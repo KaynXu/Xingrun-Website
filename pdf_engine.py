@@ -19,6 +19,7 @@ from reportlab.platypus import (
 )
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas as rl_canvas
 
 # ─── 字体注册（跨平台）────────────────────────────────────────────────────────────
 _FONT_REGISTERED = False
@@ -108,6 +109,39 @@ PAGE_W, PAGE_H = A4
 LM = RM = 1.8 * cm
 CONTENT_W = PAGE_W - LM - RM
 
+# ─── Cornell Notes 模板常量 ────────────────────────────────────────────
+NB_TAB_W  = 0.75 * cm
+NB_ML     = 1.5  * cm
+NB_MR     = 1.5  * cm + NB_TAB_W
+NB_MT     = 1.5  * cm
+NB_MB     = 1.5  * cm
+NB_CW     = PAGE_W - NB_ML - NB_MR
+NB_CH     = PAGE_H - NB_MT - NB_MB
+NB_HDR_H  = 1.8  * cm
+NB_KW_H   = 0.9  * cm
+NB_SUM_H  = 3.5  * cm
+NB_NOTES_H = NB_CH - NB_HDR_H - NB_KW_H - NB_SUM_H
+NB_CUE_W  = NB_CW * 0.28
+NB_COL_W  = NB_CW - NB_CUE_W
+NB_LINE_H = 1.05 * cm
+NB_TAB_N  = 16
+
+NB_BG     = colors.HexColor('#FAFAF8')
+NB_TAB    = colors.HexColor('#A8C4D0')
+NB_TABHI  = colors.HexColor('#6B9DAF')
+NB_HLINE  = colors.HexColor('#CCCCCC')
+NB_LBL    = colors.HexColor('#888888')
+NB_TXT    = colors.HexColor('#1A1A1A')
+NB_RULE   = colors.HexColor('#DDDDDD')
+NB_DIV    = colors.HexColor('#BBBBBB')
+NB_SUMBG  = colors.HexColor('#F0F0EE')
+NB_KWBG   = colors.HexColor('#F5F5F3')
+NB_BRD    = colors.HexColor('#CCCCCC')
+NB_STEP   = colors.HexColor('#2e6da4')
+NB_GRN    = colors.HexColor('#3a7d44')
+NB_ANS    = colors.HexColor('#1a6b3c')
+NB_PHRASE = colors.HexColor('#c0392b')
+
 
 # ─── 样式工厂 ──────────────────────────────────────────────────────────────────
 def _make_styles():
@@ -136,6 +170,9 @@ def _make_styles():
                               leading=19, textColor=colors.HexColor('#222222'), leftIndent=8),
         'q_a': ParagraphStyle('q_a', fontName=FONT_LIGHT, fontSize=9.5,
                               leading=17, textColor=C_GREY, leftIndent=20, spaceAfter=3),
+        'answer': ParagraphStyle('answer', fontName=FONT_MAIN, fontSize=9.5,
+                                 leading=17, textColor=colors.HexColor('#1a6b3c'),
+                                 leftIndent=24, spaceAfter=3),
     }
 
 
@@ -177,20 +214,26 @@ def _spacer(h=0.2):
     return Spacer(1, h * cm)
 
 
-def _render_item(item: dict, styles: dict) -> Paragraph:
+def _render_item(item: dict, styles: dict, show_answers: bool = False) -> list:
+    """Return a list of Paragraphs for this item (may include an answer line)."""
     text = _normalize_blanks(item.get("text", ""))
     t = item.get("type", "body")
+    answer = item.get("answer", "")
+    result = []
     if t == "fill":
-        return Paragraph(text, styles['fill'])
+        result.append(Paragraph(text, styles['fill']))
+        if show_answers and answer:
+            result.append(Paragraph(f"　✔️ 参考答案：{answer}", styles['answer']))
     elif t == "self_test":
-        return Paragraph(text, styles['self_test'])
+        result.append(Paragraph(text, styles['self_test']))
     else:
-        return Paragraph(text, styles['body'])
+        result.append(Paragraph(text, styles['body']))
+    return result
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────
 def _render_day1(day_data: dict, styles: dict, bg: colors.Color,
-                 border: colors.Color) -> list:
+                 border: colors.Color, show_answers: bool = False) -> list:
     elements = [
         KeepTogether([
             _day_header(day_data["label"], day_data.get("time", ""), C_DAY1, styles),
@@ -203,7 +246,9 @@ def _render_day1(day_data: dict, styles: dict, bg: colors.Color,
             f"{step.get('step_label','')}：<b>{step.get('title','')}</b>",
             styles['section']
         ))
-        paras = [_render_item(it, styles) for it in step.get("items", [])]
+        paras = []
+        for it in step.get("items", []):
+            paras.extend(_render_item(it, styles, show_answers))
         elements.append(_box(paras, bg, border))
         elements.append(_spacer(0.2))
 
@@ -219,7 +264,8 @@ def _render_day1(day_data: dict, styles: dict, bg: colors.Color,
 
 # ─── Daily 渲染（扁平 items）────────────────────────────────────────────────
 def _render_daily(day_data: dict, styles: dict, bg: colors.Color,
-                  border: colors.Color, header_color: colors.Color) -> list:
+                  border: colors.Color, header_color: colors.Color,
+                  show_answers: bool = False) -> list:
     theme = day_data.get("theme", "")
     label = day_data["label"]
     time_note = day_data.get("time", "")
@@ -232,7 +278,9 @@ def _render_daily(day_data: dict, styles: dict, bg: colors.Color,
             _spacer(0.15),
         ])
     ]
-    paras = [_render_item(it, styles) for it in day_data.get("items", [])]
+    paras = []
+    for it in day_data.get("items", []):
+        paras.extend(_render_item(it, styles, show_answers))
     phrase = day_data.get("self_test_phrase", "")
     if phrase:
         paras.append(Paragraph("", styles['body']))
@@ -243,8 +291,8 @@ def _render_daily(day_data: dict, styles: dict, bg: colors.Color,
 
 
 # ─── 月度 Day1/Day2 渲染（两天总复盘）──────────────────────────────────────
-def _render_month_day1(day_data: dict, styles: dict) -> list:
-    return _render_day1(day_data, styles, C_PURPLE_BG, C_PURPLE_BD)
+def _render_month_day1(day_data: dict, styles: dict, show_answers: bool = False) -> list:
+    return _render_day1(day_data, styles, C_PURPLE_BG, C_PURPLE_BD, show_answers)
 
 
 # ─── 题库渲染 ──────────────────────────────────────────────────────────────────
@@ -323,69 +371,331 @@ def _render_weekly_review(prompts: list, styles: dict) -> list:
     return elements
 
 
-# ─── 主入口：生成单节课 PDF ────────────────────────────────────────────────────
+# ─── Cornell Notes 底层绘制工具 ────────────────────────────────────────────────
+def _nb_split(text: str, font: str, size: float, max_w: float) -> list:
+    """CJK-aware character-level line splitter."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    if not text:
+        return ['']
+    lines, cur = [], ''
+    for ch in text:
+        test = cur + ch
+        try:
+            w = stringWidth(test, font, size)
+        except Exception:
+            w = len(test) * size * 0.65
+        if w > max_w and cur:
+            lines.append(cur)
+            cur = ch
+        else:
+            cur = test
+    if cur:
+        lines.append(cur)
+    return lines or ['']
+
+
+def _nb_draw_page(c, page_num: int, subject: str, date_str: str, keywords: str):
+    """Draw a full Cornell Notes page background. Returns (kw_bot, nb_bot)."""
+    x0 = NB_ML
+    # Background
+    c.setFillColor(NB_BG)
+    c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+    # Tab strip (right edge)
+    sx = PAGE_W - NB_TAB_W
+    sh = PAGE_H - NB_MT - NB_MB
+    th = sh / NB_TAB_N
+    ty = PAGE_H - NB_MT
+    hi = ((page_num - 1) % NB_TAB_N) + 1
+    for i in range(NB_TAB_N):
+        n = i + 1
+        y = ty - (i + 1) * th
+        c.setFillColor(NB_TABHI if n == hi else NB_TAB)
+        c.rect(sx, y, NB_TAB_W, th, fill=1, stroke=0)
+        c.setStrokeColor(colors.white)
+        c.setLineWidth(0.5)
+        c.line(sx, y + th, sx + NB_TAB_W, y + th)
+        c.setFillColor(colors.white)
+        c.setFont(FONT_MAIN, 7)
+        c.drawCentredString(sx + NB_TAB_W / 2, y + th / 2 - 3, str(n))
+    c.setStrokeColor(NB_HLINE)
+    c.setLineWidth(0.5)
+    c.line(sx, NB_MB, sx, PAGE_H - NB_MT)
+    # Header: SUBJECT | DATE
+    row_y = PAGE_H - NB_MT - NB_HDR_H
+    c.setFillColor(colors.white)
+    c.rect(x0, row_y, NB_CW, NB_HDR_H, fill=1, stroke=0)
+    c.setFillColor(NB_LBL)
+    c.setFont(FONT_MAIN, 7.5)
+    c.drawString(x0 + 4, row_y + NB_HDR_H - 14, 'SUBJECT')
+    c.setFillColor(NB_TXT)
+    c.setFont(FONT_MAIN, 10)
+    c.drawString(x0 + 4, row_y + 7, subject)
+    dw = 3.5 * cm
+    dx = x0 + NB_CW - dw
+    c.setFillColor(NB_LBL)
+    c.setFont(FONT_MAIN, 7.5)
+    c.drawString(dx, row_y + NB_HDR_H - 14, 'DATE')
+    c.setFillColor(NB_TXT)
+    c.setFont(FONT_LIGHT, 9)
+    c.drawString(dx, row_y + 7, date_str or '   /   ')
+    c.setStrokeColor(NB_HLINE)
+    c.setLineWidth(0.5)
+    c.line(dx - 6, row_y + 4, dx - 6, row_y + NB_HDR_H - 4)
+    c.setLineWidth(0.8)
+    c.line(x0, row_y, x0 + NB_CW, row_y)
+    # Keywords row
+    kw_y = row_y - NB_KW_H
+    c.setFillColor(NB_KWBG)
+    c.rect(x0, kw_y, NB_CW, NB_KW_H, fill=1, stroke=0)
+    c.setFillColor(NB_LBL)
+    c.setFont(FONT_MAIN, 7.5)
+    c.drawString(x0 + 4, kw_y + NB_KW_H / 2 + 1, 'KEYWORDS')
+    c.setFillColor(NB_TXT)
+    c.setFont(FONT_LIGHT, 9)
+    if keywords:
+        c.drawString(x0 + 58, kw_y + NB_KW_H / 2 + 1, keywords[:88])
+    c.setStrokeColor(NB_HLINE)
+    c.setLineWidth(0.5)
+    c.line(x0, kw_y, x0 + NB_CW, kw_y)
+    kw_bot = kw_y
+    # Notes two-column area
+    nb_bot = kw_bot - NB_NOTES_H
+    c.setFillColor(colors.white)
+    c.rect(x0, nb_bot, NB_CW, NB_NOTES_H, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor('#F7F7F5'))
+    c.rect(x0, nb_bot, NB_CUE_W, NB_NOTES_H, fill=1, stroke=0)
+    dvx = x0 + NB_CUE_W
+    c.setStrokeColor(NB_DIV)
+    c.setLineWidth(0.8)
+    c.line(dvx, nb_bot, dvx, kw_bot)
+    c.setFillColor(NB_LBL)
+    c.setFont(FONT_MAIN, 7.5)
+    c.drawString(x0 + 4,  kw_bot - 12, 'CUES / KEYWORDS')
+    c.drawString(dvx + 6, kw_bot - 12, 'NOTES')
+    c.setStrokeColor(NB_BRD)
+    c.setLineWidth(0.6)
+    c.rect(x0, nb_bot, NB_CW, NB_NOTES_H, fill=0, stroke=1)
+    # Summary area
+    sb_bot = nb_bot - NB_SUM_H
+    c.setFillColor(NB_SUMBG)
+    c.rect(x0, sb_bot, NB_CW, NB_SUM_H, fill=1, stroke=0)
+    c.setFillColor(NB_LBL)
+    c.setFont(FONT_MAIN, 7.5)
+    c.drawString(x0 + 4, nb_bot - 12, 'SUMMARY')
+    c.setStrokeColor(NB_HLINE)
+    c.setLineWidth(0.5)
+    c.line(x0, nb_bot - 16, x0 + NB_CW, nb_bot - 16)
+    c.setStrokeColor(NB_BRD)
+    c.setLineWidth(0.6)
+    c.rect(x0, sb_bot, NB_CW, NB_SUM_H, fill=0, stroke=1)
+    return kw_bot, nb_bot
+
+
+class _NbCtx:
+    """State manager for Cornell Notes canvas rendering."""
+    def __init__(self, c, subject: str, date_str: str):
+        self.c        = c
+        self.subject  = subject
+        self.date_str = date_str
+        self.page_num = 0
+        self.cue_x = self.cue_w = 0
+        self.ntx   = self.ntw   = 0
+        self.ctop  = self.cbot  = 0
+        self.stopy = 0
+        self.cue_y = self.note_y = 0
+
+    def begin(self, keywords=''):
+        self.page_num += 1
+        kw_bot, nb_bot = _nb_draw_page(
+            self.c, self.page_num, self.subject, self.date_str, keywords)
+        dvx          = NB_ML + NB_CUE_W
+        self.cue_x   = NB_ML + 4
+        self.cue_w   = NB_CUE_W - 10
+        self.ntx     = dvx + 8
+        self.ntw     = NB_COL_W - 14
+        self.ctop    = kw_bot - 20
+        self.cbot    = nb_bot + 4
+        self.stopy   = nb_bot
+        self.cue_y   = self.ctop
+        self.note_y  = self.ctop
+
+    def w(self, text, font, size, x, y, mw, color, indent=0):
+        """Render CJK-wrapped text; return new y."""
+        lns = _nb_split(text, font, size, mw - indent)
+        self.c.setFont(font, size)
+        self.c.setFillColor(color)
+        for ln in lns:
+            self.c.drawString(x + indent, y, ln)
+            y -= NB_LINE_H
+        return y
+
+    def chk(self, kw=''):
+        """Start a new page if notes column is nearly full."""
+        if self.note_y < self.cbot + 16:
+            self.c.showPage()
+            self.begin(kw)
+
+    def summary(self, text, color=None):
+        """Write text in the SUMMARY area of the current page."""
+        if not text:
+            return
+        color = color or NB_PHRASE
+        y = self.stopy - 28
+        lns = _nb_split(text, FONT_MAIN, 8.5, NB_CW - 12)
+        self.c.setFont(FONT_MAIN, 8.5)
+        self.c.setFillColor(color)
+        for ln in lns:
+            if y < self.stopy - NB_SUM_H + 4:
+                break
+            self.c.drawString(self.cue_x, y, ln)
+            y -= NB_LINE_H
+
+
+def _nb_item(ctx: '_NbCtx', item: dict, show_answers: bool):
+    """Render one body/fill item onto the Cornell Notes canvas."""
+    itype = item.get('type', 'body')
+    text  = _normalize_blanks(item.get('text', ''))
+    ans   = item.get('answer', '')
+    if itype == 'body':
+        ctx.note_y = ctx.w(text, FONT_LIGHT, 8.5, ctx.ntx, ctx.note_y, ctx.ntw, NB_TXT)
+    elif itype == 'fill':
+        ctx.note_y = ctx.w(text, FONT_MAIN, 9, ctx.ntx, ctx.note_y, ctx.ntw, NB_TXT, indent=4)
+        if show_answers and ans:
+            ctx.note_y = ctx.w(
+                f'↳ {ans}', FONT_LIGHT, 8,
+                ctx.ntx, ctx.note_y, ctx.ntw, NB_ANS, indent=12)
+    ctx.note_y -= 2
+
+
+# ─── 主入口：生成单节课 PDF（Cornell Notes 风格）────────────────────────────────
 def generate_lesson_pdf(plan_data: dict, output_path: str,
-                        show_quiz_answers: bool = False) -> str:
+                        show_quiz_answers: bool = False,
+                        show_fill_answers: bool = False) -> str:
     """
-    根据 plan_data（AI 生成的结构化计划）生成单节课复习 PDF。
+    生成 Cornell Notes 风格复习讲义 PDF。
+    show_fill_answers=True 时在填空题下方显示参考答案（答案版）。
     返回生成的 PDF 绝对路径。
     """
     _ensure_fonts()
-    styles = _make_styles()
-
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    doc = SimpleDocTemplate(
-        output_path,
-        pagesize=A4,
-        leftMargin=LM, rightMargin=RM,
-        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-        title="复习计划讲义（学生填写版）",
-    )
+    info      = plan_data.get('lesson_info', {})
+    subject   = info.get('subject', '')
+    grade     = info.get('grade', '')
+    topic     = info.get('topic', '')
+    date_     = info.get('date', '')
+    cats      = info.get('key_categories', [])
+    group_a   = info.get('group_a', [])
+    group_b   = info.get('group_b', [])
+    weak      = plan_data.get('weak_points_summary', '')
+    days      = plan_data.get('days', [])
+    questions = plan_data.get('questions', [])
 
-    info = plan_data.get("lesson_info", {})
-    subject = info.get("subject", "")
-    grade   = info.get("grade", "")
-    topic   = info.get("topic", "")
-    date_   = info.get("date", "")
-    cats    = info.get("key_categories", [])
-    weak    = plan_data.get("weak_points_summary", "")
+    subj_hdr = f'{grade}·{subject}' if grade else subject
+    ver_txt  = '答案版' if show_fill_answers else '学生版'
 
-    # 标题
-    story = [
-        _spacer(0.4),
-        Paragraph(f"{subject}　复习计划讲义", styles['title']),
-        Paragraph("学生填写版　·　每天5分钟以内　·　课后8天跟踪复习", styles['subtitle']),
-    ]
-    meta_parts = [p for p in [date_, grade, topic] if p]
-    if meta_parts:
-        story.append(Paragraph("　·　".join(meta_parts), styles['meta']))
+    c   = rl_canvas.Canvas(output_path, pagesize=A4)
+    ctx = _NbCtx(c, subj_hdr, date_)
+
+    # ── 封面页 ──────────────────────────────────────────────────────────────
+    ctx.begin(keywords=f'{topic}  [{ver_txt}]')
+    ny = ctx.note_y
+    ny = ctx.w(topic, FONT_MAIN, 13, ctx.ntx, ny, ctx.ntw, NB_STEP)
+    ny -= NB_LINE_H * 0.4
     if cats:
-        story.append(Paragraph(f"本课知识板块：{'　▪　'.join(cats)}", styles['meta']))
+        ny = ctx.w('本课知识板块：', FONT_MAIN, 8, ctx.ntx, ny, ctx.ntw, NB_LBL)
+        for cat in cats:
+            ny = ctx.w(f'  ▸ {cat}', FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_TXT)
+        ny -= NB_LINE_H * 0.3
+    if group_a and group_b:
+        ny = ctx.w(f'A组（第14天）：{"、".join(group_a)}', FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_GRN)
+        ny = ctx.w(f'B组（第30天）：{"、".join(group_b)}', FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_GRN)
+        ny -= NB_LINE_H * 0.3
     if weak:
-        story.append(Paragraph(f"薄弱点提示：{weak}", styles['meta']))
-    story.append(HRFlowable(width=CONTENT_W, thickness=1.5, color=C_HEADER, spaceAfter=10))
+        ny = ctx.w('薄弱点提示：', FONT_MAIN, 8, ctx.ntx, ny, ctx.ntw, NB_LBL)
+        ny = ctx.w(weak, FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_PHRASE)
+    # CUE 列：复习安排
+    cy = ctx.ctop
+    cy = ctx.w('复习安排', FONT_MAIN, 7.5, ctx.cue_x, cy, ctx.cue_w, NB_LBL)
+    for d in days:
+        dc = NB_STEP if d.get('type') == 'day1' else NB_GRN
+        cy = ctx.w(d.get('label', ''), FONT_LIGHT, 8, ctx.cue_x, cy, ctx.cue_w, dc)
+    ctx.summary(f'这节课主要学了：{topic}')
+    c.showPage()
 
-    # 天数
-    days = plan_data.get("days", [])
+    # ── 各天页面 ────────────────────────────────────────────────────────────
     for day_data in days:
-        day_type = day_data.get("type", "daily")
-        if day_type == "day1":
-            story.extend(_render_day1(day_data, styles, C_LIGHT_BG, C_BORDER))
-        elif day_type == "month_day1":
-            story.extend(_render_month_day1(day_data, styles))
+        day_type = day_data.get('type', 'daily')
+        label    = day_data.get('label', '')
+        theme    = day_data.get('theme', '')
+        phrase   = day_data.get('self_test_phrase', '')
+        group    = day_data.get('group', '')
+
+        kw = label
+        if theme:  kw += f'  ·  {theme}'
+        if group:  kw += f'  [{group}组]'
+
+        ctx.begin(keywords=kw)
+
+        if day_type == 'day1':
+            for step in day_data.get('steps', []):
+                ctx.chk(kw)
+                sl = step.get('step_label', '')
+                st = step.get('title', '')
+                # NOTES 列：步骤标题
+                ctx.note_y = ctx.w(
+                    f'{sl}  {st}', FONT_MAIN, 9,
+                    ctx.ntx, ctx.note_y, ctx.ntw, NB_STEP)
+                ctx.note_y -= NB_LINE_H * 0.15
+                # CUE 列：步骤简称
+                ctx.cue_y = ctx.w(
+                    sl.replace('⏱ ', ''), FONT_MAIN, 7.5,
+                    ctx.cue_x, ctx.cue_y, ctx.cue_w, NB_LBL)
+                ctx.cue_y = ctx.w(
+                    st[:16], FONT_LIGHT, 7.5,
+                    ctx.cue_x, ctx.cue_y, ctx.cue_w, NB_LBL)
+                ctx.cue_y -= NB_LINE_H * 0.3
+                for item in step.get('items', []):
+                    ctx.chk(kw)
+                    _nb_item(ctx, item, show_fill_answers)
+                ctx.note_y -= NB_LINE_H * 0.3
         else:
-            story.extend(_render_daily(day_data, styles, C_GREEN_BG, C_GREEN_BD, C_DAILY))
+            for item in day_data.get('items', []):
+                ctx.chk(kw)
+                _nb_item(ctx, item, show_fill_answers)
 
-    # 题库
-    questions = plan_data.get("questions", [])
-    story.extend(_render_quiz_section(questions, styles, show_answers=show_quiz_answers))
+        ctx.summary(_normalize_blanks(phrase) if phrase else '')
+        c.showPage()
 
-    # 周复盘
-    story.extend(_render_weekly_review(
-        plan_data.get("weekly_review_prompts", []), styles))
+    # ── 题库页 ──────────────────────────────────────────────────────────────
+    if questions:
+        cats_q: dict = {}
+        for q in questions:
+            cats_q.setdefault(q.get('category', '综合'), []).append(q)
+        ctx.begin(keywords='📚 题库（自测用）')
+        for cat, qs in cats_q.items():
+            ctx.chk('题库（续）')
+            ctx.note_y = ctx.w(f'▶ {cat}', FONT_MAIN, 9.5, ctx.ntx, ctx.note_y, ctx.ntw, NB_STEP)
+            ctx.cue_y  = ctx.w(cat, FONT_LIGHT, 8, ctx.cue_x, ctx.cue_y, ctx.cue_w, NB_LBL)
+            ctx.note_y -= NB_LINE_H * 0.2
+            for i, q in enumerate(qs, 1):
+                ctx.chk('题库（续）')
+                ctx.note_y = ctx.w(
+                    f'{i}. {q.get("question", "")}', FONT_LIGHT, 9,
+                    ctx.ntx, ctx.note_y, ctx.ntw, NB_TXT)
+                if show_quiz_answers:
+                    ctx.note_y = ctx.w(
+                        f'答：{q.get("answer", "")}', FONT_LIGHT, 8.5,
+                        ctx.ntx, ctx.note_y, ctx.ntw, NB_ANS, indent=8)
+                else:
+                    ctx.note_y = ctx.w(
+                        '答：＿＿＿＿＿＿＿', FONT_LIGHT, 9,
+                        ctx.ntx, ctx.note_y, ctx.ntw,
+                        colors.HexColor('#bbbbbb'), indent=8)
+                ctx.note_y -= 3
+        c.showPage()
 
-    doc.build(story)
+    c.save()
     return str(Path(output_path).resolve())
 
 

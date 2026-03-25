@@ -124,9 +124,58 @@
             </div>
           </div>
 
+          <!-- 复习风格选择 -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold">
+              <i class="bi bi-stars text-warning"></i> 复习讲义风格
+              <span class="text-muted fw-normal small ms-1">（可多选，不选则使用标准填空）</span>
+            </label>
+            <div class="row g-2">
+
+              <div class="col-md-6">
+                <label class="d-flex align-items-start gap-2 border rounded p-3 style-card" style="cursor:pointer">
+                  <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" name="prompt_styles" value="B">
+                  <div>
+                    <div class="fw-semibold">🔍 三问法</div>
+                    <div class="text-muted small">每条知识点拆成：是什么 / 为什么 / 怎么用，逼出真理解</div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="col-md-6">
+                <label class="d-flex align-items-start gap-2 border rounded p-3 style-card" style="cursor:pointer">
+                  <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" name="prompt_styles" value="C">
+                  <div>
+                    <div class="fw-semibold">📝 考题格式</div>
+                    <div class="text-muted small">每天对应一种题型的解题框架，直接贴近考试实战</div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="col-md-6">
+                <label class="d-flex align-items-start gap-2 border rounded p-3 style-card" style="cursor:pointer">
+                  <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" name="prompt_styles" value="D">
+                  <div>
+                    <div class="fw-semibold">💬 对话自测</div>
+                    <div class="text-muted small">模拟老师连续提问，学生用对话链形式完成答题</div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="col-md-6">
+                <label class="d-flex align-items-start gap-2 border rounded p-3 style-card" style="cursor:pointer">
+                  <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" name="prompt_styles" value="E">
+                  <div>
+                    <div class="fw-semibold">☑️ 遗忘清单</div>
+                    <div class="text-muted small">每天3-5条核查项，☐ 逐条勾选，5秒快速自检</div>
+                  </div>
+                </label>
+              </div>
+
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
-            <i class="bi bi-magic"></i> 一键生成复习计划（30–60 秒）
-          </button>
         </form>
 
       </div>
@@ -137,6 +186,15 @@
 
 {% block scripts %}
 <script>
+// ── 风格卡片选中高亮 ────────────────────────────────────────
+document.querySelectorAll('.style-card input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', function () {
+    this.closest('.style-card').classList.toggle('border-primary', this.checked);
+    this.closest('.style-card').classList.toggle('bg-primary', this.checked);
+    this.closest('.style-card').classList.toggle('bg-opacity-10', this.checked);
+  });
+});
+
 // ── 班级自动填充 ────────────────────────────────────────────
 function applyClass(id) {
   const sel = document.getElementById('classSel');
