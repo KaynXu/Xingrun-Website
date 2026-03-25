@@ -58,6 +58,8 @@ def has_api_key():
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
     elif provider == "mimo":
         key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
+    elif provider == "n1n":
+        key = cfg.get("n1n_api_key", "") or os.environ.get("N1N_API_KEY", "")
     else:
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     return bool(key.strip())
@@ -190,10 +192,12 @@ def add_lesson():
     # AI 生成计划
     try:
         from ai_processor import parse_and_generate_plan
+        prompt_styles = request.form.getlist("prompt_styles")
         plan = parse_and_generate_plan(
             summary_text=raw_text,
             subject=subject, grade=grade, topic=topic,
             weak_points=weak_points, lesson_date=lesson_date,
+            prompt_styles=prompt_styles,
         )
     except Exception as e:
         flash(f"AI 生成失败：{e}", "error")
@@ -201,7 +205,7 @@ def add_lesson():
                                form=request.form, cls=cls,
                                class_id=class_id, classes=list_classes())
 
-    # 生成 PDF
+    # 生成学生版 PDF
     pdf_path = ""
     try:
         from pdf_engine import generate_lesson_pdf
@@ -211,6 +215,16 @@ def add_lesson():
         generate_lesson_pdf(plan, pdf_path)
     except Exception as e:
         flash(f"PDF 生成失败：{e}", "error")
+
+    # 生成答案版 PDF
+    if pdf_path:
+        try:
+            from pdf_engine import generate_lesson_pdf
+            answer_pdf_path = pdf_path.replace(".pdf", "_答案版.pdf")
+            generate_lesson_pdf(plan, answer_pdf_path,
+                                show_quiz_answers=True, show_fill_answers=True)
+        except Exception as e:
+            flash(f"答案 PDF 生成失败：{e}", "warning")
 
     lesson_id = save_lesson(
         date_str=lesson_date, subject=subject, grade=grade,
@@ -400,12 +414,19 @@ def lesson_detail(lesson_id):
     plan = lesson.get("plan") or {}
     days = plan.get("days", [])
 
+    # 检查答案版 PDF 是否存在
+    has_answer_pdf = False
+    if lesson.get("pdf_path"):
+        answer_path = lesson["pdf_path"].replace(".pdf", "_答案版.pdf")
+        has_answer_pdf = Path(answer_path).exists()
+
     return render_template(
         "lesson_detail.html",
         lesson=lesson,
         question_cats=cats,
         total_q=len(questions),
         days=days,
+        has_answer_pdf=has_answer_pdf,
     )
 
 
@@ -418,6 +439,9 @@ def delete_lesson(lesson_id):
     pdf_path = lesson.get("pdf_path", "")
     if pdf_path and Path(pdf_path).exists():
         Path(pdf_path).unlink(missing_ok=True)
+    answer_pdf = pdf_path.replace(".pdf", "_答案版.pdf") if pdf_path else ""
+    if answer_pdf and Path(answer_pdf).exists():
+        Path(answer_pdf).unlink(missing_ok=True)
     db_delete_lesson(lesson_id)
     flash("课程已删除", "success")
     return redirect(url_for("lessons_list"))
@@ -446,6 +470,36 @@ def download_pdf(lesson_id):
         abort(404)
     return send_file(pdf_path, as_attachment=True,
                      download_name=Path(pdf_path).name)
+
+
+@app.route("/pdf/answer/<int:lesson_id>")
+def serve_answer_pdf(lesson_id):
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        abort(404)
+    pdf_path = lesson.get("pdf_path", "")
+    if not pdf_path:
+        abort(404)
+    answer_path = pdf_path.replace(".pdf", "_答案版.pdf")
+    if not Path(answer_path).exists():
+        abort(404)
+    return send_file(answer_path, mimetype="application/pdf",
+                     download_name=Path(answer_path).name)
+
+
+@app.route("/pdf/download/answer/<int:lesson_id>")
+def download_answer_pdf(lesson_id):
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        abort(404)
+    pdf_path = lesson.get("pdf_path", "")
+    if not pdf_path:
+        abort(404)
+    answer_path = pdf_path.replace(".pdf", "_答案版.pdf")
+    if not Path(answer_path).exists():
+        abort(404)
+    return send_file(answer_path, as_attachment=True,
+                     download_name=Path(answer_path).name)
 
 
 # ─── 月度复习 ──────────────────────────────────────────────────────────────────
@@ -580,6 +634,14 @@ def settings():
         if mimo_base_url:
             cfg["mimo_base_url"] = mimo_base_url
 
+        n1n_key = request.form.get("n1n_api_key", "").strip()
+        if n1n_key:
+            cfg["n1n_api_key"] = n1n_key
+
+        n1n_base_url = request.form.get("n1n_base_url", "").strip()
+        if n1n_base_url:
+            cfg["n1n_base_url"] = n1n_base_url
+
         with open(CFG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         flash("设置已保存！", "success")
@@ -595,6 +657,9 @@ def settings():
         mimo_key_set=bool(cfg.get("mimo_api_key", "")),
         mimo_masked=_mask(cfg.get("mimo_api_key", "")),
         mimo_base_url=cfg.get("mimo_base_url", ""),
+        n1n_key_set=bool(cfg.get("n1n_api_key", "")),
+        n1n_masked=_mask(cfg.get("n1n_api_key", "")),
+        n1n_base_url=cfg.get("n1n_base_url", "https://api.n1n.ai/v1"),
     )
 
 
