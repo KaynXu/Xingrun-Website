@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>{% block title %}复习计划{% endblock %} — 复习计划管理系统</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --brand: #1a3a5c;
+      --brand2: #2e6da4;
+      --accent: #3a7d44;
+    }
+    body {
+      background: #f0f4f8;
+      font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+      color: #1e293b;
+    }
+    .navbar { background: var(--brand) !important; }
+    .navbar-brand { font-weight: 700; letter-spacing: .02em; }
+    .navbar .nav-link { color: rgba(255,255,255,.75) !important; transition: color .15s; }
+    .navbar .nav-link:hover,
+    .navbar .nav-link.active { color: #fff !important; }
+    .card { border: none; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .card-header { border-radius: 12px 12px 0 0 !important; background: #e8f0fe; border-bottom: 1px solid #d0def5; }
+    .btn-primary  { background: var(--brand2); border-color: var(--brand2); }
+    .btn-primary:hover { background: #1d5a8a; border-color: #1d5a8a; }
+    .btn-success  { background: var(--accent); border-color: var(--accent); }
+    .table { margin-bottom: 0; }
+    .table th { font-weight: 600; font-size: .85rem; color: #475569; }
+
+    /* Loading overlay */
+    .loading-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); z-index: 9999;
+      align-items: center; justify-content: center; flex-direction: column;
+    }
+    .loading-overlay.show { display: flex; }
+    .loading-box {
+      background: #fff; border-radius: 16px;
+      padding: 2rem 3rem; text-align: center; max-width: 340px;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container-fluid px-4">
+    <a class="navbar-brand text-white" href="/">📚 复习计划系统</a>
+    <button class="navbar-toggler" type="button"
+            data-bs-toggle="collapse" data-bs-target="#mainNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="mainNav">
+      <ul class="navbar-nav ms-auto align-items-lg-center gap-1">
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint=='index' %} active fw-semibold{% endif %}"
+             href="/"><i class="bi bi-house-door"></i> 首页</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint in ('classes_list','class_detail','class_new','class_edit') %} active fw-semibold{% endif %}"
+             href="/classes"><i class="bi bi-people-fill"></i> 班级</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint=='add_lesson' %} active fw-semibold{% endif %}"
+             href="/add"><i class="bi bi-plus-circle"></i> 添加课程</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint=='lessons_list' %} active fw-semibold{% endif %}"
+             href="/lessons"><i class="bi bi-journals"></i> 所有课程</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint=='quiz' %} active fw-semibold{% endif %}"
+             href="/quiz"><i class="bi bi-patch-question"></i> 题库</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint=='monthly' %} active fw-semibold{% endif %}"
+             href="/monthly"><i class="bi bi-calendar-month"></i> 月度复习</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link{% if current_endpoint=='settings' %} active fw-semibold{% endif %}"
+             href="/settings">
+            {% if has_key %}
+              <i class="bi bi-gear-fill text-success"></i>
+            {% else %}
+              <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+            {% endif %}
+            设置
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- Flash messages -->
+<div class="container-fluid px-4 pt-3" id="flash-area">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }}
+                    alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+
+<!-- Main content -->
+<div class="container-fluid px-4 pb-5">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-box">
+    <div class="spinner-border text-primary mb-3"
+         style="width:3rem;height:3rem;" role="status"></div>
+    <div class="fw-semibold mb-1" id="loadingText">AI 正在生成复习计划…</div>
+    <small class="text-muted">通常需要 30–60 秒，请稍候</small>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  function showLoading(msg) {
+    document.getElementById('loadingText').textContent = msg || 'AI 正在处理，请稍候…';
+    document.getElementById('loadingOverlay').classList.add('show');
+  }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

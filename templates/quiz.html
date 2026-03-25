@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}题库{% endblock %}
+
+{% block content %}
+<h4 class="mt-2 mb-4">
+  <i class="bi bi-patch-question text-primary"></i> 题库自测
+</h4>
+
+<div class="row g-4">
+
+  <!-- 筛选栏 -->
+  <div class="col-lg-3">
+    <div class="card mb-3">
+      <div class="card-header fw-bold">
+        <i class="bi bi-funnel text-primary"></i> 筛选
+      </div>
+      <div class="card-body small">
+
+        <div class="mb-2 fw-semibold text-muted">按月份</div>
+        <a href="/quiz" class="btn btn-sm w-100 mb-1
+          {{ 'btn-primary' if not month and not lesson_id else 'btn-outline-secondary' }}">
+          全部题库
+        </a>
+        {% for m in months %}
+        <a href="/quiz?month={{ m }}"
+           class="btn btn-sm w-100 mb-1
+             {{ 'btn-primary' if month == m else 'btn-outline-secondary' }}">
+          {{ m }}
+        </a>
+        {% endfor %}
+
+        {% if all_lessons %}
+        <hr>
+        <div class="mb-2 fw-semibold text-muted">按课程</div>
+        {% for l in all_lessons %}
+        <a href="/quiz?lesson_id={{ l.id }}"
+           class="btn btn-sm w-100 mb-1 text-start
+             {{ 'btn-primary' if lesson_id == l.id else 'btn-outline-secondary' }}"
+           title="{{ l.topic }}">
+          {{ l.date }} {{ l.topic|truncate(14) if l.topic else '(无主题)' }}
+        </a>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 题目列表 -->
+  <div class="col-lg-9">
+    {% if question_cats %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <span class="text-muted small">共 {{ total_q }} 道题</span>
+      <button class="btn btn-sm btn-outline-primary" id="toggleAll">
+        显示所有答案
+      </button>
+    </div>
+
+    {% for cat, qs in question_cats.items() %}
+    <div class="card mb-3">
+      <div class="card-header fw-semibold py-2">
+        <i class="bi bi-bookmark-fill me-1 text-primary"></i>
+        {{ cat }}（{{ qs|length }} 题）
+      </div>
+      <div class="card-body">
+        {% for q in qs %}
+        <div class="border rounded p-3 mb-2 bg-light">
+          <div class="fw-semibold mb-1" style="font-size:.95rem">
+            {{ loop.index }}. {{ q.question }}
+          </div>
+          <div class="answer-block text-success small py-1 px-2 rounded
+                      bg-white border border-success mt-1"
+               style="display:none">
+            <i class="bi bi-check-circle-fill me-1"></i>{{ q.answer }}
+          </div>
+          <button class="btn btn-sm btn-outline-secondary toggle-answer mt-1"
+                  style="font-size:.8rem">
+            查看答案
+          </button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    <div class="card">
+      <div class="card-body text-center text-muted py-5">
+        <div class="fs-1 mb-2">📭</div>
+        <div>
+          {% if month %}
+            {{ month }} 没有题库数据
+          {% elif lesson_id %}
+            该课程暂无题库数据
+          {% else %}
+            暂无题库数据，添加课程后自动生成
+          {% endif %}
+        </div>
+        <a href="/add" class="btn btn-primary mt-3">
+          <i class="bi bi-plus-circle"></i> 添加课程
+        </a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.toggle-answer').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const ans = this.previousElementSibling;
+    const s = ans.style.display !== 'none';
+    ans.style.display = s ? 'none' : 'block';
+    this.textContent = s ? '查看答案' : '隐藏答案';
+  });
+});
+
+let allShowing = false;
+const toggleBtn = document.getElementById('toggleAll');
+if (toggleBtn) {
+  toggleBtn.addEventListener('click', function () {
+    allShowing = !allShowing;
+    document.querySelectorAll('.answer-block').forEach(el => {
+      el.style.display = allShowing ? 'block' : 'none';
+    });
+    document.querySelectorAll('.toggle-answer').forEach(btn => {
+      btn.textContent = allShowing ? '隐藏答案' : '查看答案';
+    });
+    this.textContent = allShowing ? '隐藏所有答案' : '显示所有答案';
+  });
+}
+</script>
+{% endblock %}

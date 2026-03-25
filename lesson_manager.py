@@ -1,0 +1,585 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+复习计划管理系统 — 主入口 CLI
+
+用法：
+  python lesson_manager.py setup                       # 初始化数据库 & 设置 API Key
+  python lesson_manager.py add --file summary.txt      # 从文本文件添加课堂总结
+  python lesson_manager.py add --audio recording.m4a   # 从录音文件添加
+  python lesson_manager.py add --text "..."            # 直接粘贴课堂总结
+  python lesson_manager.py list                        # 列出所有课程
+  python lesson_manager.py show --id 3                 # 查看某节课详情
+  python lesson_manager.py monthly --month 2026-03     # 生成月度复习 PDF
+  python lesson_manager.py quiz                        # 输出全部题库（终端）
+  python lesson_manager.py quiz --month 2026-03        # 某月题库
+  python lesson_manager.py open --id 3                 # 用系统 PDF 查看器打开
+"""
+
+import argparse
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+from datetime import date, datetime
+from pathlib import Path
+
+# ─── 路径配置 ──────────────────────────────────────────────────────────────────
+BASE_DIR   = Path(__file__).parent.resolve()
+DATA_DIR   = BASE_DIR / "data"
+PDF_DIR    = DATA_DIR / "pdfs"
+DB_PATH    = DATA_DIR / "lessons.db"
+CFG_PATH   = BASE_DIR / "config.json"
+
+DATA_DIR.mkdir(exist_ok=True)
+PDF_DIR.mkdir(exist_ok=True)
+
+
+# ─── 数据库 ────────────────────────────────────────────────────────────────────
+def get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    with get_conn() as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS classes (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            name         TEXT NOT NULL,
+            subject      TEXT DEFAULT '',
+            grade        TEXT DEFAULT '',
+            teacher_name TEXT DEFAULT '',
+            teacher_email TEXT DEFAULT '',
+            created_at   TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS lessons (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            date        TEXT NOT NULL,
+            subject     TEXT,
+            grade       TEXT,
+            topic       TEXT,
+            summary     TEXT,
+            weak_points TEXT,
+            plan_json   TEXT,
+            pdf_path    TEXT,
+            class_id    INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS questions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_id  INTEGER NOT NULL,
+            question   TEXT,
+            answer     TEXT,
+            category   TEXT,
+            day_num    INTEGER,
+            FOREIGN KEY (lesson_id) REFERENCES lessons(id)
+        );
+        """)
+        # Safe migration: add class_id if not already present
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
+        if "class_id" not in cols:
+            conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+    print(f"数据库已初始化：{DB_PATH}")
+
+
+def save_lesson(date_str: str, subject: str, grade: str, topic: str,
+                summary: str, weak_points: str,
+                plan: dict, pdf_path: str, class_id: int = 0) -> int:
+    """保存一节课及其复习计划，返回 lesson_id。"""
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO lessons
+               (date, subject, grade, topic, summary, weak_points, plan_json, pdf_path, class_id)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (date_str, subject, grade, topic, summary, weak_points,
+             json.dumps(plan, ensure_ascii=False), pdf_path,
+             class_id if class_id else None)
+        )
+        lesson_id = cur.lastrowid
+
+        # 保存题库
+        questions = plan.get("questions", [])
+        for q in questions:
+            conn.execute(
+                "INSERT INTO questions (lesson_id, question, answer, category, day_num) "
+                "VALUES (?,?,?,?,?)",
+                (lesson_id, q.get("question"), q.get("answer"),
+                 q.get("category"), q.get("day", 0))
+            )
+    return lesson_id
+
+
+def get_lesson(lesson_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM lessons WHERE id=?", (lesson_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("plan_json"):
+            d["plan"] = json.loads(d["plan_json"])
+        return d
+
+
+def list_lessons(month_str: str = "", class_id: int = 0) -> list:
+    with get_conn() as conn:
+        if class_id and month_str:
+            rows = conn.execute(
+                "SELECT * FROM lessons WHERE class_id=? AND date LIKE ? ORDER BY date",
+                (class_id, f"{month_str}%")
+            ).fetchall()
+        elif class_id:
+            rows = conn.execute(
+                "SELECT * FROM lessons WHERE class_id=? ORDER BY date DESC",
+                (class_id,)
+            ).fetchall()
+        elif month_str:
+            rows = conn.execute(
+                "SELECT * FROM lessons WHERE date LIKE ? ORDER BY date",
+                (f"{month_str}%",)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM lessons ORDER BY date DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_lesson(lesson_id: int):
+    """Delete a lesson and its associated questions from the database."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM questions WHERE lesson_id=?", (lesson_id,))
+        conn.execute("DELETE FROM lessons WHERE id=?", (lesson_id,))
+
+
+# ─── 班级 CRUD ─────────────────────────────────────────────────────────────────
+def save_class(name: str, subject: str = "", grade: str = "",
+               teacher_name: str = "", teacher_email: str = "") -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO classes (name, subject, grade, teacher_name, teacher_email) VALUES (?,?,?,?,?)",
+            (name, subject, grade, teacher_name, teacher_email)
+        )
+        return cur.lastrowid
+
+
+def get_class(class_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM classes WHERE id=?", (class_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_classes():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT c.*, COUNT(l.id) as lesson_count FROM classes c "
+            "LEFT JOIN lessons l ON l.class_id = c.id "
+            "GROUP BY c.id ORDER BY c.created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
+                 teacher_name: str = "", teacher_email: str = ""):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE classes SET name=?, subject=?, grade=?, teacher_name=?, teacher_email=? WHERE id=?",
+            (name, subject, grade, teacher_name, teacher_email, class_id)
+        )
+
+
+def delete_class(class_id: int):
+    """Delete a class (lessons are kept but unlinked)."""
+    with get_conn() as conn:
+        conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
+
+
+def get_lessons_by_week(class_id: int, week_str: str) -> list:
+    """Return lessons for a class in a given ISO week string 'YYYY-WXX'."""
+    from datetime import datetime, timedelta
+    year, wk = int(week_str.split("-W")[0]), int(week_str.split("-W")[1])
+    monday = datetime.fromisocalendar(year, wk, 1)
+    sunday = monday + timedelta(days=6)
+    mon_s = monday.strftime("%Y-%m-%d")
+    sun_s = sunday.strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM lessons WHERE class_id=? AND date >= ? AND date <= ? ORDER BY date",
+            (class_id, mon_s, sun_s)
+        ).fetchall()
+    lessons = []
+    for r in rows:
+        d = dict(r)
+        if d.get("plan_json"):
+            d["plan"] = json.loads(d["plan_json"])
+        lessons.append(d)
+    return lessons
+
+
+def get_class_weeks(class_id: int) -> list:
+    """Return sorted list of ISO week strings for which a class has lessons."""
+    from datetime import datetime
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT date FROM lessons WHERE class_id=? ORDER BY date DESC",
+            (class_id,)
+        ).fetchall()
+    weeks = []
+    seen = set()
+    for r in rows:
+        try:
+            d = datetime.strptime(r["date"], "%Y-%m-%d")
+            y, w, _ = d.isocalendar()
+            ws = f"{y}-W{w:02d}"
+            if ws not in seen:
+                seen.add(ws)
+                weeks.append(ws)
+        except Exception:
+            pass
+    return weeks
+
+
+def week_label(week_str: str) -> str:
+    """Return display label like '2026年第12周（03月23日—03月29日）'."""
+    from datetime import datetime, timedelta
+    year, wk = int(week_str.split("-W")[0]), int(week_str.split("-W")[1])
+    monday = datetime.fromisocalendar(year, wk, 1)
+    sunday = monday + timedelta(days=6)
+    return f"{year}年第{wk}周（{monday.strftime('%m月%d日')}—{sunday.strftime('%m月%d日')}）"
+
+
+def get_questions(lesson_id: int = 0, month_str: str = "") -> list[dict]:
+    with get_conn() as conn:
+        if lesson_id:
+            rows = conn.execute(
+                "SELECT * FROM questions WHERE lesson_id=? ORDER BY category, id",
+                (lesson_id,)
+            ).fetchall()
+        elif month_str:
+            rows = conn.execute(
+                """SELECT q.* FROM questions q
+                   JOIN lessons l ON q.lesson_id = l.id
+                   WHERE l.date LIKE ?
+                   ORDER BY q.category, q.id""",
+                (f"{month_str}%",)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM questions ORDER BY lesson_id, category, id"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ─── 命令：setup ───────────────────────────────────────────────────────────────
+def cmd_setup(_args):
+    init_db()
+    # 读取或创建 config.json
+    cfg = {}
+    if CFG_PATH.exists():
+        with open(CFG_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+
+    existing_key = cfg.get("openai_api_key", "")
+    if existing_key:
+        print(f"当前已有 API Key（前8位）：{existing_key[:8]}...")
+        ans = input("是否重新设置？[y/N] ").strip().lower()
+        if ans != "y":
+            print("保持原有 API Key 不变。")
+            return
+
+    key = input("请输入你的 OpenAI API Key（留空跳过）：").strip()
+    if key:
+        cfg["openai_api_key"] = key
+        with open(CFG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        print(f"API Key 已保存到 {CFG_PATH}")
+    else:
+        print("跳过 API Key 设置（可后续手动编辑 config.json 或设置环境变量 OPENAI_API_KEY）。")
+    print("\n初始化完成！可以开始使用了。")
+
+
+# ─── 命令：add ────────────────────────────────────────────────────────────────
+def cmd_add(args):
+    # 1. 获取原始文本
+    raw_text = ""
+    if args.audio:
+        from ai_processor import transcribe_audio
+        raw_text = transcribe_audio(args.audio)
+        print("\n【转录结果预览（前300字）】")
+        print(raw_text[:300])
+        print("..." if len(raw_text) > 300 else "")
+    elif args.file:
+        p = Path(args.file)
+        if not p.exists():
+            print(f"文件不存在：{p}")
+            sys.exit(1)
+        raw_text = p.read_text(encoding="utf-8")
+    elif args.text:
+        raw_text = args.text
+    else:
+        print("请通过 --text、--file 或 --audio 提供课堂总结。")
+        sys.exit(1)
+
+    # 2. 元信息（命令行优先，否则从文本中提取）
+    lesson_date = args.date or str(date.today())
+    subject     = args.subject or _extract_field(raw_text, "科目") or "数学"
+    grade       = args.grade   or _extract_field(raw_text, "年级") or ""
+    topic       = args.topic   or _extract_field(raw_text, "本节课主题") or ""
+    weak_points = args.weak    or _extract_field(raw_text, "学生薄弱点") or ""
+
+    print(f"\n课程信息：{lesson_date} | {subject} | {grade} | {topic}")
+
+    # 3. AI 生成复习计划
+    from ai_processor import parse_and_generate_plan
+    plan = parse_and_generate_plan(
+        summary_text=raw_text,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        weak_points=weak_points,
+        lesson_date=lesson_date,
+    )
+
+    # 4. 生成 PDF
+    from pdf_engine import generate_lesson_pdf
+    safe_topic = topic.replace("/", "-").replace(" ", "_")[:30] if topic else "课程"
+    pdf_name = f"{lesson_date}_{subject}_{safe_topic}.pdf"
+    pdf_path = str(PDF_DIR / pdf_name)
+    generate_lesson_pdf(plan, pdf_path)
+    print(f"PDF 已生成：{pdf_path}")
+
+    # 5. 存库
+    lesson_id = save_lesson(
+        date_str=lesson_date,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        summary=raw_text,
+        weak_points=weak_points,
+        plan=plan,
+        pdf_path=pdf_path,
+    )
+    print(f"课程已保存（ID={lesson_id}）")
+
+    # 6. 自动打开 PDF
+    if not args.no_open:
+        _open_pdf(pdf_path)
+
+
+def _extract_field(text: str, field: str) -> str:
+    """从结构化文本中提取字段值（支持常见格式）。"""
+    import re
+    pattern = rf"(?:^|\n)\s*{re.escape(field)}\s*[：:]\s*(.+)"
+    m = re.search(pattern, text)
+    return m.group(1).strip() if m else ""
+
+
+# ─── 命令：list ───────────────────────────────────────────────────────────────
+def cmd_list(args):
+    month = args.month or ""
+    lessons = list_lessons(month)
+    if not lessons:
+        print("暂无课程记录。")
+        return
+    print(f"\n{'ID':>4}  {'日期':^12}  {'科目':^8}  {'年级':^6}  {'主题'}")
+    print("─" * 70)
+    for l in lessons:
+        print(f"{l['id']:>4}  {l['date']:^12}  {l['subject'] or '':^8}  "
+              f"{l['grade'] or '':^6}  {l['topic'] or ''}")
+    print(f"\n共 {len(lessons)} 条记录")
+
+
+# ─── 命令：show ───────────────────────────────────────────────────────────────
+def cmd_show(args):
+    lesson = get_lesson(args.id)
+    if not lesson:
+        print(f"未找到 ID={args.id} 的课程。")
+        sys.exit(1)
+    print(f"\n【课程详情 ID={lesson['id']}】")
+    print(f"日期：{lesson['date']}  科目：{lesson['subject']}  "
+          f"年级：{lesson['grade']}  主题：{lesson['topic']}")
+    print(f"薄弱点：{lesson['weak_points'] or '无'}")
+    print(f"PDF：{lesson['pdf_path'] or '无'}")
+
+    qs = get_questions(lesson_id=args.id)
+    if qs:
+        print(f"\n题库（共 {len(qs)} 题）：")
+        for q in qs:
+            print(f"  [{q['category']}] Q: {q['question']}")
+            print(f"           A: {q['answer']}")
+
+
+# ─── 命令：monthly ────────────────────────────────────────────────────────────
+def cmd_monthly(args):
+    month = args.month or datetime.now().strftime("%Y-%m")
+    lessons = list_lessons(month)
+    if not lessons:
+        print(f"没有找到 {month} 的课程记录。请先用 add 命令添加课程。")
+        sys.exit(1)
+
+    print(f"\n找到 {month} 的 {len(lessons)} 节课：")
+    for l in lessons:
+        print(f"  {l['date']}  {l['subject']}  {l['topic']}")
+
+    # 准备 AI 所需数据
+    lesson_dicts = []
+    for l in lessons:
+        lesson_dicts.append({
+            "date":        l["date"],
+            "subject":     l["subject"] or "",
+            "grade":       l["grade"] or "",
+            "topic":       l["topic"] or "",
+            "summary":     l["summary"] or "",
+            "weak_points": l["weak_points"] or "",
+        })
+
+    from ai_processor import generate_monthly_plan
+    plan = generate_monthly_plan(lesson_dicts, month)
+
+    from pdf_engine import generate_monthly_pdf
+    pdf_name = f"{month}_月度综合复习.pdf"
+    pdf_path = str(PDF_DIR / pdf_name)
+    generate_monthly_pdf(plan, pdf_path)
+    print(f"月度复习 PDF 已生成：{pdf_path}")
+
+    if not args.no_open:
+        _open_pdf(pdf_path)
+
+
+# ─── 命令：quiz ───────────────────────────────────────────────────────────────
+def cmd_quiz(args):
+    lesson_id = getattr(args, "id", 0) or 0
+    month     = args.month or ""
+    questions = get_questions(lesson_id=lesson_id, month_str=month)
+
+    if not questions:
+        print("题库为空。")
+        return
+
+    # 按 category 分组输出
+    cats: dict[str, list] = {}
+    for q in questions:
+        cats.setdefault(q["category"] or "综合", []).append(q)
+
+    label = f"月份 {month}" if month else (f"课程 ID={lesson_id}" if lesson_id else "全部")
+    print(f"\n📚 题库（{label}，共 {len(questions)} 题）\n")
+    for cat, qs in cats.items():
+        print(f"▶ {cat}（{len(qs)} 题）")
+        for q in qs:
+            print(f"  Q: {q['question']}")
+            if args.show_answers:
+                print(f"  A: {q['answer']}")
+            else:
+                print(f"  A: （隐藏，用 --show-answers 查看）")
+        print()
+
+
+# ─── 命令：open ───────────────────────────────────────────────────────────────
+def cmd_open(args):
+    lesson = get_lesson(args.id)
+    if not lesson:
+        print(f"未找到 ID={args.id} 的课程。")
+        sys.exit(1)
+    pdf = lesson.get("pdf_path")
+    if not pdf or not Path(pdf).exists():
+        print(f"该课程的 PDF 不存在：{pdf}")
+        sys.exit(1)
+    _open_pdf(pdf)
+
+
+def _open_pdf(path: str):
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["open", path], check=True)
+        elif sys.platform.startswith("linux"):
+            subprocess.run(["xdg-open", path], check=True)
+        else:
+            os.startfile(path)
+    except Exception as e:
+        print(f"无法自动打开 PDF：{e}\n请手动打开：{path}")
+
+
+# ─── CLI 定义 ─────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(
+        prog="lesson_manager",
+        description="课后复习计划管理系统",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例：
+  python lesson_manager.py setup
+  python lesson_manager.py add --file 今天总结.txt --subject 数学 --grade 初二
+  python lesson_manager.py add --audio 录音.m4a
+  python lesson_manager.py list
+  python lesson_manager.py show --id 1
+  python lesson_manager.py monthly --month 2026-03
+  python lesson_manager.py quiz --month 2026-03 --show-answers
+  python lesson_manager.py open --id 1
+        """,
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # setup
+    p_setup = sub.add_parser("setup", help="初始化数据库 & 设置 API Key")
+    p_setup.set_defaults(func=cmd_setup)
+
+    # add
+    p_add = sub.add_parser("add", help="添加一节课（文本/文件/录音）")
+    src = p_add.add_mutually_exclusive_group(required=True)
+    src.add_argument("--text",  help="直接输入课堂总结文本")
+    src.add_argument("--file",  help="课堂总结文本文件路径")
+    src.add_argument("--audio", help="课堂录音文件路径（mp3/m4a/wav等）")
+    p_add.add_argument("--date",    help="上课日期 YYYY-MM-DD（默认今天）")
+    p_add.add_argument("--subject", help="科目（如：数学）")
+    p_add.add_argument("--grade",   help="年级（如：初二）")
+    p_add.add_argument("--topic",   help="本节课主题")
+    p_add.add_argument("--weak",    help="学生薄弱点")
+    p_add.add_argument("--no-open", action="store_true", help="生成后不自动打开 PDF")
+    p_add.set_defaults(func=cmd_add)
+
+    # list
+    p_list = sub.add_parser("list", help="列出课程记录")
+    p_list.add_argument("--month", help="按月筛选 YYYY-MM")
+    p_list.set_defaults(func=cmd_list)
+
+    # show
+    p_show = sub.add_parser("show", help="查看某节课详情及题库")
+    p_show.add_argument("--id", type=int, required=True, help="课程 ID")
+    p_show.set_defaults(func=cmd_show)
+
+    # monthly
+    p_month = sub.add_parser("monthly", help="生成月度综合复习 PDF")
+    p_month.add_argument("--month", help="月份 YYYY-MM（默认当月）")
+    p_month.add_argument("--no-open", action="store_true", help="生成后不自动打开 PDF")
+    p_month.set_defaults(func=cmd_monthly)
+
+    # quiz
+    p_quiz = sub.add_parser("quiz", help="查看题库")
+    p_quiz.add_argument("--id",    type=int, default=0, help="按课程 ID 筛选")
+    p_quiz.add_argument("--month", help="按月筛选 YYYY-MM")
+    p_quiz.add_argument("--show-answers", action="store_true", help="显示答案")
+    p_quiz.set_defaults(func=cmd_quiz)
+
+    # open
+    p_open = sub.add_parser("open", help="用 PDF 查看器打开某节课的复习讲义")
+    p_open.add_argument("--id", type=int, required=True, help="课程 ID")
+    p_open.set_defaults(func=cmd_open)
+
+    args = parser.parse_args()
+    
+    # 非 setup 命令自动确保 DB 存在
+    if args.command != "setup":
+        if not DB_PATH.exists():
+            print("数据库不存在，正在自动初始化...")
+            init_db()
+        
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

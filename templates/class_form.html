@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑班级' if action == 'edit' else '新建班级' }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-2">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header fw-bold">
+        <i class="bi bi-people-fill text-primary"></i>
+        {{ '编辑班级信息' if action == 'edit' else '新建班级' }}
+      </div>
+      <div class="card-body">
+        <form method="POST">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              班级名称 <span class="text-danger">*</span>
+            </label>
+            <input type="text" class="form-control" name="name"
+                   placeholder="如：初二(3)班　或　张三数学班"
+                   value="{{ cls.name if cls else '' }}" required>
+            <div class="form-text">用于识别这个教学班，可自由命名</div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">科目</label>
+              <input type="text" class="form-control" name="subject"
+                     placeholder="如：数学"
+                     value="{{ cls.subject if cls else '' }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">年级</label>
+              <input type="text" class="form-control" name="grade"
+                     placeholder="如：初二"
+                     value="{{ cls.grade if cls else '' }}">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">老师姓名</label>
+            <input type="text" class="form-control" name="teacher_name"
+                   placeholder="如：王老师"
+                   value="{{ cls.teacher_name if cls else '' }}">
+            <div class="form-text">显示在周报 PDF 封面上</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">老师邮箱（可选）</label>
+            <input type="email" class="form-control" name="teacher_email"
+                   placeholder="teacher@example.com"
+                   value="{{ cls.teacher_email if cls else '' }}">
+            <div class="form-text">用于标注周报收件人（目前需手动发送）</div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-fill">
+              <i class="bi bi-floppy"></i> 保存
+            </button>
+            <a href="{{ url_for('class_detail', class_id=cls.id) if cls else url_for('classes_list') }}"
+               class="btn btn-outline-secondary flex-fill">
+              取消
+            </a>
+          </div>
+        </form>
+
+        {% if action == 'edit' and cls %}
+        <hr class="mt-4">
+        <div class="d-flex justify-content-between align-items-center">
+          <span class="text-muted small">删除班级（课程记录不会删除）</span>
+          <form method="POST" action="{{ url_for('class_delete', class_id=cls.id) }}"
+                onsubmit="return confirm('确定删除班级「{{ cls.name }}」？课程记录会保留但不再归属此班级。')">
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+              <i class="bi bi-trash3"></i> 删除班级
+            </button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}月度复习{% endblock %}
+
+{% block content %}
+<h4 class="mt-2 mb-4">
+  <i class="bi bi-calendar-month text-primary"></i> 月度综合复习
+</h4>
+
+<div class="row g-4">
+
+  <!-- 生成 -->
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header fw-bold">
+        <i class="bi bi-magic text-primary"></i> 生成月度复习 PDF
+      </div>
+      <div class="card-body">
+        <form method="POST" id="monthlyForm">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">选择月份</label>
+            {% if months %}
+            <select class="form-select" name="month">
+              {% for m in months %}
+              <option value="{{ m }}"
+                {{ 'selected' if m == month_now else '' }}>
+                {{ m }}（{{ (lessons_by_month[m]|default(0)) }} 节）
+              </option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <input type="month" class="form-control"
+                   name="month" value="{{ month_now }}">
+            <div class="form-text text-muted">
+              暂无历史课程，请手动填写月份
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="alert alert-info small py-2">
+            <i class="bi bi-lightbulb"></i>
+            系统会把所选月份的全部课程聚合，由 AI 生成 <strong>14 天</strong>
+            月度综合复习讲义（PDF）。通常需要 1–2 分钟。
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 btn-lg">
+            <i class="bi bi-filetype-pdf"></i> 生成月度复习 PDF
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 已有月度 PDF -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header fw-bold"
+           style="background:#dcfce7;border-color:#bbf7d0">
+        <i class="bi bi-archive text-success"></i> 已生成的月度 PDF
+      </div>
+      <div class="card-body p-0">
+        {% if monthly_pdfs %}
+        <ul class="list-group list-group-flush rounded-bottom">
+          {% for m, fname in monthly_pdfs.items()|sort(reverse=true) %}
+          <li class="list-group-item d-flex justify-content-between
+                      align-items-center px-3 py-2">
+            <span class="fw-semibold">{{ m }}</span>
+            <div class="d-flex gap-2">
+              <a href="/monthly/view/{{ m }}" target="_blank"
+                 class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye"></i> 查看
+              </a>
+              <a href="/monthly/download/{{ m }}"
+                 class="btn btn-sm btn-outline-success">
+                <i class="bi bi-download"></i> 下载
+              </a>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <div class="fs-2 mb-2">📄</div>
+          <div>还没有月度 PDF</div>
+          <div class="small mt-1">
+            先添加课程，再在左边生成月度复习
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('monthlyForm').addEventListener('submit', function () {
+  showLoading('AI 正在生成月度复习计划，请稍候（1–2 分钟）…');
+});
+</script>
+{% endblock %}

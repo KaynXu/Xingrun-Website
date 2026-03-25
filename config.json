@@ -1,0 +1,8 @@
+{
+  "_note": "复习计划管理系统配置文件。选择 AI 服务商并填入对应 API Key 后保存。",
+  "provider": "openai",
+  "openai_api_key": "",
+  "deepseek_api_key": "",
+  "mimo_api_key": "",
+  "mimo_base_url": ""
+}

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-2">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header fw-bold">
+        <i class="bi bi-gear text-primary"></i> 系统设置
+      </div>
+      <div class="card-body">
+        <form method="POST">
+
+          {# ── 服务商选择 ── #}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">AI 服务商</label>
+            <div class="d-flex gap-2 flex-wrap">
+              {% for val, label, desc in [
+                  ('openai',   'OpenAI',   'GPT-4o · Whisper 转录'),
+                  ('deepseek', 'DeepSeek', 'deepseek-chat'),
+                  ('mimo',     '小米 MiMo', 'MiMo-7B-RL'),
+              ] %}
+              <div class="form-check border rounded px-3 py-2 flex-fill text-center"
+                   style="cursor:pointer; min-width:130px;"
+                   onclick="selectProvider('{{ val }}')">
+                <input class="form-check-input d-none" type="radio"
+                       name="provider" id="prov_{{ val }}" value="{{ val }}"
+                       {% if provider == val %}checked{% endif %}>
+                <label class="form-check-label d-block fw-semibold" for="prov_{{ val }}"
+                       style="cursor:pointer">{{ label }}</label>
+                <small class="text-muted">{{ desc }}</small>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <hr>
+
+          {# ── OpenAI ── #}
+          <div class="provider-section mb-3" id="sec_openai">
+            <label class="form-label fw-semibold">OpenAI API Key</label>
+            {% if openai_key_set %}
+            <div class="alert alert-success py-2 mb-2 small">
+              <i class="bi bi-check-circle-fill"></i>
+              已配置：<code>{{ openai_masked }}</code>
+            </div>
+            {% else %}
+            <div class="alert alert-warning py-2 mb-2 small">
+              <i class="bi bi-exclamation-triangle-fill"></i> 尚未配置
+            </div>
+            {% endif %}
+            <input type="password" class="form-control" name="openai_api_key"
+                   placeholder="{{ '输入新 Key 替换（留空则不修改）' if openai_key_set else '请输入 OpenAI API Key（sk- 开头）' }}"
+                   autocomplete="off">
+            <div class="form-text">
+              在 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI 官网</a> 申请。
+              <span class="text-primary fw-semibold">仅此服务商支持音频转录（Whisper）。</span>
+            </div>
+          </div>
+
+          {# ── DeepSeek ── #}
+          <div class="provider-section mb-3" id="sec_deepseek">
+            <label class="form-label fw-semibold">DeepSeek API Key</label>
+            {% if deepseek_key_set %}
+            <div class="alert alert-success py-2 mb-2 small">
+              <i class="bi bi-check-circle-fill"></i>
+              已配置：<code>{{ deepseek_masked }}</code>
+            </div>
+            {% else %}
+            <div class="alert alert-warning py-2 mb-2 small">
+              <i class="bi bi-exclamation-triangle-fill"></i> 尚未配置
+            </div>
+            {% endif %}
+            <input type="password" class="form-control" name="deepseek_api_key"
+                   placeholder="{{ '输入新 Key 替换（留空则不修改）' if deepseek_key_set else '请输入 DeepSeek API Key' }}"
+                   autocomplete="off">
+            <div class="form-text">
+              在 <a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek 开放平台</a> 申请。
+              接口地址自动使用 <code>https://api.deepseek.com/v1</code>，模型：<code>deepseek-chat</code>。
+            </div>
+          </div>
+
+          {# ── MiMo ── #}
+          <div class="provider-section mb-3" id="sec_mimo">
+            <label class="form-label fw-semibold">小米 MiMo API Key</label>
+            {% if mimo_key_set %}
+            <div class="alert alert-success py-2 mb-2 small">
+              <i class="bi bi-check-circle-fill"></i>
+              已配置：<code>{{ mimo_masked }}</code>
+            </div>
+            {% else %}
+            <div class="alert alert-warning py-2 mb-2 small">
+              <i class="bi bi-exclamation-triangle-fill"></i> 尚未配置
+            </div>
+            {% endif %}
+            <input type="password" class="form-control mb-2" name="mimo_api_key"
+                   placeholder="{{ '输入新 Key 替换（留空则不修改）' if mimo_key_set else '请输入 MiMo API Key' }}"
+                   autocomplete="off">
+            <label class="form-label fw-semibold">MiMo Base URL <span class="text-danger">*</span></label>
+            <input type="url" class="form-control" name="mimo_base_url"
+                   value="{{ mimo_base_url }}"
+                   placeholder="例如：https://api.example.com/v1">
+            <div class="form-text">
+              填写你的 MiMo 兼容接口地址（需兼容 OpenAI v1 协议）。
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 mt-2">
+            <i class="bi bi-floppy"></i> 保存设置
+          </button>
+        </form>
+
+        <hr class="my-4">
+
+        <h6 class="text-muted mb-3">使用须知</h6>
+        <ul class="list-unstyled small text-muted" style="line-height:1.9">
+          <li>✅ 数据全部保存在本地，不上传到任何服务器</li>
+          <li>🔑 仅向所选 AI 服务商发送课堂总结文本（不含其他个人信息）</li>
+          <li>🎙 音频转录仅支持 OpenAI Whisper，无论选哪个服务商都需配置 OpenAI Key</li>
+          <li>💰 OpenAI GPT-4o：约 $0.01–0.02 / 节课；月度复习约 $0.02–0.05</li>
+          <li>💰 DeepSeek-Chat 费用更低，适合高频使用</li>
+          <li>📁 PDF 和数据库存储在 <code>data/</code> 文件夹中</li>
+        </ul>
+
+        <hr>
+        <h6 class="text-muted mb-2">分享此系统给他人</h6>
+        <div class="small text-muted">
+          压缩整个文件夹（排除 <code>.venv/</code> 和 <code>data/</code>），分享给对方后：
+          <ul class="mt-1">
+            <li>macOS：双击 <code>start.command</code> 启动</li>
+            <li>Windows：双击 <code>start.bat</code> 启动</li>
+          </ul>
+          对方需要自己配置对应 API Key。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function selectProvider(val) {
+  document.getElementById('prov_' + val).checked = true;
+  highlightSelected();
+}
+
+function highlightSelected() {
+  const radios = document.querySelectorAll('input[name="provider"]');
+  radios.forEach(r => {
+    const card = r.closest('.form-check');
+    card.classList.toggle('border-primary', r.checked);
+    card.classList.toggle('bg-primary', r.checked);
+    card.classList.toggle('bg-opacity-10', r.checked);
+  });
+  // show/hide sections
+  ['openai','deepseek','mimo'].forEach(p => {
+    const sec = document.getElementById('sec_' + p);
+    const active = document.getElementById('prov_' + p).checked;
+    sec.style.display = active ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', highlightSelected);
+document.querySelectorAll('input[name="provider"]').forEach(r =>
+  r.addEventListener('change', highlightSelected)
+);
+</script>
+{% endblock %}

@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}{{ cls.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-2 mt-2 mb-3">
+  <a href="{{ url_for('classes_list') }}" class="text-muted text-decoration-none small">
+    <i class="bi bi-people-fill"></i> 班级
+  </a>
+  <span class="text-muted">/</span>
+  <h5 class="mb-0">{{ cls.name }}</h5>
+  <span class="badge bg-secondary">{{ cls.grade }}{{ cls.subject }}</span>
+  {% if cls.teacher_name %}
+  <span class="text-muted small"><i class="bi bi-person"></i> {{ cls.teacher_name }}</span>
+  {% endif %}
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('add_lesson') }}?class_id={{ cls.id }}"
+       class="btn btn-success btn-sm">
+      <i class="bi bi-magic"></i> 添加本节课
+    </a>
+    <a href="{{ url_for('class_edit', class_id=cls.id) }}"
+       class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-pencil"></i> 编辑班级
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- 左侧：周报生成 -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header fw-bold">
+        <i class="bi bi-file-earmark-pdf text-danger"></i> 周报 PDF
+        <span class="fw-normal small text-muted ms-1">发给老师</span>
+      </div>
+      <div class="card-body p-0">
+        {% if weeks %}
+        <ul class="list-group list-group-flush">
+          {% for wk in weeks %}
+          {% set wlabel = week_label(wk) %}
+          {% set lesson_list = lessons_by_week.get(wk, []) %}
+          <li class="list-group-item px-3 py-2">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-semibold small">{{ wlabel }}</div>
+                <div class="text-muted small">{{ lesson_list|length }} 节课</div>
+              </div>
+              <div class="d-flex gap-1 flex-shrink-0 ms-2">
+                {% if wk in weekly_pdfs %}
+                <a href="{{ url_for('view_weekly', class_id=cls.id, week_str=wk) }}"
+                   class="btn btn-xs btn-outline-primary" target="_blank"
+                   style="font-size:.75rem;padding:2px 8px">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <a href="{{ url_for('download_weekly', class_id=cls.id, week_str=wk) }}"
+                   class="btn btn-xs btn-outline-success"
+                   style="font-size:.75rem;padding:2px 8px">
+                  <i class="bi bi-download"></i>
+                </a>
+                {% endif %}
+                <form method="POST"
+                      action="{{ url_for('generate_weekly', class_id=cls.id, week_str=wk) }}"
+                      class="d-inline">
+                  <button class="btn btn-xs {% if wk in weekly_pdfs %}btn-outline-secondary{% else %}btn-primary{% endif %}"
+                          style="font-size:.75rem;padding:2px 8px"
+                          onclick="showLoading('正在生成周报 PDF…')">
+                    {% if wk in weekly_pdfs %}
+                    <i class="bi bi-arrow-clockwise"></i> 重新生成
+                    {% else %}
+                    <i class="bi bi-file-earmark-pdf"></i> 生成周报
+                    {% endif %}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-4 small">
+          添加课程后可生成周报
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 班级信息 -->
+    <div class="card">
+      <div class="card-header fw-bold">
+        <i class="bi bi-info-circle text-secondary"></i> 班级信息
+      </div>
+      <div class="card-body small">
+        <table class="table table-sm mb-0">
+          <tr><th class="text-muted" style="width:4rem">科目</th><td>{{ cls.subject or '—' }}</td></tr>
+          <tr><th class="text-muted">年级</th><td>{{ cls.grade or '—' }}</td></tr>
+          <tr><th class="text-muted">老师</th><td>{{ cls.teacher_name or '—' }}</td></tr>
+          {% if cls.teacher_email %}
+          <tr><th class="text-muted">邮箱</th><td>{{ cls.teacher_email }}</td></tr>
+          {% endif %}
+          <tr><th class="text-muted">共计</th><td>{{ lessons|length }} 节课</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧：课程列表 -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold">
+          <i class="bi bi-journals text-primary"></i> 课程记录
+        </span>
+        <a href="{{ url_for('add_lesson') }}?class_id={{ cls.id }}"
+           class="btn btn-sm btn-success">
+          <i class="bi bi-plus"></i> 添加本节课
+        </a>
+      </div>
+
+      {% if lessons %}
+      {% for wk in weeks %}
+      {% set lesson_list = lessons_by_week.get(wk, []) %}
+      {% if lesson_list %}
+      <div class="px-3 pt-3 pb-1">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge bg-light text-dark border fw-normal">
+            {{ week_label(wk) }}
+          </span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 small">
+            <tbody>
+              {% for lesson in lesson_list %}
+              <tr>
+                <td class="text-muted" style="width:6rem">{{ lesson.date }}</td>
+                <td class="fw-semibold">{{ lesson.topic or '（未命名）' }}</td>
+                <td class="text-muted">{{ lesson.weak_points or '' }}</td>
+                <td style="width:7rem">
+                  <div class="d-flex gap-1">
+                    <a href="{{ url_for('lesson_detail', lesson_id=lesson.id) }}"
+                       class="btn btn-xs btn-outline-primary"
+                       style="font-size:.75rem;padding:2px 8px">
+                      <i class="bi bi-eye"></i> 查看
+                    </a>
+                    {% if lesson.pdf_path %}
+                    <a href="{{ url_for('download_pdf', lesson_id=lesson.id) }}"
+                       class="btn btn-xs btn-outline-secondary"
+                       style="font-size:.75rem;padding:2px 8px">
+                      <i class="bi bi-download"></i>
+                    </a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+
+      <!-- 未分组课程（无 week） -->
+      {% set ungrouped = lessons_by_week.get('', []) %}
+      {% if ungrouped %}
+      <div class="px-3 pt-3 pb-1">
+        <span class="badge bg-light text-dark border fw-normal mb-2 d-inline-block">其他</span>
+        {% for lesson in ungrouped %}
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom small">
+          <span class="text-muted" style="min-width:6rem">{{ lesson.date }}</span>
+          <span class="fw-semibold">{{ lesson.topic or '（未命名）' }}</span>
+          <a href="{{ url_for('lesson_detail', lesson_id=lesson.id) }}"
+             class="btn btn-xs btn-outline-primary ms-auto"
+             style="font-size:.75rem;padding:2px 8px">查看</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="py-2"></div>
+
+      {% else %}
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-journal-plus fs-1 d-block mb-3"></i>
+        <p class="mb-3">还没有课程，点击下方按钮添加第一节课</p>
+        <a href="{{ url_for('add_lesson') }}?class_id={{ cls.id }}"
+           class="btn btn-success">
+          <i class="bi bi-magic"></i> 添加第一节课
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
