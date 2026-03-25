@@ -19,6 +19,7 @@
                   ('openai',   'OpenAI',   'GPT-4o · Whisper 转录'),
                   ('deepseek', 'DeepSeek', 'deepseek-chat'),
                   ('mimo',     '小米 MiMo', 'MiMo-7B-RL'),
+                  ('n1n',      'N1N 代理', 'GPT-4o · 国内加速'),
               ] %}
               <div class="form-check border rounded px-3 py-2 flex-fill text-center"
                    style="cursor:pointer; min-width:130px;"
@@ -105,6 +106,31 @@
             </div>
           </div>
 
+          {# ── N1N ── #}
+          <div class="provider-section mb-3" id="sec_n1n">
+            <label class="form-label fw-semibold">N1N API Key</label>
+            {% if n1n_key_set %}
+            <div class="alert alert-success py-2 mb-2 small">
+              <i class="bi bi-check-circle-fill"></i>
+              已配置：<code>{{ n1n_masked }}</code>
+            </div>
+            {% else %}
+            <div class="alert alert-warning py-2 mb-2 small">
+              <i class="bi bi-exclamation-triangle-fill"></i> 尚未配置
+            </div>
+            {% endif %}
+            <input type="password" class="form-control mb-2" name="n1n_api_key"
+                   placeholder="{{ '输入新 Key 替换（留空则不修改）' if n1n_key_set else '请输入 N1N API Key（sk- 开头）' }}"
+                   autocomplete="off">
+            <label class="form-label fw-semibold">N1N Base URL</label>
+            <input type="url" class="form-control" name="n1n_base_url"
+                   value="{{ n1n_base_url }}"
+                   placeholder="https://api.n1n.ai/v1">
+            <div class="form-text">
+              N1N 是 OpenAI 兴寻代理，默认地址：<code>https://api.n1n.ai/v1</code>，香港加速：<code>https://hk.n1n.ai/v1</code>，模型：<code>gpt-4o</code>。
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-primary w-100 mt-2">
             <i class="bi bi-floppy"></i> 保存设置
           </button>
@@ -152,7 +178,7 @@ function highlightSelected() {
     card.classList.toggle('bg-opacity-10', r.checked);
   });
   // show/hide sections
-  ['openai','deepseek','mimo'].forEach(p => {
+  ['openai','deepseek','mimo','n1n'].forEach(p => {
     const sec = document.getElementById('sec_' + p);
     const active = document.getElementById('prov_' + p).checked;
     sec.style.display = active ? '' : 'none';
