@@ -3,12 +3,14 @@
 """
 复习计划管理系统 — Web 界面 (Flask)
 启动方式：双击 start.command（macOS）或 start.bat（Windows）
-访问地址：http://127.0.0.1:5000
+访问地址：http://127.0.0.1:5001
 """
 
+import hashlib
 import json
 import os
 import re
+import secrets
 import threading
 import webbrowser
 from datetime import date, datetime
@@ -32,7 +34,11 @@ for _d in (DATA_DIR, PDF_DIR, UPLOAD_DIR):
 app = Flask(__name__)
 app.secret_key = "review_plan_local_2026"
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
-CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}})
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:8080", "http://127.0.0.1:8080",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+]}})
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
@@ -667,14 +673,50 @@ def settings():
 
 # ─── JSON API ──────────────────────────────────────────────────────────────────
 
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    cfg = get_config()
+    stored_user = cfg.get("admin_username", "admin")
+    stored_hash = cfg.get("admin_password_hash", "")
+    # Default password "xingrun2026" if none set
+    if not stored_hash:
+        stored_hash = hashlib.sha256("xingrun2026".encode()).hexdigest()
+    if username != stored_user or hashlib.sha256(password.encode()).hexdigest() != stored_hash:
+        return jsonify({"error": "用户名或密码错误"}), 401
+    token = secrets.token_hex(32)
+    cfg.setdefault("_tokens", [])
+    cfg["_tokens"].append(token)
+    cfg["_tokens"] = cfg["_tokens"][-20:]  # keep last 20
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return jsonify({"token": token})
+
+
+def _check_auth():
+    token = request.headers.get("X-Auth-Token", "")
+    if not token:
+        return False
+    cfg = get_config()
+    return token in cfg.get("_tokens", [])
+
+
 @app.route("/api/stats")
 def api_stats():
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
     month_now = datetime.now().strftime("%Y-%m")
+    all_lessons = list_lessons()
+    total_pdfs = sum(1 for l in all_lessons if l.get("pdf_path") and Path(l["pdf_path"]).exists())
+    with get_conn() as conn:
+        total_questions = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
     return jsonify({
-        "total_lessons": len(list_lessons()),
-        "total_classes": len(list_classes()),
+        "total_lessons": len(all_lessons),
         "month_lessons": len(list_lessons(month_now)),
-        "month_now": month_now,
+        "total_pdfs": total_pdfs,
+        "total_questions": total_questions,
     })
 
 
@@ -739,6 +781,8 @@ def api_class_delete(class_id):
 
 @app.route("/api/lessons", methods=["GET"])
 def api_lessons_list():
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
     return jsonify(list_lessons(month_str=month if month else None,
@@ -747,6 +791,8 @@ def api_lessons_list():
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
 def api_lesson_get(lesson_id):
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
     lesson = get_lesson(lesson_id)
     if not lesson:
         return jsonify({"error": "not found"}), 404
@@ -756,6 +802,8 @@ def api_lesson_get(lesson_id):
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
 def api_lesson_delete(lesson_id):
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
     lesson = get_lesson(lesson_id)
     if not lesson:
         return jsonify({"error": "not found"}), 404
@@ -768,8 +816,10 @@ def api_lesson_delete(lesson_id):
 
 @app.route("/api/lessons", methods=["POST"])
 def api_lesson_create():
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
     if not has_api_key():
-        return jsonify({"error": "请先在设置页面填入 API Key"}), 400
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
     
     if request.is_json:
         data = request.json or {}
@@ -848,6 +898,8 @@ def api_lesson_create():
 
 @app.route("/api/quiz", methods=["GET"])
 def api_quiz():
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
     month     = request.args.get("month", "")
     lesson_id = request.args.get("lesson_id", 0, type=int)
     questions = get_questions(lesson_id=lesson_id if lesson_id else None,
@@ -927,7 +979,7 @@ def api_settings_save():
 def _open_browser():
     import time
     time.sleep(1.5)
-    webbrowser.open("http://127.0.0.1:5000")
+    webbrowser.open("http://127.0.0.1:5001")
 
 
 if __name__ == "__main__":
@@ -936,7 +988,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("  📚 复习计划管理系统已启动")
     print("  浏览器即将自动打开")
-    print("  地址：http://127.0.0.1:5000")
+    print("  地址：http://127.0.0.1:5001")
     print("  按 Ctrl+C 关闭程序")
     print("=" * 50 + "\n")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=5001, debug=False)
