@@ -1,10 +1,31 @@
-# 复习计划管理系统
+# 星韵课后复习系统
 
-每次上课后，把录音或课堂总结发给系统，自动生成 8 天填空题复习讲义 PDF，并记入题库。月底可一键生成月度综合复习计划。
+每次上课后提交课堂总结（文字/文件/音频），AI 自动生成 **8 天填空题复习讲义 PDF** 并记入题库。月底一键生成 **14 天月度综合复习计划 PDF**。
+
+提供 **Web UI**（Flask）和 **命令行**（CLI）两种使用方式。
 
 ---
 
 ## 快速开始
+
+### 方式一：Web UI（推荐）
+
+**macOS** — 双击 `start.command`  
+**Windows** — 双击 `start.bat`
+
+脚本自动创建虚拟环境、安装依赖、初始化数据库，并在浏览器打开 `http://127.0.0.1:5000`。
+
+**手动启动：**
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+启动后进入**设置页面**配置 API Key 和服务商（见下方「AI 服务商」）。
+
+---
+
+### 方式二：命令行（CLI）
 
 ### 1. 初始化（只需做一次）
 
@@ -95,18 +116,53 @@ python lesson_manager.py open --id 3    # 重新打开某节课 PDF
 
 ---
 
+## AI 服务商
+
+支持三种服务商，在 Web UI 设置页或 `config.json` 中切换：
+
+| 服务商 | 说明 |
+|--------|------|
+| OpenAI | 默认，使用 GPT-4o 生成计划 + Whisper 语音转文字 |
+| DeepSeek | 兼容 OpenAI SDK |
+| MiMo | 自定义端点 |
+
+---
+
+## REST API
+
+后端提供 REST API（CORS 允许 `localhost:5173`），供前端项目 `xingrun-frontend` 调用：
+
+| 端点 | 方法 |
+|------|------|
+| `/api/stats` | GET |
+| `/api/classes` | GET, POST |
+| `/api/classes/<id>` | GET, PUT, DELETE |
+| `/api/lessons` | GET, POST |
+| `/api/lessons/<id>` | GET, DELETE |
+| `/api/quiz` | GET |
+| `/api/monthly` | GET |
+| `/api/monthly/generate` | POST |
+| `/api/settings` | GET, POST |
+
+---
+
 ## 文件结构
 
 ```
-复习计划/
-├── lesson_manager.py           ← 主入口 CLI
-├── ai_processor.py             ← AI 处理（转录 + 计划生成）
-├── pdf_engine.py               ← PDF 生成引擎
-├── config.json                 ← API Key 配置
-├── data/
-│   ├── lessons.db              ← SQLite 数据库（课程 + 题库）
-│   └── pdfs/                   ← 生成的 PDF 文件
-└── .venv/                      ← Python 虚拟环境
+Xingrun-Summary/
+├── app.py                      ← Flask 主应用，所有路由
+├── lesson_manager.py           ← 数据库层 + CLI 入口
+├── ai_processor.py             ← AI 调用（计划生成、语音转写）
+├── pdf_engine.py               ← PDF 生成（课时单、月度、周报）
+├── config.json                 ← API Key 及服务商配置（本地存储）
+├── requirements.txt
+├── start.command               ← macOS 一键启动
+├── start.bat                   ← Windows 一键启动
+├── templates/                  ← Jinja2 HTML 模板
+└── data/
+    ├── lessons.db              ← SQLite 数据库（课程 + 题库）
+    ├── pdfs/                   ← 生成的 PDF 文件
+    └── uploads/                ← 音频临时文件（处理后自动删除）
 ```
 
 ---

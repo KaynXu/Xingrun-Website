@@ -15,7 +15,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from flask import (Flask, abort, flash, redirect, render_template,
-                   request, send_file, url_for)
+                   request, send_file, url_for, jsonify)
+from flask_cors import CORS
 
 # ─── 路径 ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -31,6 +32,7 @@ for _d in (DATA_DIR, PDF_DIR, UPLOAD_DIR):
 app = Flask(__name__)
 app.secret_key = "review_plan_local_2026"
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}})
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
@@ -661,6 +663,264 @@ def settings():
         n1n_masked=_mask(cfg.get("n1n_api_key", "")),
         n1n_base_url=cfg.get("n1n_base_url", "https://api.n1n.ai/v1"),
     )
+
+
+# ─── JSON API ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/stats")
+def api_stats():
+    month_now = datetime.now().strftime("%Y-%m")
+    return jsonify({
+        "total_lessons": len(list_lessons()),
+        "total_classes": len(list_classes()),
+        "month_lessons": len(list_lessons(month_now)),
+        "month_now": month_now,
+    })
+
+
+@app.route("/api/classes", methods=["GET"])
+def api_classes_list():
+    return jsonify(list_classes())
+
+
+@app.route("/api/classes", methods=["POST"])
+def api_class_create():
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "班级名称不能为空"}), 400
+    cid = save_class(
+        name=name,
+        subject=data.get("subject", "").strip(),
+        grade=data.get("grade", "").strip(),
+        teacher_name=data.get("teacher_name", "").strip(),
+        teacher_email=data.get("teacher_email", "").strip(),
+    )
+    return jsonify({"id": cid, "name": name}), 201
+
+
+@app.route("/api/classes/<int:class_id>", methods=["GET"])
+def api_class_get(class_id):
+    cls = get_class(class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    lessons = list_lessons(class_id=class_id)
+    return jsonify({**cls, "lessons": lessons})
+
+
+@app.route("/api/classes/<int:class_id>", methods=["PUT"])
+def api_class_update(class_id):
+    cls = get_class(class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "班级名称不能为空"}), 400
+    update_class(
+        class_id=class_id,
+        name=name,
+        subject=data.get("subject", "").strip(),
+        grade=data.get("grade", "").strip(),
+        teacher_name=data.get("teacher_name", "").strip(),
+        teacher_email=data.get("teacher_email", "").strip(),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/classes/<int:class_id>", methods=["DELETE"])
+def api_class_delete(class_id):
+    cls = get_class(class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    db_delete_class(class_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/lessons", methods=["GET"])
+def api_lessons_list():
+    month = request.args.get("month", "")
+    class_id = request.args.get("class_id", 0, type=int)
+    return jsonify(list_lessons(month_str=month if month else None,
+                                class_id=class_id if class_id else None))
+
+
+@app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
+def api_lesson_get(lesson_id):
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    questions = get_questions(lesson_id=lesson_id)
+    return jsonify({**lesson, "questions": questions})
+
+
+@app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
+def api_lesson_delete(lesson_id):
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    pdf_path = lesson.get("pdf_path", "")
+    if pdf_path and Path(pdf_path).exists():
+        Path(pdf_path).unlink(missing_ok=True)
+    db_delete_lesson(lesson_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/lessons", methods=["POST"])
+def api_lesson_create():
+    if not has_api_key():
+        return jsonify({"error": "请先在设置页面填入 API Key"}), 400
+    
+    if request.is_json:
+        data = request.json or {}
+    else:
+        data = request.form or {}
+        
+    lesson_date = data.get("date") or str(date.today())
+    class_id    = int(data.get("class_id") or 0)
+    cls         = get_class(class_id) if class_id else None
+    subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
+    grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
+    topic       = data.get("topic", "").strip()
+    weak_points = data.get("weak_points", "").strip()
+    
+    input_type = data.get("input_type", "text")
+    raw_text = ""
+    
+    if input_type == "text" or request.is_json:
+        raw_text = data.get("summary_text", "").strip()
+        if not raw_text:
+            return jsonify({"error": "请填写课堂总结内容"}), 400
+    else:
+        file = request.files.get("upload_file")
+        if not file or not file.filename:
+            return jsonify({"error": "请上传音频或文本文件"}), 400
+        
+        ext = Path(file.filename).suffix.lower()
+        if ext in {".mp3", ".m4a", ".mp4", ".wav", ".ogg", ".webm", ".flac"}:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = UPLOAD_DIR / f"audio_{ts}{ext}"
+            file.save(str(save_path))
+            
+            if save_path.stat().st_size > 25 * 1024 * 1024:
+                save_path.unlink(missing_ok=True)
+                return jsonify({"error": "音频文件过大（最大 25MB）"}), 400
+                
+            try:
+                from ai_processor import transcribe_audio
+                raw_text = transcribe_audio(str(save_path))
+            except Exception as e:
+                save_path.unlink(missing_ok=True)
+                return jsonify({"error": f"音频转录失败：{e}"}), 500
+            save_path.unlink(missing_ok=True)
+        elif ext in {".txt", ".md", ".text"}:
+            raw_text = file.read().decode("utf-8", errors="replace")
+        else:
+            return jsonify({"error": f"不支持的文件格式 {ext}"}), 400
+
+    if not raw_text:
+        return jsonify({"error": "提取的总结内容为空"}), 400
+
+    try:
+        from ai_processor import parse_and_generate_plan
+        plan = parse_and_generate_plan(
+            summary_text=raw_text, subject=subject, grade=grade,
+            topic=topic, weak_points=weak_points, lesson_date=lesson_date,
+        )
+    except Exception as e:
+        return jsonify({"error": f"AI 生成失败：{e}"}), 500
+    pdf_path = ""
+    try:
+        from pdf_engine import generate_lesson_pdf
+        safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
+        pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
+        pdf_path = str(PDF_DIR / pdf_name)
+        generate_lesson_pdf(plan, pdf_path)
+    except Exception:
+        pass
+    lesson_id = save_lesson(
+        date_str=lesson_date, subject=subject, grade=grade,
+        topic=topic, summary=raw_text, weak_points=weak_points,
+        plan=plan, pdf_path=pdf_path, class_id=class_id,
+    )
+    return jsonify({"id": lesson_id, "success": True}), 201
+
+
+@app.route("/api/quiz", methods=["GET"])
+def api_quiz():
+    month     = request.args.get("month", "")
+    lesson_id = request.args.get("lesson_id", 0, type=int)
+    questions = get_questions(lesson_id=lesson_id if lesson_id else None,
+                              month_str=month if month else None)
+    cats = {}
+    for q in questions:
+        cats.setdefault(q.get("category") or "综合", []).append(q)
+    return jsonify({"total": len(questions), "categories": cats})
+
+
+@app.route("/api/monthly", methods=["GET"])
+def api_monthly_list():
+    months = _get_all_months()
+    monthly_pdfs = _get_monthly_pdfs()
+    return jsonify({
+        "months": [{"month": m, "count": len(list_lessons(m)),
+                    "has_pdf": m in monthly_pdfs} for m in months]
+    })
+
+
+@app.route("/api/monthly/generate", methods=["POST"])
+def api_monthly_generate():
+    if not has_api_key():
+        return jsonify({"error": "请先在设置页面填入 API Key"}), 400
+    data = request.json or {}
+    month_str = data.get("month") or datetime.now().strftime("%Y-%m")
+    lessons = list_lessons(month_str)
+    if not lessons:
+        return jsonify({"error": f"{month_str} 没有课程记录"}), 400
+    lesson_dicts = [{"date": l["date"], "subject": l["subject"] or "",
+                     "grade": l["grade"] or "", "topic": l["topic"] or "",
+                     "summary": (l["summary"] or "")[:800],
+                     "weak_points": l["weak_points"] or ""} for l in lessons]
+    try:
+        from ai_processor import generate_monthly_plan
+        plan = generate_monthly_plan(lesson_dicts, month_str)
+        from pdf_engine import generate_monthly_pdf
+        pdf_name = f"{month_str}_月度综合复习.pdf"
+        generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True, "filename": pdf_name})
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_settings_get():
+    cfg = get_config()
+    def _mask(k):
+        return (k[:4] + "..." + k[-4:]) if len(k) > 8 else ("*" * len(k) if k else "")
+    return jsonify({
+        "provider": cfg.get("provider", "openai"),
+        "openai_set": bool(cfg.get("openai_api_key")),
+        "openai_masked": _mask(cfg.get("openai_api_key", "")),
+        "deepseek_set": bool(cfg.get("deepseek_api_key")),
+        "deepseek_masked": _mask(cfg.get("deepseek_api_key", "")),
+        "mimo_set": bool(cfg.get("mimo_api_key")),
+        "mimo_masked": _mask(cfg.get("mimo_api_key", "")),
+        "mimo_base_url": cfg.get("mimo_base_url", ""),
+    })
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings_save():
+    cfg = get_config()
+    data = request.json or {}
+    if "provider" in data:
+        cfg["provider"] = data["provider"].strip()
+    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url"):
+        if data.get(key):
+            cfg[key] = data[key].strip()
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True})
 
 
 # ─── 启动 ──────────────────────────────────────────────────────────────────────
