@@ -13,7 +13,7 @@
 **macOS** — 双击 `start.command`  
 **Windows** — 双击 `start.bat`
 
-脚本自动创建虚拟环境、安装依赖、初始化数据库，并在浏览器打开 `http://127.0.0.1:5000`。
+脚本自动创建虚拟环境、安装依赖、初始化数据库，并在浏览器打开 `http://127.0.0.1:5001`。
 
 **手动启动：**
 ```bash
@@ -130,7 +130,7 @@ python lesson_manager.py open --id 3    # 重新打开某节课 PDF
 
 ## REST API
 
-后端提供 REST API（CORS 允许 `localhost:5173`），供前端项目 `xingrun-frontend` 调用：
+后端提供 REST API（CORS 已放行 `localhost:3000`、`localhost:5173`、`localhost:8080`），供前端项目 `Xingrun-Summary-Web` 调用：
 
 | 端点 | 方法 |
 |------|------|
