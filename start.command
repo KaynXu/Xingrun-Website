@@ -52,14 +52,14 @@ init_db()
 
 echo ""
 echo "✅ 系统启动中..."
-echo "浏览器即将自动打开 http://127.0.0.1:5000"
+echo "浏览器即将自动打开 http://127.0.0.1:5001"
 echo ""
 echo "关闭此窗口或按 Ctrl+C 可停止服务"
 echo "=============================="
 echo ""
 
 # 延迟打开浏览器
-(sleep 2 && open "http://127.0.0.1:5000") &
+(sleep 2 && open "http://127.0.0.1:5001") &
 
 # 启动 Flask
 .venv/bin/python app.py

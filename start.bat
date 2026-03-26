@@ -53,7 +53,7 @@ echo ==============================
 echo.
 
 :: 延迟打开浏览器
-start "" /b cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:5000"
+start "" /b cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:5001"
 
 :: 启动 Flask
 .venv\Scripts\python app.py
