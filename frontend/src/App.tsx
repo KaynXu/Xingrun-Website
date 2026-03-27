@@ -243,6 +243,26 @@ async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promi
   return res.json() as Promise<T>;
 }
 
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(' ');
+}
+
+const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
+const workspaceCardClass =
+  'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm';
+const workspaceSoftCardClass =
+  'rounded-[1.5rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(239,248,255,0.78)_100%)] shadow-[0_14px_36px_rgba(47,128,237,0.05)]';
+const workspaceFieldClass =
+  'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400';
+const workspacePrimaryButtonClass =
+  'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
+const workspaceSecondaryButtonClass =
+  'inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60';
+const workspaceGhostButtonClass =
+  'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100';
+const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900';
+const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500';
+
 // --- Components ---
 
 export const SidebarAccountSheet = ({
@@ -264,40 +284,40 @@ export const SidebarAccountSheet = ({
 
   return (
     <div className="fixed inset-0 z-40" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" />
+      <div className="absolute inset-0 bg-slate-900/18 backdrop-blur-[4px]" />
       <div className="absolute left-4 bottom-4 w-[calc(100vw-2rem)] max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="rounded-[1.75rem] border border-white/10 bg-[#0b0b0b] p-6 shadow-2xl shadow-black/40">
+        <div className={`${workspaceCardClass} p-6`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xl font-bold shrink-0">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-xl font-bold text-white shadow-[0_16px_32px_rgba(34,199,232,0.25)]">
                 {currentUser.display_name.slice(0, 1).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <p className="text-xl font-semibold truncate">{currentUser.display_name}</p>
-                <p className="text-sm text-gray-500 truncate">@{currentUser.username}</p>
+                <p className="truncate text-xl font-semibold text-slate-900">{currentUser.display_name}</p>
+                <p className="truncate text-sm text-slate-500">@{currentUser.username}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-700"
               aria-label="关闭账号面板"
             >
               ×
             </button>
           </div>
 
-          <div className="mt-5 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className={`${workspaceSoftCardClass} mt-5 space-y-3 p-4`}>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-gray-500">权限</span>
+              <span className="text-slate-500">权限</span>
               <span>{getRoleLabel(currentUser.role)}</span>
             </div>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-gray-500">机构</span>
+              <span className="text-slate-500">机构</span>
               <span>{currentUser.organization_name}</span>
             </div>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-gray-500">状态</span>
+              <span className="text-slate-500">状态</span>
               <span>{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
             </div>
           </div>
@@ -306,14 +326,14 @@ export const SidebarAccountSheet = ({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left font-medium hover:bg-white/10 transition-colors"
+              className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50"
             >
               查看账号信息
             </button>
             <button
               type="button"
               onClick={onLogout}
-              className="w-full rounded-2xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-left font-medium text-red-300 hover:bg-red-500/15 transition-colors"
+              className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-medium text-rose-600 transition-colors hover:bg-rose-100"
             >
               退出登录
             </button>
@@ -346,49 +366,55 @@ const Sidebar = ({
   ];
 
   return (
-    <div className="w-64 h-screen border-r border-white/10 flex flex-col bg-black sticky top-0">
-      <div className="p-6 flex items-center gap-3">
+    <div className="sticky top-0 flex h-screen w-72 flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] shadow-[18px_0_48px_rgba(47,128,237,0.06)]">
+      <div className="border-b border-sky-100/80 px-6 py-6">
+        <div className="flex items-center gap-3">
         <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
-        <h1 className="text-lg font-semibold tracking-tight">星润复习系统</h1>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900">Starain 工作台</h1>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">AI EDU PLATFORM</p>
+          </div>
+        </div>
       </div>
 
-      <nav className="flex-1 px-4 py-4 space-y-1">
+      <nav className="flex-1 space-y-1 px-4 py-5">
         {menuItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setActivePage(item.id as Page)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+            className={cn(
+              'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
               activePage === item.id
-                ? 'bg-blue-600/10 text-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
-                : 'text-gray-400 hover:text-gray-100 hover:bg-white/5'
-            }`}
+                ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)]'
+                : 'border border-transparent text-slate-500 hover:border-sky-100 hover:bg-white/75 hover:text-slate-800',
+            )}
           >
             <item.icon size={20} />
             <span className="font-medium">{item.label}</span>
             {activePage === item.id && (
               <motion.div
                 layoutId="active-pill"
-                className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500"
+                className="ml-auto h-2 w-2 rounded-full bg-sky-500"
               />
             )}
           </button>
         ))}
       </nav>
 
-      <div className="p-4 mt-auto border-t border-white/10">
+      <div className="mt-auto border-t border-sky-100/80 p-4">
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
-          className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left"
+          className="flex w-full items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 p-3 text-left transition-colors hover:bg-white"
         >
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 font-bold text-white">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{currentUser.display_name}</p>
-            <p className="text-xs text-gray-500 truncate">{getRoleLabel(currentUser.role)}</p>
+            <p className="truncate text-sm font-medium text-slate-900">{currentUser.display_name}</p>
+            <p className="truncate text-xs text-slate-500">{getRoleLabel(currentUser.role)}</p>
           </div>
-          <MoreVertical size={16} className="text-gray-500 shrink-0" />
+          <MoreVertical size={16} className="shrink-0 text-slate-400" />
         </button>
       </div>
 
@@ -414,25 +440,32 @@ const Sidebar = ({
 
 const Header = ({ title, onGoHome }: { title: string; onGoHome?: () => void }) => {
   return (
-    <header className="h-16 border-b border-white/10 flex items-center justify-between px-8 bg-black/50 backdrop-blur-md sticky top-0 z-10">
-      <h2 className="text-xl font-semibold">{title}</h2>
+    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/78 px-6 backdrop-blur-xl md:px-8">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Workspace</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{title}</h2>
+      </div>
       <div className="flex items-center gap-4">
         {onGoHome && (
-          <button onClick={onGoHome} title="返回首页" className="p-2 text-gray-400 hover:text-gray-100 transition-colors">
+          <button
+            onClick={onGoHome}
+            title="返回首页"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800"
+          >
             <Home size={20} />
           </button>
         )}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500" size={18} />
           <input
             type="text"
             placeholder="搜索课程、题目..."
-            className="bg-white/5 border border-white/10 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-blue-500/50 w-64 transition-all"
+            className={`${workspaceFieldClass} w-64 rounded-full py-2 pl-10 pr-4`}
           />
         </div>
-        <button className="p-2 text-gray-400 hover:text-gray-100 transition-colors relative">
+        <button className="relative flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800">
           <Bell size={20} />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-black"></span>
+          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400" />
         </button>
       </div>
     </header>
@@ -440,32 +473,27 @@ const Header = ({ title, onGoHome }: { title: string; onGoHome?: () => void }) =
 };
 
 const XiaojimaoLoading = ({ label = '小吉猫正在思考中...' }: { label?: string }) => (
-  <div className="flex flex-col items-center justify-center py-12">
+  <div className="flex flex-col items-center justify-center py-12 text-center">
     <motion.div
       animate={{
-        y: [0, -10, 0],
-        rotate: [0, 5, -5, 0],
+        y: [0, -4, 0],
       }}
       transition={{
-        duration: 2,
+        duration: 2.4,
         repeat: Infinity,
         ease: 'easeInOut',
       }}
-      className="w-24 h-24 bg-blue-600/20 rounded-full flex items-center justify-center relative mb-4"
+      className="relative mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-sky-100"
     >
-      <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-500 shadow-[0_18px_36px_rgba(34,199,232,0.22)]">
         <span className="text-white text-3xl">🐱</span>
       </div>
-      <motion.div
-        animate={{ scale: [1, 1.2, 1] }}
-        transition={{ duration: 1.5, repeat: Infinity }}
-        className="absolute -top-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center text-[10px] text-blue-600 font-bold shadow-lg"
-      >
+      <div className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[10px] font-bold text-sky-600 shadow-lg">
         AI
-      </motion.div>
+      </div>
     </motion.div>
-    <p className="text-blue-400 font-medium animate-pulse">{label}</p>
-    <p className="text-gray-500 text-sm mt-2">正在为您生成结构化复习资料</p>
+    <p className="font-medium text-slate-700">{label}</p>
+    <p className="mt-2 text-sm text-slate-500">正在为您生成结构化复习资料</p>
   </div>
 );
 
@@ -483,10 +511,7 @@ const Dashboard = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      apiFetch<Stats>('/api/stats'),
-      apiFetch<Lesson[]>('/api/lessons'),
-    ])
+    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/lessons')])
       .then(([s, lessons]) => {
         setStats(s);
         setRecentLessons(lessons.slice(0, 5));
@@ -503,76 +528,95 @@ const Dashboard = ({
   ];
 
   return (
-    <div className="p-8 space-y-8">
-      {/* Hero Section */}
-      <div className="bg-gradient-to-br from-blue-600/20 to-transparent border border-blue-500/20 rounded-3xl p-8 flex flex-col justify-between min-h-[200px]">
-        <div>
-          <h3 className="text-2xl font-bold mb-2">欢迎回来，{currentUser.display_name}</h3>
-          <p className="text-gray-400 max-w-md">
-            {loading
-              ? '正在加载数据...'
-              : `本月已记录 ${stats?.month_lessons ?? 0} 节课，累计生成 ${stats?.total_pdfs ?? 0} 份 PDF 复习资料。`}
-          </p>
+    <div className={`${workspacePageClass} space-y-8`}>
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
+        <div className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-8 shadow-[0_24px_72px_rgba(47,128,237,0.08)]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">Today at Starain</p>
+            <h3 className="mt-4 text-3xl font-bold tracking-tight text-slate-900">欢迎回来，{currentUser.display_name}</h3>
+            <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-600">
+              {loading
+                ? '正在加载你的课堂数据与教学资产。'
+                : `本月已记录 ${stats?.month_lessons ?? 0} 节课，累计生成 ${stats?.total_pdfs ?? 0} 份 PDF 复习资料。`}
+            </p>
+          </div>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button onClick={() => setActivePage('input')} className={workspacePrimaryButtonClass}>
+              <PlusCircle size={20} />
+              添加新课程
+            </button>
+            <button onClick={() => setActivePage('library')} className={workspaceSecondaryButtonClass}>
+              <Library size={20} />
+              查看课程列表
+            </button>
+          </div>
         </div>
-        <div className="flex gap-4 mt-6">
-          <button
-            onClick={() => setActivePage('input')}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-lg shadow-blue-600/20"
-          >
-            <PlusCircle size={20} />
-            添加新课程
-          </button>
-          <button
-            onClick={() => setActivePage('library')}
-            className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all"
-          >
-            <Library size={20} />
-            查看课程列表
-          </button>
+
+        <div className={`${workspaceSoftCardClass} p-6`}>
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Account</p>
+          <div className="mt-5 flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-xl font-bold text-white shadow-[0_16px_32px_rgba(34,199,232,0.25)]">
+              {currentUser.display_name.slice(0, 1).toUpperCase()}
+            </div>
+            <div>
+              <p className="text-lg font-semibold text-slate-900">{currentUser.display_name}</p>
+              <p className="text-sm text-slate-500">{getRoleLabel(currentUser.role)}</p>
+            </div>
+          </div>
+          <div className="mt-6 space-y-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">机构</span>
+              <span className="font-medium text-slate-700">{currentUser.organization_name}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">账号状态</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
+                {currentUser.status === 'active' ? '正常' : currentUser.status}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
         {statCards.map((stat, i) => (
-          <div
-            key={i}
-            className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:border-blue-500/30 transition-all group"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className={`p-2 rounded-lg bg-white/5 ${stat.color}`}>
+          <div key={i} className={`${workspaceCardClass} group p-6`}>
+            <div className="mb-4 flex items-center justify-between">
+              <div className={`rounded-2xl bg-sky-50 p-3 ${stat.color}`}>
                 <stat.icon size={20} />
               </div>
-              <ArrowRight size={16} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
+              <ArrowRight size={16} className="text-slate-300 transition-colors group-hover:text-sky-500" />
             </div>
-            <p className="text-sm text-gray-500">{stat.label}</p>
-            <p className="text-2xl font-bold mt-1">{stat.value}</p>
+            <p className="text-sm text-slate-500">{stat.label}</p>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{stat.value}</p>
           </div>
         ))}
       </div>
 
-      {/* Recent Lessons */}
-      <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden">
-        <div className="p-6 border-b border-white/10 flex items-center justify-between">
-          <h4 className="font-semibold">最近课程</h4>
-          <button onClick={() => setActivePage('library')} className="text-sm text-blue-500 hover:underline">
+      <div className={`${workspaceCardClass} overflow-hidden`}>
+        <div className="flex items-center justify-between border-b border-sky-100/80 p-6">
+          <div>
+            <h4 className="font-semibold text-slate-900">最近课程</h4>
+            <p className="mt-1 text-sm text-slate-500">最近录入的课堂内容会优先出现在这里。</p>
+          </div>
+          <button onClick={() => setActivePage('library')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500">
             查看全部
           </button>
         </div>
         {loading ? (
-          <div className="p-8 text-center text-gray-500">加载中...</div>
+          <div className="p-8 text-center text-slate-500">加载中...</div>
         ) : recentLessons.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">暂无课程记录</div>
+          <div className="p-8 text-center text-slate-500">暂无课程记录</div>
         ) : (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-sky-100/80">
             {recentLessons.map((lesson) => (
-              <div key={lesson.id} className="p-4 hover:bg-white/5 transition-colors flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500">
-                  <FileText size={24} />
+              <div key={lesson.id} className="flex items-center gap-4 p-4 transition-colors hover:bg-sky-50/70">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                  <FileText size={22} />
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium">{lesson.topic || `${lesson.subject} 课程`}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="font-medium text-slate-900">{lesson.topic || `${lesson.subject} 课程`}</p>
+                  <p className="text-xs text-slate-500">
                     {lesson.date} • {lesson.subject} • {lesson.grade}
                   </p>
                 </div>
@@ -580,7 +624,7 @@ const Dashboard = ({
                   <div className="flex gap-2">
                     <a
                       href={`/pdf/download/${lesson.id}`}
-                      className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600"
                       title="下载"
                     >
                       <Download size={18} />
@@ -589,7 +633,7 @@ const Dashboard = ({
                       href={`/pdf/${lesson.id}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600"
                       title="查看"
                     >
                       <Eye size={18} />
@@ -697,77 +741,85 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className={`${workspacePageClass} mx-auto max-w-6xl`}>
       <AnimatePresence mode="wait">
         {isLoading ? (
           <motion.div
             key="loading"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.1 }}
-            className="h-[60vh] flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={`${workspaceCardClass} flex min-h-[60vh] items-center justify-center p-8`}
           >
             <XiaojimaoLoading label="小吉猫正在生成复习资料..." />
           </motion.div>
         ) : (
           <motion.div
             key="form"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             className="space-y-8"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h3 className="text-2xl font-bold">添加新课程</h3>
-                <p className="text-gray-500">上传录音或粘贴笔记，AI 将为您自动生成复习资料。</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
+                <h3 className={`${workspaceSectionTitleClass} mt-3`}>添加新课程</h3>
+                <p className={`${workspaceSectionTextClass} mt-2`}>
+                  上传录音或粘贴笔记，AI 会整理成统一的复习资料与后续题库资产。
+                </p>
               </div>
-              <div className="flex gap-3">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <input
                   type="text"
                   placeholder="科目"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-28"
+                  className={`${workspaceFieldClass} w-full sm:w-32`}
                 />
                 <select
                   value={classId ?? ''}
                   onChange={(e) => handleClassChange(Number(e.target.value))}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-32 text-gray-300"
+                  className={`${workspaceFieldClass} w-full sm:w-40`}
                 >
-                  <option value="" disabled className="bg-[#0a0a0a]">选择班级</option>
+                  <option value="">选择班级</option>
                   {classes.map((c) => (
-                    <option key={c.id} value={c.id} className="bg-[#0a0a0a]">{c.name}</option>
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
                 <input
                   type="date"
                   value={lessonDate}
                   onChange={(e) => setLessonDate(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50"
+                  className={`${workspaceFieldClass} w-full sm:w-40`}
                 />
               </div>
             </div>
 
             {error && (
-              <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
+              <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-600">
                 <AlertCircle size={18} />
                 <span className="text-sm">{error}</span>
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
               <div className="space-y-6">
-                {/* Input type toggle */}
-                <div className="flex gap-2 p-1 bg-white/5 border border-white/10 rounded-xl w-fit">
+                <div className="inline-flex gap-2 rounded-2xl border border-sky-100 bg-white/85 p-1 shadow-sm">
                   <button
                     onClick={() => setInputType('text')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${inputType === 'text' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    className={cn(
+                      'rounded-xl px-4 py-2 text-sm font-medium transition-all',
+                      inputType === 'text' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                    )}
                   >
                     文字笔记
                   </button>
                   <button
                     onClick={() => setInputType('file')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${inputType === 'file' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    className={cn(
+                      'rounded-xl px-4 py-2 text-sm font-medium transition-all',
+                      inputType === 'file' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                    )}
                   >
                     上传文件
                   </button>
@@ -776,13 +828,13 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 {inputType === 'file' ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="bg-white/5 border-2 border-dashed border-white/10 rounded-3xl p-12 flex flex-col items-center justify-center text-center hover:border-blue-500/50 transition-all cursor-pointer group"
+                    className={`${workspaceCardClass} cursor-pointer p-12 text-center transition-all hover:border-sky-200 hover:shadow-[0_24px_64px_rgba(47,128,237,0.1)]`}
                   >
-                    <div className="w-16 h-16 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 transition-transform hover:scale-105">
                       <Upload size={32} />
                     </div>
-                    <h4 className="font-semibold mb-2">{file ? file.name : '上传课后录音或文本'}</h4>
-                    <p className="text-sm text-gray-500">支持 m4a, mp3, wav, txt, md 格式</p>
+                    <h4 className="font-semibold text-slate-900">{file ? file.name : '上传课后录音或文本'}</h4>
+                    <p className="mt-2 text-sm text-slate-500">支持 m4a, mp3, wav, txt, md 格式</p>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -793,9 +845,9 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   </div>
                 ) : null}
 
-                <div className="p-6 bg-white/5 border border-white/10 rounded-3xl space-y-4">
-                  <h4 className="font-semibold flex items-center gap-2">
-                    <CheckCircle2 size={18} className="text-blue-500" />
+                <div className={`${workspaceCardClass} space-y-4 p-6`}>
+                  <h4 className="flex items-center gap-2 font-semibold text-slate-900">
+                    <CheckCircle2 size={18} className="text-sky-500" />
                     课程信息
                   </h4>
                   <input
@@ -803,29 +855,32 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                     placeholder="课程主题（选填）"
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
-                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500/50"
+                    className={workspaceFieldClass}
                   />
                   <textarea
                     placeholder="薄弱点（选填）"
                     value={weakPoints}
                     onChange={(e) => setWeakPoints(e.target.value)}
-                    rows={2}
-                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500/50 resize-none"
+                    rows={3}
+                    className={`${workspaceFieldClass} resize-none`}
                   />
                 </div>
               </div>
 
-              <div className="flex flex-col h-full">
+              <div className="flex flex-col">
                 {inputType === 'text' && (
-                  <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-semibold">课堂笔记</h4>
+                  <div className={`${workspaceCardClass} flex flex-1 flex-col p-6`}>
+                    <div className="mb-4 flex items-center justify-between gap-4">
+                      <div>
+                        <h4 className="font-semibold text-slate-900">课堂笔记</h4>
+                        <p className="mt-1 text-sm text-slate-500">支持长段文本、结构化大纲与老师备注。</p>
+                      </div>
                       <button
                         onClick={handleAnalyze}
                         disabled={!summaryText.trim() || isAnalyzing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:border-blue-500/50 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        className={workspaceGhostButtonClass}
                       >
-                        <Cpu size={13} className={isAnalyzing ? 'animate-pulse text-blue-400' : ''} />
+                        <Cpu size={13} className={isAnalyzing ? 'text-sky-500' : 'text-slate-500'} />
                         {isAnalyzing ? '识别中...' : '识别'}
                       </button>
                     </div>
@@ -833,14 +888,11 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                       placeholder="在此处粘贴您的课堂笔记或结构化大纲..."
                       value={summaryText}
                       onChange={(e) => setSummaryText(e.target.value)}
-                      className="flex-1 bg-transparent border-none resize-none focus:outline-none text-gray-300 leading-relaxed font-mono text-sm min-h-[240px]"
+                      className="min-h-[320px] flex-1 resize-none rounded-2xl border border-sky-100 bg-[linear-gradient(180deg,rgba(249,252,255,0.98)_0%,rgba(240,248,255,0.95)_100%)] px-5 py-4 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100"
                     />
                   </div>
                 )}
-                <button
-                  onClick={handleGenerate}
-                  className="mt-6 w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
-                >
+                <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
                   生成复习资料 PDF
                   <ArrowRight size={20} />
                 </button>
@@ -876,82 +928,83 @@ const LibraryPage = () => {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex items-center justify-between">
-        <h3 className="text-2xl font-bold">课程列表</h3>
+        <div>
+          <h3 className={workspaceSectionTitleClass}>课程列表</h3>
+          <p className={`${workspaceSectionTextClass} mt-2`}>按课程、日期与 PDF 生成状态查看教学记录。</p>
+        </div>
         <div className="flex gap-2">
-          <button className="p-2 bg-white/5 border border-white/10 rounded-xl text-gray-400 hover:text-white transition-all">
+          <button className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-200 bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600">
             <Filter size={20} />
           </button>
         </div>
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden">
+      <div className={`${workspaceCardClass} overflow-hidden`}>
         {loading ? (
-          <div className="p-8 text-center text-gray-500">加载中...</div>
+          <div className="p-8 text-center text-slate-500">加载中...</div>
         ) : lessons.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">暂无课程，点击「添加课程」开始记录。</div>
+          <div className="p-8 text-center text-slate-500">暂无课程，点击「添加课程」开始记录。</div>
         ) : (
-          <table className="w-full text-left border-collapse">
+          <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
+              <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400">
                 <th className="px-6 py-4 font-semibold">课程名称</th>
                 <th className="px-6 py-4 font-semibold">科目 / 年级</th>
                 <th className="px-6 py-4 font-semibold">日期</th>
                 <th className="px-6 py-4 font-semibold">PDF</th>
-                <th className="px-6 py-4 font-semibold text-right">操作</th>
+                <th className="px-6 py-4 text-right font-semibold">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-sky-100/80">
               {lessons.map((lesson) => (
-                <tr key={lesson.id} className="hover:bg-white/5 transition-colors group">
+                <tr key={lesson.id} className="group transition-colors hover:bg-sky-50/70">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-500">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
                         <FileText size={16} />
                       </div>
-                      <span className="font-medium">{lesson.topic || `${lesson.subject} 课程`}</span>
+                      <span className="font-medium text-slate-900">{lesson.topic || `${lesson.subject} 课程`}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
                       {lesson.subject && (
-                        <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[10px] font-bold uppercase">
+                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">
                           {lesson.subject}
                         </span>
                       )}
                       {lesson.grade && (
-                        <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400 text-[10px] font-bold uppercase">
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                           {lesson.grade}
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-mono">{lesson.date}</td>
+                  <td className="px-6 py-4 font-mono text-sm text-slate-500">{lesson.date}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full ${lesson.pdf_path ? 'bg-green-500' : 'bg-gray-600'}`}
-                      />
-                      <span className="text-sm text-gray-500">{lesson.pdf_path ? '已生成' : '无'}</span>
+                      <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300')} />
+                      <span className="text-sm text-slate-500">{lesson.pdf_path ? '已生成' : '无'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                       {lesson.pdf_path && (
                         <>
                           <a
                             href={`/pdf/${lesson.id}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all"
+                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600"
                             title="查看"
                           >
                             <Eye size={16} />
                           </a>
                           <a
                             href={`/pdf/download/${lesson.id}`}
-                            className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all"
+                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600"
                             title="下载"
                           >
                             <Download size={16} />
@@ -960,7 +1013,7 @@ const LibraryPage = () => {
                       )}
                       <button
                         onClick={() => handleDelete(lesson.id)}
-                        className="p-2 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-500 transition-all"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600"
                         title="删除"
                       >
                         <Trash2 size={16} />
@@ -992,57 +1045,45 @@ const QuestionBank = () => {
   const allQuestions: Question[] = (Object.values(data.categories) as Question[][]).flat();
 
   return (
-    <div className="p-8 space-y-6">
+    <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-bold">题库浏览</h3>
-          <p className="text-gray-500">浏览从课程中自动提取的填空题。共 {data.total} 道题。</p>
+          <h3 className={workspaceSectionTitleClass}>题库浏览</h3>
+          <p className={`${workspaceSectionTextClass} mt-2`}>浏览从课程中自动提取的填空题。共 {data.total} 道题。</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
-            <span className="text-sm text-gray-400">显示答案</span>
-            <button
-              onClick={() => setShowAnswers(!showAnswers)}
-              className={`w-10 h-5 rounded-full relative transition-colors ${showAnswers ? 'bg-blue-600' : 'bg-white/20'}`}
-            >
-              <motion.div
-                animate={{ x: showAnswers ? 20 : 2 }}
-                className="absolute top-1 w-3 h-3 bg-white rounded-full"
-              />
-            </button>
-          </div>
+        <div className={`${workspaceSoftCardClass} flex items-center gap-3 px-4 py-3`}>
+          <span className="text-sm text-slate-500">显示答案</span>
+          <button
+            onClick={() => setShowAnswers(!showAnswers)}
+            className={`relative h-5 w-10 rounded-full transition-colors ${showAnswers ? 'bg-sky-600' : 'bg-sky-100'}`}
+          >
+            <motion.div animate={{ x: showAnswers ? 20 : 2 }} className="absolute top-1 h-3 w-3 rounded-full bg-white" />
+          </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="p-8 text-center text-gray-500">加载中...</div>
+        <div className="p-8 text-center text-slate-500">加载中...</div>
       ) : allQuestions.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">暂无题目，添加课程后将自动提取填空题。</div>
+        <div className={`${workspaceCardClass} p-8 text-center text-slate-500`}>暂无题目，添加课程后将自动提取填空题。</div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {allQuestions.map((item, i) => (
-            <div
-              key={item.id}
-              className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:border-blue-500/30 transition-all"
-            >
+            <div key={item.id} className={`${workspaceCardClass} p-6`}>
               <div className="flex items-start justify-between gap-4">
-                <div className="space-y-3 flex-1">
+                <div className="flex-1 space-y-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">
-                      Q{i + 1}
-                    </span>
-                    {item.category && (
-                      <span className="text-xs text-gray-500">{item.category}</span>
-                    )}
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700">Q{i + 1}</span>
+                    {item.category && <span className="text-xs text-slate-500">{item.category}</span>}
                   </div>
-                  <p className="text-lg text-gray-200 leading-relaxed">
+                  <p className="text-lg leading-relaxed text-slate-700">
                     {item.question.split('___').map((part, index, array) => (
                       <React.Fragment key={index}>
                         {part}
                         {index < array.length - 1 && (
                           <span
-                            className={`inline-block border-b-2 border-blue-500/50 min-w-[80px] text-center px-2 font-bold transition-all ${
-                              showAnswers ? 'text-blue-400 opacity-100' : 'text-transparent opacity-0'
+                            className={`inline-block min-w-[80px] border-b-2 border-sky-400/60 px-2 text-center font-bold transition-all ${
+                              showAnswers ? 'text-sky-600 opacity-100' : 'text-transparent opacity-0'
                             }`}
                           >
                             {item.answer}
@@ -1052,7 +1093,7 @@ const QuestionBank = () => {
                     ))}
                   </p>
                   {showAnswers && !item.question.includes('___') && (
-                    <p className="text-sm text-blue-400 mt-2">答案：{item.answer}</p>
+                    <p className="mt-2 text-sm text-sky-600">答案：{item.answer}</p>
                   )}
                 </div>
               </div>
@@ -1148,64 +1189,64 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   return (
-    <div className="p-8 space-y-8">
+    <div className={`${workspacePageClass} space-y-8`}>
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
-        <section className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-5">
+        <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
-            <p className="text-sm text-gray-500 uppercase tracking-[0.25em]">Owner</p>
-            <h3 className="text-2xl font-bold mt-3">账号审批</h3>
-            <p className="text-sm text-gray-400 mt-2">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
+            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Owner</p>
+            <h3 className="mt-3 text-2xl font-bold text-slate-900">账号审批</h3>
+            <p className="mt-2 text-sm text-slate-500">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
           </div>
-          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5">
-            <p className="text-xs text-blue-300 uppercase tracking-[0.25em]">Current Account</p>
-            <p className="text-xl font-semibold mt-3">{currentUser.display_name}</p>
+          <div className={`${workspaceSoftCardClass} p-5`}>
+            <p className="text-xs uppercase tracking-[0.25em] text-sky-600">Current Account</p>
+            <p className="mt-3 text-xl font-semibold text-slate-900">{currentUser.display_name}</p>
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-gray-500">用户名</span>
-                <span>{currentUser.username}</span>
+                <span className="text-slate-500">用户名</span>
+                <span className="text-slate-700">{currentUser.username}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-gray-500">权限</span>
-                <span>{getRoleLabel(currentUser.role)}</span>
+                <span className="text-slate-500">权限</span>
+                <span className="text-slate-700">{getRoleLabel(currentUser.role)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-gray-500">机构</span>
-                <span>{currentUser.organization_name}</span>
+                <span className="text-slate-500">机构</span>
+                <span className="text-slate-700">{currentUser.organization_name}</span>
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
-            <p className="text-xs text-gray-500 uppercase tracking-[0.25em]">Queue</p>
-            <p className="text-4xl font-bold mt-3">{items.length}</p>
-            <p className="text-sm text-gray-500 mt-2">当前待审核注册申请</p>
+          <div className={`${workspaceSoftCardClass} p-5`}>
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Queue</p>
+            <p className="mt-3 text-4xl font-bold text-slate-900">{items.length}</p>
+            <p className="mt-2 text-sm text-slate-500">当前待审核注册申请</p>
           </div>
         </section>
 
-        <section className="bg-white/5 border border-white/10 rounded-3xl p-6">
+        <section className={`${workspaceCardClass} p-6`}>
           <div className="flex items-center justify-between gap-4 mb-6">
             <div>
-              <h4 className="text-xl font-semibold">待审批申请</h4>
-              <p className="text-sm text-gray-500 mt-1">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
+              <h4 className="text-xl font-semibold text-slate-900">待审批申请</h4>
+              <p className="mt-1 text-sm text-slate-500">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
             </div>
             <button
               onClick={() => loadItems().catch(() => undefined)}
-              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-sm font-medium transition-colors"
+              className={workspaceSecondaryButtonClass}
             >
               刷新列表
             </button>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600">
               <AlertCircle size={16} />
               {error}
             </div>
           )}
 
           {loading ? (
-            <div className="p-8 text-center text-gray-500">正在读取审批队列...</div>
+            <div className="p-8 text-center text-slate-500">正在读取审批队列...</div>
           ) : items.length === 0 ? (
-            <div className="p-10 rounded-2xl border border-dashed border-white/10 text-center text-gray-500">
+            <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500">
               暂无待审批申请，新的注册请求会出现在这里。
             </div>
           ) : (
@@ -1213,27 +1254,27 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               {items.map((item) => {
                 const busy = actingId === item.id;
                 return (
-                  <div key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                  <div key={item.id} className={`${workspaceSoftCardClass} p-5`}>
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-lg font-semibold">{item.display_name}</span>
-                          <span className="text-xs px-2.5 py-1 rounded-full border border-blue-500/20 bg-blue-500/10 text-blue-300">
+                          <span className="text-lg font-semibold text-slate-900">{item.display_name}</span>
+                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700">
                             待审批
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-400">
+                        <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3">
                           <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-gray-600">用户名</p>
-                            <p className="text-gray-200 mt-1">{item.username}</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">用户名</p>
+                            <p className="mt-1 text-slate-700">{item.username}</p>
                           </div>
                           <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-gray-600">机构</p>
-                            <p className="text-gray-200 mt-1">{item.organization_name}</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">机构</p>
+                            <p className="mt-1 text-slate-700">{item.organization_name}</p>
                           </div>
                           <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-gray-600">申请时间</p>
-                            <p className="text-gray-200 mt-1">{item.created_at}</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">申请时间</p>
+                            <p className="mt-1 text-slate-700">{item.created_at}</p>
                           </div>
                         </div>
                       </div>
@@ -1241,14 +1282,14 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <button
                           onClick={() => handleDecision(item.id, 'reject')}
                           disabled={busy}
-                          className="px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 transition-colors"
+                          className={workspaceSecondaryButtonClass}
                         >
                           拒绝
                         </button>
                         <button
                           onClick={() => handleDecision(item.id, 'approve')}
                           disabled={busy}
-                          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 transition-colors font-semibold"
+                          className={workspacePrimaryButtonClass}
                         >
                           {busy ? '处理中...' : '通过并开通'}
                         </button>
@@ -1262,42 +1303,42 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         </section>
       </div>
 
-      <section className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-5">
+      <section className={`${workspaceCardClass} space-y-5 p-6`}>
         <div>
-          <h4 className="text-xl font-semibold">班级分配</h4>
-          <p className="text-sm text-gray-400 mt-1">为每位成员指定可访问的班级。</p>
+          <h4 className="text-xl font-semibold text-slate-900">班级分配</h4>
+          <p className="mt-1 text-sm text-slate-500">为每位成员指定可访问的班级。</p>
         </div>
         {users.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">暂无成员数据</div>
+          <div className="p-8 text-center text-slate-500">暂无成员数据</div>
         ) : (
           <div className="space-y-4">
             {users.map((user) => {
               const assigned = userClassIds[user.id] ?? [];
               const saving = savingUserId === user.id;
               return (
-                <div key={user.id} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                     <div>
-                      <span className="font-semibold">{user.name}</span>
-                      <span className="ml-2 text-xs text-gray-500">{user.org}</span>
-                      {saving && <span className="ml-2 text-xs text-blue-400">保存中...</span>}
+                      <span className="font-semibold text-slate-900">{user.name}</span>
+                      <span className="ml-2 text-xs text-slate-500">{user.org}</span>
+                      {saving && <span className="ml-2 text-xs text-sky-600">保存中...</span>}
                     </div>
                     {classes.length === 0 ? (
-                      <span className="text-xs text-gray-500">暂无班级</span>
+                      <span className="text-xs text-slate-500">暂无班级</span>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {classes.map((cls) => {
                           const checked = assigned.includes(cls.id);
                           return (
-                            <label key={cls.id} className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                            <label key={cls.id} className="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-600">
                               <input
                                 type="checkbox"
                                 checked={checked}
                                 disabled={saving}
                                 onChange={(e) => handleClassToggle(user.id, cls.id, e.target.checked)}
-                                className="accent-blue-500"
+                                className="accent-sky-500"
                               />
-                              <span className={checked ? 'text-white' : 'text-gray-400'}>{cls.name}</span>
+                              <span className={checked ? 'text-slate-900' : 'text-slate-500'}>{cls.name}</span>
                             </label>
                           );
                         })}
@@ -1316,50 +1357,47 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
 const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout: () => void }) => {
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-8">
-      <h3 className="text-2xl font-bold">系统设置</h3>
+    <div className={`${workspacePageClass} mx-auto max-w-3xl space-y-8`}>
+      <h3 className={workspaceSectionTitleClass}>系统设置</h3>
 
       <section className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">账号</h4>
-        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500">账号</h4>
+        <div className={`${workspaceCardClass} flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between`}>
           <div>
-            <p className="font-medium">当前账号</p>
-            <p className="text-sm text-gray-500 mt-0.5">登出后需重新输入用户名和密码。</p>
-            <div className="flex flex-wrap gap-2 mt-4 text-xs">
-              <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300">
+            <p className="font-medium text-slate-900">当前账号</p>
+            <p className="mt-0.5 text-sm text-slate-500">登出后需重新输入用户名和密码。</p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
                 {currentUser.display_name}
               </span>
-              <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
                 {getRoleLabel(currentUser.role)}
               </span>
-              <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
                 {currentUser.organization_name}
               </span>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            className="px-5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-semibold transition-all"
-          >
+          <button onClick={onLogout} className={workspaceSecondaryButtonClass}>
             退出登录
           </button>
         </div>
       </section>
 
       <section className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">关于</h4>
-        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-3">
+        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500">关于</h4>
+        <div className={`${workspaceCardClass} space-y-3 p-6`}>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">产品</span>
-            <span>星润课后复习系统</span>
+            <span className="text-slate-500">产品</span>
+            <span className="text-slate-700">星润课后复习系统</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">版本</span>
-            <span className="font-mono">v1.0.0</span>
+            <span className="text-slate-500">版本</span>
+            <span className="font-mono text-slate-700">v1.0.0</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">AI 引擎</span>
-            <span>由星润提供</span>
+            <span className="text-slate-500">AI 引擎</span>
+            <span className="text-slate-700">由星润提供</span>
           </div>
         </div>
       </section>
@@ -1829,9 +1867,21 @@ export const LandingPage = ({
       {/* Hero Section */}
       <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)]">
         <div className="absolute inset-x-0 top-0 h-full">
-          <div className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px]" />
-          <div className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px]" />
-          <div className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px]" />
+          <motion.div
+            animate={{ scale: [1, 1.12, 1], opacity: [0.5, 0.65, 0.5] }}
+            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px]"
+          />
+          <motion.div
+            animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.55, 0.4] }}
+            transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+            className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px]"
+          />
+          <motion.div
+            animate={{ scale: [1, 1.15, 1], opacity: [0.7, 0.85, 0.7] }}
+            transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 4 }}
+            className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px]"
+          />
         </div>
 
         <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-center justify-center py-32 text-center">
@@ -1841,12 +1891,22 @@ export const LandingPage = ({
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]">
-              <span className="mb-6 inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700">
+              <motion.span
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.5 }}
+                className="mb-6 inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700"
+              >
                 BUILT FROM REAL TEACHING PRACTICE
-              </span>
-              <h1 className="mt-6 text-5xl font-black leading-[0.95] tracking-tight text-slate-900 md:text-7xl">
+              </motion.span>
+              <motion.h1
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+                className="mt-6 text-5xl font-black leading-[0.95] tracking-tight text-slate-900 md:text-7xl"
+              >
                 教育工作流终于被 AI 重新组织好了
-              </h1>
+              </motion.h1>
 
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
@@ -1887,14 +1947,26 @@ export const LandingPage = ({
       {/* Feature Bento Grid */}
       <section id="features" className="border-t border-sky-100/80 py-24">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-16">
+          <motion.div
+            className="mb-16"
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          >
             <h2 className="text-4xl md:text-5xl font-bold mb-4">把真实教学流程整理成可复用的 AI 能力</h2>
             <p className="text-slate-600 text-lg">不是堆叠功能点，而是把一条已经跑通的教育工作流产品化。</p>
-          </div>
+          </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Large Card */}
-            <div className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2">
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2"
+            >
               <div className="absolute right-0 top-0 p-8 opacity-10 transition-opacity group-hover:opacity-20">
                 <FileText size={200} />
               </div>
@@ -1914,10 +1986,16 @@ export const LandingPage = ({
                   <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">教学交付</div>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Small Card */}
-            <div className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+            >
               <div>
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
@@ -1932,10 +2010,16 @@ export const LandingPage = ({
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">薄弱点追踪</span>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">个性化复习</span>
               </div>
-            </div>
+            </motion.div>
 
             {/* Small Card */}
-            <div className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+            >
               <div>
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
@@ -1949,10 +2033,16 @@ export const LandingPage = ({
                 <span>AP / A-Level / IB</span>
                 <ArrowRight size={14} />
               </div>
-            </div>
+            </motion.div>
 
             {/* Medium Card */}
-            <div className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row">
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row"
+            >
               <div className="flex-1">
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
                   <FileText size={24} />
@@ -1971,7 +2061,8 @@ export const LandingPage = ({
                   <motion.div
                     key={item.label}
                     initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
                     transition={{ duration: 0.55, delay: 0.15 + index * 0.12, ease: [0.16, 1, 0.3, 1] }}
                     className="rounded-2xl border border-sky-100 bg-white/90 p-4 shadow-[0_14px_34px_rgba(47,128,237,0.07)]"
                   >
@@ -1985,7 +2076,8 @@ export const LandingPage = ({
                       <div className="h-2 overflow-hidden rounded-full bg-sky-100">
                         <motion.div
                           initial={{ width: '0%' }}
-                          animate={{ width: item.width }}
+                          whileInView={{ width: item.width }}
+                          viewport={{ once: true }}
                           transition={{ duration: 0.9, delay: 0.35 + index * 0.15, ease: [0.16, 1, 0.3, 1] }}
                           className={`h-full ${item.tone}`}
                         />
@@ -1995,30 +2087,7 @@ export const LandingPage = ({
                   </motion.div>
                 ))}
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Process Section */}
-      <section id="process" className="py-24">
-        <div className="max-w-7xl mx-auto px-6 text-center">
-          <h2 className="mb-16 text-4xl font-bold text-slate-900">三步搭建 AI 教学交付链路</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
-            <div className="absolute left-0 top-1/2 z-0 hidden h-[1px] w-full -translate-y-1/2 bg-sky-100 md:block"></div>
-            {[
-              { step: '01', title: '教学素材进入平台', desc: '录音、笔记、题目、课件等教学资料进入统一工作台。' },
-              { step: '02', title: 'AI 完成结构化处理', desc: '提炼重点、识别薄弱点、归档题目并生成讲义草稿。' },
-              { step: '03', title: '输出到复习与教学协同', desc: '生成复习资料、错题沉淀、题库调用与团队复用内容。' },
-            ].map((item, i) => (
-              <div key={i} className="relative z-10 flex flex-col items-center rounded-[2rem] border border-sky-100 bg-white/75 px-6 py-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
-                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-2xl font-black text-sky-700 shadow-sm">
-                  {item.step}
-                </div>
-                <h4 className="mb-2 text-xl font-bold text-slate-900">{item.title}</h4>
-                <p className="max-w-[200px] text-slate-500">{item.desc}</p>
-              </div>
-            ))}
+            </motion.div>
           </div>
         </div>
       </section>
@@ -2027,7 +2096,13 @@ export const LandingPage = ({
       <section id="about" className="border-t border-sky-100/80 py-24">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 items-start">
-            <div className="space-y-6">
+            <motion.div
+              className="space-y-6"
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            >
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-slate-500">
                 ABOUT STARAIN
               </span>
@@ -2040,7 +2115,7 @@ export const LandingPage = ({
               <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed">
                 我们先在自己的教育机构中解决复习资料、题库沉淀、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
               </p>
-            </div>
+            </motion.div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-4">
               {[
@@ -2056,11 +2131,18 @@ export const LandingPage = ({
                   title: '服务对象',
                   body: '聚焦学校、培训机构、国际课程团队与教研运营场景。',
                 },
-              ].map((item) => (
-                <div key={item.title} className="rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
+              ].map((item, i) => (
+                <motion.div
+                  key={item.title}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
+                  className="rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+                >
                   <p className="mb-2 text-sm font-semibold text-slate-900">{item.title}</p>
                   <p className="text-sm leading-relaxed text-slate-500">{item.body}</p>
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -2190,8 +2272,8 @@ export default function App() {
 
   if (token && !authReady) {
     return (
-      <div className="min-h-screen bg-black text-gray-100 flex items-center justify-center px-6">
-        <div className="w-full max-w-xl rounded-[2rem] border border-white/10 bg-white/5 p-8">
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-6 text-slate-900">
+        <div className={`${workspaceCardClass} w-full max-w-xl p-8`}>
           <XiaojimaoLoading label="正在验证账号权限..." />
         </div>
       </div>
@@ -2232,34 +2314,41 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-black text-gray-100">
-      <Sidebar
-        activePage={activePage}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        setActivePage={setActivePage}
-      />
-      <main className="flex-1 flex flex-col">
-        <Header title={pageTitle[activePage]} onGoHome={() => setShowLanding(true)} />
-        <div className="flex-1 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activePage}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {activePage === 'dashboard' && <Dashboard currentUser={currentUser} setActivePage={setActivePage} />}
-              {activePage === 'input' && <LessonInput onSuccess={handleLessonSuccess} />}
-              {activePage === 'library' && <LibraryPage />}
-              {activePage === 'questions' && <QuestionBank />}
-              {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
-              {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </main>
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px]" />
+        <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px]" />
+        <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px]" />
+      </div>
+      <div className="relative flex min-h-screen">
+        <Sidebar
+          activePage={activePage}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          setActivePage={setActivePage}
+        />
+        <main className="flex min-w-0 flex-1 flex-col">
+          <Header title={pageTitle[activePage]} onGoHome={() => setShowLanding(true)} />
+          <div className="flex-1 overflow-y-auto">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activePage}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18 }}
+              >
+                {activePage === 'dashboard' && <Dashboard currentUser={currentUser} setActivePage={setActivePage} />}
+                {activePage === 'input' && <LessonInput onSuccess={handleLessonSuccess} />}
+                {activePage === 'library' && <LibraryPage />}
+                {activePage === 'questions' && <QuestionBank />}
+                {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
+                {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
