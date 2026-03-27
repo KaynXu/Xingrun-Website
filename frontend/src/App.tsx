@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
+  Home,
   LayoutDashboard,
   PlusCircle,
   Library,
@@ -157,11 +158,16 @@ const Sidebar = ({ activePage, setActivePage }: { activePage: Page; setActivePag
   );
 };
 
-const Header = ({ title }: { title: string }) => {
+const Header = ({ title, onGoHome }: { title: string; onGoHome?: () => void }) => {
   return (
     <header className="h-16 border-b border-white/10 flex items-center justify-between px-8 bg-black/50 backdrop-blur-md sticky top-0 z-10">
       <h2 className="text-xl font-semibold">{title}</h2>
       <div className="flex items-center gap-4">
+        {onGoHome && (
+          <button onClick={onGoHome} title="返回首页" className="p-2 text-gray-400 hover:text-gray-100 transition-colors">
+            <Home size={20} />
+          </button>
+        )}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
           <input
@@ -1137,6 +1143,7 @@ export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem('xr_token') || '');
   const [showLogin, setShowLogin] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [showLanding, setShowLanding] = useState(false);
 
   const handleLogin = (t: string) => {
     localStorage.setItem('xr_token', t);
@@ -1161,10 +1168,10 @@ export default function App() {
     settings: '系统设置',
   };
 
-  if (!token) {
+  if (!token || showLanding) {
     return (
       <>
-        <LandingPage onLogin={() => setShowLogin(true)} />
+        <LandingPage onLogin={token ? () => setShowLanding(false) : () => setShowLogin(true)} />
         <AnimatePresence>
           {showLogin && (
             <LoginModal onLogin={handleLogin} onClose={() => setShowLogin(false)} />
@@ -1178,7 +1185,7 @@ export default function App() {
     <div className="flex min-h-screen bg-black text-gray-100">
       <Sidebar activePage={activePage} setActivePage={setActivePage} />
       <main className="flex-1 flex flex-col">
-        <Header title={pageTitle[activePage]} />
+        <Header title={pageTitle[activePage]} onGoHome={() => setShowLanding(true)} />
         <div className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait">
             <motion.div
