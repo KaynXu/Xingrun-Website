@@ -121,6 +121,12 @@ def init_db():
             user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE TABLE IF NOT EXISTS user_classes (
+            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            PRIMARY KEY (user_id, class_id)
+        );
         """)
         # Safe migration: add class_id if not already present
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
@@ -327,6 +333,39 @@ def delete_class(class_id: int):
     with get_conn() as conn:
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
+
+
+# ─── 用户-班级关联 ──────────────────────────────────────────────────────────────
+def list_all_users() -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.*, o.name AS organization_name
+            FROM users u
+            JOIN organizations o ON o.id = u.organization_id
+            WHERE u.status = 'active'
+            ORDER BY CASE WHEN u.role='owner' THEN 0 ELSE 1 END, u.display_name
+            """
+        ).fetchall()
+        return [_public_user_dict(row) for row in rows]
+
+
+def get_user_class_ids(user_id: int) -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT class_id FROM user_classes WHERE user_id=?", (user_id,)
+        ).fetchall()
+        return [r["class_id"] for r in rows]
+
+
+def set_user_class_ids(user_id: int, class_ids: list):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM user_classes WHERE user_id=?", (user_id,))
+        for cid in class_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_classes (user_id, class_id) VALUES (?, ?)",
+                (user_id, cid)
+            )
 
 
 # ─── 账号 / 机构 / 审批 ────────────────────────────────────────────────────────
