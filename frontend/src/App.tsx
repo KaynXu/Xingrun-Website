@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Hls from 'hls.js';
 import {
   Home,
   LayoutDashboard,
@@ -281,6 +282,62 @@ const workspaceGhostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
 const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900 dark:text-white';
 const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500 dark:text-slate-400';
+const landingHeroVideoStreamUrl =
+  'https://stream.mux.com/ef2TghmWccnsK54qnxtFWjv36zXb01cK02CAfgDNQMgn4.m3u8';
+
+function HeroBackgroundVideo() {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = landingHeroVideoStreamUrl;
+      return () => {
+        video.removeAttribute('src');
+        video.load();
+      };
+    }
+
+    if (!Hls.isSupported()) {
+      return;
+    }
+
+    const hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+    });
+
+    hls.loadSource(landingHeroVideoStreamUrl);
+    hls.attachMedia(video);
+
+    return () => {
+      hls.destroy();
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, []);
+
+  return (
+    <div className="absolute inset-0">
+      <video
+        ref={videoRef}
+        className="h-full w-full object-cover opacity-[0.32] saturate-[0.9] dark:opacity-[0.26]"
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+        data-stream-src={landingHeroVideoStreamUrl}
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.3)_0%,rgba(238,246,255,0.78)_58%,rgba(238,246,255,0.94)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.28)_0%,rgba(15,23,42,0.72)_58%,rgba(15,23,42,0.9)_100%)]" />
+    </div>
+  );
+}
 
 // --- Components ---
 
@@ -1915,6 +1972,7 @@ export const LandingPage = ({
 
       {/* Hero Section */}
       <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)] dark:bg-[#0f172a]">
+        <HeroBackgroundVideo />
         <div className="absolute inset-x-0 top-0 h-full">
           <motion.div
             animate={{ scale: [1, 1.12, 1], opacity: [0.5, 0.65, 0.5] }}
