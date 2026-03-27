@@ -148,7 +148,7 @@ const LANDING_LEGAL_DOCUMENTS: Record<
         title: '你的权利与联系我们',
         paragraphs: [
           '你可以基于适用法律和服务能力，申请查询、更正、删除相关账号信息，或就账号停用、机构权限和数据处理问题与我们联系。',
-          '如果你对本政策或个人信息处理有疑问，可通过产品运营或机构对接渠道联系星润团队，我们会在合理范围内进行说明与处理。',
+          '如果你对本政策或个人信息处理有疑问，可通过产品运营或机构对接渠道联系 Starain 团队，我们会在合理范围内进行说明与处理。',
         ],
       },
     ],
@@ -170,7 +170,7 @@ const LANDING_LEGAL_DOCUMENTS: Record<
       {
         title: '服务内容与使用边界',
         paragraphs: [
-          '星润当前提供并持续迭代的能力包括但不限于课后复习资料生成、题库沉淀、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
+          'Starain 当前提供并持续迭代的能力包括但不限于课后复习资料生成、题库沉淀、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
           '我们会持续优化产品功能，但不承诺所有展示中的方案模块都已在当前版本全面上线，也不保证服务在任何时间点都完全不中断。',
         ],
       },
@@ -342,8 +342,8 @@ const Sidebar = ({
   return (
     <div className="w-64 h-screen border-r border-white/10 flex flex-col bg-black sticky top-0">
       <div className="p-6 flex items-center gap-3">
-        <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
-        <h1 className="text-lg font-semibold tracking-tight">星润复习系统</h1>
+        <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
+        <h1 className="text-lg font-semibold tracking-tight">Starain 复习系统</h1>
       </div>
 
       <nav className="flex-1 px-4 py-4 space-y-1">
@@ -1592,7 +1592,7 @@ export const LandingLegalPage = ({
       <nav className="sticky top-0 z-50 border-b border-white/5 bg-black/70 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <img src="/logo.png" alt="星润 logo" className="w-11 h-11 object-contain" />
+            <img src="/logo.png" alt="Starain logo" className="w-11 h-11 object-contain" />
             <div className="min-w-0">
               <p className="text-lg font-bold tracking-tight truncate">Starain</p>
               <p className="text-xs text-slate-500 tracking-[0.28em]">AI Edu Platform</p>
@@ -1647,7 +1647,7 @@ export const LandingLegalPage = ({
 
       <footer className="relative z-10 border-t border-white/5 py-10">
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-gray-500">
-          <p>© 2026 Xingrun AI. All rights reserved.</p>
+          <p>© 2026 Starain. All rights reserved.</p>
           <div className="flex items-center gap-6">
             <a href="#privacy-policy" className="hover:text-white transition-colors">隐私政策</a>
             <a href="#terms-of-service" className="hover:text-white transition-colors">服务条款</a>
@@ -1697,7 +1697,7 @@ export const LandingPage = ({
       <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="星润 logo" className="w-12 h-12 object-contain" />
+            <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
             <span className="text-xl font-bold tracking-tight">Starain</span>
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
               AI Edu Platform
@@ -1706,7 +1706,7 @@ export const LandingPage = ({
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
             <a href="#features" className="hover:text-white transition-colors">核心方案</a>
             <a href="#process" className="hover:text-white transition-colors">落地流程</a>
-            <a href="#about" className="hover:text-white transition-colors">关于星润</a>
+            <a href="#about" className="hover:text-white transition-colors">关于 Starain</a>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -1940,12 +1940,12 @@ export const LandingPage = ({
           <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 items-start">
             <div className="space-y-6">
               <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-gray-400">
-                ABOUT XINGRUN
+                ABOUT STARAIN
               </span>
               <div>
-                <h2 className="text-4xl md:text-5xl font-bold mb-4">关于星润</h2>
+                <h2 className="text-4xl md:text-5xl font-bold mb-4">关于 Starain</h2>
                 <p className="max-w-2xl text-lg text-gray-400 leading-relaxed">
-                  星润聚焦 AI 与教育场景的深度结合，面向学校、机构与教学团队，
+                  Starain 聚焦 AI 与教育场景的深度结合，面向学校、机构与教学团队，
                   构建从内容生成、知识沉淀到教学交付的下一代工作流。
                 </p>
               </div>
@@ -1985,7 +1985,7 @@ export const LandingPage = ({
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="flex flex-col items-center md:items-start gap-3">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
+              <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
               <span className="text-lg font-bold tracking-tight">Starain</span>
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
                 AI Edu Platform
@@ -1995,7 +1995,7 @@ export const LandingPage = ({
               面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
             </p>
           </div>
-          <p className="text-gray-600 text-sm">© 2026 Xingrun AI. All rights reserved.</p>
+          <p className="text-gray-600 text-sm">© 2026 Starain. All rights reserved.</p>
           <div className="flex gap-6 text-gray-500 text-sm">
             <a href="#privacy-policy" className="hover:text-white transition-colors">隐私政策</a>
             <a href="#terms-of-service" className="hover:text-white transition-colors">服务条款</a>
