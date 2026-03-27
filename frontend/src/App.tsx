@@ -14,6 +14,7 @@ import {
   Search,
   Bell,
   User,
+  Users,
   FileText,
   Clock,
   Download,
@@ -28,6 +29,7 @@ import {
   ArrowRight,
   AlertCircle,
   ShieldCheck,
+  Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -847,71 +849,9 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   );
 };
 
-const PdfViewerModal = ({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) => {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let url: string;
-    const token = getToken();
-    fetch(`/pdf/${lesson.id}`, {
-      headers: token ? { 'X-Auth-Token': token } : {},
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error('PDF 加载失败');
-        return res.blob();
-      })
-      .then((blob) => {
-        url = URL.createObjectURL(blob);
-        setBlobUrl(url);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'PDF 加载失败'))
-      .finally(() => setLoadingPdf(false));
-    return () => { if (url) URL.revokeObjectURL(url); };
-  }, [lesson.id]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col p-4 gap-3"
-    >
-      <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 flex flex-col h-full max-w-5xl mx-auto w-full gap-3">
-        <div className="flex items-center justify-between bg-[#0a0a0a] border border-white/10 rounded-2xl px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-500">
-              <FileText size={14} />
-            </div>
-            <span className="font-medium">{lesson.topic || `${lesson.subject} 课程`}</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-white transition-colors text-2xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-        <div className="flex-1 bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden">
-          {loadingPdf ? (
-            <div className="flex items-center justify-center h-full text-gray-500">加载中...</div>
-          ) : error ? (
-            <div className="flex items-center justify-center h-full text-red-400">{error}</div>
-          ) : (
-            <iframe src={blobUrl!} className="w-full h-full" title="PDF 查看" />
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
 const LibraryPage = () => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewingLesson, setViewingLesson] = useState<Lesson | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1924,7 +1864,7 @@ export const LandingPage = ({
                   从课程目标到讲义、课堂提纲和教研素材，减少教师重复整理工作。
                 </p>
               </div>
-              <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-slate-950/95 p-5 md:w-72">
+              <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] md:w-72">
                 {[
                   { label: '讲义大纲', tone: 'bg-orange-500', width: '72%' },
                   { label: '课堂提纲', tone: 'bg-orange-400', width: '58%' },
@@ -1935,16 +1875,16 @@ export const LandingPage = ({
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.55, delay: 0.15 + index * 0.12, ease: [0.16, 1, 0.3, 1] }}
-                    className="rounded-2xl border border-white/8 bg-white/[0.03] p-4"
+                    className="rounded-2xl border border-sky-100 bg-white/90 p-4 shadow-[0_14px_34px_rgba(47,128,237,0.07)]"
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-white">{item.label}</span>
-                      <span className="text-[10px] rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-400">
+                      <span className="text-sm font-medium text-slate-900">{item.label}</span>
+                      <span className="text-[10px] rounded-full border border-sky-100 bg-sky-50 px-2 py-1 text-sky-700">
                         AI Draft
                       </span>
                     </div>
                     <div className="space-y-2">
-                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-2 overflow-hidden rounded-full bg-sky-100">
                         <motion.div
                           initial={{ width: '0%' }}
                           animate={{ width: item.width }}
@@ -1952,7 +1892,7 @@ export const LandingPage = ({
                           className={`h-full ${item.tone}`}
                         />
                       </div>
-                      <div className="h-2 w-3/4 rounded-full bg-white/10" />
+                      <div className="h-2 w-3/4 rounded-full bg-sky-100" />
                     </div>
                   </motion.div>
                 ))}
