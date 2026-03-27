@@ -1381,12 +1381,12 @@ const LandingPage = ({
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="星润 logo" className="w-12 h-12 object-contain" />
-            <span className="text-xl font-bold tracking-tight">星润课后复习系统</span>
+            <span className="text-xl font-bold tracking-tight">星润 AI 教育解决方案</span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-            <a href="#features" className="hover:text-white transition-colors">核心功能</a>
-            <a href="#process" className="hover:text-white transition-colors">工作流程</a>
-            <a href="#about" className="hover:text-white transition-colors">关于我们</a>
+            <a href="#features" className="hover:text-white transition-colors">核心方案</a>
+            <a href="#process" className="hover:text-white transition-colors">落地流程</a>
+            <a href="#about" className="hover:text-white transition-colors">关于星润</a>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -1433,9 +1433,13 @@ const LandingPage = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h1 className="text-[12vw] md:text-[8vw] font-black leading-[0.85] tracking-tighter uppercase mb-8">
-              AI Powered<br />
-              <span className="text-blue-500">Efficiency</span>
+            <span className="inline-flex items-center rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-blue-300 mb-6">
+              AI EDU SOLUTION FOR TEAMS
+            </span>
+            <h1 className="mt-6 text-[13vw] md:text-[6.8vw] font-black leading-[0.9] tracking-tighter mb-8">
+              为学校与教育机构打造
+              <br />
+              <span className="text-blue-500">可落地的 AI 教学方案</span>
             </h1>
           </motion.div>
 
@@ -1443,10 +1447,10 @@ const LandingPage = ({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4, duration: 0.8 }}
-            className="text-xl md:text-2xl text-gray-400 max-w-2xl mx-auto mb-12 font-light leading-relaxed"
+            className="text-lg md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 font-light leading-relaxed"
           >
-            专为独立教师设计的 AI 课后复习系统。<br />
-            将课堂录音与笔记，快速转化为结构化复习资料与教学题库。
+            以课后复习系统为落地起点，延展智能错题本、国际课程题库与自动组卷、
+            教案讲义生成等核心模块，帮助教学团队建立更高效的内容生产与交付链路。
           </motion.p>
 
           <motion.div
@@ -1462,12 +1466,13 @@ const LandingPage = ({
               进入工作台
               <ArrowRight size={20} />
             </button>
-            <button
-              onClick={onRegister}
+            <a
+              href="#features"
               className="w-full sm:w-auto bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all active:scale-95 flex items-center justify-center gap-2"
             >
-              <User size={20} /> 提交注册申请
-            </button>
+              查看方案版图
+              <ArrowRight size={20} />
+            </a>
           </motion.div>
         </div>
       </section>
@@ -1476,8 +1481,8 @@ const LandingPage = ({
       <section id="features" className="py-24 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">重新定义教学交付</h2>
-            <p className="text-gray-500 text-lg">不仅仅是复习，更是学习效率的质变。</p>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">重构 AI 教学交付</h2>
+            <p className="text-gray-500 text-lg">从单点工具走向可扩展的教育解决方案版图。</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1489,14 +1494,17 @@ const LandingPage = ({
               <div className="relative z-10 h-full flex flex-col justify-between">
                 <div>
                   <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center mb-6">
-                    <Clock size={24} />
+                    <FileText size={24} />
                   </div>
-                  <h3 className="text-3xl font-bold mb-4">结构化复习资料</h3>
-                  <p className="text-gray-400 text-lg max-w-md">AI 自动整理课堂重点、薄弱项与练习内容，快速生成可直接交付给学生的复习资料。</p>
+                  <h3 className="text-3xl font-bold mb-4">课后复习系统</h3>
+                  <p className="text-gray-400 text-lg max-w-2xl">
+                    从课堂录音、笔记到结构化复习资料与题目生成，已经形成可落地的教学交付闭环。
+                  </p>
                 </div>
-                <div className="mt-12 flex gap-4">
-                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">课堂重点整理</div>
-                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">复习资料 PDF</div>
+                <div className="mt-12 flex flex-wrap gap-4">
+                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">课堂分析</div>
+                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">复习资料生成</div>
+                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">教学交付</div>
                 </div>
               </div>
             </div>
@@ -1505,15 +1513,17 @@ const LandingPage = ({
             <div className="bg-gradient-to-br from-purple-600/20 to-transparent border border-purple-500/20 rounded-[2.5rem] p-10 flex flex-col justify-between">
               <div>
                 <div className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center mb-6">
-                  <Cpu size={24} />
+                  <AlertCircle size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4">多模态 AI 引擎</h3>
-                <p className="text-gray-400">支持 DeepSeek, OpenAI 等顶级模型，精准提取学术知识点。</p>
+                <h3 className="text-2xl font-bold mb-4">智能错题本</h3>
+                <p className="text-gray-400">
+                  沉淀学生高频错误与知识薄弱点，形成可持续追踪的个性化复习资产。
+                </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded uppercase tracking-widest font-bold">Math</span>
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded uppercase tracking-widest font-bold">Economics</span>
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded uppercase tracking-widest font-bold">Physics</span>
+                <span className="text-[10px] bg-white/10 px-2 py-1 rounded tracking-widest font-bold">错因沉淀</span>
+                <span className="text-[10px] bg-white/10 px-2 py-1 rounded tracking-widest font-bold">薄弱点追踪</span>
+                <span className="text-[10px] bg-white/10 px-2 py-1 rounded tracking-widest font-bold">个性化复习</span>
               </div>
             </div>
 
@@ -1523,11 +1533,13 @@ const LandingPage = ({
                 <div className="w-12 h-12 bg-green-600 rounded-2xl flex items-center justify-center mb-6">
                   <Database size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4">智能题库系统</h3>
-                <p className="text-gray-400">自动从笔记中生成填空题与简答题，构建您的专属教学资产库。</p>
+                <h3 className="text-2xl font-bold mb-4">国际课程题库 / 自动组卷</h3>
+                <p className="text-gray-400">
+                  面向 AP、A-Level、IB 等国际课程场景，支持题库沉淀、标签化管理与自动组卷。
+                </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-green-500 font-bold text-sm">
-                <span>SQLite 驱动</span>
+                <span>AP / A-Level / IB</span>
                 <ArrowRight size={14} />
               </div>
             </div>
@@ -1536,21 +1548,44 @@ const LandingPage = ({
             <div className="md:col-span-2 bg-white/5 border border-white/10 rounded-[2.5rem] p-10 flex flex-col md:flex-row gap-10 items-center">
               <div className="flex-1">
                 <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center mb-6">
-                  <Upload size={24} />
+                  <FileText size={24} />
                 </div>
-                <h3 className="text-3xl font-bold mb-4">录音即笔记</h3>
-                <p className="text-gray-400 text-lg">拖入课堂录音，AI 自动转录并结合您的 Markdown 大纲，生成可编辑、可下载的复习内容。</p>
+                <h3 className="text-3xl font-bold mb-4">教案与讲义生成</h3>
+                <p className="text-gray-400 text-lg">
+                  将课程目标、知识结构与教学素材快速转化为讲义、课堂提纲和教研交付内容。
+                </p>
               </div>
-              <div className="w-full md:w-64 aspect-square bg-black border border-white/10 rounded-3xl p-6 flex flex-col justify-center gap-4">
-                <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                  <motion.div animate={{ width: ['0%', '100%'] }} transition={{ duration: 2, repeat: Infinity }} className="h-full bg-orange-500" />
-                </div>
-                <div className="h-2 w-2/3 bg-white/10 rounded-full overflow-hidden">
-                  <motion.div animate={{ width: ['0%', '100%'] }} transition={{ duration: 2, delay: 0.5, repeat: Infinity }} className="h-full bg-orange-500" />
-                </div>
-                <div className="h-2 w-3/4 bg-white/10 rounded-full overflow-hidden">
-                  <motion.div animate={{ width: ['0%', '100%'] }} transition={{ duration: 2, delay: 1, repeat: Infinity }} className="h-full bg-orange-500" />
-                </div>
+              <div className="w-full md:w-72 bg-black border border-white/10 rounded-3xl p-5 flex flex-col gap-3">
+                {[
+                  { label: '讲义大纲', tone: 'bg-orange-500' },
+                  { label: '课堂提纲', tone: 'bg-orange-400' },
+                  { label: '教研材料', tone: 'bg-orange-300' },
+                ].map((item, index) => (
+                  <motion.div
+                    key={item.label}
+                    initial={{ opacity: 0.4, x: 10 }}
+                    animate={{ opacity: [0.5, 1, 0.7], x: [10, 0, 4] }}
+                    transition={{ duration: 2.2, delay: index * 0.2, repeat: Infinity }}
+                    className="rounded-2xl border border-white/8 bg-white/[0.03] p-4"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-white">{item.label}</span>
+                      <span className="text-[10px] rounded-full border border-white/10 bg-white/5 px-2 py-1 text-gray-400">
+                        AI Draft
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                        <motion.div
+                          animate={{ width: ['18%', '72%', '48%'] }}
+                          transition={{ duration: 2.2, delay: index * 0.2, repeat: Infinity }}
+                          className={`h-full ${item.tone}`}
+                        />
+                      </div>
+                      <div className="h-2 w-3/4 rounded-full bg-white/10" />
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </div>
           </div>
@@ -1560,13 +1595,13 @@ const LandingPage = ({
       {/* Process Section */}
       <section id="process" className="py-24 bg-white/[0.02]">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <h2 className="text-4xl font-bold mb-16">三步开启高效教学</h2>
+          <h2 className="text-4xl font-bold mb-16">三步搭建 AI 教学交付链路</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
             <div className="hidden md:block absolute top-1/2 left-0 w-full h-[1px] bg-white/10 -translate-y-1/2 z-0"></div>
             {[
-              { step: '01', title: '输入素材', desc: '上传课堂录音或粘贴结构化笔记大纲。' },
-              { step: '02', title: 'AI 处理', desc: '小吉猫 AI 引擎自动分析知识点并生成题目。' },
-              { step: '03', title: '交付复习', desc: '一键下载复习资料 PDF，发送给学生。' },
+              { step: '01', title: '教学素材接入', desc: '接入课堂录音、笔记、题目与课程资料。' },
+              { step: '02', title: 'AI 模块处理', desc: '按复习、错题、组卷、讲义等场景完成结构化生成。' },
+              { step: '03', title: '面向团队交付', desc: '输出给教师、教研与教学运营团队，形成标准化内容资产。' },
             ].map((item, i) => (
               <div key={i} className="relative z-10 flex flex-col items-center">
                 <div className="w-20 h-20 bg-black border border-white/20 rounded-full flex items-center justify-center text-2xl font-black mb-6 shadow-2xl">
@@ -1581,11 +1616,16 @@ const LandingPage = ({
       </section>
 
       {/* Footer */}
-      <footer className="py-20 border-t border-white/5">
+      <footer id="about" className="py-20 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
-            <span className="text-lg font-bold tracking-tight">星润课后复习系统</span>
+          <div className="flex flex-col items-center md:items-start gap-3">
+            <div className="flex items-center gap-3">
+              <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
+              <span className="text-lg font-bold tracking-tight">星润 AI 教育解决方案</span>
+            </div>
+            <p className="max-w-md text-sm text-gray-500 text-center md:text-left">
+              面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
+            </p>
           </div>
           <p className="text-gray-600 text-sm">© 2026 Xingrun AI. All rights reserved.</p>
           <div className="flex gap-6 text-gray-500 text-sm">
