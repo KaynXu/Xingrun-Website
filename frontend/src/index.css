@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -12,6 +13,10 @@
   body {
     @apply bg-[#F6FBFF] text-slate-900 antialiased;
     font-family: var(--font-sans);
+  }
+  html.dark body {
+    background-color: #0d1220;
+    color: #e2e8f0;
   }
 }
 
