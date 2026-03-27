@@ -17,13 +17,17 @@
 """
 
 import argparse
+import hashlib
 import json
 import os
+import secrets
 import sqlite3
 import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
+
+from config_runtime import get_runtime_config
 
 # ─── 路径配置 ──────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -31,6 +35,9 @@ DATA_DIR   = BASE_DIR / "data"
 PDF_DIR    = DATA_DIR / "pdfs"
 DB_PATH    = DATA_DIR / "lessons.db"
 CFG_PATH   = BASE_DIR / "config.json"
+DEFAULT_ORGANIZATION_NAME = "星润Starain"
+OWNER_USERNAME = "Kayn"
+OWNER_DISPLAY_NAME = "Kayn"
 
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
@@ -79,12 +86,135 @@ def init_db():
             day_num    INTEGER,
             FOREIGN KEY (lesson_id) REFERENCES lessons(id)
         );
+
+        CREATE TABLE IF NOT EXISTS organizations (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL UNIQUE,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            username        TEXT NOT NULL UNIQUE,
+            password_hash   TEXT NOT NULL,
+            display_name    TEXT NOT NULL,
+            role            TEXT NOT NULL DEFAULT 'member',
+            status          TEXT NOT NULL DEFAULT 'active',
+            organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS registration_requests (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            username        TEXT NOT NULL,
+            password_hash   TEXT NOT NULL,
+            display_name    TEXT NOT NULL,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            status          TEXT NOT NULL DEFAULT 'pending',
+            reviewed_by     INTEGER REFERENCES users(id),
+            reviewed_at     TEXT,
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token       TEXT PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
         """)
         # Safe migration: add class_id if not already present
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+        _bootstrap_account_state(conn)
     print(f"数据库已初始化：{DB_PATH}")
+
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _public_user_dict(row):
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"],
+        "role": row["role"],
+        "status": row["status"],
+        "organization_id": row["organization_id"],
+        "organization_name": row["organization_name"],
+        "created_at": row["created_at"],
+    }
+
+
+def _ensure_organization(conn: sqlite3.Connection, name: str = DEFAULT_ORGANIZATION_NAME) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM organizations WHERE name=?", (name,)).fetchone()
+    if row:
+        return row
+    cur = conn.execute("INSERT INTO organizations (name) VALUES (?)", (name,))
+    return conn.execute("SELECT * FROM organizations WHERE id=?", (cur.lastrowid,)).fetchone()
+
+
+def _fetch_user_row_by_username(conn: sqlite3.Connection, username: str):
+    return conn.execute(
+        """
+        SELECT u.*, o.name AS organization_name
+        FROM users u
+        JOIN organizations o ON o.id = u.organization_id
+        WHERE u.username=?
+        """,
+        (username,),
+    ).fetchone()
+
+
+def _fetch_user_row_by_id(conn: sqlite3.Connection, user_id: int):
+    return conn.execute(
+        """
+        SELECT u.*, o.name AS organization_name
+        FROM users u
+        JOIN organizations o ON o.id = u.organization_id
+        WHERE u.id=?
+        """,
+        (user_id,),
+    ).fetchone()
+
+
+def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
+    runtime_cfg = get_runtime_config()
+    org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
+    old_username = (runtime_cfg.get("admin_username") or "admin").strip() or "admin"
+    configured_hash = (runtime_cfg.get("admin_password_hash") or "").strip()
+    owner = conn.execute(
+        """
+        SELECT u.*, o.name AS organization_name
+        FROM users u
+        JOIN organizations o ON o.id = u.organization_id
+        WHERE u.role='owner' OR u.username IN (?, ?)
+        ORDER BY CASE WHEN u.username=? THEN 0 WHEN u.role='owner' THEN 1 ELSE 2 END, u.id
+        LIMIT 1
+        """,
+        (OWNER_USERNAME, old_username, OWNER_USERNAME),
+    ).fetchone()
+    owner_hash = configured_hash or (owner["password_hash"] if owner else "") or hash_password("xingrun2026")
+    if owner:
+        conn.execute(
+            """
+            UPDATE users
+            SET username=?, password_hash=?, display_name=?, role='owner', status='active', organization_id=?
+            WHERE id=?
+            """,
+            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, org["id"], owner["id"]),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+            VALUES (?, ?, ?, 'owner', 'active', ?)
+            """,
+            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, org["id"]),
+        )
 
 
 def save_lesson(date_str: str, subject: str, grade: str, topic: str,
@@ -197,6 +327,180 @@ def delete_class(class_id: int):
     with get_conn() as conn:
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
+
+
+# ─── 账号 / 机构 / 审批 ────────────────────────────────────────────────────────
+def get_current_user(token: str):
+    if not token:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT u.*, o.name AS organization_name
+            FROM auth_sessions s
+            JOIN users u ON u.id = s.user_id
+            JOIN organizations o ON o.id = u.organization_id
+            WHERE s.token=?
+            """,
+            (token,),
+        ).fetchone()
+    return _public_user_dict(row)
+
+
+def get_user_by_username(username: str):
+    with get_conn() as conn:
+        row = _fetch_user_row_by_username(conn, username)
+    return _public_user_dict(row)
+
+
+def create_auth_session(user_id: int) -> str:
+    token = secrets.token_hex(32)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO auth_sessions (token, user_id) VALUES (?, ?)",
+            (token, user_id),
+        )
+        conn.execute(
+            """
+            DELETE FROM auth_sessions
+            WHERE user_id=? AND token NOT IN (
+                SELECT token FROM auth_sessions
+                WHERE user_id=?
+                ORDER BY created_at DESC, token DESC
+                LIMIT 10
+            )
+            """,
+            (user_id, user_id),
+        )
+    return token
+
+
+def authenticate_user(username: str, password: str):
+    with get_conn() as conn:
+        row = _fetch_user_row_by_username(conn, username)
+        if not row:
+            pending = conn.execute(
+                "SELECT 1 FROM registration_requests WHERE username=? AND status='pending' LIMIT 1",
+                (username,),
+            ).fetchone()
+            if pending:
+                return None, "该账号申请正在等待审批"
+            return None, "用户名或密码错误"
+        if row["status"] != "active":
+            return None, "账号未启用"
+        if row["password_hash"] != hash_password(password):
+            return None, "用户名或密码错误"
+    return _public_user_dict(row), None
+
+
+def create_registration_request(username: str, display_name: str, password: str,
+                                organization_name: str = DEFAULT_ORGANIZATION_NAME):
+    with get_conn() as conn:
+        org = _ensure_organization(conn, organization_name)
+        existing_user = conn.execute(
+            "SELECT 1 FROM users WHERE username=? LIMIT 1",
+            (username,),
+        ).fetchone()
+        if existing_user:
+            raise ValueError("用户名已存在")
+        existing_pending = conn.execute(
+            "SELECT 1 FROM registration_requests WHERE username=? AND status='pending' LIMIT 1",
+            (username,),
+        ).fetchone()
+        if existing_pending:
+            raise ValueError("该用户名已有待审批申请")
+        cur = conn.execute(
+            """
+            INSERT INTO registration_requests (username, password_hash, display_name, organization_id, status)
+            VALUES (?, ?, ?, ?, 'pending')
+            """,
+            (username, hash_password(password), display_name, org["id"]),
+        )
+        row = conn.execute(
+            """
+            SELECT rr.*, o.name AS organization_name
+            FROM registration_requests rr
+            JOIN organizations o ON o.id = rr.organization_id
+            WHERE rr.id=?
+            """,
+            (cur.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+def list_registration_requests(status: str = "pending") -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT rr.*, o.name AS organization_name
+            FROM registration_requests rr
+            JOIN organizations o ON o.id = rr.organization_id
+            WHERE rr.status=?
+            ORDER BY rr.created_at ASC, rr.id ASC
+            """,
+            (status,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def approve_registration_request(request_id: int, reviewer_id: int):
+    with get_conn() as conn:
+        req = conn.execute(
+            """
+            SELECT rr.*, o.name AS organization_name
+            FROM registration_requests rr
+            JOIN organizations o ON o.id = rr.organization_id
+            WHERE rr.id=?
+            """,
+            (request_id,),
+        ).fetchone()
+        if not req:
+            raise LookupError("申请不存在")
+        if req["status"] != "pending":
+            raise ValueError("该申请已处理")
+        existing_user = conn.execute(
+            "SELECT 1 FROM users WHERE username=? LIMIT 1",
+            (req["username"],),
+        ).fetchone()
+        if existing_user:
+            raise ValueError("用户名已存在")
+        cur = conn.execute(
+            """
+            INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+            VALUES (?, ?, ?, 'member', 'active', ?)
+            """,
+            (req["username"], req["password_hash"], req["display_name"], req["organization_id"]),
+        )
+        conn.execute(
+            """
+            UPDATE registration_requests
+            SET status='approved', reviewed_by=?, reviewed_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (reviewer_id, request_id),
+        )
+        user_row = _fetch_user_row_by_id(conn, cur.lastrowid)
+    return _public_user_dict(user_row)
+
+
+def reject_registration_request(request_id: int, reviewer_id: int) -> None:
+    with get_conn() as conn:
+        req = conn.execute(
+            "SELECT * FROM registration_requests WHERE id=?",
+            (request_id,),
+        ).fetchone()
+        if not req:
+            raise LookupError("申请不存在")
+        if req["status"] != "pending":
+            raise ValueError("该申请已处理")
+        conn.execute(
+            """
+            UPDATE registration_requests
+            SET status='rejected', reviewed_by=?, reviewed_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (reviewer_id, request_id),
+        )
 
 
 def get_lessons_by_week(class_id: int, week_str: str) -> list:
