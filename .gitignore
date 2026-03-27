@@ -5,3 +5,5 @@ frontend/dist/
 frontend/.env
 frontend/.DS_Store
 frontend/public/.DS_Store
+.superpowers/
+.worktrees/
