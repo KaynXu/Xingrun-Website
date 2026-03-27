@@ -101,6 +101,13 @@ interface RegistrationRequestItem {
   created_at: string;
 }
 
+interface UserItem {
+  id: number;
+  name: string;
+  org: string;
+  role: Role;
+}
+
 function getRoleLabel(role: Role): string {
   return role === 'owner' ? '最高权限账号' : '机构成员';
 }
@@ -1063,6 +1070,11 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [error, setError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
 
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [userClassIds, setUserClassIds] = useState<Record<number, number[]>>({});
+  const [savingUserId, setSavingUserId] = useState<number | null>(null);
+
   const loadItems = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -1092,6 +1104,46 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       setError(err instanceof Error ? err.message : '审批操作失败');
     } finally {
       setActingId(null);
+    }
+  };
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch<UserItem[]>('/api/admin/users'),
+      apiFetch<ClassItem[]>('/api/classes'),
+    ]).then(([u, c]) => {
+      setUsers(u);
+      setClasses(c);
+      return Promise.all(
+        u.map((user) =>
+          apiFetch<{ class_ids: number[] }>(`/api/admin/users/${user.id}/classes`).then((d) => ({
+            id: user.id,
+            class_ids: d.class_ids,
+          }))
+        )
+      );
+    }).then((results) => {
+      const map: Record<number, number[]> = {};
+      results.forEach(({ id, class_ids }) => { map[id] = class_ids; });
+      setUserClassIds(map);
+    }).catch(console.error);
+  }, []);
+
+  const handleClassToggle = async (userId: number, classId: number, checked: boolean) => {
+    const prev = userClassIds[userId] ?? [];
+    const next = checked ? [...prev, classId] : prev.filter((id) => id !== classId);
+    setUserClassIds((m) => ({ ...m, [userId]: next }));
+    setSavingUserId(userId);
+    try {
+      await apiFetch(`/api/admin/users/${userId}/classes`, {
+        method: 'PUT',
+        body: JSON.stringify({ class_ids: next }),
+      });
+    } catch (err) {
+      setUserClassIds((m) => ({ ...m, [userId]: prev }));
+      setError(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSavingUserId(null);
     }
   };
 
@@ -1209,6 +1261,55 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           )}
         </section>
       </div>
+
+      <section className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-5">
+        <div>
+          <h4 className="text-xl font-semibold">班级分配</h4>
+          <p className="text-sm text-gray-400 mt-1">为每位成员指定可访问的班级。</p>
+        </div>
+        {users.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">暂无成员数据</div>
+        ) : (
+          <div className="space-y-4">
+            {users.map((user) => {
+              const assigned = userClassIds[user.id] ?? [];
+              const saving = savingUserId === user.id;
+              return (
+                <div key={user.id} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                    <div>
+                      <span className="font-semibold">{user.name}</span>
+                      <span className="ml-2 text-xs text-gray-500">{user.org}</span>
+                      {saving && <span className="ml-2 text-xs text-blue-400">保存中...</span>}
+                    </div>
+                    {classes.length === 0 ? (
+                      <span className="text-xs text-gray-500">暂无班级</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {classes.map((cls) => {
+                          const checked = assigned.includes(cls.id);
+                          return (
+                            <label key={cls.id} className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={saving}
+                                onChange={(e) => handleClassToggle(user.id, cls.id, e.target.checked)}
+                                className="accent-blue-500"
+                              />
+                              <span className={checked ? 'text-white' : 'text-gray-400'}>{cls.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 };
