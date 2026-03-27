@@ -49,7 +49,11 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              save_lesson,
                              save_class, get_class, list_classes,
                              update_class, delete_class as db_delete_class,
-                             get_lessons_by_week, get_class_weeks, week_label)
+                             get_lessons_by_week, get_class_weeks, week_label,
+                             DEFAULT_ORGANIZATION_NAME, authenticate_user,
+                             create_auth_session, create_registration_request,
+                             approve_registration_request, reject_registration_request,
+                             list_registration_requests, get_current_user)
 
 init_db()
 
@@ -690,35 +694,105 @@ def api_login():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
-    runtime_cfg = get_config()
-    file_cfg = load_file_config()
-    stored_user = runtime_cfg.get("admin_username", "admin")
-    stored_hash = runtime_cfg.get("admin_password_hash", "")
-    # Default password "xingrun2026" if none set
-    if not stored_hash:
-        stored_hash = hashlib.sha256("xingrun2026".encode()).hexdigest()
-    if username != stored_user or hashlib.sha256(password.encode()).hexdigest() != stored_hash:
-        return jsonify({"error": "用户名或密码错误"}), 401
-    token = secrets.token_hex(32)
-    file_cfg.setdefault("_tokens", [])
-    file_cfg["_tokens"].append(token)
-    file_cfg["_tokens"] = file_cfg["_tokens"][-20:]  # keep last 20
-    write_file_config(file_cfg)
-    return jsonify({"token": token})
+    user, error = authenticate_user(username=username, password=password)
+    if not user:
+        return jsonify({"error": error}), 401
+    token = create_auth_session(user["id"])
+    return jsonify({"token": token, "user": user})
 
 
-def _check_auth():
-    token = request.headers.get("X-Auth-Token", "")
-    if not token:
-        return False
-    cfg = get_config()
-    return token in cfg.get("_tokens", [])
+@app.route("/api/register-request", methods=["POST"])
+def api_register_request():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+    organization_name = data.get("organization_name", "").strip() or DEFAULT_ORGANIZATION_NAME
+
+    if not username or not display_name or not password:
+        return jsonify({"error": "请填写完整的注册信息"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "密码至少需要 6 位"}), 400
+    if organization_name != DEFAULT_ORGANIZATION_NAME:
+        return jsonify({"error": "当前仅支持加入星润Starain"}), 400
+    try:
+        item = create_registration_request(
+            username=username,
+            display_name=display_name,
+            password=password,
+            organization_name=organization_name,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"id": item["id"], "status": item["status"]}), 201
+
+
+def _require_auth():
+    token = request.headers.get("X-Auth-Token", "").strip()
+    user = get_current_user(token)
+    if not user:
+        return None, (jsonify({"error": "未授权"}), 401)
+    return user, None
+
+
+def _require_owner():
+    user, error = _require_auth()
+    if error:
+        return None, error
+    if user.get("role") != "owner":
+        return None, (jsonify({"error": "无权限"}), 403)
+    return user, None
+
+
+@app.route("/api/me", methods=["GET"])
+def api_me():
+    user, error = _require_auth()
+    if error:
+        return error
+    return jsonify(user)
+
+
+@app.route("/api/admin/registration-requests", methods=["GET"])
+def api_admin_registration_requests():
+    _, error = _require_owner()
+    if error:
+        return error
+    return jsonify({"items": list_registration_requests("pending")})
+
+
+@app.route("/api/admin/registration-requests/<int:request_id>/approve", methods=["POST"])
+def api_admin_registration_request_approve(request_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        approved = approve_registration_request(request_id=request_id, reviewer_id=user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True, "user": approved})
+
+
+@app.route("/api/admin/registration-requests/<int:request_id>/reject", methods=["POST"])
+def api_admin_registration_request_reject(request_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        reject_registration_request(request_id=request_id, reviewer_id=user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True})
 
 
 @app.route("/api/stats")
 def api_stats():
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     month_now = datetime.now().strftime("%Y-%m")
     all_lessons = list_lessons()
     total_pdfs = sum(1 for l in all_lessons if l.get("pdf_path") and Path(l["pdf_path"]).exists())
@@ -734,11 +808,17 @@ def api_stats():
 
 @app.route("/api/classes", methods=["GET"])
 def api_classes_list():
+    _, error = _require_auth()
+    if error:
+        return error
     return jsonify(list_classes())
 
 
 @app.route("/api/classes", methods=["POST"])
 def api_class_create():
+    _, error = _require_auth()
+    if error:
+        return error
     data = request.json or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -755,6 +835,9 @@ def api_class_create():
 
 @app.route("/api/classes/<int:class_id>", methods=["GET"])
 def api_class_get(class_id):
+    _, error = _require_auth()
+    if error:
+        return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
@@ -764,6 +847,9 @@ def api_class_get(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
 def api_class_update(class_id):
+    _, error = _require_auth()
+    if error:
+        return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
@@ -784,6 +870,9 @@ def api_class_update(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["DELETE"])
 def api_class_delete(class_id):
+    _, error = _require_auth()
+    if error:
+        return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
@@ -793,8 +882,9 @@ def api_class_delete(class_id):
 
 @app.route("/api/lessons", methods=["GET"])
 def api_lessons_list():
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
     return jsonify(list_lessons(month_str=month if month else None,
@@ -803,8 +893,9 @@ def api_lessons_list():
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
 def api_lesson_get(lesson_id):
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     lesson = get_lesson(lesson_id)
     if not lesson:
         return jsonify({"error": "not found"}), 404
@@ -814,8 +905,9 @@ def api_lesson_get(lesson_id):
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
 def api_lesson_delete(lesson_id):
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     lesson = get_lesson(lesson_id)
     if not lesson:
         return jsonify({"error": "not found"}), 404
@@ -828,8 +920,9 @@ def api_lesson_delete(lesson_id):
 
 @app.route("/api/lessons", methods=["POST"])
 def api_lesson_create():
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     if not has_api_key():
         return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
     
@@ -910,8 +1003,9 @@ def api_lesson_create():
 
 @app.route("/api/quiz", methods=["GET"])
 def api_quiz():
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     month     = request.args.get("month", "")
     lesson_id = request.args.get("lesson_id", 0, type=int)
     questions = get_questions(lesson_id=lesson_id if lesson_id else None,
@@ -924,6 +1018,9 @@ def api_quiz():
 
 @app.route("/api/monthly", methods=["GET"])
 def api_monthly_list():
+    _, error = _require_auth()
+    if error:
+        return error
     months = _get_all_months()
     monthly_pdfs = _get_monthly_pdfs()
     return jsonify({
@@ -934,6 +1031,9 @@ def api_monthly_list():
 
 @app.route("/api/monthly/generate", methods=["POST"])
 def api_monthly_generate():
+    _, error = _require_auth()
+    if error:
+        return error
     if not has_api_key():
         return jsonify({"error": "请先在设置页面填入 API Key"}), 400
     data = request.json or {}
@@ -958,8 +1058,9 @@ def api_monthly_generate():
 
 @app.route("/api/analyze", methods=["POST"])
 def api_analyze_text():
-    if not _check_auth():
-        return jsonify({"error": "未授权"}), 401
+    _, error = _require_auth()
+    if error:
+        return error
     data = request.json or {}
     text = (data.get("text") or "").strip()
     if not text:
@@ -996,6 +1097,9 @@ def api_analyze_text():
 
 @app.route("/api/settings", methods=["GET"])
 def api_settings_get():
+    _, error = _require_auth()
+    if error:
+        return error
     cfg = get_config()
     controlled_keys = env_controlled_keys()
     def _mask(k):
@@ -1018,6 +1122,9 @@ def api_settings_get():
 
 @app.route("/api/settings", methods=["POST"])
 def api_settings_save():
+    _, error = _require_auth()
+    if error:
+        return error
     cfg = load_file_config()
     data = request.json or {}
     controlled_keys = env_controlled_keys()
