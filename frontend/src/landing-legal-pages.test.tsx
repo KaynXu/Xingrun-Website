@@ -5,6 +5,46 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import * as AppModule from './App';
 
+test('landing page renders Starain hero branding and approved messaging', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+
+  assert.equal(typeof LandingPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+
+  assert.match(markup, /Starain/);
+  assert.match(markup, /AI Edu Platform/);
+  assert.match(markup, /教育工作流终于被 AI 重新组织好了/);
+  assert.match(markup, /查看平台方案/);
+  assert.match(markup, /申请试用/);
+  assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
+});
+
+test('legal pages use Starain branding in the chrome', () => {
+  const LandingLegalPage = (AppModule as {
+    LandingLegalPage?: React.ComponentType<{
+      documentKey: 'privacy' | 'terms';
+    }>;
+  }).LandingLegalPage;
+
+  assert.equal(typeof LandingLegalPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingLegalPage documentKey="privacy" />,
+  );
+
+  assert.match(markup, /Starain/);
+  assert.match(markup, /AI Edu Platform/);
+  assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
+});
+
 test('landing page footer exposes standalone legal page links', () => {
   const LandingPage = (AppModule as {
     LandingPage?: React.ComponentType<{
