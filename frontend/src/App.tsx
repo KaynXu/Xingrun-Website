@@ -1838,12 +1838,13 @@ export const LandingPage = ({
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
             <span className="text-xl font-bold tracking-tight">星润Starain</span>
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
+            <span className="hidden sm:block text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
               AI Edu Platform
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500">
             <a href="#features" className="transition-colors hover:text-slate-900">核心方案</a>
+            <a href="#about" className="transition-colors hover:text-slate-900">我们的故事</a>
             <a href="#about" className="transition-colors hover:text-slate-900">关于 Starain</a>
           </div>
           <div className="flex items-center gap-3">
@@ -1883,13 +1884,13 @@ export const LandingPage = ({
           />
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-center justify-center py-32 text-center">
+        <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-center justify-center py-20 md:py-32 text-center">
           <motion.div
             initial={{ opacity: 0, scale: 2, y: -100 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]">
+            <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-5 sm:p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]">
               <motion.span
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1902,7 +1903,7 @@ export const LandingPage = ({
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.25, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                className="mt-6 text-5xl font-black leading-[0.95] tracking-tight text-slate-900 md:text-7xl"
+                className="mt-6 text-3xl sm:text-5xl font-black leading-[1.05] sm:leading-[0.95] tracking-tight text-slate-900 md:text-7xl"
               >
                 教育工作流终于被 AI 重新组织好了
               </motion.h1>
@@ -1964,7 +1965,7 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2"
+              className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2"
             >
               <div className="absolute right-0 top-0 p-8 opacity-10 transition-opacity group-hover:opacity-20">
                 <FileText size={200} />
@@ -1993,7 +1994,7 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-6 md:p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
             >
               <div>
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
@@ -2017,7 +2018,7 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
             >
               <div>
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
@@ -2040,7 +2041,7 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row"
+              className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row"
             >
               <div className="flex-1">
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
@@ -2163,11 +2164,18 @@ export const LandingPage = ({
               面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
             </p>
           </div>
-          <p className="text-sm text-slate-500">© 2026 Starain. All rights reserved.</p>
-          <div className="flex gap-6 text-sm text-slate-500">
+          <div className="flex flex-col items-center md:items-start gap-2 text-sm text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">导航</p>
+            <a href="#features" className="transition-colors hover:text-slate-900">核心方案</a>
+            <a href="#about" className="transition-colors hover:text-slate-900">我们的故事</a>
+            <a href="#about" className="transition-colors hover:text-slate-900">关于 Starain</a>
+          </div>
+          <div className="flex flex-col items-center md:items-start gap-2 text-sm text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">法律</p>
             <a href="#privacy-policy" className="transition-colors hover:text-slate-900">隐私政策</a>
             <a href="#terms-of-service" className="transition-colors hover:text-slate-900">服务条款</a>
           </div>
+          <p className="text-sm text-slate-500">© 2026 Starain. All rights reserved.</p>
         </div>
       </footer>
     </div>
