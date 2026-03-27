@@ -342,8 +342,8 @@ const Sidebar = ({
   return (
     <div className="w-64 h-screen border-r border-white/10 flex flex-col bg-black sticky top-0">
       <div className="p-6 flex items-center gap-3">
-        <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
-        <h1 className="text-lg font-semibold tracking-tight">Starain 复习系统</h1>
+        <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
+        <h1 className="text-lg font-semibold tracking-tight">星润复习系统</h1>
       </div>
 
       <nav className="flex-1 px-4 py-4 space-y-1">
