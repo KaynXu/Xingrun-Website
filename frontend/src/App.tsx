@@ -134,15 +134,97 @@ async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promi
 
 // --- Components ---
 
+export const SidebarAccountSheet = ({
+  currentUser,
+  open,
+  onClose,
+  onLogout,
+  onOpenSettings,
+}: {
+  currentUser: CurrentUser;
+  open: boolean;
+  onClose: () => void;
+  onLogout: () => void;
+  onOpenSettings: () => void;
+}) => {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-40" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" />
+      <div className="absolute left-4 bottom-4 w-[calc(100vw-2rem)] max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="rounded-[1.75rem] border border-white/10 bg-[#0b0b0b] p-6 shadow-2xl shadow-black/40">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xl font-bold shrink-0">
+                {currentUser.display_name.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xl font-semibold truncate">{currentUser.display_name}</p>
+                <p className="text-sm text-gray-500 truncate">@{currentUser.username}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+              aria-label="关闭账号面板"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-gray-500">权限</span>
+              <span>{getRoleLabel(currentUser.role)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-gray-500">机构</span>
+              <span>{currentUser.organization_name}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-gray-500">状态</span>
+              <span>{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left font-medium hover:bg-white/10 transition-colors"
+            >
+              查看账号信息
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full rounded-2xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-left font-medium text-red-300 hover:bg-red-500/15 transition-colors"
+            >
+              退出登录
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Sidebar = ({
   activePage,
   currentUser,
+  onLogout,
   setActivePage,
 }: {
   activePage: Page;
   currentUser: CurrentUser;
+  onLogout: () => void;
   setActivePage: (p: Page) => void;
 }) => {
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'input', icon: PlusCircle, label: '添加课程' },
@@ -183,7 +265,11 @@ const Sidebar = ({
       </nav>
 
       <div className="p-4 mt-auto border-t border-white/10">
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+        <button
+          type="button"
+          onClick={() => setAccountSheetOpen(true)}
+          className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left"
+        >
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
@@ -191,9 +277,26 @@ const Sidebar = ({
             <p className="text-sm font-medium truncate">{currentUser.display_name}</p>
             <p className="text-xs text-gray-500 truncate">{getRoleLabel(currentUser.role)}</p>
           </div>
-          <MoreVertical size={16} className="text-gray-500" />
-        </div>
+          <MoreVertical size={16} className="text-gray-500 shrink-0" />
+        </button>
       </div>
+
+      <AnimatePresence>
+        {accountSheetOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <SidebarAccountSheet
+              currentUser={currentUser}
+              open={accountSheetOpen}
+              onClose={() => setAccountSheetOpen(false)}
+              onLogout={onLogout}
+              onOpenSettings={() => {
+                setAccountSheetOpen(false);
+                setActivePage('settings');
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -1758,7 +1861,12 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-black text-gray-100">
-      <Sidebar activePage={activePage} currentUser={currentUser} setActivePage={setActivePage} />
+      <Sidebar
+        activePage={activePage}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        setActivePage={setActivePage}
+      />
       <main className="flex-1 flex flex-col">
         <Header title={pageTitle[activePage]} onGoHome={() => setShowLanding(true)} />
         <div className="flex-1 overflow-y-auto">
