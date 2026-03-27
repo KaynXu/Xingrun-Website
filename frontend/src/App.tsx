@@ -847,9 +847,71 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   );
 };
 
+const PdfViewerModal = ({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) => {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let url: string;
+    const token = getToken();
+    fetch(`/pdf/${lesson.id}`, {
+      headers: token ? { 'X-Auth-Token': token } : {},
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('PDF 加载失败');
+        return res.blob();
+      })
+      .then((blob) => {
+        url = URL.createObjectURL(blob);
+        setBlobUrl(url);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'PDF 加载失败'))
+      .finally(() => setLoadingPdf(false));
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [lesson.id]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex flex-col p-4 gap-3"
+    >
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 flex flex-col h-full max-w-5xl mx-auto w-full gap-3">
+        <div className="flex items-center justify-between bg-[#0a0a0a] border border-white/10 rounded-2xl px-5 py-3">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-500">
+              <FileText size={14} />
+            </div>
+            <span className="font-medium">{lesson.topic || `${lesson.subject} 课程`}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white transition-colors text-2xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <div className="flex-1 bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden">
+          {loadingPdf ? (
+            <div className="flex items-center justify-center h-full text-gray-500">加载中...</div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-full text-red-400">{error}</div>
+          ) : (
+            <iframe src={blobUrl!} className="w-full h-full" title="PDF 查看" />
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 const LibraryPage = () => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewingLesson, setViewingLesson] = useState<Lesson | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1583,24 +1645,25 @@ export const LandingLegalPage = ({
   const document = LANDING_LEGAL_DOCUMENTS[documentKey];
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-blue-500/30">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-600/10 blur-[120px] rounded-full" />
+    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-12%] left-[-8%] h-[28rem] w-[28rem] rounded-full bg-sky-200/45 blur-[120px]" />
+        <div className="absolute right-[-10%] top-[10%] h-[24rem] w-[24rem] rounded-full bg-cyan-200/40 blur-[110px]" />
+        <div className="absolute bottom-[-12%] left-[18%] h-[22rem] w-[22rem] rounded-full bg-blue-100/70 blur-[120px]" />
       </div>
 
-      <nav className="sticky top-0 z-50 border-b border-white/5 bg-black/70 backdrop-blur-xl">
+      <nav className="sticky top-0 z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/logo.png" alt="Starain logo" className="w-11 h-11 object-contain" />
             <div className="min-w-0">
               <p className="text-lg font-bold tracking-tight truncate">Starain</p>
-              <p className="text-xs text-slate-500 tracking-[0.28em]">AI Edu Platform</p>
+              <p className="text-xs text-sky-700 tracking-[0.28em]">AI Edu Platform</p>
             </div>
           </div>
           <a
             href="#"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-white/10 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-sky-50"
           >
             <Home size={16} />
             返回首页
@@ -1613,28 +1676,28 @@ export const LandingLegalPage = ({
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-8 md:p-12 shadow-[0_0_60px_rgba(59,130,246,0.08)]"
+          className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]"
         >
-          <div className="flex flex-col gap-5 border-b border-white/10 pb-8">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-blue-300">
+          <div className="flex flex-col gap-5 border-b border-sky-100 pb-8">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700">
               <ShieldCheck size={14} />
               LEGAL
             </div>
             <div className="space-y-4">
               <h1 className="text-4xl md:text-5xl font-black tracking-tight">{document.title}</h1>
-              <p className="max-w-3xl text-base md:text-lg text-gray-400 leading-8">{document.summary}</p>
+              <p className="max-w-3xl text-base md:text-lg text-slate-600 leading-8">{document.summary}</p>
             </div>
-            <p className="text-sm text-gray-500">最近更新：{document.updatedAt}</p>
+            <p className="text-sm text-slate-500">最近更新：{document.updatedAt}</p>
           </div>
 
           <div className="mt-10 space-y-8">
             {document.sections.map((section) => (
               <section
                 key={section.title}
-                className="rounded-[1.5rem] border border-white/8 bg-black/30 p-6 md:p-7"
+                className="rounded-[1.5rem] border border-sky-100 bg-white/90 p-6 md:p-7 shadow-[0_16px_48px_rgba(47,128,237,0.06)]"
               >
                 <h2 className="text-2xl font-bold tracking-tight">{section.title}</h2>
-                <div className="mt-4 space-y-4 text-sm md:text-base leading-8 text-gray-300">
+                <div className="mt-4 space-y-4 text-sm md:text-base leading-8 text-slate-600">
                   {section.paragraphs.map((paragraph) => (
                     <p key={paragraph}>{paragraph}</p>
                   ))}
@@ -1645,12 +1708,12 @@ export const LandingLegalPage = ({
         </motion.div>
       </main>
 
-      <footer className="relative z-10 border-t border-white/5 py-10">
-        <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-gray-500">
+      <footer className="relative z-10 border-t border-sky-100/80 py-10">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-slate-500">
           <p>© 2026 Starain. All rights reserved.</p>
           <div className="flex items-center gap-6">
-            <a href="#privacy-policy" className="hover:text-white transition-colors">隐私政策</a>
-            <a href="#terms-of-service" className="hover:text-white transition-colors">服务条款</a>
+            <a href="#privacy-policy" className="transition-colors hover:text-slate-900">隐私政策</a>
+            <a href="#terms-of-service" className="transition-colors hover:text-slate-900">服务条款</a>
           </div>
         </div>
       </footer>
@@ -1692,9 +1755,9 @@ export const LandingPage = ({
   }
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-blue-500/30">
+    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70">
       {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl">
+      <nav className="fixed top-0 w-full z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
@@ -1703,21 +1766,21 @@ export const LandingPage = ({
               AI Edu Platform
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-            <a href="#features" className="hover:text-white transition-colors">核心方案</a>
-            <a href="#process" className="hover:text-white transition-colors">落地流程</a>
-            <a href="#about" className="hover:text-white transition-colors">关于 Starain</a>
+          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500">
+            <a href="#features" className="transition-colors hover:text-slate-900">核心方案</a>
+            <a href="#process" className="transition-colors hover:text-slate-900">落地流程</a>
+            <a href="#about" className="transition-colors hover:text-slate-900">关于 Starain</a>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onRegister}
-              className="hidden sm:inline-flex bg-white/5 border border-white/10 text-white px-5 py-2.5 rounded-full font-semibold text-sm hover:bg-white/10 transition-all active:scale-95"
+              className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95"
             >
               申请注册
             </button>
             <button
               onClick={onLogin}
-              className="bg-white text-black px-6 py-2.5 rounded-full font-bold text-sm hover:bg-gray-200 transition-all active:scale-95"
+              className="rounded-full bg-sky-600 px-6 py-2.5 text-sm font-bold text-white shadow-[0_16px_40px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
             >
               立即登录
             </button>
@@ -1726,77 +1789,65 @@ export const LandingPage = ({
       </nav>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        {/* Background Video */}
-        <div className="absolute inset-0 z-0">
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="w-full h-full object-cover opacity-30"
-          >
-            <source src="/bg.mp4" type="video/mp4" />
-          </video>
-          <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black" />
-          <div className="absolute inset-0 bg-black/40" />
+      <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)]">
+        <div className="absolute inset-x-0 top-0 h-full">
+          <div className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px]" />
+          <div className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px]" />
+          <div className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px]" />
         </div>
 
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 blur-[120px] rounded-full" />
-        </div>
-
-        <div className="max-w-7xl mx-auto px-6 relative z-10 text-center">
+        <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-center justify-center py-32 text-center">
           <motion.div
             initial={{ opacity: 0, scale: 2, y: -100 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
-            <span className="inline-flex items-center rounded-full border border-sky-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700 mb-6">
-              BUILT FROM REAL TEACHING PRACTICE
-            </span>
-            <h1 className="mt-6 text-5xl md:text-7xl font-black leading-[0.95] tracking-tight text-white mb-8">
-              教育工作流终于被 AI 重新组织好了
-            </h1>
-          </motion.div>
+            <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]">
+              <span className="mb-6 inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700">
+                BUILT FROM REAL TEACHING PRACTICE
+              </span>
+              <h1 className="mt-6 text-5xl font-black leading-[0.95] tracking-tight text-slate-900 md:text-7xl">
+                教育工作流终于被 AI 重新组织好了
+              </h1>
 
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.8 }}
-            className="text-lg md:text-xl text-slate-300 max-w-3xl mx-auto mb-12 leading-relaxed"
-          >
-            Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，
-            再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。
-          </motion.p>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.8 }}
+                className="mx-auto mb-12 mt-8 max-w-3xl text-lg leading-relaxed text-slate-600 md:text-xl"
+              >
+                Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，
+                再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。
+              </motion.p>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6, duration: 0.8 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
-          >
-            <a
-              href="#features"
-              className="w-full sm:w-auto bg-blue-600 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-blue-500 transition-all shadow-[0_0_40px_rgba(59,130,246,0.3)] active:scale-95 flex items-center justify-center gap-2"
-            >
-              查看平台方案
-              <ArrowRight size={20} />
-            </a>
-            <button
-              onClick={onRegister}
-              className="w-full sm:w-auto bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              <User size={20} />
-              申请试用
-            </button>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6, duration: 0.8 }}
+                className="flex flex-col items-center justify-center gap-4 sm:flex-row"
+              >
+                <a
+                  href="#features"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-600 px-10 py-5 text-lg font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95 sm:w-auto"
+                >
+                  查看平台方案
+                  <ArrowRight size={20} />
+                </a>
+                <button
+                  onClick={onRegister}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-10 py-5 text-lg font-bold text-slate-700 transition-all hover:bg-sky-50 active:scale-95 sm:w-auto"
+                >
+                  <User size={20} />
+                  申请试用
+                </button>
+              </motion.div>
+            </div>
           </motion.div>
         </div>
       </section>
 
       {/* Feature Bento Grid */}
-      <section id="features" className="py-24 border-t border-white/5">
+      <section id="features" className="border-t border-sky-100/80 py-24">
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-16">
             <h2 className="text-4xl md:text-5xl font-bold mb-4">把真实教学流程整理成可复用的 AI 能力</h2>
@@ -1805,13 +1856,13 @@ export const LandingPage = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Large Card */}
-            <div className="md:col-span-2 bg-white/5 border border-white/10 rounded-[2.5rem] p-10 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+            <div className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2">
+              <div className="absolute right-0 top-0 p-8 opacity-10 transition-opacity group-hover:opacity-20">
                 <FileText size={200} />
               </div>
               <div className="relative z-10 h-full flex flex-col justify-between">
                 <div>
-                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center mb-6">
+                  <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
                     <FileText size={24} />
                   </div>
                   <h3 className="text-3xl font-bold mb-4 text-slate-900">从课堂素材到复习交付</h3>
@@ -1820,17 +1871,17 @@ export const LandingPage = ({
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
-                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">课堂分析</div>
-                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">复习资料生成</div>
-                  <div className="px-4 py-2 bg-white/5 rounded-full text-xs font-mono text-blue-400 border border-blue-500/20">教学交付</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">课堂分析</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">复习资料生成</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">教学交付</div>
                 </div>
               </div>
             </div>
 
             {/* Small Card */}
-            <div className="bg-gradient-to-br from-purple-600/20 to-transparent border border-purple-500/20 rounded-[2.5rem] p-10 flex flex-col justify-between">
+            <div className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
               <div>
-                <div className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center mb-6">
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
                 <h3 className="text-2xl font-bold mb-4 text-slate-900">把错误沉淀成可追踪资产</h3>
@@ -1839,16 +1890,16 @@ export const LandingPage = ({
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded tracking-widest font-bold">错因沉淀</span>
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded tracking-widest font-bold">薄弱点追踪</span>
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded tracking-widest font-bold">个性化复习</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">错因沉淀</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">薄弱点追踪</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">个性化复习</span>
               </div>
             </div>
 
             {/* Small Card */}
-            <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-10 flex flex-col justify-between">
+            <div className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
               <div>
-                <div className="w-12 h-12 bg-green-600 rounded-2xl flex items-center justify-center mb-6">
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
                 <h3 className="text-2xl font-bold mb-4 text-slate-900">把题目沉淀成可调用的题库系统</h3>
@@ -1856,16 +1907,16 @@ export const LandingPage = ({
                   面向 AP、A-Level、IB 等课程，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
                 </p>
               </div>
-              <div className="mt-8 flex items-center gap-2 text-green-500 font-bold text-sm">
+              <div className="mt-8 flex items-center gap-2 text-blue-600 font-bold text-sm">
                 <span>AP / A-Level / IB</span>
                 <ArrowRight size={14} />
               </div>
             </div>
 
             {/* Medium Card */}
-            <div className="md:col-span-2 bg-white/5 border border-white/10 rounded-[2.5rem] p-10 flex flex-col md:flex-row gap-10 items-center">
+            <div className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row">
               <div className="flex-1">
-                <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center mb-6">
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
                   <FileText size={24} />
                 </div>
                 <h3 className="text-3xl font-bold mb-4 text-slate-900">把课程目标转化为讲义与教研交付</h3>
@@ -1873,7 +1924,7 @@ export const LandingPage = ({
                   从课程目标到讲义、课堂提纲和教研素材，减少教师重复整理工作。
                 </p>
               </div>
-              <div className="w-full md:w-72 bg-black border border-white/10 rounded-3xl p-5 flex flex-col gap-3">
+              <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-slate-950/95 p-5 md:w-72">
                 {[
                   { label: '讲义大纲', tone: 'bg-orange-500', width: '72%' },
                   { label: '课堂提纲', tone: 'bg-orange-400', width: '58%' },
@@ -1912,22 +1963,22 @@ export const LandingPage = ({
       </section>
 
       {/* Process Section */}
-      <section id="process" className="py-24 bg-white/[0.02]">
+      <section id="process" className="py-24">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <h2 className="text-4xl font-bold mb-16">三步搭建 AI 教学交付链路</h2>
+          <h2 className="mb-16 text-4xl font-bold text-slate-900">三步搭建 AI 教学交付链路</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
-            <div className="hidden md:block absolute top-1/2 left-0 w-full h-[1px] bg-white/10 -translate-y-1/2 z-0"></div>
+            <div className="absolute left-0 top-1/2 z-0 hidden h-[1px] w-full -translate-y-1/2 bg-sky-100 md:block"></div>
             {[
               { step: '01', title: '教学素材进入平台', desc: '录音、笔记、题目、课件等教学资料进入统一工作台。' },
               { step: '02', title: 'AI 完成结构化处理', desc: '提炼重点、识别薄弱点、归档题目并生成讲义草稿。' },
               { step: '03', title: '输出到复习与教学协同', desc: '生成复习资料、错题沉淀、题库调用与团队复用内容。' },
             ].map((item, i) => (
-              <div key={i} className="relative z-10 flex flex-col items-center">
-                <div className="w-20 h-20 bg-black border border-white/20 rounded-full flex items-center justify-center text-2xl font-black mb-6 shadow-2xl">
+              <div key={i} className="relative z-10 flex flex-col items-center rounded-[2rem] border border-sky-100 bg-white/75 px-6 py-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
+                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-2xl font-black text-sky-700 shadow-sm">
                   {item.step}
                 </div>
-                <h4 className="text-xl font-bold mb-2">{item.title}</h4>
-                <p className="text-gray-500 max-w-[200px]">{item.desc}</p>
+                <h4 className="mb-2 text-xl font-bold text-slate-900">{item.title}</h4>
+                <p className="max-w-[200px] text-slate-500">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -1935,7 +1986,7 @@ export const LandingPage = ({
       </section>
 
       {/* About Section */}
-      <section id="about" className="py-24 border-t border-white/5">
+      <section id="about" className="border-t border-sky-100/80 py-24">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 items-start">
             <div className="space-y-6">
@@ -1968,9 +2019,9 @@ export const LandingPage = ({
                   body: '聚焦学校、培训机构、国际课程团队与教研运营场景。',
                 },
               ].map((item) => (
-                <div key={item.title} className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-6">
-                  <p className="text-sm font-semibold text-white mb-2">{item.title}</p>
-                  <p className="text-sm text-gray-500 leading-relaxed">{item.body}</p>
+                <div key={item.title} className="rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)]">
+                  <p className="mb-2 text-sm font-semibold text-slate-900">{item.title}</p>
+                  <p className="text-sm leading-relaxed text-slate-500">{item.body}</p>
                 </div>
               ))}
             </div>
@@ -1979,7 +2030,7 @@ export const LandingPage = ({
       </section>
 
       {/* Footer */}
-      <footer className="py-20 border-t border-white/5">
+      <footer className="border-t border-sky-100/80 py-20">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="flex flex-col items-center md:items-start gap-3">
             <div className="flex items-center gap-3">
@@ -1993,10 +2044,10 @@ export const LandingPage = ({
               面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
             </p>
           </div>
-          <p className="text-gray-600 text-sm">© 2026 Starain. All rights reserved.</p>
-          <div className="flex gap-6 text-gray-500 text-sm">
-            <a href="#privacy-policy" className="hover:text-white transition-colors">隐私政策</a>
-            <a href="#terms-of-service" className="hover:text-white transition-colors">服务条款</a>
+          <p className="text-sm text-slate-500">© 2026 Starain. All rights reserved.</p>
+          <div className="flex gap-6 text-sm text-slate-500">
+            <a href="#privacy-policy" className="transition-colors hover:text-slate-900">隐私政策</a>
+            <a href="#terms-of-service" className="transition-colors hover:text-slate-900">服务条款</a>
           </div>
         </div>
       </footer>
