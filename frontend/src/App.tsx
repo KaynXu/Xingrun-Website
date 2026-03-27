@@ -1837,14 +1837,13 @@ export const LandingPage = ({
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
-            <span className="text-xl font-bold tracking-tight">Starain</span>
+            <span className="text-xl font-bold tracking-tight">星润Starain</span>
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
               AI Edu Platform
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500">
             <a href="#features" className="transition-colors hover:text-slate-900">核心方案</a>
-            <a href="#process" className="transition-colors hover:text-slate-900">落地流程</a>
             <a href="#about" className="transition-colors hover:text-slate-900">关于 Starain</a>
           </div>
           <div className="flex items-center gap-3">
@@ -2155,7 +2154,7 @@ export const LandingPage = ({
           <div className="flex flex-col items-center md:items-start gap-3">
             <div className="flex items-center gap-3">
               <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
-              <span className="text-lg font-bold tracking-tight">Starain</span>
+              <span className="text-lg font-bold tracking-tight">星润Starain</span>
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
                 AI Edu Platform
               </span>
