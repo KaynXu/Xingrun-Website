@@ -1463,7 +1463,7 @@ const LoginModal = ({
         transition={{ duration: 0.2 }}
         className="relative z-10 w-full max-w-md"
       >
-        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl">
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold">登录账号</h2>
             <button
@@ -1600,7 +1600,7 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
         transition={{ duration: 0.2 }}
         className="relative z-10 w-full max-w-lg"
       >
-        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl">
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-semibold">提交注册申请</h2>
