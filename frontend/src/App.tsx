@@ -27,6 +27,8 @@ import {
   ArrowRight,
   AlertCircle,
   ShieldCheck,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -247,21 +249,38 @@ function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
 }
 
+function getInitialDarkModePreference(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    const saved = window.localStorage?.getItem?.('xr_dark');
+    if (saved !== null && saved !== undefined) {
+      return saved === 'true';
+    }
+  } catch {
+    // Ignore storage access issues and fall back to the system preference.
+  }
+
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+}
+
 const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
 const workspaceCardClass =
-  'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm';
+  'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/88 dark:shadow-[0_24px_60px_rgba(2,6,23,0.42)]';
 const workspaceSoftCardClass =
-  'rounded-[1.5rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(239,248,255,0.78)_100%)] shadow-[0_14px_36px_rgba(47,128,237,0.05)]';
+  'rounded-[1.5rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(239,248,255,0.78)_100%)] shadow-[0_14px_36px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-slate-800/72 dark:shadow-[0_18px_40px_rgba(2,6,23,0.34)]';
 const workspaceFieldClass =
-  'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400';
+  'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:focus:border-sky-500 dark:focus:ring-sky-500/15 dark:placeholder:text-slate-500';
 const workspacePrimaryButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
 const workspaceSecondaryButtonClass =
-  'inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
 const workspaceGhostButtonClass =
-  'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100';
-const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900';
-const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500';
+  'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
+const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900 dark:text-white';
+const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500 dark:text-slate-400';
 
 // --- Components ---
 
@@ -293,14 +312,14 @@ export const SidebarAccountSheet = ({
                 {currentUser.display_name.slice(0, 1).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-xl font-semibold text-slate-900">{currentUser.display_name}</p>
-                <p className="truncate text-sm text-slate-500">@{currentUser.username}</p>
+                <p className="truncate text-xl font-semibold text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
+                <p className="truncate text-sm text-slate-500 dark:text-slate-400">@{currentUser.username}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-700"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-700 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
               aria-label="关闭账号面板"
             >
               ×
@@ -309,16 +328,16 @@ export const SidebarAccountSheet = ({
 
           <div className={`${workspaceSoftCardClass} mt-5 space-y-3 p-4`}>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-500">权限</span>
-              <span>{getRoleLabel(currentUser.role)}</span>
+              <span className="text-slate-500 dark:text-slate-400">权限</span>
+              <span className="dark:text-slate-100">{getRoleLabel(currentUser.role)}</span>
             </div>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-500">机构</span>
-              <span>{currentUser.organization_name}</span>
+              <span className="text-slate-500 dark:text-slate-400">机构</span>
+              <span className="dark:text-slate-100">{currentUser.organization_name}</span>
             </div>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-500">状态</span>
-              <span>{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
+              <span className="text-slate-500 dark:text-slate-400">状态</span>
+              <span className="dark:text-slate-100">{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
             </div>
           </div>
 
@@ -326,14 +345,14 @@ export const SidebarAccountSheet = ({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50"
+              className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
             >
               查看账号信息
             </button>
             <button
               type="button"
               onClick={onLogout}
-              className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-medium text-rose-600 transition-colors hover:bg-rose-100"
+              className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-medium text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
             >
               退出登录
             </button>
@@ -366,12 +385,12 @@ const Sidebar = ({
   ];
 
   return (
-    <div className="sticky top-0 flex h-screen w-72 flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] shadow-[18px_0_48px_rgba(47,128,237,0.06)]">
-      <div className="border-b border-sky-100/80 px-6 py-6">
+    <div className="sticky top-0 flex h-screen w-72 flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,15,30,0.98)_0%,rgba(15,23,42,0.96)_52%,rgba(17,24,39,0.98)_100%)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]">
+      <div className="border-b border-sky-100/80 px-6 py-6 dark:border-white/10">
         <div className="flex items-center gap-3">
         <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-900">Starain 工作台</h1>
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Starain 工作台</h1>
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">AI EDU PLATFORM</p>
           </div>
         </div>
@@ -385,8 +404,8 @@ const Sidebar = ({
             className={cn(
               'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
               activePage === item.id
-                ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)]'
-                : 'border border-transparent text-slate-500 hover:border-sky-100 hover:bg-white/75 hover:text-slate-800',
+                ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)] dark:border-sky-500/30 dark:bg-white/10 dark:text-sky-300 dark:shadow-[0_16px_36px_rgba(2,6,23,0.35)]'
+                : 'border border-transparent text-slate-500 hover:border-sky-100 hover:bg-white/75 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/10 dark:hover:bg-white/5 dark:hover:text-slate-100',
             )}
           >
             <item.icon size={20} />
@@ -401,20 +420,20 @@ const Sidebar = ({
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-sky-100/80 p-4">
+      <div className="mt-auto border-t border-sky-100/80 p-4 dark:border-white/10">
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
-          className="flex w-full items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 p-3 text-left transition-colors hover:bg-white"
+          className="flex w-full items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 p-3 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 font-bold text-white">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="truncate text-sm font-medium text-slate-900">{currentUser.display_name}</p>
-            <p className="truncate text-xs text-slate-500">{getRoleLabel(currentUser.role)}</p>
+            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{getRoleLabel(currentUser.role)}</p>
           </div>
-          <MoreVertical size={16} className="shrink-0 text-slate-400" />
+          <MoreVertical size={16} className="shrink-0 text-slate-400 dark:text-slate-500" />
         </button>
       </div>
 
@@ -438,34 +457,54 @@ const Sidebar = ({
   );
 };
 
-const Header = ({ title, onGoHome }: { title: string; onGoHome?: () => void }) => {
+const Header = ({
+  title,
+  onGoHome,
+  isDark,
+  onToggleDarkMode,
+}: {
+  title: string;
+  onGoHome?: () => void;
+  isDark?: boolean;
+  onToggleDarkMode?: () => void;
+}) => {
   return (
-    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/78 px-6 backdrop-blur-xl md:px-8">
+    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/78 px-6 backdrop-blur-xl md:px-8 dark:border-white/10 dark:bg-[#0f172a]/88">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Workspace</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{title}</h2>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{title}</h2>
       </div>
       <div className="flex items-center gap-4">
+        {onToggleDarkMode && (
+          <button
+            onClick={onToggleDarkMode}
+            title="切换夜间模式"
+            aria-label="切换夜间模式"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+        )}
         {onGoHome && (
           <button
             onClick={onGoHome}
             title="返回首页"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <Home size={20} />
           </button>
         )}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500" size={18} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
           <input
             type="text"
             placeholder="搜索课程、题目..."
             className={`${workspaceFieldClass} w-64 rounded-full py-2 pl-10 pr-4`}
           />
         </div>
-        <button className="relative flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800">
+        <button className="relative flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white">
           <Bell size={20} />
-          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400" />
+          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400 dark:border-slate-900" />
         </button>
       </div>
     </header>
@@ -492,8 +531,8 @@ const XiaojimaoLoading = ({ label = '小吉猫正在思考中...' }: { label?: s
         AI
       </div>
     </motion.div>
-    <p className="font-medium text-slate-700">{label}</p>
-    <p className="mt-2 text-sm text-slate-500">正在为您生成结构化复习资料</p>
+    <p className="font-medium text-slate-700 dark:text-slate-200">{label}</p>
+    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">正在为您生成结构化复习资料</p>
   </div>
 );
 
@@ -530,11 +569,11 @@ const Dashboard = ({
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
-        <div className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-8 shadow-[0_24px_72px_rgba(47,128,237,0.08)]">
+        <div className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-8 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)]">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">Today at Starain</p>
-            <h3 className="mt-4 text-3xl font-bold tracking-tight text-slate-900">欢迎回来，{currentUser.display_name}</h3>
-            <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-600">
+            <h3 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">欢迎回来，{currentUser.display_name}</h3>
+            <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-300">
               {loading
                 ? '正在加载你的课堂数据与教学资产。'
                 : `本月已记录 ${stats?.month_lessons ?? 0} 节课，累计生成 ${stats?.total_pdfs ?? 0} 份 PDF 复习资料。`}
@@ -559,18 +598,18 @@ const Dashboard = ({
               {currentUser.display_name.slice(0, 1).toUpperCase()}
             </div>
             <div>
-              <p className="text-lg font-semibold text-slate-900">{currentUser.display_name}</p>
-              <p className="text-sm text-slate-500">{getRoleLabel(currentUser.role)}</p>
+              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{getRoleLabel(currentUser.role)}</p>
             </div>
           </div>
           <div className="mt-6 space-y-4">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">机构</span>
-              <span className="font-medium text-slate-700">{currentUser.organization_name}</span>
+              <span className="text-slate-500 dark:text-slate-400">机构</span>
+              <span className="font-medium text-slate-700 dark:text-slate-200">{currentUser.organization_name}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">账号状态</span>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
+              <span className="text-slate-500 dark:text-slate-400">账号状态</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
                 {currentUser.status === 'active' ? '正常' : currentUser.status}
               </span>
             </div>
@@ -582,41 +621,41 @@ const Dashboard = ({
         {statCards.map((stat, i) => (
           <div key={i} className={`${workspaceCardClass} group p-6`}>
             <div className="mb-4 flex items-center justify-between">
-              <div className={`rounded-2xl bg-sky-50 p-3 ${stat.color}`}>
+              <div className={`rounded-2xl bg-sky-50 p-3 dark:bg-white/5 ${stat.color}`}>
                 <stat.icon size={20} />
               </div>
-              <ArrowRight size={16} className="text-slate-300 transition-colors group-hover:text-sky-500" />
+              <ArrowRight size={16} className="text-slate-300 transition-colors group-hover:text-sky-500 dark:text-slate-600 dark:group-hover:text-sky-400" />
             </div>
-            <p className="text-sm text-slate-500">{stat.label}</p>
-            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{stat.value}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{stat.label}</p>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{stat.value}</p>
           </div>
         ))}
       </div>
 
       <div className={`${workspaceCardClass} overflow-hidden`}>
-        <div className="flex items-center justify-between border-b border-sky-100/80 p-6">
+        <div className="flex items-center justify-between border-b border-sky-100/80 p-6 dark:border-white/10">
           <div>
-            <h4 className="font-semibold text-slate-900">最近课程</h4>
-            <p className="mt-1 text-sm text-slate-500">最近录入的课堂内容会优先出现在这里。</p>
+            <h4 className="font-semibold text-slate-900 dark:text-white">最近课程</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近录入的课堂内容会优先出现在这里。</p>
           </div>
-          <button onClick={() => setActivePage('library')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500">
+          <button onClick={() => setActivePage('library')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300">
             查看全部
           </button>
         </div>
         {loading ? (
-          <div className="p-8 text-center text-slate-500">加载中...</div>
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
         ) : recentLessons.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">暂无课程记录</div>
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无课程记录</div>
         ) : (
-          <div className="divide-y divide-sky-100/80">
+          <div className="divide-y divide-sky-100/80 dark:divide-white/10">
             {recentLessons.map((lesson) => (
-              <div key={lesson.id} className="flex items-center gap-4 p-4 transition-colors hover:bg-sky-50/70">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+              <div key={lesson.id} className="flex items-center gap-4 p-4 transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
                   <FileText size={22} />
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium text-slate-900">{lesson.topic || `${lesson.subject} 课程`}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="font-medium text-slate-900 dark:text-slate-100">{lesson.topic || `${lesson.subject} 课程`}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     {lesson.date} • {lesson.subject} • {lesson.grade}
                   </p>
                 </div>
@@ -624,7 +663,7 @@ const Dashboard = ({
                   <div className="flex gap-2">
                     <a
                       href={`/pdf/download/${lesson.id}`}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                       title="下载"
                     >
                       <Download size={18} />
@@ -633,7 +672,7 @@ const Dashboard = ({
                       href={`/pdf/${lesson.id}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                       title="查看"
                     >
                       <Eye size={18} />
@@ -1721,25 +1760,25 @@ export const LandingLegalPage = ({
   const document = LANDING_LEGAL_DOCUMENTS[documentKey];
 
   return (
-    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70">
+    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70 dark:bg-[#0d1220] dark:text-slate-100">
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-12%] left-[-8%] h-[28rem] w-[28rem] rounded-full bg-sky-200/45 blur-[120px]" />
         <div className="absolute right-[-10%] top-[10%] h-[24rem] w-[24rem] rounded-full bg-cyan-200/40 blur-[110px]" />
         <div className="absolute bottom-[-12%] left-[18%] h-[22rem] w-[22rem] rounded-full bg-blue-100/70 blur-[120px]" />
       </div>
 
-      <nav className="sticky top-0 z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl">
+      <nav className="sticky top-0 z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl dark:border-white/8 dark:bg-[#0d1220]/95">
         <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/logo.png" alt="Starain logo" className="w-11 h-11 object-contain" />
             <div className="min-w-0">
-              <p className="text-lg font-bold tracking-tight truncate">Starain</p>
+              <p className="text-lg font-bold tracking-tight truncate dark:text-white">Starain</p>
               <p className="text-xs text-sky-700 tracking-[0.28em]">AI Edu Platform</p>
             </div>
           </div>
           <a
             href="#"
-            className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-sky-50"
+            className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
           >
             <Home size={16} />
             返回首页
@@ -1752,28 +1791,28 @@ export const LandingLegalPage = ({
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]"
+          className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-800/80"
         >
-          <div className="flex flex-col gap-5 border-b border-sky-100 pb-8">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700">
+          <div className="flex flex-col gap-5 border-b border-sky-100 pb-8 dark:border-white/10">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
               <ShieldCheck size={14} />
               LEGAL
             </div>
             <div className="space-y-4">
-              <h1 className="text-4xl md:text-5xl font-black tracking-tight">{document.title}</h1>
-              <p className="max-w-3xl text-base md:text-lg text-slate-600 leading-8">{document.summary}</p>
+              <h1 className="text-4xl md:text-5xl font-black tracking-tight dark:text-white">{document.title}</h1>
+              <p className="max-w-3xl text-base md:text-lg text-slate-600 leading-8 dark:text-slate-300">{document.summary}</p>
             </div>
-            <p className="text-sm text-slate-500">最近更新：{document.updatedAt}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">最近更新：{document.updatedAt}</p>
           </div>
 
           <div className="mt-10 space-y-8">
             {document.sections.map((section) => (
               <section
                 key={section.title}
-                className="rounded-[1.5rem] border border-sky-100 bg-white/90 p-6 md:p-7 shadow-[0_16px_48px_rgba(47,128,237,0.06)]"
+                className="rounded-[1.5rem] border border-sky-100 bg-white/90 p-6 md:p-7 shadow-[0_16px_48px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-slate-800/75"
               >
-                <h2 className="text-2xl font-bold tracking-tight">{section.title}</h2>
-                <div className="mt-4 space-y-4 text-sm md:text-base leading-8 text-slate-600">
+                <h2 className="text-2xl font-bold tracking-tight dark:text-white">{section.title}</h2>
+                <div className="mt-4 space-y-4 text-sm md:text-base leading-8 text-slate-600 dark:text-slate-300">
                   {section.paragraphs.map((paragraph) => (
                     <p key={paragraph}>{paragraph}</p>
                   ))}
@@ -1784,12 +1823,12 @@ export const LandingLegalPage = ({
         </motion.div>
       </main>
 
-      <footer className="relative z-10 border-t border-sky-100/80 py-10">
-        <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-slate-500">
+      <footer className="relative z-10 border-t border-sky-100/80 py-10 dark:border-white/8">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-slate-500 dark:text-slate-400">
           <p>© 2026 Starain. All rights reserved.</p>
           <div className="flex items-center gap-6">
-            <a href="#privacy-policy" className="transition-colors hover:text-slate-900">隐私政策</a>
-            <a href="#terms-of-service" className="transition-colors hover:text-slate-900">服务条款</a>
+            <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
+            <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
           </div>
         </div>
       </footer>
@@ -1801,10 +1840,14 @@ export const LandingPage = ({
   onLogin,
   onRegister,
   activeLegalPage,
+  isDark = false,
+  onToggleDarkMode,
 }: {
   onLogin: () => void;
   onRegister: () => void;
   activeLegalPage?: LandingLegalDocumentKey | null;
+  isDark?: boolean;
+  onToggleDarkMode?: () => void;
 }) => {
   const [hashLegalPage, setHashLegalPage] = useState<LandingLegalDocumentKey | null>(() =>
     typeof window === 'undefined' ? null : getLandingLegalPageFromHash(window.location.hash),
@@ -1831,9 +1874,9 @@ export const LandingPage = ({
   }
 
   return (
-    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70">
+    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70 dark:bg-[#0d1220] dark:text-slate-100">
       {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl">
+      <nav className="fixed top-0 w-full z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl dark:bg-[#0d1220]/95 dark:border-white/8">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
@@ -1842,15 +1885,21 @@ export const LandingPage = ({
               AI Edu Platform
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500">
-            <a href="#features" className="transition-colors hover:text-slate-900">核心方案</a>
-            <a href="#about" className="transition-colors hover:text-slate-900">我们的故事</a>
-            <a href="#about" className="transition-colors hover:text-slate-900">关于 Starain</a>
+          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400">
+            <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
+            <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={onToggleDarkMode}
+              className="rounded-full p-2.5 text-slate-500 hover:bg-sky-50 dark:text-slate-400 dark:hover:bg-white/10 transition-colors"
+              aria-label="切换夜间模式"
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
               onClick={onRegister}
-              className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95"
+              className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
             >
               申请注册
             </button>
@@ -1865,7 +1914,7 @@ export const LandingPage = ({
       </nav>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)]">
+      <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)] dark:bg-[#0f172a]">
         <div className="absolute inset-x-0 top-0 h-full">
           <motion.div
             animate={{ scale: [1, 1.12, 1], opacity: [0.5, 0.65, 0.5] }}
@@ -1890,12 +1939,12 @@ export const LandingPage = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-5 sm:p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)]">
+            <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-5 sm:p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)] dark:bg-slate-800/80 dark:border-white/10">
               <motion.span
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1, duration: 0.5 }}
-                className="mb-6 inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700"
+                className="mb-6 inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700 dark:bg-slate-700/80 dark:border-sky-500/30 dark:text-sky-300"
               >
                 BUILT FROM REAL TEACHING PRACTICE
               </motion.span>
@@ -1903,7 +1952,7 @@ export const LandingPage = ({
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.25, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                className="mt-6 text-3xl sm:text-5xl font-black leading-[1.05] sm:leading-[0.95] tracking-tight text-slate-900 md:text-7xl"
+                className="mt-6 text-3xl sm:text-5xl font-black leading-[1.05] sm:leading-[0.95] tracking-tight text-slate-900 md:text-7xl dark:text-white"
               >
                 教育工作流终于被 AI 重新组织好了
               </motion.h1>
@@ -1912,7 +1961,7 @@ export const LandingPage = ({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4, duration: 0.8 }}
-                className="mx-auto mb-12 mt-8 max-w-3xl text-lg leading-relaxed text-slate-600 md:text-xl"
+                className="mx-auto mb-12 mt-8 max-w-3xl text-lg leading-relaxed text-slate-600 md:text-xl dark:text-slate-300"
               >
                 Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，
                 再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。
@@ -1933,7 +1982,7 @@ export const LandingPage = ({
                 </a>
                 <button
                   onClick={onRegister}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-10 py-5 text-lg font-bold text-slate-700 transition-all hover:bg-sky-50 active:scale-95 sm:w-auto"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-10 py-5 text-lg font-bold text-slate-700 transition-all hover:bg-sky-50 active:scale-95 sm:w-auto dark:border-white/15 dark:bg-white/8 dark:text-slate-200 dark:hover:bg-white/15"
                 >
                   <User size={20} />
                   申请试用
@@ -1945,7 +1994,7 @@ export const LandingPage = ({
       </section>
 
       {/* Feature Bento Grid */}
-      <section id="features" className="border-t border-sky-100/80 py-24">
+      <section id="features" className="border-t border-sky-100/80 py-24 dark:border-white/8">
         <div className="max-w-7xl mx-auto px-6">
           <motion.div
             className="mb-16"
@@ -1954,8 +2003,8 @@ export const LandingPage = ({
             viewport={{ once: true }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">把真实教学流程整理成可复用的 AI 能力</h2>
-            <p className="text-slate-600 text-lg">不是堆叠功能点，而是把一条已经跑通的教育工作流产品化。</p>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4 dark:text-white">把真实教学流程整理成可复用的 AI 能力</h2>
+            <p className="text-slate-600 text-lg dark:text-slate-300">不是堆叠功能点，而是把一条已经跑通的教育工作流产品化。</p>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1965,7 +2014,7 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2"
+              className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 dark:bg-slate-800/80 dark:border-white/10"
             >
               <div className="absolute right-0 top-0 p-8 opacity-10 transition-opacity group-hover:opacity-20">
                 <FileText size={200} />
@@ -1975,15 +2024,15 @@ export const LandingPage = ({
                   <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
                     <FileText size={24} />
                   </div>
-                  <h3 className="text-3xl font-bold mb-4 text-slate-900">从课堂素材到复习交付</h3>
-                  <p className="text-slate-600 text-lg max-w-2xl">
+                  <h3 className="text-3xl font-bold mb-4 text-slate-900 dark:text-white">从课堂素材到复习交付</h3>
+                  <p className="text-slate-600 text-lg max-w-2xl dark:text-slate-300">
                     课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与可复用的交付资产。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
-                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">课堂分析</div>
-                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">复习资料生成</div>
-                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700">教学交付</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:bg-sky-900/40 dark:border-sky-500/30 dark:text-sky-300">课堂分析</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:bg-sky-900/40 dark:border-sky-500/30 dark:text-sky-300">复习资料生成</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:bg-sky-900/40 dark:border-sky-500/30 dark:text-sky-300">教学交付</div>
                 </div>
               </div>
             </motion.div>
@@ -1994,21 +2043,21 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-6 md:p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-6 md:p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)] dark:bg-slate-800/80 dark:border-white/10"
             >
               <div>
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4 text-slate-900">把错误沉淀成可追踪资产</h3>
-                <p className="text-slate-600">
+                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把错误沉淀成可追踪资产</h3>
+                <p className="text-slate-600 dark:text-slate-300">
                   不是一次性纠错，而是持续记录高频错误、薄弱点与个性化复习路径。
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">错因沉淀</span>
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">薄弱点追踪</span>
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700">个性化复习</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因沉淀</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">薄弱点追踪</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">个性化复习</span>
               </div>
             </motion.div>
 
@@ -2018,18 +2067,18 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_20px_60px_rgba(47,128,237,0.05)] dark:bg-slate-800/80 dark:border-white/10"
             >
               <div>
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4 text-slate-900">把题目沉淀成可调用的题库系统</h3>
-                <p className="text-slate-600">
+                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把题目沉淀成可调用的题库系统</h3>
+                <p className="text-slate-600 dark:text-slate-300">
                   面向 AP、A-Level、IB 等课程，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
                 </p>
               </div>
-              <div className="mt-8 flex items-center gap-2 text-blue-600 font-bold text-sm">
+              <div className="mt-8 flex items-center gap-2 text-blue-600 font-bold text-sm dark:text-blue-400">
                 <span>AP / A-Level / IB</span>
                 <ArrowRight size={14} />
               </div>
@@ -2041,18 +2090,18 @@ export const LandingPage = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row"
+              className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 md:p-10 shadow-[0_24px_70px_rgba(47,128,237,0.06)] md:col-span-2 md:flex-row dark:bg-slate-800/80 dark:border-white/10"
             >
               <div className="flex-1">
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
                   <FileText size={24} />
                 </div>
-                <h3 className="text-3xl font-bold mb-4 text-slate-900">把课程目标转化为讲义与教研交付</h3>
-                <p className="text-slate-600 text-lg">
+                <h3 className="text-3xl font-bold mb-4 text-slate-900 dark:text-white">把课程目标转化为讲义与教研交付</h3>
+                <p className="text-slate-600 text-lg dark:text-slate-300">
                   从课程目标到讲义、课堂提纲和教研素材，减少教师重复整理工作。
                 </p>
               </div>
-              <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] md:w-72">
+              <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] md:w-72 dark:border-white/10 dark:bg-slate-700/50">
                 {[
                   { label: '讲义大纲', tone: 'bg-orange-500', width: '72%' },
                   { label: '课堂提纲', tone: 'bg-orange-400', width: '58%' },
@@ -2064,16 +2113,16 @@ export const LandingPage = ({
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.55, delay: 0.15 + index * 0.12, ease: [0.16, 1, 0.3, 1] }}
-                    className="rounded-2xl border border-sky-100 bg-white/90 p-4 shadow-[0_14px_34px_rgba(47,128,237,0.07)]"
+                    className="rounded-2xl border border-sky-100 bg-white/90 p-4 shadow-[0_14px_34px_rgba(47,128,237,0.07)] dark:border-white/10 dark:bg-slate-600/50"
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-slate-900">{item.label}</span>
-                      <span className="text-[10px] rounded-full border border-sky-100 bg-sky-50 px-2 py-1 text-sky-700">
+                      <span className="text-sm font-medium text-slate-900 dark:text-white">{item.label}</span>
+                      <span className="text-[10px] rounded-full border border-sky-100 bg-sky-50 px-2 py-1 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/50 dark:text-sky-300">
                         AI Draft
                       </span>
                     </div>
                     <div className="space-y-2">
-                      <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+                      <div className="h-2 overflow-hidden rounded-full bg-sky-100 dark:bg-slate-600">
                         <motion.div
                           initial={{ width: '0%' }}
                           whileInView={{ width: item.width }}
@@ -2082,7 +2131,7 @@ export const LandingPage = ({
                           className={`h-full ${item.tone}`}
                         />
                       </div>
-                      <div className="h-2 w-3/4 rounded-full bg-sky-100" />
+                      <div className="h-2 w-3/4 rounded-full bg-sky-100 dark:bg-slate-600" />
                     </div>
                   </motion.div>
                 ))}
@@ -2093,7 +2142,7 @@ export const LandingPage = ({
       </section>
 
       {/* About Section */}
-      <section id="about" className="border-t border-sky-100/80 py-24">
+      <section id="about" className="border-t border-sky-100/80 py-24 dark:border-white/8">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 items-start">
             <motion.div
@@ -2103,16 +2152,16 @@ export const LandingPage = ({
               viewport={{ once: true }}
               transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             >
-              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-slate-500">
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
                 ABOUT STARAIN
               </span>
               <div>
-                <h2 className="text-4xl md:text-5xl font-bold mb-4 text-slate-900">关于 Starain</h2>
-                <p className="max-w-2xl text-lg text-slate-600 leading-relaxed">
+                <h2 className="text-4xl md:text-5xl font-bold mb-4 text-slate-900 dark:text-white">关于 Starain</h2>
+                <p className="max-w-2xl text-lg text-slate-600 leading-relaxed dark:text-slate-300">
                   Starain 不是从 PPT 里想出来的，而是从真实教学现场长出来的。
                 </p>
               </div>
-              <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed">
+              <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed dark:text-slate-400">
                 我们先在自己的教育机构中解决复习资料、题库沉淀、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
               </p>
             </motion.div>
@@ -2138,10 +2187,10 @@ export const LandingPage = ({
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
-                  className="rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)]"
+                  className="rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-slate-800/80"
                 >
-                  <p className="mb-2 text-sm font-semibold text-slate-900">{item.title}</p>
-                  <p className="text-sm leading-relaxed text-slate-500">{item.body}</p>
+                  <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                  <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{item.body}</p>
                 </motion.div>
               ))}
             </div>
@@ -2150,32 +2199,31 @@ export const LandingPage = ({
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-sky-100/80 py-20">
+      <footer className="border-t border-sky-100/80 py-20 dark:border-white/8">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="flex flex-col items-center md:items-start gap-3">
             <div className="flex items-center gap-3">
               <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
-              <span className="text-lg font-bold tracking-tight">星润Starain</span>
+              <span className="text-lg font-bold tracking-tight dark:text-white">星润Starain</span>
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
                 AI Edu Platform
               </span>
             </div>
-            <p className="max-w-md text-sm text-gray-500 text-center md:text-left">
+            <p className="max-w-md text-sm text-gray-500 text-center md:text-left dark:text-slate-400">
               面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
             </p>
           </div>
-          <div className="flex flex-col items-center md:items-start gap-2 text-sm text-slate-500">
+          <div className="flex flex-col items-center md:items-start gap-2 text-sm text-slate-500 dark:text-slate-400">
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">导航</p>
-            <a href="#features" className="transition-colors hover:text-slate-900">核心方案</a>
-            <a href="#about" className="transition-colors hover:text-slate-900">我们的故事</a>
-            <a href="#about" className="transition-colors hover:text-slate-900">关于 Starain</a>
+            <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
+            <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
           </div>
-          <div className="flex flex-col items-center md:items-start gap-2 text-sm text-slate-500">
+          <div className="flex flex-col items-center md:items-start gap-2 text-sm text-slate-500 dark:text-slate-400">
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">法律</p>
-            <a href="#privacy-policy" className="transition-colors hover:text-slate-900">隐私政策</a>
-            <a href="#terms-of-service" className="transition-colors hover:text-slate-900">服务条款</a>
+            <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
+            <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
           </div>
-          <p className="text-sm text-slate-500">© 2026 Starain. All rights reserved.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 Starain. All rights reserved.</p>
         </div>
       </footer>
     </div>
@@ -2188,6 +2236,7 @@ export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem('xr_token') || '');
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(localStorage.getItem('xr_token')));
+  const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
@@ -2195,6 +2244,20 @@ export default function App() {
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
   );
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.documentElement.classList.toggle('dark', isDark);
+
+    try {
+      window.localStorage?.setItem?.('xr_dark', String(isDark));
+    } catch {
+      // Ignore storage access issues and keep the UI functional.
+    }
+  }, [isDark]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2279,7 +2342,7 @@ export default function App() {
 
   if (token && !authReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-6 text-slate-900">
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-6 text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
         <div className={`${workspaceCardClass} w-full max-w-xl p-8`}>
           <XiaojimaoLoading label="正在验证账号权限..." />
         </div>
@@ -2293,6 +2356,8 @@ export default function App() {
         <LandingPage
           onLogin={token ? () => setShowLanding(false) : () => setShowLogin(true)}
           activeLegalPage={landingLegalPage}
+          isDark={isDark}
+          onToggleDarkMode={() => setIsDark((current) => !current)}
           onRegister={() => {
             if (token) {
               setShowLanding(false);
@@ -2321,7 +2386,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900">
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px]" />
         <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px]" />
@@ -2335,7 +2400,12 @@ export default function App() {
           setActivePage={setActivePage}
         />
         <main className="flex min-w-0 flex-1 flex-col">
-          <Header title={pageTitle[activePage]} onGoHome={() => setShowLanding(true)} />
+          <Header
+            title={pageTitle[activePage]}
+            onGoHome={() => setShowLanding(true)}
+            isDark={isDark}
+            onToggleDarkMode={() => setIsDark((current) => !current)}
+          />
           <div className="flex-1 overflow-y-auto">
             <AnimatePresence mode="wait">
               <motion.div
