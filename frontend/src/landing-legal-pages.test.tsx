@@ -71,6 +71,36 @@ test('legal pages use Starain branding in the chrome', () => {
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
 
+test('landing and legal pages use the bright Starain shell', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+  const LandingLegalPage = (AppModule as {
+    LandingLegalPage?: React.ComponentType<{
+      documentKey: 'privacy' | 'terms';
+    }>;
+  }).LandingLegalPage;
+
+  assert.equal(typeof LandingPage, 'function');
+  assert.equal(typeof LandingLegalPage, 'function');
+
+  const landingMarkup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+  const legalMarkup = renderToStaticMarkup(
+    <LandingLegalPage documentKey="terms" />,
+  );
+
+  assert.doesNotMatch(landingMarkup, /min-h-screen bg-black text-white/);
+  assert.doesNotMatch(legalMarkup, /min-h-screen bg-black text-white/);
+  assert.match(landingMarkup, /bg-\[#F6FBFF\]/);
+  assert.match(landingMarkup, /text-slate-900/);
+  assert.match(legalMarkup, /bg-\[#F6FBFF\]/);
+});
+
 test('landing page footer exposes standalone legal page links', () => {
   const LandingPage = (AppModule as {
     LandingPage?: React.ComponentType<{

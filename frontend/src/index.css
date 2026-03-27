@@ -2,13 +2,15 @@
 
 @theme {
   --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --color-brand-blue: #3b82f6;
-  --color-brand-dark: #000000;
+  --color-brand-blue: #2F80ED;
+  --color-brand-cyan: #22C7E8;
+  --color-brand-ink: #16324F;
+  --color-brand-surface: #F6FBFF;
 }
 
 @layer base {
   body {
-    @apply bg-black text-gray-100 antialiased;
+    @apply bg-[#F6FBFF] text-slate-900 antialiased;
     font-family: var(--font-sans);
   }
 }
@@ -24,10 +26,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: #cbd5e1;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: #94a3b8;
 }
