@@ -23,6 +23,8 @@ python app.py
 
 启动后进入**设置页面**配置 API Key 和服务商（见下方「AI 服务商」）。
 
+生产部署推荐使用环境变量，而不是把敏感配置直接写进 `config.json`。
+
 ---
 
 ### 方式二：命令行（CLI）
@@ -34,6 +36,27 @@ python lesson_manager.py setup
 ```
 按提示输入 OpenAI API Key（用于音频转录 + 复习计划生成）。  
 API Key 保存在 `config.json`，也可以设置环境变量 `OPENAI_API_KEY`。
+
+### 环境变量部署
+
+推荐在服务器上创建 `.env.runtime`，并通过 `scripts/run_backend.sh` 启动后端。
+可参考 `.env.runtime.example`。
+
+常用变量：
+
+```bash
+XR_PROVIDER=n1n
+N1N_API_KEY=your_n1n_api_key
+XR_N1N_BASE_URL=https://api.n1n.ai/v1
+XR_N1N_MODEL=gpt-4o
+
+# 可选：admin 登录覆盖
+XR_ADMIN_USERNAME=admin
+XR_ADMIN_PASSWORD_HASH=<sha256_hex>
+```
+
+优先级规则：环境变量 > `config.json`。
+`config.json` 仍可用于本地开发和保存登录 token，但生产环境推荐把敏感配置放进环境变量。
 
 ---
 
@@ -118,7 +141,7 @@ python lesson_manager.py open --id 3    # 重新打开某节课 PDF
 
 ## AI 服务商
 
-支持三种服务商，在 Web UI 设置页或 `config.json` 中切换：
+支持三种服务商，在 Web UI 设置页、`config.json` 或环境变量中切换：
 
 | 服务商 | 说明 |
 |--------|------|
@@ -154,7 +177,9 @@ Xingrun-Summary/
 ├── lesson_manager.py           ← 数据库层 + CLI 入口
 ├── ai_processor.py             ← AI 调用（计划生成、语音转写）
 ├── pdf_engine.py               ← PDF 生成（课时单、月度、周报）
-├── config.json                 ← API Key 及服务商配置（本地存储）
+├── config.json                 ← 本地配置与登录 token（生产环境建议使用环境变量覆盖）
+├── .env.runtime.example        ← 生产环境变量示例
+├── config_runtime.py           ← 运行时配置加载（环境变量优先）
 ├── requirements.txt
 ├── start.command               ← macOS 一键启动
 ├── start.bat                   ← Windows 一键启动
@@ -173,3 +198,4 @@ Xingrun-Summary/
 - 单次添加课程约消耗 GPT-4o 3000~5000 tokens（约 $0.01～$0.02）
 - 月度复习约消耗 5000~10000 tokens（多课程聚合）
 - 数据全部本地存储，不上传到任何服务器
+- 生产部署建议不要把真实 API Key 提交进 git；优先使用 `.env.runtime`
