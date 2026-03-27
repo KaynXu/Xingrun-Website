@@ -9,6 +9,17 @@
         <i class="bi bi-gear text-primary"></i> 系统设置
       </div>
       <div class="card-body">
+        {% if controlled_env %}
+        <div class="alert alert-info small">
+          <div class="fw-semibold mb-1">
+            <i class="bi bi-info-circle-fill"></i> 检测到环境变量接管配置
+          </div>
+          <div>
+            以下字段当前由环境变量提供，页面保存不会覆盖它们：
+            <code>{{ controlled_env.values()|join(', ') }}</code>
+          </div>
+        </div>
+        {% endif %}
         <form method="POST">
 
           {# ── 服务商选择 ── #}

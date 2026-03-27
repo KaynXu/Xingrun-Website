@@ -19,6 +19,9 @@ from pathlib import Path
 from flask import (Flask, abort, flash, redirect, render_template,
                    request, send_file, url_for, jsonify)
 from flask_cors import CORS
+from config_runtime import (env_controlled_keys, env_var_for_key,
+                            get_runtime_config, load_file_config,
+                            write_file_config)
 
 # ─── 路径 ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -53,10 +56,7 @@ init_db()
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
-    if CFG_PATH.exists():
-        with open(CFG_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    return get_runtime_config()
 
 
 def has_api_key():
@@ -617,6 +617,7 @@ def quiz():
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
     cfg = get_config()
+    controlled_keys = env_controlled_keys()
 
     def _mask(key):
         if len(key) > 12:
@@ -624,36 +625,46 @@ def settings():
         return "*" * len(key) if key else ""
 
     if request.method == "POST":
-        cfg["provider"] = request.form.get("provider", "openai").strip()
+        file_cfg = load_file_config()
+
+        if "provider" not in controlled_keys:
+            file_cfg["provider"] = request.form.get("provider", "openai").strip()
 
         openai_key = request.form.get("openai_api_key", "").strip()
-        if openai_key:
-            cfg["openai_api_key"] = openai_key
+        if openai_key and "openai_api_key" not in controlled_keys:
+            file_cfg["openai_api_key"] = openai_key
 
         deepseek_key = request.form.get("deepseek_api_key", "").strip()
-        if deepseek_key:
-            cfg["deepseek_api_key"] = deepseek_key
+        if deepseek_key and "deepseek_api_key" not in controlled_keys:
+            file_cfg["deepseek_api_key"] = deepseek_key
 
         mimo_key = request.form.get("mimo_api_key", "").strip()
-        if mimo_key:
-            cfg["mimo_api_key"] = mimo_key
+        if mimo_key and "mimo_api_key" not in controlled_keys:
+            file_cfg["mimo_api_key"] = mimo_key
 
         mimo_base_url = request.form.get("mimo_base_url", "").strip()
-        if mimo_base_url:
-            cfg["mimo_base_url"] = mimo_base_url
+        if mimo_base_url and "mimo_base_url" not in controlled_keys:
+            file_cfg["mimo_base_url"] = mimo_base_url
 
         n1n_key = request.form.get("n1n_api_key", "").strip()
-        if n1n_key:
-            cfg["n1n_api_key"] = n1n_key
+        if n1n_key and "n1n_api_key" not in controlled_keys:
+            file_cfg["n1n_api_key"] = n1n_key
 
         n1n_base_url = request.form.get("n1n_base_url", "").strip()
-        if n1n_base_url:
-            cfg["n1n_base_url"] = n1n_base_url
+        if n1n_base_url and "n1n_base_url" not in controlled_keys:
+            file_cfg["n1n_base_url"] = n1n_base_url
 
-        with open(CFG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        write_file_config(file_cfg)
+        if controlled_keys:
+            flash("部分设置由环境变量控制，页面保存不会覆盖这些字段。", "info")
         flash("设置已保存！", "success")
         return redirect(url_for("settings"))
+
+    controlled_env = {
+        key: env_var_for_key(key)
+        for key in controlled_keys
+        if env_var_for_key(key)
+    }
 
     return render_template(
         "settings.html",
@@ -668,6 +679,7 @@ def settings():
         n1n_key_set=bool(cfg.get("n1n_api_key", "")),
         n1n_masked=_mask(cfg.get("n1n_api_key", "")),
         n1n_base_url=cfg.get("n1n_base_url", "https://api.n1n.ai/v1"),
+        controlled_env=controlled_env,
     )
 
 
@@ -678,20 +690,20 @@ def api_login():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
-    cfg = get_config()
-    stored_user = cfg.get("admin_username", "admin")
-    stored_hash = cfg.get("admin_password_hash", "")
+    runtime_cfg = get_config()
+    file_cfg = load_file_config()
+    stored_user = runtime_cfg.get("admin_username", "admin")
+    stored_hash = runtime_cfg.get("admin_password_hash", "")
     # Default password "xingrun2026" if none set
     if not stored_hash:
         stored_hash = hashlib.sha256("xingrun2026".encode()).hexdigest()
     if username != stored_user or hashlib.sha256(password.encode()).hexdigest() != stored_hash:
         return jsonify({"error": "用户名或密码错误"}), 401
     token = secrets.token_hex(32)
-    cfg.setdefault("_tokens", [])
-    cfg["_tokens"].append(token)
-    cfg["_tokens"] = cfg["_tokens"][-20:]  # keep last 20
-    with open(CFG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    file_cfg.setdefault("_tokens", [])
+    file_cfg["_tokens"].append(token)
+    file_cfg["_tokens"] = file_cfg["_tokens"][-20:]  # keep last 20
+    write_file_config(file_cfg)
     return jsonify({"token": token})
 
 
@@ -947,6 +959,7 @@ def api_monthly_generate():
 @app.route("/api/settings", methods=["GET"])
 def api_settings_get():
     cfg = get_config()
+    controlled_keys = env_controlled_keys()
     def _mask(k):
         return (k[:4] + "..." + k[-4:]) if len(k) > 8 else ("*" * len(k) if k else "")
     return jsonify({
@@ -958,21 +971,25 @@ def api_settings_get():
         "mimo_set": bool(cfg.get("mimo_api_key")),
         "mimo_masked": _mask(cfg.get("mimo_api_key", "")),
         "mimo_base_url": cfg.get("mimo_base_url", ""),
+        "n1n_set": bool(cfg.get("n1n_api_key")),
+        "n1n_masked": _mask(cfg.get("n1n_api_key", "")),
+        "n1n_base_url": cfg.get("n1n_base_url", "https://api.n1n.ai/v1"),
+        "controlled_keys": sorted(controlled_keys),
     })
 
 
 @app.route("/api/settings", methods=["POST"])
 def api_settings_save():
-    cfg = get_config()
+    cfg = load_file_config()
     data = request.json or {}
-    if "provider" in data:
+    controlled_keys = env_controlled_keys()
+    if "provider" in data and "provider" not in controlled_keys:
         cfg["provider"] = data["provider"].strip()
-    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url"):
-        if data.get(key):
+    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url", "n1n_api_key", "n1n_base_url"):
+        if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
-    with open(CFG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-    return jsonify({"ok": True})
+    write_file_config(cfg)
+    return jsonify({"ok": True, "controlled_keys": sorted(controlled_keys)})
 
 
 # ─── 启动 ──────────────────────────────────────────────────────────────────────

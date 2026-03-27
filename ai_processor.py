@@ -12,14 +12,11 @@ import os
 import re
 from pathlib import Path
 from datetime import date
+from config_runtime import get_runtime_config
 
 # ─── 配置加载 ──────────────────────────────────────────────────────────────────
 def _load_config() -> dict:
-    cfg_path = Path(__file__).parent / "config.json"
-    if cfg_path.exists():
-        with open(cfg_path, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+  return get_runtime_config()
 
 
 def _get_client():
