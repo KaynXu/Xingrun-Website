@@ -46,9 +46,10 @@ test('landing page tells the validated workflow story', () => {
   assert.match(markup, /把错误沉淀成可追踪资产/);
   assert.match(markup, /把题目沉淀成可调用的题库系统/);
   assert.match(markup, /把课程目标转化为讲义与教研交付/);
-  assert.match(markup, /教学素材进入平台/);
-  assert.match(markup, /AI 完成结构化处理/);
-  assert.match(markup, /输出到复习与教学协同/);
+  assert.match(markup, /课堂录音、笔记与教学内容进入平台后/);
+  assert.match(markup, /课堂分析/);
+  assert.match(markup, /复习资料生成/);
+  assert.match(markup, /教学交付/);
   assert.match(markup, /关于 Starain/);
   assert.match(markup, /不是从 PPT 里想出来的/);
 });
@@ -167,4 +168,48 @@ test('landing app hash helper maps legal hashes to standalone pages', () => {
   assert.equal(getLandingLegalPageFromHash('#privacy-policy'), 'privacy');
   assert.equal(getLandingLegalPageFromHash('#terms-of-service'), 'terms');
   assert.equal(getLandingLegalPageFromHash('#features'), null);
+});
+
+test('landing page keeps a single about link per nav group and exposes a dark mode toggle', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+
+  assert.equal(typeof LandingPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+
+  assert.equal((markup.match(/href="#about"/g) ?? []).length, 2);
+  assert.doesNotMatch(markup, /我们的故事/);
+  assert.match(markup, /aria-label="切换夜间模式"/);
+  assert.match(markup, /dark:bg-\[#0d1220\]/);
+  assert.match(markup, /dark:border-white\/8/);
+  assert.match(markup, /dark:text-slate-400/);
+});
+
+test('landing page dark mode styles cover the about section and footer shell', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+
+  assert.equal(typeof LandingPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+
+  assert.match(markup, /id="about" class="border-t border-sky-100\/80 py-24 dark:border-white\/8"/);
+  assert.match(markup, /ABOUT STARAIN/);
+  assert.match(markup, /dark:bg-slate-800\/80 dark:border-white\/10/);
+  assert.match(markup, /dark:text-white/);
+  assert.match(markup, /<footer class="border-t border-sky-100\/80 py-20 dark:border-white\/8"/);
+  assert.match(markup, /All rights reserved/);
 });
