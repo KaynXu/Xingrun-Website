@@ -11,6 +11,7 @@ import {
   PlusCircle,
   Library,
   Database,
+  CalendarDays,
   Settings,
   Search,
   Bell,
@@ -32,11 +33,12 @@ import {
   Sun,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { CourseCalendarPage } from './CourseCalendarPage';
 
 // --- Types ---
 
 type Role = 'owner' | 'member';
-type Page = 'dashboard' | 'input' | 'library' | 'questions' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'input' | 'library' | 'calendar' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -59,20 +61,6 @@ interface Stats {
   total_questions: number;
 }
 
-interface Question {
-  id: number;
-  lesson_id: number;
-  question: string;
-  answer: string;
-  category: string;
-  day_num: number;
-}
-
-interface QuizData {
-  total: number;
-  categories: Record<string, Question[]>;
-}
-
 interface ApiSettings {
   provider: string;
 }
@@ -82,6 +70,9 @@ interface ClassItem {
   name: string;
   subject: string;
   grade: string;
+  teacher_name?: string;
+  teacher_email?: string;
+  lesson_count?: number;
 }
 
 interface CurrentUser {
@@ -267,6 +258,26 @@ function getInitialDarkModePreference(): boolean {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
 }
 
+function getTodayIsoDate(): string {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function shiftIsoDate(dateString: string, days: number): string {
+  const base = new Date(`${dateString}T12:00:00`);
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+function getLatestLessonDate(lessons: Lesson[]): string {
+  if (lessons.length === 0) {
+    return getTodayIsoDate();
+  }
+
+  return lessons.reduce((latest, lesson) => (lesson.date > latest ? lesson.date : latest), lessons[0].date);
+}
+
 const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
 const workspaceCardClass =
   'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/88 dark:shadow-[0_24px_60px_rgba(2,6,23,0.42)]';
@@ -436,7 +447,7 @@ const Sidebar = ({
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'input', icon: PlusCircle, label: '添加课程' },
     { id: 'library', icon: Library, label: '课程列表' },
-    { id: 'questions', icon: Database, label: '题库浏览' },
+    { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
@@ -555,7 +566,7 @@ const Header = ({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
           <input
             type="text"
-            placeholder="搜索课程、题目..."
+            placeholder="搜索课程、班级..."
             className={`${workspaceFieldClass} w-64 rounded-full py-2 pl-10 pr-4`}
           />
         </div>
@@ -598,9 +609,11 @@ const XiaojimaoLoading = ({ label = '小吉猫正在思考中...' }: { label?: s
 const Dashboard = ({
   currentUser,
   setActivePage,
+  activeClassCount,
 }: {
   currentUser: CurrentUser;
   setActivePage: (p: Page) => void;
+  activeClassCount: number;
 }) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentLessons, setRecentLessons] = useState<Lesson[]>([]);
@@ -620,7 +633,7 @@ const Dashboard = ({
     { label: '本月课程', value: stats?.month_lessons ?? '—', icon: FileText, color: 'text-blue-500' },
     { label: '累计课程', value: stats?.total_lessons ?? '—', icon: Library, color: 'text-green-500' },
     { label: '已生成 PDF', value: stats?.total_pdfs ?? '—', icon: Download, color: 'text-purple-500' },
-    { label: '题库题目', value: stats?.total_questions ?? '—', icon: Database, color: 'text-orange-500' },
+    { label: '活跃班级', value: activeClassCount, icon: CalendarDays, color: 'text-cyan-500' },
   ];
 
   return (
@@ -1122,81 +1135,6 @@ const LibraryPage = () => {
           </table>
         )}
       </div>
-    </div>
-  );
-};
-
-const QuestionBank = () => {
-  const [data, setData] = useState<QuizData>({ total: 0, categories: {} });
-  const [showAnswers, setShowAnswers] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    apiFetch<QuizData>('/api/quiz')
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const allQuestions: Question[] = (Object.values(data.categories) as Question[][]).flat();
-
-  return (
-    <div className={`${workspacePageClass} space-y-6`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className={workspaceSectionTitleClass}>题库浏览</h3>
-          <p className={`${workspaceSectionTextClass} mt-2`}>浏览从课程中自动提取的填空题。共 {data.total} 道题。</p>
-        </div>
-        <div className={`${workspaceSoftCardClass} flex items-center gap-3 px-4 py-3`}>
-          <span className="text-sm text-slate-500 dark:text-slate-400">显示答案</span>
-          <button
-            onClick={() => setShowAnswers(!showAnswers)}
-            className={`relative h-5 w-10 rounded-full transition-colors ${showAnswers ? 'bg-sky-600' : 'bg-sky-100 dark:bg-slate-700'}`}
-          >
-            <motion.div animate={{ x: showAnswers ? 20 : 2 }} className="absolute top-1 h-3 w-3 rounded-full bg-white dark:bg-slate-100" />
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
-      ) : allQuestions.length === 0 ? (
-        <div className={`${workspaceCardClass} p-8 text-center text-slate-500 dark:text-slate-400`}>暂无题目，添加课程后将自动提取填空题。</div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {allQuestions.map((item, i) => (
-            <div key={item.id} className={`${workspaceCardClass} p-6`}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Q{i + 1}</span>
-                    {item.category && <span className="text-xs text-slate-500 dark:text-slate-400">{item.category}</span>}
-                  </div>
-                  <p className="text-lg leading-relaxed text-slate-700 dark:text-slate-100">
-                    {item.question.split('___').map((part, index, array) => (
-                      <React.Fragment key={index}>
-                        {part}
-                        {index < array.length - 1 && (
-                          <span
-                            className={`inline-block min-w-[80px] border-b-2 border-sky-400/60 px-2 text-center font-bold transition-all ${
-                              showAnswers ? 'text-sky-600 opacity-100 dark:text-sky-300' : 'text-transparent opacity-0'
-                            }`}
-                          >
-                            {item.answer}
-                          </span>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </p>
-                  {showAnswers && !item.question.includes('___') && (
-                    <p className="mt-2 text-sm text-sky-600 dark:text-sky-300">答案：{item.answer}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 };
@@ -2302,6 +2240,10 @@ export default function App() {
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
   );
+  const [calendarClasses, setCalendarClasses] = useState<ClassItem[]>([]);
+  const [calendarLessons, setCalendarLessons] = useState<Lesson[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getTodayIsoDate());
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -2370,6 +2312,43 @@ export default function App() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !currentUser) {
+      setCalendarClasses([]);
+      setCalendarLessons([]);
+      setCalendarLoading(false);
+      setCalendarAnchorDate(getTodayIsoDate());
+      return;
+    }
+
+    if (!authReady) {
+      return;
+    }
+
+    let cancelled = false;
+    setCalendarLoading(true);
+
+    Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/lessons')])
+      .then(([classes, lessons]) => {
+        if (cancelled) {
+          return;
+        }
+        setCalendarClasses(classes);
+        setCalendarLessons(lessons);
+        setCalendarAnchorDate(getLatestLessonDate(lessons));
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (!cancelled) {
+          setCalendarLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, currentUser, token]);
+
   const handleLogin = (t: string) => {
     localStorage.setItem('xr_token', t);
     setToken(t);
@@ -2389,11 +2368,19 @@ export default function App() {
     setActivePage('library');
   };
 
+  const handlePreviousCalendarWeek = () => {
+    setCalendarAnchorDate((current) => shiftIsoDate(current, -7));
+  };
+
+  const handleNextCalendarWeek = () => {
+    setCalendarAnchorDate((current) => shiftIsoDate(current, 7));
+  };
+
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
     input: '添加课程',
     library: '课程列表',
-    questions: '题库浏览',
+    calendar: '课程日历',
     accounts: '账号审批',
     settings: '系统设置',
   };
@@ -2446,9 +2433,9 @@ export default function App() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px]" />
-        <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px]" />
-        <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px]" />
+        <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
+        <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
+        <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
       </div>
       <div className="relative flex min-h-screen">
         <Sidebar
@@ -2473,10 +2460,31 @@ export default function App() {
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
               >
-                {activePage === 'dashboard' && <Dashboard currentUser={currentUser} setActivePage={setActivePage} />}
+                {activePage === 'dashboard' && (
+                  <Dashboard
+                    currentUser={currentUser}
+                    setActivePage={setActivePage}
+                    activeClassCount={calendarClasses.length}
+                  />
+                )}
                 {activePage === 'input' && <LessonInput onSuccess={handleLessonSuccess} />}
                 {activePage === 'library' && <LibraryPage />}
-                {activePage === 'questions' && <QuestionBank />}
+                {activePage === 'calendar' &&
+                  (calendarLoading ? (
+                    <div className={`${workspacePageClass}`}>
+                      <div className={`${workspaceCardClass} p-8`}>
+                        <XiaojimaoLoading label="正在整理课程日历..." />
+                      </div>
+                    </div>
+                  ) : (
+                    <CourseCalendarPage
+                      anchorDate={calendarAnchorDate}
+                      classes={calendarClasses}
+                      lessons={calendarLessons}
+                      onPreviousWeek={handlePreviousCalendarWeek}
+                      onNextWeek={handleNextCalendarWeek}
+                    />
+                  ))}
                 {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
