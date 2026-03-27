@@ -26,14 +26,14 @@ import {
   MoreVertical,
   Filter,
   ArrowRight,
-  Play,
   AlertCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Types ---
 
-type Page = 'dashboard' | 'input' | 'library' | 'questions' | 'settings';
+type Role = 'owner' | 'member';
+type Page = 'dashboard' | 'input' | 'library' | 'questions' | 'accounts' | 'settings';
 
 interface Lesson {
   id: number;
@@ -80,6 +80,30 @@ interface ClassItem {
   grade: string;
 }
 
+interface CurrentUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: Role;
+  status: string;
+  organization_id: number;
+  organization_name: string;
+  created_at: string;
+}
+
+interface RegistrationRequestItem {
+  id: number;
+  username: string;
+  display_name: string;
+  organization_name: string;
+  status: string;
+  created_at: string;
+}
+
+function getRoleLabel(role: Role): string {
+  return role === 'owner' ? '最高权限账号' : '机构成员';
+}
+
 // --- API helper ---
 
 function getToken(): string {
@@ -110,12 +134,21 @@ async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promi
 
 // --- Components ---
 
-const Sidebar = ({ activePage, setActivePage }: { activePage: Page; setActivePage: (p: Page) => void }) => {
+const Sidebar = ({
+  activePage,
+  currentUser,
+  setActivePage,
+}: {
+  activePage: Page;
+  currentUser: CurrentUser;
+  setActivePage: (p: Page) => void;
+}) => {
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'input', icon: PlusCircle, label: '添加课程' },
     { id: 'library', icon: Library, label: '课程列表' },
     { id: 'questions', icon: Database, label: '题库浏览' },
+    ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
 
@@ -152,11 +185,11 @@ const Sidebar = ({ activePage, setActivePage }: { activePage: Page; setActivePag
       <div className="p-4 mt-auto border-t border-white/10">
         <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
-            K
+            {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Kayn</p>
-            <p className="text-xs text-gray-500 truncate">管理员</p>
+            <p className="text-sm font-medium truncate">{currentUser.display_name}</p>
+            <p className="text-xs text-gray-500 truncate">{getRoleLabel(currentUser.role)}</p>
           </div>
           <MoreVertical size={16} className="text-gray-500" />
         </div>
@@ -224,7 +257,13 @@ const XiaojimaoLoading = ({ label = '小吉猫正在思考中...' }: { label?: s
 
 // --- Pages ---
 
-const Dashboard = ({ setActivePage }: { setActivePage: (p: Page) => void }) => {
+const Dashboard = ({
+  currentUser,
+  setActivePage,
+}: {
+  currentUser: CurrentUser;
+  setActivePage: (p: Page) => void;
+}) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentLessons, setRecentLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +293,7 @@ const Dashboard = ({ setActivePage }: { setActivePage: (p: Page) => void }) => {
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-blue-600/20 to-transparent border border-blue-500/20 rounded-3xl p-8 flex flex-col justify-between min-h-[200px]">
         <div>
-          <h3 className="text-2xl font-bold mb-2">欢迎回来，Kayn 老师</h3>
+          <h3 className="text-2xl font-bold mb-2">欢迎回来，{currentUser.display_name}</h3>
           <p className="text-gray-400 max-w-md">
             {loading
               ? '正在加载数据...'
@@ -811,17 +850,184 @@ const QuestionBank = () => {
   );
 };
 
-const SettingsPage = ({ onLogout }: { onLogout: () => void }) => {
+const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+  const [items, setItems] = useState<RegistrationRequestItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [actingId, setActingId] = useState<number | null>(null);
+
+  const loadItems = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiFetch<{ items: RegistrationRequestItem[] }>('/api/admin/registration-requests');
+      setItems(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '审批列表加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadItems().catch(() => undefined);
+  }, [loadItems]);
+
+  const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
+    setActingId(requestId);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registration-requests/${requestId}/${action}`, {
+        method: 'POST',
+      });
+      setItems((current) => current.filter((item) => item.id !== requestId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '审批操作失败');
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  return (
+    <div className="p-8 space-y-8">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
+        <section className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-5">
+          <div>
+            <p className="text-sm text-gray-500 uppercase tracking-[0.25em]">Owner</p>
+            <h3 className="text-2xl font-bold mt-3">账号审批</h3>
+            <p className="text-sm text-gray-400 mt-2">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
+          </div>
+          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5">
+            <p className="text-xs text-blue-300 uppercase tracking-[0.25em]">Current Account</p>
+            <p className="text-xl font-semibold mt-3">{currentUser.display_name}</p>
+            <div className="mt-4 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-gray-500">用户名</span>
+                <span>{currentUser.username}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-gray-500">权限</span>
+                <span>{getRoleLabel(currentUser.role)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-gray-500">机构</span>
+                <span>{currentUser.organization_name}</span>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
+            <p className="text-xs text-gray-500 uppercase tracking-[0.25em]">Queue</p>
+            <p className="text-4xl font-bold mt-3">{items.length}</p>
+            <p className="text-sm text-gray-500 mt-2">当前待审核注册申请</p>
+          </div>
+        </section>
+
+        <section className="bg-white/5 border border-white/10 rounded-3xl p-6">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <h4 className="text-xl font-semibold">待审批申请</h4>
+              <p className="text-sm text-gray-500 mt-1">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
+            </div>
+            <button
+              onClick={() => loadItems().catch(() => undefined)}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-sm font-medium transition-colors"
+            >
+              刷新列表
+            </button>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="p-8 text-center text-gray-500">正在读取审批队列...</div>
+          ) : items.length === 0 ? (
+            <div className="p-10 rounded-2xl border border-dashed border-white/10 text-center text-gray-500">
+              暂无待审批申请，新的注册请求会出现在这里。
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {items.map((item) => {
+                const busy = actingId === item.id;
+                return (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold">{item.display_name}</span>
+                          <span className="text-xs px-2.5 py-1 rounded-full border border-blue-500/20 bg-blue-500/10 text-blue-300">
+                            待审批
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-400">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-gray-600">用户名</p>
+                            <p className="text-gray-200 mt-1">{item.username}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-gray-600">机构</p>
+                            <p className="text-gray-200 mt-1">{item.organization_name}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-gray-600">申请时间</p>
+                            <p className="text-gray-200 mt-1">{item.created_at}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => handleDecision(item.id, 'reject')}
+                          disabled={busy}
+                          className="px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 transition-colors"
+                        >
+                          拒绝
+                        </button>
+                        <button
+                          onClick={() => handleDecision(item.id, 'approve')}
+                          disabled={busy}
+                          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 transition-colors font-semibold"
+                        >
+                          {busy ? '处理中...' : '通过并开通'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+};
+
+const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout: () => void }) => {
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
       <h3 className="text-2xl font-bold">系统设置</h3>
 
       <section className="space-y-4">
         <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">账号</h4>
-        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 flex items-center justify-between">
+        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
           <div>
             <p className="font-medium">当前账号</p>
             <p className="text-sm text-gray-500 mt-0.5">登出后需重新输入用户名和密码。</p>
+            <div className="flex flex-wrap gap-2 mt-4 text-xs">
+              <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300">
+                {currentUser.display_name}
+              </span>
+              <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
+                {getRoleLabel(currentUser.role)}
+              </span>
+              <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
+                {currentUser.organization_name}
+              </span>
+            </div>
           </div>
           <button
             onClick={onLogout}
@@ -855,7 +1061,15 @@ const SettingsPage = ({ onLogout }: { onLogout: () => void }) => {
 
 // --- Login Modal ---
 
-const LoginModal = ({ onLogin, onClose }: { onLogin: (token: string) => void; onClose: () => void }) => {
+const LoginModal = ({
+  onLogin,
+  onClose,
+  onOpenRegister,
+}: {
+  onLogin: (token: string) => void;
+  onClose: () => void;
+  onOpenRegister: () => void;
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -962,6 +1176,189 @@ const LoginModal = ({ onLogin, onClose }: { onLogin: (token: string) => void; on
               {loading ? '登录中...' : '登录'}
             </button>
           </form>
+
+          <button
+            type="button"
+            onClick={onOpenRegister}
+            className="w-full mt-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+          >
+            还没有账号？提交注册申请
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/register-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          display_name: displayName,
+          password,
+          organization_name: '星润Starain',
+        }),
+      });
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) as { error?: string } : {};
+      if (!res.ok) {
+        throw new Error(data.error || '注册申请提交失败');
+      }
+      setSuccess('申请已提交，等待 Kayn 审批通过后即可登录后台。');
+      setUsername('');
+      setDisplayName('');
+      setPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '注册申请提交失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-lg"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold">提交注册申请</h2>
+              <p className="text-sm text-gray-500 mt-1">所有新账号默认加入机构 星润Starain，审批通过后才能进入后台。</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-white transition-colors text-2xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-300 text-sm">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">用户名</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  placeholder="登录时使用"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">显示名</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  placeholder="后台展示名称"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm text-gray-400">机构</label>
+              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-gray-200">
+                星润Starain
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入密码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all shadow-lg shadow-blue-600/20 mt-2"
+            >
+              {loading ? '提交中...' : '提交注册申请'}
+            </button>
+          </form>
         </div>
       </motion.div>
     </motion.div>
@@ -970,7 +1367,13 @@ const LoginModal = ({ onLogin, onClose }: { onLogin: (token: string) => void; on
 
 // --- Landing Page ---
 
-const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
+const LandingPage = ({
+  onLogin,
+  onRegister,
+}: {
+  onLogin: () => void;
+  onRegister: () => void;
+}) => {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30">
       {/* Navbar */}
@@ -985,12 +1388,20 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
             <a href="#process" className="hover:text-white transition-colors">工作流程</a>
             <a href="#about" className="hover:text-white transition-colors">关于我们</a>
           </div>
-          <button
-            onClick={onLogin}
-            className="bg-white text-black px-6 py-2.5 rounded-full font-bold text-sm hover:bg-gray-200 transition-all active:scale-95"
-          >
-            立即登录
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onRegister}
+              className="hidden sm:inline-flex bg-white/5 border border-white/10 text-white px-5 py-2.5 rounded-full font-semibold text-sm hover:bg-white/10 transition-all active:scale-95"
+            >
+              申请注册
+            </button>
+            <button
+              onClick={onLogin}
+              className="bg-white text-black px-6 py-2.5 rounded-full font-bold text-sm hover:bg-gray-200 transition-all active:scale-95"
+            >
+              立即登录
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -1051,8 +1462,11 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
               进入工作台
               <ArrowRight size={20} />
             </button>
-            <button className="w-full sm:w-auto bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all active:scale-95 flex items-center justify-center gap-2">
-              <Play size={20} className="fill-white" /> 查看演示视频
+            <button
+              onClick={onRegister}
+              className="w-full sm:w-auto bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <User size={20} /> 提交注册申请
             </button>
           </motion.div>
         </div>
@@ -1188,19 +1602,63 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
 
 export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem('xr_token') || '');
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(localStorage.getItem('xr_token')));
   const [showLogin, setShowLogin] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [showLanding, setShowLanding] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setCurrentUser(null);
+      setAuthReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setAuthReady(false);
+
+    apiFetch<CurrentUser>('/api/me')
+      .then((user) => {
+        if (cancelled) {
+          return;
+        }
+        setCurrentUser(user);
+        setActivePage((page) => (page === 'accounts' && user.role !== 'owner' ? 'dashboard' : page));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        localStorage.removeItem('xr_token');
+        setToken('');
+        setCurrentUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuthReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const handleLogin = (t: string) => {
     localStorage.setItem('xr_token', t);
     setToken(t);
     setShowLogin(false);
+    setShowLanding(false);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('xr_token');
     setToken('');
+    setCurrentUser(null);
+    setShowLanding(false);
+    setActivePage('dashboard');
   };
 
   const handleLessonSuccess = () => {
@@ -1212,16 +1670,46 @@ export default function App() {
     input: '添加课程',
     library: '课程列表',
     questions: '题库浏览',
+    accounts: '账号审批',
     settings: '系统设置',
   };
 
-  if (!token || showLanding) {
+  if (token && !authReady) {
+    return (
+      <div className="min-h-screen bg-black text-gray-100 flex items-center justify-center px-6">
+        <div className="w-full max-w-xl rounded-[2rem] border border-white/10 bg-white/5 p-8">
+          <XiaojimaoLoading label="正在验证账号权限..." />
+        </div>
+      </div>
+    );
+  }
+
+  if (!token || !currentUser || showLanding) {
     return (
       <>
-        <LandingPage onLogin={token ? () => setShowLanding(false) : () => setShowLogin(true)} />
+        <LandingPage
+          onLogin={token ? () => setShowLanding(false) : () => setShowLogin(true)}
+          onRegister={() => {
+            if (token) {
+              setShowLanding(false);
+              return;
+            }
+            setShowRegister(true);
+          }}
+        />
         <AnimatePresence>
           {showLogin && (
-            <LoginModal onLogin={handleLogin} onClose={() => setShowLogin(false)} />
+            <LoginModal
+              onLogin={handleLogin}
+              onClose={() => setShowLogin(false)}
+              onOpenRegister={() => {
+                setShowLogin(false);
+                setShowRegister(true);
+              }}
+            />
+          )}
+          {showRegister && (
+            <RegisterRequestModal onClose={() => setShowRegister(false)} />
           )}
         </AnimatePresence>
       </>
@@ -1230,7 +1718,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-black text-gray-100">
-      <Sidebar activePage={activePage} setActivePage={setActivePage} />
+      <Sidebar activePage={activePage} currentUser={currentUser} setActivePage={setActivePage} />
       <main className="flex-1 flex flex-col">
         <Header title={pageTitle[activePage]} onGoHome={() => setShowLanding(true)} />
         <div className="flex-1 overflow-y-auto">
@@ -1242,11 +1730,12 @@ export default function App() {
               exit={{ opacity: 0, x: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activePage === 'dashboard' && <Dashboard setActivePage={setActivePage} />}
+              {activePage === 'dashboard' && <Dashboard currentUser={currentUser} setActivePage={setActivePage} />}
               {activePage === 'input' && <LessonInput onSuccess={handleLessonSuccess} />}
               {activePage === 'library' && <LibraryPage />}
               {activePage === 'questions' && <QuestionBank />}
-              {activePage === 'settings' && <SettingsPage onLogout={handleLogout} />}
+              {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
+              {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
             </motion.div>
           </AnimatePresence>
         </div>
