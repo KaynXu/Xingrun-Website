@@ -835,7 +835,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
             </div>
 
             {error && (
-              <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-600">
+              <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
                 <AlertCircle size={18} />
                 <span className="text-sm">{error}</span>
               </div>
@@ -843,12 +843,12 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
 
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
               <div className="space-y-6">
-                <div className="inline-flex gap-2 rounded-2xl border border-sky-100 bg-white/85 p-1 shadow-sm">
+                <div className="inline-flex gap-2 rounded-2xl border border-sky-100 bg-white/85 p-1 shadow-sm dark:border-white/10 dark:bg-white/5">
                   <button
                     onClick={() => setInputType('text')}
                     className={cn(
                       'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                      inputType === 'text' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                      inputType === 'text' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
                     )}
                   >
                     文字笔记
@@ -857,7 +857,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                     onClick={() => setInputType('file')}
                     className={cn(
                       'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                      inputType === 'file' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                      inputType === 'file' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
                     )}
                   >
                     上传文件
@@ -867,13 +867,13 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 {inputType === 'file' ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className={`${workspaceCardClass} cursor-pointer p-12 text-center transition-all hover:border-sky-200 hover:shadow-[0_24px_64px_rgba(47,128,237,0.1)]`}
+                    className={`${workspaceCardClass} cursor-pointer p-12 text-center transition-all hover:border-sky-200 hover:shadow-[0_24px_64px_rgba(47,128,237,0.1)] dark:hover:border-white/15 dark:hover:shadow-[0_28px_72px_rgba(2,6,23,0.4)]`}
                   >
-                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 transition-transform hover:scale-105">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 transition-transform hover:scale-105 dark:bg-white/5 dark:text-sky-300">
                       <Upload size={32} />
                     </div>
-                    <h4 className="font-semibold text-slate-900">{file ? file.name : '上传课后录音或文本'}</h4>
-                    <p className="mt-2 text-sm text-slate-500">支持 m4a, mp3, wav, txt, md 格式</p>
+                    <h4 className="font-semibold text-slate-900 dark:text-white">{file ? file.name : '上传课后录音或文本'}</h4>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">支持 m4a, mp3, wav, txt, md 格式</p>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -885,7 +885,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 ) : null}
 
                 <div className={`${workspaceCardClass} space-y-4 p-6`}>
-                  <h4 className="flex items-center gap-2 font-semibold text-slate-900">
+                  <h4 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
                     <CheckCircle2 size={18} className="text-sky-500" />
                     课程信息
                   </h4>
@@ -911,15 +911,15 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   <div className={`${workspaceCardClass} flex flex-1 flex-col p-6`}>
                     <div className="mb-4 flex items-center justify-between gap-4">
                       <div>
-                        <h4 className="font-semibold text-slate-900">课堂笔记</h4>
-                        <p className="mt-1 text-sm text-slate-500">支持长段文本、结构化大纲与老师备注。</p>
+                        <h4 className="font-semibold text-slate-900 dark:text-white">课堂笔记</h4>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">支持长段文本、结构化大纲与老师备注。</p>
                       </div>
                       <button
                         onClick={handleAnalyze}
                         disabled={!summaryText.trim() || isAnalyzing}
                         className={workspaceGhostButtonClass}
                       >
-                        <Cpu size={13} className={isAnalyzing ? 'text-sky-500' : 'text-slate-500'} />
+                        <Cpu size={13} className={isAnalyzing ? 'text-sky-500' : 'text-slate-500 dark:text-slate-400'} />
                         {isAnalyzing ? '识别中...' : '识别'}
                       </button>
                     </div>
@@ -927,7 +927,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                       placeholder="在此处粘贴您的课堂笔记或结构化大纲..."
                       value={summaryText}
                       onChange={(e) => setSummaryText(e.target.value)}
-                      className="min-h-[320px] flex-1 resize-none rounded-2xl border border-sky-100 bg-[linear-gradient(180deg,rgba(249,252,255,0.98)_0%,rgba(240,248,255,0.95)_100%)] px-5 py-4 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100"
+                      className="min-h-[320px] flex-1 resize-none rounded-2xl border border-sky-100 bg-[linear-gradient(180deg,rgba(249,252,255,0.98)_0%,rgba(240,248,255,0.95)_100%)] px-5 py-4 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
                     />
                   </div>
                 )}
@@ -974,7 +974,7 @@ const LibraryPage = () => {
           <p className={`${workspaceSectionTextClass} mt-2`}>按课程、日期与 PDF 生成状态查看教学记录。</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-200 bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600">
+          <button className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-200 bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300">
             <Filter size={20} />
           </button>
         </div>
@@ -982,13 +982,13 @@ const LibraryPage = () => {
 
       <div className={`${workspaceCardClass} overflow-hidden`}>
         {loading ? (
-          <div className="p-8 text-center text-slate-500">加载中...</div>
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
         ) : lessons.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">暂无课程，点击「添加课程」开始记录。</div>
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无课程，点击「添加课程」开始记录。</div>
         ) : (
           <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
                 <th className="px-6 py-4 font-semibold">课程名称</th>
                 <th className="px-6 py-4 font-semibold">科目 / 年级</th>
                 <th className="px-6 py-4 font-semibold">日期</th>
@@ -996,36 +996,36 @@ const LibraryPage = () => {
                 <th className="px-6 py-4 text-right font-semibold">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-sky-100/80">
+            <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
               {lessons.map((lesson) => (
-                <tr key={lesson.id} className="group transition-colors hover:bg-sky-50/70">
+                <tr key={lesson.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
                         <FileText size={16} />
                       </div>
-                      <span className="font-medium text-slate-900">{lesson.topic || `${lesson.subject} 课程`}</span>
+                      <span className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
                       {lesson.subject && (
-                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">
+                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
                           {lesson.subject}
                         </span>
                       )}
                       {lesson.grade && (
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
                           {lesson.grade}
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 font-mono text-sm text-slate-500">{lesson.date}</td>
+                  <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{lesson.date}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300')} />
-                      <span className="text-sm text-slate-500">{lesson.pdf_path ? '已生成' : '无'}</span>
+                      <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
+                      <span className="text-sm text-slate-500 dark:text-slate-400">{lesson.pdf_path ? '已生成' : '无'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -1036,14 +1036,14 @@ const LibraryPage = () => {
                             href={`/pdf/${lesson.id}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600"
+                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                             title="查看"
                           >
                             <Eye size={16} />
                           </a>
                           <a
                             href={`/pdf/download/${lesson.id}`}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600"
+                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                             title="下载"
                           >
                             <Download size={16} />
@@ -1052,7 +1052,7 @@ const LibraryPage = () => {
                       )}
                       <button
                         onClick={() => handleDelete(lesson.id)}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                         title="删除"
                       >
                         <Trash2 size={16} />
@@ -1091,20 +1091,20 @@ const QuestionBank = () => {
           <p className={`${workspaceSectionTextClass} mt-2`}>浏览从课程中自动提取的填空题。共 {data.total} 道题。</p>
         </div>
         <div className={`${workspaceSoftCardClass} flex items-center gap-3 px-4 py-3`}>
-          <span className="text-sm text-slate-500">显示答案</span>
+          <span className="text-sm text-slate-500 dark:text-slate-400">显示答案</span>
           <button
             onClick={() => setShowAnswers(!showAnswers)}
-            className={`relative h-5 w-10 rounded-full transition-colors ${showAnswers ? 'bg-sky-600' : 'bg-sky-100'}`}
+            className={`relative h-5 w-10 rounded-full transition-colors ${showAnswers ? 'bg-sky-600' : 'bg-sky-100 dark:bg-slate-700'}`}
           >
-            <motion.div animate={{ x: showAnswers ? 20 : 2 }} className="absolute top-1 h-3 w-3 rounded-full bg-white" />
+            <motion.div animate={{ x: showAnswers ? 20 : 2 }} className="absolute top-1 h-3 w-3 rounded-full bg-white dark:bg-slate-100" />
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="p-8 text-center text-slate-500">加载中...</div>
+        <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
       ) : allQuestions.length === 0 ? (
-        <div className={`${workspaceCardClass} p-8 text-center text-slate-500`}>暂无题目，添加课程后将自动提取填空题。</div>
+        <div className={`${workspaceCardClass} p-8 text-center text-slate-500 dark:text-slate-400`}>暂无题目，添加课程后将自动提取填空题。</div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {allQuestions.map((item, i) => (
@@ -1112,17 +1112,17 @@ const QuestionBank = () => {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 space-y-3">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700">Q{i + 1}</span>
-                    {item.category && <span className="text-xs text-slate-500">{item.category}</span>}
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Q{i + 1}</span>
+                    {item.category && <span className="text-xs text-slate-500 dark:text-slate-400">{item.category}</span>}
                   </div>
-                  <p className="text-lg leading-relaxed text-slate-700">
+                  <p className="text-lg leading-relaxed text-slate-700 dark:text-slate-100">
                     {item.question.split('___').map((part, index, array) => (
                       <React.Fragment key={index}>
                         {part}
                         {index < array.length - 1 && (
                           <span
                             className={`inline-block min-w-[80px] border-b-2 border-sky-400/60 px-2 text-center font-bold transition-all ${
-                              showAnswers ? 'text-sky-600 opacity-100' : 'text-transparent opacity-0'
+                              showAnswers ? 'text-sky-600 opacity-100 dark:text-sky-300' : 'text-transparent opacity-0'
                             }`}
                           >
                             {item.answer}
@@ -1132,7 +1132,7 @@ const QuestionBank = () => {
                     ))}
                   </p>
                   {showAnswers && !item.question.includes('___') && (
-                    <p className="mt-2 text-sm text-sky-600">答案：{item.answer}</p>
+                    <p className="mt-2 text-sm text-sky-600 dark:text-sky-300">答案：{item.answer}</p>
                   )}
                 </div>
               </div>
@@ -1233,39 +1233,39 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
             <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Owner</p>
-            <h3 className="mt-3 text-2xl font-bold text-slate-900">账号审批</h3>
-            <p className="mt-2 text-sm text-slate-500">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
+            <h3 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">账号审批</h3>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-5`}>
             <p className="text-xs uppercase tracking-[0.25em] text-sky-600">Current Account</p>
-            <p className="mt-3 text-xl font-semibold text-slate-900">{currentUser.display_name}</p>
+            <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500">用户名</span>
-                <span className="text-slate-700">{currentUser.username}</span>
+                <span className="text-slate-500 dark:text-slate-400">用户名</span>
+                <span className="text-slate-700 dark:text-slate-200">{currentUser.username}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500">权限</span>
-                <span className="text-slate-700">{getRoleLabel(currentUser.role)}</span>
+                <span className="text-slate-500 dark:text-slate-400">权限</span>
+                <span className="text-slate-700 dark:text-slate-200">{getRoleLabel(currentUser.role)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500">机构</span>
-                <span className="text-slate-700">{currentUser.organization_name}</span>
+                <span className="text-slate-500 dark:text-slate-400">机构</span>
+                <span className="text-slate-700 dark:text-slate-200">{currentUser.organization_name}</span>
               </div>
             </div>
           </div>
           <div className={`${workspaceSoftCardClass} p-5`}>
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Queue</p>
-            <p className="mt-3 text-4xl font-bold text-slate-900">{items.length}</p>
-            <p className="mt-2 text-sm text-slate-500">当前待审核注册申请</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Queue</p>
+            <p className="mt-3 text-4xl font-bold text-slate-900 dark:text-white">{items.length}</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前待审核注册申请</p>
           </div>
         </section>
 
         <section className={`${workspaceCardClass} p-6`}>
           <div className="flex items-center justify-between gap-4 mb-6">
             <div>
-              <h4 className="text-xl font-semibold text-slate-900">待审批申请</h4>
-              <p className="mt-1 text-sm text-slate-500">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">待审批申请</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
             </div>
             <button
               onClick={() => loadItems().catch(() => undefined)}
@@ -1276,16 +1276,16 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
 
           {error && (
-            <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600">
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
               <AlertCircle size={16} />
               {error}
             </div>
           )}
 
           {loading ? (
-            <div className="p-8 text-center text-slate-500">正在读取审批队列...</div>
+            <div className="p-8 text-center text-slate-500 dark:text-slate-400">正在读取审批队列...</div>
           ) : items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500">
+            <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
               暂无待审批申请，新的注册请求会出现在这里。
             </div>
           ) : (
@@ -1297,23 +1297,23 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-lg font-semibold text-slate-900">{item.display_name}</span>
-                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700">
+                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.display_name}</span>
+                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
                             待审批
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
                           <div>
                             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">用户名</p>
-                            <p className="mt-1 text-slate-700">{item.username}</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
                           </div>
                           <div>
                             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">机构</p>
-                            <p className="mt-1 text-slate-700">{item.organization_name}</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.organization_name}</p>
                           </div>
                           <div>
                             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">申请时间</p>
-                            <p className="mt-1 text-slate-700">{item.created_at}</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.created_at}</p>
                           </div>
                         </div>
                       </div>
@@ -1344,11 +1344,11 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
       <section className={`${workspaceCardClass} space-y-5 p-6`}>
         <div>
-          <h4 className="text-xl font-semibold text-slate-900">班级分配</h4>
-          <p className="mt-1 text-sm text-slate-500">为每位成员指定可访问的班级。</p>
+          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级分配</h4>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为每位成员指定可访问的班级。</p>
         </div>
         {users.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">暂无成员数据</div>
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无成员数据</div>
         ) : (
           <div className="space-y-4">
             {users.map((user) => {
@@ -1358,18 +1358,18 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                     <div>
-                      <span className="font-semibold text-slate-900">{user.name}</span>
-                      <span className="ml-2 text-xs text-slate-500">{user.org}</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{user.org}</span>
                       {saving && <span className="ml-2 text-xs text-sky-600">保存中...</span>}
                     </div>
                     {classes.length === 0 ? (
-                      <span className="text-xs text-slate-500">暂无班级</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">暂无班级</span>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {classes.map((cls) => {
                           const checked = assigned.includes(cls.id);
                           return (
-                            <label key={cls.id} className="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-600">
+                              <label key={cls.id} className="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
                               <input
                                 type="checkbox"
                                 checked={checked}
@@ -1377,7 +1377,7 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                                 onChange={(e) => handleClassToggle(user.id, cls.id, e.target.checked)}
                                 className="accent-sky-500"
                               />
-                              <span className={checked ? 'text-slate-900' : 'text-slate-500'}>{cls.name}</span>
+                              <span className={checked ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}>{cls.name}</span>
                             </label>
                           );
                         })}
@@ -1400,19 +1400,19 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
       <h3 className={workspaceSectionTitleClass}>系统设置</h3>
 
       <section className="space-y-4">
-        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500">账号</h4>
+        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">账号</h4>
         <div className={`${workspaceCardClass} flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between`}>
           <div>
-            <p className="font-medium text-slate-900">当前账号</p>
-            <p className="mt-0.5 text-sm text-slate-500">登出后需重新输入用户名和密码。</p>
+            <p className="font-medium text-slate-900 dark:text-white">当前账号</p>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">登出后需重新输入用户名和密码。</p>
             <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
                 {currentUser.display_name}
               </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                 {getRoleLabel(currentUser.role)}
               </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                 {currentUser.organization_name}
               </span>
             </div>
@@ -1424,19 +1424,19 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
       </section>
 
       <section className="space-y-4">
-        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500">关于</h4>
+        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">关于</h4>
         <div className={`${workspaceCardClass} space-y-3 p-6`}>
           <div className="flex justify-between text-sm">
-            <span className="text-slate-500">产品</span>
-            <span className="text-slate-700">星润课后复习系统</span>
+            <span className="text-slate-500 dark:text-slate-400">产品</span>
+            <span className="text-slate-700 dark:text-slate-200">星润课后复习系统</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-slate-500">版本</span>
-            <span className="font-mono text-slate-700">v1.0.0</span>
+            <span className="text-slate-500 dark:text-slate-400">版本</span>
+            <span className="font-mono text-slate-700 dark:text-slate-200">v1.0.0</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-slate-500">AI 引擎</span>
-            <span className="text-slate-700">由星润提供</span>
+            <span className="text-slate-500 dark:text-slate-400">AI 引擎</span>
+            <span className="text-slate-700 dark:text-slate-200">由星润提供</span>
           </div>
         </div>
       </section>
