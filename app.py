@@ -956,6 +956,44 @@ def api_monthly_generate():
     return jsonify({"ok": True, "filename": pdf_name})
 
 
+@app.route("/api/analyze", methods=["POST"])
+def api_analyze_text():
+    if not _check_auth():
+        return jsonify({"error": "未授权"}), 401
+    data = request.json or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "请提供文本内容"}), 400
+    try:
+        from ai_processor import _get_client, _get_chat_model
+        client = _get_client()
+        resp = client.chat.completions.create(
+            model=_get_chat_model(),
+            messages=[
+                {"role": "system", "content": (
+                    "你是教学助手。根据课堂笔记提取关键信息，以JSON格式返回，"
+                    "包含三个字段：subject（科目，如语文/数学/英语等，若无法判断则为空字符串）、"
+                    "topic（本节课主题，简短概括，不超过20字）、"
+                    "weak_points（学生薄弱点，若无明显提及则为空字符串）。只返回JSON，不要其他文字。"
+                )},
+                {"role": "user", "content": f"课堂笔记：\n{text}"},
+            ],
+            temperature=0.3,
+            max_tokens=200,
+        )
+        raw = resp.choices[0].message.content.strip()
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        result = json.loads(raw)
+        return jsonify({
+            "subject": result.get("subject", ""),
+            "topic": result.get("topic", ""),
+            "weak_points": result.get("weak_points", ""),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/settings", methods=["GET"])
 def api_settings_get():
     cfg = get_config()

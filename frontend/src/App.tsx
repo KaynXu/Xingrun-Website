@@ -73,6 +73,13 @@ interface ApiSettings {
   provider: string;
 }
 
+interface ClassItem {
+  id: number;
+  name: string;
+  subject: string;
+  grade: string;
+}
+
 // --- API helper ---
 
 function getToken(): string {
@@ -347,7 +354,6 @@ const Dashboard = ({ setActivePage }: { setActivePage: (p: Page) => void }) => {
 
 const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   const [subject, setSubject] = useState('');
-  const [grade, setGrade] = useState('');
   const [topic, setTopic] = useState('');
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().split('T')[0]);
   const [weakPoints, setWeakPoints] = useState('');
@@ -355,8 +361,39 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   const [inputType, setInputType] = useState<'text' | 'file'>('text');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState('');
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [classId, setClassId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    apiFetch<ClassItem[]>('/api/classes').then(setClasses).catch(console.error);
+  }, []);
+
+  const handleClassChange = (id: number) => {
+    setClassId(id);
+    const cls = classes.find((c) => c.id === id);
+    if (cls?.subject) setSubject(cls.subject);
+  };
+
+  const handleAnalyze = async () => {
+    if (!summaryText.trim()) return;
+    setIsAnalyzing(true);
+    try {
+      const result = await apiFetch<{ subject: string; topic: string; weak_points: string }>('/api/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ text: summaryText }),
+      });
+      if (result.subject) setSubject(result.subject);
+      if (result.topic) setTopic(result.topic);
+      if (result.weak_points) setWeakPoints(result.weak_points);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '识别失败，请重试');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleGenerate = async () => {
     setError('');
@@ -376,7 +413,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
           method: 'POST',
           body: JSON.stringify({
             subject,
-            grade,
+            class_id: classId ?? 0,
             topic,
             date: lessonDate,
             weak_points: weakPoints,
@@ -387,7 +424,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
         const formData = new FormData();
         formData.append('input_type', 'file');
         formData.append('subject', subject);
-        formData.append('grade', grade);
+        formData.append('class_id', classId ? String(classId) : '0');
         formData.append('topic', topic);
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
@@ -439,13 +476,16 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   onChange={(e) => setSubject(e.target.value)}
                   className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-28"
                 />
-                <input
-                  type="text"
-                  placeholder="年级"
-                  value={grade}
-                  onChange={(e) => setGrade(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-28"
-                />
+                <select
+                  value={classId ?? ''}
+                  onChange={(e) => handleClassChange(Number(e.target.value))}
+                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-32 text-gray-300"
+                >
+                  <option value="" disabled className="bg-[#0a0a0a]">选择班级</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#0a0a0a]">{c.name}</option>
+                  ))}
+                </select>
                 <input
                   type="date"
                   value={lessonDate}
@@ -526,8 +566,15 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 {inputType === 'text' && (
                   <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col">
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-semibold">课堂笔记 (Markdown)</h4>
-                      <span className="text-xs text-gray-500">支持富文本粘贴</span>
+                      <h4 className="font-semibold">课堂笔记</h4>
+                      <button
+                        onClick={handleAnalyze}
+                        disabled={!summaryText.trim() || isAnalyzing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:border-blue-500/50 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Cpu size={13} className={isAnalyzing ? 'animate-pulse text-blue-400' : ''} />
+                        {isAnalyzing ? '识别中...' : '识别'}
+                      </button>
                     </div>
                     <textarea
                       placeholder="在此处粘贴您的课堂笔记或结构化大纲..."
