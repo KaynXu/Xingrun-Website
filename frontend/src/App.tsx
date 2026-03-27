@@ -601,6 +601,55 @@ const Dashboard = ({
   );
 };
 
+const SubjectCombobox = ({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) => {
+  const [open, setOpen] = useState(false);
+  const filtered = options.filter(
+    (o) => o && (!value || o.toLowerCase().includes(value.toLowerCase()))
+  );
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        placeholder="科目"
+        value={value}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-28"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute top-full left-0 mt-1 w-full min-w-[7rem] bg-[#0a0a0a] border border-white/10 rounded-xl overflow-hidden z-20 shadow-xl">
+          {filtered.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onMouseDown={() => {
+                onChange(opt);
+                setOpen(false);
+              }}
+              className="w-full px-4 py-2 text-sm text-left hover:bg-white/10 transition-colors text-gray-200"
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
@@ -718,12 +767,10 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 <p className="text-gray-500">上传录音或粘贴笔记，AI 将为您自动生成复习资料。</p>
               </div>
               <div className="flex gap-3">
-                <input
-                  type="text"
-                  placeholder="科目"
+                <SubjectCombobox
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 w-28"
+                  onChange={setSubject}
+                  options={[...new Set<string>(classes.map((c: ClassItem) => c.subject).filter(Boolean))] as string[]}
                 />
                 <select
                   value={classId ?? ''}
