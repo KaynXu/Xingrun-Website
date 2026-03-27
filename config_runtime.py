@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import json
+import os
+from pathlib import Path
+from typing import Optional
+
+BASE_DIR = Path(__file__).parent.resolve()
+CFG_PATH = BASE_DIR / "config.json"
+
+ENV_VAR_MAP = {
+    "provider": "XR_PROVIDER",
+    "openai_api_key": "OPENAI_API_KEY",
+    "deepseek_api_key": "DEEPSEEK_API_KEY",
+    "mimo_api_key": "MIMO_API_KEY",
+    "mimo_base_url": "XR_MIMO_BASE_URL",
+    "mimo_model": "XR_MIMO_MODEL",
+    "n1n_api_key": "N1N_API_KEY",
+    "n1n_base_url": "XR_N1N_BASE_URL",
+    "n1n_model": "XR_N1N_MODEL",
+    "admin_username": "XR_ADMIN_USERNAME",
+    "admin_password_hash": "XR_ADMIN_PASSWORD_HASH",
+}
+
+DEFAULTS = {
+    "provider": "openai",
+    "mimo_model": "MiMo-7B-RL",
+    "n1n_base_url": "https://api.n1n.ai/v1",
+    "n1n_model": "gpt-4o",
+    "deepseek_model": "deepseek-chat",
+}
+
+
+def load_file_config() -> dict:
+    if CFG_PATH.exists():
+        with open(CFG_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def write_file_config(cfg: dict) -> None:
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def get_env_overrides() -> dict:
+    overrides = {}
+    for key, env_name in ENV_VAR_MAP.items():
+        value = os.environ.get(env_name)
+        if value is not None and value.strip():
+            overrides[key] = value.strip()
+    return overrides
+
+
+def env_controlled_keys() -> set[str]:
+    return set(get_env_overrides().keys())
+
+
+def env_var_for_key(key: str) -> Optional[str]:
+    return ENV_VAR_MAP.get(key)
+
+
+def get_runtime_config() -> dict:
+    cfg = dict(DEFAULTS)
+    cfg.update(load_file_config())
+    cfg.update(get_env_overrides())
+    return cfg
