@@ -14,9 +14,7 @@ import {
   Search,
   Bell,
   User,
-  Users,
   FileText,
-  Clock,
   Download,
   Trash2,
   Eye,
@@ -29,7 +27,6 @@ import {
   ArrowRight,
   AlertCircle,
   ShieldCheck,
-  Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
