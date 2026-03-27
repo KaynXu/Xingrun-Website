@@ -28,6 +28,31 @@ test('landing page renders Starain hero branding and approved messaging', () => 
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
 
+test('landing page tells the validated workflow story', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+
+  assert.equal(typeof LandingPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+
+  assert.match(markup, /从课堂素材到复习交付/);
+  assert.match(markup, /把错误沉淀成可追踪资产/);
+  assert.match(markup, /把题目沉淀成可调用的题库系统/);
+  assert.match(markup, /把课程目标转化为讲义与教研交付/);
+  assert.match(markup, /教学素材进入平台/);
+  assert.match(markup, /AI 完成结构化处理/);
+  assert.match(markup, /输出到复习与教学协同/);
+  assert.match(markup, /关于 Starain/);
+  assert.match(markup, /不是从 PPT 里想出来的/);
+});
+
 test('legal pages use Starain branding in the chrome', () => {
   const LandingLegalPage = (AppModule as {
     LandingLegalPage?: React.ComponentType<{

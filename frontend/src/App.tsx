@@ -1799,8 +1799,8 @@ export const LandingPage = ({
       <section id="features" className="py-24 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">重构 AI 教学交付</h2>
-            <p className="text-gray-500 text-lg">从单点工具走向可扩展的教育解决方案版图。</p>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">把真实教学流程整理成可复用的 AI 能力</h2>
+            <p className="text-slate-600 text-lg">不是堆叠功能点，而是把一条已经跑通的教育工作流产品化。</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1814,9 +1814,9 @@ export const LandingPage = ({
                   <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center mb-6">
                     <FileText size={24} />
                   </div>
-                  <h3 className="text-3xl font-bold mb-4">课后复习系统</h3>
-                  <p className="text-gray-400 text-lg max-w-2xl">
-                    从课堂录音、笔记到结构化复习资料与题目生成，已经形成可落地的教学交付闭环。
+                  <h3 className="text-3xl font-bold mb-4 text-slate-900">从课堂素材到复习交付</h3>
+                  <p className="text-slate-600 text-lg max-w-2xl">
+                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与可复用的交付资产。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
@@ -1833,9 +1833,9 @@ export const LandingPage = ({
                 <div className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center mb-6">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4">智能错题本</h3>
-                <p className="text-gray-400">
-                  沉淀学生高频错误与知识薄弱点，形成可持续追踪的个性化复习资产。
+                <h3 className="text-2xl font-bold mb-4 text-slate-900">把错误沉淀成可追踪资产</h3>
+                <p className="text-slate-600">
+                  不是一次性纠错，而是持续记录高频错误、薄弱点与个性化复习路径。
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
@@ -1851,9 +1851,9 @@ export const LandingPage = ({
                 <div className="w-12 h-12 bg-green-600 rounded-2xl flex items-center justify-center mb-6">
                   <Database size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4">国际课程题库 / 自动组卷</h3>
-                <p className="text-gray-400">
-                  面向 AP、A-Level、IB 等国际课程场景，支持题库沉淀、标签化管理与自动组卷。
+                <h3 className="text-2xl font-bold mb-4 text-slate-900">把题目沉淀成可调用的题库系统</h3>
+                <p className="text-slate-600">
+                  面向 AP、A-Level、IB 等课程，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
                 </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-green-500 font-bold text-sm">
@@ -1868,9 +1868,9 @@ export const LandingPage = ({
                 <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center mb-6">
                   <FileText size={24} />
                 </div>
-                <h3 className="text-3xl font-bold mb-4">教案与讲义生成</h3>
-                <p className="text-gray-400 text-lg">
-                  将课程目标、知识结构与教学素材快速转化为讲义、课堂提纲和教研交付内容。
+                <h3 className="text-3xl font-bold mb-4 text-slate-900">把课程目标转化为讲义与教研交付</h3>
+                <p className="text-slate-600 text-lg">
+                  从课程目标到讲义、课堂提纲和教研素材，减少教师重复整理工作。
                 </p>
               </div>
               <div className="w-full md:w-72 bg-black border border-white/10 rounded-3xl p-5 flex flex-col gap-3">
@@ -1918,9 +1918,9 @@ export const LandingPage = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
             <div className="hidden md:block absolute top-1/2 left-0 w-full h-[1px] bg-white/10 -translate-y-1/2 z-0"></div>
             {[
-              { step: '01', title: '教学素材接入', desc: '接入课堂录音、笔记、题目与课程资料。' },
-              { step: '02', title: 'AI 模块处理', desc: '按复习、错题、组卷、讲义等场景完成结构化生成。' },
-              { step: '03', title: '面向团队交付', desc: '输出给教师、教研与教学运营团队，形成标准化内容资产。' },
+              { step: '01', title: '教学素材进入平台', desc: '录音、笔记、题目、课件等教学资料进入统一工作台。' },
+              { step: '02', title: 'AI 完成结构化处理', desc: '提炼重点、识别薄弱点、归档题目并生成讲义草稿。' },
+              { step: '03', title: '输出到复习与教学协同', desc: '生成复习资料、错题沉淀、题库调用与团队复用内容。' },
             ].map((item, i) => (
               <div key={i} className="relative z-10 flex flex-col items-center">
                 <div className="w-20 h-20 bg-black border border-white/20 rounded-full flex items-center justify-center text-2xl font-black mb-6 shadow-2xl">
@@ -1943,27 +1943,25 @@ export const LandingPage = ({
                 ABOUT STARAIN
               </span>
               <div>
-                <h2 className="text-4xl md:text-5xl font-bold mb-4">关于 Starain</h2>
-                <p className="max-w-2xl text-lg text-gray-400 leading-relaxed">
-                  Starain 聚焦 AI 与教育场景的深度结合，面向学校、机构与教学团队，
-                  构建从内容生成、知识沉淀到教学交付的下一代工作流。
+                <h2 className="text-4xl md:text-5xl font-bold mb-4 text-slate-900">关于 Starain</h2>
+                <p className="max-w-2xl text-lg text-slate-600 leading-relaxed">
+                  Starain 不是从 PPT 里想出来的，而是从真实教学现场长出来的。
                 </p>
               </div>
-              <p className="max-w-2xl text-sm md:text-base text-gray-500 leading-relaxed">
-                我们以已落地的课后复习系统为起点，持续延展智能错题本、国际课程题库与自动组卷、
-                教案讲义生成等能力模块，帮助团队把零散教学经验沉淀为可复制、可扩展的 AI 教学资产。
+              <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed">
+                我们先在自己的教育机构中解决复习资料、题库沉淀、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-4">
               {[
                 {
-                  title: '已落地旗舰产品',
-                  body: '课后复习系统已形成从课堂素材到复习交付的完整闭环。',
+                  title: '已验证流程',
+                  body: '课堂素材到复习交付的链路已经在真实教学里跑通。',
                 },
                 {
-                  title: '方案版图扩展',
-                  body: '错题管理、组卷与讲义生成正作为统一能力模块持续延展。',
+                  title: '能力模块化',
+                  body: '错题沉淀、题库调用与讲义生成作为统一工作流持续复用。',
                 },
                 {
                   title: '服务对象',
