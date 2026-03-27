@@ -53,7 +53,8 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              DEFAULT_ORGANIZATION_NAME, authenticate_user,
                              create_auth_session, create_registration_request,
                              approve_registration_request, reject_registration_request,
-                             list_registration_requests, get_current_user)
+                             list_registration_requests, get_current_user,
+                             list_all_users, get_user_class_ids, set_user_class_ids)
 
 init_db()
 
@@ -785,6 +786,33 @@ def api_admin_registration_request_reject(request_id):
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users", methods=["GET"])
+def api_admin_users():
+    _, error = _require_owner()
+    if error:
+        return error
+    users = list_all_users()
+    return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
+
+
+@app.route("/api/admin/users/<int:user_id>/classes", methods=["GET"])
+def api_admin_user_classes_get(user_id):
+    _, error = _require_owner()
+    if error:
+        return error
+    return jsonify({"class_ids": get_user_class_ids(user_id)})
+
+
+@app.route("/api/admin/users/<int:user_id>/classes", methods=["PUT"])
+def api_admin_user_classes_set(user_id):
+    _, error = _require_owner()
+    if error:
+        return error
+    data = request.json or {}
+    set_user_class_ids(user_id, data.get("class_ids", []))
     return jsonify({"ok": True})
 
 
