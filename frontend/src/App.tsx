@@ -1756,7 +1756,7 @@ export const LandingPage = ({
             <span className="inline-flex items-center rounded-full border border-sky-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700 mb-6">
               BUILT FROM REAL TEACHING PRACTICE
             </span>
-            <h1 className="mt-6 text-5xl md:text-7xl font-black leading-[0.95] tracking-tight text-slate-900 mb-8">
+            <h1 className="mt-6 text-5xl md:text-7xl font-black leading-[0.95] tracking-tight text-white mb-8">
               教育工作流终于被 AI 重新组织好了
             </h1>
           </motion.div>
@@ -1765,7 +1765,7 @@ export const LandingPage = ({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4, duration: 0.8 }}
-            className="text-lg md:text-xl text-slate-600 max-w-3xl mx-auto mb-12 leading-relaxed"
+            className="text-lg md:text-xl text-slate-300 max-w-3xl mx-auto mb-12 leading-relaxed"
           >
             Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，
             再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。
@@ -1777,13 +1777,13 @@ export const LandingPage = ({
             transition={{ delay: 0.6, duration: 0.8 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <button
-              onClick={onLogin}
+            <a
+              href="#features"
               className="w-full sm:w-auto bg-blue-600 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-blue-500 transition-all shadow-[0_0_40px_rgba(59,130,246,0.3)] active:scale-95 flex items-center justify-center gap-2"
             >
               查看平台方案
               <ArrowRight size={20} />
-            </button>
+            </a>
             <button
               onClick={onRegister}
               className="w-full sm:w-auto bg-white/5 border border-white/10 text-white px-10 py-5 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all active:scale-95 flex items-center justify-center gap-2"

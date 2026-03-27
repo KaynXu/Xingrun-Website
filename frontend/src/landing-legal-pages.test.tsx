@@ -23,6 +23,7 @@ test('landing page renders Starain hero branding and approved messaging', () => 
   assert.match(markup, /AI Edu Platform/);
   assert.match(markup, /教育工作流终于被 AI 重新组织好了/);
   assert.match(markup, /查看平台方案/);
+  assert.match(markup, /href="#features"/);
   assert.match(markup, /申请试用/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
