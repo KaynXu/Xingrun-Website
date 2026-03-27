@@ -1933,8 +1933,54 @@ export const LandingPage = ({
         </div>
       </section>
 
+      {/* About Section */}
+      <section id="about" className="py-24 border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 items-start">
+            <div className="space-y-6">
+              <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-gray-400">
+                ABOUT XINGRUN
+              </span>
+              <div>
+                <h2 className="text-4xl md:text-5xl font-bold mb-4">关于星润</h2>
+                <p className="max-w-2xl text-lg text-gray-400 leading-relaxed">
+                  星润聚焦 AI 与教育场景的深度结合，面向学校、机构与教学团队，
+                  构建从内容生成、知识沉淀到教学交付的下一代工作流。
+                </p>
+              </div>
+              <p className="max-w-2xl text-sm md:text-base text-gray-500 leading-relaxed">
+                我们以已落地的课后复习系统为起点，持续延展智能错题本、国际课程题库与自动组卷、
+                教案讲义生成等能力模块，帮助团队把零散教学经验沉淀为可复制、可扩展的 AI 教学资产。
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-4">
+              {[
+                {
+                  title: '已落地旗舰产品',
+                  body: '课后复习系统已形成从课堂素材到复习交付的完整闭环。',
+                },
+                {
+                  title: '方案版图扩展',
+                  body: '错题管理、组卷与讲义生成正作为统一能力模块持续延展。',
+                },
+                {
+                  title: '服务对象',
+                  body: '聚焦学校、培训机构、国际课程团队与教研运营场景。',
+                },
+              ].map((item) => (
+                <div key={item.title} className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-6">
+                  <p className="text-sm font-semibold text-white mb-2">{item.title}</p>
+                  <p className="text-sm text-gray-500 leading-relaxed">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
-      <footer id="about" className="py-20 border-t border-white/5">
+      <footer className="py-20 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="flex flex-col items-center md:items-start gap-3">
             <div className="flex items-center gap-3">
