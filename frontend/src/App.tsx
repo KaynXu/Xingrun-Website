@@ -88,6 +88,7 @@ interface ConsultationRecord {
   grade: string;
   receiving_teacher: string;
   teacher_id: string;
+  teacher_display_name?: string;
   consultation_subject: string;
   need_detail: string;
   source_channel: string;
@@ -407,8 +408,13 @@ function buildConsultationTeacherDirectory(records: ConsultationRecord[]): Recor
 }
 
 function getConsultationTeacherName(record: ConsultationRecord, teacherDirectory: Record<string, string>): string {
+  const teacherDisplayName = record.teacher_display_name?.trim() || '';
   const receivingTeacher = record.receiving_teacher?.trim() || '';
   const teacherId = record.teacher_id?.trim() || '';
+
+  if (teacherDisplayName) {
+    return teacherDisplayName;
+  }
 
   for (const candidate of [receivingTeacher, teacherId]) {
     if (isTeacherDisplayName(candidate)) {
