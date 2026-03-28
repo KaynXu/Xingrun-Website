@@ -79,6 +79,23 @@ CONSULTATION_EDITABLE_FIELDS = {
     "跟进备注",
 }
 
+CONSULTATION_API_FIELD_MAP = {
+    "date": "日期",
+    "parent_wechat_name": "家长微信名",
+    "child_name": "孩子姓名",
+    "grade": "年级",
+    "receiving_teacher": "接待老师",
+    "teacher_id": "老师ID",
+    "consultation_subject": "咨询科目",
+    "need_detail": "具体需求",
+    "source_channel": "来源渠道",
+    "screenshot": "截图",
+    "follow_up_status": "跟进状态",
+    "follow_up_note": "跟进备注",
+    "created_at": "录入时间",
+    "updated_at": "最后更新",
+}
+
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
 
@@ -109,7 +126,25 @@ def _normalize_consultation_row(row: Optional[dict]) -> Optional[dict]:
 def _serialize_consultation_row(row: dict) -> dict:
     serialized = dict(row)
     serialized["id"] = int(serialized["id"]) if serialized.get("id") else 0
+    for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
+        serialized[api_field] = serialized.get(csv_field, "")
     return serialized
+
+
+def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
+    payload = data or {}
+    updates: dict[str, str] = {}
+    for field in CONSULTATION_EDITABLE_FIELDS:
+        if field in payload:
+            value = payload.get(field, "")
+            updates[field] = "" if value is None else str(value)
+    for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
+        if csv_field not in CONSULTATION_EDITABLE_FIELDS:
+            continue
+        if api_field in payload:
+            value = payload.get(api_field, "")
+            updates[csv_field] = "" if value is None else str(value)
+    return updates
 
 
 def _read_consultation_rows() -> list[dict]:
@@ -129,6 +164,13 @@ def _write_consultation_rows(rows: list[dict]) -> None:
 
 def list_consultations(query: str = "") -> list[dict]:
     rows = _read_consultation_rows()
+    rows.sort(
+        key=lambda row: (
+            row.get("最后更新", "") or row.get("录入时间", "") or row.get("日期", ""),
+            row.get("id", ""),
+        ),
+        reverse=True,
+    )
     keyword = (query or "").strip().lower()
     if keyword:
         rows = [
@@ -154,9 +196,10 @@ def create_consultation(data: dict) -> dict:
     new_row["id"] = str(next_id)
     new_row["录入时间"] = now
     new_row["最后更新"] = now
-    for field in CONSULTATION_EDITABLE_FIELDS:
-        value = data.get(field, "")
-        new_row[field] = "" if value is None else str(value)
+    for field, value in _extract_consultation_updates(data).items():
+        new_row[field] = value
+    if not new_row["日期"]:
+        new_row["日期"] = str(date.today())
     rows.append(new_row)
     _write_consultation_rows(rows)
     return _serialize_consultation_row(new_row)
@@ -167,13 +210,12 @@ def update_consultation(consultation_id: int, data: dict):
     target_id = str(consultation_id)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     updated_row = None
+    updates = _extract_consultation_updates(data)
     for row in rows:
         if row["id"] != target_id:
             continue
-        for field in CONSULTATION_EDITABLE_FIELDS:
-            if field in data:
-                value = data.get(field, "")
-                row[field] = "" if value is None else str(value)
+        for field, value in updates.items():
+            row[field] = value
         row["最后更新"] = now
         updated_row = row
         break
