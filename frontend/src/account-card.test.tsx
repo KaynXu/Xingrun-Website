@@ -101,7 +101,8 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
 
   assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-800\/88/);
   assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-800\/72/);
-  assert.match(source, /<div className="sticky top-0 flex h-screen w-72 flex-col[^\"]*dark:border-white\/10[^\"]*dark:bg-\[linear-gradient/);
+  assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-contain[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
+  assert.match(source, /:\s*'sticky top-0 h-screen w-72[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/88/);
   assert.match(source, /<div className="rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
 });
