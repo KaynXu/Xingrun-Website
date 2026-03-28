@@ -206,6 +206,11 @@ def _normalize_consultation_source_channel(value: str, *, parent_wechat_name: st
     for canonical, aliases in CONSULTATION_SOURCE_ALIASES.items():
         if compact == canonical or compact in aliases:
             return canonical
+    for canonical, aliases in CONSULTATION_SOURCE_ALIASES.items():
+        if canonical in compact:
+            return canonical
+        if any(alias and alias in compact for alias in aliases):
+            return canonical
 
     if re.fullmatch(r"[\u4e00-\u9fff]{2,6}", compact) and not any(keyword in compact for keyword in ("介绍", "群", "圈", "私", "号", "到访")):
         return ""
