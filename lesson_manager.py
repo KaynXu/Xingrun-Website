@@ -21,6 +21,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -47,6 +48,32 @@ CONSULTATION_TEACHERS_JSON_CANDIDATES = [
     DATA_DIR / "teachers.json",
     Path.home() / ".openclaw" / "workspace-wecom" / "teachers.json",
 ]
+GRADE_NUMERAL_MAP = {
+    1: "一",
+    2: "二",
+    3: "三",
+    4: "四",
+    5: "五",
+    6: "六",
+    7: "七",
+    8: "八",
+    9: "九",
+    10: "十",
+    11: "十一",
+    12: "十二",
+}
+CONSULTATION_SOURCE_ALIASES = {
+    "转介绍": {"转介绍", "介绍", "朋友介绍", "家长介绍", "熟人介绍", "亲友介绍", "老带新", "推荐介绍", "推荐"},
+    "朋友圈": {"朋友圈", "微信朋友圈", "pyq"},
+    "家长群": {"家长群", "微信群", "班级群", "群里", "社群"},
+    "私信": {"私信", "微信私聊", "企微私聊", "单聊", "私聊"},
+    "公众号": {"公众号", "微信公众号"},
+    "小红书": {"小红书"},
+    "抖音": {"抖音"},
+    "视频号": {"视频号"},
+    "校区到访": {"校区到访", "到访", "上门", "线下到访"},
+    "其他": {"其他"},
+}
 
 CONSULTATION_FIELDNAMES = [
     "id",
@@ -124,7 +151,68 @@ def _normalize_consultation_row(row: Optional[dict]) -> Optional[dict]:
     for field in CONSULTATION_FIELDNAMES:
         value = row.get(field, "")
         normalized[field] = "" if value is None else str(value)
+    normalized["年级"] = _normalize_consultation_grade(normalized.get("年级", ""))
+    normalized["来源渠道"] = _normalize_consultation_source_channel(
+        normalized.get("来源渠道", ""),
+        parent_wechat_name=normalized.get("家长微信名", ""),
+        child_name=normalized.get("孩子姓名", ""),
+    )
     return normalized
+
+
+def _normalize_consultation_grade(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    normalized = raw.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    normalized = re.sub(r"\s+", "", normalized)
+
+    if re.fullmatch(r"[一二三四五六七八九十]{1,3}年级", normalized):
+        return normalized
+    if normalized in GRADE_NUMERAL_MAP.values():
+        return f"{normalized}年级"
+
+    match = re.fullmatch(r"(小学|小)([1-6])", normalized)
+    if match:
+        return f"{GRADE_NUMERAL_MAP[int(match.group(2))]}年级"
+    match = re.fullmatch(r"(小学|小)([一二三四五六])", normalized)
+    if match:
+        return f"{match.group(2)}年级"
+
+    match = re.fullmatch(r"([1-9]|10|11|12)年级?", normalized)
+    if match:
+        return f"{GRADE_NUMERAL_MAP[int(match.group(1))]}年级"
+
+    match = re.fullmatch(r"(初|高)([1-3])", normalized)
+    if match:
+        return f"{match.group(1)}{GRADE_NUMERAL_MAP[int(match.group(2))]}"
+    if re.fullmatch(r"(初|高)[一二三]", normalized):
+        return normalized
+
+    return raw
+
+
+def _normalize_consultation_source_channel(value: str, *, parent_wechat_name: str = "", child_name: str = "") -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    compact = re.sub(r"\s+", "", raw)
+    parent_compact = re.sub(r"\s+", "", (parent_wechat_name or "").strip())
+    child_compact = re.sub(r"\s+", "", (child_name or "").strip())
+
+    if compact and compact in {parent_compact, child_compact}:
+        return ""
+
+    for canonical, aliases in CONSULTATION_SOURCE_ALIASES.items():
+        if compact == canonical or compact in aliases:
+            return canonical
+
+    if re.fullmatch(r"[\u4e00-\u9fff]{2,6}", compact) and not any(keyword in compact for keyword in ("介绍", "群", "圈", "私", "号", "到访")):
+        return ""
+    if any(keyword in compact for keyword in ("妈妈", "爸爸", "家长", "老师")):
+        return ""
+
+    return raw
 
 
 def _get_consultation_teacher_directory() -> dict[str, str]:
@@ -168,6 +256,12 @@ def _get_consultation_teacher_directory() -> dict[str, str]:
 def _serialize_consultation_row(row: dict, teacher_directory: Optional[dict[str, str]] = None) -> dict:
     serialized = dict(row)
     serialized["id"] = int(serialized["id"]) if serialized.get("id") else 0
+    serialized["年级"] = _normalize_consultation_grade(serialized.get("年级", ""))
+    serialized["来源渠道"] = _normalize_consultation_source_channel(
+        serialized.get("来源渠道", ""),
+        parent_wechat_name=serialized.get("家长微信名", ""),
+        child_name=serialized.get("孩子姓名", ""),
+    )
     for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
         serialized[api_field] = serialized.get(csv_field, "")
     teacher_directory = teacher_directory or {}

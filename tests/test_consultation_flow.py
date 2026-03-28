@@ -251,6 +251,48 @@ class ConsultationFlowTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload[0]["teacher_display_name"], "雷老师")
 
+    def test_list_normalizes_grade_and_source_channel(self):
+        self.write_legacy_csv([
+            self.sample_row(
+                年级="5年级",
+                来源渠道="朋友介绍",
+                家长微信名="秋秋",
+                孩子姓名="秋秋",
+            )
+        ])
+
+        response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["grade"], "五年级")
+        self.assertEqual(payload[0]["source_channel"], "转介绍")
+
+    def test_create_clears_source_channel_when_it_matches_names(self):
+        create_response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "张妈妈",
+                "孩子姓名": "张小明",
+                "年级": "2年级",
+                "接待老师": "李老师",
+                "老师ID": "teacher-3",
+                "咨询科目": "语文",
+                "具体需求": "作文提高",
+                "来源渠道": "张妈妈",
+                "截图": "",
+                "跟进状态": "待联系",
+                "跟进备注": "",
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        created = create_response.get_json()
+        self.assertEqual(created["grade"], "二年级")
+        self.assertEqual(created["source_channel"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
