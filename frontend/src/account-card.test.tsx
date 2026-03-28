@@ -102,9 +102,11 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-950\/78/);
   assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
   assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-contain[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
-  assert.match(source, /:\s*'sticky top-0 h-screen w-72 self-start[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(source, /:\s*'h-screen w-72 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/88/);
   assert.match(source, /<div className="rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
+  assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
+  assert.match(source, /<main className="flex min-w-0 flex-1 flex-col lg:pl-72">/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
@@ -125,7 +127,7 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className="flex min-w-0 flex-1 flex-col">/);
+  assert.match(source, /<main className="flex min-w-0 flex-1 flex-col lg:pl-72">/);
   assert.match(source, /<div className="relative min-h-screen overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
