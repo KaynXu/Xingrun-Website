@@ -1472,7 +1472,7 @@ const ConsultationModal = ({
             <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、对象和接待老师信息。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、家长微信和接待老师信息。</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -1529,24 +1529,13 @@ const ConsultationModal = ({
                     placeholder="接待老师"
                   />
                 </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">老师ID</span>
-                  <input
-                    type="text"
-                    value={form.teacher_id}
-                    onChange={(e) => updateField('teacher_id', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                    placeholder="老师 ID"
-                  />
-                </label>
               </div>
             </section>
 
             <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">咨询内容</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求、来源和截图。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求和跟进状态。</p>
               </div>
               <div className="space-y-4">
                 <label className="space-y-2 text-sm">
@@ -1586,17 +1575,6 @@ const ConsultationModal = ({
                     ))}
                   </select>
                 </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">截图</span>
-                  <textarea
-                    value={form.screenshot}
-                    onChange={(e) => updateField('screenshot', e.target.value)}
-                    disabled={readOnly}
-                    rows={3}
-                    className={`${fieldClass} resize-none`}
-                    placeholder="截图地址或说明"
-                  />
-                </label>
               </div>
             </section>
 
@@ -1614,18 +1592,19 @@ const ConsultationModal = ({
                   />
                 </label>
                 <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">跟进备注</span>
+                  <span className="text-slate-500 dark:text-slate-400">内部备注（可选）</span>
                   <textarea
                     value={form.follow_up_note}
                     onChange={(e) => updateField('follow_up_note', e.target.value)}
                     disabled={readOnly}
                     rows={5}
                     className={`${fieldClass} resize-none`}
-                    placeholder="后续跟进记录"
+                    placeholder="补充内部跟进说明"
                   />
                 </label>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              {record && (
+                <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">录入时间</p>
                   <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.created_at || '—'}</p>
@@ -1634,21 +1613,8 @@ const ConsultationModal = ({
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
                   <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.updated_at || '—'}</p>
                 </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前权限</p>
-                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{getRoleLabel(currentUser.role)}</p>
                 </div>
-                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">截图字段</p>
-                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{form.screenshot ? '已填写' : '未填写'}</p>
-                </div>
-                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">记录状态</p>
-                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{form.follow_up_status || '—'}</p>
-                </div>
-              </div>
+              )}
             </section>
           </div>
 
