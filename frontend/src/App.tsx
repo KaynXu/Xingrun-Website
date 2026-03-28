@@ -305,6 +305,8 @@ function getLatestLessonDate(lessons: Lesson[]): string {
 }
 
 const consultationStatusOptions = ['待跟进', '跟进中', '已跟进', '已完成'];
+const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
+const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
 
 const consultationFormDefaults: ConsultationFormValues = {
   date: getTodayIsoDate(),
@@ -1498,6 +1500,7 @@ const ConsultationModal = ({
                     value={form.grade}
                     onChange={(e) => updateField('grade', e.target.value)}
                     disabled={readOnly}
+                    list="consultation-grade-options"
                     className={fieldClass}
                     placeholder="如：三年级"
                   />
@@ -1562,10 +1565,16 @@ const ConsultationModal = ({
                     value={form.source_channel}
                     onChange={(e) => updateField('source_channel', e.target.value)}
                     disabled={readOnly}
+                    list="consultation-source-options"
                     className={fieldClass}
                     placeholder="如：朋友圈 / 转介绍 / 私信"
                   />
                 </label>
+                <datalist id="consultation-source-options">
+                  {consultationSourceOptions.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">跟进状态</span>
                   <select
@@ -1583,6 +1592,12 @@ const ConsultationModal = ({
                 </label>
               </div>
             </section>
+
+            <datalist id="consultation-grade-options">
+              {consultationGradeOptions.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
 
             <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
@@ -1880,6 +1895,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           {getConsultationTeacherName(record, teacherDirectory)}
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.source_channel || '未标注来源渠道'}</p>
                       </div>
                     </div>
 
@@ -1952,7 +1968,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">家长微信 / 学生姓名</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">年级</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询老师</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询科目</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询科目 / 来源渠道</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">跟进状态</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">录入 / 更新</th>
                 <th className="px-6 py-4 text-right font-semibold whitespace-nowrap">操作</th>
@@ -1980,7 +1996,12 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         {getConsultationTeacherName(record, teacherDirectory)}
                       </p>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '—'}</td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                        <p>{record.consultation_subject || '未填写咨询科目'}</p>
+                        <p>{record.source_channel || '未标注来源渠道'}</p>
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
                         {record.follow_up_status || '—'}

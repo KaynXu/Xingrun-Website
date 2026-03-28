@@ -26,3 +26,9 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   assert.match(appSource, /whitespace-nowrap/);
   assert.doesNotMatch(appSource, /overflow-x-auto/);
 });
+
+test('consultation workspace source shows source channel alongside normalized grade-focused metadata', () => {
+  assert.match(appSource, /来源渠道/);
+  assert.match(appSource, /record\.source_channel \|\| '未标注来源渠道'/);
+  assert.match(appSource, /record\.consultation_subject \|\| '未填写咨询科目'/);
+});
