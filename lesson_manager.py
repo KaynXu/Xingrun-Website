@@ -123,11 +123,39 @@ def _normalize_consultation_row(row: Optional[dict]) -> Optional[dict]:
     return normalized
 
 
-def _serialize_consultation_row(row: dict) -> dict:
+def _get_consultation_teacher_directory() -> dict[str, str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT username, display_name
+            FROM users
+            WHERE status = 'active'
+            """
+        ).fetchall()
+    directory: dict[str, str] = {}
+    for row in rows:
+        username = (row["username"] or "").strip()
+        display_name = (row["display_name"] or "").strip()
+        if username and display_name:
+            directory[username.lower()] = display_name
+        if display_name:
+            directory[display_name.lower()] = display_name
+    return directory
+
+
+def _serialize_consultation_row(row: dict, teacher_directory: Optional[dict[str, str]] = None) -> dict:
     serialized = dict(row)
     serialized["id"] = int(serialized["id"]) if serialized.get("id") else 0
     for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
         serialized[api_field] = serialized.get(csv_field, "")
+    teacher_directory = teacher_directory or {}
+    receiving_teacher = (serialized.get("接待老师") or "").strip()
+    teacher_id = (serialized.get("老师ID") or "").strip()
+    serialized["teacher_display_name"] = (
+        teacher_directory.get(receiving_teacher.lower())
+        or teacher_directory.get(teacher_id.lower())
+        or ""
+    )
     return serialized
 
 
@@ -164,6 +192,7 @@ def _write_consultation_rows(rows: list[dict]) -> None:
 
 def list_consultations(query: str = "") -> list[dict]:
     rows = _read_consultation_rows()
+    teacher_directory = _get_consultation_teacher_directory()
     rows.sort(
         key=lambda row: (
             row.get("最后更新", "") or row.get("录入时间", "") or row.get("日期", ""),
@@ -177,14 +206,15 @@ def list_consultations(query: str = "") -> list[dict]:
             row for row in rows
             if keyword in " ".join(row.get(field, "").lower() for field in CONSULTATION_FIELDNAMES)
         ]
-    return [_serialize_consultation_row(row) for row in rows]
+    return [_serialize_consultation_row(row, teacher_directory) for row in rows]
 
 
 def get_consultation(consultation_id: int):
+    teacher_directory = _get_consultation_teacher_directory()
     target_id = str(consultation_id)
     for row in _read_consultation_rows():
         if row["id"] == target_id:
-            return _serialize_consultation_row(row)
+            return _serialize_consultation_row(row, teacher_directory)
     return None
 
 
@@ -202,7 +232,7 @@ def create_consultation(data: dict) -> dict:
         new_row["日期"] = str(date.today())
     rows.append(new_row)
     _write_consultation_rows(rows)
-    return _serialize_consultation_row(new_row)
+    return _serialize_consultation_row(new_row, _get_consultation_teacher_directory())
 
 
 def update_consultation(consultation_id: int, data: dict):
@@ -222,7 +252,7 @@ def update_consultation(consultation_id: int, data: dict):
     if updated_row is None:
         return None
     _write_consultation_rows(rows)
-    return _serialize_consultation_row(updated_row)
+    return _serialize_consultation_row(updated_row, _get_consultation_teacher_directory())
 
 
 def delete_consultation(consultation_id: int) -> bool:
