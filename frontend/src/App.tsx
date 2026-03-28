@@ -1332,7 +1332,7 @@ const ConsultationModal = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
@@ -1341,13 +1341,13 @@ const ConsultationModal = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: 18 }}
         transition={{ duration: 0.2 }}
-        className="relative z-10 flex w-full max-w-5xl max-h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
+        className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-6 py-5 dark:border-white/10">
+        <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
-            <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{titleMap[mode]}</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
+            <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
               {readOnly ? '记录详情只读展示，owner 可以在这里进入编辑或删除。' : '按工作台原有模式录入和维护咨询信息。'}
             </p>
           </div>
@@ -1361,7 +1361,7 @@ const ConsultationModal = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {error && (
             <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
               <AlertCircle size={16} />
@@ -1370,7 +1370,7 @@ const ConsultationModal = ({
           )}
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <section className={`${workspaceSoftCardClass} space-y-4 p-5`}>
+            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、对象和接待老师信息。</p>
@@ -1444,7 +1444,7 @@ const ConsultationModal = ({
               </div>
             </section>
 
-            <section className={`${workspaceSoftCardClass} space-y-4 p-5`}>
+            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">咨询内容</h4>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求、来源和截图。</p>
@@ -1501,7 +1501,7 @@ const ConsultationModal = ({
               </div>
             </section>
 
-            <section className={`${workspaceSoftCardClass} space-y-4 p-5 lg:col-span-2`}>
+            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">具体需求</span>
@@ -1553,11 +1553,11 @@ const ConsultationModal = ({
             </section>
           </div>
 
-          <div className="mt-6 flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
+          <div className="mt-5 flex flex-col gap-3 border-t border-sky-100/80 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:pt-5 dark:border-white/10">
             <div className="text-sm text-slate-500 dark:text-slate-400">
               {readOnly ? '查看模式下可直接切换到编辑或删除记录。' : '保存后会刷新列表，不需要跳转到其他页面。'}
             </div>
-            <div className="flex flex-wrap justify-end gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
               {readOnly && currentUser.role === 'owner' && (
                 <>
                   <button
@@ -1769,7 +1769,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             暂无咨询记录，点击「新增记录」开始录入。
           </div>
         ) : (
-          <table className="w-full border-collapse text-left">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-collapse text-left xl:min-w-0">
             <thead>
               <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
                 <th className="px-6 py-4 font-semibold">日期</th>
@@ -1818,7 +1819,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                         <button
                           type="button"
                           onClick={() => openViewModal(record)}
@@ -1869,6 +1870,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
