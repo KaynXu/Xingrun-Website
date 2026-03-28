@@ -93,14 +93,14 @@ test('sidebar account sheet includes dark theme surface classes', () => {
   assert.match(markup, /dark:bg-slate-950\/78/);
   assert.match(markup, /dark:border-white\/10/);
   assert.match(markup, /dark:text-slate-100/);
-  assert.match(markup, /dark:bg-slate-900\/88/);
+  assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
 });
 
 test('workspace shell source applies dark classes to sidebar header and dashboard panels', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-950\/78/);
-  assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-900\/88/);
+  assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
   assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-contain[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
   assert.match(source, /:\s*'sticky top-0 h-screen w-72[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/88/);
