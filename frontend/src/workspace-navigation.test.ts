@@ -32,3 +32,10 @@ test('consultation workspace source shows source channel alongside normalized gr
   assert.match(appSource, /record\.source_channel \|\| '未标注来源渠道'/);
   assert.match(appSource, /record\.consultation_subject \|\| '未填写咨询科目'/);
 });
+
+test('consultation modal source exposes quick parsing and structured confirmation controls', () => {
+  assert.match(appSource, /快速录入/);
+  assert.match(appSource, /智能解析/);
+  assert.match(appSource, /来源渠道备注/);
+  assert.match(appSource, /apiFetch<ConsultationTeacherOption\[]>\('\/api\/consultation-teachers'\)/);
+});

@@ -57,7 +57,7 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              list_all_users, get_user_class_ids, set_user_class_ids,
                              list_consultations, get_consultation,
                              create_consultation, update_consultation,
-                             delete_consultation)
+                             delete_consultation, list_consultation_teachers)
 
 init_db()
 
@@ -825,6 +825,14 @@ def api_consultations_list():
     if error:
         return error
     return jsonify(list_consultations(query=request.args.get("q", "")))
+
+
+@app.route("/api/consultation-teachers", methods=["GET"])
+def api_consultation_teachers():
+    _, error = _require_auth()
+    if error:
+        return error
+    return jsonify(list_consultation_teachers())
 
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["GET"])
