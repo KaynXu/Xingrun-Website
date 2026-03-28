@@ -54,7 +54,10 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              create_auth_session, create_registration_request,
                              approve_registration_request, reject_registration_request,
                              list_registration_requests, get_current_user,
-                             list_all_users, get_user_class_ids, set_user_class_ids)
+                             list_all_users, get_user_class_ids, set_user_class_ids,
+                             list_consultations, get_consultation,
+                             create_consultation, update_consultation,
+                             delete_consultation)
 
 init_db()
 
@@ -813,6 +816,56 @@ def api_admin_user_classes_set(user_id):
         return error
     data = request.json or {}
     set_user_class_ids(user_id, data.get("class_ids", []))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/consultations", methods=["GET"])
+def api_consultations_list():
+    _, error = _require_auth()
+    if error:
+        return error
+    return jsonify(list_consultations(query=request.args.get("q", "")))
+
+
+@app.route("/api/consultations/<int:consultation_id>", methods=["GET"])
+def api_consultation_get(consultation_id):
+    _, error = _require_auth()
+    if error:
+        return error
+    item = get_consultation(consultation_id)
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(item)
+
+
+@app.route("/api/consultations", methods=["POST"])
+def api_consultation_create():
+    _, error = _require_auth()
+    if error:
+        return error
+    item = create_consultation(request.json or {})
+    return jsonify(item), 201
+
+
+@app.route("/api/consultations/<int:consultation_id>", methods=["PUT"])
+def api_consultation_update(consultation_id):
+    _, error = _require_owner()
+    if error:
+        return error
+    item = update_consultation(consultation_id, request.json or {})
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(item)
+
+
+@app.route("/api/consultations/<int:consultation_id>", methods=["DELETE"])
+def api_consultation_delete(consultation_id):
+    _, error = _require_owner()
+    if error:
+        return error
+    deleted = delete_consultation(consultation_id)
+    if not deleted:
+        return jsonify({"error": "not found"}), 404
     return jsonify({"ok": True})
 
 
