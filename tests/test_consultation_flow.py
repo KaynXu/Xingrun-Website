@@ -97,6 +97,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "咨询科目": "数学",
                 "具体需求": "基础提升",
                 "来源渠道": "转介绍",
+                "来源渠道备注": "",
                 "截图": "",
                 "提醒时间": "2026-03-12 18:00",
                 "提醒状态": "已设置",
@@ -267,6 +268,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload[0]["grade"], "五年级")
         self.assertEqual(payload[0]["source_channel"], "转介绍")
+        self.assertEqual(payload[0]["source_channel_note"], "")
 
     def test_list_normalizes_mixed_name_and_source_channel_phrase(self):
         self.write_legacy_csv([
@@ -283,6 +285,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload[0]["source_channel"], "转介绍")
+        self.assertEqual(payload[0]["source_channel_note"], "张裕空")
 
     def test_create_clears_source_channel_when_it_matches_names(self):
         create_response = self.client.post(
@@ -308,6 +311,62 @@ class ConsultationFlowTestCase(unittest.TestCase):
         created = create_response.get_json()
         self.assertEqual(created["grade"], "二年级")
         self.assertEqual(created["source_channel"], "")
+        self.assertEqual(created["source_channel_note"], "")
+
+    def test_consultation_teachers_endpoint_merges_aliases(self):
+        self.write_teacher_aliases({"dXiaoDi": ["华奥鑫", "华老师"]})
+
+        response = self.client.get("/api/consultation-teachers", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(any(item["teacher_id"] == "dXiaoDi" and item["display_name"] == "华奥鑫" for item in payload))
+
+    def test_create_and_list_include_source_channel_note(self):
+        create_response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "张妈妈",
+                "孩子姓名": "张小明",
+                "年级": "二年级",
+                "接待老师": "李老师",
+                "老师ID": "teacher-3",
+                "咨询科目": "语文",
+                "具体需求": "作文提高",
+                "来源渠道": "转介绍",
+                "来源渠道备注": "张妈妈",
+                "截图": "",
+                "跟进状态": "待联系",
+                "跟进备注": "",
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        created = create_response.get_json()
+        self.assertEqual(created["source_channel_note"], "张妈妈")
+
+        list_response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
+        self.assertEqual(list_response.status_code, 200)
+        listed = list_response.get_json()
+        self.assertEqual(listed[0]["source_channel_note"], "张妈妈")
+
+    def test_owner_can_list_consultation_teachers_from_user_directory_and_alias_file(self):
+        self.write_teacher_aliases({
+            "dXiaoDi": ["华奥鑫", "华老师"],
+            "KeChongDianDeAShiPiLing": ["雷文浩", "雷老师"],
+        })
+        self.create_member_token()
+
+        response = self.client.get("/api/consultation-teachers", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        teacher_by_id = {item["teacher_id"]: item for item in payload}
+        self.assertEqual(teacher_by_id["teacher_a"]["display_name"], "Teacher A")
+        self.assertEqual(teacher_by_id["dXiaoDi"]["display_name"], "华奥鑫")
+        self.assertIn("华老师", teacher_by_id["dXiaoDi"]["aliases"])
 
 
 if __name__ == "__main__":

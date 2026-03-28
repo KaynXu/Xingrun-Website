@@ -92,6 +92,7 @@ interface ConsultationRecord {
   consultation_subject: string;
   need_detail: string;
   source_channel: string;
+  source_channel_note: string;
   screenshot: string;
   follow_up_status: string;
   follow_up_note: string;
@@ -100,6 +101,12 @@ interface ConsultationRecord {
 }
 
 type ConsultationFormValues = Omit<ConsultationRecord, 'id' | 'created_at' | 'updated_at'>;
+
+interface ConsultationTeacherOption {
+  teacher_id: string;
+  display_name: string;
+  aliases: string[];
+}
 
 interface CurrentUser {
   id: number;
@@ -304,9 +311,274 @@ function getLatestLessonDate(lessons: Lesson[]): string {
   return lessons.reduce((latest, lesson) => (lesson.date > latest ? lesson.date : latest), lessons[0].date);
 }
 
+function compactConsultationText(value: string): string {
+  return value.replace(/\s+/g, '').trim();
+}
+
+function normalizeConsultationGradeValue(rawValue: string): string {
+  const raw = rawValue.trim();
+  if (!raw) {
+    return '';
+  }
+  const normalized = compactConsultationText(raw).replace(/[０-９]/g, (digit) =>
+    String.fromCharCode(digit.charCodeAt(0) - 65248),
+  );
+
+  const chineseMatch = normalized.match(/[一二三四五六七八九十]{1,3}年级/);
+  if (chineseMatch) {
+    return chineseMatch[0];
+  }
+
+  const directChinese = normalized.match(/(^|[^a-z])(初|高)[一二三]($|[^a-z])/i);
+  if (directChinese) {
+    return `${directChinese[2]}${normalized.match(/(初|高)([一二三])/)?.[2] ?? ''}`;
+  }
+
+  const smallGradeMatch = normalized.match(/(?:小学|小)([1-6一二三四五六])/);
+  if (smallGradeMatch) {
+    const value = smallGradeMatch[1];
+    return `${gradeNumeralMap[value] || value}年级`;
+  }
+
+  const numericGradeMatch = normalized.match(/([1-9]|10|11|12)年级?/);
+  if (numericGradeMatch) {
+    return `${gradeNumeralMap[numericGradeMatch[1]] || numericGradeMatch[1]}年级`;
+  }
+
+  const middleOrHighNumeric = normalized.match(/(初|高)([1-3])/);
+  if (middleOrHighNumeric) {
+    return `${middleOrHighNumeric[1]}${gradeNumeralMap[middleOrHighNumeric[2]] || middleOrHighNumeric[2]}`;
+  }
+
+  return raw;
+}
+
+function splitConsultationSourceNote(rawValue: string, matchedToken: string): string {
+  return compactConsultationText(rawValue).replace(matchedToken, '').replace(/^[：:，,、/\\\-·()（）]+|[：:，,、/\\\-·()（）]+$/g, '');
+}
+
+function normalizeConsultationSourceValue(
+  rawValue: string,
+  parentWechatName = '',
+  childName = '',
+  sourceNote = '',
+): { source_channel: string; source_channel_note: string } {
+  const raw = rawValue.trim();
+  const rawNote = sourceNote.trim();
+  if (!raw) {
+    return { source_channel: '', source_channel_note: rawNote };
+  }
+
+  const compact = compactConsultationText(raw);
+  const parentCompact = compactConsultationText(parentWechatName);
+  const childCompact = compactConsultationText(childName);
+  if (compact && (compact === parentCompact || compact === childCompact)) {
+    return { source_channel: '', source_channel_note: '' };
+  }
+
+  for (const [canonical, aliases] of Object.entries(consultationSourceAliasMap)) {
+    if (compact === canonical || aliases.includes(compact)) {
+      return { source_channel: canonical, source_channel_note: rawNote };
+    }
+  }
+
+  for (const [canonical, aliases] of Object.entries(consultationSourceAliasMap)) {
+    if (compact.includes(canonical)) {
+      return {
+        source_channel: canonical,
+        source_channel_note: rawNote || splitConsultationSourceNote(raw, canonical),
+      };
+    }
+    for (const alias of aliases) {
+      if (alias && compact.includes(alias)) {
+        return {
+          source_channel: canonical,
+          source_channel_note: rawNote || splitConsultationSourceNote(raw, alias),
+        };
+      }
+    }
+  }
+
+  if (/^[\u4e00-\u9fff]{2,6}$/.test(compact) && !/(介绍|群|圈|私|号|到访)/.test(compact)) {
+    return { source_channel: '', source_channel_note: '' };
+  }
+  if (/(妈妈|爸爸|家长|老师)/.test(compact)) {
+    return { source_channel: '', source_channel_note: '' };
+  }
+
+  return { source_channel: raw, source_channel_note: rawNote };
+}
+
+function normalizeConsultationTeacherOption(option: ConsultationTeacherOption): ConsultationTeacherOption {
+  const aliases = Array.from(new Set((option.aliases || []).map((alias) => alias.trim()).filter(Boolean)));
+  return {
+    teacher_id: option.teacher_id,
+    display_name: option.display_name || aliases[0] || option.teacher_id,
+    aliases,
+  };
+}
+
+function findConsultationTeacherOption(input: string, teacherOptions: ConsultationTeacherOption[]): ConsultationTeacherOption | null {
+  const compactInput = compactConsultationText(input);
+  let match: ConsultationTeacherOption | null = null;
+  let longestMatch = 0;
+
+  for (const option of teacherOptions) {
+    const candidates = Array.from(new Set([option.display_name, option.teacher_id, ...option.aliases].map((item) => item.trim()).filter(Boolean)));
+    for (const candidate of candidates) {
+      const compactCandidate = compactConsultationText(candidate);
+      if (!compactCandidate || !compactInput.includes(compactCandidate)) {
+        continue;
+      }
+      if (compactCandidate.length > longestMatch) {
+        longestMatch = compactCandidate.length;
+        match = option;
+      }
+    }
+  }
+
+  return match;
+}
+
+export function parseConsultationQuickEntry(
+  input: string,
+  teacherOptions: Array<{ teacher_id: string; display_name: string; aliases: string[] }>,
+): Record<string, string> {
+  const parsed: Record<string, string> = {
+    parent_wechat_name: '',
+    child_name: '',
+    grade: '',
+    receiving_teacher: '',
+    teacher_id: '',
+    consultation_subject: '',
+    need_detail: '',
+    source_channel: '',
+    source_channel_note: '',
+  };
+
+  const normalizedInput = input.trim();
+  if (!normalizedInput) {
+    return parsed;
+  }
+
+  const normalizedTeachers = teacherOptions.map(normalizeConsultationTeacherOption);
+  const segments = normalizedInput.split(/[，,\n；;]+/).map((segment) => segment.trim()).filter(Boolean);
+  const remainingSegments = [...segments];
+
+  const teacherOption = findConsultationTeacherOption(normalizedInput, normalizedTeachers);
+  if (teacherOption) {
+    parsed.receiving_teacher = teacherOption.display_name;
+    parsed.teacher_id = teacherOption.teacher_id;
+  }
+
+  for (const segment of segments) {
+    if (!parsed.parent_wechat_name && /(妈妈|爸爸|家长)/.test(segment) && !/(介绍|转介绍|群|圈|私信)/.test(segment)) {
+      parsed.parent_wechat_name = segment.replace(/^(家长微信|家长|微信)[:：]?/, '').trim();
+      continue;
+    }
+    if (!parsed.child_name) {
+      const childMatch = segment.match(/(?:学生姓名|学生|孩子姓名|孩子)[:：]?\s*([\u4e00-\u9fffA-Za-z0-9·]{2,20})/);
+      if (childMatch) {
+        parsed.child_name = childMatch[1].trim();
+      }
+    }
+  }
+
+  for (const segment of segments) {
+    if (!parsed.grade) {
+      const grade = normalizeConsultationGradeValue(segment);
+      if (grade && grade !== segment.trim()) {
+        parsed.grade = grade;
+      } else if (consultationGradeOptions.includes(grade)) {
+        parsed.grade = grade;
+      }
+    }
+    if (!parsed.consultation_subject) {
+      const subject = consultationSubjectOptions.find((option) => segment.includes(option));
+      if (subject) {
+        parsed.consultation_subject = subject;
+      }
+    }
+  }
+
+  const sourceSegment = segments.find((segment) =>
+    Object.entries(consultationSourceAliasMap).some(([canonical, aliases]) => segment.includes(canonical) || aliases.some((alias) => alias && segment.includes(alias))),
+  );
+  const normalizedSource = normalizeConsultationSourceValue(
+    sourceSegment || normalizedInput,
+    parsed.parent_wechat_name,
+    parsed.child_name,
+  );
+  parsed.source_channel = normalizedSource.source_channel;
+  parsed.source_channel_note = normalizedSource.source_channel_note;
+
+  const cleanedSegments = remainingSegments
+    .map((segment) => {
+      let cleaned = segment;
+      if (parsed.parent_wechat_name) {
+        cleaned = cleaned.replace(parsed.parent_wechat_name, '');
+      }
+      if (parsed.child_name) {
+        cleaned = cleaned.replace(parsed.child_name, '');
+      }
+      if (parsed.grade) {
+        cleaned = cleaned.replace(parsed.grade, '');
+      }
+      if (parsed.consultation_subject) {
+        cleaned = cleaned.replace(parsed.consultation_subject, '');
+      }
+      if (parsed.source_channel) {
+        cleaned = cleaned.replace(parsed.source_channel, '');
+      }
+      if (parsed.source_channel_note) {
+        cleaned = cleaned.replace(parsed.source_channel_note, '');
+      }
+      if (teacherOption) {
+        for (const candidate of [teacherOption.display_name, teacherOption.teacher_id, ...teacherOption.aliases]) {
+          cleaned = cleaned.replace(candidate, '');
+        }
+      }
+      return cleaned.replace(/(接待|负责|咨询|家长微信|学生姓名|孩子姓名|来源渠道|来源|备注|妈妈|爸爸)[:：]?/g, '').trim();
+    })
+    .filter((segment) => segment && /想|要|补|提升|提高|咨询|规划|准备|薄弱|需要|跟进|联系/.test(segment));
+
+  if (cleanedSegments.length > 0) {
+    parsed.need_detail = cleanedSegments.join('，');
+  }
+
+  return parsed;
+}
+
 const consultationStatusOptions = ['待跟进', '跟进中', '已跟进', '已完成'];
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
+const consultationSourceAliasMap: Record<string, string[]> = {
+  转介绍: ['转介绍', '介绍', '朋友介绍', '家长介绍', '熟人介绍', '亲友介绍', '老带新', '推荐介绍', '推荐'],
+  朋友圈: ['朋友圈', '微信朋友圈', 'pyq'],
+  家长群: ['家长群', '微信群', '班级群', '群里', '社群'],
+  私信: ['私信', '微信私聊', '企微私聊', '单聊', '私聊'],
+  公众号: ['公众号', '微信公众号'],
+  小红书: ['小红书'],
+  抖音: ['抖音'],
+  视频号: ['视频号'],
+  校区到访: ['校区到访', '到访', '上门', '线下到访'],
+  其他: ['其他'],
+};
+const consultationSubjectOptions = ['数学', '奥数', '语文', '英语', '物理', '化学', '生物', '科学'];
+const gradeNumeralMap: Record<string, string> = {
+  '1': '一',
+  '2': '二',
+  '3': '三',
+  '4': '四',
+  '5': '五',
+  '6': '六',
+  '7': '七',
+  '8': '八',
+  '9': '九',
+  '10': '十',
+  '11': '十一',
+  '12': '十二',
+};
 
 const consultationFormDefaults: ConsultationFormValues = {
   date: getTodayIsoDate(),
@@ -318,6 +590,7 @@ const consultationFormDefaults: ConsultationFormValues = {
   consultation_subject: '',
   need_detail: '',
   source_channel: '',
+  source_channel_note: '',
   screenshot: '',
   follow_up_status: '待跟进',
   follow_up_note: '',
@@ -338,6 +611,7 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     consultation_subject: record.consultation_subject ?? '',
     need_detail: record.need_detail ?? '',
     source_channel: record.source_channel ?? '',
+    source_channel_note: record.source_channel_note ?? '',
     screenshot: record.screenshot ?? '',
     follow_up_status: record.follow_up_status || consultationFormDefaults.follow_up_status,
     follow_up_note: record.follow_up_note ?? '',
@@ -356,6 +630,7 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     consultation_subject: record.consultation_subject ?? '',
     need_detail: record.need_detail ?? '',
     source_channel: record.source_channel ?? '',
+    source_channel_note: record.source_channel_note ?? '',
     screenshot: record.screenshot ?? '',
     follow_up_status: record.follow_up_status ?? '',
     follow_up_note: record.follow_up_note ?? '',
@@ -437,6 +712,16 @@ function getConsultationTeacherName(record: ConsultationRecord, teacherDirectory
 function getConsultationStudentMeta(record: ConsultationRecord): string {
   const childName = record.child_name?.trim();
   return childName ? `学生姓名：${childName}` : '学生姓名待补充';
+}
+
+function getConsultationSourceLabel(record: ConsultationRecord): string {
+  const sourceChannel = record.source_channel || '未标注来源渠道';
+  const trimmedSourceChannel = sourceChannel.trim();
+  const sourceChannelNote = record.source_channel_note?.trim();
+  if (trimmedSourceChannel === '未标注来源渠道') {
+    return trimmedSourceChannel;
+  }
+  return sourceChannelNote ? `${trimmedSourceChannel} · ${sourceChannelNote}` : trimmedSourceChannel;
 }
 
 const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
@@ -1382,6 +1667,7 @@ const ConsultationModal = ({
   open,
   mode,
   record,
+  consultationTeachers,
   submitting,
   error,
   currentUser,
@@ -1393,6 +1679,7 @@ const ConsultationModal = ({
   open: boolean;
   mode: 'view' | 'create' | 'edit';
   record: ConsultationRecord | null;
+  consultationTeachers: ConsultationTeacherOption[];
   submitting: boolean;
   error: string;
   currentUser: CurrentUser;
@@ -1402,10 +1689,14 @@ const ConsultationModal = ({
   onRequestEdit?: () => void;
 }) => {
   const [form, setForm] = useState<ConsultationFormValues>(toConsultationFormValues(record));
+  const [quickEntry, setQuickEntry] = useState('');
+  const [parseFeedback, setParseFeedback] = useState('');
 
   useEffect(() => {
     if (open) {
       setForm(toConsultationFormValues(record));
+      setQuickEntry('');
+      setParseFeedback('');
     }
   }, [open, mode, record]);
 
@@ -1424,12 +1715,75 @@ const ConsultationModal = ({
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const teacherOptions = (() => {
+    if (!form.teacher_id || consultationTeachers.some((option) => option.teacher_id === form.teacher_id)) {
+      return consultationTeachers;
+    }
+    return [
+      {
+        teacher_id: form.teacher_id,
+        display_name: form.receiving_teacher || form.teacher_id,
+        aliases: [],
+      },
+      ...consultationTeachers,
+    ];
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly) {
       return;
     }
     await onSubmit(form);
+  };
+
+  const handleTeacherChange = (teacherId: string) => {
+    const selectedTeacher = teacherOptions.find((option) => option.teacher_id === teacherId);
+    if (!selectedTeacher) {
+      updateField('teacher_id', teacherId);
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      teacher_id: selectedTeacher.teacher_id,
+      receiving_teacher: selectedTeacher.display_name,
+    }));
+  };
+
+  const handleQuickParse = () => {
+    if (!quickEntry.trim()) {
+      setParseFeedback('先输入一段咨询描述，再进行智能解析。');
+      return;
+    }
+
+    const parsed = parseConsultationQuickEntry(quickEntry, consultationTeachers);
+    const nextForm: ConsultationFormValues = { ...form };
+
+    (Object.entries(parsed) as Array<[keyof ConsultationFormValues, string]>).forEach(([key, value]) => {
+      if (value) {
+        nextForm[key] = value as ConsultationFormValues[keyof ConsultationFormValues];
+      }
+    });
+
+    if (nextForm.grade) {
+      nextForm.grade = normalizeConsultationGradeValue(nextForm.grade);
+    }
+
+    const normalizedSource = normalizeConsultationSourceValue(
+      nextForm.source_channel,
+      nextForm.parent_wechat_name,
+      nextForm.child_name,
+      nextForm.source_channel_note,
+    );
+    nextForm.source_channel = normalizedSource.source_channel;
+    nextForm.source_channel_note = normalizedSource.source_channel_note;
+
+    setForm(nextForm);
+    setParseFeedback(
+      parsed.parent_wechat_name || parsed.grade || parsed.consultation_subject || parsed.source_channel || parsed.receiving_teacher
+        ? '已根据快速录入内容回填字段，请检查后保存。'
+        : '这段描述还不够明确，建议补充老师、年级或来源关键词后再试。',
+    );
   };
 
   const fieldClass = `${workspaceFieldClass} ${readOnly ? 'cursor-default' : ''}`;
@@ -1455,7 +1809,7 @@ const ConsultationModal = ({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              {readOnly ? '记录详情只读展示，owner 可以在这里进入编辑或删除。' : '按工作台原有模式录入和维护咨询信息。'}
+              {readOnly ? '记录详情只读展示，owner 可以在这里进入编辑或删除。' : '先用快速录入整理信息，再确认下方结构化字段。'}
             </p>
           </div>
           <button
@@ -1476,11 +1830,50 @@ const ConsultationModal = ({
             </div>
           )}
 
+          {!readOnly && (
+            <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h4 className="font-semibold text-slate-900 dark:text-white">快速录入</h4>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    先写一句自然描述，手动点“智能解析”后回填到下方字段。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={handleQuickParse} className={workspacePrimaryButtonClass}>
+                    <Cpu size={18} />
+                    智能解析
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickEntry('');
+                      setParseFeedback('');
+                    }}
+                    className={workspaceSecondaryButtonClass}
+                  >
+                    清空
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={quickEntry}
+                onChange={(e) => setQuickEntry(e.target.value)}
+                rows={3}
+                className={`${workspaceFieldClass} resize-none`}
+                placeholder="例如：张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础"
+              />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {parseFeedback || '默认用本地规则做轻解析，不会每次都调用 AI。'}
+              </p>
+            </section>
+          )}
+
           <div className="grid gap-5 lg:grid-cols-2">
             <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、家长微信和接待老师信息。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、家长微信和咨询老师信息。</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -1528,15 +1921,20 @@ const ConsultationModal = ({
                   />
                 </label>
                 <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">接待老师</span>
-                  <input
-                    type="text"
-                    value={form.receiving_teacher}
-                    onChange={(e) => updateField('receiving_teacher', e.target.value)}
+                  <span className="text-slate-500 dark:text-slate-400">咨询老师</span>
+                  <select
+                    value={form.teacher_id}
+                    onChange={(e) => handleTeacherChange(e.target.value)}
                     disabled={readOnly}
                     className={fieldClass}
-                    placeholder="接待老师"
-                  />
+                  >
+                    <option value="">请选择老师</option>
+                    {teacherOptions.map((option) => (
+                      <option key={option.teacher_id} value={option.teacher_id}>
+                        {option.display_name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
             </section>
@@ -1559,22 +1957,35 @@ const ConsultationModal = ({
                   />
                 </label>
                 <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">来源渠道</span>
-                  <input
-                    type="text"
+                  <span className="text-slate-500 dark:text-slate-400">来源渠道主类</span>
+                  <select
                     value={form.source_channel}
                     onChange={(e) => updateField('source_channel', e.target.value)}
                     disabled={readOnly}
-                    list="consultation-source-options"
                     className={fieldClass}
-                    placeholder="如：朋友圈 / 转介绍 / 私信"
+                  >
+                    <option value="">请选择来源渠道</option>
+                    {!consultationSourceOptions.includes(form.source_channel) && form.source_channel ? (
+                      <option value={form.source_channel}>{form.source_channel}</option>
+                    ) : null}
+                    {consultationSourceOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">来源渠道备注</span>
+                  <input
+                    type="text"
+                    value={form.source_channel_note}
+                    onChange={(e) => updateField('source_channel_note', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="例如：张妈妈转介绍 / 家长群看到后私聊"
                   />
                 </label>
-                <datalist id="consultation-source-options">
-                  {consultationSourceOptions.map((option) => (
-                    <option key={option} value={option} />
-                  ))}
-                </datalist>
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">跟进状态</span>
                   <select
@@ -1695,6 +2106,7 @@ const ConsultationModal = ({
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const isOwner = currentUser.role === 'owner';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
+  const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
@@ -1736,6 +2148,27 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
     return () => window.clearTimeout(timer);
   }, [load, search]);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch<ConsultationTeacherOption[]>('/api/consultation-teachers')
+      .then((items) => {
+        if (!active) {
+          return;
+        }
+        setConsultationTeachers(items.map(normalizeConsultationTeacherOption));
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setConsultationTeachers([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openCreateModal = () => {
     setSelectedRecord(null);
@@ -1895,7 +2328,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           {getConsultationTeacherName(record, teacherDirectory)}
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.source_channel || '未标注来源渠道'}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
                       </div>
                     </div>
 
@@ -1999,7 +2432,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <td className="px-6 py-4">
                       <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p>{record.consultation_subject || '未填写咨询科目'}</p>
-                        <p>{record.source_channel || '未标注来源渠道'}</p>
+                        <p>{getConsultationSourceLabel(record)}</p>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -2076,6 +2509,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             open={modalOpen}
             mode={modalMode}
             record={selectedRecord}
+            consultationTeachers={consultationTeachers}
             submitting={submitting}
             error={error}
             currentUser={currentUser}
