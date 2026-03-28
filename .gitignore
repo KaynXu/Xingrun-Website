@@ -15,6 +15,7 @@ frontend/public/.DS_Store
 # Local runtime databases (not baseline data)
 data/database.db
 data/local.db
+data/consultations.csv
 
 # Local asset candidates (not wired into the product)
 Assets/
