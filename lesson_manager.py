@@ -17,6 +17,7 @@
 """
 
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -26,6 +27,8 @@ import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
+import shutil
+from typing import Optional
 
 from config_runtime import get_runtime_config
 
@@ -35,12 +38,159 @@ DATA_DIR   = BASE_DIR / "data"
 PDF_DIR    = DATA_DIR / "pdfs"
 DB_PATH    = DATA_DIR / "lessons.db"
 CFG_PATH   = BASE_DIR / "config.json"
+CONSULTATIONS_CSV_PATH = DATA_DIR / "consultations.csv"
+LEGACY_CONSULTATIONS_CSV_PATH = Path.home() / "咨询记录" / "consultations.csv"
 DEFAULT_ORGANIZATION_NAME = "星润Starain"
 OWNER_USERNAME = "Kayn"
 OWNER_DISPLAY_NAME = "Kayn"
 
+CONSULTATION_FIELDNAMES = [
+    "id",
+    "日期",
+    "家长微信名",
+    "孩子姓名",
+    "年级",
+    "接待老师",
+    "老师ID",
+    "咨询科目",
+    "具体需求",
+    "来源渠道",
+    "截图",
+    "提醒时间",
+    "提醒状态",
+    "提醒任务ID",
+    "跟进状态",
+    "跟进备注",
+    "录入时间",
+    "最后更新",
+]
+CONSULTATION_EDITABLE_FIELDS = {
+    "日期",
+    "家长微信名",
+    "孩子姓名",
+    "年级",
+    "接待老师",
+    "老师ID",
+    "咨询科目",
+    "具体需求",
+    "来源渠道",
+    "截图",
+    "跟进状态",
+    "跟进备注",
+}
+
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
+
+
+def _ensure_consultations_csv() -> Path:
+    if not CONSULTATIONS_CSV_PATH.exists() and LEGACY_CONSULTATIONS_CSV_PATH.exists():
+        CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(LEGACY_CONSULTATIONS_CSV_PATH), str(CONSULTATIONS_CSV_PATH))
+
+    if not CONSULTATIONS_CSV_PATH.exists():
+        CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with CONSULTATIONS_CSV_PATH.open("w", newline="", encoding="utf-8-sig") as fh:
+            writer = csv.DictWriter(fh, fieldnames=CONSULTATION_FIELDNAMES)
+            writer.writeheader()
+    return CONSULTATIONS_CSV_PATH
+
+
+def _normalize_consultation_row(row: Optional[dict]) -> Optional[dict]:
+    if row is None:
+        return None
+    normalized = {}
+    for field in CONSULTATION_FIELDNAMES:
+        value = row.get(field, "")
+        normalized[field] = "" if value is None else str(value)
+    return normalized
+
+
+def _serialize_consultation_row(row: dict) -> dict:
+    serialized = dict(row)
+    serialized["id"] = int(serialized["id"]) if serialized.get("id") else 0
+    return serialized
+
+
+def _read_consultation_rows() -> list[dict]:
+    path = _ensure_consultations_csv()
+    with path.open("r", newline="", encoding="utf-8-sig") as fh:
+        return [_normalize_consultation_row(row) for row in csv.DictReader(fh)]
+
+
+def _write_consultation_rows(rows: list[dict]) -> None:
+    path = _ensure_consultations_csv()
+    with path.open("w", newline="", encoding="utf-8-sig") as fh:
+        writer = csv.DictWriter(fh, fieldnames=CONSULTATION_FIELDNAMES)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(_normalize_consultation_row(row))
+
+
+def list_consultations(query: str = "") -> list[dict]:
+    rows = _read_consultation_rows()
+    keyword = (query or "").strip().lower()
+    if keyword:
+        rows = [
+            row for row in rows
+            if keyword in " ".join(row.get(field, "").lower() for field in CONSULTATION_FIELDNAMES)
+        ]
+    return [_serialize_consultation_row(row) for row in rows]
+
+
+def get_consultation(consultation_id: int):
+    target_id = str(consultation_id)
+    for row in _read_consultation_rows():
+        if row["id"] == target_id:
+            return _serialize_consultation_row(row)
+    return None
+
+
+def create_consultation(data: dict) -> dict:
+    rows = _read_consultation_rows()
+    next_id = max((int(row["id"]) for row in rows if row.get("id")), default=0) + 1
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_row = {field: "" for field in CONSULTATION_FIELDNAMES}
+    new_row["id"] = str(next_id)
+    new_row["录入时间"] = now
+    new_row["最后更新"] = now
+    for field in CONSULTATION_EDITABLE_FIELDS:
+        value = data.get(field, "")
+        new_row[field] = "" if value is None else str(value)
+    rows.append(new_row)
+    _write_consultation_rows(rows)
+    return _serialize_consultation_row(new_row)
+
+
+def update_consultation(consultation_id: int, data: dict):
+    rows = _read_consultation_rows()
+    target_id = str(consultation_id)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    updated_row = None
+    for row in rows:
+        if row["id"] != target_id:
+            continue
+        for field in CONSULTATION_EDITABLE_FIELDS:
+            if field in data:
+                value = data.get(field, "")
+                row[field] = "" if value is None else str(value)
+        row["最后更新"] = now
+        updated_row = row
+        break
+    if updated_row is None:
+        return None
+    _write_consultation_rows(rows)
+    return _serialize_consultation_row(updated_row)
+
+
+def delete_consultation(consultation_id: int) -> bool:
+    rows = _read_consultation_rows()
+    target_id = str(consultation_id)
+    filtered_rows = [row for row in rows if row["id"] != target_id]
+    if len(filtered_rows) == len(rows):
+        return False
+    _write_consultation_rows(filtered_rows)
+    return True
 
 
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
