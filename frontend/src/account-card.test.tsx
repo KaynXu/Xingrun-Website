@@ -90,21 +90,28 @@ test('sidebar account sheet includes dark theme surface classes', () => {
     />,
   );
 
-  assert.match(markup, /dark:bg-slate-800\/88/);
+  assert.match(markup, /dark:bg-slate-950\/78/);
   assert.match(markup, /dark:border-white\/10/);
   assert.match(markup, /dark:text-slate-100/);
-  assert.match(markup, /dark:bg-slate-800\/72/);
+  assert.match(markup, /dark:bg-slate-900\/88/);
 });
 
 test('workspace shell source applies dark classes to sidebar header and dashboard panels', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
-  assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-800\/88/);
-  assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-800\/72/);
+  assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-950\/78/);
+  assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-900\/88/);
   assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-contain[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
   assert.match(source, /:\s*'sticky top-0 h-screen w-72[^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/88/);
   assert.match(source, /<div className="rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
+});
+
+test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(source, /rounded-2xl border border-sky-100 bg-white\/80 p-3 dark:border-white\/10 dark:bg-slate-950\/70/);
 });
 
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
