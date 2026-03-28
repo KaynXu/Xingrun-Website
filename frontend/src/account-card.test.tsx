@@ -112,6 +112,16 @@ test('consultation detail cards use darker dark-mode surfaces instead of translu
 
   assert.match(source, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
   assert.match(source, /rounded-2xl border border-sky-100 bg-white\/80 p-3 dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(source, /workspaceSoftCardClass\} p-5/);
+});
+
+test('consultation modal source keeps the create and edit form concise', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.doesNotMatch(source, /placeholder="老师 ID"/);
+  assert.doesNotMatch(source, />截图字段</);
+  assert.doesNotMatch(source, />老师ID</);
+  assert.match(source, /内部备注（可选）/);
 });
 
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
