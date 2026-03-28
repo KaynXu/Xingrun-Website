@@ -268,6 +268,22 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload[0]["grade"], "五年级")
         self.assertEqual(payload[0]["source_channel"], "转介绍")
 
+    def test_list_normalizes_mixed_name_and_source_channel_phrase(self):
+        self.write_legacy_csv([
+            self.sample_row(
+                年级="5年级",
+                来源渠道="张裕空转介绍",
+                家长微信名="张裕空妈妈",
+                孩子姓名="张裕空",
+            )
+        ])
+
+        response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["source_channel"], "转介绍")
+
     def test_create_clears_source_channel_when_it_matches_names(self):
         create_response = self.client.post(
             "/api/consultations",
