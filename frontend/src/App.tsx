@@ -758,6 +758,57 @@ const Dashboard = ({
   );
 };
 
+const SubjectCombobox = ({
+  value,
+  onChange,
+  options,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  className?: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  const filtered = options.filter(
+    (o) => o && (!value || o.toLowerCase().includes(value.toLowerCase()))
+  );
+
+  return (
+    <div className={cn('relative', className)}>
+      <input
+        type="text"
+        placeholder="科目"
+        value={value}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className={`${workspaceFieldClass} sm:w-32`}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-full min-w-[8rem] overflow-hidden rounded-xl border border-sky-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900">
+          {filtered.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onMouseDown={() => {
+                onChange(opt);
+                setOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-sky-50 dark:text-slate-200 dark:hover:bg-white/10"
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
@@ -878,12 +929,11 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
-                <input
-                  type="text"
-                  placeholder="科目"
+                <SubjectCombobox
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className={`${workspaceFieldClass} w-full sm:w-32`}
+                  onChange={setSubject}
+                  options={[...new Set<string>(classes.map((c: ClassItem) => c.subject).filter(Boolean))] as string[]}
+                  className="w-full"
                 />
                 <select
                   value={classId ?? ''}
