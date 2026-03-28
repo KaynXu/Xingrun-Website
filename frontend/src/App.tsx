@@ -16,17 +16,20 @@ import {
   Search,
   Bell,
   User,
+  MessageSquare,
   FileText,
   Download,
   Trash2,
   Eye,
   EyeOff,
+  Pencil,
   Upload,
   Cpu,
   CheckCircle2,
   MoreVertical,
   Filter,
   ArrowRight,
+  RefreshCw,
   AlertCircle,
   ShieldCheck,
   Moon,
@@ -38,7 +41,7 @@ import { CourseCalendarPage } from './CourseCalendarPage';
 // --- Types ---
 
 type Role = 'owner' | 'member';
-type Page = 'dashboard' | 'input' | 'library' | 'calendar' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -74,6 +77,26 @@ interface ClassItem {
   teacher_email?: string;
   lesson_count?: number;
 }
+
+interface ConsultationRecord {
+  id: number;
+  date: string;
+  parent_wechat_name: string;
+  child_name: string;
+  grade: string;
+  receiving_teacher: string;
+  teacher_id: string;
+  consultation_subject: string;
+  need_detail: string;
+  source_channel: string;
+  screenshot: string;
+  follow_up_status: string;
+  follow_up_note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+type ConsultationFormValues = Omit<ConsultationRecord, 'id' | 'created_at' | 'updated_at'>;
 
 interface CurrentUser {
   id: number;
@@ -278,6 +301,64 @@ function getLatestLessonDate(lessons: Lesson[]): string {
   return lessons.reduce((latest, lesson) => (lesson.date > latest ? lesson.date : latest), lessons[0].date);
 }
 
+const consultationStatusOptions = ['待跟进', '跟进中', '已跟进', '已完成'];
+
+const consultationFormDefaults: ConsultationFormValues = {
+  date: getTodayIsoDate(),
+  parent_wechat_name: '',
+  child_name: '',
+  grade: '',
+  receiving_teacher: '',
+  teacher_id: '',
+  consultation_subject: '',
+  need_detail: '',
+  source_channel: '',
+  screenshot: '',
+  follow_up_status: '待跟进',
+  follow_up_note: '',
+};
+
+function toConsultationFormValues(record?: ConsultationRecord | null): ConsultationFormValues {
+  if (!record) {
+    return consultationFormDefaults;
+  }
+
+  return {
+    date: record.date || consultationFormDefaults.date,
+    parent_wechat_name: record.parent_wechat_name ?? '',
+    child_name: record.child_name ?? '',
+    grade: record.grade ?? '',
+    receiving_teacher: record.receiving_teacher ?? '',
+    teacher_id: record.teacher_id ?? '',
+    consultation_subject: record.consultation_subject ?? '',
+    need_detail: record.need_detail ?? '',
+    source_channel: record.source_channel ?? '',
+    screenshot: record.screenshot ?? '',
+    follow_up_status: record.follow_up_status || consultationFormDefaults.follow_up_status,
+    follow_up_note: record.follow_up_note ?? '',
+  };
+}
+
+function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRecord {
+  return {
+    ...record,
+    date: record.date ?? '',
+    parent_wechat_name: record.parent_wechat_name ?? '',
+    child_name: record.child_name ?? '',
+    grade: record.grade ?? '',
+    receiving_teacher: record.receiving_teacher ?? '',
+    teacher_id: record.teacher_id ?? '',
+    consultation_subject: record.consultation_subject ?? '',
+    need_detail: record.need_detail ?? '',
+    source_channel: record.source_channel ?? '',
+    screenshot: record.screenshot ?? '',
+    follow_up_status: record.follow_up_status ?? '',
+    follow_up_note: record.follow_up_note ?? '',
+    created_at: record.created_at ?? '',
+    updated_at: record.updated_at ?? '',
+  };
+}
+
 const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
 const workspaceCardClass =
   'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/88 dark:shadow-[0_24px_60px_rgba(2,6,23,0.42)]';
@@ -447,6 +528,7 @@ const Sidebar = ({
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'input', icon: PlusCircle, label: '添加课程' },
     { id: 'library', icon: Library, label: '课程列表' },
+    { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
@@ -1185,6 +1267,627 @@ const LibraryPage = () => {
           </table>
         )}
       </div>
+    </div>
+  );
+};
+
+const ConsultationModal = ({
+  open,
+  mode,
+  record,
+  submitting,
+  error,
+  currentUser,
+  onClose,
+  onSubmit,
+  onDelete,
+  onRequestEdit,
+}: {
+  open: boolean;
+  mode: 'view' | 'create' | 'edit';
+  record: ConsultationRecord | null;
+  submitting: boolean;
+  error: string;
+  currentUser: CurrentUser;
+  onClose: () => void;
+  onSubmit: (values: ConsultationFormValues) => Promise<void>;
+  onDelete?: () => Promise<void>;
+  onRequestEdit?: () => void;
+}) => {
+  const [form, setForm] = useState<ConsultationFormValues>(toConsultationFormValues(record));
+
+  useEffect(() => {
+    if (open) {
+      setForm(toConsultationFormValues(record));
+    }
+  }, [open, mode, record]);
+
+  if (!open) {
+    return null;
+  }
+
+  const readOnly = mode === 'view';
+  const titleMap = {
+    view: '查看咨询记录',
+    create: '新增咨询记录',
+    edit: '编辑咨询记录',
+  } as const;
+
+  const updateField = <K extends keyof ConsultationFormValues>(key: K, value: ConsultationFormValues[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (readOnly) {
+      return;
+    }
+    await onSubmit(form);
+  };
+
+  const fieldClass = `${workspaceFieldClass} ${readOnly ? 'cursor-default' : ''}`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 18 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 flex w-full max-w-5xl max-h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-6 py-5 dark:border-white/10">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
+            <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{titleMap[mode]}</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {readOnly ? '记录详情只读展示，owner 可以在这里进入编辑或删除。' : '按工作台原有模式录入和维护咨询信息。'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+            aria-label="关闭咨询记录窗口"
+          >
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5">
+          {error && (
+            <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <section className={`${workspaceSoftCardClass} space-y-4 p-5`}>
+              <div>
+                <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、对象和接待老师信息。</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">日期</span>
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(e) => updateField('date', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">年级</span>
+                  <input
+                    type="text"
+                    value={form.grade}
+                    onChange={(e) => updateField('grade', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="如：三年级"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">家长微信名</span>
+                  <input
+                    type="text"
+                    value={form.parent_wechat_name}
+                    onChange={(e) => updateField('parent_wechat_name', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="家长微信昵称"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">孩子姓名</span>
+                  <input
+                    type="text"
+                    value={form.child_name}
+                    onChange={(e) => updateField('child_name', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="孩子姓名"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">接待老师</span>
+                  <input
+                    type="text"
+                    value={form.receiving_teacher}
+                    onChange={(e) => updateField('receiving_teacher', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="接待老师"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">老师ID</span>
+                  <input
+                    type="text"
+                    value={form.teacher_id}
+                    onChange={(e) => updateField('teacher_id', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="老师 ID"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className={`${workspaceSoftCardClass} space-y-4 p-5`}>
+              <div>
+                <h4 className="font-semibold text-slate-900 dark:text-white">咨询内容</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求、来源和截图。</p>
+              </div>
+              <div className="space-y-4">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">咨询科目</span>
+                  <input
+                    type="text"
+                    value={form.consultation_subject}
+                    onChange={(e) => updateField('consultation_subject', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="咨询科目"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">来源渠道</span>
+                  <input
+                    type="text"
+                    value={form.source_channel}
+                    onChange={(e) => updateField('source_channel', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                    placeholder="如：朋友圈 / 转介绍 / 私信"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">跟进状态</span>
+                  <select
+                    value={form.follow_up_status}
+                    onChange={(e) => updateField('follow_up_status', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                  >
+                    {consultationStatusOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">截图</span>
+                  <textarea
+                    value={form.screenshot}
+                    onChange={(e) => updateField('screenshot', e.target.value)}
+                    disabled={readOnly}
+                    rows={3}
+                    className={`${fieldClass} resize-none`}
+                    placeholder="截图地址或说明"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className={`${workspaceSoftCardClass} space-y-4 p-5 lg:col-span-2`}>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">具体需求</span>
+                  <textarea
+                    value={form.need_detail}
+                    onChange={(e) => updateField('need_detail', e.target.value)}
+                    disabled={readOnly}
+                    rows={5}
+                    className={`${fieldClass} resize-none`}
+                    placeholder="家长具体咨询需求"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">跟进备注</span>
+                  <textarea
+                    value={form.follow_up_note}
+                    onChange={(e) => updateField('follow_up_note', e.target.value)}
+                    disabled={readOnly}
+                    rows={5}
+                    className={`${fieldClass} resize-none`}
+                    placeholder="后续跟进记录"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">录入时间</p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.created_at || '—'}</p>
+                </div>
+                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.updated_at || '—'}</p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前权限</p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{getRoleLabel(currentUser.role)}</p>
+                </div>
+                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">截图字段</p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{form.screenshot ? '已填写' : '未填写'}</p>
+                </div>
+                <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">记录状态</p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{form.follow_up_status || '—'}</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
+            <div className="text-sm text-slate-500 dark:text-slate-400">
+              {readOnly ? '查看模式下可直接切换到编辑或删除记录。' : '保存后会刷新列表，不需要跳转到其他页面。'}
+            </div>
+            <div className="flex flex-wrap justify-end gap-3">
+              {readOnly && currentUser.role === 'owner' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onRequestEdit}
+                    className={workspaceSecondaryButtonClass}
+                  >
+                    <Pencil size={18} />
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    disabled={submitting}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                  >
+                    <Trash2 size={18} />
+                    删除
+                  </button>
+                </>
+              )}
+              {readOnly ? (
+                <button type="button" onClick={onClose} className={workspacePrimaryButtonClass}>
+                  关闭
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={onClose} className={workspaceSecondaryButtonClass} disabled={submitting}>
+                    取消
+                  </button>
+                  <button type="submit" className={workspacePrimaryButtonClass} disabled={submitting}>
+                    {submitting ? '保存中...' : mode === 'create' ? '创建记录' : '保存修改'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+  const isOwner = currentUser.role === 'owner';
+  const [records, setRecords] = useState<ConsultationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'view' | 'create' | 'edit'>('view');
+  const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const loadRequestId = useRef(0);
+
+  const load = useCallback(async (keyword: string) => {
+    const requestId = ++loadRequestId.current;
+    setLoading(true);
+    setError('');
+    try {
+      const query = keyword.trim();
+      const data = await apiFetch<ConsultationRecord[]>(`/api/consultations?q=${encodeURIComponent(query)}`);
+      if (requestId !== loadRequestId.current) {
+        return;
+      }
+      setRecords(data.map(normalizeConsultationRecord));
+    } catch (err) {
+      if (requestId !== loadRequestId.current) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : '咨询记录加载失败');
+    } finally {
+      if (requestId === loadRequestId.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      load(search).catch(() => undefined);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [load, search]);
+
+  const openCreateModal = () => {
+    setSelectedRecord(null);
+    setModalMode('create');
+    setModalOpen(true);
+    setError('');
+  };
+
+  const openViewModal = (record: ConsultationRecord) => {
+    setSelectedRecord(record);
+    setModalMode('view');
+    setModalOpen(true);
+    setError('');
+  };
+
+  const openEditModal = (record: ConsultationRecord) => {
+    setSelectedRecord(record);
+    setModalMode('edit');
+    setModalOpen(true);
+    setError('');
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setSelectedRecord(null);
+    setSubmitting(false);
+  };
+
+  const handleSubmit = async (values: ConsultationFormValues) => {
+    setSubmitting(true);
+    setError('');
+    try {
+      if (modalMode === 'edit' && selectedRecord) {
+        await apiFetch(`/api/consultations/${selectedRecord.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(values),
+        });
+      } else {
+        await apiFetch('/api/consultations', {
+          method: 'POST',
+          body: JSON.stringify(values),
+        });
+      }
+      closeModal();
+      await load(search);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存咨询记录失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedRecord) {
+      return;
+    }
+    if (!window.confirm('确定删除这条咨询记录吗？')) {
+      return;
+    }
+    setDeletingId(selectedRecord.id);
+    setError('');
+    try {
+      await apiFetch(`/api/consultations/${selectedRecord.id}`, { method: 'DELETE' });
+      closeModal();
+      await load(search);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除咨询记录失败');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const isBusy = submitting || deletingId !== null;
+
+  return (
+    <div className={`${workspacePageClass} space-y-6`}>
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Log</p>
+          <h3 className={`${workspaceSectionTitleClass} mt-3`}>咨询记录</h3>
+          <p className={`${workspaceSectionTextClass} mt-2`}>
+            记录家长咨询、跟进状态和后续备注，搜索后会直接按关键词过滤当前列表。
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索日期、家长微信名、孩子姓名、老师或科目"
+              className={`${workspaceFieldClass} w-full rounded-full py-2.5 pl-11 pr-4 sm:w-[26rem]`}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => load(search).catch(() => undefined)}
+            className={workspaceSecondaryButtonClass}
+          >
+            <RefreshCw size={18} />
+            刷新
+          </button>
+          <button type="button" onClick={openCreateModal} className={workspacePrimaryButtonClass}>
+            <PlusCircle size={18} />
+            新增记录
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      <div className={`${workspaceCardClass} overflow-hidden`}>
+        {loading ? (
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">正在加载咨询记录...</div>
+        ) : records.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+            暂无咨询记录，点击「新增记录」开始录入。
+          </div>
+        ) : (
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
+                <th className="px-6 py-4 font-semibold">日期</th>
+                <th className="px-6 py-4 font-semibold">家长 / 孩子</th>
+                <th className="px-6 py-4 font-semibold">年级</th>
+                <th className="px-6 py-4 font-semibold">接待老师</th>
+                <th className="px-6 py-4 font-semibold">咨询科目</th>
+                <th className="px-6 py-4 font-semibold">跟进状态</th>
+                <th className="px-6 py-4 font-semibold">录入 / 更新</th>
+                <th className="px-6 py-4 text-right font-semibold">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
+              {records.map((record) => {
+                const busy = isBusy && selectedRecord?.id === record.id;
+                return (
+                  <tr key={record.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
+                    <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          {record.parent_wechat_name || '—'}
+                        </p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          {record.child_name || '—'}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1 text-sm">
+                        <p className="text-slate-700 dark:text-slate-200">{record.receiving_teacher || '—'}</p>
+                        <p className="text-slate-400 dark:text-slate-500">ID: {record.teacher_id || '—'}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '—'}</td>
+                    <td className="px-6 py-4">
+                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                        {record.follow_up_status || '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                      <div className="space-y-1">
+                        <p>{record.created_at || '—'}</p>
+                        <p>{record.updated_at || '—'}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => openViewModal(record)}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                          title="查看"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        {isOwner && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(record)}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                              title="编辑"
+                              disabled={busy}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!window.confirm('确定删除这条咨询记录吗？')) {
+                                  return;
+                                }
+                                setDeletingId(record.id);
+                                try {
+                                  await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
+                                  await load(search);
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : '删除咨询记录失败');
+                                } finally {
+                                  setDeletingId(null);
+                                }
+                              }}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                              title="删除"
+                              disabled={busy}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {modalOpen && (
+          <ConsultationModal
+            open={modalOpen}
+            mode={modalMode}
+            record={selectedRecord}
+            submitting={submitting}
+            error={error}
+            currentUser={currentUser}
+            onClose={closeModal}
+            onSubmit={handleSubmit}
+            onDelete={isOwner ? handleDelete : undefined}
+            onRequestEdit={selectedRecord ? () => openEditModal(selectedRecord) : undefined}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -2430,6 +3133,7 @@ export default function App() {
     dashboard: '工作台',
     input: '添加课程',
     library: '课程列表',
+    consultation: '咨询记录',
     calendar: '课程日历',
     accounts: '账号审批',
     settings: '系统设置',
@@ -2519,6 +3223,7 @@ export default function App() {
                 )}
                 {activePage === 'input' && <LessonInput onSuccess={handleLessonSuccess} />}
                 {activePage === 'library' && <LibraryPage />}
+                {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
                 {activePage === 'calendar' &&
                   (calendarLoading ? (
                     <div className={`${workspacePageClass}`}>
