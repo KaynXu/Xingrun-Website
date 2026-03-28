@@ -86,6 +86,7 @@ CONSULTATION_FIELDNAMES = [
     "咨询科目",
     "具体需求",
     "来源渠道",
+    "来源渠道备注",
     "截图",
     "提醒时间",
     "提醒状态",
@@ -105,6 +106,7 @@ CONSULTATION_EDITABLE_FIELDS = {
     "咨询科目",
     "具体需求",
     "来源渠道",
+    "来源渠道备注",
     "截图",
     "跟进状态",
     "跟进备注",
@@ -120,6 +122,7 @@ CONSULTATION_API_FIELD_MAP = {
     "consultation_subject": "咨询科目",
     "need_detail": "具体需求",
     "source_channel": "来源渠道",
+    "source_channel_note": "来源渠道备注",
     "screenshot": "截图",
     "follow_up_status": "跟进状态",
     "follow_up_note": "跟进备注",
@@ -152,8 +155,9 @@ def _normalize_consultation_row(row: Optional[dict]) -> Optional[dict]:
         value = row.get(field, "")
         normalized[field] = "" if value is None else str(value)
     normalized["年级"] = _normalize_consultation_grade(normalized.get("年级", ""))
-    normalized["来源渠道"] = _normalize_consultation_source_channel(
+    normalized["来源渠道"], normalized["来源渠道备注"] = _normalize_consultation_source_fields(
         normalized.get("来源渠道", ""),
+        source_note=normalized.get("来源渠道备注", ""),
         parent_wechat_name=normalized.get("家长微信名", ""),
         child_name=normalized.get("孩子姓名", ""),
     )
@@ -192,35 +196,88 @@ def _normalize_consultation_grade(value: str) -> str:
     return raw
 
 
-def _normalize_consultation_source_channel(value: str, *, parent_wechat_name: str = "", child_name: str = "") -> str:
-    raw = (value or "").strip()
-    if not raw:
+def _split_source_note(raw: str, matched_token: str) -> str:
+    compact = re.sub(r"\s+", "", raw or "")
+    if not compact or not matched_token:
         return ""
+    note = compact.replace(matched_token, "", 1)
+    return note.strip("：:，,、/\\-·()（）")
+
+
+def _normalize_consultation_source_fields(
+    value: str,
+    *,
+    source_note: str = "",
+    parent_wechat_name: str = "",
+    child_name: str = "",
+) -> tuple[str, str]:
+    raw = (value or "").strip()
+    raw_note = (source_note or "").strip()
+    if not raw:
+        return "", raw_note
     compact = re.sub(r"\s+", "", raw)
     parent_compact = re.sub(r"\s+", "", (parent_wechat_name or "").strip())
     child_compact = re.sub(r"\s+", "", (child_name or "").strip())
 
     if compact and compact in {parent_compact, child_compact}:
-        return ""
+        return "", ""
 
     for canonical, aliases in CONSULTATION_SOURCE_ALIASES.items():
         if compact == canonical or compact in aliases:
-            return canonical
+            return canonical, raw_note
     for canonical, aliases in CONSULTATION_SOURCE_ALIASES.items():
         if canonical in compact:
-            return canonical
-        if any(alias and alias in compact for alias in aliases):
-            return canonical
+            return canonical, raw_note or _split_source_note(raw, canonical)
+        for alias in aliases:
+            if alias and alias in compact:
+                return canonical, raw_note or _split_source_note(raw, alias)
 
     if re.fullmatch(r"[\u4e00-\u9fff]{2,6}", compact) and not any(keyword in compact for keyword in ("介绍", "群", "圈", "私", "号", "到访")):
-        return ""
+        return "", ""
     if any(keyword in compact for keyword in ("妈妈", "爸爸", "家长", "老师")):
-        return ""
+        return "", ""
 
-    return raw
+    return raw, raw_note
+
+
+def _normalize_consultation_source_channel(value: str, *, parent_wechat_name: str = "", child_name: str = "") -> str:
+    source_channel, _ = _normalize_consultation_source_fields(
+        value,
+        parent_wechat_name=parent_wechat_name,
+        child_name=child_name,
+    )
+    return source_channel
+
+
+def _load_consultation_teacher_aliases() -> dict[str, list[str]]:
+    alias_map: dict[str, list[str]] = {}
+    for teacher_file in CONSULTATION_TEACHERS_JSON_CANDIDATES:
+        if not teacher_file.exists():
+            continue
+        try:
+            aliases = json.loads(teacher_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for teacher_id, raw_aliases in aliases.items():
+            teacher_key = str(teacher_id).strip()
+            if not teacher_key:
+                continue
+            normalized_aliases: list[str] = []
+            if isinstance(raw_aliases, list):
+                normalized_aliases = [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+            elif isinstance(raw_aliases, str):
+                normalized_aliases = [alias.strip() for alias in raw_aliases.split(",") if alias.strip()]
+            if not normalized_aliases:
+                continue
+            existing = alias_map.setdefault(teacher_key, [])
+            for alias in normalized_aliases:
+                if alias not in existing:
+                    existing.append(alias)
+    return alias_map
 
 
 def _get_consultation_teacher_directory() -> dict[str, str]:
+    alias_map = _load_consultation_teacher_aliases()
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -237,33 +294,79 @@ def _get_consultation_teacher_directory() -> dict[str, str]:
             directory[username.lower()] = display_name
         if display_name:
             directory[display_name.lower()] = display_name
-    for teacher_file in CONSULTATION_TEACHERS_JSON_CANDIDATES:
-        if not teacher_file.exists():
+    for teacher_id, aliases in alias_map.items():
+        teacher_key = teacher_id.lower()
+        if not teacher_key:
             continue
-        try:
-            aliases = json.loads(teacher_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        for teacher_id, raw_aliases in aliases.items():
-            teacher_key = str(teacher_id).strip().lower()
-            if not teacher_key or teacher_key in directory:
-                continue
-            normalized_aliases: list[str] = []
-            if isinstance(raw_aliases, list):
-                normalized_aliases = [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
-            elif isinstance(raw_aliases, str):
-                normalized_aliases = [alias.strip() for alias in raw_aliases.split(",") if alias.strip()]
-            if normalized_aliases:
-                directory[teacher_key] = normalized_aliases[0]
+        if aliases and teacher_key not in directory:
+            directory[teacher_key] = aliases[0]
+        if aliases:
+            for alias in aliases:
+                alias_key = alias.lower()
+                if alias_key and alias_key not in directory:
+                    directory[alias_key] = aliases[0]
     return directory
+
+
+def list_consultation_teachers() -> list[dict]:
+    alias_map = _load_consultation_teacher_aliases()
+    teacher_entries: dict[str, dict] = {}
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT username, display_name
+            FROM users
+            WHERE status = 'active'
+            ORDER BY display_name COLLATE NOCASE, username COLLATE NOCASE
+            """
+        ).fetchall()
+
+    for row in rows:
+        teacher_id = (row["username"] or "").strip()
+        display_name = (row["display_name"] or "").strip()
+        if not teacher_id:
+            continue
+        aliases = alias_map.get(teacher_id, [])
+        merged_aliases: list[str] = []
+        for alias in [display_name, *aliases]:
+            normalized = alias.strip()
+            if normalized and normalized not in merged_aliases:
+                merged_aliases.append(normalized)
+        teacher_entries[teacher_id] = {
+            "teacher_id": teacher_id,
+            "display_name": display_name or (merged_aliases[0] if merged_aliases else teacher_id),
+            "aliases": merged_aliases,
+        }
+
+    for teacher_id, aliases in alias_map.items():
+        if teacher_id in teacher_entries:
+            entry = teacher_entries[teacher_id]
+            for alias in aliases:
+                if alias not in entry["aliases"]:
+                    entry["aliases"].append(alias)
+            if not entry["display_name"] and entry["aliases"]:
+                entry["display_name"] = entry["aliases"][0]
+            continue
+        teacher_entries[teacher_id] = {
+            "teacher_id": teacher_id,
+            "display_name": aliases[0],
+            "aliases": aliases[:],
+        }
+
+    return sorted(
+        teacher_entries.values(),
+        key=lambda item: ((item["display_name"] or item["teacher_id"]).lower(), item["teacher_id"].lower()),
+    )
 
 
 def _serialize_consultation_row(row: dict, teacher_directory: Optional[dict[str, str]] = None) -> dict:
     serialized = dict(row)
     serialized["id"] = int(serialized["id"]) if serialized.get("id") else 0
     serialized["年级"] = _normalize_consultation_grade(serialized.get("年级", ""))
-    serialized["来源渠道"] = _normalize_consultation_source_channel(
+    serialized["来源渠道"], serialized["来源渠道备注"] = _normalize_consultation_source_fields(
         serialized.get("来源渠道", ""),
+        source_note=serialized.get("来源渠道备注", ""),
         parent_wechat_name=serialized.get("家长微信名", ""),
         child_name=serialized.get("孩子姓名", ""),
     )

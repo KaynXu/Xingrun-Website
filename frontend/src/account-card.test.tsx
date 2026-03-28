@@ -124,6 +124,41 @@ test('consultation modal source keeps the create and edit form concise', () => {
   assert.match(source, /内部备注（可选）/);
 });
 
+test('consultation modal source supports quick parsing and structured source metadata confirmation', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /快速录入/);
+  assert.match(source, /智能解析/);
+  assert.match(source, /来源渠道备注/);
+  assert.match(source, /consultationTeachers/);
+  assert.match(source, /source_channel_note/);
+});
+
+test('quick consultation parser extracts normalized teacher and source metadata', () => {
+  const parseConsultationQuickEntry = (AppModule as {
+    parseConsultationQuickEntry?: (
+      input: string,
+      teacherOptions: Array<{ teacher_id: string; display_name: string; aliases: string[] }>,
+    ) => Record<string, string>;
+  }).parseConsultationQuickEntry;
+
+  assert.equal(typeof parseConsultationQuickEntry, 'function');
+
+  const parsed = parseConsultationQuickEntry!(
+    '张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础',
+    [{ teacher_id: 'KeChongDianDeAShiPiLing', display_name: '雷文浩', aliases: ['雷老师'] }],
+  );
+
+  assert.equal(parsed.parent_wechat_name, '张妈妈');
+  assert.equal(parsed.grade, '五年级');
+  assert.equal(parsed.consultation_subject, '数学');
+  assert.equal(parsed.source_channel, '转介绍');
+  assert.equal(parsed.source_channel_note, '张裕空');
+  assert.equal(parsed.receiving_teacher, '雷文浩');
+  assert.equal(parsed.teacher_id, 'KeChongDianDeAShiPiLing');
+  assert.match(parsed.need_detail, /补基础/);
+});
+
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
