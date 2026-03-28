@@ -1864,7 +1864,7 @@ const ConsultationModal = ({
                 placeholder="例如：张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础"
               />
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {parseFeedback || '默认用本地规则做轻解析，不会每次都调用 AI。'}
+                {parseFeedback || '系统会先帮你整理字段，你再确认后保存。'}
               </p>
             </section>
           )}
