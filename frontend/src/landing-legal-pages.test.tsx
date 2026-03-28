@@ -214,3 +214,24 @@ test('landing page dark mode styles cover the about section and footer shell', (
   assert.match(markup, /<footer class="border-t border-sky-100\/80 py-20 dark:border-white\/8"/);
   assert.match(markup, /All rights reserved/);
 });
+
+test('landing feature cards swap to dark-specific surfaces instead of pale demo panels', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+
+  assert.equal(typeof LandingPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+
+  assert.match(markup, /dark:border-white\/10 dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
+  assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.92\)_0%,rgba\(30,41,59,0\.88\)_100%\)\]/);
+  assert.match(markup, /dark:bg-slate-900\/88/);
+  assert.doesNotMatch(markup, /dark:bg-slate-700\/50/);
+  assert.doesNotMatch(markup, /dark:bg-slate-600\/50/);
+});
