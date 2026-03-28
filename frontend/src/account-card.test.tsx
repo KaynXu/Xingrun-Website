@@ -107,6 +107,13 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   assert.match(source, /<div className="rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
 });
 
+test('sidebar account trigger stays in the sidebar flow instead of pinning itself to the bottom edge', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.doesNotMatch(source, /<div className="mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10">/);
+  assert.match(source, /<div className="border-t border-sky-100\/80 px-4 pt-3 pb-4 dark:border-white\/10">/);
+});
+
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
