@@ -7,3 +7,14 @@ frontend/.DS_Store
 frontend/public/.DS_Store
 .superpowers/
 .worktrees/
+
+# macOS system files
+.DS_Store
+**/.DS_Store
+
+# Local runtime databases (not baseline data)
+data/database.db
+data/local.db
+
+# Local asset candidates (not wired into the product)
+Assets/
