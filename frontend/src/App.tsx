@@ -27,6 +27,7 @@ import {
   Cpu,
   CheckCircle2,
   MoreVertical,
+  Menu,
   Filter,
   ArrowRight,
   RefreshCw,
@@ -34,6 +35,7 @@ import {
   ShieldCheck,
   Moon,
   Sun,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
@@ -359,6 +361,76 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
   };
 }
 
+function normalizeTeacherLookupKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isTeacherDisplayName(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (/老师|主任|校长|顾问/.test(normalized)) {
+    return true;
+  }
+  if (/[\u4e00-\u9fff]/.test(normalized)) {
+    return true;
+  }
+  return !/^[a-z0-9_.-]{4,}$/i.test(normalized);
+}
+
+function buildConsultationTeacherDirectory(records: ConsultationRecord[]): Record<string, string> {
+  const directory: Record<string, string> = {};
+
+  for (const record of records) {
+    const receivingTeacher = record.receiving_teacher?.trim() || '';
+    const teacherId = record.teacher_id?.trim() || '';
+    const displayName = isTeacherDisplayName(receivingTeacher)
+      ? receivingTeacher
+      : isTeacherDisplayName(teacherId)
+        ? teacherId
+        : '';
+
+    if (!displayName) {
+      continue;
+    }
+
+    for (const key of [receivingTeacher, teacherId]) {
+      const normalizedKey = normalizeTeacherLookupKey(key);
+      if (normalizedKey) {
+        directory[normalizedKey] = displayName;
+      }
+    }
+  }
+
+  return directory;
+}
+
+function getConsultationTeacherName(record: ConsultationRecord, teacherDirectory: Record<string, string>): string {
+  const receivingTeacher = record.receiving_teacher?.trim() || '';
+  const teacherId = record.teacher_id?.trim() || '';
+
+  for (const candidate of [receivingTeacher, teacherId]) {
+    if (isTeacherDisplayName(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (const candidate of [receivingTeacher, teacherId]) {
+    const mappedName = teacherDirectory[normalizeTeacherLookupKey(candidate)];
+    if (mappedName) {
+      return mappedName;
+    }
+  }
+
+  return receivingTeacher || teacherId || '待分配老师';
+}
+
+function getConsultationStudentMeta(record: ConsultationRecord): string {
+  const childName = record.child_name?.trim();
+  return childName ? `学生姓名：${childName}` : '学生姓名待补充';
+}
+
 const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
 const workspaceCardClass =
   'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/88 dark:shadow-[0_24px_60px_rgba(2,6,23,0.42)]';
@@ -367,9 +439,9 @@ const workspaceSoftCardClass =
 const workspaceFieldClass =
   'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:focus:border-sky-500 dark:focus:ring-sky-500/15 dark:placeholder:text-slate-500';
 const workspacePrimaryButtonClass =
-  'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
 const workspaceSecondaryButtonClass =
-  'inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
 const workspaceGhostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
 const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900 dark:text-white';
@@ -517,11 +589,15 @@ const Sidebar = ({
   currentUser,
   onLogout,
   setActivePage,
+  onNavigate,
+  mobile,
 }: {
   activePage: Page;
   currentUser: CurrentUser;
   onLogout: () => void;
   setActivePage: (p: Page) => void;
+  onNavigate?: () => void;
+  mobile?: boolean;
 }) => {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const menuItems = [
@@ -535,7 +611,14 @@ const Sidebar = ({
   ];
 
   return (
-    <div className="sticky top-0 flex h-screen w-72 flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,15,30,0.98)_0%,rgba(15,23,42,0.96)_52%,rgba(17,24,39,0.98)_100%)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]">
+    <div
+      className={cn(
+        'flex flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,15,30,0.98)_0%,rgba(15,23,42,0.96)_52%,rgba(17,24,39,0.98)_100%)]',
+        mobile
+          ? 'h-full w-full overflow-y-auto overscroll-contain shadow-[18px_0_48px_rgba(47,128,237,0.12)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.48)]'
+          : 'sticky top-0 h-screen w-72 shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
+      )}
+    >
       <div className="border-b border-sky-100/80 px-6 py-6 dark:border-white/10">
         <div className="flex items-center gap-3">
         <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
@@ -550,7 +633,10 @@ const Sidebar = ({
         {menuItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => setActivePage(item.id as Page)}
+            onClick={() => {
+              setActivePage(item.id as Page);
+              onNavigate?.();
+            }}
             className={cn(
               'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
               activePage === item.id
@@ -598,6 +684,7 @@ const Sidebar = ({
               onOpenSettings={() => {
                 setAccountSheetOpen(false);
                 setActivePage('settings');
+                onNavigate?.();
               }}
             />
           </motion.div>
@@ -612,19 +699,31 @@ const Header = ({
   onGoHome,
   isDark,
   onToggleDarkMode,
+  onOpenSidebar,
 }: {
   title: string;
   onGoHome?: () => void;
   isDark?: boolean;
   onToggleDarkMode?: () => void;
+  onOpenSidebar?: () => void;
 }) => {
   return (
-    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/78 px-6 backdrop-blur-xl md:px-8 dark:border-white/10 dark:bg-[#0f172a]/88">
+    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/78 px-4 backdrop-blur-xl sm:px-6 md:px-8 dark:border-white/10 dark:bg-[#0f172a]/88">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Workspace</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{title}</h2>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{title}</h2>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
+        {onOpenSidebar && (
+          <button
+            onClick={onOpenSidebar}
+            title="打开导航"
+            aria-label="打开导航"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 lg:hidden dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <Menu size={20} />
+          </button>
+        )}
         {onToggleDarkMode && (
           <button
             onClick={onToggleDarkMode}
@@ -644,7 +743,7 @@ const Header = ({
             <Home size={20} />
           </button>
         )}
-        <div className="relative">
+        <div className="relative hidden xl:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
           <input
             type="text"
@@ -652,7 +751,7 @@ const Header = ({
             className={`${workspaceFieldClass} w-64 rounded-full py-2 pl-10 pr-4`}
           />
         </div>
-        <button className="relative flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white">
+        <button className="relative hidden h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 md:flex dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white">
           <Bell size={20} />
           <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400 dark:border-slate-900" />
         </button>
@@ -1557,13 +1656,13 @@ const ConsultationModal = ({
             <div className="text-sm text-slate-500 dark:text-slate-400">
               {readOnly ? '查看模式下可直接切换到编辑或删除记录。' : '保存后会刷新列表，不需要跳转到其他页面。'}
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+            <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
               {readOnly && currentUser.role === 'owner' && (
                 <>
                   <button
                     type="button"
                     onClick={onRequestEdit}
-                    className={workspaceSecondaryButtonClass}
+                    className={`${workspaceSecondaryButtonClass} w-full sm:w-auto`}
                   >
                     <Pencil size={18} />
                     编辑
@@ -1572,7 +1671,7 @@ const ConsultationModal = ({
                     type="button"
                     onClick={onDelete}
                     disabled={submitting}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                    className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
                   >
                     <Trash2 size={18} />
                     删除
@@ -1580,15 +1679,20 @@ const ConsultationModal = ({
                 </>
               )}
               {readOnly ? (
-                <button type="button" onClick={onClose} className={workspacePrimaryButtonClass}>
+                <button type="button" onClick={onClose} className={`${workspacePrimaryButtonClass} w-full sm:w-auto`}>
                   关闭
                 </button>
               ) : (
                 <>
-                  <button type="button" onClick={onClose} className={workspaceSecondaryButtonClass} disabled={submitting}>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className={`${workspaceSecondaryButtonClass} w-full sm:w-auto`}
+                    disabled={submitting}
+                  >
                     取消
                   </button>
-                  <button type="submit" className={workspacePrimaryButtonClass} disabled={submitting}>
+                  <button type="submit" className={`${workspacePrimaryButtonClass} w-full sm:w-auto`} disabled={submitting}>
                     {submitting ? '保存中...' : mode === 'create' ? '创建记录' : '保存修改'}
                   </button>
                 </>
@@ -1613,6 +1717,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const loadRequestId = useRef(0);
+  const teacherDirectory = buildConsultationTeacherDirectory(records);
 
   const load = useCallback(async (keyword: string) => {
     const requestId = ++loadRequestId.current;
@@ -1720,7 +1825,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   return (
     <div className={`${workspacePageClass} space-y-6`}>
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Log</p>
           <h3 className={`${workspaceSectionTitleClass} mt-3`}>咨询记录</h3>
@@ -1728,29 +1833,35 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             记录家长咨询、跟进状态和后续备注，搜索后会直接按关键词过滤当前列表。
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <label className="relative">
+        <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
+          <label className="relative w-full lg:w-[22rem] xl:w-[24rem]">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜索日期、家长微信名、孩子姓名、老师或科目"
-              className={`${workspaceFieldClass} w-full rounded-full py-2.5 pl-11 pr-4 sm:w-[26rem]`}
+              className={`${workspaceFieldClass} w-full rounded-full py-2.5 pl-11 pr-4`}
             />
           </label>
-          <button
-            type="button"
-            onClick={() => load(search).catch(() => undefined)}
-            className={workspaceSecondaryButtonClass}
-          >
-            <RefreshCw size={18} />
-            刷新
-          </button>
-          <button type="button" onClick={openCreateModal} className={workspacePrimaryButtonClass}>
-            <PlusCircle size={18} />
-            新增记录
-          </button>
+          <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
+            <button
+              type="button"
+              onClick={() => load(search).catch(() => undefined)}
+              className={`${workspaceSecondaryButtonClass} w-full sm:w-auto sm:min-w-[126px]`}
+            >
+              <RefreshCw size={18} />
+              刷新
+            </button>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className={`${workspacePrimaryButtonClass} w-full sm:w-auto sm:min-w-[126px]`}
+            >
+              <PlusCircle size={18} />
+              新增记录
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1769,18 +1880,110 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             暂无咨询记录，点击「新增记录」开始录入。
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-left xl:min-w-0">
+          <>
+            <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden">
+              {records.map((record) => {
+                const busy = isBusy && selectedRecord?.id === record.id;
+                return (
+                  <article key={record.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
+                        <p className="mt-2 font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                        {record.follow_up_status || '—'}
+                      </span>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">家长微信</p>
+                        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询老师</p>
+                        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+                          {getConsultationTeacherName(record, teacherDirectory)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-white/5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">录入时间</p>
+                        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
+                      </div>
+                      <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-white/5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
+                        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => openViewModal(record)}
+                        className={`${workspaceSecondaryButtonClass} w-full`}
+                      >
+                        <Eye size={16} />
+                        查看
+                      </button>
+                      {isOwner && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(record)}
+                            className={`${workspaceSecondaryButtonClass} w-full`}
+                            disabled={busy}
+                          >
+                            <Pencil size={16} />
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm('确定删除这条咨询记录吗？')) {
+                                return;
+                              }
+                              setDeletingId(record.id);
+                              try {
+                                await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
+                                await load(search);
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : '删除咨询记录失败');
+                              } finally {
+                                setDeletingId(null);
+                              }
+                            }}
+                            className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                            disabled={busy}
+                          >
+                            <Trash2 size={16} />
+                            删除
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="hidden 2xl:block">
+              <table className="w-full border-collapse text-left">
             <thead>
               <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
-                <th className="px-6 py-4 font-semibold">日期</th>
-                <th className="px-6 py-4 font-semibold">家长 / 孩子</th>
-                <th className="px-6 py-4 font-semibold">年级</th>
-                <th className="px-6 py-4 font-semibold">接待老师</th>
-                <th className="px-6 py-4 font-semibold">咨询科目</th>
-                <th className="px-6 py-4 font-semibold">跟进状态</th>
-                <th className="px-6 py-4 font-semibold">录入 / 更新</th>
-                <th className="px-6 py-4 text-right font-semibold">操作</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">日期</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">家长微信 / 学生姓名</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">年级</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询老师</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询科目</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">跟进状态</th>
+                <th className="px-6 py-4 font-semibold whitespace-nowrap">录入 / 更新</th>
+                <th className="px-6 py-4 text-right font-semibold whitespace-nowrap">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
@@ -1795,20 +1998,19 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           {record.parent_wechat_name || '—'}
                         </p>
                         <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {record.child_name || '—'}
+                          {getConsultationStudentMeta(record)}
                         </p>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
                     <td className="px-6 py-4">
-                      <div className="space-y-1 text-sm">
-                        <p className="text-slate-700 dark:text-slate-200">{record.receiving_teacher || '—'}</p>
-                        <p className="text-slate-400 dark:text-slate-500">ID: {record.teacher_id || '—'}</p>
-                      </div>
+                      <p className="text-sm text-slate-700 dark:text-slate-200">
+                        {getConsultationTeacherName(record, teacherDirectory)}
+                      </p>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '—'}</td>
                     <td className="px-6 py-4">
-                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                      <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
                         {record.follow_up_status || '—'}
                       </span>
                     </td>
@@ -1870,7 +2072,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               })}
             </tbody>
           </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -2990,6 +3193,7 @@ export default function App() {
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
@@ -3117,6 +3321,7 @@ export default function App() {
     setCurrentUser(null);
     setShowLanding(false);
     setActivePage('dashboard');
+    setMobileNavOpen(false);
   };
 
   const handleLessonSuccess = () => {
@@ -3194,18 +3399,57 @@ export default function App() {
         <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
       </div>
       <div className="relative flex min-h-screen">
-        <Sidebar
-          activePage={activePage}
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          setActivePage={setActivePage}
-        />
+        <div className="hidden lg:block">
+          <Sidebar
+            activePage={activePage}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            setActivePage={setActivePage}
+          />
+        </div>
+        <AnimatePresence>
+          {mobileNavOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 lg:hidden"
+            >
+              <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+              <motion.div
+                initial={{ x: -24, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -24, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                className="relative h-full w-[18.5rem] max-w-[86vw]"
+              >
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  aria-label="关闭导航"
+                >
+                  <X size={18} />
+                </button>
+                <Sidebar
+                  activePage={activePage}
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  setActivePage={setActivePage}
+                  onNavigate={() => setMobileNavOpen(false)}
+                  mobile={true}
+                />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <main className="flex min-w-0 flex-1 flex-col">
           <Header
             title={pageTitle[activePage]}
             onGoHome={() => setShowLanding(true)}
             isDark={isDark}
             onToggleDarkMode={() => setIsDark((current) => !current)}
+            onOpenSidebar={() => setMobileNavOpen(true)}
           />
           <div className="flex-1 overflow-y-auto">
             <AnimatePresence mode="wait">
