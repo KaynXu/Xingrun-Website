@@ -211,6 +211,23 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(delete_response.status_code, 403)
 
+    def test_list_exposes_teacher_display_name_from_user_directory(self):
+        self.write_legacy_csv([
+            self.sample_row(
+                接待老师="teacher_a",
+                老师ID="teacher_a",
+            )
+        ])
+        self.create_member_token()
+
+        response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["receiving_teacher"], "teacher_a")
+        self.assertEqual(payload[0]["teacher_id"], "teacher_a")
+        self.assertEqual(payload[0]["teacher_display_name"], "Teacher A")
+
 
 if __name__ == "__main__":
     unittest.main()
