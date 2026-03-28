@@ -922,7 +922,7 @@ const Sidebar = ({
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 px-4 py-5">
+      <nav className="space-y-1 px-4 py-5">
         {menuItems.map((item) => (
           <button
             key={item.id}
@@ -949,7 +949,7 @@ const Sidebar = ({
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-sky-100/80 p-4 dark:border-white/10">
+      <div className="border-t border-sky-100/80 px-4 pt-3 pb-4 dark:border-white/10">
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
