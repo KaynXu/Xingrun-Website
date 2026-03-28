@@ -113,6 +113,14 @@ test('sidebar account trigger stays anchored to the bottom edge of the visible s
   assert.match(source, /<div className="mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10">/);
 });
 
+test('desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
+  assert.match(source, /<main className="flex min-w-0 flex-1 flex-col">/);
+  assert.match(source, /<div className="relative min-h-screen overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
+});
+
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 

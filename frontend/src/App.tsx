@@ -3819,7 +3819,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+    <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
         <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
@@ -3878,7 +3878,7 @@ export default function App() {
             onToggleDarkMode={() => setIsDark((current) => !current)}
             onOpenSidebar={() => setMobileNavOpen(true)}
           />
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activePage}
