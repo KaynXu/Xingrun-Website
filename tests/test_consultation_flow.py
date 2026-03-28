@@ -1,4 +1,5 @@
 import csv
+import json
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         lesson_manager.DB_PATH = self.base / "lessons.db"
         lesson_manager.CONSULTATIONS_CSV_PATH = self.base / "data" / "consultations.csv"
         lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH = self.base / "legacy" / "consultations.csv"
+        lesson_manager.CONSULTATION_TEACHERS_JSON_CANDIDATES = [self.base / "teachers.json"]
 
         config_runtime.CFG_PATH = self.base / "config.json"
         config_runtime.write_file_config({})
@@ -107,6 +109,12 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         row.update(overrides)
         return row
+
+    def write_teacher_aliases(self, aliases: dict) -> None:
+        lesson_manager.CONSULTATION_TEACHERS_JSON_CANDIDATES[0].write_text(
+            json.dumps(aliases, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     def test_list_migrates_legacy_csv_into_project_storage(self):
         self.write_legacy_csv([self.sample_row()])
@@ -227,6 +235,21 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload[0]["receiving_teacher"], "teacher_a")
         self.assertEqual(payload[0]["teacher_id"], "teacher_a")
         self.assertEqual(payload[0]["teacher_display_name"], "Teacher A")
+
+    def test_list_exposes_teacher_display_name_from_teacher_alias_file(self):
+        self.write_teacher_aliases({"KeChongDianDeAShiPiLing": ["雷老师", "雷文浩"]})
+        self.write_legacy_csv([
+            self.sample_row(
+                接待老师="KeChongDianDeAShiPiLing",
+                老师ID="KeChongDianDeAShiPiLing",
+            )
+        ])
+
+        response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["teacher_display_name"], "雷老师")
 
 
 if __name__ == "__main__":
