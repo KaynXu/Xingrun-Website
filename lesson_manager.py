@@ -43,6 +43,10 @@ LEGACY_CONSULTATIONS_CSV_PATH = Path.home() / "咨询记录" / "consultations.cs
 DEFAULT_ORGANIZATION_NAME = "星润Starain"
 OWNER_USERNAME = "Kayn"
 OWNER_DISPLAY_NAME = "Kayn"
+CONSULTATION_TEACHERS_JSON_CANDIDATES = [
+    DATA_DIR / "teachers.json",
+    Path.home() / ".openclaw" / "workspace-wecom" / "teachers.json",
+]
 
 CONSULTATION_FIELDNAMES = [
     "id",
@@ -140,6 +144,24 @@ def _get_consultation_teacher_directory() -> dict[str, str]:
             directory[username.lower()] = display_name
         if display_name:
             directory[display_name.lower()] = display_name
+    for teacher_file in CONSULTATION_TEACHERS_JSON_CANDIDATES:
+        if not teacher_file.exists():
+            continue
+        try:
+            aliases = json.loads(teacher_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for teacher_id, raw_aliases in aliases.items():
+            teacher_key = str(teacher_id).strip().lower()
+            if not teacher_key or teacher_key in directory:
+                continue
+            normalized_aliases: list[str] = []
+            if isinstance(raw_aliases, list):
+                normalized_aliases = [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+            elif isinstance(raw_aliases, str):
+                normalized_aliases = [alias.strip() for alias in raw_aliases.split(",") if alias.strip()]
+            if normalized_aliases:
+                directory[teacher_key] = normalized_aliases[0]
     return directory
 
 
