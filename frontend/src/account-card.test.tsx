@@ -113,6 +113,14 @@ test('sidebar account trigger stays anchored to the bottom edge of the visible s
   assert.match(source, /<div className="mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10">/);
 });
 
+test('sidebar account sheet renders above workspace content without relying on a fullscreen blur layer', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /import \{ createPortal \} from 'react-dom';/);
+  assert.match(source, /<div className="fixed inset-0 z-\[70\]"/);
+  assert.doesNotMatch(source, /backdrop-blur-\[4px\]/);
+});
+
 test('desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 

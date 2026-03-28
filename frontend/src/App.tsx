@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import {
   Home,
@@ -815,9 +816,9 @@ export const SidebarAccountSheet = ({
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-40" onClick={onClose}>
-      <div className="absolute inset-0 bg-slate-900/18 backdrop-blur-[4px]" />
+  const sheet = (
+    <div className="fixed inset-0 z-[70]" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-950/28" />
       <div className="absolute left-4 bottom-4 w-[calc(100vw-2rem)] max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className={`${workspaceCardClass} p-6`}>
           <div className="flex items-start justify-between gap-4">
@@ -875,6 +876,12 @@ export const SidebarAccountSheet = ({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') {
+    return sheet;
+  }
+
+  return createPortal(sheet, document.body);
 };
 
 const Sidebar = ({
