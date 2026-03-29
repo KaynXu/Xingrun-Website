@@ -43,7 +43,7 @@ import { CourseCalendarPage } from './CourseCalendarPage';
 
 // --- Types ---
 
-type Role = 'owner' | 'member';
+type Role = 'owner' | 'admin' | 'member';
 type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
@@ -137,7 +137,9 @@ interface UserItem {
 }
 
 function getRoleLabel(role: Role): string {
-  return role === 'owner' ? '最高权限账号' : '机构成员';
+  if (role === 'owner') return '最高权限账号';
+  if (role === 'admin') return '管理员';
+  return '机构成员';
 }
 
 const LANDING_LEGAL_DOCUMENTS: Record<
@@ -2541,6 +2543,7 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [userClassIds, setUserClassIds] = useState<Record<number, number[]>>({});
   const [savingUserId, setSavingUserId] = useState<number | null>(null);
+  const [changingRoleId, setChangingRoleId] = useState<number | null>(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -2595,6 +2598,22 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       setUserClassIds(map);
     }).catch(console.error);
   }, []);
+
+  const handleRoleChange = async (userId: number, newRole: 'admin' | 'member') => {
+    setChangingRoleId(userId);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/users/${userId}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({ role: newRole }),
+      });
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '权限修改失败');
+    } finally {
+      setChangingRoleId(null);
+    }
+  };
 
   const handleClassToggle = async (userId: number, classId: number, checked: boolean) => {
     const prev = userClassIds[userId] ?? [];
@@ -2741,13 +2760,35 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             {users.map((user) => {
               const assigned = userClassIds[user.id] ?? [];
               const saving = savingUserId === user.id;
+              const changingRole = changingRoleId === user.id;
+              const isOwner = user.role === 'owner';
               return (
                 <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                     <div>
+                      <div className="flex items-center gap-2">
                         <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{user.org}</span>
-                      {saving && <span className="ml-2 text-xs text-sky-600">保存中...</span>}
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          isOwner
+                            ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-900/20 dark:text-amber-300'
+                            : user.role === 'admin'
+                              ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/20 dark:text-sky-300'
+                              : 'border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400'
+                        }`}>
+                          {getRoleLabel(user.role)}
+                        </span>
+                        {!isOwner && (
+                          <button
+                            disabled={changingRole}
+                            onClick={() => handleRoleChange(user.id, user.role === 'admin' ? 'member' : 'admin')}
+                            className="text-[11px] text-sky-600 hover:text-sky-500 disabled:opacity-50 dark:text-sky-400 dark:hover:text-sky-300"
+                          >
+                            {changingRole ? '...' : user.role === 'admin' ? '降为成员' : '升为管理员'}
+                          </button>
+                        )}
+                      </div>
+                      <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{user.org}</span>
+                      {saving && <span className="mt-0.5 block text-xs text-sky-600">保存中...</span>}
                     </div>
                     {classes.length === 0 ? (
                         <span className="text-xs text-slate-500 dark:text-slate-400">暂无班级</span>
@@ -3852,10 +3893,8 @@ export default function App() {
 
   if (token && !authReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-6 text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-        <div className={`${workspaceCardClass} w-full max-w-xl p-8`}>
-          <XiaojimaoLoading label="正在验证账号权限..." />
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)]">
+        <p className="text-sm text-slate-400 dark:text-slate-500">正在验证账号权限...</p>
       </div>
     );
   }
