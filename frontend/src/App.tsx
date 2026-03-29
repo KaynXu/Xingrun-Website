@@ -170,6 +170,22 @@ function toClassFormValues(item: ClassItem): ClassFormValues {
   };
 }
 
+function areClassIdListsEqual(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+export function resolveAssignmentRollbackClassIds(
+  currentClassIds: number[],
+  previousClassIds: number[],
+  failedNextClassIds: number[],
+): number[] {
+  return areClassIdListsEqual(currentClassIds, failedNextClassIds) ? previousClassIds : currentClassIds;
+}
+
 function getRoleBadgeClass(role: Role): string {
   if (role === 'owner') {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
@@ -2907,11 +2923,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [assignmentSavingByUserId, setAssignmentSavingByUserId] = useState<Record<number, boolean>>({});
+  const loadPageRequestVersionRef = useRef(0);
   const classInteractionLocked = saving || deleting;
   const hasAssignmentSavingRows = Object.values(assignmentSavingByUserId).some(Boolean);
   const assignmentRefreshLocked = classInteractionLocked || hasAssignmentSavingRows;
 
   const loadPage = useCallback(async (preferredSelectedClassId?: number | 'new') => {
+    const requestVersion = ++loadPageRequestVersionRef.current;
     setLoading(true);
     setPageError('');
     try {
@@ -2926,6 +2944,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         }),
       );
 
+      if (requestVersion !== loadPageRequestVersionRef.current) {
+        return;
+      }
+
       setClasses(classItems);
       setUsers(userItems);
       setUserClassIdsByUserId(Object.fromEntries(assignmentEntries));
@@ -2937,13 +2959,19 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         return classItems.some((item) => item.id === requestedSelection) ? requestedSelection : 'new';
       });
     } catch (err) {
+      if (requestVersion !== loadPageRequestVersionRef.current) {
+        return;
+      }
+
       setPageError(err instanceof Error ? err.message : '班级管理数据加载失败');
       setClasses([]);
       setUsers([]);
       setUserClassIdsByUserId({});
       setSelectedClassId('new');
     } finally {
-      setLoading(false);
+      if (requestVersion === loadPageRequestVersionRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -3065,7 +3093,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         body: JSON.stringify({ class_ids: nextClassIds }),
       });
     } catch (err) {
-      setUserClassIdsByUserId((current) => ({ ...current, [userId]: previousClassIds }));
+      setUserClassIdsByUserId((current) => ({
+        ...current,
+        [userId]: resolveAssignmentRollbackClassIds(current[userId] || [], previousClassIds, nextClassIds),
+      }));
       setAssignmentError(err instanceof Error ? err.message : '成员班级分配保存失败');
     } finally {
       setAssignmentSavingByUserId((current) => {
