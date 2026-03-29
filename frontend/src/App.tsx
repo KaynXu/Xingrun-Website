@@ -3479,7 +3479,15 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         ) : (
           <div className="grid gap-4">
             <div className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <button
+                type="button"
+                onClick={() => handleToggleExpandedClass('new')}
+                disabled={classCardInteractionLocked}
+                className={cn(
+                  'flex w-full flex-col gap-4 text-left lg:flex-row lg:items-center lg:justify-between',
+                  classCardInteractionLocked ? 'cursor-not-allowed' : 'cursor-pointer',
+                )}
+              >
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-lg font-semibold text-slate-900 dark:text-white">新建班级</span>
@@ -3497,15 +3505,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <span>创建时会直接绑定该老师账号</span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleToggleExpandedClass('new')}
-                  disabled={classCardInteractionLocked}
-                  className={workspaceSecondaryButtonClass}
-                >
-                  {newClassExpanded ? '收起管理' : '展开管理'}
-                </button>
-              </div>
+              </button>
 
               {newClassExpanded && (
                 <div className="mt-5 space-y-5 border-t border-sky-100/80 pt-5 dark:border-white/10">
@@ -3656,7 +3656,15 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
               return (
                 <div key={item.id} className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleExpandedClass(item.id)}
+                    disabled={classCardInteractionLocked}
+                    className={cn(
+                      'flex w-full flex-col gap-4 text-left lg:flex-row lg:items-center lg:justify-between',
+                      classCardInteractionLocked ? 'cursor-not-allowed' : 'cursor-pointer',
+                    )}
+                  >
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.name}</span>
@@ -3671,15 +3679,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <span>当前老师：{teacherSummary}</span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleExpandedClass(item.id)}
-                      disabled={classCardInteractionLocked}
-                      className={workspaceSecondaryButtonClass}
-                    >
-                      {isExpanded ? '收起管理' : '展开管理'}
-                    </button>
-                  </div>
+                  </button>
 
                   {isExpanded && (
                     <div className="mt-5 space-y-5 border-t border-sky-100/80 pt-5 dark:border-white/10">
