@@ -106,6 +106,10 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         generate_pdf.assert_called_once()
 
+    def test_legacy_single_lesson_entrypoint_removed_from_pdf_engine(self):
+        source = (ROOT / "pdf_engine.py").read_text(encoding="utf-8")
+        self.assertNotIn("def generate_lesson_pdf(", source)
+
 
 if __name__ == "__main__":
     unittest.main()

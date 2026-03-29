@@ -142,9 +142,12 @@ python review_plan_templates/generate_review_pdfs.py hybrid review_plan_template
 ```
 
 说明：
+- 网页和 CLI 的单课 PDF 现在统一走 `review_plan_templates/single_lesson_pdf.py`
 - 模板脚本、课程包和工作流文档位于 `review_plan_templates/`
+- `review_plan_templates/generate_review_pdfs.py` 仍可独立生成同款版式 PDF
 - 生成的 PDF 默认输出到 `review_plan_templates/pdf_output/`
 - 输出目录已加入 `.gitignore`，不会把新生成的 PDF 自动纳入版本管理
+- `pdf_engine.py` 仅保留月度 / 非单课 PDF 逻辑
 
 ---
 

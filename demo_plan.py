@@ -5,8 +5,8 @@
 """
 import json
 from pathlib import Path
-from pdf_engine import generate_lesson_pdf
 from lesson_manager import save_lesson
+from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
 
 DEMO_PLAN = {
     "lesson_info": {
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     Path("data/pdfs").mkdir(parents=True, exist_ok=True)
     
     # 生成 PDF
-    result = generate_lesson_pdf(DEMO_PLAN, out_path)
+    result = generate_single_lesson_pdf(DEMO_PLAN, out_path)
     print(f"✅ PDF 已生成：{result}")
     
     # 保存到数据库
