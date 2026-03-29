@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const fixedGradeValues = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
+const sharedGradeOptionsPattern = new RegExp(
+  `const gradeOptions\\s*=\\s*\\[\\s*${fixedGradeValues.map((value) => `'${value}'`).join('\\s*,\\s*')}\\s*\\];`,
+);
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
   assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
@@ -28,7 +32,8 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
-  assert.match(classManagementBlock[0], /班级老师分配/);
+  assert.match(classManagementBlock[0], /负责老师/);
+  assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
 });
@@ -50,11 +55,30 @@ test('class management source adds a specific grade filter and renders filtered 
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
-  assert.match(classManagementBlock[0], /const gradeFilterOptions = \['全部', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'\];/);
+  assert.match(appSource, sharedGradeOptionsPattern);
+  assert.match(appSource, /const gradeFilterOptions\s*=\s*\['全部'\s*,\s*\.\.\.gradeOptions\s*\];/);
   assert.match(classManagementBlock[0], /const filteredClasses = classes\.filter\(\(item\) => \{/);
   assert.match(classManagementBlock[0], /if \(selectedGradeFilter === '全部'\) \{\s*return true;\s*\}/);
   assert.match(classManagementBlock[0], /\{filteredClasses\.length === 0 \?/);
   assert.match(classManagementBlock[0], /\{filteredClasses\.map\(\(item\) => \{/);
+});
+
+test('class management source reuses fixed grade options for form selection', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(appSource, sharedGradeOptionsPattern);
+  assert.match(appSource, /const gradeFilterOptions\s*=\s*\[\s*'全部'\s*,\s*\.\.\.gradeOptions\s*\];/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*?value=\{newClassForm\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'grade', e\.target\.value\)\}/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*?value=\{formState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(item\.id, 'grade', e\.target\.value\)\}/);
+  assert.doesNotMatch(classManagementBlock[0], /<input[\s\S]*?value=\{newClassForm\.grade\}[\s\S]*?placeholder="如：六年级"/);
+  assert.doesNotMatch(classManagementBlock[0], /<input[\s\S]*?value=\{formState\.grade\}[\s\S]*?placeholder="如：六年级"/);
+});
+
+test('class management source validates saves against the shared fixed grade options', () => {
+  assert.match(appSource, sharedGradeOptionsPattern);
+  assert.match(appSource, /gradeOptions\.includes\(\s*[^)]*grade[^)]*\)/);
+  assert.match(appSource, /请选择年级/);
 });
 
 test('class management source uses class-centric teacher binding instead of user checkbox matrices', () => {
