@@ -54,7 +54,7 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              create_auth_session, create_registration_request,
                              approve_registration_request, reject_registration_request,
                              list_registration_requests, get_current_user,
-                             list_all_users, get_user_class_ids, set_user_class_ids, update_user_role,
+                             list_all_users, get_user_class_ids, set_user_class_ids, update_user_role, update_user_profile,
                              list_consultations, get_consultation,
                              create_consultation, update_consultation,
                              delete_consultation, list_consultation_teachers)
@@ -465,6 +465,7 @@ def delete_lesson(lesson_id):
 
 # ─── PDF 查看 / 下载 ────────────────────────────────────────────────────────────
 @app.route("/pdf/<int:lesson_id>")
+@app.route("/api/pdf/<int:lesson_id>")
 def serve_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
@@ -477,6 +478,7 @@ def serve_pdf(lesson_id):
 
 
 @app.route("/pdf/download/<int:lesson_id>")
+@app.route("/api/pdf/download/<int:lesson_id>")
 def download_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
@@ -489,6 +491,7 @@ def download_pdf(lesson_id):
 
 
 @app.route("/pdf/answer/<int:lesson_id>")
+@app.route("/api/pdf/answer/<int:lesson_id>")
 def serve_answer_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
@@ -504,6 +507,7 @@ def serve_answer_pdf(lesson_id):
 
 
 @app.route("/pdf/download/answer/<int:lesson_id>")
+@app.route("/api/pdf/download/answer/<int:lesson_id>")
 def download_answer_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
@@ -754,6 +758,23 @@ def api_me():
     if error:
         return error
     return jsonify(user)
+
+
+@app.route("/api/profile", methods=["PUT"])
+def api_profile_update():
+    user, error = _require_auth()
+    if error:
+        return error
+    data = request.json or {}
+    new_username = data.get("username", "").strip()
+    new_display_name = data.get("display_name", "").strip()
+    if not new_username or not new_display_name:
+        return jsonify({"error": "用户名和昵称不能为空"}), 400
+    try:
+        update_user_profile(user["id"], new_username, new_display_name)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/registration-requests", methods=["GET"])
