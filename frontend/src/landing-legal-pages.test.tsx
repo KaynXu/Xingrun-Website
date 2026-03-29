@@ -21,12 +21,37 @@ test('landing page renders Starain hero branding and approved messaging', () => 
 
   assert.match(markup, /Starain/);
   assert.match(markup, /AI Edu Platform/);
-  assert.match(markup, /教育工作流终于被 AI 重新组织好了/);
+  assert.match(markup, /让课堂素材自然流入 AI 教学交付/);
+  assert.match(markup, /像展板说明一样克制地呈现平台角色/);
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);
   assert.match(markup, /申请试用/);
   assert.match(markup, /data-stream-src="https:\/\/stream\.mux\.com\/ef2TghmWccnsK54qnxtFWjv36zXb01cK02CAfgDNQMgn4\.m3u8"/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
+});
+
+test('landing hero uses exhibition-panel copy with a light result preview instead of a white dashboard card', () => {
+  const LandingPage = (AppModule as {
+    LandingPage?: React.ComponentType<{
+      onLogin: () => void;
+      onRegister: () => void;
+    }>;
+  }).LandingPage;
+
+  assert.equal(typeof LandingPage, 'function');
+
+  const markup = renderToStaticMarkup(
+    <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
+  );
+
+  assert.match(markup, /课堂分析/);
+  assert.match(markup, /复习资料生成/);
+  assert.match(markup, /教学交付/);
+  assert.match(markup, /平台结果预览/);
+  assert.match(markup, /上传片段/);
+  assert.match(markup, /结构化摘要/);
+  assert.match(markup, /复习讲义草稿/);
+  assert.doesNotMatch(markup, /rounded-\[2rem\] border border-sky-100 bg-white\/85 p-5 sm:p-8 md:p-12/);
 });
 
 test('landing page tells the validated workflow story', () => {
@@ -209,7 +234,8 @@ test('landing page dark mode styles cover the about section and footer shell', (
 
   assert.match(markup, /id="about" class="border-t border-sky-100\/80 py-24 dark:border-white\/8"/);
   assert.match(markup, /ABOUT STARAIN/);
-  assert.match(markup, /dark:bg-slate-800\/80 dark:border-white\/10/);
+  assert.match(markup, /dark:bg-slate-950\/35 dark:text-sky-200/);
+  assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(2,6,23,0\.42\)_0%,rgba\(15,23,42,0\.7\)_100%\)\]/);
   assert.match(markup, /dark:text-white/);
   assert.match(markup, /<footer class="border-t border-sky-100\/80 py-20 dark:border-white\/8"/);
   assert.match(markup, /All rights reserved/);
