@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw, Search } from 'lucide-react';
 
 import {
@@ -12,9 +12,12 @@ import {
 } from './App';
 import {
   buildWrongQuestionQuery,
+  normalizeWrongQuestionListResponse,
   summarizeWrongQuestionRecords,
   type WrongQuestionFilters,
+  type WrongQuestionListApiResponse,
   type WrongQuestionRecord,
+  type WrongQuestionSummary,
 } from './smartWrongQuestions';
 
 type SmartWrongQuestionsPageProps = {
@@ -39,16 +42,27 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [serverSummary, setServerSummary] = useState<WrongQuestionSummary | null>(null);
+  const requestVersionRef = useRef(0);
 
-  const summary = useMemo(() => summarizeWrongQuestionRecords(records), [records]);
+  const summary = useMemo(() => serverSummary ?? summarizeWrongQuestionRecords(records), [records, serverSummary]);
   const selectedRecord = records.find((item) => item.id === selectedId) ?? records[0] ?? null;
 
   const loadList = useCallback(async (nextFilters: WrongQuestionFilters) => {
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
     setLoading(true);
     setError('');
     try {
-      const nextRecords = await apiFetch<WrongQuestionRecord[]>(`/api/wrong-questions${buildWrongQuestionQuery(nextFilters)}`);
+      const response = await apiFetch<WrongQuestionListApiResponse>(`/api/wrong-questions${buildWrongQuestionQuery(nextFilters)}`);
+      if (requestVersion !== requestVersionRef.current) {
+        return;
+      }
+
+      const normalized = normalizeWrongQuestionListResponse(response);
+      const nextRecords = normalized.items;
       setRecords(nextRecords);
+      setServerSummary(normalized.summary);
       setSelectedId((current) => {
         if (current && nextRecords.some((item) => item.id === current)) {
           return current;
@@ -56,11 +70,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         return nextRecords[0]?.id ?? null;
       });
     } catch (loadError) {
+      if (requestVersion !== requestVersionRef.current) {
+        return;
+      }
+
       setError(loadError instanceof Error ? loadError.message : '智能错题列表加载失败');
       setRecords([]);
+      setServerSummary(null);
       setSelectedId(null);
     } finally {
-      setLoading(false);
+      if (requestVersion === requestVersionRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
