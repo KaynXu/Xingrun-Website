@@ -3403,7 +3403,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">班级管理</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-            在这里维护 {currentUser.organization_name} 的班级台账，并直接完成班级老师分配，不再与账号审批页面混用。
+            在这里统一管理 {currentUser.organization_name} 的班级信息与负责老师安排。
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
