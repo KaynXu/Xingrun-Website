@@ -21,8 +21,8 @@ test('landing page renders Starain hero branding and approved messaging', () => 
 
   assert.match(markup, /Starain/);
   assert.match(markup, /AI Edu Platform/);
-  assert.match(markup, /让课堂素材自然流入 AI 教学交付/);
-  assert.match(markup, /像展板说明一样克制地呈现平台角色/);
+  assert.match(markup, /Starain，面向教育机构的 AI 教学平台/);
+  assert.match(markup, /Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台/);
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);
   assert.match(markup, /申请试用/);
@@ -44,13 +44,15 @@ test('landing hero uses exhibition-panel copy with a light result preview instea
     <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
   );
 
-  assert.match(markup, /课堂分析/);
+  assert.match(markup, /AI EDUCATION PLATFORM FOR INSTITUTIONS/);
   assert.match(markup, /复习资料生成/);
+  assert.match(markup, /题库与内容沉淀/);
+  assert.match(markup, /教学协同交付/);
+  assert.match(markup, /PLATFORM SNAPSHOT/);
+  assert.match(markup, /不止一个助手，而是一套持续扩展的 AI Edu Platform/);
+  assert.match(markup, /复习资料/);
+  assert.match(markup, /题库系统/);
   assert.match(markup, /教学交付/);
-  assert.match(markup, /平台结果预览/);
-  assert.match(markup, /上传片段/);
-  assert.match(markup, /结构化摘要/);
-  assert.match(markup, /复习讲义草稿/);
   assert.doesNotMatch(markup, /rounded-\[2rem\] border border-sky-100 bg-white\/85 p-5 sm:p-8 md:p-12/);
 });
 
