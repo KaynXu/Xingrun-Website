@@ -11,6 +11,14 @@ export interface WrongQuestionAnalysis {
   studentNote?: string;
 }
 
+export interface WrongQuestionReviewDraft {
+  selectedErrorType: string;
+  selectedKnowledgePoints: string[];
+  selectedActions: string[];
+  selectedReasons: string[];
+  studentNote: string;
+}
+
 export interface WrongQuestionRecord {
   id: string;
   studentName: string;
@@ -161,6 +169,74 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   };
 }
 
+function normalizeDraftList(values: string[]): string[] {
+  return values
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
+  return {
+    selectedErrorType: record.analysis.selectedErrorType?.trim() || record.analysis.errorType,
+    selectedKnowledgePoints: normalizeDraftList(record.analysis.selectedKnowledgePoints ?? record.analysis.knowledgePoints),
+    selectedActions: normalizeDraftList(record.analysis.selectedActions ?? []),
+    selectedReasons: normalizeDraftList(record.analysis.selectedReasons ?? []),
+    studentNote: record.analysis.studentNote?.trim() ?? '',
+  };
+}
+
+export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft): WrongQuestionReviewDraft {
+  return {
+    selectedErrorType: draft.selectedErrorType.trim(),
+    selectedKnowledgePoints: normalizeDraftList(draft.selectedKnowledgePoints),
+    selectedActions: normalizeDraftList(draft.selectedActions),
+    selectedReasons: normalizeDraftList(draft.selectedReasons),
+    studentNote: draft.studentNote.trim(),
+  };
+}
+
+export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft: WrongQuestionReviewDraft): WrongQuestionRecord {
+  const payload = buildWrongQuestionReviewPayload(draft);
+  const nextAnalysis: WrongQuestionAnalysis = {
+    ...record.analysis,
+  };
+
+  if (payload.selectedErrorType) {
+    nextAnalysis.selectedErrorType = payload.selectedErrorType;
+  } else {
+    delete nextAnalysis.selectedErrorType;
+  }
+
+  if (payload.selectedKnowledgePoints.length > 0) {
+    nextAnalysis.selectedKnowledgePoints = payload.selectedKnowledgePoints;
+  } else {
+    delete nextAnalysis.selectedKnowledgePoints;
+  }
+
+  if (payload.selectedActions.length > 0) {
+    nextAnalysis.selectedActions = payload.selectedActions;
+  } else {
+    delete nextAnalysis.selectedActions;
+  }
+
+  if (payload.selectedReasons.length > 0) {
+    nextAnalysis.selectedReasons = payload.selectedReasons;
+  } else {
+    delete nextAnalysis.selectedReasons;
+  }
+
+  if (payload.studentNote) {
+    nextAnalysis.studentNote = payload.studentNote;
+  } else {
+    delete nextAnalysis.studentNote;
+  }
+
+  return {
+    ...record,
+    analysis: nextAnalysis,
+  };
+}
+
 function normalizeWrongQuestionSummary(rawSummary: unknown, fallback: WrongQuestionSummary, totalOverride: unknown): WrongQuestionSummary {
   const source = isObjectRecord(rawSummary) ? rawSummary : {};
   const normalizedTotalOverride = typeof totalOverride === 'number' && Number.isFinite(totalOverride)
@@ -246,4 +322,8 @@ export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {
   }
 
   return parts.length > 0 ? `?${parts.join('&')}` : '';
+}
+
+export function buildWrongQuestionSummaryExportPath(filters: WrongQuestionFilters): string {
+  return `/api/wrong-questions/summary/export${buildWrongQuestionQuery(filters)}`;
 }
