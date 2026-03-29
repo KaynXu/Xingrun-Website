@@ -4283,7 +4283,7 @@ export const LandingPage = ({
             <span className="hidden sm:block text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
               AI Edu Platform
             </span>
-          </div>˜
+          </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400">
             <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
             <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
