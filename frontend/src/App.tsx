@@ -1513,7 +1513,7 @@ const SubjectCombobox = ({
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className={`${workspaceFieldClass} sm:w-32`}
+        className={`${workspaceFieldClass} w-full`}
       />
       {open && filtered.length > 0 && (
         <div className="absolute left-0 top-full z-20 mt-1 w-full min-w-[8rem] overflow-hidden rounded-xl border border-sky-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900">
@@ -1647,7 +1647,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-8"
           >
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="space-y-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
                 <h3 className={`${workspaceSectionTitleClass} mt-3`}>生成复习文档</h3>
@@ -1655,7 +1655,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   上传录音或粘贴笔记，AI 会整理成统一的复习资料与后续题库资产。
                 </p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
                 <SubjectCombobox
                   value={subject}
                   onChange={setSubject}
@@ -1665,7 +1665,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 <select
                   value={classId ?? ''}
                   onChange={(e) => handleClassChange(Number(e.target.value))}
-                  className={`${workspaceFieldClass} w-full sm:w-40`}
+                  className={`${workspaceFieldClass} w-full`}
                 >
                   <option value="">选择班级</option>
                   {classes.map((c) => (
@@ -1676,7 +1676,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   type="date"
                   value={lessonDate}
                   onChange={(e) => setLessonDate(e.target.value)}
-                  className={`${workspaceFieldClass} w-full sm:w-40`}
+                  className={`${workspaceFieldClass} w-full`}
                 />
               </div>
             </div>
