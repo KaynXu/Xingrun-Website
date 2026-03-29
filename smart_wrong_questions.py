@@ -103,7 +103,10 @@ def _request_downstream(
                 return raw, response.headers
             if not raw:
                 return {}
-            return json.loads(raw.decode("utf-8"))
+            try:
+                return json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                raise WrongQuestionProxyError("下游服务返回了无效响应", 502) from exc
     except error.HTTPError as exc:
         raise WrongQuestionProxyError(_extract_error_message(exc.read()), exc.code) from exc
     except error.URLError as exc:
