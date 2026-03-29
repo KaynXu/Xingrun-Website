@@ -212,3 +212,16 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(indexCssSource, /html\.dark ::-webkit-scrollbar-thumb\s*\{[\s\S]*background:\s*#334155;/);
   assert.match(indexCssSource, /html\.dark ::-webkit-scrollbar-thumb:hover\s*\{[\s\S]*background:\s*#475569;/);
 });
+
+test('workspace source splits approval and class assignment responsibilities across separate pages', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.match(source, /账号审批/);
+  assert.ok(approvalBlock);
+  assert.doesNotMatch(approvalBlock[0], /班级分配/);
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /成员班级分配/);
+  assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
+});
