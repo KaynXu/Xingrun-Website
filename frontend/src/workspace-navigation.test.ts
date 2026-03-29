@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(appSource, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -15,6 +15,16 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 
   assert.doesNotMatch(appSource, /题库浏览/);
   assert.doesNotMatch(appSource, /QuestionBank/);
+});
+
+test('workspace navigation wires smart wrong questions into the owner admin shell only', () => {
+  const sidebarBlock = appSource.match(/const menuItems = \[[\s\S]*?\n  \];/);
+
+  assert.ok(sidebarBlock);
+  assert.match(appSource, /type Page = [^;]*'smartWrongQuestions'[^;]*;/);
+  assert.match(sidebarBlock[0], /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
+  assert.match(appSource, /smartWrongQuestions: '智能错题'/);
+  assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
