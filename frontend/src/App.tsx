@@ -141,8 +141,28 @@ interface ClassFormValues {
   subject: string;
   grade: string;
   teacher_name: string;
-  teacher_email: string;
 }
+
+const GRADE_NORMALIZATION_RULES: Array<[string, string]> = [
+  ['一年级', '一年级'],
+  ['二年级', '二年级'],
+  ['三年级', '三年级'],
+  ['四年级', '四年级'],
+  ['五年级', '五年级'],
+  ['六年级', '六年级'],
+  ['初一', '初一'],
+  ['初二', '初二'],
+  ['初三', '初三'],
+  ['高一', '高一'],
+  ['高二', '高二'],
+  ['高三', '高三'],
+];
+
+const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
+  ['6年级2班', '六年级 2 班'],
+  ['六年级二班', '六年级 2 班'],
+  ['六年2班', '六年级 2 班'],
+];
 
 function getRoleLabel(role: Role): string {
   if (role === 'owner') return '最高权限账号';
@@ -156,7 +176,6 @@ function createEmptyClassForm(): ClassFormValues {
     subject: '',
     grade: '',
     teacher_name: '',
-    teacher_email: '',
   };
 }
 
@@ -166,9 +185,44 @@ function toClassFormValues(item: ClassItem): ClassFormValues {
     subject: item.subject || '',
     grade: item.grade || '',
     teacher_name: item.teacher_name || '',
-    teacher_email: item.teacher_email || '',
   };
 }
+
+const normalizeClassNameInput = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const normalized = trimmed
+    .replace(/\s+/g, '')
+    .replace(/^6年级/, '六年级')
+    .replace(/^5年级/, '五年级')
+    .replace(/^4年级/, '四年级')
+    .replace(/^3年级/, '三年级')
+    .replace(/^2年级/, '二年级')
+    .replace(/^1年级/, '一年级')
+    .replace(/^六年(?=\d+班$)/, '六年级')
+    .replace(/^五年(?=\d+班$)/, '五年级')
+    .replace(/^四年(?=\d+班$)/, '四年级')
+    .replace(/^三年(?=\d+班$)/, '三年级')
+    .replace(/^二年(?=\d+班$)/, '二年级')
+    .replace(/^一年(?=\d+班$)/, '一年级')
+    .replace(/一班$/, '1班')
+    .replace(/二班$/, '2班')
+    .replace(/三班$/, '3班')
+    .replace(/四班$/, '4班')
+    .replace(/五班$/, '5班')
+    .replace(/六班$/, '6班');
+
+  const gradePrefix = GRADE_NORMALIZATION_RULES.find(([alias]) => normalized.startsWith(alias))?.[1];
+  const match = normalized.match(/^(一年级|二年级|三年级|四年级|五年级|六年级|初一|初二|初三|高一|高二|高三)(\d+)班$/);
+  if (!match || !gradePrefix) {
+    return trimmed;
+  }
+
+  return `${gradePrefix} ${match[2]} 班`;
+};
 
 function areClassIdListsEqual(left: number[], right: number[]): boolean {
   if (left.length !== right.length) {
@@ -3095,11 +3149,11 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const handleSaveClass = async () => {
     const payload = {
-      name: form.name.trim(),
+      name: normalizeClassNameInput(form.name),
       subject: form.subject.trim(),
       grade: form.grade.trim(),
       teacher_name: form.teacher_name.trim(),
-      teacher_email: form.teacher_email.trim(),
+      teacher_email: '',
     };
 
     if (!payload.name) {
@@ -3184,7 +3238,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         ...current,
         [userId]: resolveAssignmentRollbackClassIds(current[userId] || [], previousClassIds, nextClassIds),
       }));
-      setAssignmentError(err instanceof Error ? err.message : '成员班级分配保存失败');
+      setAssignmentError(err instanceof Error ? err.message : '班级老师分配保存失败');
     } finally {
       setAssignmentSavingByUserId((current) => {
         const nextState = { ...current };
@@ -3203,7 +3257,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">班级管理</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-            在这里维护 {currentUser.organization_name} 的班级台账，并直接完成成员班级分配，不再与账号审批页面混用。
+            在这里维护 {currentUser.organization_name} 的班级台账，并直接完成班级老师分配，不再与账号审批页面混用。
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -3296,8 +3350,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </p>
                       </div>
                       <div className="text-sm text-slate-500 dark:text-slate-400 sm:text-right">
-                        <p>{item.teacher_name || '未填写老师'}</p>
-                        <p className="mt-1">{item.teacher_email || '未填写邮箱'}</p>
+                        <p>{item.teacher_name || '未填写负责老师'}</p>
                       </div>
                     </div>
                   </button>
@@ -3352,30 +3405,20 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               />
             </label>
             <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">老师姓名</span>
+              <span className="text-slate-500 dark:text-slate-400">负责老师</span>
               <input
                 type="text"
                 value={form.teacher_name}
                 onChange={(e) => handleFieldChange('teacher_name', e.target.value)}
                 className={workspaceFieldClass}
-                placeholder="主负责老师"
-              />
-            </label>
-            <label className="space-y-2 text-sm md:col-span-2">
-              <span className="text-slate-500 dark:text-slate-400">老师邮箱</span>
-              <input
-                type="email"
-                value={form.teacher_email}
-                onChange={(e) => handleFieldChange('teacher_email', e.target.value)}
-                className={workspaceFieldClass}
-                placeholder="teacher@example.com"
+                placeholder="如：张老师"
               />
             </label>
           </div>
 
           <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">当前表单模型</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">字段统一为 name、subject、grade、teacher_name、teacher_email，创建和编辑都复用同一套提交逻辑。</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
           </div>
 
           <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
@@ -3410,8 +3453,8 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       <section className={`${workspaceCardClass} space-y-5 p-6`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员班级分配</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为机构成员勾选可访问班级，采用乐观更新并在失败时回滚。</p>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级老师分配</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为机构成员勾选可访问班级，班级名称会按统一规则保存，成员分配继续采用乐观更新并在失败时回滚。</p>
           </div>
           <button
             type="button"
@@ -3432,7 +3475,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
         {loading ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-            正在读取成员班级分配...
+            正在读取班级老师分配...
           </div>
         ) : classes.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">

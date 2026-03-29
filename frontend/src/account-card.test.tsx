@@ -222,7 +222,7 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /Owner<\/p>[\s\S]*账号审批[\s\S]*dark:text-white/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);
-  assert.match(appSource, /班级分配<\/h4>[\s\S]*dark:text-white/);
+  assert.match(appSource, /班级老师分配<\/h4>[\s\S]*dark:text-white/);
   assert.match(appSource, /text-sm font-semibold uppercase tracking-wider text-slate-500[^\"]*dark:text-slate-400/);
   assert.match(appSource, /当前账号<\/p>[\s\S]*dark:text-white/);
   assert.match(appSource, /calendar: '课程日历'/);
