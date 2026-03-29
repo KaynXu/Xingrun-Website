@@ -231,3 +231,17 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.match(classManagementBlock[0], /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
   assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
 });
+
+test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
+  assert.match(classManagementBlock[0], /const hasAssignmentSavingRows = Object\.values\(assignmentSavingByUserId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasAssignmentSavingRows;/);
+  assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*刷新列表/);
+  assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*新建班级/);
+  assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
+  assert.match(classManagementBlock[0], /disabled=\{rowSaving \|\| classInteractionLocked\}/);
+});
