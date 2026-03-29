@@ -374,14 +374,19 @@ test('class management source separates mutation success from best-effort refres
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /const loadPage = useCallback\(async \(preferredExpandedClassId\?: number \| 'new' \| null, options\?: \{ preserveStateOnError\?: boolean \}\) => \{/);
+  assert.match(source, /type LoadPageResult =/);
+  assert.match(classManagementBlock[0], /const loadPage = useCallback\(async \(preferredExpandedClassId\?: number \| 'new' \| null, options\?: \{ preserveStateOnError\?: boolean \}\): Promise<LoadPageResult> => \{/);
   assert.match(classManagementBlock[0], /const preserveStateOnError = options\?\.preserveStateOnError \?\? false;/);
+  assert.match(classManagementBlock[0], /return \{ status: 'stale' \};/);
+  assert.match(classManagementBlock[0], /return \{ status: 'success' \};/);
+  assert.match(classManagementBlock[0], /return \{ status: 'refresh-error', error \};/);
+  assert.doesNotMatch(classManagementBlock[0], /if \(requestVersion !== loadPageRequestVersionRef\.current\) \{\s*return;\s*\}/);
   assert.match(classManagementBlock[0], /if \(!preserveStateOnError\) \{[\s\S]*setClasses\(\[\]\);[\s\S]*setUsers\(\[\]\);[\s\S]*setTeacherBindingByClassId\(\{\}\);/);
-  assert.match(classManagementBlock[0], /await apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{[\s\S]*const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);[\s\S]*if \(!refreshResult\.ok\) \{[\s\S]*老师绑定已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /await apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{[\s\S]*const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);[\s\S]*if \(refreshResult\.status === 'refresh-error'\) \{[\s\S]*老师绑定已保存，但列表刷新失败/);
   assert.match(classManagementBlock[0], /let teacherBindingSucceeded = false;/);
   assert.match(classManagementBlock[0], /teacherBindingSucceeded = true;/);
   assert.match(classManagementBlock[0], /if \(classId === 'new' && createdClassId != null && !teacherBindingSucceeded\) \{/);
-  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);[\s\S]*if \(!refreshResult\.ok\) \{[\s\S]*班级和负责老师已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);[\s\S]*if \(refreshResult\.status === 'refresh-error'\) \{[\s\S]*班级和负责老师已保存，但列表刷新失败/);
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
@@ -391,10 +396,16 @@ test('class management source disables conflicting controls while async class or
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
   assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
   assert.match(classManagementBlock[0], /disabled=\{pageRefreshLocked\}[\s\S]*刷新列表/);
-  assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*新建班级/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*新建班级/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*展开管理/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*创建班级/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
   assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
 });

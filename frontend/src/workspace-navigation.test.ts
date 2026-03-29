@@ -35,13 +35,14 @@ test('workspace navigation source reserves classes management for owner and admi
 
 test('class management source guards selection and refresh during class save delete locks', () => {
   assert.match(appSource, /const classInteractionLocked = saving \|\| deleting;/);
+  assert.match(appSource, /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(appSource, /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(appSource, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
   assert.match(appSource, /const \[formByClassId, setFormByClassId\] = useState<Record<string, ClassFormValues>>/);
-  assert.match(appSource, /const handleToggleExpandedClass = \(classId: number \| 'new'\) => \{\s*if \(classInteractionLocked\) \{\s*return;\s*\}\s*setExpandedClassId\(\(current\) => current === classId \? null : classId\);\s*setFormError\(''\);\s*setAssignmentError\(''\);\s*\};/);
+  assert.match(appSource, /const handleToggleExpandedClass = \(classId: number \| 'new'\) => \{\s*if \(classCardInteractionLocked\) \{\s*return;\s*\}\s*setExpandedClassId\(\(current\) => current === classId \? null : classId\);\s*setFormError\(''\);\s*setAssignmentError\(''\);\s*\};/);
   assert.match(appSource, /onClick=\{\(\) => loadPage\(expandedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{pageRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classInteractionLocked\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}\s+disabled=\{classCardInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
 });
 
 test('class management source adds a specific grade filter and renders filtered classes only', () => {
@@ -75,24 +76,32 @@ test('class management source keeps interaction locks while switching to single-
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /if \(classInteractionLocked \|\| teacherBindingSavingByClassId\[classId\]\) \{\s*return;\s*\}/);
+  assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
   assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
   assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
+  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
 });
 
 test('class management source keeps refresh reconciliation non-destructive after successful mutations', () => {
   const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.ok(classManagementBlock);
+  assert.match(appSource, /type LoadPageResult =/);
   assert.match(classManagementBlock[0], /const preserveStateOnError = options\?\.preserveStateOnError \?\? false;/);
+  assert.match(classManagementBlock[0], /return \{ status: 'stale' \};/);
+  assert.match(classManagementBlock[0], /return \{ status: 'success' \};/);
+  assert.match(classManagementBlock[0], /return \{ status: 'refresh-error', error \};/);
   assert.match(classManagementBlock[0], /if \(!preserveStateOnError\) \{[\s\S]*setClasses\(\[\]\);[\s\S]*setUsers\(\[\]\);[\s\S]*setTeacherBindingByClassId\(\{\}\);/);
   assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
   assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);/);
-  assert.match(classManagementBlock[0], /if \(!refreshResult\.ok\) \{[\s\S]*老师绑定已保存，但列表刷新失败/);
-  assert.match(classManagementBlock[0], /if \(!refreshResult\.ok\) \{[\s\S]*班级和负责老师已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /if \(refreshResult\.status === 'refresh-error'\) \{[\s\S]*老师绑定已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /if \(refreshResult\.status === 'refresh-error'\) \{[\s\S]*班级和负责老师已保存，但列表刷新失败/);
 });
 
 test('class management source adds compact card single-expand state via expandedClassId', () => {
@@ -109,7 +118,7 @@ test('class management source adds compact card single-expand state via expanded
 test('class management source guards loadPage responses with a request version ref', () => {
   assert.match(appSource, /const loadPageRequestVersionRef = useRef\(0\);/);
   assert.match(appSource, /const requestVersion = \+\+loadPageRequestVersionRef\.current;/);
-  assert.match(appSource, /if \(requestVersion !== loadPageRequestVersionRef\.current\) \{\s*return;\s*\}/);
+  assert.match(appSource, /if \(requestVersion !== loadPageRequestVersionRef\.current\) \{\s*return \{ status: 'stale' \};\s*\}/);
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
