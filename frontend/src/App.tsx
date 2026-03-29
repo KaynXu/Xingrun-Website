@@ -144,6 +144,11 @@ interface ClassFormValues {
   teacher_name: string;
 }
 
+type LoadPageResult =
+  | { status: 'success' }
+  | { status: 'stale' }
+  | { status: 'refresh-error'; error: Error };
+
 const GRADE_NORMALIZATION_RULES: Array<[string, string]> = [
   ['一年级', '一年级'],
   ['二年级', '二年级'],
@@ -3090,13 +3095,14 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const loadPageRequestVersionRef = useRef(0);
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
+  const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const gradeFilterOptions = ['全部', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
-  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null, options?: { preserveStateOnError?: boolean }) => {
+  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null, options?: { preserveStateOnError?: boolean }): Promise<LoadPageResult> => {
     const preserveStateOnError = options?.preserveStateOnError ?? false;
     const requestVersion = ++loadPageRequestVersionRef.current;
     setLoading(true);
@@ -3109,7 +3115,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       ]);
 
       if (requestVersion !== loadPageRequestVersionRef.current) {
-        return;
+        return { status: 'stale' };
       }
 
       const normalizedTeacherBindings = Object.fromEntries(
@@ -3138,10 +3144,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         }
         return null;
       });
-      return { ok: true as const };
+      return { status: 'success' };
     } catch (err) {
       if (requestVersion !== loadPageRequestVersionRef.current) {
-        return { ok: false as const, error: err instanceof Error ? err : new Error('班级管理数据加载失败') };
+        return { status: 'stale' };
       }
 
       const error = err instanceof Error ? err : new Error('班级管理数据加载失败');
@@ -3154,7 +3160,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         setNewClassTeacherUserId(null);
         setExpandedClassId(null);
       }
-      return { ok: false as const, error };
+      return { status: 'refresh-error', error };
     } finally {
       if (requestVersion === loadPageRequestVersionRef.current) {
         setLoading(false);
@@ -3185,7 +3191,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleToggleExpandedClass = (classId: number | 'new') => {
-    if (classInteractionLocked) {
+    if (classCardInteractionLocked) {
       return;
     }
     setExpandedClassId((current) => current === classId ? null : classId);
@@ -3259,7 +3265,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         }));
         setExpandedClassId(created.id);
         const refreshResult = await loadPage(created.id, { preserveStateOnError: true });
-        if (!refreshResult.ok) {
+        if (refreshResult.status === 'refresh-error') {
           setFormError(`班级和负责老师已保存，但列表刷新失败：${refreshResult.error.message}`);
         }
       } else {
@@ -3268,7 +3274,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           body: JSON.stringify(payload),
         });
         const refreshResult = await loadPage(classId, { preserveStateOnError: true });
-        if (!refreshResult.ok) {
+        if (refreshResult.status === 'refresh-error') {
           setFormError(`班级已保存，但列表刷新失败：${refreshResult.error.message}`);
         }
       }
@@ -3333,7 +3339,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         body: JSON.stringify({ teacher_user_id: teacherUserId }),
       });
       const refreshResult = await loadPage(classId, { preserveStateOnError: true });
-      if (!refreshResult.ok) {
+      if (refreshResult.status === 'refresh-error') {
         setAssignmentError(`老师绑定已保存，但列表刷新失败：${refreshResult.error.message}`);
       }
     } catch (err) {
@@ -3433,7 +3439,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <button
               type="button"
               onClick={() => handleToggleExpandedClass('new')}
-              disabled={classInteractionLocked}
+              disabled={classCardInteractionLocked}
               className={workspacePrimaryButtonClass}
             >
               <PlusCircle size={18} />
@@ -3491,7 +3497,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 <button
                   type="button"
                   onClick={() => handleToggleExpandedClass('new')}
-                  disabled={classInteractionLocked}
+                  disabled={classCardInteractionLocked}
                   className={workspaceSecondaryButtonClass}
                 >
                   {newClassExpanded ? '收起管理' : '展开管理'}
@@ -3612,7 +3618,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <button
                       type="button"
                       onClick={() => handleSaveClass('new')}
-                      disabled={saving || deleting}
+                      disabled={classCardInteractionLocked}
                       className={workspacePrimaryButtonClass}
                     >
                       {saving ? '保存中...' : '创建班级'}
@@ -3665,7 +3671,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <button
                       type="button"
                       onClick={() => handleToggleExpandedClass(item.id)}
-                      disabled={classInteractionLocked}
+                      disabled={classCardInteractionLocked}
                       className={workspaceSecondaryButtonClass}
                     >
                       {isExpanded ? '收起管理' : '展开管理'}
@@ -3727,7 +3733,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <button
                           type="button"
                           onClick={() => handleDeleteClass(item.id)}
-                          disabled={deleting || saving}
+                          disabled={classCardInteractionLocked}
                           className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
                         >
                           <Trash2 size={18} />
@@ -3736,7 +3742,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <button
                           type="button"
                           onClick={() => handleSaveClass(item.id)}
-                          disabled={saving || deleting}
+                          disabled={classCardInteractionLocked}
                           className={workspacePrimaryButtonClass}
                         >
                           {saving ? '保存中...' : '保存班级'}
