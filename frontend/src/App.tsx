@@ -44,7 +44,7 @@ import { CourseCalendarPage } from './CourseCalendarPage';
 // --- Types ---
 
 type Role = 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'classes' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -1145,8 +1145,7 @@ const Sidebar = ({
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
-    { id: 'input', icon: PlusCircle, label: '添加课程' },
-    { id: 'library', icon: Library, label: '课程列表' },
+    { id: 'review-generation', icon: Library, label: '复习生成' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(currentUser.role === 'owner' || currentUser.role === 'admin'
@@ -1378,13 +1377,13 @@ const Dashboard = ({
             </p>
           </div>
           <div className="mt-8 flex flex-wrap gap-3">
-            <button onClick={() => setActivePage('input')} className={workspacePrimaryButtonClass}>
+            <button onClick={() => setActivePage('review-generation')} className={workspacePrimaryButtonClass}>
               <PlusCircle size={20} />
-              添加新课程
+              新建复习文档
             </button>
-            <button onClick={() => setActivePage('library')} className={workspaceSecondaryButtonClass}>
+            <button onClick={() => setActivePage('review-generation')} className={workspaceSecondaryButtonClass}>
               <Library size={20} />
-              查看课程列表
+              查看历史文档
             </button>
           </div>
         </div>
@@ -1436,7 +1435,7 @@ const Dashboard = ({
             <h4 className="font-semibold text-slate-900 dark:text-white">最近课程</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近录入的课堂内容会优先出现在这里。</p>
           </div>
-          <button onClick={() => setActivePage('library')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300">
+          <button onClick={() => setActivePage('review-generation')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300">
             查看全部
           </button>
         </div>
@@ -1651,7 +1650,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
             <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
-                <h3 className={`${workspaceSectionTitleClass} mt-3`}>添加新课程</h3>
+                <h3 className={`${workspaceSectionTitleClass} mt-3`}>生成复习文档</h3>
                 <p className={`${workspaceSectionTextClass} mt-2`}>
                   上传录音或粘贴笔记，AI 会整理成统一的复习资料与后续题库资产。
                 </p>
@@ -1780,7 +1779,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   </div>
                 )}
                 <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
-                  生成复习资料 PDF
+                  生成复习文档
                   <ArrowRight size={20} />
                 </button>
               </div>
@@ -1792,7 +1791,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   );
 };
 
-const LibraryPage = () => {
+const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1806,7 +1805,7 @@ const LibraryPage = () => {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshToken]);
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('确定删除此课程？相关 PDF 也会被删除。')) return;
@@ -1815,104 +1814,132 @@ const LibraryPage = () => {
   };
 
   return (
+    <div className={`${workspaceCardClass} overflow-hidden`}>
+      {loading ? (
+        <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
+      ) : lessons.length === 0 ? (
+        <div className="p-8 text-center text-slate-500 dark:text-slate-400">还没有复习文档，点击「新建复习文档」开始生成</div>
+      ) : (
+        <table className="w-full border-collapse text-left">
+          <thead>
+            <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
+              <th className="px-6 py-4 font-semibold">课程名称</th>
+              <th className="px-6 py-4 font-semibold">科目 / 年级</th>
+              <th className="px-6 py-4 font-semibold">日期</th>
+              <th className="px-6 py-4 font-semibold">PDF</th>
+              <th className="px-6 py-4 text-right font-semibold">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
+            {lessons.map((lesson) => (
+              <tr key={lesson.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
+                      <FileText size={16} />
+                    </div>
+                    <span className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex gap-2">
+                    {lesson.subject && (
+                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                        {lesson.subject}
+                      </span>
+                    )}
+                    {lesson.grade && (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                        {lesson.grade}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{lesson.date}</td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
+                    <span className="text-sm text-slate-500 dark:text-slate-400">{lesson.pdf_path ? '已生成' : '无'}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {lesson.pdf_path && (
+                      <>
+                        <a
+                          href={`/api/pdf/${lesson.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                          title="查看"
+                        >
+                          <Eye size={16} />
+                        </a>
+                        <a
+                          href={`/api/pdf/download/${lesson.id}`}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                          title="下载"
+                        >
+                          <Download size={16} />
+                        </a>
+                      </>
+                    )}
+                    <button
+                      onClick={() => handleDelete(lesson.id)}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                      title="删除"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+};
+
+const ReviewGenerationPage = ({ onSuccess }: { onSuccess: () => void }) => {
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+
+  const handleComposerSuccess = () => {
+    setComposerOpen(false);
+    onSuccess();
+  };
+
+  const handleFormSuccess = () => {
+    handleComposerSuccess();
+    setHistoryRefreshToken((current) => current + 1);
+  };
+
+  return (
     <div className={`${workspacePageClass} space-y-6`}>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className={workspaceSectionTitleClass}>课程列表</h3>
-          <p className={`${workspaceSectionTextClass} mt-2`}>按课程、日期与 PDF 生成状态查看教学记录。</p>
+          <h3 className={workspaceSectionTitleClass}>历史文档</h3>
+          <p className={`${workspaceSectionTextClass} mt-2`}>查看已生成的复习文档，支持下载、预览与删除。</p>
         </div>
-        <div className="flex gap-2">
-          <button className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-200 bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300">
-            <Filter size={20} />
-          </button>
-        </div>
+        <button onClick={() => setComposerOpen((current) => !current)} className={workspacePrimaryButtonClass}>
+          <PlusCircle size={20} />
+          新建复习文档
+        </button>
       </div>
 
-      <div className={`${workspaceCardClass} overflow-hidden`}>
-        {loading ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
-        ) : lessons.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无课程，点击「添加课程」开始记录。</div>
-        ) : (
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
-                <th className="px-6 py-4 font-semibold">课程名称</th>
-                <th className="px-6 py-4 font-semibold">科目 / 年级</th>
-                <th className="px-6 py-4 font-semibold">日期</th>
-                <th className="px-6 py-4 font-semibold">PDF</th>
-                <th className="px-6 py-4 text-right font-semibold">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
-              {lessons.map((lesson) => (
-                <tr key={lesson.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
-                        <FileText size={16} />
-                      </div>
-                      <span className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      {lesson.subject && (
-                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-                          {lesson.subject}
-                        </span>
-                      )}
-                      {lesson.grade && (
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
-                          {lesson.grade}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{lesson.date}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
-                      <span className="text-sm text-slate-500 dark:text-slate-400">{lesson.pdf_path ? '已生成' : '无'}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      {lesson.pdf_path && (
-                        <>
-                          <a
-                            href={`/api/pdf/${lesson.id}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                            title="查看"
-                          >
-                            <Eye size={16} />
-                          </a>
-                          <a
-                            href={`/api/pdf/download/${lesson.id}`}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                            title="下载"
-                          >
-                            <Download size={16} />
-                          </a>
-                        </>
-                      )}
-                      <button
-                        onClick={() => handleDelete(lesson.id)}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                        title="删除"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {composerOpen && (
+        <div className={`${workspaceSoftCardClass} p-4 sm:p-6`}>
+          <div className="mb-4">
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">上传课堂内容并生成新的复习文档。</p>
+          </div>
+          <LessonInput onSuccess={handleFormSuccess} />
+        </div>
+      )}
+
+      <ReviewDocumentHistory refreshToken={historyRefreshToken} />
     </div>
   );
 };
@@ -4847,8 +4874,8 @@ export default function App() {
     setMobileNavOpen(false);
   };
 
-  const handleLessonSuccess = () => {
-    setActivePage('library');
+  const handleReviewGenerationSuccess = () => {
+    setActivePage('review-generation');
   };
 
   const handlePreviousCalendarWeek = () => {
@@ -4861,8 +4888,7 @@ export default function App() {
 
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
-    input: '添加课程',
-    library: '课程列表',
+    'review-generation': '复习生成',
     consultation: '咨询记录',
     calendar: '课程日历',
     classes: '班级管理',
@@ -4991,8 +5017,7 @@ export default function App() {
                     activeClassCount={calendarClasses.length}
                   />
                 )}
-                {activePage === 'input' && <LessonInput onSuccess={handleLessonSuccess} />}
-                {activePage === 'library' && <LibraryPage />}
+                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} />}
                 {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
                 {activePage === 'calendar' &&
                   (calendarLoading ? (
