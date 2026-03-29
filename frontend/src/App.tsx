@@ -3312,7 +3312,7 @@ export const LandingPage = ({
             <span className="hidden sm:block text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
               AI Edu Platform
             </span>
-          </div>
+          </div>˜
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400">
             <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
             <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
@@ -3376,7 +3376,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.08, duration: 0.5 }}
                 className="inline-flex items-center rounded-full border border-white/50 bg-white/55 px-4 py-1.5 text-[11px] font-semibold tracking-[0.32em] text-slate-700 backdrop-blur-md dark:border-white/12 dark:bg-slate-950/35 dark:text-sky-200"
               >
-                BUILT FOR TEACHING DELIVERY
+                AI EDUCATION PLATFORM FOR INSTITUTIONS
               </motion.span>
               <motion.h1
                 initial={{ opacity: 0, y: 16 }}
@@ -3384,7 +3384,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.18, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
                 className="mt-8 max-w-4xl text-4xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-6xl md:text-7xl dark:text-white"
               >
-                让课堂素材自然流入 AI 教学交付
+                Starain，面向教育机构的 AI 教学平台
               </motion.h1>
 
               <motion.p
@@ -3393,8 +3393,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.32, duration: 0.78 }}
                 className="mt-7 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg md:text-xl dark:text-slate-200"
               >
-                像展板说明一样克制地呈现平台角色。课堂、批注、题目与讲义片段进入 Starain 后，
-                会被整理成结构化结果与稳定的教学交付资产。
+                从复习资料生成，到题库沉淀、讲义生成与教学协同，Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台。
               </motion.p>
 
               <motion.div
@@ -3404,9 +3403,9 @@ export const LandingPage = ({
                 className="mt-8 space-y-3"
               >
                 {[
-                  ['课堂分析', '把课堂录音、批注与知识点还原成可读线索'],
-                  ['复习资料生成', '把课堂内容压缩成学生能直接带走的复习材料'],
-                  ['教学交付', '把结果沉淀为讲义、总结与团队可复用资产'],
+                  ['复习资料生成', '把课堂内容快速整理成学生可直接使用的复习材料。'],
+                  ['题库与内容沉淀', '把题目、讲义与教学素材沉淀为可复用的内容资产。'],
+                  ['教学协同交付', '让教师、教研与机构团队在同一平台里完成生产与交付。'],
                 ].map(([label, description]) => (
                   <div
                     key={label}
@@ -3453,8 +3452,8 @@ export const LandingPage = ({
               <div className="overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.38)_100%)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] dark:shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
                 <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 pb-4 dark:border-white/10">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">平台结果预览</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">素材进入后，结果会轻量但持续地沉淀下来</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">PLATFORM SNAPSHOT</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">不止一个助手，而是一套持续扩展的 AI Edu Platform</p>
                   </div>
                   <div className="rounded-full border border-emerald-200/80 bg-emerald-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                     Live
@@ -3463,9 +3462,9 @@ export const LandingPage = ({
 
                 <div className="mt-5 space-y-3">
                   {[
-                    { icon: Upload, title: '上传片段', body: '课堂录音 09:42 + 批注截图 + 题目草稿' },
-                    { icon: CheckCircle2, title: '结构化摘要', body: '知识点、薄弱点与 follow-up 建议自动归档' },
-                    { icon: FileText, title: '复习讲义草稿', body: '一页式讲义、家长回传摘要与课堂复盘同步生成' },
+                    { icon: Upload, title: '复习资料', body: '课堂内容生成讲义、总结与学生复习材料' },
+                    { icon: CheckCircle2, title: '题库系统', body: '题目与知识点持续归档，支持后续调用与组织' },
+                    { icon: FileText, title: '教学交付', body: '面向教师与机构团队沉淀可复用的教学资产' },
                   ].map((item, index) => (
                     <motion.div
                       key={item.title}
