@@ -12,10 +12,13 @@ import {
 } from './App';
 import {
   applyWrongQuestionReviewDraft,
+  buildWrongQuestionDetailPath,
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
-  buildWrongQuestionSummaryExportPath,
+  buildWrongQuestionReviewPath,
+  downloadWrongQuestionSummary,
+  hydrateWrongQuestionReviewDraftFromDetail,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   summarizeWrongQuestionRecords,
@@ -53,13 +56,33 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [savingReview, setSavingReview] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [reviewDraftByRecordId, setReviewDraftByRecordId] = useState<Record<string, WrongQuestionReviewDraft>>({});
+  const [reviewDraftDirtyByRecordId, setReviewDraftDirtyByRecordId] = useState<Record<string, boolean>>({});
   const [serverSummary, setServerSummary] = useState<WrongQuestionSummary | null>(null);
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
+  const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
 
   const summary = useMemo(() => serverSummary ?? summarizeWrongQuestionRecords(records), [records, serverSummary]);
   const selectedRecord = records.find((item) => item.id === selectedId) ?? records[0] ?? null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
+
+  const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
+    reviewDraftDirtyByRecordIdRef.current = {
+      ...reviewDraftDirtyByRecordIdRef.current,
+      [recordId]: isDirty,
+    };
+
+    setReviewDraftDirtyByRecordId((current) => {
+      if (current[recordId] === isDirty) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [recordId]: isDirty,
+      };
+    });
+  }, []);
 
   const loadList = useCallback(async (nextFilters: WrongQuestionFilters) => {
     const requestVersion = requestVersionRef.current + 1;
@@ -109,6 +132,10 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
+    if (reviewDraftDirtyByRecordId[selectedRecord.id] === undefined) {
+      updateDraftDirtyState(selectedRecord.id, false);
+    }
+
     setReviewDraftByRecordId((current) => {
       if (current[selectedRecord.id]) {
         return current;
@@ -119,7 +146,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         [selectedRecord.id]: buildWrongQuestionReviewDraft(selectedRecord),
       };
     });
-  }, [selectedRecord]);
+  }, [reviewDraftDirtyByRecordId, selectedRecord, updateDraftDirtyState]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -133,24 +160,24 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     void (async () => {
       try {
-        const response = await apiFetch<WrongQuestionRecord>(`/api/wrong-questions/${encodeURIComponent(selectedId)}`);
+        const response = await apiFetch<WrongQuestionRecord>(buildWrongQuestionDetailPath(selectedId));
         if (requestVersion !== detailRequestVersionRef.current) {
           return;
         }
 
         const detailRecord = normalizeWrongQuestionRecord(response);
+        const hasLocalEdits = Boolean(reviewDraftDirtyByRecordIdRef.current[detailRecord.id]);
         setRecords((current) => current.map((item) => item.id === detailRecord.id ? detailRecord : item));
         setServerSummary(null);
         setReviewDraftByRecordId((current) => {
-          if (current[detailRecord.id]) {
-            return current;
-          }
-
           return {
             ...current,
-            [detailRecord.id]: buildWrongQuestionReviewDraft(detailRecord),
+            [detailRecord.id]: hydrateWrongQuestionReviewDraftFromDetail(detailRecord, current[detailRecord.id], hasLocalEdits),
           };
         });
+        if (!hasLocalEdits) {
+          updateDraftDirtyState(detailRecord.id, false);
+        }
       } catch (loadDetailError) {
         if (requestVersion !== detailRequestVersionRef.current) {
           return;
@@ -189,6 +216,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         [key]: value,
       },
     }));
+    updateDraftDirtyState(selectedRecord.id, true);
   };
 
   const handleSaveReview = async () => {
@@ -201,7 +229,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     try {
       const payload = buildWrongQuestionReviewPayload(selectedDraft);
-      const response = await apiFetch<{ ok?: boolean; record?: unknown }>(`/api/wrong-questions/${selectedRecord.id}/review`, {
+      const response = await apiFetch<{ ok?: boolean; record?: unknown }>(buildWrongQuestionReviewPath(selectedRecord.id), {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
@@ -215,6 +243,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         ...current,
         [selectedRecord.id]: buildWrongQuestionReviewDraft(nextRecord),
       }));
+      updateDraftDirtyState(selectedRecord.id, false);
     } catch (saveReviewError) {
       setSaveError(saveReviewError instanceof Error ? saveReviewError.message : '智能错题保存失败');
     } finally {
@@ -223,7 +252,10 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   };
 
   const handleExportSummary = () => {
-    window.open(buildWrongQuestionSummaryExportPath(filters), '_blank', 'noopener');
+    setError('');
+    void downloadWrongQuestionSummary(filters).catch((downloadError) => {
+      setError(downloadError instanceof Error ? downloadError.message : '智能错题导出失败');
+    });
   };
 
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
