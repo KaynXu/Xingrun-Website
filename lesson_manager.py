@@ -814,6 +814,14 @@ def set_user_class_ids(user_id: int, class_ids: list):
             )
 
 
+def update_user_role(user_id: int, role: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET role=? WHERE id=? AND role != 'owner'",
+            (role, user_id)
+        )
+
+
 # ─── 账号 / 机构 / 审批 ────────────────────────────────────────────────────────
 def get_current_user(token: str):
     if not token:
