@@ -4042,6 +4042,7 @@ export default function App() {
             currentUser={currentUser}
             onLogout={handleLogout}
             setActivePage={setActivePage}
+            onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
           />
         </div>
         <AnimatePresence>
@@ -4075,6 +4076,7 @@ export default function App() {
                   setActivePage={setActivePage}
                   onNavigate={() => setMobileNavOpen(false)}
                   mobile={true}
+                  onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
                 />
               </motion.div>
             </motion.div>
