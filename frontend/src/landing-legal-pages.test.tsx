@@ -22,7 +22,7 @@ test('landing page renders Starain hero branding and approved messaging', () => 
 
   assert.match(markup, /Starain/);
   assert.match(markup, /AI Edu Platform/);
-  assert.match(markup, /Starain，面向教育机构的 AI 教学平台/);
+  assert.match(markup, /Starain，用 AI 赋能教育机构。/);
   assert.match(markup, /Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台/);
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);
