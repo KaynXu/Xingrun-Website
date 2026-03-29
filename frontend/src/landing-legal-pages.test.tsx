@@ -74,6 +74,10 @@ test('landing page tells the validated workflow story', () => {
   assert.match(markup, /从课堂素材到复习交付/);
   assert.match(markup, /把错误沉淀成可追踪资产/);
   assert.match(markup, /把题目沉淀成可调用的题库系统/);
+  assert.match(markup, /面向不同课程体系与教学场景，把零散题目变成可标签化、可复用、可自动组卷的题库资产。/);
+  assert.match(markup, /多课程体系/);
+  assert.doesNotMatch(markup, /AP、A-Level、IB/);
+  assert.doesNotMatch(markup, /AP \/ A-Level \/ IB/);
   assert.match(markup, /把课程目标转化为讲义与教研交付/);
   assert.match(markup, /课堂录音、笔记与教学内容进入平台后/);
   assert.match(markup, /课堂分析/);
