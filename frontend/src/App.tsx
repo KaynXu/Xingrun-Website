@@ -3321,63 +3321,133 @@ export const LandingPage = ({
           />
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-center justify-center py-20 md:py-32 text-center">
-          <motion.div
-            initial={{ opacity: 0, scale: 2, y: -100 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-5 sm:p-8 md:p-12 shadow-[0_30px_90px_rgba(47,128,237,0.08)] dark:bg-slate-800/80 dark:border-white/10">
+        <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-end py-24 md:py-32 lg:py-36">
+          <div className="grid w-full gap-10 lg:grid-cols-[minmax(0,1.12fr)_360px] lg:items-end">
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="max-w-3xl"
+            >
               <motion.span
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.5 }}
-                className="mb-6 inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-1.5 text-xs font-semibold tracking-[0.3em] text-sky-700 dark:bg-slate-700/80 dark:border-sky-500/30 dark:text-sky-300"
+                transition={{ delay: 0.08, duration: 0.5 }}
+                className="inline-flex items-center rounded-full border border-white/50 bg-white/55 px-4 py-1.5 text-[11px] font-semibold tracking-[0.32em] text-slate-700 backdrop-blur-md dark:border-white/12 dark:bg-slate-950/35 dark:text-sky-200"
               >
-                BUILT FROM REAL TEACHING PRACTICE
+                BUILT FOR TEACHING DELIVERY
               </motion.span>
               <motion.h1
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                className="mt-6 text-3xl sm:text-5xl font-black leading-[1.05] sm:leading-[0.95] tracking-tight text-slate-900 md:text-7xl dark:text-white"
+                transition={{ delay: 0.18, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
+                className="mt-8 max-w-4xl text-4xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-6xl md:text-7xl dark:text-white"
               >
-                教育工作流终于被 AI 重新组织好了
+                让课堂素材自然流入 AI 教学交付
               </motion.h1>
 
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4, duration: 0.8 }}
-                className="mx-auto mb-12 mt-8 max-w-3xl text-lg leading-relaxed text-slate-600 md:text-xl dark:text-slate-300"
+                transition={{ delay: 0.32, duration: 0.78 }}
+                className="mt-7 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg md:text-xl dark:text-slate-200"
               >
-                Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，
-                再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。
+                像展板说明一样克制地呈现平台角色。课堂、批注、题目与讲义片段进入 Starain 后，
+                会被整理成结构化结果与稳定的教学交付资产。
               </motion.p>
 
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6, duration: 0.8 }}
-                className="flex flex-col items-center justify-center gap-4 sm:flex-row"
+                transition={{ delay: 0.46, duration: 0.78 }}
+                className="mt-8 space-y-3"
+              >
+                {[
+                  ['课堂分析', '把课堂录音、批注与知识点还原成可读线索'],
+                  ['复习资料生成', '把课堂内容压缩成学生能直接带走的复习材料'],
+                  ['教学交付', '把结果沉淀为讲义、总结与团队可复用资产'],
+                ].map(([label, description]) => (
+                  <div
+                    key={label}
+                    className="flex items-start gap-3 text-left"
+                  >
+                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.5)]" />
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-sky-200">{label}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{description}</p>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.58, duration: 0.78 }}
+                className="mt-10 flex flex-col gap-4 sm:flex-row"
               >
                 <a
                   href="#features"
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-600 px-10 py-5 text-lg font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95 sm:w-auto"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-8 py-4 text-base font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
                 >
                   查看平台方案
-                  <ArrowRight size={20} />
+                  <ArrowRight size={18} />
                 </a>
                 <button
                   onClick={onRegister}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-10 py-5 text-lg font-bold text-slate-700 transition-all hover:bg-sky-50 active:scale-95 sm:w-auto dark:border-white/15 dark:bg-white/8 dark:text-slate-200 dark:hover:bg-white/15"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
                 >
-                  <User size={20} />
+                  <User size={18} />
                   申请试用
                 </button>
               </motion.div>
-            </div>
-          </motion.div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 28, y: 20 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              transition={{ delay: 0.34, duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="lg:justify-self-end"
+            >
+              <div className="overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.38)_100%)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] dark:shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
+                <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 pb-4 dark:border-white/10">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">平台结果预览</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">素材进入后，结果会轻量但持续地沉淀下来</p>
+                  </div>
+                  <div className="rounded-full border border-emerald-200/80 bg-emerald-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    Live
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {[
+                    { icon: Upload, title: '上传片段', body: '课堂录音 09:42 + 批注截图 + 题目草稿' },
+                    { icon: CheckCircle2, title: '结构化摘要', body: '知识点、薄弱点与 follow-up 建议自动归档' },
+                    { icon: FileText, title: '复习讲义草稿', body: '一页式讲义、家长回传摘要与课堂复盘同步生成' },
+                  ].map((item, index) => (
+                    <motion.div
+                      key={item.title}
+                      initial={{ opacity: 0, y: 18 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.52 + index * 0.1, duration: 0.55 }}
+                      className="rounded-[1.5rem] border border-white/60 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/34"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-[0_14px_30px_rgba(14,165,233,0.28)]">
+                          <item.icon size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold tracking-[0.18em] text-slate-800 dark:text-slate-100">{item.title}</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.body}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
         </div>
       </section>
 
