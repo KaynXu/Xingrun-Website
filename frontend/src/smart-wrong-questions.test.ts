@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { JSDOM } from 'jsdom';
 
 import {
   applyWrongQuestionReviewDraft,
@@ -13,12 +16,102 @@ import {
   buildWrongQuestionSummaryExportPath,
   downloadWrongQuestionSummary,
   hydrateWrongQuestionReviewDraftFromDetail,
+  normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
+  resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type WrongQuestionRecord,
 } from './smartWrongQuestions';
+import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
+
+type GlobalKey = keyof typeof globalThis;
+
+function setGlobalValue<T>(key: GlobalKey, value: T): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+  Object.defineProperty(globalThis, key, {
+    configurable: true,
+    writable: true,
+    value,
+  });
+
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(globalThis, key, descriptor);
+      return;
+    }
+
+    delete (globalThis as Record<string, unknown>)[key];
+  };
+}
+
+function createJsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? 'OK' : 'Error',
+    json: async () => body,
+    headers: {
+      get() {
+        return null;
+      },
+    },
+  } as unknown as Response;
+}
+
+async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Timed out waiting for assertion');
+}
+
+function setupDomEnvironment(): {
+  cleanup: () => void;
+  container: HTMLDivElement;
+} {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'http://localhost/',
+  });
+  const restoreCallbacks = [
+    setGlobalValue('window', dom.window),
+    setGlobalValue('document', dom.window.document),
+    setGlobalValue('navigator', dom.window.navigator),
+    setGlobalValue('HTMLElement', dom.window.HTMLElement),
+    setGlobalValue('HTMLButtonElement', dom.window.HTMLButtonElement),
+    setGlobalValue('HTMLInputElement', dom.window.HTMLInputElement),
+    setGlobalValue('HTMLTextAreaElement', dom.window.HTMLTextAreaElement),
+    setGlobalValue('Node', dom.window.Node),
+    setGlobalValue('Event', dom.window.Event),
+    setGlobalValue('MouseEvent', dom.window.MouseEvent),
+    setGlobalValue('localStorage', dom.window.localStorage),
+    setGlobalValue('IS_REACT_ACT_ENVIRONMENT' as GlobalKey, true),
+  ];
+  const container = dom.window.document.createElement('div');
+  dom.window.document.body.appendChild(container);
+
+  return {
+    container,
+    cleanup: () => {
+      dom.window.document.body.removeChild(container);
+      for (const restore of restoreCallbacks.reverse()) {
+        restore();
+      }
+      dom.window.close();
+    },
+  };
+}
 
 test('summarizeWrongQuestionRecords derives the overview card counts from loaded records', () => {
   const records: WrongQuestionRecord[] = [
@@ -377,6 +470,87 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
   });
 });
 
+test('resolveSavedWrongQuestionRecord preserves explicit clears through optimistic and server-returned save paths', () => {
+  const detailRecord: WrongQuestionRecord = {
+    id: 'record-1',
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    subject: '数学',
+    teacherName: '雷文浩',
+    createdAt: '2026-03-29T08:00:00Z',
+    analysis: {
+      questionCategory: '计算',
+      errorType: '计算错误',
+      knowledgePoints: ['分数运算', '单位换算'],
+      selectedErrorType: '审题错误',
+      selectedKnowledgePoints: ['单位换算'],
+      selectedActions: ['重做同类题'],
+      selectedReasons: ['单位遗漏'],
+      studentNote: '需要复盘单位检查',
+    },
+  };
+  const clearedDraft = {
+    selectedErrorType: '   ',
+    selectedKnowledgePoints: [],
+    selectedActions: ['重做同类题'],
+    selectedReasons: ['单位遗漏'],
+    studentNote: '需要复盘单位检查',
+  };
+
+  const optimisticRecord = resolveSavedWrongQuestionRecord(detailRecord, clearedDraft);
+  const serverRecord = resolveSavedWrongQuestionRecord(
+    detailRecord,
+    clearedDraft,
+    {
+      id: 'record-1',
+      student_name: 'Alice',
+      class_name: '六年级 1 班',
+      subject: '数学',
+      teacher_name: '雷文浩',
+      created_at: '2026-03-29T08:00:00Z',
+      analysis: {
+        question_category: '计算',
+        error_type: '计算错误',
+        knowledge_points: ['分数运算', '单位换算'],
+        selected_actions: ['重做同类题'],
+        selected_reasons: ['单位遗漏'],
+        student_note: '需要复盘单位检查',
+      },
+    },
+  );
+
+  assert.deepEqual(buildWrongQuestionReviewDraft(optimisticRecord), {
+    selectedErrorType: '',
+    selectedKnowledgePoints: [],
+    selectedActions: ['重做同类题'],
+    selectedReasons: ['单位遗漏'],
+    studentNote: '需要复盘单位检查',
+  });
+  assert.deepEqual(buildWrongQuestionReviewDraft(serverRecord), {
+    selectedErrorType: '',
+    selectedKnowledgePoints: [],
+    selectedActions: ['重做同类题'],
+    selectedReasons: ['单位遗漏'],
+    studentNote: '需要复盘单位检查',
+  });
+  assert.deepEqual(serverRecord, normalizeWrongQuestionRecord({
+    id: 'record-1',
+    student_name: 'Alice',
+    class_name: '六年级 1 班',
+    subject: '数学',
+    teacher_name: '雷文浩',
+    created_at: '2026-03-29T08:00:00Z',
+    analysis: {
+      question_category: '计算',
+      error_type: '计算错误',
+      knowledge_points: ['分数运算', '单位换算'],
+      selected_actions: ['重做同类题'],
+      selected_reasons: ['单位遗漏'],
+      student_note: '需要复盘单位检查',
+    },
+  }));
+});
+
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
@@ -404,17 +578,159 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /studentNote/);
 });
 
-test('SmartWrongQuestionsPage saves review drafts and surfaces save failures without dropping edits', () => {
-  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
-  const saveBlock = pageSource.match(/const handleSaveReview = async \(\) => \{[\s\S]*?\n  \};/);
+test('SmartWrongQuestionsPage rebuilds empty review fields from a successful save response', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
 
-  assert.ok(saveBlock);
-  assert.match(pageSource, /const \[saveError, setSaveError\] = useState\(''\);/);
-  assert.match(pageSource, /const \[savingReview, setSavingReview\] = useState\(false\);/);
-  assert.match(saveBlock[0], /apiFetch(?:<[^>]+>)?\(buildWrongQuestionReviewPath\([^)]+\), \{\s*method: 'PUT'/);
-  assert.match(saveBlock[0], /catch \(saveReviewError\) \{\s*setSaveError\(/);
-  assert.match(saveBlock[0], /updateDraftDirtyState\([^)]+false\)/);
-  assert.match(pageSource, /保存教师复盘/);
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-1',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              subject: '数学',
+              teacher_name: '雷文浩',
+              created_at: '2026-03-29T08:00:00Z',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算', '单位换算'],
+                selected_actions: ['重做同类题'],
+                selected_reasons: ['单位遗漏'],
+                student_note: '需要复盘单位检查',
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-1' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-1',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          subject: '数学',
+          teacher_name: '雷文浩',
+          created_at: '2026-03-29T08:00:00Z',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算', '单位换算'],
+            selected_actions: ['重做同类题'],
+            selected_reasons: ['单位遗漏'],
+            student_note: '需要复盘单位检查',
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-1/review' && init?.method === 'PUT') {
+        return createJsonResponse({
+          ok: true,
+          record: {
+            id: 'record-1',
+            student_name: 'Alice',
+            class_name: '六年级 1 班',
+            subject: '数学',
+            teacher_name: '雷文浩',
+            created_at: '2026-03-29T08:00:00Z',
+            analysis: {
+              question_category: '计算',
+              error_type: '计算错误',
+              knowledge_points: ['分数运算', '单位换算'],
+              selected_actions: ['重做同类题'],
+              selected_reasons: ['单位遗漏'],
+              student_note: '需要复盘单位检查',
+            },
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '管理员',
+            organization_name: '星润Starain',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      assert.equal(fetchCalls.length, 2);
+      const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
+      const selectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
+
+      assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
+      assert.ok(selectedKnowledgePointsTextarea instanceof HTMLTextAreaElement);
+      assert.equal(selectedErrorTypeInput.value, '');
+      assert.equal(selectedKnowledgePointsTextarea.value, '');
+    });
+
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+
+    assert.ok(saveButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.equal(fetchCalls.length, 3);
+      const saveCall = fetchCalls[2];
+      assert.equal(saveCall?.input, '/api/wrong-questions/record-1/review');
+      assert.equal(saveCall?.init?.method, 'PUT');
+
+      const payload = JSON.parse(String(saveCall?.init?.body));
+      assert.equal(payload.selectedErrorType, '');
+      assert.deepEqual(payload.selectedKnowledgePoints, []);
+      assert.deepEqual(payload.selectedActions, ['重做同类题']);
+      assert.deepEqual(payload.selectedReasons, ['单位遗漏']);
+      assert.equal(payload.studentNote, '需要复盘单位检查');
+    });
+
+    await act(async () => {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const rebuiltSelectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
+      const rebuiltSelectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
+      assert.ok(rebuiltSelectedErrorTypeInput instanceof HTMLInputElement);
+      assert.ok(rebuiltSelectedKnowledgePointsTextarea instanceof HTMLTextAreaElement);
+      assert.equal(rebuiltSelectedErrorTypeInput.value, '');
+      assert.equal(rebuiltSelectedKnowledgePointsTextarea.value, '');
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
 });
 
 test('SmartWrongQuestionsPage reuses the current filter query for PDF export', () => {
