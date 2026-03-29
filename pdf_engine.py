@@ -81,9 +81,7 @@ def _ensure_fonts():
         except Exception:
             pdfmetrics.registerFont(TTFont('CJKLight', light_path))
     else:
-        # 最后备用：用 Helvetica（中文会乱码，但不崩溃）
-        from reportlab.lib.fonts import addMapping
-        pdfmetrics.registerFont(TTFont.__new__(TTFont))
+        # 最后备用：用内置 Helvetica（中文会显示为方块，但不崩溃）
         import warnings
         warnings.warn("未找到中文字体，PDF 中文字符可能显示为方块。"
                       "请安装 WQY MicroHei 或 Microsoft YaHei。")
