@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { buildWrongQuestionQuery, summarizeWrongQuestionRecords, type WrongQuestionRecord } from './smartWrongQuestions';
+import {
+  buildWrongQuestionQuery,
+  normalizeWrongQuestionListResponse,
+  summarizeWrongQuestionRecords,
+  type WrongQuestionRecord,
+} from './smartWrongQuestions';
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
 
 test('summarizeWrongQuestionRecords derives the overview card counts from loaded records', () => {
   const records: WrongQuestionRecord[] = [
@@ -75,4 +85,90 @@ test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => 
   );
 
   assert.equal(buildWrongQuestionQuery({ studentName: '   ', onlyPendingReview: false }), '');
+});
+
+test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
+  const normalized = normalizeWrongQuestionListResponse({
+    items: [
+      {
+        id: 123,
+        studentNickname: 'Alice',
+        class_name: '六年级 1 班',
+        subject: '数学',
+        teacher_name: '雷文浩',
+        created_at: '2026-03-29T08:00:00Z',
+        image_url: 'https://cdn.example.com/question-1.png',
+        analysis: {
+          question_category: '计算',
+          error_type: '计算错误',
+          knowledge_points: ['分数运算'],
+          is_repeated_mistake: '是',
+          teacher_priority: '高',
+        },
+      },
+      {
+        id: 'record-2',
+        student_name: 'Bob',
+        className: '初一 2 班',
+        teacherName: '王老师',
+        createdAt: '2026-03-29T09:00:00Z',
+      },
+    ],
+    summary: {
+      total_count: 9,
+      repeated_mistake_count: 4,
+      high_priority_count: 2,
+      pending_review_count: 5,
+    },
+    total: 12,
+  });
+
+  assert.deepEqual(normalized.items[0], {
+    id: '123',
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    subject: '数学',
+    teacherName: '雷文浩',
+    createdAt: '2026-03-29T08:00:00Z',
+    imageUrl: 'https://cdn.example.com/question-1.png',
+    analysis: {
+      questionCategory: '计算',
+      errorType: '计算错误',
+      knowledgePoints: ['分数运算'],
+      isRepeatedMistake: '是',
+      teacherPriority: '高',
+    },
+  });
+
+  assert.deepEqual(normalized.items[1], {
+    id: 'record-2',
+    studentName: 'Bob',
+    className: '初一 2 班',
+    subject: '',
+    teacherName: '王老师',
+    createdAt: '2026-03-29T09:00:00Z',
+    imageUrl: '',
+    analysis: {
+      questionCategory: '',
+      errorType: '',
+      knowledgePoints: [],
+    },
+  });
+
+  assert.deepEqual(normalized.summary, {
+    totalCount: 12,
+    repeatedMistakeCount: 4,
+    highPriorityCount: 2,
+    pendingReviewCount: 5,
+  });
+});
+
+test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /useRef/);
+  assert.match(pageSource, /const requestVersionRef = useRef\(0\);/);
+  assert.match(pageSource, /const requestVersion = requestVersionRef\.current \+ 1;\s*requestVersionRef\.current = requestVersion;/);
+  assert.match(pageSource, /if \(requestVersion !== requestVersionRef\.current\) \{\s*return;\s*\}/);
+  assert.match(pageSource, /if \(requestVersion === requestVersionRef\.current\) \{\s*setLoading\(false\);\s*\}/);
 });
