@@ -229,5 +229,5 @@ git commit -m "feat: unify review generation workspace"
 ## Self-Review
 
 - **Spec coverage:** The plan covers every approved decision from the spec: one `复习生成` module, `历史文档` as the default landing area, `新建复习文档` as the CTA, `生成复习文档` as the inline form title, and collapse-back-to-history success behavior.
-- **Placeholder scan:** No `TODO`, `TBD`, or vague “handle this later” language remains. Each task includes exact files, commands, and target code shapes.
+- **Placeholder scan:** No placeholder markers or vague deferred-work language remain. Each task includes exact files, commands, and target code shapes.
 - **Type consistency:** The plan keeps the existing `LessonInput` request flow, introduces the single page key `review-generation`, renames the success callback consistently to `handleReviewGenerationSuccess`, and defines one wrapper component `ReviewGenerationPage` plus one history component `ReviewDocumentHistory`.
