@@ -814,6 +814,20 @@ def set_user_class_ids(user_id: int, class_ids: list):
             )
 
 
+def update_user_profile(user_id: int, new_username: str, new_display_name: str):
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username=? AND id!=?",
+            (new_username, user_id)
+        ).fetchone()
+        if existing:
+            raise ValueError("用户名已被占用")
+        conn.execute(
+            "UPDATE users SET username=?, display_name=? WHERE id=?",
+            (new_username, new_display_name, user_id)
+        )
+
+
 def update_user_role(user_id: int, role: str):
     with get_conn() as conn:
         conn.execute(
