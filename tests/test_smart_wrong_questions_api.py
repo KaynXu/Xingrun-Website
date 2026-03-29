@@ -10,7 +10,23 @@ if str(ROOT) not in sys.path:
 
 import config_runtime
 import lesson_manager
+import smart_wrong_questions
 from app import app
+
+
+class FakeResponse:
+    def __init__(self, raw: bytes, headers: dict[str, str] | None = None):
+        self._raw = raw
+        self.headers = headers or {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return self._raw
 
 
 class SmartWrongQuestionsApiTestCase(unittest.TestCase):
@@ -132,6 +148,97 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(forwarded_args.get("page"), "1")
         self.assertEqual(forwarded_args.get("pageSize"), "20")
         self.assertEqual(forwarded_args.get("empty"), "")
+
+    @patch("smart_wrong_questions.fetch_wrong_question_record")
+    def test_staff_can_get_wrong_question_record_detail(self, fetch_wrong_question_record):
+        owner_payload = self.login_owner()
+        fetch_wrong_question_record.return_value = {
+            "id": "record-42",
+            "student_name": "Alice",
+            "question_text": "2 + 2 = ?",
+        }
+
+        response = self.client.get(
+            "/api/wrong-questions/record-42?studentName=Alice&subject=Math",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["id"], "record-42")
+        fetch_wrong_question_record.assert_called_once()
+        self.assertEqual(fetch_wrong_question_record.call_args.args[0], "record-42")
+        forwarded_args = fetch_wrong_question_record.call_args.args[1]
+        self.assertEqual(forwarded_args.get("studentName"), "Alice")
+        self.assertEqual(forwarded_args.get("subject"), "Math")
+
+    @patch("smart_wrong_questions.save_wrong_question_review")
+    def test_staff_can_save_wrong_question_review(self, save_wrong_question_review):
+        owner_payload = self.login_owner()
+        save_wrong_question_review.return_value = {
+            "ok": True,
+            "record": {"id": "record-42", "teacher_comment": "需要重做"},
+        }
+
+        response = self.client.put(
+            "/api/wrong-questions/record-42/review?teacherName=Kayn",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={"teacher_comment": "需要重做", "mastery": "needs_practice"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        save_wrong_question_review.assert_called_once()
+        self.assertEqual(save_wrong_question_review.call_args.args[0], "record-42")
+        forwarded_args = save_wrong_question_review.call_args.args[1]
+        forwarded_payload = save_wrong_question_review.call_args.args[2]
+        self.assertEqual(forwarded_args.get("teacherName"), "Kayn")
+        self.assertEqual(
+            forwarded_payload,
+            {"teacher_comment": "需要重做", "mastery": "needs_practice"},
+        )
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_list_route_translates_config_proxy_errors(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        fetch_wrong_question_records.side_effect = smart_wrong_questions.WrongQuestionProxyError(
+            "智能错题服务尚未配置",
+            503,
+        )
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {"error": "智能错题服务尚未配置"})
+
+    @patch("smart_wrong_questions.save_wrong_question_review")
+    def test_review_route_translates_downstream_proxy_errors(self, save_wrong_question_review):
+        owner_payload = self.login_owner()
+        save_wrong_question_review.side_effect = smart_wrong_questions.WrongQuestionProxyError(
+            "下游服务不可用: timeout",
+            502,
+        )
+
+        response = self.client.put(
+            "/api/wrong-questions/record-42/review",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={"teacher_comment": "需要重做"},
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json(), {"error": "下游服务不可用: timeout"})
+
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_malformed_downstream_json_becomes_proxy_error(self, urlopen):
+        urlopen.return_value = FakeResponse(b"not-json")
+
+        with self.assertRaises(smart_wrong_questions.WrongQuestionProxyError) as ctx:
+            smart_wrong_questions.fetch_wrong_question_records({"studentName": "Alice"})
+
+        self.assertEqual(str(ctx.exception), "下游服务返回了无效响应")
+        self.assertEqual(ctx.exception.status_code, 502)
 
     @patch("smart_wrong_questions.export_wrong_question_summary")
     def test_export_route_returns_pdf_attachment(self, export_wrong_question_summary):
