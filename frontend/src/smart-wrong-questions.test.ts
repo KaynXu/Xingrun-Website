@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  applyWrongQuestionReviewDraft,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewDraft,
@@ -330,6 +331,49 @@ test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and pre
   assert.deepEqual(editedDraft, {
     ...pristineDraft,
     studentNote: '老师已手动修改',
+  });
+});
+
+test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty after save and reload', () => {
+  const detailRecord: WrongQuestionRecord = {
+    id: 'record-1',
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    subject: '数学',
+    teacherName: '雷文浩',
+    createdAt: '2026-03-29T08:00:00Z',
+    analysis: {
+      questionCategory: '计算',
+      errorType: '计算错误',
+      knowledgePoints: ['分数运算', '单位换算'],
+      selectedErrorType: '审题错误',
+      selectedKnowledgePoints: ['单位换算'],
+      selectedActions: ['重做同类题'],
+      selectedReasons: ['单位遗漏'],
+      studentNote: '需要复盘单位检查',
+    },
+  };
+
+  const clearedRecord = applyWrongQuestionReviewDraft(detailRecord, {
+    selectedErrorType: '   ',
+    selectedKnowledgePoints: [],
+    selectedActions: ['重做同类题'],
+    selectedReasons: ['单位遗漏'],
+    studentNote: '需要复盘单位检查',
+  });
+
+  const rebuiltDraft = buildWrongQuestionReviewDraft(clearedRecord);
+
+  assert.equal(clearedRecord.analysis.errorType, '计算错误');
+  assert.deepEqual(clearedRecord.analysis.knowledgePoints, ['分数运算', '单位换算']);
+  assert.equal(clearedRecord.analysis.selectedErrorType, undefined);
+  assert.equal(clearedRecord.analysis.selectedKnowledgePoints, undefined);
+  assert.deepEqual(rebuiltDraft, {
+    selectedErrorType: '',
+    selectedKnowledgePoints: [],
+    selectedActions: ['重做同类题'],
+    selectedReasons: ['单位遗漏'],
+    studentNote: '需要复盘单位检查',
   });
 });
 
