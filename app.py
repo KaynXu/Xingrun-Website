@@ -1024,13 +1024,19 @@ def api_class_update(class_id):
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
+    teacher_name = None
+    if "teacher_name" in data:
+        teacher_name = (data.get("teacher_name") or "").strip()
+    teacher_email = None
+    if "teacher_email" in data:
+        teacher_email = (data.get("teacher_email") or "").strip()
     update_class(
         class_id=class_id,
         name=name,
         subject=data.get("subject", "").strip(),
         grade=data.get("grade", "").strip(),
-        teacher_name=data.get("teacher_name", "").strip(),
-        teacher_email=data.get("teacher_email", "").strip(),
+        teacher_name=teacher_name,
+        teacher_email=teacher_email,
     )
     return jsonify({"ok": True})
 

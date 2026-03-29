@@ -818,10 +818,31 @@ def list_classes():
 
 
 def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
-                 teacher_name: str = "", teacher_email: str = ""):
+                 teacher_name: Optional[str] = None, teacher_email: Optional[str] = None):
     with get_conn() as conn:
+        bound_teacher_row = conn.execute(
+            "SELECT user_id FROM user_classes WHERE class_id=? ORDER BY user_id LIMIT 1",
+            (class_id,),
+        ).fetchone()
+
+        if bound_teacher_row:
+            conn.execute(
+                "UPDATE classes SET name=?, subject=?, grade=?, teacher_email='' WHERE id=?",
+                (name, subject, grade, class_id)
+            )
+            _sync_class_teacher_metadata(conn, [class_id])
+            return
+
         conn.execute(
-            "UPDATE classes SET name=?, subject=?, grade=?, teacher_name=?, teacher_email=? WHERE id=?",
+            """
+            UPDATE classes
+            SET name=?,
+                subject=?,
+                grade=?,
+                teacher_name=COALESCE(?, teacher_name),
+                teacher_email=COALESCE(?, teacher_email)
+            WHERE id=?
+            """,
             (name, subject, grade, teacher_name, teacher_email, class_id)
         )
 
