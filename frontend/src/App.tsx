@@ -241,6 +241,23 @@ export function resolveAssignmentRollbackClassIds(
   return areClassIdListsEqual(currentClassIds, failedNextClassIds) ? previousClassIds : currentClassIds;
 }
 
+export function resolveTeacherBindingRollbackClassItem(
+  currentItem: ClassItem,
+  failedNextTeacherUserId: number,
+  previousTeacherUserId: number | null,
+  previousTeacherName: string,
+): ClassItem {
+  if (currentItem.teacher_user_id !== failedNextTeacherUserId) {
+    return currentItem;
+  }
+
+  return {
+    ...currentItem,
+    teacher_name: previousTeacherName,
+    teacher_user_id: previousTeacherUserId,
+  };
+}
+
 function getRoleBadgeClass(role: Role): string {
   if (role === 'owner') {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
@@ -3073,6 +3090,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const loadPageRequestVersionRef = useRef(0);
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
+  const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const gradeFilterOptions = ['全部', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 
@@ -3195,21 +3213,24 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setSaving(true);
     setFormError('');
 
+    let createdClassId: number | null = null;
+
     try {
       if (classId === 'new') {
         const created = await apiFetch<{ id: number; name: string }>('/api/classes', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
-        await apiFetch(`/api/classes/${created.id}/teacher`, {
-          method: 'PUT',
-          body: JSON.stringify({ teacher_user_id: selectedTeacherUserId }),
-        });
+        createdClassId = created.id;
         setFormByClassId((current) => ({
           ...current,
           new: createEmptyClassForm(),
         }));
         setNewClassTeacherUserId(null);
+        await apiFetch(`/api/classes/${created.id}/teacher`, {
+          method: 'PUT',
+          body: JSON.stringify({ teacher_user_id: selectedTeacherUserId }),
+        });
         setExpandedClassId(created.id);
         await loadPage(created.id);
       } else {
@@ -3220,6 +3241,11 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         await loadPage(classId);
       }
     } catch (err) {
+      if (classId === 'new' && createdClassId != null) {
+        setFormError(err instanceof Error ? `班级已创建，但负责老师绑定失败：${err.message}` : '班级已创建，但负责老师绑定失败，请在班级卡片中重新选择老师');
+        await loadPage(createdClassId);
+        return;
+      }
       setFormError(err instanceof Error ? err.message : '班级保存失败');
     } finally {
       setSaving(false);
@@ -3255,7 +3281,9 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return;
     }
 
-    const previousTeacherUserId = teacherBindingByClassId[classId] ?? classes.find((item) => item.id === classId)?.teacher_user_id ?? null;
+    const previousClass = classes.find((item) => item.id === classId);
+    const previousTeacherUserId = teacherBindingByClassId[classId] ?? previousClass?.teacher_user_id ?? null;
+    const previousTeacherName = previousClass?.teacher_name || '';
     const selectedTeacher = users.find((user) => user.id === teacherUserId);
 
     setAssignmentError('');
@@ -3272,16 +3300,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         method: 'PUT',
         body: JSON.stringify({ teacher_user_id: teacherUserId }),
       });
+      await loadPage(classId);
     } catch (err) {
-      const previousTeacher = previousTeacherUserId == null ? undefined : users.find((user) => user.id === previousTeacherUserId);
       setTeacherBindingByClassId((current) => ({ ...current, [classId]: previousTeacherUserId }));
       setClasses((current) => current.map((item) => (
         item.id === classId
-          ? {
-            ...item,
-            teacher_name: previousTeacher?.name || item.teacher_name,
-            teacher_user_id: previousTeacherUserId,
-          }
+          ? resolveTeacherBindingRollbackClassItem(item, teacherUserId, previousTeacherUserId, previousTeacherName)
           : item
       )));
       setAssignmentError(err instanceof Error ? err.message : '班级老师分配保存失败');
@@ -3366,7 +3390,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <button
               type="button"
               onClick={() => loadPage(expandedClassId).catch(() => undefined)}
-              disabled={classInteractionLocked}
+              disabled={pageRefreshLocked}
               className={workspaceSecondaryButtonClass}
             >
               刷新列表
