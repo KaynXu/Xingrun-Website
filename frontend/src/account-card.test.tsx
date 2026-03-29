@@ -183,6 +183,32 @@ test('quick consultation parser extracts normalized teacher and source metadata'
   assert.match(parsed.need_detail, /补基础/);
 });
 
+test('assignment rollback helper restores previous ids when optimistic state is still current', () => {
+  const resolveAssignmentRollbackClassIds = (AppModule as {
+    resolveAssignmentRollbackClassIds?: (
+      currentClassIds: number[],
+      previousClassIds: number[],
+      failedNextClassIds: number[],
+    ) => number[];
+  }).resolveAssignmentRollbackClassIds;
+
+  assert.equal(typeof resolveAssignmentRollbackClassIds, 'function');
+  assert.deepEqual(resolveAssignmentRollbackClassIds!([2, 4], [2], [2, 4]), [2]);
+});
+
+test('assignment rollback helper preserves fresher ids after state changed again', () => {
+  const resolveAssignmentRollbackClassIds = (AppModule as {
+    resolveAssignmentRollbackClassIds?: (
+      currentClassIds: number[],
+      previousClassIds: number[],
+      failedNextClassIds: number[],
+    ) => number[];
+  }).resolveAssignmentRollbackClassIds;
+
+  assert.equal(typeof resolveAssignmentRollbackClassIds, 'function');
+  assert.deepEqual(resolveAssignmentRollbackClassIds!([1, 3], [2], [2, 4]), [1, 3]);
+});
+
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
@@ -211,4 +237,37 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(indexCssSource, /html\.dark\s*\{[\s\S]*color-scheme:\s*dark;/);
   assert.match(indexCssSource, /html\.dark ::-webkit-scrollbar-thumb\s*\{[\s\S]*background:\s*#334155;/);
   assert.match(indexCssSource, /html\.dark ::-webkit-scrollbar-thumb:hover\s*\{[\s\S]*background:\s*#475569;/);
+});
+
+test('workspace source splits approval and class assignment responsibilities across separate pages', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.match(source, /账号审批/);
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /成员权限/);
+  assert.match(approvalBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(approvalBlock[0], /`\/api\/admin\/users\/\$\{userId\}\/role`/);
+  assert.doesNotMatch(approvalBlock[0], /成员班级分配/);
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /成员班级分配/);
+  assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(classManagementBlock[0], /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
+  assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
+});
+
+test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
+  assert.match(classManagementBlock[0], /const hasAssignmentSavingRows = Object\.values\(assignmentSavingByUserId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasAssignmentSavingRows;/);
+  assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*刷新列表/);
+  assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*新建班级/);
+  assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
+  assert.match(classManagementBlock[0], /disabled=\{rowSaving \|\| classInteractionLocked\}/);
 });
