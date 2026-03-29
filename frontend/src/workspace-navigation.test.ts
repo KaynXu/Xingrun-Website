@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(appSource, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -15,6 +15,39 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 
   assert.doesNotMatch(appSource, /题库浏览/);
   assert.doesNotMatch(appSource, /QuestionBank/);
+});
+
+test('review generation source replaces separate lesson input and library pages with one review-generation workspace page', () => {
+  const sidebarBlock = appSource.match(/const menuItems = \[[\s\S]*?\n  \];/);
+
+  assert.ok(sidebarBlock);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(sidebarBlock[0], /id: 'review-generation'[\s\S]*label: '复习生成'/);
+  assert.doesNotMatch(sidebarBlock[0], /id: 'input'[\s\S]*label: '添加课程'/);
+  assert.doesNotMatch(sidebarBlock[0], /id: 'library'[\s\S]*label: '课程列表'/);
+  assert.match(appSource, /'review-generation': '复习生成'/);
+  assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage onSuccess=\{handleReviewGenerationSuccess\} \/>/);
+  assert.doesNotMatch(appSource, /activePage === 'input'/);
+  assert.doesNotMatch(appSource, /activePage === 'library'/);
+});
+
+test('review generation source defaults to 历史文档 and expands 生成复习文档 from 新建复习文档 CTA', () => {
+  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess \}: \{ onSuccess: \(\) => void \}\) => \{[\s\S]*?\n};/);
+
+  assert.ok(reviewGenerationBlock);
+  assert.match(reviewGenerationBlock[0], /const \[composerOpen, setComposerOpen\] = useState\(false\);/);
+  assert.match(reviewGenerationBlock[0], /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
+  assert.match(reviewGenerationBlock[0], /新建复习文档/);
+  assert.match(reviewGenerationBlock[0], /生成复习文档/);
+  assert.match(reviewGenerationBlock[0], /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} \/>/);
+});
+
+test('review generation source collapses the inline composer after successful generation', () => {
+  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess \}: \{ onSuccess: \(\) => void \}\) => \{[\s\S]*?\n};/);
+
+  assert.ok(reviewGenerationBlock);
+  assert.match(reviewGenerationBlock[0], /const handleComposerSuccess = \(\) => \{\s*setComposerOpen\(false\);\s*onSuccess\(\);\s*\};/);
+  assert.doesNotMatch(reviewGenerationBlock[0], /setActivePage\('library'\)/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
