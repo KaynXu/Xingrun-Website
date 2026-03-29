@@ -29,6 +29,7 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
   assert.match(classManagementBlock[0], /班级老师分配/);
+  assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。/);
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
 });
