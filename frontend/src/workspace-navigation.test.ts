@@ -78,9 +78,21 @@ test('class management source keeps interaction locks while switching to single-
   assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /if \(classInteractionLocked \|\| teacherBindingSavingByClassId\[classId\]\) \{\s*return;\s*\}/);
-  assert.match(classManagementBlock[0], /await loadPage\(classId\);/);
+  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
   assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}/);
+});
+
+test('class management source keeps refresh reconciliation non-destructive after successful mutations', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const preserveStateOnError = options\?\.preserveStateOnError \?\? false;/);
+  assert.match(classManagementBlock[0], /if \(!preserveStateOnError\) \{[\s\S]*setClasses\(\[\]\);[\s\S]*setUsers\(\[\]\);[\s\S]*setTeacherBindingByClassId\(\{\}\);/);
+  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
+  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);/);
+  assert.match(classManagementBlock[0], /if \(!refreshResult\.ok\) \{[\s\S]*老师绑定已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /if \(!refreshResult\.ok\) \{[\s\S]*班级和负责老师已保存，但列表刷新失败/);
 });
 
 test('class management source adds compact card single-expand state via expandedClassId', () => {
