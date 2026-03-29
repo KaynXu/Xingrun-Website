@@ -1185,11 +1185,11 @@ def cmd_add(args):
     )
 
     # 4. 生成 PDF
-    from pdf_engine import generate_lesson_pdf
+    from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
     safe_topic = topic.replace("/", "-").replace(" ", "_")[:30] if topic else "课程"
     pdf_name = f"{lesson_date}_{subject}_{safe_topic}.pdf"
     pdf_path = str(PDF_DIR / pdf_name)
-    generate_lesson_pdf(plan, pdf_path)
+    generate_single_lesson_pdf(plan, pdf_path)
     print(f"PDF 已生成：{pdf_path}")
 
     # 5. 存库
