@@ -2907,6 +2907,9 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [assignmentSavingByUserId, setAssignmentSavingByUserId] = useState<Record<number, boolean>>({});
+  const classInteractionLocked = saving || deleting;
+  const hasAssignmentSavingRows = Object.values(assignmentSavingByUserId).some(Boolean);
+  const assignmentRefreshLocked = classInteractionLocked || hasAssignmentSavingRows;
 
   const loadPage = useCallback(async (preferredSelectedClassId?: number | 'new') => {
     setLoading(true);
@@ -2968,6 +2971,9 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleSelectClass = (classId: number | 'new') => {
+    if (classInteractionLocked) {
+      return;
+    }
     setSelectedClassId(classId);
     setFormError('');
   };
@@ -3040,6 +3046,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleToggleAssignment = async (userId: number, classId: number, checked: boolean) => {
+    if (classInteractionLocked || assignmentSavingByUserId[userId]) {
+      return;
+    }
+
     const previousClassIds = userClassIdsByUserId[userId] || [];
     const nextClassIds = checked
       ? [...previousClassIds, classId].filter((value, index, list) => list.indexOf(value) === index).sort((a, b) => a - b)
@@ -3109,10 +3119,20 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">选择班级卡片进入编辑，或切换到新建班级状态。</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => loadPage(selectedClassId).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+              <button
+                type="button"
+                onClick={() => loadPage(selectedClassId).catch(() => undefined)}
+                disabled={classInteractionLocked}
+                className={workspaceSecondaryButtonClass}
+              >
                 刷新列表
               </button>
-              <button type="button" onClick={() => handleSelectClass('new')} className={workspacePrimaryButtonClass}>
+              <button
+                type="button"
+                onClick={() => handleSelectClass('new')}
+                disabled={classInteractionLocked}
+                className={workspacePrimaryButtonClass}
+              >
                 <PlusCircle size={18} />
                 新建班级
               </button>
@@ -3136,6 +3156,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     key={item.id}
                     type="button"
                     onClick={() => handleSelectClass(item.id)}
+                    disabled={classInteractionLocked}
                     className={cn(
                       workspaceSoftCardClass,
                       'w-full p-5 text-left transition-all',
@@ -3240,7 +3261,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
-            <button type="button" onClick={() => handleSelectClass('new')} className={workspaceSecondaryButtonClass}>
+            <button
+              type="button"
+              onClick={() => handleSelectClass('new')}
+              disabled={classInteractionLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               切换到新建状态
             </button>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -3269,7 +3295,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员班级分配</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为机构成员勾选可访问班级，采用乐观更新并在失败时回滚。</p>
           </div>
-          <button type="button" onClick={() => loadPage(selectedClassId).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+          <button
+            type="button"
+            onClick={() => loadPage(selectedClassId).catch(() => undefined)}
+            disabled={assignmentRefreshLocked}
+            className={workspaceSecondaryButtonClass}
+          >
             刷新分配
           </button>
         </div>
@@ -3320,13 +3351,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             key={`${user.id}-${item.id}`}
                             className={cn(
                               'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
-                              rowSaving && 'opacity-70',
+                              (rowSaving || classInteractionLocked) && 'opacity-70',
                             )}
                           >
                             <input
                               type="checkbox"
                               checked={checked}
-                              disabled={rowSaving}
+                              disabled={rowSaving || classInteractionLocked}
                               onChange={(e) => handleToggleAssignment(user.id, item.id, e.target.checked)}
                               className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                             />
