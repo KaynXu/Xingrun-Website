@@ -54,7 +54,7 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              create_auth_session, create_registration_request,
                              approve_registration_request, reject_registration_request,
                              list_registration_requests, get_current_user,
-                             list_all_users, get_user_class_ids, set_user_class_ids,
+                             list_all_users, get_user_class_ids, set_user_class_ids, update_user_role,
                              list_consultations, get_consultation,
                              create_consultation, update_consultation,
                              delete_consultation, list_consultation_teachers)
@@ -799,6 +799,19 @@ def api_admin_users():
         return error
     users = list_all_users()
     return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
+
+
+@app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
+def api_admin_user_role_set(user_id):
+    _, error = _require_owner()
+    if error:
+        return error
+    data = request.json or {}
+    role = data.get("role")
+    if role not in ("admin", "member"):
+        return jsonify({"error": "role must be admin or member"}), 400
+    update_user_role(user_id, role)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["GET"])
