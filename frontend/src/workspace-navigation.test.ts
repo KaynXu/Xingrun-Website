@@ -113,7 +113,10 @@ test('class management source adds compact card single-expand state via expanded
   assert.match(classManagementBlock[0], /const isExpanded = expandedClassId === item\.id/);
   assert.match(classManagementBlock[0], /setExpandedClassId\(\(current\) => current === classId \? null : classId\)/);
   assert.match(classManagementBlock[0], /className=\{`\$\{workspaceSoftCardClass\} overflow-hidden p-5`\}/);
-  assert.match(classManagementBlock[0], /\{isExpanded \? '收起管理' : '展开管理'\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}/);
+  assert.doesNotMatch(classManagementBlock[0], /展开管理/);
+  assert.doesNotMatch(classManagementBlock[0], /收起管理/);
   assert.doesNotMatch(classManagementBlock[0], /当前展开/);
   assert.doesNotMatch(classManagementBlock[0], /每次只展开一个班级卡片，在卡片内部完成基础信息维护和班级老师分配。/);
 });
