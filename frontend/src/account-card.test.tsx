@@ -209,6 +209,78 @@ test('assignment rollback helper preserves fresher ids after state changed again
   assert.deepEqual(resolveAssignmentRollbackClassIds!([1, 3], [2], [2, 4]), [1, 3]);
 });
 
+test('teacher binding rollback helper restores exact previous teacher fields', () => {
+  const resolveTeacherBindingRollbackClassItem = (AppModule as {
+    resolveTeacherBindingRollbackClassItem?: (
+      currentItem: {
+        id: number;
+        name: string;
+        subject: string;
+        grade: string;
+        teacher_name?: string;
+        teacher_user_id?: number | null;
+      },
+      failedNextTeacherUserId: number,
+      previousTeacherUserId: number | null,
+      previousTeacherName: string,
+    ) => {
+      id: number;
+      name: string;
+      subject: string;
+      grade: string;
+      teacher_name?: string;
+      teacher_user_id?: number | null;
+    };
+  }).resolveTeacherBindingRollbackClassItem;
+
+  assert.equal(typeof resolveTeacherBindingRollbackClassItem, 'function');
+  assert.deepEqual(
+    resolveTeacherBindingRollbackClassItem!(
+      { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '新老师', teacher_user_id: 12 },
+      12,
+      null,
+      '',
+    ),
+    { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '', teacher_user_id: null },
+  );
+});
+
+test('teacher binding rollback helper preserves fresher teacher state after later updates', () => {
+  const resolveTeacherBindingRollbackClassItem = (AppModule as {
+    resolveTeacherBindingRollbackClassItem?: (
+      currentItem: {
+        id: number;
+        name: string;
+        subject: string;
+        grade: string;
+        teacher_name?: string;
+        teacher_user_id?: number | null;
+      },
+      failedNextTeacherUserId: number,
+      previousTeacherUserId: number | null,
+      previousTeacherName: string,
+    ) => {
+      id: number;
+      name: string;
+      subject: string;
+      grade: string;
+      teacher_name?: string;
+      teacher_user_id?: number | null;
+    };
+  }).resolveTeacherBindingRollbackClassItem;
+
+  assert.equal(typeof resolveTeacherBindingRollbackClassItem, 'function');
+  assert.deepEqual(
+    resolveTeacherBindingRollbackClassItem!(
+      { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '更新后的老师', teacher_user_id: 18 },
+      12,
+      null,
+      '',
+    ),
+    { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '更新后的老师', teacher_user_id: 18 },
+  );
+});
+
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
@@ -290,6 +362,11 @@ test('class management source keeps teacher binding selection scoped per class c
   assert.match(classManagementBlock[0], /const currentTeacher = currentTeacherUserId == null \? undefined : users\.find\(\(user\) => user\.id === currentTeacherUserId\);/);
   assert.match(classManagementBlock[0], /const teacherBindingSaving = Boolean\(teacherBindingSavingByClassId\[item\.id\]\);/);
   assert.match(classManagementBlock[0], /onChange=\{\(\) => handleSelectTeacherForClass\(item\.id, user\.id\)\}/);
+  assert.match(classManagementBlock[0], /const previousTeacherName = previousClass\?\.teacher_name \|\| '';/);
+  assert.match(classManagementBlock[0], /resolveTeacherBindingRollbackClassItem\(item, teacherUserId, previousTeacherUserId, previousTeacherName\)/);
+  assert.match(classManagementBlock[0], /await loadPage\(classId\);/);
+  assert.match(classManagementBlock[0], /let createdClassId: number \| null = null;/);
+  assert.match(classManagementBlock[0], /班级已创建，但负责老师绑定失败/);
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
@@ -299,8 +376,9 @@ test('class management source disables conflicting controls while async class or
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
   assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*刷新列表/);
+  assert.match(classManagementBlock[0], /disabled=\{pageRefreshLocked\}[\s\S]*刷新列表/);
   assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*新建班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
   assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
