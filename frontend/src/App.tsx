@@ -44,7 +44,7 @@ import { CourseCalendarPage } from './CourseCalendarPage';
 // --- Types ---
 
 type Role = 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -136,10 +136,64 @@ interface UserItem {
   role: Role;
 }
 
+interface ClassFormValues {
+  name: string;
+  subject: string;
+  grade: string;
+  teacher_name: string;
+  teacher_email: string;
+}
+
 function getRoleLabel(role: Role): string {
   if (role === 'owner') return '最高权限账号';
   if (role === 'admin') return '管理员';
   return '机构成员';
+}
+
+function createEmptyClassForm(): ClassFormValues {
+  return {
+    name: '',
+    subject: '',
+    grade: '',
+    teacher_name: '',
+    teacher_email: '',
+  };
+}
+
+function toClassFormValues(item: ClassItem): ClassFormValues {
+  return {
+    name: item.name || '',
+    subject: item.subject || '',
+    grade: item.grade || '',
+    teacher_name: item.teacher_name || '',
+    teacher_email: item.teacher_email || '',
+  };
+}
+
+function areClassIdListsEqual(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+export function resolveAssignmentRollbackClassIds(
+  currentClassIds: number[],
+  previousClassIds: number[],
+  failedNextClassIds: number[],
+): number[] {
+  return areClassIdListsEqual(currentClassIds, failedNextClassIds) ? previousClassIds : currentClassIds;
+}
+
+function getRoleBadgeClass(role: Role): string {
+  if (role === 'owner') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
+  }
+  if (role === 'admin') {
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
+  }
+  return 'border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
 }
 
 const LANDING_LEGAL_DOCUMENTS: Record<
@@ -1002,6 +1056,9 @@ const Sidebar = ({
     { id: 'library', icon: Library, label: '课程列表' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
+    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+      ? [{ id: 'classes', icon: Home, label: '班级管理' }]
+      : []),
     ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
@@ -2630,15 +2687,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
 const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [actingId, setActingId] = useState<number | null>(null);
-
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [userClassIds, setUserClassIds] = useState<Record<number, number[]>>({});
-  const [savingUserId, setSavingUserId] = useState<number | null>(null);
-  const [changingRoleId, setChangingRoleId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [usersError, setUsersError] = useState('');
+  const [actingId, setActingId] = useState<number | null>(null);
+  const [roleSavingUserId, setRoleSavingUserId] = useState<number | null>(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -2653,9 +2708,23 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   }, []);
 
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    setUsersError('');
+    try {
+      const data = await apiFetch<UserItem[]>('/api/admin/users');
+      setUsers(data);
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : '成员权限加载失败');
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadItems().catch(() => undefined);
-  }, [loadItems]);
+    loadUsers().catch(() => undefined);
+  }, [loadItems, loadUsers]);
 
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
@@ -2672,59 +2741,26 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
-  useEffect(() => {
-    Promise.all([
-      apiFetch<UserItem[]>('/api/admin/users'),
-      apiFetch<ClassItem[]>('/api/classes'),
-    ]).then(([u, c]) => {
-      setUsers(u);
-      setClasses(c);
-      return Promise.all(
-        u.map((user) =>
-          apiFetch<{ class_ids: number[] }>(`/api/admin/users/${user.id}/classes`).then((d) => ({
-            id: user.id,
-            class_ids: d.class_ids,
-          }))
-        )
-      );
-    }).then((results) => {
-      const map: Record<number, number[]> = {};
-      results.forEach(({ id, class_ids }) => { map[id] = class_ids; });
-      setUserClassIds(map);
-    }).catch(console.error);
-  }, []);
+  const handleRoleToggle = async (userId: number, currentRole: Role) => {
+    if (currentRole === 'owner') {
+      return;
+    }
 
-  const handleRoleChange = async (userId: number, newRole: 'admin' | 'member') => {
-    setChangingRoleId(userId);
-    setError('');
+    const nextRole: Exclude<Role, 'owner'> = currentRole === 'admin' ? 'member' : 'admin';
+    setRoleSavingUserId(userId);
+    setUsersError('');
+    setUsers((current) => current.map((user) => (user.id === userId ? { ...user, role: nextRole } : user)));
+
     try {
       await apiFetch(`/api/admin/users/${userId}/role`, {
         method: 'PUT',
-        body: JSON.stringify({ role: newRole }),
-      });
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '权限修改失败');
-    } finally {
-      setChangingRoleId(null);
-    }
-  };
-
-  const handleClassToggle = async (userId: number, classId: number, checked: boolean) => {
-    const prev = userClassIds[userId] ?? [];
-    const next = checked ? [...prev, classId] : prev.filter((id) => id !== classId);
-    setUserClassIds((m) => ({ ...m, [userId]: next }));
-    setSavingUserId(userId);
-    try {
-      await apiFetch(`/api/admin/users/${userId}/classes`, {
-        method: 'PUT',
-        body: JSON.stringify({ class_ids: next }),
+        body: JSON.stringify({ role: nextRole }),
       });
     } catch (err) {
-      setUserClassIds((m) => ({ ...m, [userId]: prev }));
-      setError(err instanceof Error ? err.message : '保存失败');
+      setUsers((current) => current.map((user) => (user.id === userId ? { ...user, role: currentRole } : user)));
+      setUsersError(err instanceof Error ? err.message : '成员权限更新失败');
     } finally {
-      setSavingUserId(null);
+      setRoleSavingUserId(null);
     }
   };
 
@@ -2843,76 +2879,70 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         </section>
       </div>
 
-      <section className={`${workspaceCardClass} space-y-5 p-6`}>
-        <div>
-          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级分配</h4>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为每位成员指定可访问的班级。</p>
-        </div>
-        {users.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无成员数据</div>
-        ) : (
-          <div className="space-y-4">
-            {users.map((user) => {
-              const assigned = userClassIds[user.id] ?? [];
-              const saving = savingUserId === user.id;
-              const changingRole = changingRoleId === user.id;
-              const isOwner = user.role === 'owner';
-              return (
-                <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
-                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          isOwner
-                            ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-900/20 dark:text-amber-300'
-                            : user.role === 'admin'
-                              ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/20 dark:text-sky-300'
-                              : 'border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400'
-                        }`}>
-                          {getRoleLabel(user.role)}
-                        </span>
-                        {!isOwner && (
-                          <button
-                            disabled={changingRole}
-                            onClick={() => handleRoleChange(user.id, user.role === 'admin' ? 'member' : 'admin')}
-                            className="text-[11px] text-sky-600 hover:text-sky-500 disabled:opacity-50 dark:text-sky-400 dark:hover:text-sky-300"
-                          >
-                            {changingRole ? '...' : user.role === 'admin' ? '降为成员' : '升为管理员'}
-                          </button>
-                        )}
-                      </div>
-                      <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{user.org}</span>
-                      {saving && <span className="mt-0.5 block text-xs text-sky-600">保存中...</span>}
-                    </div>
-                    {classes.length === 0 ? (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">暂无班级</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {classes.map((cls) => {
-                          const checked = assigned.includes(cls.id);
-                          return (
-                              <label key={cls.id} className="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={saving}
-                                onChange={(e) => handleClassToggle(user.id, cls.id, e.target.checked)}
-                                className="accent-sky-500"
-                              />
-                              <span className={checked ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}>{cls.name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+      {currentUser.role === 'owner' && (
+        <section className={`${workspaceCardClass} p-6`}>
+          <div className="flex flex-col gap-3 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员权限</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                只有 owner 可以在这里切换管理员与普通成员权限，班级分配不再放在审批页。
+              </p>
+            </div>
+            <button onClick={() => loadUsers().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+              刷新成员
+            </button>
           </div>
-        )}
-      </section>
+
+          {usersError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {usersError}
+            </div>
+          )}
+
+          {usersLoading ? (
+            <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载成员权限...</div>
+          ) : users.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前暂无可管理成员。
+            </div>
+          ) : (
+            <div className="mt-5 space-y-4">
+              {users.map((user) => {
+                const busy = roleSavingUserId === user.id;
+                const isOwner = user.role === 'owner';
+                return (
+                  <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
+                            {getRoleLabel(user.role)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
+                      </div>
+                      {isOwner ? (
+                        <span className="text-sm text-slate-500 dark:text-slate-400">Owner 权限固定，不可调整</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleRoleToggle(user.id, user.role)}
+                          disabled={busy}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          {busy ? '保存中...' : user.role === 'admin' ? '降为成员' : '设为管理员'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 };
@@ -2962,6 +2992,507 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
             <span className="text-slate-700 dark:text-slate-200">由星润提供</span>
           </div>
         </div>
+      </section>
+    </div>
+  );
+};
+
+const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [userClassIdsByUserId, setUserClassIdsByUserId] = useState<Record<number, number[]>>({});
+  const [selectedClassId, setSelectedClassId] = useState<number | 'new'>('new');
+  const [form, setForm] = useState<ClassFormValues>(() => createEmptyClassForm());
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [assignmentError, setAssignmentError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [assignmentSavingByUserId, setAssignmentSavingByUserId] = useState<Record<number, boolean>>({});
+  const loadPageRequestVersionRef = useRef(0);
+  const classInteractionLocked = saving || deleting;
+  const hasAssignmentSavingRows = Object.values(assignmentSavingByUserId).some(Boolean);
+  const assignmentRefreshLocked = classInteractionLocked || hasAssignmentSavingRows;
+
+  const loadPage = useCallback(async (preferredSelectedClassId?: number | 'new') => {
+    const requestVersion = ++loadPageRequestVersionRef.current;
+    setLoading(true);
+    setPageError('');
+    try {
+      const [classItems, userItems] = await Promise.all([
+        apiFetch<ClassItem[]>('/api/classes'),
+        apiFetch<UserItem[]>('/api/admin/users'),
+      ]);
+      const assignmentEntries = await Promise.all(
+        userItems.map(async ({ id: userId }) => {
+          const data = await apiFetch<{ class_ids: number[] }>(`/api/admin/users/${userId}/classes`);
+          return [userId, data.class_ids] as const;
+        }),
+      );
+
+      if (requestVersion !== loadPageRequestVersionRef.current) {
+        return;
+      }
+
+      setClasses(classItems);
+      setUsers(userItems);
+      setUserClassIdsByUserId(Object.fromEntries(assignmentEntries));
+      setSelectedClassId((current) => {
+        const requestedSelection = preferredSelectedClassId ?? current;
+        if (requestedSelection === 'new') {
+          return 'new';
+        }
+        return classItems.some((item) => item.id === requestedSelection) ? requestedSelection : 'new';
+      });
+    } catch (err) {
+      if (requestVersion !== loadPageRequestVersionRef.current) {
+        return;
+      }
+
+      setPageError(err instanceof Error ? err.message : '班级管理数据加载失败');
+      setClasses([]);
+      setUsers([]);
+      setUserClassIdsByUserId({});
+      setSelectedClassId('new');
+    } finally {
+      if (requestVersion === loadPageRequestVersionRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPage().catch(() => undefined);
+  }, [loadPage]);
+
+  useEffect(() => {
+    if (selectedClassId === 'new') {
+      setForm(createEmptyClassForm());
+      return;
+    }
+
+    const selectedClass = classes.find((item) => item.id === selectedClassId);
+    if (!selectedClass) {
+      setForm(createEmptyClassForm());
+      return;
+    }
+
+    setForm(toClassFormValues(selectedClass));
+  }, [classes, selectedClassId]);
+
+  const handleFieldChange = (field: keyof ClassFormValues, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSelectClass = (classId: number | 'new') => {
+    if (classInteractionLocked) {
+      return;
+    }
+    setSelectedClassId(classId);
+    setFormError('');
+  };
+
+  const handleSaveClass = async () => {
+    const payload = {
+      name: form.name.trim(),
+      subject: form.subject.trim(),
+      grade: form.grade.trim(),
+      teacher_name: form.teacher_name.trim(),
+      teacher_email: form.teacher_email.trim(),
+    };
+
+    if (!payload.name) {
+      setFormError('班级名称不能为空');
+      return;
+    }
+
+    setSaving(true);
+    setFormError('');
+
+    try {
+      if (selectedClassId === 'new') {
+        const created = await apiFetch<{ id: number; name: string }>('/api/classes', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setSelectedClassId(created.id);
+        await loadPage(created.id);
+      } else {
+        await apiFetch(`/api/classes/${selectedClassId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+        await loadPage(selectedClassId);
+      }
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : '班级保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteClass = async () => {
+    if (selectedClassId === 'new') {
+      return;
+    }
+
+    const targetClass = classes.find((item) => item.id === selectedClassId);
+    if (!targetClass) {
+      return;
+    }
+
+    if (!window.confirm(`确定删除班级「${targetClass.name}」吗？`)) {
+      return;
+    }
+
+    setDeleting(true);
+    setFormError('');
+
+    try {
+      await apiFetch(`/api/classes/${selectedClassId}`, { method: 'DELETE' });
+      setSelectedClassId('new');
+      await loadPage('new');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : '班级删除失败');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleToggleAssignment = async (userId: number, classId: number, checked: boolean) => {
+    if (classInteractionLocked || assignmentSavingByUserId[userId]) {
+      return;
+    }
+
+    const previousClassIds = userClassIdsByUserId[userId] || [];
+    const nextClassIds = checked
+      ? [...previousClassIds, classId].filter((value, index, list) => list.indexOf(value) === index).sort((a, b) => a - b)
+      : previousClassIds.filter((value) => value !== classId);
+
+    setAssignmentError('');
+    setAssignmentSavingByUserId((current) => ({ ...current, [userId]: true }));
+    setUserClassIdsByUserId((current) => ({ ...current, [userId]: nextClassIds }));
+
+    try {
+      await apiFetch(`/api/admin/users/${userId}/classes`, {
+        method: 'PUT',
+        body: JSON.stringify({ class_ids: nextClassIds }),
+      });
+    } catch (err) {
+      setUserClassIdsByUserId((current) => ({
+        ...current,
+        [userId]: resolveAssignmentRollbackClassIds(current[userId] || [], previousClassIds, nextClassIds),
+      }));
+      setAssignmentError(err instanceof Error ? err.message : '成员班级分配保存失败');
+    } finally {
+      setAssignmentSavingByUserId((current) => {
+        const nextState = { ...current };
+        delete nextState[userId];
+        return nextState;
+      });
+    }
+  };
+
+  const selectedClass = selectedClassId === 'new' ? null : classes.find((item) => item.id === selectedClassId) || null;
+
+  return (
+    <div className={`${workspacePageClass} space-y-8`}>
+      <section className={`${workspaceCardClass} space-y-4 p-6`}>
+        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Class Workspace</p>
+        <div>
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">班级管理</h3>
+          <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
+            在这里维护 {currentUser.organization_name} 的班级台账，并直接完成成员班级分配，不再与账号审批页面混用。
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className={`${workspaceSoftCardClass} p-4`}>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">班级数量</p>
+            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{classes.length}</p>
+          </div>
+          <div className={`${workspaceSoftCardClass} p-4`}>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">成员数量</p>
+            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{users.length}</p>
+          </div>
+          <div className={`${workspaceSoftCardClass} p-4`}>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前编辑</p>
+            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">{selectedClass ? selectedClass.name : '新建班级'}</p>
+          </div>
+        </div>
+      </section>
+
+      {pageError && (
+        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <AlertCircle size={16} />
+          {pageError}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+        <section className={`${workspaceCardClass} space-y-5 p-6`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级列表</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">选择班级卡片进入编辑，或切换到新建班级状态。</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => loadPage(selectedClassId).catch(() => undefined)}
+                disabled={classInteractionLocked}
+                className={workspaceSecondaryButtonClass}
+              >
+                刷新列表
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectClass('new')}
+                disabled={classInteractionLocked}
+                className={workspacePrimaryButtonClass}
+              >
+                <PlusCircle size={18} />
+                新建班级
+              </button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              正在加载班级数据...
+            </div>
+          ) : classes.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              暂无班级，点击「新建班级」开始创建。
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {classes.map((item) => {
+                const active = item.id === selectedClassId;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectClass(item.id)}
+                    disabled={classInteractionLocked}
+                    className={cn(
+                      workspaceSoftCardClass,
+                      'w-full p-5 text-left transition-all',
+                      active && 'border-sky-300 shadow-[0_18px_40px_rgba(47,128,237,0.14)] dark:border-sky-400/40',
+                    )}
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.name}</span>
+                          {active && (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                              正在编辑
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          {(item.grade || '未填写年级')} · {(item.subject || '未填写科目')}
+                        </p>
+                      </div>
+                      <div className="text-sm text-slate-500 dark:text-slate-400 sm:text-right">
+                        <p>{item.teacher_name || '未填写老师'}</p>
+                        <p className="mt-1">{item.teacher_email || '未填写邮箱'}</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className={`${workspaceCardClass} space-y-5 p-6`}>
+          <div>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedClass ? '编辑班级' : '新建班级'}</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">使用同一套表单维护班级基础信息，保存后会自动刷新班级列表。</p>
+          </div>
+
+          {formError && (
+            <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {formError}
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">班级名称</span>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => handleFieldChange('name', e.target.value)}
+                className={workspaceFieldClass}
+                placeholder="如：六年级数学冲刺班"
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">科目</span>
+              <input
+                type="text"
+                value={form.subject}
+                onChange={(e) => handleFieldChange('subject', e.target.value)}
+                className={workspaceFieldClass}
+                placeholder="如：数学"
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">年级</span>
+              <input
+                type="text"
+                value={form.grade}
+                onChange={(e) => handleFieldChange('grade', e.target.value)}
+                className={workspaceFieldClass}
+                placeholder="如：六年级"
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">老师姓名</span>
+              <input
+                type="text"
+                value={form.teacher_name}
+                onChange={(e) => handleFieldChange('teacher_name', e.target.value)}
+                className={workspaceFieldClass}
+                placeholder="主负责老师"
+              />
+            </label>
+            <label className="space-y-2 text-sm md:col-span-2">
+              <span className="text-slate-500 dark:text-slate-400">老师邮箱</span>
+              <input
+                type="email"
+                value={form.teacher_email}
+                onChange={(e) => handleFieldChange('teacher_email', e.target.value)}
+                className={workspaceFieldClass}
+                placeholder="teacher@example.com"
+              />
+            </label>
+          </div>
+
+          <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">当前表单模型</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">字段统一为 name、subject、grade、teacher_name、teacher_email，创建和编辑都复用同一套提交逻辑。</p>
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
+            <button
+              type="button"
+              onClick={() => handleSelectClass('new')}
+              disabled={classInteractionLocked}
+              className={workspaceSecondaryButtonClass}
+            >
+              切换到新建状态
+            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              {selectedClass && (
+                <button
+                  type="button"
+                  onClick={handleDeleteClass}
+                  disabled={deleting || saving}
+                  className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                >
+                  <Trash2 size={18} />
+                  {deleting ? '删除中...' : '删除当前班级'}
+                </button>
+              )}
+              <button type="button" onClick={handleSaveClass} disabled={saving || deleting} className={workspacePrimaryButtonClass}>
+                {saving ? '保存中...' : selectedClass ? '保存班级' : '创建班级'}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section className={`${workspaceCardClass} space-y-5 p-6`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员班级分配</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为机构成员勾选可访问班级，采用乐观更新并在失败时回滚。</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadPage(selectedClassId).catch(() => undefined)}
+            disabled={assignmentRefreshLocked}
+            className={workspaceSecondaryButtonClass}
+          >
+            刷新分配
+          </button>
+        </div>
+
+        {assignmentError && (
+          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+            <AlertCircle size={16} />
+            {assignmentError}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+            正在读取成员班级分配...
+          </div>
+        ) : classes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+            还没有班级可分配，请先创建班级。
+          </div>
+        ) : users.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+            当前暂无成员，成员通过审批后会出现在这里。
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {users.map((user) => {
+              const selectedIds = userClassIdsByUserId[user.id] || [];
+              const rowSaving = Boolean(assignmentSavingByUserId[user.id]);
+              return (
+                <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2 lg:max-w-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-lg font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
+                          {getRoleLabel(user.role)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{rowSaving ? '保存中...' : `已分配 ${selectedIds.length} 个班级`}</p>
+                    </div>
+
+                    <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {classes.map((item) => {
+                        const checked = selectedIds.includes(item.id);
+                        return (
+                          <label
+                            key={`${user.id}-${item.id}`}
+                            className={cn(
+                              'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
+                              (rowSaving || classInteractionLocked) && 'opacity-70',
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={rowSaving || classInteractionLocked}
+                              onChange={(e) => handleToggleAssignment(user.id, item.id, e.target.checked)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                            />
+                            <span>
+                              <span className="block font-semibold text-slate-900 dark:text-white">{item.name}</span>
+                              <span className="mt-1 block text-slate-500 dark:text-slate-400">{(item.grade || '未填年级')} · {(item.subject || '未填科目')}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -3889,7 +4420,15 @@ export default function App() {
           return;
         }
         setCurrentUser(user);
-        setActivePage((page) => (page === 'accounts' && user.role !== 'owner' ? 'dashboard' : page));
+        setActivePage((page) => {
+          if (page === 'accounts' && user.role !== 'owner') {
+            return 'dashboard';
+          }
+          if (page === 'classes' && user.role !== 'owner' && user.role !== 'admin') {
+            return 'dashboard';
+          }
+          return page;
+        });
       })
       .catch(() => {
         if (cancelled) {
@@ -3981,6 +4520,7 @@ export default function App() {
     library: '课程列表',
     consultation: '咨询记录',
     calendar: '课程日历',
+    classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',
   };
@@ -4125,6 +4665,9 @@ export default function App() {
                       onNextWeek={handleNextCalendarWeek}
                     />
                   ))}
+                {activePage === 'classes' && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
+                  <ClassManagementPage currentUser={currentUser} />
+                )}
                 {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>

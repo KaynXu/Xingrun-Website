@@ -29,6 +29,55 @@ class AccountFlowTestCase(unittest.TestCase):
     def auth_headers(token: str) -> dict[str, str]:
         return {"X-Auth-Token": token}
 
+    def approve_user(
+        self,
+        owner_token: str,
+        username: str,
+        display_name: str,
+        password: str,
+    ) -> dict:
+        submit = self.client.post(
+            "/api/register-request",
+            json={
+                "username": username,
+                "display_name": display_name,
+                "password": password,
+                "organization_name": "星润Starain",
+            },
+        )
+        self.assertEqual(submit.status_code, 201)
+
+        pending_list = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(pending_list.status_code, 200)
+        pending_payload = pending_list.get_json()
+        self.assertIsNotNone(pending_payload)
+
+        request_id = None
+        for item in pending_payload["items"]:
+            if item["username"] == username:
+                request_id = item["id"]
+                break
+
+        self.assertIsNotNone(request_id)
+
+        approve = self.client.post(
+            f"/api/admin/registration-requests/{request_id}/approve",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(approve.status_code, 200)
+
+        login = self.client.post(
+            "/api/login",
+            json={"username": username, "password": password},
+        )
+        self.assertEqual(login.status_code, 200)
+        login_payload = login.get_json()
+        self.assertIsNotNone(login_payload)
+        return login_payload
+
     def test_owner_seed_and_approval_flow(self):
         owner_login = self.client.post(
             "/api/login",
@@ -101,6 +150,325 @@ class AccountFlowTestCase(unittest.TestCase):
 
         classes = self.client.get("/api/classes")
         self.assertEqual(classes.status_code, 401)
+
+    def test_admin_can_manage_classes_and_assign_member_assignments(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_payload = owner_login.get_json()
+        self.assertIsNotNone(owner_payload)
+        owner_token = owner_payload["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="admin_a",
+            display_name="Admin A",
+            password="adminpass123",
+        )
+        admin_token = admin_payload["token"]
+        admin_me = self.client.get("/api/me", headers=self.auth_headers(admin_token))
+        self.assertEqual(admin_me.status_code, 200)
+        admin_me_payload = admin_me.get_json()
+        self.assertIsNotNone(admin_me_payload)
+        admin_id = admin_me_payload["id"]
+
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="member_a",
+            display_name="Member A",
+            password="memberpass123",
+        )
+        member_token = member_payload["token"]
+        member_me = self.client.get("/api/me", headers=self.auth_headers(member_token))
+        self.assertEqual(member_me.status_code, 200)
+        member_me_payload = member_me.get_json()
+        self.assertIsNotNone(member_me_payload)
+        member_id = member_me_payload["id"]
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(admin_token),
+            json={
+                "name": "六年级数学冲刺班",
+                "subject": "数学",
+                "grade": "六年级",
+            },
+        )
+        self.assertEqual(create_class.status_code, 201)
+        create_class_payload = create_class.get_json()
+        self.assertIsNotNone(create_class_payload)
+        class_id = create_class_payload["id"]
+
+        assign_classes = self.client.put(
+            f"/api/admin/users/{member_id}/classes",
+            headers=self.auth_headers(admin_token),
+            json={"class_ids": [class_id]},
+        )
+        self.assertEqual(assign_classes.status_code, 200)
+
+        member_classes = self.client.get(
+            f"/api/admin/users/{member_id}/classes",
+            headers=self.auth_headers(admin_token),
+        )
+        self.assertEqual(member_classes.status_code, 200)
+        member_classes_payload = member_classes.get_json()
+        self.assertIsNotNone(member_classes_payload)
+        self.assertEqual(member_classes_payload["class_ids"], [class_id])
+
+        admin_pending_requests = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(admin_token),
+        )
+        self.assertEqual(admin_pending_requests.status_code, 403)
+
+        admin_role_update = self.client.put(
+            f"/api/admin/users/{member_id}/role",
+            headers=self.auth_headers(admin_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(admin_role_update.status_code, 403)
+
+    def test_admin_rejects_null_class_ids_payload(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="admin_null",
+            display_name="Admin Null",
+            password="adminnull123",
+        )
+        admin_token = admin_payload["token"]
+        admin_me = self.client.get("/api/me", headers=self.auth_headers(admin_token))
+        admin_id = admin_me.get_json()["id"]
+
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="member_null",
+            display_name="Member Null",
+            password="membernull123",
+        )
+        member_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_payload["token"]),
+        ).get_json()["id"]
+
+        assign_classes = self.client.put(
+            f"/api/admin/users/{member_id}/classes",
+            headers=self.auth_headers(admin_token),
+            json={"class_ids": None},
+        )
+        self.assertEqual(assign_classes.status_code, 400)
+        self.assertEqual(assign_classes.get_json()["error"], "class_ids must be a list")
+
+    def test_admin_assigning_nonexistent_class_returns_404(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="admin_missing_class",
+            display_name="Admin Missing Class",
+            password="adminmissing123",
+        )
+        admin_token = admin_payload["token"]
+        admin_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(admin_token),
+        ).get_json()["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="member_missing_class",
+            display_name="Member Missing Class",
+            password="membermissing123",
+        )
+        member_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_payload["token"]),
+        ).get_json()["id"]
+
+        assign_classes = self.client.put(
+            f"/api/admin/users/{member_id}/classes",
+            headers=self.auth_headers(admin_token),
+            json={"class_ids": [999999]},
+        )
+        self.assertEqual(assign_classes.status_code, 404)
+        self.assertEqual(assign_classes.get_json()["error"], "class not found: 999999")
+
+    def test_admin_assigning_nonexistent_user_returns_404(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="admin_missing_user",
+            display_name="Admin Missing User",
+            password="adminmissinguser123",
+        )
+        admin_token = admin_payload["token"]
+        admin_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(admin_token),
+        ).get_json()["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        assign_classes = self.client.put(
+            "/api/admin/users/999999/classes",
+            headers=self.auth_headers(admin_token),
+            json={"class_ids": []},
+        )
+        self.assertEqual(assign_classes.status_code, 404)
+        self.assertEqual(assign_classes.get_json()["error"], "user not found")
+
+    def test_delete_class_clears_assignments_and_unlinks_lessons(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="admin_delete_class",
+            display_name="Admin Delete Class",
+            password="admindelete123",
+        )
+        admin_token = admin_payload["token"]
+        admin_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(admin_token),
+        ).get_json()["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="member_delete_class",
+            display_name="Member Delete Class",
+            password="memberdelete123",
+        )
+        member_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_payload["token"]),
+        ).get_json()["id"]
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(admin_token),
+            json={
+                "name": "六年级英语冲刺班",
+                "subject": "英语",
+                "grade": "六年级",
+            },
+        )
+        self.assertEqual(create_class.status_code, 201)
+        class_id = create_class.get_json()["id"]
+
+        assign_classes = self.client.put(
+            f"/api/admin/users/{member_id}/classes",
+            headers=self.auth_headers(admin_token),
+            json={"class_ids": [class_id]},
+        )
+        self.assertEqual(assign_classes.status_code, 200)
+
+        lesson_id = lesson_manager.save_lesson(
+            date_str="2026-03-29",
+            subject="英语",
+            grade="六年级",
+            topic="阅读理解",
+            summary="课堂总结",
+            weak_points="",
+            plan={"questions": []},
+            pdf_path="",
+            class_id=class_id,
+        )
+
+        lesson_manager.delete_class(class_id)
+
+        self.assertEqual(lesson_manager.get_user_class_ids(member_id), [])
+        lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertIsNotNone(lesson)
+        self.assertIsNone(lesson["class_id"])
+
+    def test_member_cannot_write_class_management_apis(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_payload = owner_login.get_json()
+        self.assertIsNotNone(owner_payload)
+        owner_token = owner_payload["token"]
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="member_b",
+            display_name="Member B",
+            password="memberpass456",
+        )
+        member_token = member_payload["token"]
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(member_token),
+            json={
+                "name": "六年级数学基础班",
+                "subject": "数学",
+                "grade": "六年级",
+            },
+        )
+        self.assertEqual(create_class.status_code, 403)
+
+        admin_users = self.client.get(
+            "/api/admin/users",
+            headers=self.auth_headers(member_token),
+        )
+        self.assertEqual(admin_users.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -743,6 +743,15 @@ def _require_auth():
     return user, None
 
 
+def _require_staff():
+    user, error = _require_auth()
+    if error:
+        return None, error
+    if user.get("role") not in {"owner", "admin"}:
+        return None, (jsonify({"error": "无权限"}), 403)
+    return user, None
+
+
 def _require_owner():
     user, error = _require_auth()
     if error:
@@ -815,7 +824,7 @@ def api_admin_registration_request_reject(request_id):
 
 @app.route("/api/admin/users", methods=["GET"])
 def api_admin_users():
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     users = list_all_users()
@@ -837,7 +846,7 @@ def api_admin_user_role_set(user_id):
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["GET"])
 def api_admin_user_classes_get(user_id):
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     return jsonify({"class_ids": get_user_class_ids(user_id)})
@@ -845,11 +854,19 @@ def api_admin_user_classes_get(user_id):
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["PUT"])
 def api_admin_user_classes_set(user_id):
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     data = request.json or {}
-    set_user_class_ids(user_id, data.get("class_ids", []))
+    class_ids = data.get("class_ids", [])
+    if not isinstance(class_ids, list):
+        return jsonify({"error": "class_ids must be a list"}), 400
+    try:
+        set_user_class_ids(user_id, class_ids)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
 
 
@@ -939,7 +956,7 @@ def api_classes_list():
 
 @app.route("/api/classes", methods=["POST"])
 def api_class_create():
-    _, error = _require_auth()
+    _, error = _require_staff()
     if error:
         return error
     data = request.json or {}
@@ -970,7 +987,7 @@ def api_class_get(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
 def api_class_update(class_id):
-    _, error = _require_auth()
+    _, error = _require_staff()
     if error:
         return error
     cls = get_class(class_id)
@@ -993,7 +1010,7 @@ def api_class_update(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["DELETE"])
 def api_class_delete(class_id):
-    _, error = _require_auth()
+    _, error = _require_staff()
     if error:
         return error
     cls = get_class(class_id)
