@@ -78,6 +78,7 @@ interface ClassItem {
   grade: string;
   teacher_name?: string;
   teacher_email?: string;
+  teacher_user_id?: number | null;
   lesson_count?: number;
 }
 
@@ -142,6 +143,11 @@ interface ClassFormValues {
   grade: string;
   teacher_name: string;
 }
+
+type LoadPageResult =
+  | { status: 'success' }
+  | { status: 'stale' }
+  | { status: 'refresh-error'; error: Error };
 
 const GRADE_NORMALIZATION_RULES: Array<[string, string]> = [
   ['一年级', '一年级'],
@@ -238,6 +244,39 @@ export function resolveAssignmentRollbackClassIds(
   failedNextClassIds: number[],
 ): number[] {
   return areClassIdListsEqual(currentClassIds, failedNextClassIds) ? previousClassIds : currentClassIds;
+}
+
+export function resolveTeacherBindingRollbackClassItem(
+  currentItem: ClassItem,
+  failedNextTeacherUserId: number,
+  previousTeacherUserId: number | null,
+  previousTeacherName: string,
+): ClassItem {
+  if (currentItem.teacher_user_id !== failedNextTeacherUserId) {
+    return currentItem;
+  }
+
+  return {
+    ...currentItem,
+    teacher_name: previousTeacherName,
+    teacher_user_id: previousTeacherUserId,
+  };
+}
+
+export function resolveTeacherBindingRollbackTeacherBindings(
+  currentTeacherBindingByClassId: Record<number, number | null>,
+  classId: number,
+  previousTeacherUserId: number | null,
+  failedNextTeacherUserId: number,
+): Record<number, number | null> {
+  if (currentTeacherBindingByClassId[classId] !== failedNextTeacherUserId) {
+    return currentTeacherBindingByClassId;
+  }
+
+  return {
+    ...currentTeacherBindingByClassId,
+    [classId]: previousTeacherUserId,
+  };
 }
 
 function getRoleBadgeClass(role: Role): string {
@@ -3054,11 +3093,13 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
 const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [userClassIdsByUserId, setUserClassIdsByUserId] = useState<Record<number, number[]>>({});
+  const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
   const [expandedClassId, setExpandedClassId] = useState<number | 'new' | null>(null);
   const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
     new: createEmptyClassForm(),
   }));
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
+  const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
   const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState('');
@@ -3066,37 +3107,40 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [assignmentError, setAssignmentError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [assignmentSavingByUserId, setAssignmentSavingByUserId] = useState<Record<number, boolean>>({});
+  const [teacherBindingSavingByClassId, setTeacherBindingSavingByClassId] = useState<Record<number, boolean>>({});
   const loadPageRequestVersionRef = useRef(0);
   const classInteractionLocked = saving || deleting;
-  const hasAssignmentSavingRows = Object.values(assignmentSavingByUserId).some(Boolean);
-  const assignmentRefreshLocked = classInteractionLocked || hasAssignmentSavingRows;
+  const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
+  const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
+  const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
+  const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
+  const gradeFilterOptions = ['全部', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
-  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null) => {
+  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null, options?: { preserveStateOnError?: boolean }): Promise<LoadPageResult> => {
+    const preserveStateOnError = options?.preserveStateOnError ?? false;
     const requestVersion = ++loadPageRequestVersionRef.current;
     setLoading(true);
     setPageError('');
     try {
-      const [classItems, userItems] = await Promise.all([
+      const [classItems, userItems, teacherBindingData] = await Promise.all([
         apiFetch<ClassItem[]>('/api/classes'),
         apiFetch<UserItem[]>('/api/admin/users'),
+        apiFetch<{ teacher_bindings: Record<number, number | null> }>('/api/classes/teacher-bindings'),
       ]);
-      const assignmentEntries = await Promise.all(
-        userItems.map(async ({ id: userId }) => {
-          const data = await apiFetch<{ class_ids: number[] }>(`/api/admin/users/${userId}/classes`);
-          return [userId, data.class_ids] as const;
-        }),
-      );
 
       if (requestVersion !== loadPageRequestVersionRef.current) {
-        return;
+        return { status: 'stale' };
       }
+
+      const normalizedTeacherBindings = Object.fromEntries(
+        Object.entries(teacherBindingData.teacher_bindings).map(([classId, teacherUserId]) => [Number(classId), teacherUserId]),
+      ) as Record<number, number | null>;
 
       setClasses(classItems);
       setUsers(userItems);
-      setUserClassIdsByUserId(Object.fromEntries(assignmentEntries));
+      setTeacherBindingByClassId(normalizedTeacherBindings);
       setFormByClassId((current) => {
         const nextForms: Record<string, ClassFormValues> = {
           new: current.new || createEmptyClassForm(),
@@ -3116,17 +3160,23 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         }
         return null;
       });
+      return { status: 'success' };
     } catch (err) {
       if (requestVersion !== loadPageRequestVersionRef.current) {
-        return;
+        return { status: 'stale' };
       }
 
-      setPageError(err instanceof Error ? err.message : '班级管理数据加载失败');
-      setClasses([]);
-      setUsers([]);
-      setUserClassIdsByUserId({});
-      setFormByClassId({ new: createEmptyClassForm() });
-      setExpandedClassId(null);
+      const error = err instanceof Error ? err : new Error('班级管理数据加载失败');
+      setPageError(error.message);
+      if (!preserveStateOnError) {
+        setClasses([]);
+        setUsers([]);
+        setTeacherBindingByClassId({});
+        setFormByClassId({ new: createEmptyClassForm() });
+        setNewClassTeacherUserId(null);
+        setExpandedClassId(null);
+      }
+      return { status: 'refresh-error', error };
     } finally {
       if (requestVersion === loadPageRequestVersionRef.current) {
         setLoading(false);
@@ -3157,7 +3207,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleToggleExpandedClass = (classId: number | 'new') => {
-    if (classInteractionLocked) {
+    if (classCardInteractionLocked) {
       return;
     }
     setExpandedClassId((current) => current === classId ? null : classId);
@@ -3167,11 +3217,19 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const handleSaveClass = async (classId: number | 'new') => {
     const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
+    const selectedTeacherUserId = classId === 'new'
+      ? newClassTeacherUserId
+      : (teacherBindingByClassId[classId] ?? classes.find((item) => item.id === classId)?.teacher_user_id ?? null);
+    if (classId === 'new' && !selectedTeacherUserId) {
+      setFormError('请先选择负责老师账号');
+      return;
+    }
+    const selectedTeacher = typeof selectedTeacherUserId === 'number' ? users.find((user) => user.id === selectedTeacherUserId) : undefined;
     const payload = {
       name: normalizeClassNameInput(currentForm.name),
       subject: currentForm.subject.trim(),
       grade: currentForm.grade.trim(),
-      teacher_name: currentForm.teacher_name.trim(),
+      teacher_name: selectedTeacher?.name || '',
       teacher_email: '',
     };
 
@@ -3183,26 +3241,66 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setSaving(true);
     setFormError('');
 
+    let createdClassId: number | null = null;
+    let teacherBindingSucceeded = false;
+
     try {
       if (classId === 'new') {
         const created = await apiFetch<{ id: number; name: string }>('/api/classes', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
+        createdClassId = created.id;
         setFormByClassId((current) => ({
           ...current,
           new: createEmptyClassForm(),
         }));
+        setNewClassTeacherUserId(null);
+        loadPageRequestVersionRef.current += 1;
+        await apiFetch(`/api/classes/${created.id}/teacher`, {
+          method: 'PUT',
+          body: JSON.stringify({ teacher_user_id: selectedTeacherUserId }),
+        });
+        teacherBindingSucceeded = true;
+        const optimisticCreatedClass: ClassItem = {
+          id: created.id,
+          name: payload.name,
+          subject: payload.subject,
+          grade: payload.grade,
+          teacher_name: selectedTeacher?.name || '',
+          teacher_email: '',
+          teacher_user_id: selectedTeacherUserId,
+        };
+        setClasses((current) => {
+          const remaining = current.filter((item) => item.id !== created.id);
+          return [...remaining, optimisticCreatedClass];
+        });
+        setTeacherBindingByClassId((current) => ({ ...current, [created.id]: selectedTeacherUserId }));
+        setFormByClassId((current) => ({
+          ...current,
+          [getClassStateKey(created.id)]: toClassFormValues(optimisticCreatedClass),
+        }));
         setExpandedClassId(created.id);
-        await loadPage(created.id);
+        const refreshResult = await loadPage(created.id, { preserveStateOnError: true });
+        if (refreshResult.status === 'refresh-error') {
+          setFormError(`班级和负责老师已保存，但列表刷新失败：${refreshResult.error.message}`);
+        }
       } else {
         await apiFetch(`/api/classes/${classId}`, {
           method: 'PUT',
           body: JSON.stringify(payload),
         });
-        await loadPage(classId);
+        const refreshResult = await loadPage(classId, { preserveStateOnError: true });
+        if (refreshResult.status === 'refresh-error') {
+          setFormError(`班级已保存，但列表刷新失败：${refreshResult.error.message}`);
+        }
       }
     } catch (err) {
+      if (classId === 'new' && createdClassId != null && !teacherBindingSucceeded) {
+        setFormError(err instanceof Error ? `班级已创建，但负责老师绑定失败：${err.message}` : '班级已创建，但负责老师绑定失败，请在班级卡片中重新选择老师');
+        await loadPage(createdClassId, { preserveStateOnError: true });
+        return;
+      }
       setFormError(err instanceof Error ? err.message : '班级保存失败');
     } finally {
       setSaving(false);
@@ -3233,39 +3331,58 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
-  const handleToggleAssignment = async (userId: number, classId: number, checked: boolean) => {
-    if (classInteractionLocked || assignmentSavingByUserId[userId]) {
+  const handleSelectTeacherForClass = async (classId: number, teacherUserId: number) => {
+    if (classInteractionLocked || teacherBindingSavingByClassId[classId]) {
       return;
     }
 
-    const previousClassIds = userClassIdsByUserId[userId] || [];
-    const nextClassIds = checked
-      ? [...previousClassIds, classId].filter((value, index, list) => list.indexOf(value) === index).sort((a, b) => a - b)
-      : previousClassIds.filter((value) => value !== classId);
+    const previousClass = classes.find((item) => item.id === classId);
+    const previousTeacherUserId = teacherBindingByClassId[classId] ?? previousClass?.teacher_user_id ?? null;
+    const previousTeacherName = previousClass?.teacher_name || '';
+    const selectedTeacher = users.find((user) => user.id === teacherUserId);
 
     setAssignmentError('');
-    setAssignmentSavingByUserId((current) => ({ ...current, [userId]: true }));
-    setUserClassIdsByUserId((current) => ({ ...current, [userId]: nextClassIds }));
+    loadPageRequestVersionRef.current += 1;
+    setTeacherBindingSavingByClassId((current) => ({ ...current, [classId]: true }));
+    setTeacherBindingByClassId((current) => ({ ...current, [classId]: teacherUserId }));
+    setClasses((current) => current.map((item) => (
+      item.id === classId
+        ? { ...item, teacher_name: selectedTeacher?.name || item.teacher_name, teacher_user_id: teacherUserId }
+        : item
+    )));
 
     try {
-      await apiFetch(`/api/admin/users/${userId}/classes`, {
+      await apiFetch(`/api/classes/${classId}/teacher`, {
         method: 'PUT',
-        body: JSON.stringify({ class_ids: nextClassIds }),
+        body: JSON.stringify({ teacher_user_id: teacherUserId }),
       });
+      const refreshResult = await loadPage(classId, { preserveStateOnError: true });
+      if (refreshResult.status === 'refresh-error') {
+        setAssignmentError(`老师绑定已保存，但列表刷新失败：${refreshResult.error.message}`);
+      }
     } catch (err) {
-      setUserClassIdsByUserId((current) => ({
-        ...current,
-        [userId]: resolveAssignmentRollbackClassIds(current[userId] || [], previousClassIds, nextClassIds),
-      }));
+      setTeacherBindingByClassId((current) => resolveTeacherBindingRollbackTeacherBindings(current, classId, previousTeacherUserId, teacherUserId));
+      setClasses((current) => current.map((item) => (
+        item.id === classId
+          ? resolveTeacherBindingRollbackClassItem(item, teacherUserId, previousTeacherUserId, previousTeacherName)
+          : item
+      )));
       setAssignmentError(err instanceof Error ? err.message : '班级老师分配保存失败');
     } finally {
-      setAssignmentSavingByUserId((current) => {
+      setTeacherBindingSavingByClassId((current) => {
         const nextState = { ...current };
-        delete nextState[userId];
+        delete nextState[classId];
         return nextState;
       });
     }
   };
+
+  const filteredClasses = classes.filter((item) => {
+    if (selectedGradeFilter === '全部') {
+      return true;
+    }
+    return item.grade === selectedGradeFilter;
+  });
 
   const expandedSummary = (() => {
     if (expandedClassId === 'new') {
@@ -3279,6 +3396,15 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const newClassForm = formByClassId.new || createEmptyClassForm();
   const newClassExpanded = expandedClassId === 'new';
+  const newClassTeacher = newClassTeacherUserId == null ? undefined : users.find((user) => user.id === newClassTeacherUserId);
+  const newClassFilteredUsers = users.filter((user) => {
+    const keyword = (teacherSearchByClassId.new || '').trim().toLowerCase();
+    if (!keyword) {
+      return true;
+    }
+    return [user.name, user.org, getRoleLabel(user.role)]
+      .some((value) => value.toLowerCase().includes(keyword));
+  });
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
@@ -3323,7 +3449,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <button
               type="button"
               onClick={() => loadPage(expandedClassId).catch(() => undefined)}
-              disabled={classInteractionLocked}
+              disabled={pageRefreshLocked}
               className={workspaceSecondaryButtonClass}
             >
               刷新列表
@@ -3331,13 +3457,34 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <button
               type="button"
               onClick={() => handleToggleExpandedClass('new')}
-              disabled={classInteractionLocked}
+              disabled={classCardInteractionLocked}
               className={workspacePrimaryButtonClass}
             >
               <PlusCircle size={18} />
               新建班级
             </button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-t border-sky-100/80 pt-4 dark:border-white/10">
+          {gradeFilterOptions.map((option) => {
+            const active = option === selectedGradeFilter;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSelectedGradeFilter(option)}
+                className={cn(
+                  'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                  active
+                    ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                    : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                )}
+              >
+                {option}
+              </button>
+            );
+          })}
         </div>
 
         {loading ? (
@@ -3361,14 +3508,14 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         {newClassForm.subject.trim()}
                       </span>
                     ) : null}
-                    <span>{newClassForm.teacher_name.trim() || '待填写负责老师'}</span>
-                    <span>保存后再分配老师</span>
+                    <span>当前老师：{newClassTeacher?.name || '待选择负责老师'}</span>
+                    <span>创建时会直接绑定该老师账号</span>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleToggleExpandedClass('new')}
-                  disabled={classInteractionLocked}
+                  disabled={classCardInteractionLocked}
                   className={workspaceSecondaryButtonClass}
                 >
                   {newClassExpanded ? '收起管理' : '展开管理'}
@@ -3415,16 +3562,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         placeholder="如：六年级"
                       />
                     </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">负责老师</span>
-                      <input
-                        type="text"
-                        value={newClassForm.teacher_name}
-                        onChange={(e) => handleFieldChange('new', 'teacher_name', e.target.value)}
-                        className={workspaceFieldClass}
-                        placeholder="如：张老师"
-                      />
-                    </label>
                   </div>
 
                   <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
@@ -3432,11 +3569,74 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
                   </div>
 
+                  <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                    <div>
+                      <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新建班级时必须选择一个负责老师账号，系统会同步老师姓名。</p>
+                    </div>
+
+                    <label className="relative block">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                      <input
+                        type="text"
+                        value={teacherSearchByClassId.new || ''}
+                        onChange={(e) => handleTeacherSearchChange('new', e.target.value)}
+                        placeholder="搜索老师"
+                        className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                      />
+                    </label>
+
+                    {users.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                        当前暂无成员，成员通过审批后会出现在这里。
+                      </div>
+                    ) : newClassFilteredUsers.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                        没有匹配到老师，请调整搜索关键词。
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {newClassFilteredUsers.map((user) => {
+                          const checked = newClassTeacherUserId === user.id;
+                          return (
+                            <label
+                              key={`new-${user.id}`}
+                              className={cn(
+                                'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
+                                classInteractionLocked && 'opacity-70',
+                                checked && 'border-sky-300 bg-sky-50/80 dark:border-sky-400/40 dark:bg-sky-500/10',
+                              )}
+                            >
+                              <input
+                                type="radio"
+                                name="class-teacher-new"
+                                checked={checked}
+                                disabled={classInteractionLocked}
+                                onChange={() => setNewClassTeacherUserId(user.id)}
+                                className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                              />
+                              <span className="min-w-0">
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
+                                    {getRoleLabel(user.role)}
+                                  </span>
+                                </span>
+                                <span className="mt-1 block text-slate-500 dark:text-slate-400">所属机构：{user.org}</span>
+                                <span className="mt-1 block text-slate-500 dark:text-slate-400">{checked ? '将作为创建后的负责老师' : '选择为负责老师'}</span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
                     <button
                       type="button"
                       onClick={() => handleSaveClass('new')}
-                      disabled={saving || deleting}
+                      disabled={classCardInteractionLocked}
                       className={workspacePrimaryButtonClass}
                     >
                       {saving ? '保存中...' : '创建班级'}
@@ -3446,27 +3646,20 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               )}
             </div>
 
-            {classes.length === 0 ? (
+            {filteredClasses.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                暂无班级，展开上方新建卡片开始创建。
+                {classes.length === 0 ? '暂无班级，展开上方新建卡片开始创建。' : `当前筛选“${selectedGradeFilter}”下暂无班级。`}
               </div>
             ) : null}
 
-            {classes.map((item) => {
+            {filteredClasses.map((item) => {
               const isExpanded = expandedClassId === item.id;
               const formState = formByClassId[getClassStateKey(item.id)] || toClassFormValues(item);
               const teacherSearch = teacherSearchByClassId[getClassStateKey(item.id)] || '';
-              const selectedTeacherIds = users
-                .filter((user) => (userClassIdsByUserId[user.id] || []).includes(item.id))
-                .map((user) => user.id);
-              const selectedTeacherNames = users
-                .filter((user) => (userClassIdsByUserId[user.id] || []).includes(item.id))
-                .map((user) => user.name);
-              const teacherSummary = selectedTeacherNames.length > 0
-                ? selectedTeacherNames.length > 2
-                  ? `${selectedTeacherNames.slice(0, 2).join('、')} 等 ${selectedTeacherNames.length} 位老师`
-                  : selectedTeacherNames.join('、')
-                : item.teacher_name || '未分配老师';
+              const currentTeacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
+              const currentTeacher = currentTeacherUserId == null ? undefined : users.find((user) => user.id === currentTeacherUserId);
+              const teacherSummary = currentTeacher?.name || item.teacher_name || '未分配老师';
+              const teacherBindingSaving = Boolean(teacherBindingSavingByClassId[item.id]);
               const filteredUsers = users.filter((user) => {
                 const keyword = teacherSearch.trim().toLowerCase();
                 if (!keyword) {
@@ -3490,14 +3683,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                         <span>{item.grade || '未填写年级'}</span>
-                        <span>{teacherSummary}</span>
-                        <span>{selectedTeacherIds.length} 位老师</span>
+                        <span>当前老师：{teacherSummary}</span>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleToggleExpandedClass(item.id)}
-                      disabled={classInteractionLocked}
+                      disabled={classCardInteractionLocked}
                       className={workspaceSecondaryButtonClass}
                     >
                       {isExpanded ? '收起管理' : '展开管理'}
@@ -3546,13 +3738,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </label>
                         <label className="space-y-2 text-sm">
                           <span className="text-slate-500 dark:text-slate-400">负责老师</span>
-                          <input
-                            type="text"
-                            value={formState.teacher_name}
-                            onChange={(e) => handleFieldChange(item.id, 'teacher_name', e.target.value)}
-                            className={workspaceFieldClass}
-                            placeholder="如：张老师"
-                          />
+                          <div className={`${workspaceFieldClass} flex min-h-12 items-center`}>{teacherSummary}</div>
                         </label>
                       </div>
 
@@ -3565,7 +3751,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <button
                           type="button"
                           onClick={() => handleDeleteClass(item.id)}
-                          disabled={deleting || saving}
+                          disabled={classCardInteractionLocked}
                           className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
                         >
                           <Trash2 size={18} />
@@ -3574,7 +3760,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <button
                           type="button"
                           onClick={() => handleSaveClass(item.id)}
-                          disabled={saving || deleting}
+                          disabled={classCardInteractionLocked}
                           className={workspacePrimaryButtonClass}
                         >
                           {saving ? '保存中...' : '保存班级'}
@@ -3585,7 +3771,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级老师分配</h4>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">已分配 {selectedTeacherIds.length} 位老师</p>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前老师：{teacherSummary}</p>
                           </div>
                           <button
                             type="button"
@@ -3626,21 +3812,22 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         ) : (
                           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             {filteredUsers.map((user) => {
-                              const checked = (userClassIdsByUserId[user.id] || []).includes(item.id);
-                              const rowSaving = Boolean(assignmentSavingByUserId[user.id]);
+                              const checked = currentTeacherUserId === user.id;
                               return (
                                 <label
                                   key={`${item.id}-${user.id}`}
                                   className={cn(
                                     'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
-                                    (rowSaving || classInteractionLocked) && 'opacity-70',
+                                    (teacherBindingSaving || classInteractionLocked) && 'opacity-70',
+                                    checked && 'border-sky-300 bg-sky-50/80 dark:border-sky-400/40 dark:bg-sky-500/10',
                                   )}
                                 >
                                   <input
-                                    type="checkbox"
+                                    type="radio"
+                                    name={`class-teacher-${item.id}`}
                                     checked={checked}
-                                    disabled={rowSaving || classInteractionLocked}
-                                    onChange={(e) => handleToggleAssignment(user.id, item.id, e.target.checked)}
+                                    disabled={teacherBindingSaving || classInteractionLocked}
+                                    onChange={() => handleSelectTeacherForClass(item.id, user.id)}
                                     className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                                   />
                                   <span className="min-w-0">
@@ -3651,7 +3838,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                                       </span>
                                     </span>
                                     <span className="mt-1 block text-slate-500 dark:text-slate-400">所属机构：{user.org}</span>
-                                    <span className="mt-1 block text-slate-500 dark:text-slate-400">{rowSaving ? '保存中...' : checked ? '已加入当前班级' : '未加入当前班级'}</span>
+                                    <span className="mt-1 block text-slate-500 dark:text-slate-400">{teacherBindingSaving ? '保存中...' : checked ? '当前负责老师' : '设为当前负责老师'}</span>
                                   </span>
                                 </label>
                               );
