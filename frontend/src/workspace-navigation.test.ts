@@ -50,6 +50,18 @@ test('review generation source collapses the inline composer after successful ge
   assert.doesNotMatch(reviewGenerationBlock[0], /setActivePage\('library'\)/);
 });
 
+test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
+  const lessonInputBlock = appSource.match(/const LessonInput = \(\{ onSuccess \}: \{ onSuccess: \(\) => void \}\) => \{[\s\S]*?\n};/);
+  const subjectComboboxBlock = appSource.match(/const SubjectCombobox = \([\s\S]*?\n};/);
+
+  assert.ok(lessonInputBlock);
+  assert.ok(subjectComboboxBlock);
+  assert.match(lessonInputBlock[0], /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
+  assert.match(lessonInputBlock[0], /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
+  assert.doesNotMatch(lessonInputBlock[0], /sm:w-40/);
+  assert.doesNotMatch(subjectComboboxBlock[0], /sm:w-32/);
+});
+
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
   const classManagementBlock = appSource.match(/const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
 
