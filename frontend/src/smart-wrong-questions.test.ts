@@ -5,8 +5,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
+  buildWrongQuestionReviewDraft,
+  buildWrongQuestionReviewPath,
   buildWrongQuestionSummaryExportPath,
+  downloadWrongQuestionSummary,
+  hydrateWrongQuestionReviewDraftFromDetail,
   normalizeWrongQuestionListResponse,
   summarizeWrongQuestionRecords,
   type WrongQuestionRecord,
@@ -99,6 +104,115 @@ test('buildWrongQuestionSummaryExportPath reuses the normalized filter query', (
   );
 });
 
+test('record detail and review paths encode record ids consistently', () => {
+  assert.equal(
+    buildWrongQuestionDetailPath('record/with space?#x'),
+    '/api/wrong-questions/record%2Fwith%20space%3F%23x',
+  );
+
+  assert.equal(
+    buildWrongQuestionReviewPath('record/with space?#x'),
+    '/api/wrong-questions/record%2Fwith%20space%3F%23x/review',
+  );
+});
+
+test('downloadWrongQuestionSummary fetches the export with auth header and triggers a blob download', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+  const originalLocalStorage = globalThis.localStorage;
+  const originalUrl = globalThis.URL;
+
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  const clickedHrefs: string[] = [];
+  const appendCalls: unknown[] = [];
+  const removeCalls: unknown[] = [];
+  const revokeCalls: string[] = [];
+  const anchor = {
+    href: '',
+    download: '',
+    rel: '',
+    style: { display: '' },
+    click() {
+      clickedHrefs.push(this.href);
+    },
+  };
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get(name: string) {
+            return name.toLowerCase() === 'content-disposition'
+              ? 'attachment; filename="smart-summary.pdf"'
+              : null;
+          },
+        },
+        blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+      } as Response;
+    }) as typeof fetch;
+
+    globalThis.localStorage = {
+      getItem(key: string) {
+        return key === 'xr_token' ? 'token-123' : null;
+      },
+      setItem() {},
+      removeItem() {},
+      clear() {},
+      key() {
+        return null;
+      },
+      length: 0,
+    } as Storage;
+
+    globalThis.document = {
+      body: {
+        appendChild(node: unknown) {
+          appendCalls.push(node);
+        },
+        removeChild(node: unknown) {
+          removeCalls.push(node);
+        },
+      },
+      createElement(tagName: string) {
+        assert.equal(tagName, 'a');
+        return anchor as unknown as HTMLAnchorElement;
+      },
+    } as Document;
+
+    globalThis.URL = {
+      ...originalUrl,
+      createObjectURL(blob: Blob) {
+        assert.equal(blob.type, 'application/pdf');
+        return 'blob:smart-summary';
+      },
+      revokeObjectURL(url: string) {
+        revokeCalls.push(url);
+      },
+    } as typeof URL;
+
+    await downloadWrongQuestionSummary({ studentName: ' Alice ', onlyPendingReview: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.document = originalDocument;
+    globalThis.localStorage = originalLocalStorage;
+    globalThis.URL = originalUrl;
+  }
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0]?.input, '/api/wrong-questions/summary/export?studentName=Alice&onlyPendingReview=true');
+  assert.equal((fetchCalls[0]?.init?.headers as Record<string, string>)['X-Auth-Token'], 'token-123');
+  assert.equal(anchor.download, 'smart-summary.pdf');
+  assert.equal(anchor.rel, 'noopener');
+  assert.deepEqual(clickedHrefs, ['blob:smart-summary']);
+  assert.equal(appendCalls.length, 1);
+  assert.equal(removeCalls.length, 1);
+  assert.deepEqual(revokeCalls, ['blob:smart-summary']);
+});
+
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
   const normalized = normalizeWrongQuestionListResponse({
     items: [
@@ -175,6 +289,50 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
   });
 });
 
+test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and preserves locally edited drafts', () => {
+  const listRecord: WrongQuestionRecord = {
+    id: 'record-1',
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    subject: '数学',
+    teacherName: '雷文浩',
+    createdAt: '2026-03-29T08:00:00Z',
+    analysis: {
+      questionCategory: '计算',
+      errorType: '计算错误',
+      knowledgePoints: ['分数运算'],
+    },
+  };
+  const detailRecord: WrongQuestionRecord = {
+    ...listRecord,
+    analysis: {
+      ...listRecord.analysis,
+      selectedErrorType: '审题错误',
+      selectedKnowledgePoints: ['分数运算', '单位换算'],
+      selectedActions: ['重做同类题'],
+      selectedReasons: ['单位遗漏'],
+      studentNote: '需要复盘单位检查',
+    },
+  };
+
+  const pristineDraft = buildWrongQuestionReviewDraft(listRecord);
+  const hydratedDraft = hydrateWrongQuestionReviewDraftFromDetail(detailRecord, pristineDraft, false);
+  const editedDraft = hydrateWrongQuestionReviewDraftFromDetail(
+    detailRecord,
+    {
+      ...pristineDraft,
+      studentNote: '老师已手动修改',
+    },
+    true,
+  );
+
+  assert.deepEqual(hydratedDraft, buildWrongQuestionReviewDraft(detailRecord));
+  assert.deepEqual(editedDraft, {
+    ...pristineDraft,
+    studentNote: '老师已手动修改',
+  });
+});
+
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
@@ -191,8 +349,10 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /const \[detailLoading, setDetailLoading\] = useState\(false\);/);
   assert.match(pageSource, /const \[detailError, setDetailError\] = useState\(''\);/);
   assert.match(pageSource, /const \[reviewDraftByRecordId, setReviewDraftByRecordId\] = useState<Record<string, [^>]+>>\(\{\}\);/);
-  assert.match(pageSource, /apiFetch<[^>]+>\(`\/api\/wrong-questions\/\$\{[^}]+\}`\)/);
+  assert.match(pageSource, /const \[reviewDraftDirtyByRecordId, setReviewDraftDirtyByRecordId\] = useState<Record<string, boolean>>\(\{\}\);/);
+  assert.match(pageSource, /apiFetch<[^>]+>\(buildWrongQuestionDetailPath\([^)]+\)\)/);
   assert.match(pageSource, /setReviewDraftByRecordId\(\(current\) => \{/);
+  assert.match(pageSource, /hydrateWrongQuestionReviewDraftFromDetail\(/);
   assert.match(pageSource, /selectedErrorType/);
   assert.match(pageSource, /selectedKnowledgePoints/);
   assert.match(pageSource, /selectedActions/);
@@ -207,8 +367,9 @@ test('SmartWrongQuestionsPage saves review drafts and surfaces save failures wit
   assert.ok(saveBlock);
   assert.match(pageSource, /const \[saveError, setSaveError\] = useState\(''\);/);
   assert.match(pageSource, /const \[savingReview, setSavingReview\] = useState\(false\);/);
-  assert.match(saveBlock[0], /apiFetch(?:<[^>]+>)?\(`\/api\/wrong-questions\/\$\{[^}]+\}\/review`, \{\s*method: 'PUT'/);
+  assert.match(saveBlock[0], /apiFetch(?:<[^>]+>)?\(buildWrongQuestionReviewPath\([^)]+\), \{\s*method: 'PUT'/);
   assert.match(saveBlock[0], /catch \(saveReviewError\) \{\s*setSaveError\(/);
+  assert.match(saveBlock[0], /updateDraftDirtyState\([^)]+false\)/);
   assert.match(pageSource, /保存教师复盘/);
 });
 
@@ -216,7 +377,6 @@ test('SmartWrongQuestionsPage reuses the current filter query for PDF export', (
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
   assert.match(pageSource, /const handleExportSummary = \(\) => \{/);
-  assert.match(pageSource, /buildWrongQuestionSummaryExportPath\(filters\)/);
-  assert.match(pageSource, /window\.open\(/);
+  assert.match(pageSource, /downloadWrongQuestionSummary\(filters\)/);
   assert.match(pageSource, /导出 PDF 汇总/);
 });

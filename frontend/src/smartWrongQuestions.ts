@@ -195,6 +195,18 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
   };
 }
 
+export function hydrateWrongQuestionReviewDraftFromDetail(
+  detailRecord: WrongQuestionRecord,
+  currentDraft?: WrongQuestionReviewDraft,
+  hasLocalEdits = false,
+): WrongQuestionReviewDraft {
+  if (currentDraft && hasLocalEdits) {
+    return currentDraft;
+  }
+
+  return buildWrongQuestionReviewDraft(detailRecord);
+}
+
 export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft: WrongQuestionReviewDraft): WrongQuestionRecord {
   const payload = buildWrongQuestionReviewPayload(draft);
   const nextAnalysis: WrongQuestionAnalysis = {
@@ -324,6 +336,92 @@ export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
 
+export function buildWrongQuestionDetailPath(recordId: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}`;
+}
+
+export function buildWrongQuestionReviewPath(recordId: string): string {
+  return `${buildWrongQuestionDetailPath(recordId)}/review`;
+}
+
 export function buildWrongQuestionSummaryExportPath(filters: WrongQuestionFilters): string {
   return `/api/wrong-questions/summary/export${buildWrongQuestionQuery(filters)}`;
+}
+
+function getWrongQuestionAuthToken(): string {
+  if (typeof localStorage === 'undefined') {
+    return '';
+  }
+
+  return localStorage.getItem('xr_token') || '';
+}
+
+function getDownloadFileName(contentDisposition: string | null, fallbackFileName: string): string {
+  if (!contentDisposition) {
+    return fallbackFileName;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const basicMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return basicMatch?.[1] || fallbackFileName;
+}
+
+async function getResponseErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
+  const errorPayload = await response.json().catch(() => ({ error: response.statusText }));
+  if (typeof errorPayload === 'object' && errorPayload && 'error' in errorPayload && typeof errorPayload.error === 'string') {
+    return errorPayload.error;
+  }
+
+  return fallbackMessage;
+}
+
+export async function downloadWrongQuestionSummary(filters: WrongQuestionFilters): Promise<void> {
+  if (typeof document === 'undefined') {
+    throw new Error('当前环境不支持导出下载');
+  }
+
+  const token = getWrongQuestionAuthToken();
+  const response = await fetch(buildWrongQuestionSummaryExportPath(filters), {
+    headers: token ? { 'X-Auth-Token': token } : {},
+  });
+
+  if (response.status === 401) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('xr_token');
+    }
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+    throw new Error('登录已过期，请重新登录');
+  }
+
+  if (!response.ok) {
+    throw new Error(await getResponseErrorMessage(response, '智能错题导出失败'));
+  }
+
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const fileName = getDownloadFileName(response.headers.get('content-disposition'), 'wrong-questions-summary.pdf');
+
+  link.href = downloadUrl;
+  link.download = fileName;
+  link.rel = 'noopener';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+
+  try {
+    link.click();
+  } finally {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+  }
 }
