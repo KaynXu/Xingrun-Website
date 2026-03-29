@@ -3384,16 +3384,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return item.grade === selectedGradeFilter;
   });
 
-  const expandedSummary = (() => {
-    if (expandedClassId === 'new') {
-      return '新建班级';
-    }
-    if (typeof expandedClassId === 'number') {
-      return classes.find((item) => item.id === expandedClassId)?.name || '未展开';
-    }
-    return '未展开';
-  })();
-
   const newClassForm = formByClassId.new || createEmptyClassForm();
   const newClassExpanded = expandedClassId === 'new';
   const newClassTeacher = newClassTeacherUserId == null ? undefined : users.find((user) => user.id === newClassTeacherUserId);
@@ -3416,7 +3406,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             在这里维护 {currentUser.organization_name} 的班级台账，并直接完成班级老师分配，不再与账号审批页面混用。
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${workspaceSoftCardClass} p-4`}>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">班级数量</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{classes.length}</p>
@@ -3424,10 +3414,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className={`${workspaceSoftCardClass} p-4`}>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">成员数量</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{users.length}</p>
-          </div>
-          <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前展开</p>
-            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">{expandedSummary}</p>
           </div>
         </div>
       </section>
@@ -3443,7 +3429,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级卡片</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">每次只展开一个班级卡片，在卡片内部完成基础信息维护和班级老师分配。</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
