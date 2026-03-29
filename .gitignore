@@ -19,3 +19,7 @@ data/consultations.csv
 
 # Local asset candidates (not wired into the product)
 Assets/
+
+review_plan_templates/pdf_output/*.pdf
+review_plan_templates/pdf_output/.DS_Store
+xunlian   md/
