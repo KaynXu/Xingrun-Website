@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(appSource, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -39,6 +39,7 @@ test('review generation source defaults to 历史文档 and expands 生成复习
   assert.match(reviewGenerationBlock[0], /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
   assert.match(reviewGenerationBlock[0], /新建复习文档/);
   assert.match(reviewGenerationBlock[0], /生成复习文档/);
+  assert.match(reviewGenerationBlock[0], /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} \/>/);
 });
 
 test('review generation source collapses the inline composer after successful generation', () => {
