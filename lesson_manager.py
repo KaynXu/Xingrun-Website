@@ -778,6 +778,7 @@ def delete_class(class_id: int):
     """Delete a class (lessons are kept but unlinked)."""
     with get_conn() as conn:
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
 
 
@@ -799,18 +800,45 @@ def list_all_users() -> list:
 def get_user_class_ids(user_id: int) -> list:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT class_id FROM user_classes WHERE user_id=?", (user_id,)
+            "SELECT class_id FROM user_classes WHERE user_id=? ORDER BY class_id", (user_id,)
         ).fetchall()
         return [r["class_id"] for r in rows]
 
 
 def set_user_class_ids(user_id: int, class_ids: list):
+    if not isinstance(class_ids, list):
+        raise ValueError("class_ids must be a list")
+
+    normalized_class_ids = []
+    seen_class_ids = set()
+    for class_id in class_ids:
+        if isinstance(class_id, bool) or not isinstance(class_id, int):
+            raise ValueError("class_ids must contain integers")
+        if class_id in seen_class_ids:
+            continue
+        seen_class_ids.add(class_id)
+        normalized_class_ids.append(class_id)
+
     with get_conn() as conn:
+        if not _fetch_user_row_by_id(conn, user_id):
+            raise LookupError("user not found")
+
+        if normalized_class_ids:
+            placeholders = ", ".join("?" for _ in normalized_class_ids)
+            rows = conn.execute(
+                f"SELECT id FROM classes WHERE id IN ({placeholders})",
+                normalized_class_ids,
+            ).fetchall()
+            existing_class_ids = {row["id"] for row in rows}
+            for class_id in normalized_class_ids:
+                if class_id not in existing_class_ids:
+                    raise LookupError(f"class not found: {class_id}")
+
         conn.execute("DELETE FROM user_classes WHERE user_id=?", (user_id,))
-        for cid in class_ids:
+        for class_id in normalized_class_ids:
             conn.execute(
                 "INSERT OR IGNORE INTO user_classes (user_id, class_id) VALUES (?, ?)",
-                (user_id, cid)
+                (user_id, class_id)
             )
 
 
