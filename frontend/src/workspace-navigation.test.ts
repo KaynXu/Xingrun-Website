@@ -23,6 +23,12 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.match(appSource, /id: 'classes'[\s\S]*label: '班级管理'/);
   assert.match(appSource, /classes: '班级管理'/);
   assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
+  assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(appSource, /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
+  assert.match(appSource, /班级列表/);
+  assert.match(appSource, /成员班级分配/);
+  assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
@@ -46,4 +52,14 @@ test('consultation modal source exposes quick parsing and structured confirmatio
   assert.match(appSource, /智能解析/);
   assert.match(appSource, /来源渠道备注/);
   assert.match(appSource, /apiFetch<ConsultationTeacherOption\[]>\('\/api\/consultation-teachers'\)/);
+});
+
+test('approval page source keeps member role controls separate from class assignment', () => {
+  const approvalBlock = appSource.match(/const ApprovalPage = \([\s\S]*?\n\};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /成员权限/);
+  assert.match(approvalBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(approvalBlock[0], /`\/api\/admin\/users\/\$\{userId\}\/role`/);
+  assert.doesNotMatch(approvalBlock[0], /成员班级分配/);
 });
