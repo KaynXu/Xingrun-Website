@@ -224,21 +224,20 @@ def add_lesson():
     # 生成学生版 PDF
     pdf_path = ""
     try:
-        from pdf_engine import generate_lesson_pdf
+        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
         safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
         pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
         pdf_path = str(PDF_DIR / pdf_name)
-        generate_lesson_pdf(plan, pdf_path)
+        generate_single_lesson_pdf(plan, pdf_path)
     except Exception as e:
         flash(f"PDF 生成失败：{e}", "error")
 
     # 生成答案版 PDF
     if pdf_path:
         try:
-            from pdf_engine import generate_lesson_pdf
+            from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
             answer_pdf_path = pdf_path.replace(".pdf", "_答案版.pdf")
-            generate_lesson_pdf(plan, answer_pdf_path,
-                                show_quiz_answers=True, show_fill_answers=True)
+            generate_single_lesson_pdf(plan, answer_pdf_path)
         except Exception as e:
             flash(f"答案 PDF 生成失败：{e}", "warning")
 
@@ -1126,11 +1125,11 @@ def api_lesson_create():
         return jsonify({"error": f"AI 生成失败：{e}"}), 500
     pdf_path = ""
     try:
-        from pdf_engine import generate_lesson_pdf
+        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
         safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
         pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
         pdf_path = str(PDF_DIR / pdf_name)
-        generate_lesson_pdf(plan, pdf_path)
+        generate_single_lesson_pdf(plan, pdf_path)
     except Exception:
         pass
     lesson_id = save_lesson(
