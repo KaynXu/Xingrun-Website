@@ -749,18 +749,70 @@ def save_class(name: str, subject: str = "", grade: str = "",
         return cur.lastrowid
 
 
+def _sync_class_teacher_metadata(conn: sqlite3.Connection, class_ids: list[int]) -> None:
+    normalized_class_ids = []
+    seen_class_ids = set()
+    for class_id in class_ids:
+        if class_id in seen_class_ids:
+            continue
+        seen_class_ids.add(class_id)
+        normalized_class_ids.append(class_id)
+
+    for class_id in normalized_class_ids:
+        row = conn.execute(
+            """
+            SELECT u.display_name
+            FROM user_classes uc
+            JOIN users u ON u.id = uc.user_id
+            WHERE uc.class_id=?
+            ORDER BY uc.user_id
+            LIMIT 1
+            """,
+            (class_id,),
+        ).fetchone()
+        teacher_name = (row["display_name"] if row else "") or ""
+        conn.execute(
+            "UPDATE classes SET teacher_name=?, teacher_email='' WHERE id=?",
+            (teacher_name, class_id),
+        )
+
+
 def get_class(class_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM classes WHERE id=?", (class_id,)).fetchone()
+        row = conn.execute(
+            """
+            SELECT c.*, (
+                SELECT uc.user_id
+                FROM user_classes uc
+                WHERE uc.class_id = c.id
+                ORDER BY uc.user_id
+                LIMIT 1
+            ) AS teacher_user_id
+            FROM classes c
+            WHERE c.id=?
+            """,
+            (class_id,),
+        ).fetchone()
         return dict(row) if row else None
 
 
 def list_classes():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT c.*, COUNT(l.id) as lesson_count FROM classes c "
-            "LEFT JOIN lessons l ON l.class_id = c.id "
-            "GROUP BY c.id ORDER BY c.created_at DESC"
+            """
+            SELECT c.*, COUNT(l.id) as lesson_count,
+                   (
+                       SELECT uc.user_id
+                       FROM user_classes uc
+                       WHERE uc.class_id = c.id
+                       ORDER BY uc.user_id
+                       LIMIT 1
+                   ) AS teacher_user_id
+            FROM classes c
+            LEFT JOIN lessons l ON l.class_id = c.id
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+            """
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -780,6 +832,53 @@ def delete_class(class_id: int):
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
+
+
+def get_class_teacher_user_id(class_id: int) -> Optional[int]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM user_classes WHERE class_id=? ORDER BY user_id LIMIT 1",
+            (class_id,),
+        ).fetchone()
+        return row["user_id"] if row else None
+
+
+def list_class_teacher_bindings() -> dict[int, Optional[int]]:
+    with get_conn() as conn:
+        class_rows = conn.execute("SELECT id FROM classes ORDER BY id").fetchall()
+        binding_rows = conn.execute(
+            "SELECT class_id, user_id FROM user_classes ORDER BY class_id, user_id"
+        ).fetchall()
+
+    bindings = {row["id"]: None for row in class_rows}
+    for row in binding_rows:
+        class_id = row["class_id"]
+        if class_id in bindings and bindings[class_id] is None:
+            bindings[class_id] = row["user_id"]
+    return bindings
+
+
+def set_class_teacher_user_id(class_id: int, teacher_user_id: Optional[int]):
+    if teacher_user_id is not None and (isinstance(teacher_user_id, bool) or not isinstance(teacher_user_id, int)):
+        raise ValueError("teacher_user_id must be an integer or null")
+
+    with get_conn() as conn:
+        class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        if teacher_user_id is not None:
+            user_row = _fetch_user_row_by_id(conn, teacher_user_id)
+            if not user_row:
+                raise LookupError("user not found")
+
+        conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
+        if teacher_user_id is not None:
+            conn.execute(
+                "INSERT INTO user_classes (user_id, class_id) VALUES (?, ?)",
+                (teacher_user_id, class_id),
+            )
+        _sync_class_teacher_metadata(conn, [class_id])
 
 
 # ─── 用户-班级关联 ──────────────────────────────────────────────────────────────
@@ -823,6 +922,14 @@ def set_user_class_ids(user_id: int, class_ids: list):
         if not _fetch_user_row_by_id(conn, user_id):
             raise LookupError("user not found")
 
+        previous_class_ids = [
+            row["class_id"]
+            for row in conn.execute(
+                "SELECT class_id FROM user_classes WHERE user_id=?",
+                (user_id,),
+            ).fetchall()
+        ]
+
         if normalized_class_ids:
             placeholders = ", ".join("?" for _ in normalized_class_ids)
             rows = conn.execute(
@@ -837,9 +944,14 @@ def set_user_class_ids(user_id: int, class_ids: list):
         conn.execute("DELETE FROM user_classes WHERE user_id=?", (user_id,))
         for class_id in normalized_class_ids:
             conn.execute(
-                "INSERT OR IGNORE INTO user_classes (user_id, class_id) VALUES (?, ?)",
-                (user_id, class_id)
+                "DELETE FROM user_classes WHERE class_id=?",
+                (class_id,),
             )
+            conn.execute(
+                "INSERT INTO user_classes (user_id, class_id) VALUES (?, ?)",
+                (user_id, class_id),
+            )
+        _sync_class_teacher_metadata(conn, previous_class_ids + normalized_class_ids)
 
 
 def update_user_profile(user_id: int, new_username: str, new_display_name: str):
@@ -854,6 +966,11 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
             "UPDATE users SET username=?, display_name=? WHERE id=?",
             (new_username, new_display_name, user_id)
         )
+        class_rows = conn.execute(
+            "SELECT class_id FROM user_classes WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
 
 
 def update_user_role(user_id: int, role: str):
