@@ -80,6 +80,7 @@ test('class management source keeps interaction locks while switching to single-
   assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /if \(classInteractionLocked \|\| teacherBindingSavingByClassId\[classId\]\) \{\s*return;\s*\}/);
+  assert.match(classManagementBlock[0], /loadPageRequestVersionRef\.current \+= 1;/);
   assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
   assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
   assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
