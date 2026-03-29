@@ -4544,11 +4544,11 @@ export const LandingPage = ({
                 </div>
                 <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把题目沉淀成可调用的题库系统</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  面向 AP、A-Level、IB 等课程，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
+                  面向不同课程体系与教学场景，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
                 </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-blue-600 font-bold text-sm dark:text-blue-400">
-                <span>AP / A-Level / IB</span>
+                <span>多课程体系</span>
                 <ArrowRight size={14} />
               </div>
             </motion.div>
