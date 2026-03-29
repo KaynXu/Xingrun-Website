@@ -18,6 +18,9 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
   assert.match(appSource, /type Page = [^;]*'classes'[^;]*;/);
   assert.match(appSource, /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'/);
   assert.match(appSource, /id: 'classes'[\s\S]*label: '班级管理'/);
@@ -26,8 +29,8 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
   assert.match(appSource, /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
-  assert.match(appSource, /班级列表/);
-  assert.match(appSource, /成员班级分配/);
+  assert.match(classManagementBlock[0], /班级老师分配/);
+  assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
 });
 
@@ -46,6 +49,17 @@ test('class management source guards assignment refresh and checkboxes during co
   assert.match(appSource, /const handleToggleAssignment = async \(userId: number, classId: number, checked: boolean\) => \{\s*if \(classInteractionLocked \|\| assignmentSavingByUserId\[userId\]\) \{\s*return;\s*\}/);
   assert.match(appSource, /onClick=\{\(\) => loadPage\(selectedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{assignmentRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
   assert.match(appSource, /disabled=\{rowSaving \|\| classInteractionLocked\}/);
+});
+
+test('class management source adds compact card single-expand state via expandedClassId', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
+  assert.match(classManagementBlock[0], /const isExpanded = expandedClassId === item\.id/);
+  assert.match(classManagementBlock[0], /setExpandedClassId\(\(current\) => current === classId \? null : classId\)/);
+  assert.match(classManagementBlock[0], /className=\{`\$\{workspaceSoftCardClass\} overflow-hidden p-5`\}/);
+  assert.match(classManagementBlock[0], /\{isExpanded \? '收起管理' : '展开管理'\}/);
 });
 
 test('class management source guards loadPage responses with a request version ref', () => {

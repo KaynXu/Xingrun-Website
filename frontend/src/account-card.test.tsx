@@ -251,7 +251,8 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.match(approvalBlock[0], /`\/api\/admin\/users\/\$\{userId\}\/role`/);
   assert.doesNotMatch(approvalBlock[0], /成员班级分配/);
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /成员班级分配/);
+  assert.match(classManagementBlock[0], /班级老师分配/);
+  assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
   assert.match(classManagementBlock[0], /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
@@ -270,4 +271,29 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*新建班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
   assert.match(classManagementBlock[0], /disabled=\{rowSaving \|\| classInteractionLocked\}/);
+});
+
+test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.doesNotMatch(source, /interface ClassFormValues \{[\s\S]*teacher_email: string;/);
+  assert.doesNotMatch(classManagementBlock[0], /teacher_email:\s*form\.teacher_email\.trim\(\)/);
+  assert.doesNotMatch(classManagementBlock[0], /老师邮箱/);
+  assert.doesNotMatch(classManagementBlock[0], /未填写邮箱/);
+  assert.doesNotMatch(classManagementBlock[0], /<section className=\{`\$\{workspaceCardClass\} space-y-5 p-6`\}>[\s\S]*班级分配/);
+  assert.match(classManagementBlock[0], /班级老师分配/);
+});
+
+test('class management source embeds teacher assignment inside each class card and normalizes common class names', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(source, /const normalizeClassNameInput = \(value: string\): string =>/);
+  assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
+  assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
+  assert.match(classManagementBlock[0], /已分配 \{selectedTeacherIds.length\} 位老师/);
+  assert.match(classManagementBlock[0], /classes\.map\(\(item\) => \{[\s\S]*班级老师分配/);
 });
