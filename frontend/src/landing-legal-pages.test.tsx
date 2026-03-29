@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -241,6 +242,13 @@ test('landing page dark mode styles cover the about section and footer shell', (
   assert.match(markup, /dark:text-white/);
   assert.match(markup, /<footer class="border-t border-sky-100\/80 py-20 dark:border-white\/8"/);
   assert.match(markup, /All rights reserved/);
+});
+
+test('landing page source does not contain stray navbar characters after the brand block', () => {
+  const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(appSource, /<\/div>˜/);
+  assert.doesNotMatch(appSource, /˜/);
 });
 
 test('landing feature cards swap to dark-specific surfaces instead of pale demo panels', () => {
