@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'input' \| 'library' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(appSource, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -15,6 +15,14 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 
   assert.doesNotMatch(appSource, /题库浏览/);
   assert.doesNotMatch(appSource, /QuestionBank/);
+});
+
+test('workspace navigation source reserves classes management for owner and admin shells', () => {
+  assert.match(appSource, /type Page = [^;]*'classes'[^;]*;/);
+  assert.match(appSource, /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'/);
+  assert.match(appSource, /id: 'classes'[\s\S]*label: '班级管理'/);
+  assert.match(appSource, /classes: '班级管理'/);
+  assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
