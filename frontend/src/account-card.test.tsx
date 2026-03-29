@@ -183,6 +183,32 @@ test('quick consultation parser extracts normalized teacher and source metadata'
   assert.match(parsed.need_detail, /补基础/);
 });
 
+test('assignment rollback helper restores previous ids when optimistic state is still current', () => {
+  const resolveAssignmentRollbackClassIds = (AppModule as {
+    resolveAssignmentRollbackClassIds?: (
+      currentClassIds: number[],
+      previousClassIds: number[],
+      failedNextClassIds: number[],
+    ) => number[];
+  }).resolveAssignmentRollbackClassIds;
+
+  assert.equal(typeof resolveAssignmentRollbackClassIds, 'function');
+  assert.deepEqual(resolveAssignmentRollbackClassIds!([2, 4], [2], [2, 4]), [2]);
+});
+
+test('assignment rollback helper preserves fresher ids after state changed again', () => {
+  const resolveAssignmentRollbackClassIds = (AppModule as {
+    resolveAssignmentRollbackClassIds?: (
+      currentClassIds: number[],
+      previousClassIds: number[],
+      failedNextClassIds: number[],
+    ) => number[];
+  }).resolveAssignmentRollbackClassIds;
+
+  assert.equal(typeof resolveAssignmentRollbackClassIds, 'function');
+  assert.deepEqual(resolveAssignmentRollbackClassIds!([1, 3], [2], [2, 4]), [1, 3]);
+});
+
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');

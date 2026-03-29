@@ -48,6 +48,12 @@ test('class management source guards assignment refresh and checkboxes during co
   assert.match(appSource, /disabled=\{rowSaving \|\| classInteractionLocked\}/);
 });
 
+test('class management source guards loadPage responses with a request version ref', () => {
+  assert.match(appSource, /const loadPageRequestVersionRef = useRef\(0\);/);
+  assert.match(appSource, /const requestVersion = \+\+loadPageRequestVersionRef\.current;/);
+  assert.match(appSource, /if \(requestVersion !== loadPageRequestVersionRef\.current\) \{\s*return;\s*\}/);
+});
+
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
   assert.match(appSource, /mobileNavOpen/);
   assert.match(appSource, /aria-label="打开导航"/);
