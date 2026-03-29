@@ -11,7 +11,6 @@ import {
   workspaceSoftCardClass,
 } from './App';
 import {
-  applyWrongQuestionReviewDraft,
   buildWrongQuestionDetailPath,
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
@@ -21,6 +20,7 @@ import {
   hydrateWrongQuestionReviewDraftFromDetail,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
+  resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type WrongQuestionFilters,
   type WrongQuestionListApiResponse,
@@ -233,9 +233,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-      const nextRecord = response.record
-        ? normalizeWrongQuestionRecord(response.record)
-        : applyWrongQuestionReviewDraft(selectedRecord, payload);
+      const nextRecord = resolveSavedWrongQuestionRecord(selectedRecord, payload, response.record);
 
       setRecords((current) => current.map((item) => item.id === selectedRecord.id ? nextRecord : item));
       setServerSummary(null);

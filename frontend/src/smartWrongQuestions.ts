@@ -249,6 +249,18 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
   };
 }
 
+export function resolveSavedWrongQuestionRecord(
+  currentRecord: WrongQuestionRecord,
+  draft: WrongQuestionReviewDraft,
+  responseRecord?: unknown,
+): WrongQuestionRecord {
+  if (responseRecord) {
+    return normalizeWrongQuestionRecord(responseRecord);
+  }
+
+  return applyWrongQuestionReviewDraft(currentRecord, draft);
+}
+
 function normalizeWrongQuestionSummary(rawSummary: unknown, fallback: WrongQuestionSummary, totalOverride: unknown): WrongQuestionSummary {
   const source = isObjectRecord(rawSummary) ? rawSummary : {};
   const normalizedTotalOverride = typeof totalOverride === 'number' && Number.isFinite(totalOverride)
