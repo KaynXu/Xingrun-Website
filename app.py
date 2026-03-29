@@ -837,7 +837,15 @@ def api_admin_user_classes_set(user_id):
     if error:
         return error
     data = request.json or {}
-    set_user_class_ids(user_id, data.get("class_ids", []))
+    class_ids = data.get("class_ids", [])
+    if not isinstance(class_ids, list):
+        return jsonify({"error": "class_ids must be a list"}), 400
+    try:
+        set_user_class_ids(user_id, class_ids)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
 
 
