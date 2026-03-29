@@ -31,6 +31,23 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
 });
 
+test('class management source guards selection and refresh during class save delete locks', () => {
+  assert.match(appSource, /const classInteractionLocked = saving \|\| deleting;/);
+  assert.match(appSource, /const handleSelectClass = \(classId: number \| 'new'\) => \{\s*if \(classInteractionLocked\) \{\s*return;\s*\}\s*setSelectedClassId\(classId\);\s*setFormError\(''\);\s*\};/);
+  assert.match(appSource, /onClick=\{\(\) => loadPage\(selectedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleSelectClass\('new'\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleSelectClass\(item\.id\)\}[\s\S]*disabled=\{classInteractionLocked\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleSelectClass\('new'\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+});
+
+test('class management source guards assignment refresh and checkboxes during conflicting async work', () => {
+  assert.match(appSource, /const hasAssignmentSavingRows = Object\.values\(assignmentSavingByUserId\)\.some\(Boolean\);/);
+  assert.match(appSource, /const assignmentRefreshLocked = classInteractionLocked \|\| hasAssignmentSavingRows;/);
+  assert.match(appSource, /const handleToggleAssignment = async \(userId: number, classId: number, checked: boolean\) => \{\s*if \(classInteractionLocked \|\| assignmentSavingByUserId\[userId\]\) \{\s*return;\s*\}/);
+  assert.match(appSource, /onClick=\{\(\) => loadPage\(selectedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{assignmentRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+  assert.match(appSource, /disabled=\{rowSaving \|\| classInteractionLocked\}/);
+});
+
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
   assert.match(appSource, /mobileNavOpen/);
   assert.match(appSource, /aria-label="打开导航"/);
