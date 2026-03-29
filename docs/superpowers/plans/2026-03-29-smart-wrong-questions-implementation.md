@@ -721,5 +721,5 @@ git commit -m "feat: ship smart wrong questions workspace"
 ## Self-Review
 
 - **Spec coverage:** The plan covers the confirmed dual-entry model, the internal-only `智能错题` tab, the SaaS proxy architecture, owner/admin gating, list/detail/review/export flows, and the explicit first-release scope boundary that excludes chat-room reconstruction and login unification.
-- **Placeholder scan:** No `TODO`, `TBD`, or “implement later” placeholders remain. Each task includes exact files, commands, expected outcomes, and code to anchor the implementation.
+- **Placeholder scan:** No unresolved placeholder markers remain. Each task includes exact files, commands, expected outcomes, and code to anchor the implementation.
 - **Type consistency:** The plan uses one shared frontend page key `smartWrongQuestions`, one backend route family `/api/wrong-questions*`, and one downstream review route `/api/teacher/records/:recordId/selections`. The helper/type names stay consistent across tasks.
