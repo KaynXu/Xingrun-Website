@@ -439,7 +439,10 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
   assert.match(classManagementBlock[0], /disabled=\{pageRefreshLocked\}[\s\S]*刷新列表/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*新建班级/);
-  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*展开管理/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
+  assert.doesNotMatch(classManagementBlock[0], /展开管理/);
+  assert.doesNotMatch(classManagementBlock[0], /收起管理/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*创建班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
