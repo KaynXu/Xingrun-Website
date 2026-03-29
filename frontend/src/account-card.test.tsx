@@ -209,6 +209,40 @@ test('assignment rollback helper preserves fresher ids after state changed again
   assert.deepEqual(resolveAssignmentRollbackClassIds!([1, 3], [2], [2, 4]), [1, 3]);
 });
 
+test('teacher binding map rollback helper restores previous id when optimistic binding is still current', () => {
+  const resolveTeacherBindingRollbackTeacherBindings = (AppModule as {
+    resolveTeacherBindingRollbackTeacherBindings?: (
+      currentTeacherBindingByClassId: Record<number, number | null>,
+      classId: number,
+      previousTeacherUserId: number | null,
+      failedNextTeacherUserId: number,
+    ) => Record<number, number | null>;
+  }).resolveTeacherBindingRollbackTeacherBindings;
+
+  assert.equal(typeof resolveTeacherBindingRollbackTeacherBindings, 'function');
+  assert.deepEqual(
+    resolveTeacherBindingRollbackTeacherBindings!({ 7: 12, 9: 18 }, 7, null, 12),
+    { 7: null, 9: 18 },
+  );
+});
+
+test('teacher binding map rollback helper preserves fresher binding state after later updates', () => {
+  const resolveTeacherBindingRollbackTeacherBindings = (AppModule as {
+    resolveTeacherBindingRollbackTeacherBindings?: (
+      currentTeacherBindingByClassId: Record<number, number | null>,
+      classId: number,
+      previousTeacherUserId: number | null,
+      failedNextTeacherUserId: number,
+    ) => Record<number, number | null>;
+  }).resolveTeacherBindingRollbackTeacherBindings;
+
+  assert.equal(typeof resolveTeacherBindingRollbackTeacherBindings, 'function');
+  assert.deepEqual(
+    resolveTeacherBindingRollbackTeacherBindings!({ 7: 18, 9: 18 }, 7, null, 12),
+    { 7: 18, 9: 18 },
+  );
+});
+
 test('teacher binding rollback helper restores exact previous teacher fields', () => {
   const resolveTeacherBindingRollbackClassItem = (AppModule as {
     resolveTeacherBindingRollbackClassItem?: (
@@ -363,6 +397,9 @@ test('class management source keeps teacher binding selection scoped per class c
   assert.match(classManagementBlock[0], /const teacherBindingSaving = Boolean\(teacherBindingSavingByClassId\[item\.id\]\);/);
   assert.match(classManagementBlock[0], /onChange=\{\(\) => handleSelectTeacherForClass\(item\.id, user\.id\)\}/);
   assert.match(classManagementBlock[0], /const previousTeacherName = previousClass\?\.teacher_name \|\| '';/);
+  assert.match(source, /export function resolveTeacherBindingRollbackTeacherBindings\(/);
+  assert.match(classManagementBlock[0], /loadPageRequestVersionRef\.current \+= 1;/);
+  assert.match(classManagementBlock[0], /setTeacherBindingByClassId\(\(current\) => resolveTeacherBindingRollbackTeacherBindings\(current, classId, previousTeacherUserId, teacherUserId\)\);/);
   assert.match(classManagementBlock[0], /resolveTeacherBindingRollbackClassItem\(item, teacherUserId, previousTeacherUserId, previousTeacherName\)/);
   assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
   assert.match(classManagementBlock[0], /let createdClassId: number \| null = null;/);
