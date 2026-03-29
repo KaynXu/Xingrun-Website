@@ -36,18 +36,20 @@ test('workspace navigation source reserves classes management for owner and admi
 
 test('class management source guards selection and refresh during class save delete locks', () => {
   assert.match(appSource, /const classInteractionLocked = saving \|\| deleting;/);
-  assert.match(appSource, /const handleSelectClass = \(classId: number \| 'new'\) => \{\s*if \(classInteractionLocked\) \{\s*return;\s*\}\s*setSelectedClassId\(classId\);\s*setFormError\(''\);\s*\};/);
-  assert.match(appSource, /onClick=\{\(\) => loadPage\(selectedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleSelectClass\('new'\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleSelectClass\(item\.id\)\}[\s\S]*disabled=\{classInteractionLocked\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleSelectClass\('new'\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+  assert.match(appSource, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
+  assert.match(appSource, /const \[formByClassId, setFormByClassId\] = useState<Record<string, ClassFormValues>>/);
+  assert.match(appSource, /const handleToggleExpandedClass = \(classId: number \| 'new'\) => \{\s*if \(classInteractionLocked\) \{\s*return;\s*\}\s*setExpandedClassId\(\(current\) => current === classId \? null : classId\);\s*setFormError\(''\);\s*setAssignmentError\(''\);\s*\};/);
+  assert.match(appSource, /onClick=\{\(\) => loadPage\(expandedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}\s+disabled=\{classInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classInteractionLocked\}/);
 });
 
 test('class management source guards assignment refresh and checkboxes during conflicting async work', () => {
   assert.match(appSource, /const hasAssignmentSavingRows = Object\.values\(assignmentSavingByUserId\)\.some\(Boolean\);/);
   assert.match(appSource, /const assignmentRefreshLocked = classInteractionLocked \|\| hasAssignmentSavingRows;/);
+  assert.match(appSource, /const \[teacherSearchByClassId, setTeacherSearchByClassId\] = useState<Record<string, string>>\(\{\}\);/);
   assert.match(appSource, /const handleToggleAssignment = async \(userId: number, classId: number, checked: boolean\) => \{\s*if \(classInteractionLocked \|\| assignmentSavingByUserId\[userId\]\) \{\s*return;\s*\}/);
-  assert.match(appSource, /onClick=\{\(\) => loadPage\(selectedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{assignmentRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => loadPage\(item\.id\)\.catch\(\(\) => undefined\)\}\s+disabled=\{assignmentRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
   assert.match(appSource, /disabled=\{rowSaving \|\| classInteractionLocked\}/);
 });
 
