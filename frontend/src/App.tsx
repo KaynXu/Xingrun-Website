@@ -40,11 +40,12 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
+import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 
 // --- Types ---
 
 type Role = 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'classes' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -398,7 +399,7 @@ function getToken(): string {
   return localStorage.getItem('xr_token') || '';
 }
 
-async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
+export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
   const token = getToken();
   const res = await fetch(path, {
@@ -882,16 +883,16 @@ function getConsultationSourceLabel(record: ConsultationRecord): string {
   return sourceChannelNote ? `${trimmedSourceChannel} · ${sourceChannelNote}` : trimmedSourceChannel;
 }
 
-const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
-const workspaceCardClass =
+export const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
+export const workspaceCardClass =
   'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78 dark:shadow-[0_24px_60px_rgba(2,6,23,0.52)]';
-const workspaceSoftCardClass =
+export const workspaceSoftCardClass =
   'rounded-[1.5rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(239,248,255,0.78)_100%)] shadow-[0_14px_36px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] dark:shadow-[0_18px_40px_rgba(2,6,23,0.44)]';
-const workspaceFieldClass =
+export const workspaceFieldClass =
   'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:focus:border-sky-500 dark:focus:ring-sky-500/15 dark:placeholder:text-slate-500';
-const workspacePrimaryButtonClass =
+export const workspacePrimaryButtonClass =
   'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
-const workspaceSecondaryButtonClass =
+export const workspaceSecondaryButtonClass =
   'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
 const workspaceGhostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
@@ -1149,6 +1150,9 @@ const Sidebar = ({
     { id: 'library', icon: Library, label: '课程列表' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
+    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+      ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
+      : []),
     ...(currentUser.role === 'owner' || currentUser.role === 'admin'
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
       : []),
@@ -4865,6 +4869,7 @@ export default function App() {
     library: '课程列表',
     consultation: '咨询记录',
     calendar: '课程日历',
+    smartWrongQuestions: '智能错题',
     classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',
@@ -5010,6 +5015,9 @@ export default function App() {
                       onNextWeek={handleNextCalendarWeek}
                     />
                   ))}
+                {activePage === 'smartWrongQuestions' &&
+                  (currentUser.role === 'owner' || currentUser.role === 'admin') &&
+                  <SmartWrongQuestionsPage currentUser={currentUser} />}
                 {activePage === 'classes' && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
