@@ -228,13 +228,37 @@ def build_story(styles, variant_key, *, lesson, days, final_reminder_lines, know
     story.append(Spacer(1, 8 * mm))
     story.append(Paragraph(lesson["title"], styles["title"]))
     subtitle = "" if chinese_only else lesson.get("subtitle", "")
-    ...
+    if subtitle:
+        story.append(Paragraph(subtitle, styles["subtitle"]))
+    story.append(Spacer(1, 5 * mm))
+    story.append(make_box(labels["usage_title"], Paragraph(labels["usage_text"], styles["body"]), styles, styles["soft"]))
+    story.append(Spacer(1, 3 * mm))
+    story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, colors.white))
+    story.append(Spacer(1, 3 * mm))
+    story.append(make_box(labels["quotes_title"], bullet_paragraph([f"“{quote}”" for quote in lesson["quotes"]], styles["quote"]), styles, styles["quote_bg"]))
     for index, day in enumerate(days):
-        ...
+        if index > 0:
+            story.append(PageBreak())
+        story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h1"]))
+        story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_text(day['goal'], chinese_only)}", styles["body"]))
+        story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_text(day['focus'], chinese_only)}", styles["body"]))
         knowledge_items = knowledge_sections.get(day["day"], [])
-        ...
+        story.append(Spacer(1, 2 * mm))
+        story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, colors.white))
+        story.append(Spacer(1, 2 * mm))
+        story.append(make_box(labels["blanks_title"], Paragraph("<br/>".join([f"{position}. {localize_text(item[0], chinese_only)}" for position, item in enumerate(day["blanks"], start=1)]), styles["body"]), styles, colors.white))
+        story.append(Spacer(1, 2 * mm))
+        story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, colors.white))
+        if knowledge_items:
+            story.append(Spacer(1, 2 * mm))
+            story.append(make_box(labels["knowledge_mixed_title"], make_knowledge_mixed_table(knowledge_items, styles, chinese_only), styles, colors.white))
     story.append(make_box(labels["final_reminder_box"], bullet_paragraph(localize_lines(final_reminder_lines, chinese_only), styles["body"]), styles, styles["soft"]))
-    ...
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph(labels["answer_key"], styles["h1"]))
+    for day in days:
+        story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h2"]))
+        story.append(make_answer_table(day, styles, labels))
+    return story
 ```
 
 - [ ] **Step 3: Create a focused adapter module for system `plan` -> review-template payload conversion**
@@ -362,16 +386,15 @@ Expected: FAIL only on `test_legacy_single_lesson_entrypoint_removed_from_pdf_en
 - [ ] **Step 3: Delete the legacy single-lesson renderer from `pdf_engine.py`, but keep monthly/aggregate functions intact**
 
 ```python
-# Remove the old single-lesson entrypoint block:
-def generate_lesson_pdf(plan_data: dict, output_path: str,
-                        show_quiz_answers: bool = False,
-                        show_fill_answers: bool = False) -> str:
-    ...
+Delete the full `generate_lesson_pdf(...)` block from `pdf_engine.py`.
 
-# Remove any helper functions used only by that block, but keep:
-# - generate_monthly_pdf(...)
-# - generate_weekly_pdf(...)
-# - helper functions still referenced by monthly/aggregate PDF code
+Immediately after deletion, search the file for helper names that were only referenced by that block and remove the ones that now have zero callers. Keep any helper that is still referenced by `generate_monthly_pdf(...)`, `generate_weekly_pdf(...)`, or any other remaining non-single-lesson function in the file.
+
+Before committing, verify with:
+
+grep -n "def generate_lesson_pdf(" pdf_engine.py
+
+Expected: no output.
 ```
 
 - [ ] **Step 4: Update the README so the single-lesson default path is documented correctly**
