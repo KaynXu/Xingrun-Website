@@ -3096,7 +3096,8 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
-  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null) => {
+  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null, options?: { preserveStateOnError?: boolean }) => {
+    const preserveStateOnError = options?.preserveStateOnError ?? false;
     const requestVersion = ++loadPageRequestVersionRef.current;
     setLoading(true);
     setPageError('');
@@ -3137,18 +3138,23 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         }
         return null;
       });
+      return { ok: true as const };
     } catch (err) {
       if (requestVersion !== loadPageRequestVersionRef.current) {
-        return;
+        return { ok: false as const, error: err instanceof Error ? err : new Error('班级管理数据加载失败') };
       }
 
-      setPageError(err instanceof Error ? err.message : '班级管理数据加载失败');
-      setClasses([]);
-      setUsers([]);
-      setTeacherBindingByClassId({});
-      setFormByClassId({ new: createEmptyClassForm() });
-      setNewClassTeacherUserId(null);
-      setExpandedClassId(null);
+      const error = err instanceof Error ? err : new Error('班级管理数据加载失败');
+      setPageError(error.message);
+      if (!preserveStateOnError) {
+        setClasses([]);
+        setUsers([]);
+        setTeacherBindingByClassId({});
+        setFormByClassId({ new: createEmptyClassForm() });
+        setNewClassTeacherUserId(null);
+        setExpandedClassId(null);
+      }
+      return { ok: false as const, error };
     } finally {
       if (requestVersion === loadPageRequestVersionRef.current) {
         setLoading(false);
@@ -3214,6 +3220,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setFormError('');
 
     let createdClassId: number | null = null;
+    let teacherBindingSucceeded = false;
 
     try {
       if (classId === 'new') {
@@ -3231,19 +3238,44 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           method: 'PUT',
           body: JSON.stringify({ teacher_user_id: selectedTeacherUserId }),
         });
+        teacherBindingSucceeded = true;
+        const optimisticCreatedClass: ClassItem = {
+          id: created.id,
+          name: payload.name,
+          subject: payload.subject,
+          grade: payload.grade,
+          teacher_name: selectedTeacher?.name || '',
+          teacher_email: '',
+          teacher_user_id: selectedTeacherUserId,
+        };
+        setClasses((current) => {
+          const remaining = current.filter((item) => item.id !== created.id);
+          return [...remaining, optimisticCreatedClass];
+        });
+        setTeacherBindingByClassId((current) => ({ ...current, [created.id]: selectedTeacherUserId }));
+        setFormByClassId((current) => ({
+          ...current,
+          [getClassStateKey(created.id)]: toClassFormValues(optimisticCreatedClass),
+        }));
         setExpandedClassId(created.id);
-        await loadPage(created.id);
+        const refreshResult = await loadPage(created.id, { preserveStateOnError: true });
+        if (!refreshResult.ok) {
+          setFormError(`班级和负责老师已保存，但列表刷新失败：${refreshResult.error.message}`);
+        }
       } else {
         await apiFetch(`/api/classes/${classId}`, {
           method: 'PUT',
           body: JSON.stringify(payload),
         });
-        await loadPage(classId);
+        const refreshResult = await loadPage(classId, { preserveStateOnError: true });
+        if (!refreshResult.ok) {
+          setFormError(`班级已保存，但列表刷新失败：${refreshResult.error.message}`);
+        }
       }
     } catch (err) {
-      if (classId === 'new' && createdClassId != null) {
+      if (classId === 'new' && createdClassId != null && !teacherBindingSucceeded) {
         setFormError(err instanceof Error ? `班级已创建，但负责老师绑定失败：${err.message}` : '班级已创建，但负责老师绑定失败，请在班级卡片中重新选择老师');
-        await loadPage(createdClassId);
+        await loadPage(createdClassId, { preserveStateOnError: true });
         return;
       }
       setFormError(err instanceof Error ? err.message : '班级保存失败');
@@ -3300,7 +3332,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         method: 'PUT',
         body: JSON.stringify({ teacher_user_id: teacherUserId }),
       });
-      await loadPage(classId);
+      const refreshResult = await loadPage(classId, { preserveStateOnError: true });
+      if (!refreshResult.ok) {
+        setAssignmentError(`老师绑定已保存，但列表刷新失败：${refreshResult.error.message}`);
+      }
     } catch (err) {
       setTeacherBindingByClassId((current) => ({ ...current, [classId]: previousTeacherUserId }));
       setClasses((current) => current.map((item) => (
