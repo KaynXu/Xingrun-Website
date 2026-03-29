@@ -553,6 +553,14 @@ export function parseConsultationQuickEntry(
 }
 
 const consultationStatusOptions = ['待跟进', '跟进中', '已跟进', '已完成'];
+
+function consultationStatusClass(status: string): string {
+  if (status === '待跟进') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  if (status === '跟进中') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
+  if (status === '已跟进') return 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300';
+  if (status === '已完成') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  return 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400';
+}
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
 const consultationSourceAliasMap: Record<string, string[]> = {
@@ -2320,7 +2328,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
                         <p className="mt-2 font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
                       </div>
-                      <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                      <span className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.08em] ${consultationStatusClass(record.follow_up_status || '')}`}>
                         {record.follow_up_status || '—'}
                       </span>
                     </div>
@@ -2445,7 +2453,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                      <span className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.08em] ${consultationStatusClass(record.follow_up_status || '')}`}>
                         {record.follow_up_status || '—'}
                       </span>
                     </td>
