@@ -54,7 +54,9 @@ from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
                              create_auth_session, create_registration_request,
                              approve_registration_request, reject_registration_request,
                              list_registration_requests, get_current_user,
-                             list_all_users, get_user_class_ids, set_user_class_ids, update_user_role, update_user_profile,
+                             list_all_users, get_user_class_ids, set_user_class_ids,
+                             get_class_teacher_user_id, list_class_teacher_bindings,
+                             set_class_teacher_user_id, update_user_role, update_user_profile,
                              list_consultations, get_consultation,
                              create_consultation, update_consultation,
                              delete_consultation, list_consultation_teachers)
@@ -972,6 +974,14 @@ def api_class_create():
     return jsonify({"id": cid, "name": name}), 201
 
 
+@app.route("/api/classes/teacher-bindings", methods=["GET"])
+def api_class_teacher_bindings_list():
+    _, error = _require_staff()
+    if error:
+        return error
+    return jsonify({"teacher_bindings": list_class_teacher_bindings()})
+
+
 @app.route("/api/classes/<int:class_id>", methods=["GET"])
 def api_class_get(class_id):
     _, error = _require_auth()
@@ -982,6 +992,24 @@ def api_class_get(class_id):
         return jsonify({"error": "not found"}), 404
     lessons = list_lessons(class_id=class_id)
     return jsonify({**cls, "lessons": lessons})
+
+
+@app.route("/api/classes/<int:class_id>/teacher", methods=["PUT"])
+def api_class_teacher_set(class_id):
+    _, error = _require_staff()
+    if error:
+        return error
+    data = request.json or {}
+    teacher_user_id = data.get("teacher_user_id")
+    try:
+        set_class_teacher_user_id(class_id, teacher_user_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        message = str(exc)
+        status_code = 404 if message in {"class not found", "user not found"} else 400
+        return jsonify({"error": message}), status_code
+    return jsonify({"ok": True, "teacher_user_id": get_class_teacher_user_id(class_id)})
 
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
