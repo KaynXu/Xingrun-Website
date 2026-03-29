@@ -220,8 +220,14 @@ test('workspace source splits approval and class assignment responsibilities acr
 
   assert.match(source, /账号审批/);
   assert.ok(approvalBlock);
-  assert.doesNotMatch(approvalBlock[0], /班级分配/);
+  assert.match(approvalBlock[0], /成员权限/);
+  assert.match(approvalBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(approvalBlock[0], /`\/api\/admin\/users\/\$\{userId\}\/role`/);
+  assert.doesNotMatch(approvalBlock[0], /成员班级分配/);
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /成员班级分配/);
+  assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(classManagementBlock[0], /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
   assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
 });
