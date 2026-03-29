@@ -13,6 +13,7 @@
   body {
     @apply bg-[#F6FBFF] text-slate-900 antialiased;
     font-family: var(--font-sans);
+    -webkit-overflow-scrolling: touch;
   }
   html {
     color-scheme: light;
