@@ -815,13 +815,54 @@ export const SidebarAccountSheet = ({
   onClose,
   onLogout,
   onOpenSettings,
+  onProfileUpdated,
 }: {
   currentUser: CurrentUser;
   open: boolean;
   onClose: () => void;
   onLogout: () => void;
   onOpenSettings: () => void;
+  onProfileUpdated?: (username: string, displayName: string) => void;
 }) => {
+  const [editing, setEditing] = useState(false);
+  const [editUsername, setEditUsername] = useState('');
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const startEdit = () => {
+    setEditUsername(currentUser.username);
+    setEditDisplayName(currentUser.display_name);
+    setEditError('');
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditError('');
+  };
+
+  const saveEdit = async () => {
+    if (!editUsername.trim() || !editDisplayName.trim()) {
+      setEditError('用户名和昵称不能为空');
+      return;
+    }
+    setSaving(true);
+    setEditError('');
+    try {
+      await apiFetch('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ username: editUsername.trim(), display_name: editDisplayName.trim() }),
+      });
+      onProfileUpdated?.(editUsername.trim(), editDisplayName.trim());
+      setEditing(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!open) {
     return null;
   }
@@ -851,37 +892,80 @@ export const SidebarAccountSheet = ({
             </button>
           </div>
 
-          <div className={`${workspaceSoftCardClass} mt-5 space-y-3 p-4`}>
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">权限</span>
-              <span className="dark:text-slate-100">{getRoleLabel(currentUser.role)}</span>
+          {editing ? (
+            <div className="mt-5 space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-500 dark:text-slate-400">用户名 <span className="text-slate-400 dark:text-slate-500">· 登录用</span></label>
+                <input
+                  type="text"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  className={`${workspaceFieldClass} w-full`}
+                  placeholder="登录用"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-500 dark:text-slate-400">昵称 <span className="text-slate-400 dark:text-slate-500">· 显示用</span></label>
+                <input
+                  type="text"
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                  className={`${workspaceFieldClass} w-full`}
+                  placeholder="后台显示的名字"
+                />
+              </div>
+              {editError && (
+                <p className="text-xs text-rose-500 dark:text-rose-400">{editError}</p>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={cancelEdit} className={workspaceSecondaryButtonClass}>取消</button>
+                <button type="button" onClick={saveEdit} disabled={saving} className={workspacePrimaryButtonClass}>
+                  {saving ? '保存中...' : '保存'}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">机构</span>
-              <span className="dark:text-slate-100">{currentUser.organization_name}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">状态</span>
-              <span className="dark:text-slate-100">{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className={`${workspaceSoftCardClass} mt-5 space-y-3 p-4`}>
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">权限</span>
+                  <span className="dark:text-slate-100">{getRoleLabel(currentUser.role)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">机构</span>
+                  <span className="dark:text-slate-100">{currentUser.organization_name}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">状态</span>
+                  <span className="dark:text-slate-100">{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
+                </div>
+              </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-3">
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
-            >
-              查看账号信息
-            </button>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-medium text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-            >
-              退出登录
-            </button>
-          </div>
+              <div className="mt-5 grid grid-cols-1 gap-3">
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
+                >
+                  修改用户名 / 昵称
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
+                >
+                  查看账号信息
+                </button>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-medium text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                >
+                  退出登录
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -901,6 +985,7 @@ const Sidebar = ({
   setActivePage,
   onNavigate,
   mobile,
+  onProfileUpdated,
 }: {
   activePage: Page;
   currentUser: CurrentUser;
@@ -908,6 +993,7 @@ const Sidebar = ({
   setActivePage: (p: Page) => void;
   onNavigate?: () => void;
   mobile?: boolean;
+  onProfileUpdated?: (username: string, displayName: string) => void;
 }) => {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const menuItems = [
@@ -996,6 +1082,7 @@ const Sidebar = ({
                 setActivePage('settings');
                 onNavigate?.();
               }}
+              onProfileUpdated={onProfileUpdated}
             />
           </motion.div>
         )}
@@ -1223,14 +1310,14 @@ const Dashboard = ({
                 {lesson.pdf_path && (
                   <div className="flex gap-2">
                     <a
-                      href={`/pdf/download/${lesson.id}`}
+                      href={`/api/pdf/download/${lesson.id}`}
                       className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                       title="下载"
                     >
                       <Download size={18} />
                     </a>
                     <a
-                      href={`/pdf/${lesson.id}`}
+                      href={`/api/pdf/${lesson.id}`}
                       target="_blank"
                       rel="noreferrer"
                       className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
@@ -1644,7 +1731,7 @@ const LibraryPage = () => {
                       {lesson.pdf_path && (
                         <>
                           <a
-                            href={`/pdf/${lesson.id}`}
+                            href={`/api/pdf/${lesson.id}`}
                             target="_blank"
                             rel="noreferrer"
                             className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
@@ -1653,7 +1740,7 @@ const LibraryPage = () => {
                             <Eye size={16} />
                           </a>
                           <a
-                            href={`/pdf/download/${lesson.id}`}
+                            href={`/api/pdf/download/${lesson.id}`}
                             className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                             title="下载"
                           >
@@ -3106,24 +3193,24 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">用户名</label>
+                <label className="text-sm text-gray-400">用户名 <span className="text-gray-600 font-normal">· 登录用</span></label>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
-                  placeholder="登录时使用"
+                  placeholder="用于登录，提交后不可修改"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">显示名</label>
+                <label className="text-sm text-gray-400">昵称 <span className="text-gray-600 font-normal">· 显示用</span></label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
-                  placeholder="后台展示名称"
+                  placeholder="后台显示的名字，可修改"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
