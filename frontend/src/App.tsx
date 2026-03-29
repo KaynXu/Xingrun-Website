@@ -263,6 +263,22 @@ export function resolveTeacherBindingRollbackClassItem(
   };
 }
 
+export function resolveTeacherBindingRollbackTeacherBindings(
+  currentTeacherBindingByClassId: Record<number, number | null>,
+  classId: number,
+  previousTeacherUserId: number | null,
+  failedNextTeacherUserId: number,
+): Record<number, number | null> {
+  if (currentTeacherBindingByClassId[classId] !== failedNextTeacherUserId) {
+    return currentTeacherBindingByClassId;
+  }
+
+  return {
+    ...currentTeacherBindingByClassId,
+    [classId]: previousTeacherUserId,
+  };
+}
+
 function getRoleBadgeClass(role: Role): string {
   if (role === 'owner') {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
@@ -3240,6 +3256,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           new: createEmptyClassForm(),
         }));
         setNewClassTeacherUserId(null);
+        loadPageRequestVersionRef.current += 1;
         await apiFetch(`/api/classes/${created.id}/teacher`, {
           method: 'PUT',
           body: JSON.stringify({ teacher_user_id: selectedTeacherUserId }),
@@ -3325,6 +3342,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     const selectedTeacher = users.find((user) => user.id === teacherUserId);
 
     setAssignmentError('');
+    loadPageRequestVersionRef.current += 1;
     setTeacherBindingSavingByClassId((current) => ({ ...current, [classId]: true }));
     setTeacherBindingByClassId((current) => ({ ...current, [classId]: teacherUserId }));
     setClasses((current) => current.map((item) => (
@@ -3343,7 +3361,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         setAssignmentError(`老师绑定已保存，但列表刷新失败：${refreshResult.error.message}`);
       }
     } catch (err) {
-      setTeacherBindingByClassId((current) => ({ ...current, [classId]: previousTeacherUserId }));
+      setTeacherBindingByClassId((current) => resolveTeacherBindingRollbackTeacherBindings(current, classId, previousTeacherUserId, teacherUserId));
       setClasses((current) => current.map((item) => (
         item.id === classId
           ? resolveTeacherBindingRollbackClassItem(item, teacherUserId, previousTeacherUserId, previousTeacherName)
