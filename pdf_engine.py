@@ -15,7 +15,7 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, KeepTogether,
+    HRFlowable, KeepTogether, PageBreak,
 )
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -567,135 +567,87 @@ def _nb_item(ctx: '_NbCtx', item: dict, show_answers: bool):
     ctx.note_y -= 2
 
 
-# ─── 主入口：生成单节课 PDF（Cornell Notes 风格）────────────────────────────────
+# ─── 主入口：生成单节课 PDF（新版分块模板）──────────────────────────────────────
 def generate_lesson_pdf(plan_data: dict, output_path: str,
                         show_quiz_answers: bool = False,
                         show_fill_answers: bool = False) -> str:
     """
-    生成 Cornell Notes 风格复习讲义 PDF。
+    生成新版分块式复习讲义 PDF。
     show_fill_answers=True 时在填空题下方显示参考答案（答案版）。
     返回生成的 PDF 绝对路径。
     """
     _ensure_fonts()
+    styles = _make_styles()
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    info      = plan_data.get('lesson_info', {})
-    subject   = info.get('subject', '')
-    grade     = info.get('grade', '')
-    topic     = info.get('topic', '')
-    date_     = info.get('date', '')
-    cats      = info.get('key_categories', [])
-    group_a   = info.get('group_a', [])
-    group_b   = info.get('group_b', [])
-    weak      = plan_data.get('weak_points_summary', '')
-    days      = plan_data.get('days', [])
+    info = plan_data.get('lesson_info', {})
+    subject = info.get('subject', '')
+    grade = info.get('grade', '')
+    topic = info.get('topic', '复习计划')
+    date_ = info.get('date', '')
+    cats = info.get('key_categories', [])
+    weak = plan_data.get('weak_points_summary', '')
+    days = plan_data.get('days', [])
     questions = plan_data.get('questions', [])
+    weekly_review_prompts = plan_data.get('weekly_review_prompts', [])
 
-    subj_hdr = f'{grade}·{subject}' if grade else subject
-    ver_txt  = '答案版' if show_fill_answers else '学生版'
+    version_text = '答案版' if show_fill_answers else '学生填写版'
+    subject_line = '　'.join(part for part in [grade, subject] if part)
 
-    c   = rl_canvas.Canvas(output_path, pagesize=A4)
-    ctx = _NbCtx(c, subj_hdr, date_)
+    doc = SimpleDocTemplate(
+        output_path,
+        pagesize=A4,
+        leftMargin=LM,
+        rightMargin=RM,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        title=f'{topic}（{version_text}）',
+    )
 
-    # ── 封面页 ──────────────────────────────────────────────────────────────
-    ctx.begin(keywords=f'{topic}  [{ver_txt}]')
-    ny = ctx.note_y
-    ny = ctx.w(topic, FONT_MAIN, 13, ctx.ntx, ny, ctx.ntw, NB_STEP)
-    ny -= NB_LINE_H * 0.4
+    story = [
+        _spacer(0.4),
+        Paragraph(topic or '课后复习计划', styles['title']),
+        Paragraph(f'{version_text}　·　第1/2/7/14/30天跟踪复习', styles['subtitle']),
+    ]
+
+    meta_lines = []
+    if subject_line:
+        meta_lines.append(subject_line)
+    if date_:
+        meta_lines.append(f'生成日期：{date_}')
+    if meta_lines:
+        story.append(Paragraph('　·　'.join(meta_lines), styles['meta']))
+
+    story.append(HRFlowable(width=CONTENT_W, thickness=1.5, color=C_HEADER, spaceAfter=10))
+
+    intro_paras = [
+        Paragraph('每个复习日都完整覆盖整节课内容，题型以填空题为主，口头自测与题库为辅。', styles['body']),
+    ]
     if cats:
-        ny = ctx.w('本课知识板块：', FONT_MAIN, 8, ctx.ntx, ny, ctx.ntw, NB_LBL)
-        for cat in cats:
-            ny = ctx.w(f'  ▸ {cat}', FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_TXT)
-        ny -= NB_LINE_H * 0.3
-    if group_a and group_b:
-        ny = ctx.w(f'A组（第14天）：{"、".join(group_a)}', FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_GRN)
-        ny = ctx.w(f'B组（第30天）：{"、".join(group_b)}', FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_GRN)
-        ny -= NB_LINE_H * 0.3
+        intro_paras.append(Paragraph(f"本课知识板块：{'　▪　'.join(cats)}", styles['body']))
     if weak:
-        ny = ctx.w('薄弱点提示：', FONT_MAIN, 8, ctx.ntx, ny, ctx.ntw, NB_LBL)
-        ny = ctx.w(weak, FONT_LIGHT, 9, ctx.ntx, ny, ctx.ntw, NB_PHRASE)
-    # CUE 列：复习安排
-    cy = ctx.ctop
-    cy = ctx.w('复习安排', FONT_MAIN, 7.5, ctx.cue_x, cy, ctx.cue_w, NB_LBL)
-    for d in days:
-        dc = NB_STEP if d.get('type') == 'day1' else NB_GRN
-        cy = ctx.w(d.get('label', ''), FONT_LIGHT, 8, ctx.cue_x, cy, ctx.cue_w, dc)
-    ctx.summary(f'这节课主要学了：{topic}')
-    c.showPage()
+        intro_paras.append(Paragraph(f'薄弱点提醒：{weak}', styles['self_test']))
+    story.append(_box(intro_paras, C_LIGHT_BG, C_BORDER))
+    story.append(_spacer(0.25))
 
-    # ── 各天页面 ────────────────────────────────────────────────────────────
     for day_data in days:
+        story.append(PageBreak())
         day_type = day_data.get('type', 'daily')
-        label    = day_data.get('label', '')
-        theme    = day_data.get('theme', '')
-        phrase   = day_data.get('self_test_phrase', '')
-        group    = day_data.get('group', '')
-
-        kw = label
-        if theme:  kw += f'  ·  {theme}'
-        if group:  kw += f'  [{group}组]'
-
-        ctx.begin(keywords=kw)
-
         if day_type == 'day1':
-            for step in day_data.get('steps', []):
-                ctx.chk(kw)
-                sl = step.get('step_label', '')
-                st = step.get('title', '')
-                # NOTES 列：步骤标题
-                ctx.note_y = ctx.w(
-                    f'{sl}  {st}', FONT_MAIN, 9,
-                    ctx.ntx, ctx.note_y, ctx.ntw, NB_STEP)
-                ctx.note_y -= NB_LINE_H * 0.15
-                # CUE 列：步骤简称
-                ctx.cue_y = ctx.w(
-                    sl.replace('⏱ ', ''), FONT_MAIN, 7.5,
-                    ctx.cue_x, ctx.cue_y, ctx.cue_w, NB_LBL)
-                ctx.cue_y = ctx.w(
-                    st[:16], FONT_LIGHT, 7.5,
-                    ctx.cue_x, ctx.cue_y, ctx.cue_w, NB_LBL)
-                ctx.cue_y -= NB_LINE_H * 0.3
-                for item in step.get('items', []):
-                    ctx.chk(kw)
-                    _nb_item(ctx, item, show_fill_answers)
-                ctx.note_y -= NB_LINE_H * 0.3
+            story.extend(_render_day1(day_data, styles, C_LIGHT_BG, C_BORDER, show_answers=show_fill_answers))
         else:
-            for item in day_data.get('items', []):
-                ctx.chk(kw)
-                _nb_item(ctx, item, show_fill_answers)
+            header_color = C_DAILY if day_data.get('day', 0) < 14 else C_DAY1
+            background = C_GREEN_BG if header_color == C_DAILY else C_LIGHT_BG
+            border = C_GREEN_BD if header_color == C_DAILY else C_BORDER
+            story.extend(_render_daily(day_data, styles, background, border, header_color, show_answers=show_fill_answers))
 
-        ctx.summary(_normalize_blanks(phrase) if phrase else '')
-        c.showPage()
-
-    # ── 题库页 ──────────────────────────────────────────────────────────────
     if questions:
-        cats_q: dict = {}
-        for q in questions:
-            cats_q.setdefault(q.get('category', '综合'), []).append(q)
-        ctx.begin(keywords='📚 题库（自测用）')
-        for cat, qs in cats_q.items():
-            ctx.chk('题库（续）')
-            ctx.note_y = ctx.w(f'▶ {cat}', FONT_MAIN, 9.5, ctx.ntx, ctx.note_y, ctx.ntw, NB_STEP)
-            ctx.cue_y  = ctx.w(cat, FONT_LIGHT, 8, ctx.cue_x, ctx.cue_y, ctx.cue_w, NB_LBL)
-            ctx.note_y -= NB_LINE_H * 0.2
-            for i, q in enumerate(qs, 1):
-                ctx.chk('题库（续）')
-                ctx.note_y = ctx.w(
-                    f'{i}. {q.get("question", "")}', FONT_LIGHT, 9,
-                    ctx.ntx, ctx.note_y, ctx.ntw, NB_TXT)
-                if show_quiz_answers:
-                    ctx.note_y = ctx.w(
-                        f'答：{q.get("answer", "")}', FONT_LIGHT, 8.5,
-                        ctx.ntx, ctx.note_y, ctx.ntw, NB_ANS, indent=8)
-                else:
-                    ctx.note_y = ctx.w(
-                        '答：＿＿＿＿＿＿＿', FONT_LIGHT, 9,
-                        ctx.ntx, ctx.note_y, ctx.ntw,
-                        colors.HexColor('#bbbbbb'), indent=8)
-                ctx.note_y -= 3
-        c.showPage()
+        story.append(PageBreak())
+        story.extend(_render_quiz_section(questions, styles, show_answers=show_quiz_answers))
 
-    c.save()
+    story.extend(_render_weekly_review(weekly_review_prompts, styles))
+
+    doc.build(story)
     return str(Path(output_path).resolve())
 
 
