@@ -778,6 +778,7 @@ def delete_class(class_id: int):
     """Delete a class (lessons are kept but unlinked)."""
     with get_conn() as conn:
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
 
 
