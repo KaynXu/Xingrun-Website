@@ -28,7 +28,6 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(appSource, /const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
-  assert.match(appSource, /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
   assert.match(classManagementBlock[0], /班级老师分配/);
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
@@ -44,13 +43,41 @@ test('class management source guards selection and refresh during class save del
   assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classInteractionLocked\}/);
 });
 
-test('class management source guards assignment refresh and checkboxes during conflicting async work', () => {
-  assert.match(appSource, /const hasAssignmentSavingRows = Object\.values\(assignmentSavingByUserId\)\.some\(Boolean\);/);
-  assert.match(appSource, /const assignmentRefreshLocked = classInteractionLocked \|\| hasAssignmentSavingRows;/);
-  assert.match(appSource, /const \[teacherSearchByClassId, setTeacherSearchByClassId\] = useState<Record<string, string>>\(\{\}\);/);
-  assert.match(appSource, /const handleToggleAssignment = async \(userId: number, classId: number, checked: boolean\) => \{\s*if \(classInteractionLocked \|\| assignmentSavingByUserId\[userId\]\) \{\s*return;\s*\}/);
-  assert.match(appSource, /onClick=\{\(\) => loadPage\(item\.id\)\.catch\(\(\) => undefined\)\}\s+disabled=\{assignmentRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
-  assert.match(appSource, /disabled=\{rowSaving \|\| classInteractionLocked\}/);
+test('class management source adds a specific grade filter and renders filtered classes only', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
+  assert.match(classManagementBlock[0], /const gradeFilterOptions = \['全部', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'\];/);
+  assert.match(classManagementBlock[0], /const filteredClasses = classes\.filter\(\(item\) => \{/);
+  assert.match(classManagementBlock[0], /if \(selectedGradeFilter === '全部'\) \{\s*return true;\s*\}/);
+  assert.match(classManagementBlock[0], /\{filteredClasses\.length === 0 \?/);
+  assert.match(classManagementBlock[0], /\{filteredClasses\.map\(\(item\) => \{/);
+});
+
+test('class management source uses class-centric teacher binding instead of user checkbox matrices', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /apiFetch<\{ teacher_bindings: Record<number, number \| null> \}>\('\/api\/classes\/teacher-bindings'\)/);
+  assert.match(classManagementBlock[0], /const \[teacherBindingByClassId, setTeacherBindingByClassId\] = useState<Record<number, number \| null>>\(\{\}\);/);
+  assert.match(classManagementBlock[0], /const \[teacherBindingSavingByClassId, setTeacherBindingSavingByClassId\] = useState<Record<number, boolean>>\(\{\}\);/);
+  assert.match(classManagementBlock[0], /const handleSelectTeacherForClass = async \(classId: number, teacherUserId: number\) => \{/);
+  assert.match(classManagementBlock[0], /apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{/);
+  assert.doesNotMatch(classManagementBlock[0], /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
+  assert.doesNotMatch(classManagementBlock[0], /type="checkbox"/);
+  assert.match(classManagementBlock[0], /type="radio"/);
+});
+
+test('class management source keeps interaction locks while switching to single-teacher binding saves', () => {
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /if \(classInteractionLocked \|\| teacherBindingSavingByClassId\[classId\]\) \{\s*return;\s*\}/);
+  assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
+  assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}/);
 });
 
 test('class management source adds compact card single-expand state via expandedClassId', () => {
