@@ -44,7 +44,7 @@ import { CourseCalendarPage } from './CourseCalendarPage';
 // --- Types ---
 
 type Role = 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'input' | 'library' | 'consultation' | 'calendar' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -916,6 +916,9 @@ const Sidebar = ({
     { id: 'library', icon: Library, label: '课程列表' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
+    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+      ? [{ id: 'classes', icon: Home, label: '班级管理' }]
+      : []),
     ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
@@ -2547,12 +2550,6 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [error, setError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
 
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [userClassIds, setUserClassIds] = useState<Record<number, number[]>>({});
-  const [savingUserId, setSavingUserId] = useState<number | null>(null);
-  const [changingRoleId, setChangingRoleId] = useState<number | null>(null);
-
   const loadItems = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -2582,62 +2579,6 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       setError(err instanceof Error ? err.message : '审批操作失败');
     } finally {
       setActingId(null);
-    }
-  };
-
-  useEffect(() => {
-    Promise.all([
-      apiFetch<UserItem[]>('/api/admin/users'),
-      apiFetch<ClassItem[]>('/api/classes'),
-    ]).then(([u, c]) => {
-      setUsers(u);
-      setClasses(c);
-      return Promise.all(
-        u.map((user) =>
-          apiFetch<{ class_ids: number[] }>(`/api/admin/users/${user.id}/classes`).then((d) => ({
-            id: user.id,
-            class_ids: d.class_ids,
-          }))
-        )
-      );
-    }).then((results) => {
-      const map: Record<number, number[]> = {};
-      results.forEach(({ id, class_ids }) => { map[id] = class_ids; });
-      setUserClassIds(map);
-    }).catch(console.error);
-  }, []);
-
-  const handleRoleChange = async (userId: number, newRole: 'admin' | 'member') => {
-    setChangingRoleId(userId);
-    setError('');
-    try {
-      await apiFetch(`/api/admin/users/${userId}/role`, {
-        method: 'PUT',
-        body: JSON.stringify({ role: newRole }),
-      });
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '权限修改失败');
-    } finally {
-      setChangingRoleId(null);
-    }
-  };
-
-  const handleClassToggle = async (userId: number, classId: number, checked: boolean) => {
-    const prev = userClassIds[userId] ?? [];
-    const next = checked ? [...prev, classId] : prev.filter((id) => id !== classId);
-    setUserClassIds((m) => ({ ...m, [userId]: next }));
-    setSavingUserId(userId);
-    try {
-      await apiFetch(`/api/admin/users/${userId}/classes`, {
-        method: 'PUT',
-        body: JSON.stringify({ class_ids: next }),
-      });
-    } catch (err) {
-      setUserClassIds((m) => ({ ...m, [userId]: prev }));
-      setError(err instanceof Error ? err.message : '保存失败');
-    } finally {
-      setSavingUserId(null);
     }
   };
 
@@ -2755,77 +2696,6 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           )}
         </section>
       </div>
-
-      <section className={`${workspaceCardClass} space-y-5 p-6`}>
-        <div>
-          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级分配</h4>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">为每位成员指定可访问的班级。</p>
-        </div>
-        {users.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无成员数据</div>
-        ) : (
-          <div className="space-y-4">
-            {users.map((user) => {
-              const assigned = userClassIds[user.id] ?? [];
-              const saving = savingUserId === user.id;
-              const changingRole = changingRoleId === user.id;
-              const isOwner = user.role === 'owner';
-              return (
-                <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
-                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          isOwner
-                            ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-900/20 dark:text-amber-300'
-                            : user.role === 'admin'
-                              ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/20 dark:text-sky-300'
-                              : 'border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400'
-                        }`}>
-                          {getRoleLabel(user.role)}
-                        </span>
-                        {!isOwner && (
-                          <button
-                            disabled={changingRole}
-                            onClick={() => handleRoleChange(user.id, user.role === 'admin' ? 'member' : 'admin')}
-                            className="text-[11px] text-sky-600 hover:text-sky-500 disabled:opacity-50 dark:text-sky-400 dark:hover:text-sky-300"
-                          >
-                            {changingRole ? '...' : user.role === 'admin' ? '降为成员' : '升为管理员'}
-                          </button>
-                        )}
-                      </div>
-                      <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{user.org}</span>
-                      {saving && <span className="mt-0.5 block text-xs text-sky-600">保存中...</span>}
-                    </div>
-                    {classes.length === 0 ? (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">暂无班级</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {classes.map((cls) => {
-                          const checked = assigned.includes(cls.id);
-                          return (
-                              <label key={cls.id} className="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={saving}
-                                onChange={(e) => handleClassToggle(user.id, cls.id, e.target.checked)}
-                                className="accent-sky-500"
-                              />
-                              <span className={checked ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}>{cls.name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
     </div>
   );
 };
@@ -2874,6 +2744,49 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
             <span className="text-slate-500 dark:text-slate-400">AI 引擎</span>
             <span className="text-slate-700 dark:text-slate-200">由星润提供</span>
           </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+  return (
+    <div className={`${workspacePageClass} space-y-8`}>
+      <section className={`${workspaceCardClass} space-y-4 p-6`}>
+        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Class Workspace</p>
+        <div>
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">班级管理</h3>
+          <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
+            这里将承接班级台账、成员归属与后续运营动作。当前先拆出独立工作区页面，保留 {currentUser.organization_name} 的班级管理入口与结构。
+          </p>
+        </div>
+      </section>
+
+      <section className={`${workspaceCardClass} space-y-5 p-6`}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级列表</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">后续将在这里接入班级检索、筛选与基础信息维护。</p>
+          </div>
+          <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/30 dark:text-sky-300">
+            即将接入
+          </span>
+        </div>
+        <div className={`${workspaceSoftCardClass} p-5`}>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">班级数据将在 Task 5 接入</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">本页当前只提供工作区壳层，避免账号审批页面继续承担班级管理职责。</p>
+        </div>
+      </section>
+
+      <section className={`${workspaceCardClass} space-y-5 p-6`}>
+        <div>
+          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员班级分配</h4>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">成员与班级关系的编辑入口会在后续任务中接入真实数据与表单操作。</p>
+        </div>
+        <div className={`${workspaceSoftCardClass} p-5`}>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">当前阶段不加载分配数据</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">这里只保留版面与信息层级，确保 owner 和 admin 已有独立的班级管理标签页。</p>
         </div>
       </section>
     </div>
@@ -3802,7 +3715,15 @@ export default function App() {
           return;
         }
         setCurrentUser(user);
-        setActivePage((page) => (page === 'accounts' && user.role !== 'owner' ? 'dashboard' : page));
+        setActivePage((page) => {
+          if (page === 'accounts' && user.role !== 'owner') {
+            return 'dashboard';
+          }
+          if (page === 'classes' && user.role !== 'owner' && user.role !== 'admin') {
+            return 'dashboard';
+          }
+          return page;
+        });
       })
       .catch(() => {
         if (cancelled) {
@@ -3894,6 +3815,7 @@ export default function App() {
     library: '课程列表',
     consultation: '咨询记录',
     calendar: '课程日历',
+    classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',
   };
@@ -4036,6 +3958,9 @@ export default function App() {
                       onNextWeek={handleNextCalendarWeek}
                     />
                   ))}
+                {activePage === 'classes' && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
+                  <ClassManagementPage currentUser={currentUser} />
+                )}
                 {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
