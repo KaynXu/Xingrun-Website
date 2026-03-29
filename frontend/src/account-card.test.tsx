@@ -255,8 +255,41 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
-  assert.match(classManagementBlock[0], /apiFetch<\{ class_ids: number\[\] \}>\(`\/api\/admin\/users\/\$\{userId\}\/classes`\)/);
   assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
+});
+
+test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(source, /teacher_user_id\?: number \| null;/);
+  assert.match(classManagementBlock[0], /当前老师：/);
+  assert.match(classManagementBlock[0], /teacherSummary = currentTeacher\?\.name \|\| item\.teacher_name \|\| '未分配老师';/);
+  assert.doesNotMatch(classManagementBlock[0], /已分配 \{selectedTeacherIds\.length\} 位老师/);
+  assert.doesNotMatch(classManagementBlock[0], /selectedTeacherNames/);
+});
+
+test('class management source requires selecting one teacher when creating a class', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /if \(classId === 'new' && !selectedTeacherUserId\) \{\s*setFormError\('请先选择负责老师账号'\);\s*return;\s*\}/);
+  assert.match(classManagementBlock[0], /const selectedTeacher = typeof selectedTeacherUserId === 'number' \? users\.find\(\(user\) => user\.id === selectedTeacherUserId\) : undefined;/);
+  assert.match(classManagementBlock[0], /teacher_name: selectedTeacher\?\.name \|\| '',/);
+  assert.match(classManagementBlock[0], /await apiFetch\(`\/api\/classes\/\$\{created\.id\}\/teacher`, \{/);
+});
+
+test('class management source keeps teacher binding selection scoped per class card', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const currentTeacherUserId = teacherBindingByClassId\[item\.id\] \?\? item\.teacher_user_id \?\? null;/);
+  assert.match(classManagementBlock[0], /const currentTeacher = currentTeacherUserId == null \? undefined : users\.find\(\(user\) => user\.id === currentTeacherUserId\);/);
+  assert.match(classManagementBlock[0], /const teacherBindingSaving = Boolean\(teacherBindingSavingByClassId\[item\.id\]\);/);
+  assert.match(classManagementBlock[0], /onChange=\{\(\) => handleSelectTeacherForClass\(item\.id, user\.id\)\}/);
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
@@ -265,12 +298,12 @@ test('class management source disables conflicting controls while async class or
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
-  assert.match(classManagementBlock[0], /const hasAssignmentSavingRows = Object\.values\(assignmentSavingByUserId\)\.some\(Boolean\);/);
-  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasAssignmentSavingRows;/);
+  assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*刷新列表/);
   assert.match(classManagementBlock[0], /disabled=\{classInteractionLocked\}[\s\S]*新建班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
-  assert.match(classManagementBlock[0], /disabled=\{rowSaving \|\| classInteractionLocked\}/);
+  assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
@@ -294,6 +327,6 @@ test('class management source embeds teacher assignment inside each class card a
   assert.match(source, /const normalizeClassNameInput = \(value: string\): string =>/);
   assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
-  assert.match(classManagementBlock[0], /已分配 \{selectedTeacherIds.length\} 位老师/);
-  assert.match(classManagementBlock[0], /classes\.map\(\(item\) => \{[\s\S]*班级老师分配/);
+  assert.match(classManagementBlock[0], /当前老师：\{teacherSummary\}/);
+  assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*班级老师分配/);
 });
