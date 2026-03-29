@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildWrongQuestionQuery,
+  buildWrongQuestionSummaryExportPath,
   normalizeWrongQuestionListResponse,
   summarizeWrongQuestionRecords,
   type WrongQuestionRecord,
@@ -85,6 +86,17 @@ test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => 
   );
 
   assert.equal(buildWrongQuestionQuery({ studentName: '   ', onlyPendingReview: false }), '');
+});
+
+test('buildWrongQuestionSummaryExportPath reuses the normalized filter query', () => {
+  assert.equal(
+    buildWrongQuestionSummaryExportPath({
+      studentName: ' Alice ',
+      className: ' 六年级 1 班 ',
+      onlyPendingReview: true,
+    }),
+    '/api/wrong-questions/summary/export?studentName=Alice&className=%E5%85%AD%E5%B9%B4%E7%BA%A7%201%20%E7%8F%AD&onlyPendingReview=true',
+  );
 });
 
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
@@ -171,4 +183,40 @@ test('SmartWrongQuestionsPage guards against stale list responses with a request
   assert.match(pageSource, /const requestVersion = requestVersionRef\.current \+ 1;\s*requestVersionRef\.current = requestVersion;/);
   assert.match(pageSource, /if \(requestVersion !== requestVersionRef\.current\) \{\s*return;\s*\}/);
   assert.match(pageSource, /if \(requestVersion === requestVersionRef\.current\) \{\s*setLoading\(false\);\s*\}/);
+});
+
+test('SmartWrongQuestionsPage loads selected record detail into a review draft state', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /const \[detailLoading, setDetailLoading\] = useState\(false\);/);
+  assert.match(pageSource, /const \[detailError, setDetailError\] = useState\(''\);/);
+  assert.match(pageSource, /const \[reviewDraftByRecordId, setReviewDraftByRecordId\] = useState<Record<string, [^>]+>>\(\{\}\);/);
+  assert.match(pageSource, /apiFetch<[^>]+>\(`\/api\/wrong-questions\/\$\{[^}]+\}`\)/);
+  assert.match(pageSource, /setReviewDraftByRecordId\(\(current\) => \{/);
+  assert.match(pageSource, /selectedErrorType/);
+  assert.match(pageSource, /selectedKnowledgePoints/);
+  assert.match(pageSource, /selectedActions/);
+  assert.match(pageSource, /selectedReasons/);
+  assert.match(pageSource, /studentNote/);
+});
+
+test('SmartWrongQuestionsPage saves review drafts and surfaces save failures without dropping edits', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+  const saveBlock = pageSource.match(/const handleSaveReview = async \(\) => \{[\s\S]*?\n  \};/);
+
+  assert.ok(saveBlock);
+  assert.match(pageSource, /const \[saveError, setSaveError\] = useState\(''\);/);
+  assert.match(pageSource, /const \[savingReview, setSavingReview\] = useState\(false\);/);
+  assert.match(saveBlock[0], /apiFetch(?:<[^>]+>)?\(`\/api\/wrong-questions\/\$\{[^}]+\}\/review`, \{\s*method: 'PUT'/);
+  assert.match(saveBlock[0], /catch \(saveReviewError\) \{\s*setSaveError\(/);
+  assert.match(pageSource, /保存教师复盘/);
+});
+
+test('SmartWrongQuestionsPage reuses the current filter query for PDF export', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /const handleExportSummary = \(\) => \{/);
+  assert.match(pageSource, /buildWrongQuestionSummaryExportPath\(filters\)/);
+  assert.match(pageSource, /window\.open\(/);
+  assert.match(pageSource, /导出 PDF 汇总/);
 });

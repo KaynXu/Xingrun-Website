@@ -11,12 +11,18 @@ import {
   workspaceSoftCardClass,
 } from './App';
 import {
+  applyWrongQuestionReviewDraft,
+  buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
+  buildWrongQuestionReviewPayload,
+  buildWrongQuestionSummaryExportPath,
+  normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   summarizeWrongQuestionRecords,
   type WrongQuestionFilters,
   type WrongQuestionListApiResponse,
   type WrongQuestionRecord,
+  type WrongQuestionReviewDraft,
   type WrongQuestionSummary,
 } from './smartWrongQuestions';
 
@@ -42,11 +48,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [savingReview, setSavingReview] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [reviewDraftByRecordId, setReviewDraftByRecordId] = useState<Record<string, WrongQuestionReviewDraft>>({});
   const [serverSummary, setServerSummary] = useState<WrongQuestionSummary | null>(null);
   const requestVersionRef = useRef(0);
+  const detailRequestVersionRef = useRef(0);
 
   const summary = useMemo(() => serverSummary ?? summarizeWrongQuestionRecords(records), [records, serverSummary]);
   const selectedRecord = records.find((item) => item.id === selectedId) ?? records[0] ?? null;
+  const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
 
   const loadList = useCallback(async (nextFilters: WrongQuestionFilters) => {
     const requestVersion = requestVersionRef.current + 1;
@@ -89,6 +102,69 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     void loadList(initialFilters);
   }, [loadList]);
 
+  useEffect(() => {
+    if (!selectedRecord) {
+      setDetailError('');
+      setSaveError('');
+      return;
+    }
+
+    setReviewDraftByRecordId((current) => {
+      if (current[selectedRecord.id]) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [selectedRecord.id]: buildWrongQuestionReviewDraft(selectedRecord),
+      };
+    });
+  }, [selectedRecord]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      return;
+    }
+
+    const requestVersion = detailRequestVersionRef.current + 1;
+    detailRequestVersionRef.current = requestVersion;
+    setDetailLoading(true);
+    setDetailError('');
+
+    void (async () => {
+      try {
+        const response = await apiFetch<WrongQuestionRecord>(`/api/wrong-questions/${encodeURIComponent(selectedId)}`);
+        if (requestVersion !== detailRequestVersionRef.current) {
+          return;
+        }
+
+        const detailRecord = normalizeWrongQuestionRecord(response);
+        setRecords((current) => current.map((item) => item.id === detailRecord.id ? detailRecord : item));
+        setServerSummary(null);
+        setReviewDraftByRecordId((current) => {
+          if (current[detailRecord.id]) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [detailRecord.id]: buildWrongQuestionReviewDraft(detailRecord),
+          };
+        });
+      } catch (loadDetailError) {
+        if (requestVersion !== detailRequestVersionRef.current) {
+          return;
+        }
+
+        setDetailError(loadDetailError instanceof Error ? loadDetailError.message : '智能错题详情加载失败');
+      } finally {
+        if (requestVersion === detailRequestVersionRef.current) {
+          setDetailLoading(false);
+        }
+      }
+    })();
+  }, [selectedId]);
+
   const handleFilterChange = <K extends keyof WrongQuestionFilters>(key: K, value: WrongQuestionFilters[K]) => {
     setFilters((current) => ({
       ...current,
@@ -100,6 +176,59 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     event.preventDefault();
     void loadList(filters);
   };
+
+  const handleDraftChange = <K extends keyof WrongQuestionReviewDraft>(key: K, value: WrongQuestionReviewDraft[K]) => {
+    if (!selectedRecord) {
+      return;
+    }
+
+    setReviewDraftByRecordId((current) => ({
+      ...current,
+      [selectedRecord.id]: {
+        ...(current[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord)),
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleSaveReview = async () => {
+    if (!selectedRecord || !selectedDraft) {
+      return;
+    }
+
+    setSavingReview(true);
+    setSaveError('');
+
+    try {
+      const payload = buildWrongQuestionReviewPayload(selectedDraft);
+      const response = await apiFetch<{ ok?: boolean; record?: unknown }>(`/api/wrong-questions/${selectedRecord.id}/review`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      const nextRecord = response.record
+        ? normalizeWrongQuestionRecord(response.record)
+        : applyWrongQuestionReviewDraft(selectedRecord, payload);
+
+      setRecords((current) => current.map((item) => item.id === selectedRecord.id ? nextRecord : item));
+      setServerSummary(null);
+      setReviewDraftByRecordId((current) => ({
+        ...current,
+        [selectedRecord.id]: buildWrongQuestionReviewDraft(nextRecord),
+      }));
+    } catch (saveReviewError) {
+      setSaveError(saveReviewError instanceof Error ? saveReviewError.message : '智能错题保存失败');
+    } finally {
+      setSavingReview(false);
+    }
+  };
+
+  const handleExportSummary = () => {
+    window.open(buildWrongQuestionSummaryExportPath(filters), '_blank', 'noopener');
+  };
+
+  const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
+  const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
+  const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
@@ -143,17 +272,22 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">筛选与列表</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">本阶段只实现列表浏览和页面骨架，不包含保存跟进与导出。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">筛选错题、查看详情、保存教师复盘，并按当前筛选条件导出 PDF 汇总。</p>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadList(filters)}
-            disabled={loading}
-            className={workspaceSecondaryButtonClass}
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            刷新列表
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={handleExportSummary} className={workspaceSecondaryButtonClass}>
+              导出 PDF 汇总
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadList(filters)}
+              disabled={loading}
+              className={workspaceSecondaryButtonClass}
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              刷新列表
+            </button>
+          </div>
         </div>
 
         <form className="grid gap-4 lg:grid-cols-3" onSubmit={handleSubmit}>
@@ -279,8 +413,22 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className={`${workspaceCardClass} space-y-5 p-5`}>
               <div>
                 <h4 className="text-xl font-semibold text-slate-900 dark:text-white">记录详情</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">后续教师勾选保存与导出将在后续任务补齐。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">选中记录后会拉取详情，可直接保存教师复盘内容。</p>
               </div>
+
+              {detailError && (
+                <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                  <AlertCircle size={16} />
+                  {detailError}
+                </div>
+              )}
+
+              {saveError && (
+                <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                  <AlertCircle size={16} />
+                  {saveError}
+                </div>
+              )}
 
               {selectedRecord ? (
                 <>
@@ -294,6 +442,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     <p className="text-sm text-slate-500 dark:text-slate-400">{selectedRecord.className || '未标注班级'} · {selectedRecord.teacherName || '未标注老师'}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
                   </div>
+
+                  {detailLoading && (
+                    <div className="rounded-2xl border border-dashed border-sky-200 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                      正在加载记录详情...
+                    </div>
+                  )}
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className={`${workspaceSoftCardClass} p-4`}>
@@ -321,6 +475,74 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       )}
                     </div>
                   </div>
+
+                  {selectedDraft && (
+                    <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">教师复盘</p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败时会保留当前草稿，便于继续修改后重试。</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveReview()}
+                          disabled={savingReview}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          保存教师复盘
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="space-y-2 text-sm sm:col-span-2">
+                          <span className="text-slate-500 dark:text-slate-400">selectedErrorType</span>
+                          <input
+                            type="text"
+                            value={selectedDraft.selectedErrorType}
+                            onChange={(event) => handleDraftChange('selectedErrorType', event.target.value)}
+                            className={workspaceFieldClass}
+                            placeholder="填写教师最终确认的错误类型"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">selectedKnowledgePoints</span>
+                          <textarea
+                            value={selectedKnowledgePointText}
+                            onChange={(event) => handleDraftChange('selectedKnowledgePoints', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            placeholder="每行一个知识点"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">selectedActions</span>
+                          <textarea
+                            value={selectedActionsText}
+                            onChange={(event) => handleDraftChange('selectedActions', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            placeholder="每行一个后续动作"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">selectedReasons</span>
+                          <textarea
+                            value={selectedReasonsText}
+                            onChange={(event) => handleDraftChange('selectedReasons', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            placeholder="每行一个原因"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">studentNote</span>
+                          <textarea
+                            value={selectedDraft.studentNote}
+                            onChange={(event) => handleDraftChange('studentNote', event.target.value)}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            placeholder="补充学生当前表现或教师备注"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
