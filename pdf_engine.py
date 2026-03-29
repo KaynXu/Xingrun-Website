@@ -7,7 +7,9 @@ PDF 生成引擎（数据驱动版）
   - 月度综合复习讲义
 """
 
+import html
 import os
+import re
 from pathlib import Path
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -175,9 +177,71 @@ def _make_styles():
 
 
 # ─── 低级渲染助手 ───────────────────────────────────────────────────────────────
+_GREEK = {
+    'alpha':'α','beta':'β','gamma':'γ','delta':'δ','epsilon':'ε','zeta':'ζ',
+    'eta':'η','theta':'θ','iota':'ι','kappa':'κ','lambda':'λ','mu':'μ',
+    'nu':'ν','xi':'ξ','pi':'π','rho':'ρ','sigma':'σ','tau':'τ',
+    'upsilon':'υ','phi':'φ','chi':'χ','psi':'ψ','omega':'ω',
+    'Alpha':'Α','Beta':'Β','Gamma':'Γ','Delta':'Δ','Theta':'Θ',
+    'Lambda':'Λ','Pi':'Π','Sigma':'Σ','Omega':'Ω',
+}
+_SUP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶',
+        '7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','n':'ⁿ'}
+_SUB = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅',
+        '6':'₆','7':'₇','8':'₈','9':'₉'}
+
+
+def _latex_to_readable(text: str) -> str:
+    """将文本中 $...$ 内联 LaTeX 数学公式转为 Unicode 可读字符串。"""
+    def _conv(m):
+        s = m.group(1)
+        # \frac{a}{b} → (a)/(b)，递归处理嵌套
+        for _ in range(5):
+            s2 = re.sub(r'\\frac\{([^{}]*)\}\{([^{}]*)\}', r'(\1)/(\2)', s)
+            if s2 == s:
+                break
+            s = s2
+        # \sqrt{x} → √(x)
+        s = re.sub(r'\\sqrt\{([^{}]*)\}', r'√(\1)', s)
+        # 上标 ^{...} 或 ^x
+        s = re.sub(r'\^\{([^{}]*)\}',
+                   lambda m: ''.join(_SUP.get(c, c) for c in m.group(1)), s)
+        s = re.sub(r'\^([0-9])',
+                   lambda m: _SUP.get(m.group(1), m.group(1)), s)
+        # 下标 _{...} 或 _x
+        s = re.sub(r'_\{([^{}]*)\}',
+                   lambda m: ''.join(_SUB.get(c, c) for c in m.group(1)), s)
+        s = re.sub(r'_([0-9])',
+                   lambda m: _SUB.get(m.group(1), m.group(1)), s)
+        # 希腊字母
+        for name, ch in _GREEK.items():
+            s = s.replace(f'\\{name}', ch)
+        # 常用运算符
+        s = (s.replace(r'\times', '×').replace(r'\div', '÷')
+              .replace(r'\cdot', '·').replace(r'\geq', '≥')
+              .replace(r'\leq', '≤').replace(r'\neq', '≠')
+              .replace(r'\approx', '≈').replace(r'\pm', '±')
+              .replace(r'\infty', '∞').replace(r'\degree', '°')
+              .replace(r'\circ', '°').replace(r'\angle', '∠'))
+        # 函数名去反斜杠
+        s = re.sub(r'\\(sin|cos|tan|cot|sec|csc|log|lg|ln|lim|max|min)', r'\1', s)
+        # 向量箭头
+        s = re.sub(r'\\vec\{([^{}]*)\}', r'\1⃗', s)
+        # 去掉剩余 \cmd
+        s = re.sub(r'\\[a-zA-Z]+', '', s)
+        # 去大括号
+        s = s.replace('{', '').replace('}', '')
+        return s.strip()
+
+    return re.sub(r'\$\$([^$]+)\$\$', _conv,
+           re.sub(r'\$([^$]+)\$', _conv, text))
+
+
 def _normalize_blanks(text: str) -> str:
-    """将 ____ 替换为全角下划线，保证渲染统一"""
-    return text.replace('____', BLANK)
+    """LaTeX→Unicode，____ 替换，XML 特殊字符转义，保证 ReportLab 安全渲染"""
+    text = _latex_to_readable(text)
+    text = text.replace('____', BLANK)
+    return html.escape(text)
 
 
 def _day_header(label: str, time_note: str, color, styles: dict):
@@ -221,7 +285,7 @@ def _render_item(item: dict, styles: dict, show_answers: bool = False) -> list:
     if t == "fill":
         result.append(Paragraph(text, styles['fill']))
         if show_answers and answer:
-            result.append(Paragraph(f"　✔️ 参考答案：{answer}", styles['answer']))
+            result.append(Paragraph(f"　✔️ 参考答案：{html.escape(answer)}", styles['answer']))
     elif t == "self_test":
         result.append(Paragraph(text, styles['self_test']))
     else:
@@ -241,7 +305,7 @@ def _render_day1(day_data: dict, styles: dict, bg: colors.Color,
     steps = day_data.get("steps", [])
     for step in steps:
         elements.append(Paragraph(
-            f"{step.get('step_label','')}：<b>{step.get('title','')}</b>",
+            f"{html.escape(step.get('step_label',''))}：<b>{html.escape(step.get('title',''))}</b>",
             styles['section']
         ))
         paras = []
@@ -322,10 +386,10 @@ def _render_quiz_section(questions: list, styles: dict, show_answers=False) -> l
             textColor=C_HEADER, spaceBefore=4, spaceAfter=2)))
         paras = []
         for i, q in enumerate(qs, 1):
-            q_text = f"{i}. {q.get('question', '')}"
+            q_text = f"{i}. {html.escape(q.get('question', ''))}"
             paras.append(Paragraph(q_text, styles['q_q']))
             if show_answers:
-                paras.append(Paragraph(f"答：{q.get('answer','')}", styles['q_a']))
+                paras.append(Paragraph(f"答：{html.escape(q.get('answer',''))}", styles['q_a']))
             else:
                 paras.append(Paragraph(f"答：{BLANK * 2}", styles['q_a']))
         elements.append(_box(paras, C_LIGHT_BG, C_BORDER))
@@ -356,7 +420,7 @@ def _render_weekly_review(prompts: list, styles: dict) -> list:
     ]))
     elements.append(hdr_tbl)
     elements.append(_spacer(0.15))
-    paras = [Paragraph(f"{i+1}. {p}　{BLANK * 2}", styles['fill'])
+    paras = [Paragraph(f"{i+1}. {html.escape(p)}　{BLANK * 2}", styles['fill'])
              for i, p in enumerate(prompts)]
     elements.append(_box(paras, C_LIGHT_BG, C_BORDER))
     elements.append(_spacer(0.25))
