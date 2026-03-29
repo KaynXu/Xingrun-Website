@@ -177,8 +177,8 @@ function normalizeDraftList(values: string[]): string[] {
 
 export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
   return {
-    selectedErrorType: record.analysis.selectedErrorType?.trim() || record.analysis.errorType,
-    selectedKnowledgePoints: normalizeDraftList(record.analysis.selectedKnowledgePoints ?? record.analysis.knowledgePoints),
+    selectedErrorType: record.analysis.selectedErrorType?.trim() ?? '',
+    selectedKnowledgePoints: normalizeDraftList(record.analysis.selectedKnowledgePoints ?? []),
     selectedActions: normalizeDraftList(record.analysis.selectedActions ?? []),
     selectedReasons: normalizeDraftList(record.analysis.selectedReasons ?? []),
     studentNote: record.analysis.studentNote?.trim() ?? '',
