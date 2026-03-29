@@ -119,6 +119,35 @@ python lesson_manager.py monthly --month 2026-03
 
 ---
 
+### 5.1 使用新版课后复习计划模板
+
+项目内已同步新版模板工作区到 `review_plan_templates/`，用于生成“第 1 / 2 / 7 / 14 / 30 天”的课后复习计划 PDF。
+
+常用命令：
+
+```bash
+python review_plan_templates/generate_review_pdfs.py
+```
+
+指定某个课程包生成：
+
+```bash
+python review_plan_templates/generate_review_pdfs.py default review_plan_templates/lesson_pack_vector_workflow.py
+```
+
+如需旧双语版：
+
+```bash
+python review_plan_templates/generate_review_pdfs.py hybrid review_plan_templates/lesson_pack_vector_workflow.py
+```
+
+说明：
+- 模板脚本、课程包和工作流文档位于 `review_plan_templates/`
+- 生成的 PDF 默认输出到 `review_plan_templates/pdf_output/`
+- 输出目录已加入 `.gitignore`，不会把新生成的 PDF 自动纳入版本管理
+
+---
+
 ### 6. 题库操作
 
 ```bash
@@ -177,6 +206,7 @@ Xingrun-Summary/
 ├── lesson_manager.py           ← 数据库层 + CLI 入口
 ├── ai_processor.py             ← AI 调用（计划生成、语音转写）
 ├── pdf_engine.py               ← PDF 生成（课时单、月度、周报）
+├── review_plan_templates/      ← 新版课后复习计划模板、课包与工作流文档
 ├── config.json                 ← 本地配置与登录 token（生产环境建议使用环境变量覆盖）
 ├── .env.runtime.example        ← 生产环境变量示例
 ├── config_runtime.py           ← 运行时配置加载（环境变量优先）
