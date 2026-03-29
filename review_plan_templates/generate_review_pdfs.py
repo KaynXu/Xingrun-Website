@@ -989,9 +989,10 @@ def make_knowledge_answer_table(knowledge_items, styles, knowledge_mode, labels,
     return table
 
 
-def on_page(styles, variant_key):
+def on_page(styles, variant_key, lesson_title=None):
     chinese_only = is_chinese_only(variant_key)
     labels = build_labels(chinese_only)
+    footer_title = lesson_title or LESSON["title"]
 
     def draw(canvas, doc):
         canvas.saveState()
@@ -1000,41 +1001,44 @@ def on_page(styles, variant_key):
         canvas.line(doc.leftMargin, A4[1] - 18 * mm, A4[0] - doc.rightMargin, A4[1] - 18 * mm)
         canvas.setFont("STSong-Light", 8.5)
         canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(doc.leftMargin, 10 * mm, LESSON["title"])
+        canvas.drawString(doc.leftMargin, 10 * mm, footer_title)
         canvas.drawRightString(A4[0] - doc.rightMargin, 10 * mm, labels["footer_right"].format(page=canvas.getPageNumber()))
         canvas.restoreState()
 
     return draw
 
 
-def build_story(styles, variant_key):
+def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None):
     base_date = date.today()
-    variant = VARIANTS[variant_key]
     chinese_only = is_chinese_only(variant_key)
     labels = build_labels(chinese_only)
+    lesson = lesson or LESSON
+    days = days or DAYS
+    final_reminder_lines = final_reminder_lines or FINAL_REMINDER_LINES
+    knowledge_sections = knowledge_sections if knowledge_sections is not None else KNOWLEDGE_SECTIONS
     story = []
     story.append(Spacer(1, 8 * mm))
-    story.append(Paragraph(LESSON["title"], styles["title"]))
-    subtitle = "" if chinese_only else LESSON["subtitle"]
+    story.append(Paragraph(lesson["title"], styles["title"]))
+    subtitle = "" if chinese_only else lesson.get("subtitle", "")
     if subtitle:
         story.append(Paragraph(subtitle, styles["subtitle"]))
     story.append(Spacer(1, 5 * mm))
     story.append(make_box(labels["usage_title"], Paragraph(labels["usage_text"], styles["body"]), styles, styles["soft"]))
     story.append(Spacer(1, 3 * mm))
-    story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(LESSON["full_review_topics"], chinese_only), styles["body"]), styles, colors.white))
+    story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, colors.white))
     story.append(Spacer(1, 3 * mm))
-    golden_quotes = [f"“{quote}”" for quote in LESSON["quotes"]]
+    golden_quotes = [f"“{quote}”" for quote in lesson.get("quotes", [])]
     story.append(make_box(labels["quotes_title"], bullet_paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
     story.append(PageBreak())
 
-    for index, day in enumerate(DAYS):
+    for index, day in enumerate(days):
         if index > 0:
             story.append(PageBreak())
         story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h1"]))
         story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_text(day['goal'], chinese_only)}", styles["body"]))
         story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_text(day['focus'], chinese_only)}", styles["body"]))
         story.append(Spacer(1, 2 * mm))
-        story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(LESSON["full_review_topics"], chinese_only), styles["body"]), styles, styles["soft"]))
+        story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["soft"]))
         story.append(Spacer(1, 2 * mm))
         story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, colors.white))
         story.append(Spacer(1, 2 * mm))
@@ -1044,7 +1048,7 @@ def build_story(styles, variant_key):
         story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, colors.white))
         story.append(Spacer(1, 2 * mm))
 
-        knowledge_items = KNOWLEDGE_SECTIONS.get(day["day"], [])
+        knowledge_items = knowledge_sections.get(day["day"], [])
         if knowledge_items:
             knowledge_mode = knowledge_mode_for_day(day, variant_key)
             if knowledge_mode == "mixed":
@@ -1073,7 +1077,7 @@ def build_story(styles, variant_key):
     story.append(make_box(
         labels["final_reminder_box"],
         bullet_paragraph(
-            localize_lines(FINAL_REMINDER_LINES, chinese_only),
+            localize_lines(final_reminder_lines, chinese_only),
             styles["body"],
         ),
         styles,
@@ -1081,11 +1085,11 @@ def build_story(styles, variant_key):
     ))
     story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(labels["answer_key"], styles["h1"]))
-    for day in DAYS:
+    for day in days:
         story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h2"]))
         story.append(make_answer_table(day, styles, labels))
         story.append(Spacer(1, 2 * mm))
-        knowledge_items = KNOWLEDGE_SECTIONS.get(day["day"], [])
+        knowledge_items = knowledge_sections.get(day["day"], [])
         if knowledge_items:
             knowledge_mode = knowledge_mode_for_day(day, variant_key)
             if knowledge_mode == "mixed":
@@ -1096,6 +1100,45 @@ def build_story(styles, variant_key):
             story.append(make_knowledge_answer_table(knowledge_items, styles, knowledge_mode, labels, chinese_only))
             story.append(Spacer(1, 2 * mm))
     return story
+
+
+def render_review_plan_pdf(
+    *,
+    lesson: dict,
+    days: list[dict],
+    final_reminder_lines: list[str],
+    output_path: str,
+    variant_key: str = "cn",
+    knowledge_sections: dict | None = None,
+) -> str:
+    register_fonts()
+    styles = build_styles()
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    doc = SimpleDocTemplate(
+        str(output),
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=24 * mm,
+        bottomMargin=16 * mm,
+        title=lesson["title"],
+    )
+    canvas_maker = lambda *args, **kwargs: TrackingCanvas(*args, char_space=LETTER_SPACING, **kwargs)
+    doc.build(
+        build_story(
+            styles,
+            variant_key,
+            lesson=lesson,
+            days=days,
+            final_reminder_lines=final_reminder_lines,
+            knowledge_sections=knowledge_sections or {},
+        ),
+        onFirstPage=on_page(styles, variant_key, lesson["title"]),
+        onLaterPages=on_page(styles, variant_key, lesson["title"]),
+        canvasmaker=canvas_maker,
+    )
+    return str(output.resolve())
 
 
 def parse_cli_args():
@@ -1126,26 +1169,16 @@ def main():
     variant_key, lesson_pack_path = parse_cli_args()
     if lesson_pack_path:
         load_lesson_pack(lesson_pack_path)
-    register_fonts()
     OUTPUT_DIR.mkdir(exist_ok=True)
-    styles = build_styles()
     variant = VARIANTS[variant_key]
     file_path = build_timestamped_output_path(OUTPUT_DIR, variant["filename"])
-    doc = SimpleDocTemplate(
-        str(file_path),
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=24 * mm,
-        bottomMargin=16 * mm,
-        title=LESSON["title"],
-    )
-    canvas_maker = lambda *args, **kwargs: TrackingCanvas(*args, char_space=LETTER_SPACING, **kwargs)
-    doc.build(
-        build_story(styles, variant_key),
-        onFirstPage=on_page(styles, variant_key),
-        onLaterPages=on_page(styles, variant_key),
-        canvasmaker=canvas_maker,
+    render_review_plan_pdf(
+        lesson=LESSON,
+        days=DAYS,
+        final_reminder_lines=FINAL_REMINDER_LINES,
+        output_path=str(file_path),
+        variant_key=variant_key,
+        knowledge_sections=KNOWLEDGE_SECTIONS,
     )
     print("Created PDFs:")
     print(file_path.name)
