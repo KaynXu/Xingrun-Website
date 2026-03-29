@@ -609,6 +609,85 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(class_payload["teacher_name"], "Teacher Swap B")
         self.assertEqual(class_payload["teacher_user_id"], teacher_b_id)
 
+    def test_legacy_class_update_preserves_bound_teacher_identity_when_fields_omitted(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="admin_legacy_update",
+            display_name="Admin Legacy Update",
+            password="adminlegacy123",
+        )
+        admin_token = admin_payload["token"]
+        admin_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(admin_token),
+        ).get_json()["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        teacher_payload = self.approve_user(
+            owner_token=owner_token,
+            username="teacher_legacy_update",
+            display_name="Teacher Legacy Update",
+            password="teacherlegacy123",
+        )
+        teacher_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(teacher_payload["token"]),
+        ).get_json()["id"]
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(admin_token),
+            json={
+                "name": "高一 1 班",
+                "subject": "物理",
+                "grade": "高一",
+                "teacher_name": "",
+                "teacher_email": "",
+            },
+        )
+        self.assertEqual(create_class.status_code, 201)
+        class_id = create_class.get_json()["id"]
+
+        bind_teacher = self.client.put(
+            f"/api/classes/{class_id}/teacher",
+            headers=self.auth_headers(admin_token),
+            json={"teacher_user_id": teacher_id},
+        )
+        self.assertEqual(bind_teacher.status_code, 200)
+
+        legacy_update = self.client.put(
+            f"/api/classes/{class_id}",
+            headers=self.auth_headers(admin_token),
+            json={
+                "name": "高一 1 班提高班",
+                "subject": "物理",
+                "grade": "高一",
+            },
+        )
+        self.assertEqual(legacy_update.status_code, 200)
+
+        class_detail = self.client.get(
+            f"/api/classes/{class_id}",
+            headers=self.auth_headers(admin_token),
+        )
+        self.assertEqual(class_detail.status_code, 200)
+        class_payload = class_detail.get_json()
+        self.assertEqual(class_payload["name"], "高一 1 班提高班")
+        self.assertEqual(class_payload["teacher_name"], "Teacher Legacy Update")
+        self.assertEqual(class_payload["teacher_user_id"], teacher_id)
+
     def test_member_cannot_write_class_management_apis(self):
         owner_login = self.client.post(
             "/api/login",
