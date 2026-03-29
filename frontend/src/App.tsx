@@ -3307,17 +3307,17 @@ export const LandingPage = ({
           <motion.div
             animate={{ scale: [1, 1.12, 1], opacity: [0.5, 0.65, 0.5] }}
             transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px]"
+            className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px] dark:bg-cyan-500/10"
           />
           <motion.div
             animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.55, 0.4] }}
             transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-            className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px]"
+            className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px] dark:bg-blue-500/10"
           />
           <motion.div
             animate={{ scale: [1, 1.15, 1], opacity: [0.7, 0.85, 0.7] }}
             transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 4 }}
-            className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px]"
+            className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px] dark:bg-slate-700/20"
           />
         </div>
 
