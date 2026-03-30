@@ -158,6 +158,43 @@ class MasterDataApiTestCase(unittest.TestCase):
         self.assertEqual(queue_after_resolve.status_code, 200)
         self.assertEqual(queue_after_resolve.get_json()["items"], [])
 
+    def test_owner_cannot_mark_mapping_mapped_without_canonical_ids(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+
+        master_data.upsert_wrong_question_mapping(
+            "record-unresolved-1",
+            teacher_name_snapshot="Unknown Teacher",
+            class_name_snapshot="Unknown Class",
+            subject_snapshot="数学",
+            mapping_status="needs_review",
+        )
+
+        resolve_response = self.client.put(
+            "/api/master-data/mappings/wrong-questions/record-unresolved-1",
+            headers=self.auth_headers(owner_token),
+            json={},
+        )
+        self.assertEqual(resolve_response.status_code, 400)
+        self.assertEqual(
+            resolve_response.get_json()["error"],
+            "mapped status requires teacher_user_id and class_id",
+        )
+
+        persisted = master_data.get_wrong_question_mapping("record-unresolved-1")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["mapping_status"], "needs_review")
+        self.assertEqual(persisted["teacher_user_id"], None)
+        self.assertEqual(persisted["class_id"], None)
+
+        queue_response = self.client.get(
+            "/api/master-data/mappings/wrong-questions",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertEqual(len(queue_response.get_json()["items"]), 1)
+        self.assertEqual(queue_response.get_json()["items"][0]["record_id"], "record-unresolved-1")
+
     def test_member_gets_403_on_queue_and_resolve(self):
         owner_payload = self.login_owner()
         owner_token = owner_payload["token"]
@@ -219,6 +256,18 @@ class MasterDataApiTestCase(unittest.TestCase):
         self.assertEqual(get_updated.status_code, 200)
         self.assertEqual(get_updated.get_json()["aliases"], ["Kayn 老师", "Wendy Wang"])
 
+    def test_owner_get_user_aliases_returns_404_for_missing_user(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+
+        response = self.client.get(
+            "/api/master-data/users/999999/aliases",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()["error"], "user not found")
+
     def test_owner_can_read_and_write_class_aliases(self):
         owner_payload = self.login_owner()
         owner_token = owner_payload["token"]
@@ -245,6 +294,18 @@ class MasterDataApiTestCase(unittest.TestCase):
         )
         self.assertEqual(get_updated.status_code, 200)
         self.assertEqual(get_updated.get_json()["aliases"], ["G6 Math B", "六年级2班"])
+
+    def test_owner_get_class_aliases_returns_404_for_missing_class(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+
+        response = self.client.get(
+            "/api/master-data/classes/999999/aliases",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()["error"], "class not found")
 
 
 if __name__ == "__main__":
