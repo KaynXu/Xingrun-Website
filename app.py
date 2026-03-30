@@ -947,7 +947,11 @@ def api_master_data_user_aliases_put(user_id):
     user, error = _require_staff()
     if error:
         return error
-    payload = request.json or {}
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
     aliases = payload.get("aliases", [])
     if not isinstance(aliases, list):
         return jsonify({"error": "aliases must be a list"}), 400
@@ -978,7 +982,11 @@ def api_master_data_class_aliases_put(class_id):
     user, error = _require_staff()
     if error:
         return error
-    payload = request.json or {}
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
     aliases = payload.get("aliases", [])
     if not isinstance(aliases, list):
         return jsonify({"error": "aliases must be a list"}), 400
