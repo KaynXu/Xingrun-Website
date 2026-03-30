@@ -118,8 +118,14 @@ def _quote_record_id(record_id: str) -> str:
     return parse.quote(str(record_id), safe="")
 
 
+def _require_object_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise WrongQuestionProxyError("下游服务返回了无效响应", 502)
+    return dict(payload)
+
+
 def fetch_wrong_question_records(query: Any) -> dict[str, Any]:
-    payload = _request_downstream("/wrong-questions", query=query)
+    payload = _require_object_payload(_request_downstream("/wrong-questions", query=query))
     items = payload.get("items") or []
     payload["items"] = [
         master_data.normalize_wrong_question_record(item)
@@ -131,18 +137,20 @@ def fetch_wrong_question_records(query: Any) -> dict[str, Any]:
 
 
 def fetch_wrong_question_record(record_id: str, query: Any) -> dict[str, Any]:
-    payload = _request_downstream(f"/wrong-questions/{_quote_record_id(record_id)}", query=query)
-    if isinstance(payload, Mapping):
-        return master_data.normalize_wrong_question_record(dict(payload))
-    return payload
+    payload = _require_object_payload(
+        _request_downstream(f"/wrong-questions/{_quote_record_id(record_id)}", query=query)
+    )
+    return master_data.normalize_wrong_question_record(payload)
 
 
 def save_wrong_question_review(record_id: str, query: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    return _request_downstream(
-        f"/wrong-questions/{_quote_record_id(record_id)}/review",
-        method="PUT",
-        query=query,
-        payload=payload,
+    return _require_object_payload(
+        _request_downstream(
+            f"/wrong-questions/{_quote_record_id(record_id)}/review",
+            method="PUT",
+            query=query,
+            payload=payload,
+        )
     )
 
 

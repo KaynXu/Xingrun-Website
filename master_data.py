@@ -726,6 +726,8 @@ def _write_audit_log(
 def _normalize_aliases(aliases: Iterable[str]) -> list[str]:
     unique_aliases = {}
     for alias in aliases:
+        if not isinstance(alias, str):
+            raise ValueError("aliases must contain only strings")
         cleaned_alias = (alias or "").strip()
         normalized = normalize_alias(cleaned_alias)
         if not normalized:
