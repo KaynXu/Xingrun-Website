@@ -911,14 +911,18 @@ def api_master_data_wrong_question_mapping_resolve(record_id):
     user, error = _require_staff()
     if error:
         return error
-    payload = request.json or {}
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid JSON payload"}), 400
     try:
         resolved = master_data.resolve_wrong_question_mapping(
             actor_user_id=user["id"],
             record_id=record_id,
             teacher_user_id=payload.get("teacher_user_id"),
             class_id=payload.get("class_id"),
-            mapping_status=(payload.get("mapping_status") or "mapped").strip() or "mapped",
+            mapping_status=payload.get("mapping_status") if "mapping_status" in payload else "mapped",
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
