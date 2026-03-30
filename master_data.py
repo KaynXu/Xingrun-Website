@@ -5,9 +5,74 @@ from typing import Any, Iterable, Optional
 import lesson_manager
 
 
+WRONG_QUESTION_MAPPINGS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS wrong_question_mappings (
+    record_id TEXT PRIMARY KEY,
+    teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+    teacher_name_snapshot TEXT DEFAULT '',
+    class_name_snapshot TEXT DEFAULT '',
+    subject_snapshot TEXT DEFAULT '',
+    mapping_status TEXT NOT NULL DEFAULT 'unmapped',
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+)
+"""
+
+MASTER_DATA_AUDIT_LOG_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS master_data_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_key TEXT NOT NULL,
+    action TEXT NOT NULL,
+    before_json TEXT NOT NULL,
+    after_json TEXT NOT NULL,
+    actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+)
+"""
+
+WRONG_QUESTION_MAPPINGS_COLUMNS = [
+    "record_id",
+    "teacher_user_id",
+    "class_id",
+    "teacher_name_snapshot",
+    "class_name_snapshot",
+    "subject_snapshot",
+    "mapping_status",
+    "reviewed_by",
+    "reviewed_at",
+    "created_at",
+    "updated_at",
+]
+
+MASTER_DATA_AUDIT_LOG_COLUMNS = [
+    "id",
+    "entity_type",
+    "entity_key",
+    "action",
+    "before_json",
+    "after_json",
+    "actor_user_id",
+    "created_at",
+]
+
+WRONG_QUESTION_MAPPINGS_FOREIGN_KEYS = {
+    "teacher_user_id": "SET NULL",
+    "class_id": "SET NULL",
+    "reviewed_by": "SET NULL",
+}
+
+MASTER_DATA_AUDIT_LOG_FOREIGN_KEYS = {
+    "actor_user_id": "SET NULL",
+}
+
+
 def ensure_schema(conn: sqlite3.Connection):
     conn.executescript(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS user_aliases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -32,32 +97,52 @@ def ensure_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_class_aliases_normalized_alias
         ON class_aliases(normalized_alias);
 
-        CREATE TABLE IF NOT EXISTS wrong_question_mappings (
-            record_id TEXT PRIMARY KEY,
-            teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
-            teacher_name_snapshot TEXT DEFAULT '',
-            class_name_snapshot TEXT DEFAULT '',
-            subject_snapshot TEXT DEFAULT '',
-            mapping_status TEXT NOT NULL DEFAULT 'unmapped',
-            reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            reviewed_at TEXT,
-            created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS master_data_audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            entity_type TEXT NOT NULL,
-            entity_key TEXT NOT NULL,
-            action TEXT NOT NULL,
-            before_json TEXT NOT NULL,
-            after_json TEXT NOT NULL,
-            actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            created_at TEXT DEFAULT (datetime('now','localtime'))
-        );
+        {WRONG_QUESTION_MAPPINGS_TABLE_SQL};
+        {MASTER_DATA_AUDIT_LOG_TABLE_SQL};
         """
     )
+    _ensure_table_foreign_keys(
+        conn,
+        table_name="wrong_question_mappings",
+        expected_actions=WRONG_QUESTION_MAPPINGS_FOREIGN_KEYS,
+        create_table_sql=WRONG_QUESTION_MAPPINGS_TABLE_SQL,
+        columns=WRONG_QUESTION_MAPPINGS_COLUMNS,
+    )
+    _ensure_table_foreign_keys(
+        conn,
+        table_name="master_data_audit_log",
+        expected_actions=MASTER_DATA_AUDIT_LOG_FOREIGN_KEYS,
+        create_table_sql=MASTER_DATA_AUDIT_LOG_TABLE_SQL,
+        columns=MASTER_DATA_AUDIT_LOG_COLUMNS,
+    )
+
+
+def _ensure_table_foreign_keys(
+    conn: sqlite3.Connection,
+    *,
+    table_name: str,
+    expected_actions: dict[str, str],
+    create_table_sql: str,
+    columns: list[str],
+):
+    if _get_foreign_key_actions(conn, table_name) == expected_actions:
+        return
+
+    temp_table_name = f"{table_name}__legacy_backup"
+    quoted_columns = ", ".join(f'"{column}"' for column in columns)
+
+    conn.execute(f'ALTER TABLE "{table_name}" RENAME TO "{temp_table_name}"')
+    conn.execute(create_table_sql)
+    conn.execute(
+        f'INSERT INTO "{table_name}" ({quoted_columns}) '
+        f'SELECT {quoted_columns} FROM "{temp_table_name}"'
+    )
+    conn.execute(f'DROP TABLE "{temp_table_name}"')
+
+
+def _get_foreign_key_actions(conn: sqlite3.Connection, table_name: str) -> dict[str, str]:
+    rows = conn.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
+    return {row[3]: row[6] for row in rows}
 
 
 def normalize_alias(value) -> str:
