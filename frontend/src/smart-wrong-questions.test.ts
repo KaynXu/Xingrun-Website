@@ -658,6 +658,14 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
   try {
     localStorage.setItem('xr_token', 'token-123');
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
+
       if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
         return createJsonResponse({
           items: [
@@ -755,6 +763,14 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchCalls.push({ input, init });
 
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
+
       if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
         return createJsonResponse({
           items: [
@@ -841,7 +857,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 2);
+      assert.equal(fetchCalls.length, 4);
       const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
       const selectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
 
@@ -862,8 +878,8 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 3);
-      const saveCall = fetchCalls[2];
+      assert.equal(fetchCalls.length, 5);
+      const saveCall = fetchCalls[4];
       assert.equal(saveCall?.input, '/api/wrong-questions/record-1/review');
       assert.equal(saveCall?.init?.method, 'PUT');
 
@@ -909,6 +925,14 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
     localStorage.setItem('xr_token', 'token-123');
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
 
       if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
         return createJsonResponse({
@@ -1015,7 +1039,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 3);
+      assert.equal(fetchCalls.length, 5);
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /主数据映射待处理/);
       assert.match(pageText, /老师：Kayn/);
@@ -1045,6 +1069,14 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
     localStorage.setItem('xr_token', 'token-123');
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
 
       if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
         return createJsonResponse({
@@ -1148,7 +1180,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 3);
+      assert.equal(fetchCalls.length, 5);
       const pageText = domEnvironment.container.textContent || '';
       const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
       assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
@@ -1177,4 +1209,112 @@ test('SmartWrongQuestionsPage reuses the current filter query for PDF export', (
   assert.match(pageSource, /const handleExportSummary = \(\) => \{/);
   assert.match(pageSource, /downloadWrongQuestionSummary\(filters\)/);
   assert.match(pageSource, /导出 PDF 汇总/);
+});
+
+test('SmartWrongQuestionsPage loads teacher and class filter options as selects instead of free text inputs', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 11, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 12, name: '初一 2 班', subject: '英语', grade: '初一', teacher_user_id: 9 },
+        ]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([
+          { id: 7, name: 'Kayn', org: '星润Starain', role: 'owner' },
+          { id: 9, name: '雷文浩', org: '星润Starain', role: 'admin' },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-filter-options',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              subject: '数学',
+              teacher_name: 'Kayn',
+              created_at: '2026-03-29T08:00:00Z',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-filter-options' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-filter-options',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          subject: '数学',
+          teacher_name: 'Kayn',
+          created_at: '2026-03-29T08:00:00Z',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: 'Kayn',
+            organization_name: '星润Starain',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const teacherSelect = domEnvironment.container.querySelector('select[aria-label="老师"]') as HTMLSelectElement | null;
+      const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+
+      assert.ok(classSelect);
+      assert.ok(teacherSelect);
+      assert.equal(classSelect.tagName, 'SELECT');
+      assert.equal(teacherSelect.tagName, 'SELECT');
+      assert.equal(classSelect.options.length, 3);
+      assert.equal(teacherSelect.options.length, 3);
+      assert.equal(classSelect.options[1]?.textContent?.trim(), '六年级 1 班 · 数学');
+      assert.equal(teacherSelect.options[1]?.textContent?.trim(), 'Kayn');
+      assert.equal(fetchCalls[0]?.input, '/api/classes');
+      assert.equal(fetchCalls[1]?.input, '/api/admin/users');
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
 });
