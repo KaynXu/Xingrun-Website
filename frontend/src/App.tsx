@@ -40,12 +40,13 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
+import { MasterDataMappingsPage } from './MasterDataMappingsPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 
 // --- Types ---
 
 type Role = 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'masterDataMappings' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
 interface Lesson {
@@ -1151,6 +1152,9 @@ const Sidebar = ({
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(currentUser.role === 'owner' || currentUser.role === 'admin'
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
+      : []),
+    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+      ? [{ id: 'masterDataMappings', icon: Database, label: '主数据映射' }]
       : []),
     ...(currentUser.role === 'owner' || currentUser.role === 'admin'
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
@@ -4896,6 +4900,7 @@ export default function App() {
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
+    masterDataMappings: '主数据映射',
     classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',
@@ -5043,6 +5048,9 @@ export default function App() {
                 {activePage === 'smartWrongQuestions' &&
                   (currentUser.role === 'owner' || currentUser.role === 'admin') &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
+                {activePage === 'masterDataMappings' &&
+                  (currentUser.role === 'owner' || currentUser.role === 'admin') &&
+                  <MasterDataMappingsPage currentUser={currentUser} />}
                 {activePage === 'classes' && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
