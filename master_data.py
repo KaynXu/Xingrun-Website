@@ -346,6 +346,17 @@ def normalize_wrong_question_record(
                 mapping_status=suggestion.get("mapping_status", mapping.get("mapping_status") or "unmapped"),
                 conn=conn,
             )
+        elif _should_auto_refresh_wrong_question_mapping_snapshots(mapping, suggestion):
+            mapping = upsert_wrong_question_mapping(
+                record_id,
+                teacher_user_id=mapping.get("teacher_user_id"),
+                class_id=mapping.get("class_id"),
+                teacher_name_snapshot=suggestion.get("teacher_name_snapshot", teacher_name_snapshot),
+                class_name_snapshot=suggestion.get("class_name_snapshot", class_name_snapshot),
+                subject_snapshot=suggestion.get("subject_snapshot", subject_snapshot),
+                mapping_status=mapping.get("mapping_status") or "unmapped",
+                conn=conn,
+            )
 
         normalized["teacher_user_id"] = mapping.get("teacher_user_id")
         normalized["teacher_display_name"] = (
@@ -583,6 +594,24 @@ def _should_auto_upgrade_wrong_question_mapping(
     if _is_final_wrong_question_mapping(existing_mapping):
         return False
     return _mapping_resolution_rank(suggestion) > _mapping_resolution_rank(existing_mapping)
+
+
+def _should_auto_refresh_wrong_question_mapping_snapshots(
+    existing_mapping: dict[str, Any],
+    suggestion: dict[str, Any],
+) -> bool:
+    if existing_mapping.get("reviewed_by") is not None:
+        return False
+    if _is_final_wrong_question_mapping(existing_mapping):
+        return False
+    return any(
+        (existing_mapping.get(field) or "") != (suggestion.get(field) or "")
+        for field in (
+            "teacher_name_snapshot",
+            "class_name_snapshot",
+            "subject_snapshot",
+        )
+    )
 
 
 def _is_final_wrong_question_mapping(mapping: dict[str, Any]) -> bool:
