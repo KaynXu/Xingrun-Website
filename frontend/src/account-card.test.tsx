@@ -328,7 +328,7 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /Owner<\/p>[\s\S]*账号审批[\s\S]*dark:text-white/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);
-  assert.match(appSource, /班级老师分配<\/h4>[\s\S]*dark:text-white/);
+  assert.match(appSource, /负责老师<\/h4>[\s\S]*dark:text-white/);
   assert.match(appSource, /text-sm font-semibold uppercase tracking-wider text-slate-500[^\"]*dark:text-slate-400/);
   assert.match(appSource, /当前账号<\/p>[\s\S]*dark:text-white/);
   assert.match(appSource, /calendar: '课程日历'/);
@@ -357,7 +357,8 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.match(approvalBlock[0], /`\/api\/admin\/users\/\$\{userId\}\/role`/);
   assert.doesNotMatch(approvalBlock[0], /成员班级分配/);
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /班级老师分配/);
+  assert.match(classManagementBlock[0], /负责老师/);
+  assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
@@ -370,10 +371,20 @@ test('class management source shows current teacher summary and removes multi-te
 
   assert.ok(classManagementBlock);
   assert.match(source, /teacher_user_id\?: number \| null;/);
-  assert.match(classManagementBlock[0], /当前老师：/);
+  assert.match(classManagementBlock[0], /当前负责老师：/);
   assert.match(classManagementBlock[0], /teacherSummary = currentTeacher\?\.name \|\| item\.teacher_name \|\| '未分配老师';/);
   assert.doesNotMatch(classManagementBlock[0], /已分配 \{selectedTeacherIds\.length\} 位老师/);
   assert.doesNotMatch(classManagementBlock[0], /selectedTeacherNames/);
+});
+
+test('class management source uses one 负责老师 concept instead of separate 班级老师分配 wording', () => {
+  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /<h4\b[^>]*>\s*负责老师\s*<\/h4>/);
+  assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
+  assert.doesNotMatch(classManagementBlock[0], /<span\b[^>]*>\s*负责老师\s*<\/span>\s*<div\b[^>]*>\s*\{teacherSummary\}\s*<\/div>/);
 });
 
 test('class management source requires selecting one teacher when creating a class', () => {
@@ -460,7 +471,8 @@ test('class management source removes teacher-email UI and the standalone bottom
   assert.doesNotMatch(classManagementBlock[0], /老师邮箱/);
   assert.doesNotMatch(classManagementBlock[0], /未填写邮箱/);
   assert.doesNotMatch(classManagementBlock[0], /<section className=\{`\$\{workspaceCardClass\} space-y-5 p-6`\}>[\s\S]*班级分配/);
-  assert.match(classManagementBlock[0], /班级老师分配/);
+  assert.match(classManagementBlock[0], /负责老师/);
+  assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
 });
 
 test('class management source embeds teacher assignment inside each class card and normalizes common class names', () => {
@@ -471,6 +483,7 @@ test('class management source embeds teacher assignment inside each class card a
   assert.match(source, /const normalizeClassNameInput = \(value: string\): string =>/);
   assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
-  assert.match(classManagementBlock[0], /当前老师：\{teacherSummary\}/);
-  assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*班级老师分配/);
+  assert.match(classManagementBlock[0], /当前负责老师：\{teacherSummary\}/);
+  assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*负责老师/);
+  assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
 });
