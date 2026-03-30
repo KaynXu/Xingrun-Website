@@ -23,6 +23,7 @@ import {
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type WrongQuestionFilters,
+  type WrongQuestionMappingStatus,
   type WrongQuestionListApiResponse,
   type WrongQuestionRecord,
   type WrongQuestionReviewDraft,
@@ -44,6 +45,30 @@ const initialFilters: WrongQuestionFilters = {
   errorType: '',
   onlyPendingReview: false,
 };
+
+function formatWrongQuestionMappingStatus(status: WrongQuestionMappingStatus): string {
+  switch (status) {
+    case 'mapped':
+      return '已映射';
+    case 'ambiguous':
+      return '映射有歧义';
+    case 'needs_review':
+      return '待确认映射';
+    case 'unmapped':
+    default:
+      return '未映射';
+  }
+}
+
+function hasSnapshotDifference(canonicalValue: string, snapshotValue: string): boolean {
+  const canonical = canonicalValue.trim();
+  const snapshot = snapshotValue.trim();
+  return Boolean(snapshot) && snapshot !== canonical;
+}
+
+function isMappedWrongQuestionRecord(status: WrongQuestionMappingStatus): boolean {
+  return status === 'mapped';
+}
 
 export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPageProps) {
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
@@ -414,6 +439,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className="space-y-3">
               {records.map((item) => {
                 const active = item.id === selectedRecord?.id;
+                const showsTeacherSnapshot = hasSnapshotDifference(item.teacherName, item.teacherNameSnapshot);
+                const showsClassSnapshot = hasSnapshotDifference(item.className, item.classNameSnapshot);
                 return (
                   <button
                     key={item.id}
@@ -425,6 +452,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <div>
                         <p className="text-base font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.subject || '未标注科目'}</p>
+                        {showsClassSnapshot && (
+                          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">原始班级：{item.classNameSnapshot}</p>
+                        )}
                       </div>
                       <span className="rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                         {item.analysis.errorType || '待分析'}
@@ -432,6 +462,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                       <span>老师：{item.teacherName || '未标注'}</span>
+                      {showsTeacherSnapshot && <span>原始老师：{item.teacherNameSnapshot}</span>}
+                      <span>映射状态：{formatWrongQuestionMappingStatus(item.mappingStatus)}</span>
                       <span>优先级：{item.analysis.teacherPriority || '待确认'}</span>
                       <span>{item.analysis.selectedErrorType ? '已跟进' : '待跟进'}</span>
                     </div>
@@ -469,9 +501,29 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         {selectedRecord.subject || '未标注科目'}
                       </span>
                     </div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">{selectedRecord.className || '未标注班级'} · {selectedRecord.teacherName || '未标注老师'}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">班级：{selectedRecord.className || '未标注班级'}</p>
+                    {hasSnapshotDifference(selectedRecord.className, selectedRecord.classNameSnapshot) && (
+                      <p className="text-sm text-amber-700 dark:text-amber-300">原始班级：{selectedRecord.classNameSnapshot}</p>
+                    )}
+                    <p className="text-sm text-slate-500 dark:text-slate-400">老师：{selectedRecord.teacherName || '未标注老师'}</p>
+                    {hasSnapshotDifference(selectedRecord.teacherName, selectedRecord.teacherNameSnapshot) && (
+                      <p className="text-sm text-amber-700 dark:text-amber-300">原始老师：{selectedRecord.teacherNameSnapshot}</p>
+                    )}
+                    <p className="text-sm text-slate-500 dark:text-slate-400">映射状态：{formatWrongQuestionMappingStatus(selectedRecord.mappingStatus)}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
                   </div>
+
+                  {!isMappedWrongQuestionRecord(selectedRecord.mappingStatus) && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle size={16} className="mt-0.5" />
+                        <div>
+                          <p className="font-semibold">主数据映射待处理</p>
+                          <p className="mt-1">当前老师或班级仍在沿用原始快照，请先在“主数据映射”里确认 canonical 身份。</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {detailLoading && (
                     <div className="rounded-2xl border border-dashed border-sky-200 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">

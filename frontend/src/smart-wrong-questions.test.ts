@@ -119,8 +119,13 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
       id: 'record-1',
       studentName: 'Alice',
       className: '六年级 1 班',
+      classNameSnapshot: '六年级 1 班',
+      classId: null,
       subject: '数学',
       teacherName: '雷文浩',
+      teacherNameSnapshot: '雷文浩',
+      teacherUserId: null,
+      mappingStatus: 'mapped',
       createdAt: '2026-03-29T08:00:00Z',
       analysis: {
         questionCategory: '计算',
@@ -134,8 +139,13 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
       id: 'record-2',
       studentName: 'Bob',
       className: '初一 2 班',
+      classNameSnapshot: '初一 2 班',
+      classId: null,
       subject: '英语',
       teacherName: '王老师',
+      teacherNameSnapshot: '王老师',
+      teacherUserId: null,
+      mappingStatus: 'mapped',
       createdAt: '2026-03-29T09:00:00Z',
       analysis: {
         questionCategory: '阅读',
@@ -150,8 +160,13 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
       id: 'record-3',
       studentName: 'Cathy',
       className: '高一 3 班',
+      classNameSnapshot: '高一 3 班',
+      classId: null,
       subject: '物理',
       teacherName: '李老师',
+      teacherNameSnapshot: '李老师',
+      teacherUserId: null,
+      mappingStatus: 'mapped',
       createdAt: '2026-03-29T10:00:00Z',
       analysis: {
         questionCategory: '受力',
@@ -347,8 +362,13 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
     id: '123',
     studentName: 'Alice',
     className: '六年级 1 班',
+    classNameSnapshot: '六年级 1 班',
+    classId: null,
     subject: '数学',
     teacherName: '雷文浩',
+    teacherNameSnapshot: '雷文浩',
+    teacherUserId: null,
+    mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
     imageUrl: 'https://cdn.example.com/question-1.png',
     analysis: {
@@ -364,8 +384,13 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
     id: 'record-2',
     studentName: 'Bob',
     className: '初一 2 班',
+    classNameSnapshot: '初一 2 班',
+    classId: null,
     subject: '',
     teacherName: '王老师',
+    teacherNameSnapshot: '王老师',
+    teacherUserId: null,
+    mappingStatus: 'mapped',
     createdAt: '2026-03-29T09:00:00Z',
     imageUrl: '',
     analysis: {
@@ -383,13 +408,59 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
   });
 });
 
+test('normalizeWrongQuestionRecord preserves canonical and snapshot identities side by side', () => {
+  const normalized = normalizeWrongQuestionRecord({
+    id: 'record-identity-1',
+    student_name: 'Alice',
+    class_display_name: '六年级 1 班',
+    class_name_snapshot: '六年级一班（临时）',
+    class_id: 42,
+    subject: '数学',
+    teacher_display_name: 'Kayn',
+    teacher_name_snapshot: 'Kayn 老师（代课）',
+    teacher_user_id: 7,
+    mapping_status: 'needs_review',
+    created_at: '2026-03-29T08:00:00Z',
+    analysis: {
+      question_category: '计算',
+      error_type: '计算错误',
+      knowledge_points: ['分数运算'],
+    },
+  });
+
+  assert.deepEqual(normalized, {
+    id: 'record-identity-1',
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    classNameSnapshot: '六年级一班（临时）',
+    classId: 42,
+    subject: '数学',
+    teacherName: 'Kayn',
+    teacherNameSnapshot: 'Kayn 老师（代课）',
+    teacherUserId: 7,
+    mappingStatus: 'needs_review',
+    createdAt: '2026-03-29T08:00:00Z',
+    imageUrl: '',
+    analysis: {
+      questionCategory: '计算',
+      errorType: '计算错误',
+      knowledgePoints: ['分数运算'],
+    },
+  });
+});
+
 test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and preserves locally edited drafts', () => {
   const listRecord: WrongQuestionRecord = {
     id: 'record-1',
     studentName: 'Alice',
     className: '六年级 1 班',
+    classNameSnapshot: '六年级 1 班',
+    classId: null,
     subject: '数学',
     teacherName: '雷文浩',
+    teacherNameSnapshot: '雷文浩',
+    teacherUserId: null,
+    mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
     analysis: {
       questionCategory: '计算',
@@ -432,8 +503,13 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
     id: 'record-1',
     studentName: 'Alice',
     className: '六年级 1 班',
+    classNameSnapshot: '六年级 1 班',
+    classId: null,
     subject: '数学',
     teacherName: '雷文浩',
+    teacherNameSnapshot: '雷文浩',
+    teacherUserId: null,
+    mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
     analysis: {
       questionCategory: '计算',
@@ -475,8 +551,13 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears through optimist
     id: 'record-1',
     studentName: 'Alice',
     className: '六年级 1 班',
+    classNameSnapshot: '六年级 1 班',
+    classId: null,
     subject: '数学',
     teacherName: '雷文浩',
+    teacherNameSnapshot: '雷文浩',
+    teacherUserId: null,
+    mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
     analysis: {
       questionCategory: '计算',
@@ -576,6 +657,100 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /selectedActions/);
   assert.match(pageSource, /selectedReasons/);
   assert.match(pageSource, /studentNote/);
+});
+
+test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unresolved mapping warning', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-identity-ui',
+              student_name: 'Alice',
+              class_display_name: '六年级 1 班',
+              class_name_snapshot: '六年级一班（临时）',
+              class_id: 42,
+              subject: '数学',
+              teacher_display_name: 'Kayn',
+              teacher_name_snapshot: 'Kayn 老师（代课）',
+              teacher_user_id: 7,
+              mapping_status: 'needs_review',
+              created_at: '2026-03-29T08:00:00Z',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-identity-ui' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-identity-ui',
+          student_name: 'Alice',
+          class_display_name: '六年级 1 班',
+          class_name_snapshot: '六年级一班（临时）',
+          class_id: 42,
+          subject: '数学',
+          teacher_display_name: 'Kayn',
+          teacher_name_snapshot: 'Kayn 老师（代课）',
+          teacher_user_id: 7,
+          mapping_status: 'needs_review',
+          created_at: '2026-03-29T08:00:00Z',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '管理员',
+            organization_name: '星润Starain',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /主数据映射待处理/);
+      assert.match(pageText, /老师：Kayn/);
+      assert.match(pageText, /原始老师：Kayn 老师（代课）/);
+      assert.match(pageText, /班级：六年级 1 班/);
+      assert.match(pageText, /原始班级：六年级一班（临时）/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
 });
 
 test('SmartWrongQuestionsPage rebuilds empty review fields from a successful save response', async () => {
