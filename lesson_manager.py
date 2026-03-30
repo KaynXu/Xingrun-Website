@@ -574,6 +574,9 @@ def init_db():
             PRIMARY KEY (user_id, class_id)
         );
         """)
+        import master_data
+
+        master_data.ensure_schema(conn)
         # Safe migration: add class_id if not already present
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
