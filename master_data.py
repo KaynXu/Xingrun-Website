@@ -279,7 +279,7 @@ def suggest_wrong_question_mapping(
         if class_row and not teacher_row and class_row["teacher_user_id"] is not None:
             teacher_row = _find_user_by_id(conn, class_row["teacher_user_id"])
 
-        mapping_status = "mapped" if teacher_row and class_row else "unmapped"
+        mapping_status = _suggest_mapping_status(teacher_row, class_row)
         return {
             "record_id": raw_record.get("id") or raw_record.get("record_id"),
             "teacher_name_snapshot": teacher_name,
@@ -335,7 +335,7 @@ def normalize_wrong_question_record(
                 mapping_status=suggestion.get("mapping_status", "unmapped"),
                 conn=conn,
             )
-        elif _should_auto_upgrade_wrong_question_mapping(mapping, suggestion):
+        elif _should_auto_upgrade_wrong_question_mapping(mapping, suggestion, conn=conn):
             mapping = upsert_wrong_question_mapping(
                 record_id,
                 teacher_user_id=suggestion.get("teacher_user_id"),
@@ -346,7 +346,7 @@ def normalize_wrong_question_record(
                 mapping_status=suggestion.get("mapping_status", mapping.get("mapping_status") or "unmapped"),
                 conn=conn,
             )
-        elif _should_auto_refresh_wrong_question_mapping_snapshots(mapping, suggestion):
+        elif _should_auto_refresh_wrong_question_mapping_snapshots(mapping, suggestion, conn=conn):
             mapping = upsert_wrong_question_mapping(
                 record_id,
                 teacher_user_id=mapping.get("teacher_user_id"),
@@ -418,6 +418,12 @@ def upsert_wrong_question_mapping(
         _require_class(conn, class_id)
     if reviewed_by is not None:
         _require_user(conn, reviewed_by)
+    normalized_status = _normalize_mapping_status(mapping_status)
+    if normalized_status == "mapped":
+        if teacher_user_id is None or class_id is None:
+            raise ValueError("mapped status requires teacher_user_id and class_id")
+        if not _is_valid_teacher_class_pair(conn, teacher_user_id, class_id):
+            raise ValueError("teacher/class pair does not match canonical class binding")
 
     before = get_wrong_question_mapping(record_id, conn=conn)
     reviewed_at_expr = "datetime('now','localtime')" if reviewed_by is not None else "NULL"
@@ -453,7 +459,7 @@ def upsert_wrong_question_mapping(
             teacher_name_snapshot,
             class_name_snapshot,
             subject_snapshot,
-            mapping_status,
+            normalized_status,
             reviewed_by,
         ),
     )
@@ -514,11 +520,13 @@ def list_wrong_question_mapping_queue(status: Optional[str] = None) -> list[dict
                 FROM wrong_question_mappings wqm
                 LEFT JOIN users u ON u.id = wqm.teacher_user_id
                 LEFT JOIN classes c ON c.id = wqm.class_id
-                WHERE wqm.mapping_status != 'mapped'
                 ORDER BY wqm.updated_at DESC, wqm.record_id DESC
                 """
             ).fetchall()
-        return [dict(row) for row in rows]
+        items = [dict(row) for row in rows]
+        if status:
+            return items
+        return [item for item in items if not _is_final_wrong_question_mapping(item, conn=conn)]
 
 
 def resolve_wrong_question_mapping(
@@ -539,6 +547,8 @@ def resolve_wrong_question_mapping(
             _require_user(conn, teacher_user_id)
         if class_id is not None:
             _require_class(conn, class_id)
+        if normalized_status == "mapped" and not _is_valid_teacher_class_pair(conn, teacher_user_id, class_id):
+            raise ValueError("teacher/class pair does not match canonical class binding")
 
         before = get_wrong_question_mapping(record_id, conn=conn)
         if not before:
@@ -559,9 +569,9 @@ def resolve_wrong_question_mapping(
         )
 
         after = get_wrong_question_mapping(record_id, conn=conn)
-        if teacher_user_id is not None and after and after["teacher_name_snapshot"]:
+        if after and _is_final_wrong_question_mapping(after, conn=conn) and after["teacher_name_snapshot"]:
             merge_user_alias(conn, user_id=teacher_user_id, alias=after["teacher_name_snapshot"])
-        if class_id is not None and after and after["class_name_snapshot"]:
+        if after and _is_final_wrong_question_mapping(after, conn=conn) and after["class_name_snapshot"]:
             merge_class_alias(conn, class_id=class_id, alias=after["class_name_snapshot"])
 
         _write_audit_log(
@@ -590,21 +600,25 @@ def _normalize_mapping_status(mapping_status: Any) -> str:
 def _should_auto_upgrade_wrong_question_mapping(
     existing_mapping: dict[str, Any],
     suggestion: dict[str, Any],
+    *,
+    conn: sqlite3.Connection,
 ) -> bool:
     if existing_mapping.get("reviewed_by") is not None:
         return False
-    if _is_final_wrong_question_mapping(existing_mapping):
+    if _is_final_wrong_question_mapping(existing_mapping, conn=conn):
         return False
-    return _mapping_resolution_rank(suggestion) > _mapping_resolution_rank(existing_mapping)
+    return _mapping_resolution_rank(suggestion, conn=conn) > _mapping_resolution_rank(existing_mapping, conn=conn)
 
 
 def _should_auto_refresh_wrong_question_mapping_snapshots(
     existing_mapping: dict[str, Any],
     suggestion: dict[str, Any],
+    *,
+    conn: sqlite3.Connection,
 ) -> bool:
     if existing_mapping.get("reviewed_by") is not None:
         return False
-    if _is_final_wrong_question_mapping(existing_mapping):
+    if _is_final_wrong_question_mapping(existing_mapping, conn=conn):
         return False
     return any(
         (existing_mapping.get(field) or "") != (suggestion.get(field) or "")
@@ -616,20 +630,55 @@ def _should_auto_refresh_wrong_question_mapping_snapshots(
     )
 
 
-def _is_final_wrong_question_mapping(mapping: dict[str, Any]) -> bool:
+def _is_final_wrong_question_mapping(
+    mapping: dict[str, Any],
+    *,
+    conn: Optional[sqlite3.Connection] = None,
+) -> bool:
     return (
         mapping.get("mapping_status") == "mapped"
         and mapping.get("teacher_user_id") is not None
         and mapping.get("class_id") is not None
+        and (
+            conn is None
+            or _is_valid_teacher_class_pair(
+                conn,
+                mapping.get("teacher_user_id"),
+                mapping.get("class_id"),
+            )
+        )
     )
 
 
-def _mapping_resolution_rank(mapping: dict[str, Any]) -> tuple[int, int, int]:
+def _mapping_resolution_rank(
+    mapping: dict[str, Any],
+    *,
+    conn: Optional[sqlite3.Connection] = None,
+) -> tuple[int, int, int]:
     return (
-        1 if mapping.get("mapping_status") == "mapped" else 0,
+        1 if _is_final_wrong_question_mapping(mapping, conn=conn) else 0,
         1 if mapping.get("class_id") is not None else 0,
         1 if mapping.get("teacher_user_id") is not None else 0,
     )
+
+
+def _suggest_mapping_status(teacher_row, class_row) -> str:
+    if not teacher_row or not class_row:
+        return "unmapped"
+    if class_row["teacher_user_id"] is not None and class_row["teacher_user_id"] == teacher_row["id"]:
+        return "mapped"
+    return "needs_review"
+
+
+def _is_valid_teacher_class_pair(
+    conn: sqlite3.Connection,
+    teacher_user_id: Optional[int],
+    class_id: Optional[int],
+) -> bool:
+    if teacher_user_id is None or class_id is None:
+        return False
+    bound_teacher_user_id = lesson_manager.get_class_teacher_user_id(class_id)
+    return bound_teacher_user_id is not None and bound_teacher_user_id == teacher_user_id
 
 
 def _write_audit_log(
