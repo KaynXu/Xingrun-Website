@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 import config_runtime
 import lesson_manager
+import master_data
 import smart_wrong_questions
 from app import app
 
@@ -149,6 +151,54 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(forwarded_args.get("pageSize"), "20")
         self.assertEqual(forwarded_args.get("empty"), "")
 
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_staff_list_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
+        owner_payload = self.login_owner()
+        owner_id = owner_payload["user"]["id"]
+        class_id = lesson_manager.save_class("六年级 1 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner_id)
+        master_data.set_user_aliases(
+            actor_user_id=owner_id,
+            user_id=owner_id,
+            aliases=["Kayn 老师"],
+        )
+        master_data.set_class_aliases(
+            actor_user_id=owner_id,
+            class_id=class_id,
+            aliases=["六年级1班"],
+        )
+        urlopen.return_value = FakeResponse(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "record-1",
+                            "teacher_name": "Kayn 老师",
+                            "class_name": "六年级1班",
+                            "subject": "数学",
+                            "student_name": "Alice",
+                        }
+                    ],
+                    "total": 1,
+                }
+            ).encode("utf-8")
+        )
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()["items"][0]
+        self.assertEqual(item["teacher_user_id"], owner_id)
+        self.assertEqual(item["teacher_display_name"], "Kayn")
+        self.assertEqual(item["teacher_name_snapshot"], "Kayn 老师")
+        self.assertEqual(item["class_id"], class_id)
+        self.assertEqual(item["class_display_name"], "六年级 1 班")
+        self.assertEqual(item["class_name_snapshot"], "六年级1班")
+        self.assertEqual(item["mapping_status"], "mapped")
+
     @patch("smart_wrong_questions.fetch_wrong_question_record")
     def test_staff_can_get_wrong_question_record_detail(self, fetch_wrong_question_record):
         owner_payload = self.login_owner()
@@ -170,6 +220,50 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         forwarded_args = fetch_wrong_question_record.call_args.args[1]
         self.assertEqual(forwarded_args.get("studentName"), "Alice")
         self.assertEqual(forwarded_args.get("subject"), "Math")
+
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_staff_detail_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
+        owner_payload = self.login_owner()
+        owner_id = owner_payload["user"]["id"]
+        class_id = lesson_manager.save_class("六年级 2 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner_id)
+        master_data.set_user_aliases(
+            actor_user_id=owner_id,
+            user_id=owner_id,
+            aliases=["Kayn 老师"],
+        )
+        master_data.set_class_aliases(
+            actor_user_id=owner_id,
+            class_id=class_id,
+            aliases=["六年级2班"],
+        )
+        urlopen.return_value = FakeResponse(
+            json.dumps(
+                {
+                    "id": "record-42",
+                    "teacher_name": "Kayn 老师",
+                    "class_name": "六年级2班",
+                    "subject": "数学",
+                    "student_name": "Alice",
+                    "question_text": "2 + 2 = ?",
+                }
+            ).encode("utf-8")
+        )
+
+        response = self.client.get(
+            "/api/wrong-questions/record-42",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["teacher_user_id"], owner_id)
+        self.assertEqual(payload["teacher_display_name"], "Kayn")
+        self.assertEqual(payload["teacher_name_snapshot"], "Kayn 老师")
+        self.assertEqual(payload["class_id"], class_id)
+        self.assertEqual(payload["class_display_name"], "六年级 2 班")
+        self.assertEqual(payload["class_name_snapshot"], "六年级2班")
+        self.assertEqual(payload["mapping_status"], "mapped")
 
     @patch("smart_wrong_questions.save_wrong_question_review")
     def test_staff_can_save_wrong_question_review(self, save_wrong_question_review):

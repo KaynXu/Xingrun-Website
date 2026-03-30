@@ -259,12 +259,19 @@ def merge_class_alias(conn: sqlite3.Connection, class_id: int, alias: str) -> li
     return list_class_aliases(class_id, conn=conn)
 
 
-def suggest_wrong_question_mapping(raw_record: dict[str, Any]) -> dict[str, Any]:
-    teacher_name = str(raw_record.get("teacher_name") or "")
-    class_name = str(raw_record.get("class_name") or "")
+def suggest_wrong_question_mapping(
+    raw_record: dict[str, Any],
+    conn: Optional[sqlite3.Connection] = None,
+) -> dict[str, Any]:
+    teacher_name = str(raw_record.get("teacher_name") or raw_record.get("teacherName") or "")
+    class_name = str(raw_record.get("class_name") or raw_record.get("className") or "")
     subject = str(raw_record.get("subject") or "")
 
-    with lesson_manager.get_conn() as conn:
+    should_close = conn is None
+    if conn is None:
+        conn = lesson_manager.get_conn()
+
+    try:
         ensure_schema(conn)
         teacher_row = _find_user_match(conn, teacher_name)
         class_row = _find_class_match(conn, class_name, subject=subject)
@@ -274,7 +281,7 @@ def suggest_wrong_question_mapping(raw_record: dict[str, Any]) -> dict[str, Any]
 
         mapping_status = "mapped" if teacher_row and class_row else "unmapped"
         return {
-            "record_id": raw_record.get("id"),
+            "record_id": raw_record.get("id") or raw_record.get("record_id"),
             "teacher_name_snapshot": teacher_name,
             "class_name_snapshot": class_name,
             "subject_snapshot": subject,
@@ -284,6 +291,76 @@ def suggest_wrong_question_mapping(raw_record: dict[str, Any]) -> dict[str, Any]
             "class_display_name": class_row["name"] if class_row else "",
             "mapping_status": mapping_status,
         }
+    finally:
+        if should_close:
+            conn.close()
+
+
+def normalize_wrong_question_record(
+    raw_record: dict[str, Any],
+    conn: Optional[sqlite3.Connection] = None,
+) -> dict[str, Any]:
+    normalized = dict(raw_record)
+    record_id = str(raw_record.get("id") or raw_record.get("record_id") or "")
+    teacher_name_snapshot = str(raw_record.get("teacher_name") or raw_record.get("teacherName") or "")
+    class_name_snapshot = str(raw_record.get("class_name") or raw_record.get("className") or "")
+    subject_snapshot = str(raw_record.get("subject") or "")
+
+    if not record_id:
+        normalized["teacher_user_id"] = None
+        normalized["teacher_display_name"] = teacher_name_snapshot
+        normalized["teacher_name_snapshot"] = teacher_name_snapshot
+        normalized["class_id"] = None
+        normalized["class_display_name"] = class_name_snapshot
+        normalized["class_name_snapshot"] = class_name_snapshot
+        normalized["mapping_status"] = "unmapped"
+        return normalized
+
+    should_close = conn is None
+    if conn is None:
+        conn = lesson_manager.get_conn()
+
+    try:
+        ensure_schema(conn)
+        suggestion = suggest_wrong_question_mapping(raw_record, conn=conn)
+        mapping = get_wrong_question_mapping(record_id, conn=conn)
+        if not mapping:
+            mapping = upsert_wrong_question_mapping(
+                record_id,
+                teacher_user_id=suggestion.get("teacher_user_id"),
+                class_id=suggestion.get("class_id"),
+                teacher_name_snapshot=suggestion.get("teacher_name_snapshot", teacher_name_snapshot),
+                class_name_snapshot=suggestion.get("class_name_snapshot", class_name_snapshot),
+                subject_snapshot=suggestion.get("subject_snapshot", subject_snapshot),
+                mapping_status=suggestion.get("mapping_status", "unmapped"),
+                conn=conn,
+            )
+
+        normalized["teacher_user_id"] = mapping.get("teacher_user_id")
+        normalized["teacher_display_name"] = (
+            mapping.get("teacher_display_name")
+            or mapping.get("teacher_name_snapshot")
+            or teacher_name_snapshot
+        )
+        normalized["teacher_name_snapshot"] = (
+            mapping.get("teacher_name_snapshot")
+            or teacher_name_snapshot
+        )
+        normalized["class_id"] = mapping.get("class_id")
+        normalized["class_display_name"] = (
+            mapping.get("class_display_name")
+            or mapping.get("class_name_snapshot")
+            or class_name_snapshot
+        )
+        normalized["class_name_snapshot"] = (
+            mapping.get("class_name_snapshot")
+            or class_name_snapshot
+        )
+        normalized["mapping_status"] = mapping.get("mapping_status", "unmapped")
+        return normalized
+    finally:
+        if should_close:
+            conn.close()
 
 
 def upsert_wrong_question_mapping(
