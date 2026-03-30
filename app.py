@@ -961,6 +961,8 @@ def api_master_data_user_aliases_put(user_id):
             user_id=user_id,
             aliases=aliases,
         )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"aliases": updated_aliases})
@@ -996,6 +998,8 @@ def api_master_data_class_aliases_put(class_id):
             class_id=class_id,
             aliases=aliases,
         )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"aliases": updated_aliases})
