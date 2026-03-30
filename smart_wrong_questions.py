@@ -6,6 +6,7 @@ from typing import Any
 from urllib import error, parse, request
 
 from config_runtime import get_runtime_config
+import master_data
 
 
 class WrongQuestionProxyError(RuntimeError):
@@ -118,11 +119,22 @@ def _quote_record_id(record_id: str) -> str:
 
 
 def fetch_wrong_question_records(query: Any) -> dict[str, Any]:
-    return _request_downstream("/wrong-questions", query=query)
+    payload = _request_downstream("/wrong-questions", query=query)
+    items = payload.get("items") or []
+    payload["items"] = [
+        master_data.normalize_wrong_question_record(item)
+        if isinstance(item, Mapping)
+        else item
+        for item in items
+    ]
+    return payload
 
 
 def fetch_wrong_question_record(record_id: str, query: Any) -> dict[str, Any]:
-    return _request_downstream(f"/wrong-questions/{_quote_record_id(record_id)}", query=query)
+    payload = _request_downstream(f"/wrong-questions/{_quote_record_id(record_id)}", query=query)
+    if isinstance(payload, Mapping):
+        return master_data.normalize_wrong_question_record(dict(payload))
+    return payload
 
 
 def save_wrong_question_review(record_id: str, query: Any, payload: dict[str, Any]) -> dict[str, Any]:
