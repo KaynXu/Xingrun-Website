@@ -172,6 +172,9 @@ const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
   ['六年2班', '六年级 2 班'],
 ];
 
+const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
+const gradeFilterOptions = ['全部', ...gradeOptions];
+
 function getRoleLabel(role: Role): string {
   if (role === 'owner') return '最高权限账号';
   if (role === 'admin') return '管理员';
@@ -3149,7 +3152,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
-  const gradeFilterOptions = ['全部', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
@@ -3270,6 +3272,11 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
     if (!payload.name) {
       setFormError('班级名称不能为空');
+      return;
+    }
+
+    if (!payload.grade || !gradeOptions.includes(payload.grade)) {
+      setFormError('请选择年级');
       return;
     }
 
@@ -3402,7 +3409,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           ? resolveTeacherBindingRollbackClassItem(item, teacherUserId, previousTeacherUserId, previousTeacherName)
           : item
       )));
-      setAssignmentError(err instanceof Error ? err.message : '班级老师分配保存失败');
+      setAssignmentError(err instanceof Error ? err.message : '负责老师保存失败');
     } finally {
       setTeacherBindingSavingByClassId((current) => {
         const nextState = { ...current };
@@ -3464,6 +3471,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级卡片</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">每次只展开一个班级卡片，在卡片内部完成基础信息维护和负责老师设置。</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
@@ -3536,7 +3544,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         {newClassForm.subject.trim()}
                       </span>
                     ) : null}
-                    <span>当前老师：{newClassTeacher?.name || '待选择负责老师'}</span>
+                    <span>当前负责老师：{newClassTeacher?.name || '待选择负责老师'}</span>
                     <span>创建时会直接绑定该老师账号</span>
                   </div>
                 </div>
@@ -3574,13 +3582,16 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </label>
                     <label className="space-y-2 text-sm">
                       <span className="text-slate-500 dark:text-slate-400">年级</span>
-                      <input
-                        type="text"
+                      <select
                         value={newClassForm.grade}
                         onChange={(e) => handleFieldChange('new', 'grade', e.target.value)}
                         className={workspaceFieldClass}
-                        placeholder="如：六年级"
-                      />
+                      >
+                        <option value="">请选择年级</option>
+                        {gradeOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
                     </label>
                   </div>
 
@@ -3711,7 +3722,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                         <span>{item.grade || '未填写年级'}</span>
-                        <span>当前老师：{teacherSummary}</span>
+                        <span>当前负责老师：{teacherSummary}</span>
                       </div>
                     </div>
                   </button>
@@ -3748,17 +3759,16 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </label>
                         <label className="space-y-2 text-sm">
                           <span className="text-slate-500 dark:text-slate-400">年级</span>
-                          <input
-                            type="text"
+                          <select
                             value={formState.grade}
                             onChange={(e) => handleFieldChange(item.id, 'grade', e.target.value)}
                             className={workspaceFieldClass}
-                            placeholder="如：六年级"
-                          />
-                        </label>
-                        <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">负责老师</span>
-                          <div className={`${workspaceFieldClass} flex min-h-12 items-center`}>{teacherSummary}</div>
+                          >
+                            <option value="">请选择年级</option>
+                            {gradeOptions.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </select>
                         </label>
                       </div>
 
@@ -3790,8 +3800,8 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       <div className={`${workspaceCardClass} space-y-5 p-5`}>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级老师分配</h4>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前老师：{teacherSummary}</p>
+                            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前负责老师：{teacherSummary}，可直接更换。</p>
                           </div>
                           <button
                             type="button"
