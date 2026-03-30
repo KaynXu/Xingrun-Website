@@ -389,6 +389,87 @@ def get_wrong_question_mapping(record_id: str, conn: Optional[sqlite3.Connection
             conn.close()
 
 
+def list_wrong_question_mapping_queue(status: Optional[str] = None) -> list[dict[str, Any]]:
+    with lesson_manager.get_conn() as conn:
+        ensure_schema(conn)
+        if status:
+            rows = conn.execute(
+                """
+                SELECT wqm.*, u.display_name AS teacher_display_name, c.name AS class_display_name
+                FROM wrong_question_mappings wqm
+                LEFT JOIN users u ON u.id = wqm.teacher_user_id
+                LEFT JOIN classes c ON c.id = wqm.class_id
+                WHERE wqm.mapping_status=?
+                ORDER BY wqm.updated_at DESC, wqm.record_id DESC
+                """,
+                (status,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT wqm.*, u.display_name AS teacher_display_name, c.name AS class_display_name
+                FROM wrong_question_mappings wqm
+                LEFT JOIN users u ON u.id = wqm.teacher_user_id
+                LEFT JOIN classes c ON c.id = wqm.class_id
+                WHERE wqm.mapping_status != 'mapped'
+                ORDER BY wqm.updated_at DESC, wqm.record_id DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def resolve_wrong_question_mapping(
+    *,
+    actor_user_id: int,
+    record_id: str,
+    teacher_user_id: Optional[int],
+    class_id: Optional[int],
+    mapping_status: str,
+):
+    with lesson_manager.get_conn() as conn:
+        ensure_schema(conn)
+        _require_user(conn, actor_user_id)
+        if teacher_user_id is not None:
+            _require_user(conn, teacher_user_id)
+        if class_id is not None:
+            _require_class(conn, class_id)
+
+        before = get_wrong_question_mapping(record_id, conn=conn)
+        if not before:
+            raise LookupError("wrong question mapping not found")
+
+        conn.execute(
+            """
+            UPDATE wrong_question_mappings
+            SET teacher_user_id=?,
+                class_id=?,
+                mapping_status=?,
+                reviewed_by=?,
+                reviewed_at=datetime('now','localtime'),
+                updated_at=datetime('now','localtime')
+            WHERE record_id=?
+            """,
+            (teacher_user_id, class_id, mapping_status, actor_user_id, record_id),
+        )
+
+        after = get_wrong_question_mapping(record_id, conn=conn)
+        if teacher_user_id is not None and after and after["teacher_name_snapshot"]:
+            merge_user_alias(conn, user_id=teacher_user_id, alias=after["teacher_name_snapshot"])
+        if class_id is not None and after and after["class_name_snapshot"]:
+            merge_class_alias(conn, class_id=class_id, alias=after["class_name_snapshot"])
+
+        _write_audit_log(
+            conn,
+            entity_type="wrong_question_mapping",
+            entity_key=record_id,
+            action="resolve",
+            before=before,
+            after=after,
+            actor_user_id=actor_user_id,
+        )
+        return after
+
+
 def _write_audit_log(
     conn: sqlite3.Connection,
     *,
