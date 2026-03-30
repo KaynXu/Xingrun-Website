@@ -220,6 +220,50 @@ class MasterDataApiTestCase(unittest.TestCase):
         self.assertIsNotNone(persisted)
         self.assertEqual(persisted["mapping_status"], "needs_review")
 
+    def test_owner_gets_400_for_conflicting_teacher_class_pair_when_mapping_mapped(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+        owner_id = owner_payload["user"]["id"]
+
+        other_teacher = self.approve_user(
+            owner_token=owner_token,
+            username="teacher_pair_conflict",
+            display_name="Teacher Pair Conflict",
+            password="teacher123",
+        )
+        class_id = lesson_manager.save_class("六年级 配对班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner_id)
+
+        master_data.upsert_wrong_question_mapping(
+            "record-pair-conflict-1",
+            teacher_name_snapshot="Teacher Pair Conflict",
+            class_name_snapshot="六年级配对班",
+            subject_snapshot="数学",
+            mapping_status="needs_review",
+        )
+
+        resolve_response = self.client.put(
+            "/api/master-data/mappings/wrong-questions/record-pair-conflict-1",
+            headers=self.auth_headers(owner_token),
+            json={
+                "teacher_user_id": other_teacher["user"]["id"],
+                "class_id": class_id,
+                "mapping_status": "mapped",
+            },
+        )
+
+        self.assertEqual(resolve_response.status_code, 400)
+        self.assertEqual(
+            resolve_response.get_json()["error"],
+            "teacher/class pair does not match canonical class binding",
+        )
+
+        persisted = master_data.get_wrong_question_mapping("record-pair-conflict-1")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["mapping_status"], "needs_review")
+        self.assertIsNone(persisted["teacher_user_id"])
+        self.assertIsNone(persisted["class_id"])
+
     def test_member_gets_403_on_queue_and_resolve(self):
         owner_payload = self.login_owner()
         owner_token = owner_payload["token"]

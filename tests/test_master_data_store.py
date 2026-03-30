@@ -23,6 +23,14 @@ class MasterDataStoreTestCase(unittest.TestCase):
         lesson_manager.init_db()
         self.owner = lesson_manager.get_user_by_username("Kayn")
 
+    def _approve_user(self, username: str, display_name: str, password: str):
+        request_row = lesson_manager.create_registration_request(
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+        return lesson_manager.approve_registration_request(request_row["id"], self.owner["id"])
+
     def _count_rows(self, table_name: str, where_clause: str = "", params=()):
         query = f"SELECT COUNT(*) AS count FROM {table_name}"
         if where_clause:
@@ -216,6 +224,45 @@ class MasterDataStoreTestCase(unittest.TestCase):
         self.assertEqual(suggestion["teacher_display_name"], "Kayn")
         self.assertEqual(suggestion["class_display_name"], "六年级 1 班")
 
+    def test_normalize_wrong_question_record_keeps_conflicting_pair_non_final(self):
+        other_teacher = self._approve_user(
+            username="teacher_conflict",
+            display_name="Teacher Conflict",
+            password="teacher123",
+        )
+        class_id = lesson_manager.save_class("六年级 冲刺班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, self.owner["id"])
+
+        master_data.set_user_aliases(
+            actor_user_id=self.owner["id"],
+            user_id=other_teacher["id"],
+            aliases=["Conflict Teacher"],
+        )
+        master_data.set_class_aliases(
+            actor_user_id=self.owner["id"],
+            class_id=class_id,
+            aliases=["Sprint Math"],
+        )
+
+        normalized = master_data.normalize_wrong_question_record(
+            {
+                "id": "record-conflict-1",
+                "teacher_name": "Conflict Teacher",
+                "class_name": "Sprint Math",
+                "subject": "数学",
+            }
+        )
+
+        self.assertEqual(normalized["teacher_user_id"], other_teacher["id"])
+        self.assertEqual(normalized["class_id"], class_id)
+        self.assertEqual(normalized["mapping_status"], "needs_review")
+
+        persisted = master_data.get_wrong_question_mapping("record-conflict-1")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["teacher_user_id"], other_teacher["id"])
+        self.assertEqual(persisted["class_id"], class_id)
+        self.assertEqual(persisted["mapping_status"], "needs_review")
+
     def test_foreign_keys_are_enabled_and_class_aliases_cascade_on_delete(self):
         with lesson_manager.get_conn() as conn:
             pragma_row = conn.execute("PRAGMA foreign_keys").fetchone()
@@ -338,6 +385,34 @@ class MasterDataStoreTestCase(unittest.TestCase):
         queue = master_data.list_wrong_question_mapping_queue()
         self.assertEqual([item["record_id"] for item in queue], ["record-repair-1"])
         self.assertEqual(queue[0]["mapping_status"], "needs_review")
+
+    def test_resolve_wrong_question_mapping_non_final_status_does_not_merge_aliases(self):
+        other_teacher = self._approve_user(
+            username="teacher_review_only",
+            display_name="Teacher Review",
+            password="teacher123",
+        )
+        class_id = lesson_manager.save_class("六年级 提高班", subject="数学", grade="六年级")
+
+        master_data.upsert_wrong_question_mapping(
+            "record-review-only",
+            teacher_name_snapshot="Review Alias Teacher",
+            class_name_snapshot="Review Alias Class",
+            subject_snapshot="数学",
+            mapping_status="needs_review",
+        )
+
+        resolved = master_data.resolve_wrong_question_mapping(
+            actor_user_id=self.owner["id"],
+            record_id="record-review-only",
+            teacher_user_id=other_teacher["id"],
+            class_id=class_id,
+            mapping_status="needs_review",
+        )
+
+        self.assertEqual(resolved["mapping_status"], "needs_review")
+        self.assertEqual(master_data.list_user_aliases(other_teacher["id"]), [])
+        self.assertEqual(master_data.list_class_aliases(class_id), [])
 
     def test_init_db_migrates_legacy_master_data_foreign_keys(self):
         self.temp_dir.cleanup()
