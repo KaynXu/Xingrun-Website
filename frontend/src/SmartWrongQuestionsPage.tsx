@@ -70,6 +70,31 @@ function isMappedWrongQuestionRecord(status: WrongQuestionMappingStatus): boolea
   return status === 'mapped';
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
+  if (!isObjectRecord(response)) {
+    return undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(response, 'record')) {
+    return response.record;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(response, 'id')
+    || Object.prototype.hasOwnProperty.call(response, 'analysis')
+    || Object.prototype.hasOwnProperty.call(response, 'student_name')
+    || Object.prototype.hasOwnProperty.call(response, 'studentName')
+  ) {
+    return response;
+  }
+
+  return undefined;
+}
+
 export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPageProps) {
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
   const [records, setRecords] = useState<WrongQuestionRecord[]>([]);
@@ -254,11 +279,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     try {
       const payload = buildWrongQuestionReviewPayload(selectedDraft);
-      const response = await apiFetch<{ ok?: boolean; record?: unknown }>(buildWrongQuestionReviewPath(selectedRecord.id), {
+      const response = await apiFetch<unknown>(buildWrongQuestionReviewPath(selectedRecord.id), {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-      const nextRecord = resolveSavedWrongQuestionRecord(selectedRecord, payload, response.record);
+      const nextRecord = resolveSavedWrongQuestionRecord(
+        selectedRecord,
+        payload,
+        extractSavedWrongQuestionResponseRecord(response),
+      );
 
       setRecords((current) => current.map((item) => item.id === selectedRecord.id ? nextRecord : item));
       setServerSummary(null);
