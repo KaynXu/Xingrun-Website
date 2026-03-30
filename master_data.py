@@ -358,6 +358,8 @@ def normalize_wrong_question_record(
                 conn=conn,
             )
 
+        mapping = _present_wrong_question_mapping(mapping, conn=conn)
+
         normalized["teacher_user_id"] = mapping.get("teacher_user_id")
         normalized["teacher_display_name"] = (
             mapping.get("teacher_display_name")
@@ -501,31 +503,18 @@ def get_wrong_question_mapping(record_id: str, conn: Optional[sqlite3.Connection
 def list_wrong_question_mapping_queue(status: Optional[str] = None) -> list[dict[str, Any]]:
     with lesson_manager.get_conn() as conn:
         ensure_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT wqm.*, u.display_name AS teacher_display_name, c.name AS class_display_name
+            FROM wrong_question_mappings wqm
+            LEFT JOIN users u ON u.id = wqm.teacher_user_id
+            LEFT JOIN classes c ON c.id = wqm.class_id
+            ORDER BY wqm.updated_at DESC, wqm.record_id DESC
+            """
+        ).fetchall()
+        items = [_present_wrong_question_mapping(dict(row), conn=conn) for row in rows]
         if status:
-            rows = conn.execute(
-                """
-                SELECT wqm.*, u.display_name AS teacher_display_name, c.name AS class_display_name
-                FROM wrong_question_mappings wqm
-                LEFT JOIN users u ON u.id = wqm.teacher_user_id
-                LEFT JOIN classes c ON c.id = wqm.class_id
-                WHERE wqm.mapping_status=?
-                ORDER BY wqm.updated_at DESC, wqm.record_id DESC
-                """,
-                (status,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT wqm.*, u.display_name AS teacher_display_name, c.name AS class_display_name
-                FROM wrong_question_mappings wqm
-                LEFT JOIN users u ON u.id = wqm.teacher_user_id
-                LEFT JOIN classes c ON c.id = wqm.class_id
-                ORDER BY wqm.updated_at DESC, wqm.record_id DESC
-                """
-            ).fetchall()
-        items = [dict(row) for row in rows]
-        if status:
-            return items
+            return [item for item in items if item.get("mapping_status") == status]
         return [item for item in items if not _is_final_wrong_question_mapping(item, conn=conn)]
 
 
@@ -628,6 +617,26 @@ def _should_auto_refresh_wrong_question_mapping_snapshots(
             "subject_snapshot",
         )
     )
+
+
+def _present_wrong_question_mapping(
+    mapping: Optional[dict[str, Any]],
+    *,
+    conn: sqlite3.Connection,
+) -> Optional[dict[str, Any]]:
+    if mapping is None or _is_final_wrong_question_mapping(mapping, conn=conn):
+        return mapping
+
+    if mapping.get("mapping_status") != "mapped":
+        return mapping
+
+    presented_mapping = dict(mapping)
+    presented_mapping["teacher_user_id"] = None
+    presented_mapping["class_id"] = None
+    presented_mapping["teacher_display_name"] = presented_mapping.get("teacher_name_snapshot") or ""
+    presented_mapping["class_display_name"] = presented_mapping.get("class_name_snapshot") or ""
+    presented_mapping["mapping_status"] = "needs_review"
+    return presented_mapping
 
 
 def _is_final_wrong_question_mapping(
@@ -812,7 +821,7 @@ def _filter_classes_by_subject(rows, normalized_subject: str):
     if not normalized_subject:
         return list(rows)
     subject_matches = [row for row in rows if normalize_alias(row["subject"]) == normalized_subject]
-    return subject_matches or list(rows)
+    return subject_matches
 
 
 def _find_user_by_id(conn: sqlite3.Connection, user_id: int):
