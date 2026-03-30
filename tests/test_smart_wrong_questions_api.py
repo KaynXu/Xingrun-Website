@@ -593,6 +593,19 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(str(ctx.exception), "下游服务返回了无效响应")
         self.assertEqual(ctx.exception.status_code, 502)
 
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_list_route_translates_non_object_downstream_json_root(self, urlopen):
+        owner_payload = self.login_owner()
+        urlopen.return_value = FakeResponse(json.dumps([{"id": "record-1"}]).encode("utf-8"))
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json(), {"error": "下游服务返回了无效响应"})
+
     @patch("smart_wrong_questions.export_wrong_question_summary")
     def test_export_route_returns_pdf_attachment(self, export_wrong_question_summary):
         owner_payload = self.login_owner()
