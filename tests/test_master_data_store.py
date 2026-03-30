@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -29,6 +30,149 @@ class MasterDataStoreTestCase(unittest.TestCase):
         with lesson_manager.get_conn() as conn:
             row = conn.execute(query, params).fetchone()
         return row["count"]
+
+    def _create_legacy_master_data_schema(self):
+        conn = sqlite3.connect(lesson_manager.DB_PATH)
+        try:
+            conn.executescript(
+                """
+                PRAGMA foreign_keys = OFF;
+
+                CREATE TABLE classes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    subject TEXT DEFAULT '',
+                    grade TEXT DEFAULT '',
+                    teacher_name TEXT DEFAULT '',
+                    teacher_email TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE lessons (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    subject TEXT,
+                    grade TEXT,
+                    topic TEXT,
+                    summary TEXT,
+                    weak_points TEXT,
+                    plan_json TEXT,
+                    pdf_path TEXT,
+                    class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE questions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lesson_id INTEGER NOT NULL,
+                    question TEXT,
+                    answer TEXT,
+                    category TEXT,
+                    day_num INTEGER,
+                    FOREIGN KEY (lesson_id) REFERENCES lessons(id)
+                );
+
+                CREATE TABLE organizations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'member',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    organization_id INTEGER NOT NULL REFERENCES organizations(id),
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE registration_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    organization_id INTEGER NOT NULL REFERENCES organizations(id),
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    reviewed_by INTEGER REFERENCES users(id),
+                    reviewed_at TEXT,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE auth_sessions (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE user_classes (
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                    PRIMARY KEY (user_id, class_id)
+                );
+
+                CREATE TABLE user_aliases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    alias TEXT NOT NULL,
+                    normalized_alias TEXT NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now','localtime')),
+                    UNIQUE(user_id, normalized_alias)
+                );
+
+                CREATE INDEX idx_user_aliases_normalized_alias
+                ON user_aliases(normalized_alias);
+
+                CREATE TABLE class_aliases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                    alias TEXT NOT NULL,
+                    normalized_alias TEXT NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now','localtime')),
+                    UNIQUE(class_id, normalized_alias)
+                );
+
+                CREATE INDEX idx_class_aliases_normalized_alias
+                ON class_aliases(normalized_alias);
+
+                CREATE TABLE wrong_question_mappings (
+                    record_id TEXT PRIMARY KEY,
+                    teacher_user_id INTEGER REFERENCES users(id),
+                    class_id INTEGER REFERENCES classes(id),
+                    teacher_name_snapshot TEXT DEFAULT '',
+                    class_name_snapshot TEXT DEFAULT '',
+                    subject_snapshot TEXT DEFAULT '',
+                    mapping_status TEXT NOT NULL DEFAULT 'unmapped',
+                    reviewed_by INTEGER REFERENCES users(id),
+                    reviewed_at TEXT,
+                    created_at TEXT DEFAULT (datetime('now','localtime')),
+                    updated_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE master_data_audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT NOT NULL,
+                    entity_key TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    before_json TEXT NOT NULL,
+                    after_json TEXT NOT NULL,
+                    actor_user_id INTEGER REFERENCES users(id),
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                PRAGMA foreign_keys = ON;
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _get_foreign_key_actions(self, table_name: str) -> dict[str, str]:
+        with lesson_manager.get_conn() as conn:
+            rows = conn.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
+        return {row[3]: row[6] for row in rows}
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -166,6 +310,44 @@ class MasterDataStoreTestCase(unittest.TestCase):
         self.assertIsNotNone(mapping)
         self.assertIsNone(mapping["class_id"])
         self.assertEqual(mapping["class_name_snapshot"], "六年级4班")
+
+    def test_init_db_migrates_legacy_master_data_foreign_keys(self):
+        self.temp_dir.cleanup()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        lesson_manager.DB_PATH = self.base / "lessons.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({})
+
+        self._create_legacy_master_data_schema()
+
+        self.assertEqual(
+            self._get_foreign_key_actions("wrong_question_mappings"),
+            {
+                "reviewed_by": "NO ACTION",
+                "class_id": "NO ACTION",
+                "teacher_user_id": "NO ACTION",
+            },
+        )
+        self.assertEqual(
+            self._get_foreign_key_actions("master_data_audit_log"),
+            {"actor_user_id": "NO ACTION"},
+        )
+
+        lesson_manager.init_db()
+
+        self.assertEqual(
+            self._get_foreign_key_actions("wrong_question_mappings"),
+            {
+                "reviewed_by": "SET NULL",
+                "class_id": "SET NULL",
+                "teacher_user_id": "SET NULL",
+            },
+        )
+        self.assertEqual(
+            self._get_foreign_key_actions("master_data_audit_log"),
+            {"actor_user_id": "SET NULL"},
+        )
 
 
 if __name__ == "__main__":
