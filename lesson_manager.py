@@ -858,7 +858,21 @@ def delete_class(class_id: int):
 
         master_data.ensure_schema(conn)
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
-        conn.execute("UPDATE wrong_question_mappings SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute(
+            """
+            UPDATE wrong_question_mappings
+            SET class_id=NULL,
+                mapping_status=CASE
+                    WHEN teacher_user_id IS NOT NULL THEN 'needs_review'
+                    ELSE 'unmapped'
+                END,
+                reviewed_by=NULL,
+                reviewed_at=NULL,
+                updated_at=datetime('now','localtime')
+            WHERE class_id=?
+            """,
+            (class_id,),
+        )
         conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
 

@@ -311,6 +311,34 @@ class MasterDataStoreTestCase(unittest.TestCase):
         self.assertIsNone(mapping["class_id"])
         self.assertEqual(mapping["class_name_snapshot"], "六年级4班")
 
+    def test_delete_class_requeues_invalidated_mapped_wrong_question_mapping(self):
+        class_id = lesson_manager.save_class("六年级 5 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, self.owner["id"])
+
+        master_data.upsert_wrong_question_mapping(
+            "record-repair-1",
+            teacher_user_id=self.owner["id"],
+            class_id=class_id,
+            teacher_name_snapshot="Kayn 老师",
+            class_name_snapshot="六年级5班",
+            subject_snapshot="数学",
+            mapping_status="mapped",
+            reviewed_by=self.owner["id"],
+        )
+
+        lesson_manager.delete_class(class_id)
+
+        mapping = master_data.get_wrong_question_mapping("record-repair-1")
+        self.assertIsNotNone(mapping)
+        self.assertEqual(mapping["mapping_status"], "needs_review")
+        self.assertIsNone(mapping["class_id"])
+        self.assertEqual(mapping["teacher_user_id"], self.owner["id"])
+        self.assertIsNone(mapping["reviewed_by"])
+
+        queue = master_data.list_wrong_question_mapping_queue()
+        self.assertEqual([item["record_id"] for item in queue], ["record-repair-1"])
+        self.assertEqual(queue[0]["mapping_status"], "needs_review")
+
     def test_init_db_migrates_legacy_master_data_foreign_keys(self):
         self.temp_dir.cleanup()
         self.temp_dir = tempfile.TemporaryDirectory()
