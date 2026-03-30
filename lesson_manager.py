@@ -492,6 +492,7 @@ def delete_consultation(consultation_id: int) -> bool:
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -853,7 +854,11 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
 def delete_class(class_id: int):
     """Delete a class (lessons are kept but unlinked)."""
     with get_conn() as conn:
+        import master_data
+
+        master_data.ensure_schema(conn)
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute("UPDATE wrong_question_mappings SET class_id=NULL WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
 
