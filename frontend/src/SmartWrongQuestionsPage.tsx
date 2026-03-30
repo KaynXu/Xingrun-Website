@@ -37,6 +37,17 @@ type SmartWrongQuestionsPageProps = {
   };
 };
 
+type WrongQuestionClassFilterOption = {
+  id: number;
+  name: string;
+  subject: string;
+};
+
+type WrongQuestionTeacherFilterOption = {
+  id: number;
+  name: string;
+};
+
 const initialFilters: WrongQuestionFilters = {
   studentName: '',
   className: '',
@@ -98,6 +109,8 @@ function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
 export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPageProps) {
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
   const [records, setRecords] = useState<WrongQuestionRecord[]>([]);
+  const [classOptions, setClassOptions] = useState<WrongQuestionClassFilterOption[]>([]);
+  const [teacherOptions, setTeacherOptions] = useState<WrongQuestionTeacherFilterOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -169,6 +182,39 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         setLoading(false);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      try {
+        const [classItems, userItems] = await Promise.all([
+          apiFetch<Array<{ id: number; name: string; subject?: string }>>('/api/classes'),
+          apiFetch<Array<{ id: number; name: string }>>('/api/admin/users'),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setClassOptions(classItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          subject: item.subject?.trim() ?? '',
+        })));
+        setTeacherOptions(userItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+        })));
+      } catch (loadOptionsError) {
+        console.error(loadOptionsError);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -387,13 +433,19 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </label>
           <label className="space-y-2 text-sm">
             <span className="text-slate-500 dark:text-slate-400">班级</span>
-            <input
-              type="text"
+            <select
+              aria-label="班级"
               value={filters.className ?? ''}
               onChange={(event) => handleFilterChange('className', event.target.value)}
               className={workspaceFieldClass}
-              placeholder="如：六年级 1 班"
-            />
+            >
+              <option value="">全部班级</option>
+              {classOptions.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.subject ? `${item.name} · ${item.subject}` : item.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="space-y-2 text-sm">
             <span className="text-slate-500 dark:text-slate-400">科目</span>
@@ -407,13 +459,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </label>
           <label className="space-y-2 text-sm">
             <span className="text-slate-500 dark:text-slate-400">老师</span>
-            <input
-              type="text"
+            <select
+              aria-label="老师"
               value={filters.teacherName ?? ''}
               onChange={(event) => handleFilterChange('teacherName', event.target.value)}
               className={workspaceFieldClass}
-              placeholder="如：雷文浩"
-            />
+            >
+              <option value="">全部老师</option>
+              {teacherOptions.map((item) => (
+                <option key={item.id} value={item.name}>{item.name}</option>
+              ))}
+            </select>
           </label>
           <label className="space-y-2 text-sm">
             <span className="text-slate-500 dark:text-slate-400">错误类型</span>
