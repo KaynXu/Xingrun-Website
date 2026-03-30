@@ -920,6 +920,8 @@ def api_master_data_wrong_question_mapping_resolve(record_id):
             class_id=payload.get("class_id"),
             mapping_status=(payload.get("mapping_status") or "mapped").strip() or "mapped",
         )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify(resolved)
