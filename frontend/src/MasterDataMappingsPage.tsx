@@ -63,9 +63,10 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
   const [items, setItems] = useState<WrongQuestionMappingQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [savingRecordId, setSavingRecordId] = useState<string | null>(null);
+  const [savingRecordIds, setSavingRecordIds] = useState<Record<string, boolean>>({});
   const [saveErrorByRecordId, setSaveErrorByRecordId] = useState<Record<string, string>>({});
   const [formByRecordId, setFormByRecordId] = useState<Record<string, MappingFormState>>({});
+  const hasPendingSaves = Object.values(savingRecordIds).some(Boolean);
 
   const loadQueue = useCallback(async () => {
     setLoading(true);
@@ -111,12 +112,31 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
       mapping_status: currentForm.mappingStatus,
     };
 
-    setSavingRecordId(recordId);
+    setSavingRecordIds((current) => ({
+      ...current,
+      [recordId]: true,
+    }));
     setSaveErrorByRecordId((current) => ({ ...current, [recordId]: '' }));
 
     try {
       const resolved = await resolveWrongQuestionMapping(recordId, payload);
-      setItems((current) => current.filter((item) => item.recordId !== recordId));
+      setItems((current) => {
+        if (resolved.mappingStatus === 'mapped') {
+          return current.filter((item) => item.recordId !== recordId);
+        }
+
+        let didReplace = false;
+        const nextItems = current.map((item) => {
+          if (item.recordId !== recordId) {
+            return item;
+          }
+
+          didReplace = true;
+          return resolved;
+        });
+
+        return didReplace ? nextItems : [resolved, ...nextItems];
+      });
       setFormByRecordId((current) => ({
         ...current,
         [recordId]: buildInitialFormState(resolved),
@@ -127,7 +147,11 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
         [recordId]: saveError instanceof Error ? saveError.message : '主数据映射保存失败',
       }));
     } finally {
-      setSavingRecordId((current) => (current === recordId ? null : current));
+      setSavingRecordIds((current) => {
+        const nextState = { ...current };
+        delete nextState[recordId];
+        return nextState;
+      });
     }
   };
 
@@ -149,7 +173,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
             onClick={() => {
               void loadQueue();
             }}
-            disabled={loading || savingRecordId !== null}
+            disabled={loading || hasPendingSaves}
             className={workspaceSecondaryButtonClass}
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : undefined} />
@@ -176,7 +200,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
           <div className="space-y-4">
             {items.map((item) => {
               const form = formByRecordId[item.recordId] ?? buildInitialFormState(item);
-              const saving = savingRecordId === item.recordId;
+              const saving = Boolean(savingRecordIds[item.recordId]);
 
               return (
                 <article key={item.recordId} className={`${workspaceSoftCardClass} space-y-5 p-5`}>
@@ -220,6 +244,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
                         inputMode="numeric"
                         className={workspaceFieldClass}
                         value={form.teacherUserId}
+                        disabled={saving}
                         onInput={(event) => updateFormField(item.recordId, { teacherUserId: (event.target as HTMLInputElement).value })}
                         onChange={(event) => updateFormField(item.recordId, { teacherUserId: event.target.value })}
                         placeholder="teacher_user_id"
@@ -233,6 +258,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
                         inputMode="numeric"
                         className={workspaceFieldClass}
                         value={form.classId}
+                        disabled={saving}
                         onInput={(event) => updateFormField(item.recordId, { classId: (event.target as HTMLInputElement).value })}
                         onChange={(event) => updateFormField(item.recordId, { classId: event.target.value })}
                         placeholder="class_id"
@@ -244,6 +270,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
                         name="mapping_status"
                         className={workspaceFieldClass}
                         value={form.mappingStatus}
+                        disabled={saving}
                         onChange={(event) => updateFormField(item.recordId, { mappingStatus: event.target.value as WrongQuestionMappingStatus })}
                       >
                         {mappingStatusOptions.map((option) => (
