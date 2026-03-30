@@ -68,6 +68,10 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasOwnKey(source: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(source, key));
+}
+
 function pickStringValue(source: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = source[key];
@@ -294,7 +298,34 @@ export function resolveSavedWrongQuestionRecord(
   responseRecord?: unknown,
 ): WrongQuestionRecord {
   if (responseRecord) {
-    return normalizeWrongQuestionRecord(responseRecord);
+    const normalizedResponse = normalizeWrongQuestionRecord(responseRecord);
+    const responseSource = isObjectRecord(responseRecord) ? responseRecord : {};
+    const hasCanonicalTeacherName = hasOwnKey(responseSource, ['teacherDisplayName', 'teacher_display_name']);
+    const hasTeacherSnapshot = hasOwnKey(responseSource, ['teacherNameSnapshot', 'teacher_name_snapshot']);
+    const hasTeacherUserId = hasOwnKey(responseSource, ['teacherUserId', 'teacher_user_id']);
+    const hasCanonicalClassName = hasOwnKey(responseSource, ['classDisplayName', 'class_display_name']);
+    const hasClassSnapshot = hasOwnKey(responseSource, ['classNameSnapshot', 'class_name_snapshot']);
+    const hasClassId = hasOwnKey(responseSource, ['classId', 'class_id']);
+    const hasMappingStatus = hasOwnKey(responseSource, ['mappingStatus', 'mapping_status']);
+
+    return {
+      ...normalizedResponse,
+      teacherName: hasCanonicalTeacherName
+        ? normalizedResponse.teacherName || currentRecord.teacherName
+        : currentRecord.teacherName || normalizedResponse.teacherName,
+      teacherNameSnapshot: hasTeacherSnapshot
+        ? normalizedResponse.teacherNameSnapshot || currentRecord.teacherNameSnapshot
+        : currentRecord.teacherNameSnapshot || normalizedResponse.teacherNameSnapshot,
+      teacherUserId: hasTeacherUserId ? normalizedResponse.teacherUserId : currentRecord.teacherUserId,
+      className: hasCanonicalClassName
+        ? normalizedResponse.className || currentRecord.className
+        : currentRecord.className || normalizedResponse.className,
+      classNameSnapshot: hasClassSnapshot
+        ? normalizedResponse.classNameSnapshot || currentRecord.classNameSnapshot
+        : currentRecord.classNameSnapshot || normalizedResponse.classNameSnapshot,
+      classId: hasClassId ? normalizedResponse.classId : currentRecord.classId,
+      mappingStatus: hasMappingStatus ? normalizedResponse.mappingStatus : currentRecord.mappingStatus,
+    };
   }
 
   return applyWrongQuestionReviewDraft(currentRecord, draft);
