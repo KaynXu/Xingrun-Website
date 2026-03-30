@@ -69,6 +69,8 @@ MASTER_DATA_AUDIT_LOG_FOREIGN_KEYS = {
     "actor_user_id": "SET NULL",
 }
 
+ALLOWED_MAPPING_STATUSES = {"mapped", "unmapped", "ambiguous", "needs_review"}
+
 
 def ensure_schema(conn: sqlite3.Connection):
     conn.executescript(
@@ -155,6 +157,7 @@ def list_user_aliases(user_id, conn=None) -> list[str]:
         conn = lesson_manager.get_conn()
     try:
         ensure_schema(conn)
+        _require_user(conn, user_id)
         rows = conn.execute(
             "SELECT alias FROM user_aliases WHERE user_id=? ORDER BY alias COLLATE NOCASE, id",
             (user_id,),
@@ -195,6 +198,7 @@ def list_class_aliases(class_id, conn=None) -> list[str]:
         conn = lesson_manager.get_conn()
     try:
         ensure_schema(conn)
+        _require_class(conn, class_id)
         rows = conn.execute(
             "SELECT alias FROM class_aliases WHERE class_id=? ORDER BY alias COLLATE NOCASE, id",
             (class_id,),
@@ -429,6 +433,9 @@ def resolve_wrong_question_mapping(
     with lesson_manager.get_conn() as conn:
         ensure_schema(conn)
         _require_user(conn, actor_user_id)
+        normalized_status = _normalize_mapping_status(mapping_status)
+        if normalized_status == "mapped" and (teacher_user_id is None or class_id is None):
+            raise ValueError("mapped status requires teacher_user_id and class_id")
         if teacher_user_id is not None:
             _require_user(conn, teacher_user_id)
         if class_id is not None:
@@ -449,7 +456,7 @@ def resolve_wrong_question_mapping(
                 updated_at=datetime('now','localtime')
             WHERE record_id=?
             """,
-            (teacher_user_id, class_id, mapping_status, actor_user_id, record_id),
+            (teacher_user_id, class_id, normalized_status, actor_user_id, record_id),
         )
 
         after = get_wrong_question_mapping(record_id, conn=conn)
@@ -468,6 +475,15 @@ def resolve_wrong_question_mapping(
             actor_user_id=actor_user_id,
         )
         return after
+
+
+def _normalize_mapping_status(mapping_status: str) -> str:
+    normalized_status = (mapping_status or "").strip()
+    if not normalized_status:
+        raise ValueError("mapping_status is required")
+    if normalized_status not in ALLOWED_MAPPING_STATUSES:
+        raise ValueError("invalid mapping_status")
+    return normalized_status
 
 
 def _write_audit_log(
