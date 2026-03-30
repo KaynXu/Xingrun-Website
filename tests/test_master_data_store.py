@@ -263,6 +263,42 @@ class MasterDataStoreTestCase(unittest.TestCase):
         self.assertEqual(persisted["class_id"], class_id)
         self.assertEqual(persisted["mapping_status"], "needs_review")
 
+    def test_normalize_wrong_question_record_does_not_fall_back_to_name_only_class_match_when_subject_conflicts(self):
+        class_id = lesson_manager.save_class("六年级 冲刺班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, self.owner["id"])
+
+        master_data.set_user_aliases(
+            actor_user_id=self.owner["id"],
+            user_id=self.owner["id"],
+            aliases=["Kayn 老师"],
+        )
+        master_data.set_class_aliases(
+            actor_user_id=self.owner["id"],
+            class_id=class_id,
+            aliases=["Sprint Math"],
+        )
+
+        normalized = master_data.normalize_wrong_question_record(
+            {
+                "id": "record-subject-conflict-1",
+                "teacher_name": "Kayn 老师",
+                "class_name": "Sprint Math",
+                "subject": "英语",
+            }
+        )
+
+        self.assertEqual(normalized["teacher_user_id"], self.owner["id"])
+        self.assertEqual(normalized["teacher_display_name"], "Kayn")
+        self.assertIsNone(normalized["class_id"])
+        self.assertEqual(normalized["class_display_name"], "Sprint Math")
+        self.assertEqual(normalized["mapping_status"], "unmapped")
+
+        persisted = master_data.get_wrong_question_mapping("record-subject-conflict-1")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["teacher_user_id"], self.owner["id"])
+        self.assertIsNone(persisted["class_id"])
+        self.assertEqual(persisted["mapping_status"], "unmapped")
+
     def test_foreign_keys_are_enabled_and_class_aliases_cascade_on_delete(self):
         with lesson_manager.get_conn() as conn:
             pragma_row = conn.execute("PRAGMA foreign_keys").fetchone()

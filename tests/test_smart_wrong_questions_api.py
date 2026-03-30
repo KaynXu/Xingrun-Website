@@ -271,6 +271,96 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(upgraded_mapping["class_id"], class_id)
 
     @patch("smart_wrong_questions.request.urlopen")
+    def test_later_reads_degrade_stale_mapped_record_after_class_teacher_rebinding(self, urlopen):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+        owner_id = owner_payload["user"]["id"]
+        replacement_teacher = self.approve_user(
+            owner_token=owner_token,
+            username="teacher_rebind",
+            display_name="Teacher Rebind",
+            password="teacher123",
+        )
+        replacement_teacher_id = replacement_teacher["user"]["id"]
+
+        class_id = lesson_manager.save_class("六年级 6 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner_id)
+        master_data.set_user_aliases(
+            actor_user_id=owner_id,
+            user_id=owner_id,
+            aliases=["Kayn 老师"],
+        )
+        master_data.set_class_aliases(
+            actor_user_id=owner_id,
+            class_id=class_id,
+            aliases=["六年级6班"],
+        )
+        urlopen.return_value = FakeResponse(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "record-rebind-1",
+                            "teacher_name": "Kayn 老师",
+                            "class_name": "六年级6班",
+                            "subject": "数学",
+                            "student_name": "Alice",
+                        }
+                    ],
+                    "total": 1,
+                }
+            ).encode("utf-8")
+        )
+
+        first_response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        first_item = first_response.get_json()["items"][0]
+        self.assertEqual(first_item["mapping_status"], "mapped")
+        self.assertEqual(first_item["teacher_user_id"], owner_id)
+        self.assertEqual(first_item["teacher_display_name"], "Kayn")
+        self.assertEqual(first_item["class_id"], class_id)
+        self.assertEqual(first_item["class_display_name"], "六年级 6 班")
+
+        lesson_manager.set_class_teacher_user_id(class_id, replacement_teacher_id)
+
+        second_response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(second_response.status_code, 200)
+        second_item = second_response.get_json()["items"][0]
+        self.assertEqual(second_item["mapping_status"], "needs_review")
+        self.assertIsNone(second_item["teacher_user_id"])
+        self.assertEqual(second_item["teacher_display_name"], "Kayn 老师")
+        self.assertIsNone(second_item["class_id"])
+        self.assertEqual(second_item["class_display_name"], "六年级6班")
+
+        queue_response = self.client.get(
+            "/api/master-data/mappings/wrong-questions",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(queue_response.status_code, 200)
+        queue_item = queue_response.get_json()["items"][0]
+        self.assertEqual(queue_item["record_id"], "record-rebind-1")
+        self.assertEqual(queue_item["mapping_status"], "needs_review")
+        self.assertIsNone(queue_item["teacher_user_id"])
+        self.assertEqual(queue_item["teacher_display_name"], "Kayn 老师")
+        self.assertIsNone(queue_item["class_id"])
+        self.assertEqual(queue_item["class_display_name"], "六年级6班")
+
+        persisted = master_data.get_wrong_question_mapping("record-rebind-1")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["mapping_status"], "mapped")
+        self.assertEqual(persisted["teacher_user_id"], owner_id)
+        self.assertEqual(persisted["class_id"], class_id)
+
+    @patch("smart_wrong_questions.request.urlopen")
     def test_later_reads_refresh_snapshot_fields_even_when_mapping_stays_unresolved(self, urlopen):
         owner_payload = self.login_owner()
         urlopen.side_effect = [
