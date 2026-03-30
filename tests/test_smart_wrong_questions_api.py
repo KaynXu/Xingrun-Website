@@ -270,6 +270,88 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(upgraded_mapping["teacher_user_id"], owner_id)
         self.assertEqual(upgraded_mapping["class_id"], class_id)
 
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_later_reads_refresh_snapshot_fields_even_when_mapping_stays_unresolved(self, urlopen):
+        owner_payload = self.login_owner()
+        urlopen.side_effect = [
+            FakeResponse(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "id": "record-refresh-1",
+                                "teacher_name": "Kayn 老师",
+                                "class_name": "六年级5班",
+                                "subject": "数学",
+                                "student_name": "Alice",
+                            }
+                        ],
+                        "total": 1,
+                    }
+                ).encode("utf-8")
+            ),
+            FakeResponse(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "id": "record-refresh-1",
+                                "teacher_name": "Kayn 老师（代课）",
+                                "class_name": "六年级五班-临时",
+                                "subject": "数学提高",
+                                "student_name": "Alice",
+                            }
+                        ],
+                        "total": 1,
+                    }
+                ).encode("utf-8")
+            ),
+        ]
+
+        first_response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        first_item = first_response.get_json()["items"][0]
+        self.assertEqual(first_item["mapping_status"], "unmapped")
+        self.assertEqual(first_item["teacher_user_id"], None)
+        self.assertEqual(first_item["class_id"], None)
+        self.assertEqual(first_item["teacher_name_snapshot"], "Kayn 老师")
+        self.assertEqual(first_item["class_name_snapshot"], "六年级5班")
+
+        first_mapping = master_data.get_wrong_question_mapping("record-refresh-1")
+        self.assertIsNotNone(first_mapping)
+        self.assertEqual(first_mapping["mapping_status"], "unmapped")
+        self.assertEqual(first_mapping["teacher_name_snapshot"], "Kayn 老师")
+        self.assertEqual(first_mapping["class_name_snapshot"], "六年级5班")
+        self.assertEqual(first_mapping["subject_snapshot"], "数学")
+
+        second_response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(second_response.status_code, 200)
+        second_item = second_response.get_json()["items"][0]
+        self.assertEqual(second_item["mapping_status"], "unmapped")
+        self.assertEqual(second_item["teacher_user_id"], None)
+        self.assertEqual(second_item["class_id"], None)
+        self.assertEqual(second_item["teacher_display_name"], "Kayn 老师（代课）")
+        self.assertEqual(second_item["teacher_name_snapshot"], "Kayn 老师（代课）")
+        self.assertEqual(second_item["class_display_name"], "六年级五班-临时")
+        self.assertEqual(second_item["class_name_snapshot"], "六年级五班-临时")
+
+        refreshed_mapping = master_data.get_wrong_question_mapping("record-refresh-1")
+        self.assertIsNotNone(refreshed_mapping)
+        self.assertEqual(refreshed_mapping["mapping_status"], "unmapped")
+        self.assertEqual(refreshed_mapping["teacher_user_id"], None)
+        self.assertEqual(refreshed_mapping["class_id"], None)
+        self.assertEqual(refreshed_mapping["teacher_name_snapshot"], "Kayn 老师（代课）")
+        self.assertEqual(refreshed_mapping["class_name_snapshot"], "六年级五班-临时")
+        self.assertEqual(refreshed_mapping["subject_snapshot"], "数学提高")
+
     @patch("smart_wrong_questions.fetch_wrong_question_record")
     def test_staff_can_get_wrong_question_record_detail(self, fetch_wrong_question_record):
         owner_payload = self.login_owner()
