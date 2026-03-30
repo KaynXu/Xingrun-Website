@@ -1035,6 +1035,142 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
   }
 });
 
+test('SmartWrongQuestionsPage accepts a top-level saved record response without losing unresolved mapping identity', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-save-top-level',
+              student_name: 'Alice',
+              class_display_name: '六年级 1 班',
+              class_name_snapshot: '六年级一班（临时）',
+              class_id: 42,
+              subject: '数学',
+              teacher_display_name: 'Kayn',
+              teacher_name_snapshot: 'Kayn 老师（代课）',
+              teacher_user_id: 7,
+              mapping_status: 'needs_review',
+              created_at: '2026-03-29T08:00:00Z',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算', '单位换算'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-save-top-level' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-save-top-level',
+          student_name: 'Alice',
+          class_display_name: '六年级 1 班',
+          class_name_snapshot: '六年级一班（临时）',
+          class_id: 42,
+          subject: '数学',
+          teacher_display_name: 'Kayn',
+          teacher_name_snapshot: 'Kayn 老师（代课）',
+          teacher_user_id: 7,
+          mapping_status: 'needs_review',
+          created_at: '2026-03-29T08:00:00Z',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算', '单位换算'],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-save-top-level/review' && init?.method === 'PUT') {
+        return createJsonResponse({
+          id: 'record-save-top-level',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          subject: '数学',
+          teacher_name: 'Kayn',
+          created_at: '2026-03-29T08:00:00Z',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算', '单位换算'],
+            selected_error_type: '服务端修正',
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '管理员',
+            organization_name: '星润Starain',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /主数据映射待处理/);
+      assert.match(pageText, /原始老师：Kayn 老师（代课）/);
+      assert.match(pageText, /原始班级：六年级一班（临时）/);
+    });
+
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+
+    assert.ok(saveButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.equal(fetchCalls.length, 3);
+      const pageText = domEnvironment.container.textContent || '';
+      const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
+      assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
+      assert.equal(selectedErrorTypeInput.value, '服务端修正');
+      assert.match(pageText, /主数据映射待处理/);
+      assert.match(pageText, /老师：Kayn/);
+      assert.match(pageText, /原始老师：Kayn 老师（代课）/);
+      assert.match(pageText, /班级：六年级 1 班/);
+      assert.match(pageText, /原始班级：六年级一班（临时）/);
+      assert.match(pageText, /映射状态：待确认映射/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
 test('SmartWrongQuestionsPage reuses the current filter query for PDF export', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 

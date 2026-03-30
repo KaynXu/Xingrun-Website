@@ -527,7 +527,7 @@ def resolve_wrong_question_mapping(
     record_id: str,
     teacher_user_id: Optional[int],
     class_id: Optional[int],
-    mapping_status: str,
+    mapping_status: Any,
 ):
     with lesson_manager.get_conn() as conn:
         ensure_schema(conn)
@@ -576,8 +576,10 @@ def resolve_wrong_question_mapping(
         return after
 
 
-def _normalize_mapping_status(mapping_status: str) -> str:
-    normalized_status = (mapping_status or "").strip()
+def _normalize_mapping_status(mapping_status: Any) -> str:
+    if not isinstance(mapping_status, str):
+        raise ValueError("invalid mapping_status")
+    normalized_status = mapping_status.strip()
     if not normalized_status:
         raise ValueError("mapping_status is required")
     if normalized_status not in ALLOWED_MAPPING_STATUSES:

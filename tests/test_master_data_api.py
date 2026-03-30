@@ -195,6 +195,31 @@ class MasterDataApiTestCase(unittest.TestCase):
         self.assertEqual(len(queue_response.get_json()["items"]), 1)
         self.assertEqual(queue_response.get_json()["items"][0]["record_id"], "record-unresolved-1")
 
+    def test_owner_gets_400_for_non_string_mapping_status(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+
+        master_data.upsert_wrong_question_mapping(
+            "record-invalid-status-1",
+            teacher_name_snapshot="Unknown Teacher",
+            class_name_snapshot="Unknown Class",
+            subject_snapshot="数学",
+            mapping_status="needs_review",
+        )
+
+        resolve_response = self.client.put(
+            "/api/master-data/mappings/wrong-questions/record-invalid-status-1",
+            headers=self.auth_headers(owner_token),
+            json={"mapping_status": ["mapped"]},
+        )
+
+        self.assertEqual(resolve_response.status_code, 400)
+        self.assertEqual(resolve_response.get_json()["error"], "invalid mapping_status")
+
+        persisted = master_data.get_wrong_question_mapping("record-invalid-status-1")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["mapping_status"], "needs_review")
+
     def test_member_gets_403_on_queue_and_resolve(self):
         owner_payload = self.login_owner()
         owner_token = owner_payload["token"]
