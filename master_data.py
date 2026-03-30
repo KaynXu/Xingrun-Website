@@ -335,6 +335,17 @@ def normalize_wrong_question_record(
                 mapping_status=suggestion.get("mapping_status", "unmapped"),
                 conn=conn,
             )
+        elif _should_auto_upgrade_wrong_question_mapping(mapping, suggestion):
+            mapping = upsert_wrong_question_mapping(
+                record_id,
+                teacher_user_id=suggestion.get("teacher_user_id"),
+                class_id=suggestion.get("class_id"),
+                teacher_name_snapshot=suggestion.get("teacher_name_snapshot", teacher_name_snapshot),
+                class_name_snapshot=suggestion.get("class_name_snapshot", class_name_snapshot),
+                subject_snapshot=suggestion.get("subject_snapshot", subject_snapshot),
+                mapping_status=suggestion.get("mapping_status", mapping.get("mapping_status") or "unmapped"),
+                conn=conn,
+            )
 
         normalized["teacher_user_id"] = mapping.get("teacher_user_id")
         normalized["teacher_display_name"] = (
@@ -561,6 +572,33 @@ def _normalize_mapping_status(mapping_status: str) -> str:
     if normalized_status not in ALLOWED_MAPPING_STATUSES:
         raise ValueError("invalid mapping_status")
     return normalized_status
+
+
+def _should_auto_upgrade_wrong_question_mapping(
+    existing_mapping: dict[str, Any],
+    suggestion: dict[str, Any],
+) -> bool:
+    if existing_mapping.get("reviewed_by") is not None:
+        return False
+    if _is_final_wrong_question_mapping(existing_mapping):
+        return False
+    return _mapping_resolution_rank(suggestion) > _mapping_resolution_rank(existing_mapping)
+
+
+def _is_final_wrong_question_mapping(mapping: dict[str, Any]) -> bool:
+    return (
+        mapping.get("mapping_status") == "mapped"
+        and mapping.get("teacher_user_id") is not None
+        and mapping.get("class_id") is not None
+    )
+
+
+def _mapping_resolution_rank(mapping: dict[str, Any]) -> tuple[int, int, int]:
+    return (
+        1 if mapping.get("mapping_status") == "mapped" else 0,
+        1 if mapping.get("class_id") is not None else 0,
+        1 if mapping.get("teacher_user_id") is not None else 0,
+    )
 
 
 def _write_audit_log(
