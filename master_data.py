@@ -34,13 +34,13 @@ def ensure_schema(conn: sqlite3.Connection):
 
         CREATE TABLE IF NOT EXISTS wrong_question_mappings (
             record_id TEXT PRIMARY KEY,
-            teacher_user_id INTEGER REFERENCES users(id),
-            class_id INTEGER REFERENCES classes(id),
+            teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
             teacher_name_snapshot TEXT DEFAULT '',
             class_name_snapshot TEXT DEFAULT '',
             subject_snapshot TEXT DEFAULT '',
             mapping_status TEXT NOT NULL DEFAULT 'unmapped',
-            reviewed_by INTEGER REFERENCES users(id),
+            reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
             reviewed_at TEXT,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
@@ -53,7 +53,7 @@ def ensure_schema(conn: sqlite3.Connection):
             action TEXT NOT NULL,
             before_json TEXT NOT NULL,
             after_json TEXT NOT NULL,
-            actor_user_id INTEGER REFERENCES users(id),
+            actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
         """
@@ -209,70 +209,77 @@ def upsert_wrong_question_mapping(
     reviewed_by: Optional[int] = None,
     conn: Optional[sqlite3.Connection] = None,
 ):
-    should_close = conn is None
     if conn is None:
-        conn = lesson_manager.get_conn()
-    try:
-        ensure_schema(conn)
-        if teacher_user_id is not None:
-            _require_user(conn, teacher_user_id)
-        if class_id is not None:
-            _require_class(conn, class_id)
-        if reviewed_by is not None:
-            _require_user(conn, reviewed_by)
+        with lesson_manager.get_conn() as owned_conn:
+            return upsert_wrong_question_mapping(
+                record_id,
+                teacher_user_id=teacher_user_id,
+                class_id=class_id,
+                teacher_name_snapshot=teacher_name_snapshot,
+                class_name_snapshot=class_name_snapshot,
+                subject_snapshot=subject_snapshot,
+                mapping_status=mapping_status,
+                reviewed_by=reviewed_by,
+                conn=owned_conn,
+            )
 
-        before = get_wrong_question_mapping(record_id, conn=conn)
-        reviewed_at_expr = "datetime('now','localtime')" if reviewed_by is not None else "NULL"
-        conn.execute(
-            f"""
-            INSERT INTO wrong_question_mappings (
-                record_id,
-                teacher_user_id,
-                class_id,
-                teacher_name_snapshot,
-                class_name_snapshot,
-                subject_snapshot,
-                mapping_status,
-                reviewed_by,
-                reviewed_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, {reviewed_at_expr}, datetime('now','localtime'))
-            ON CONFLICT(record_id) DO UPDATE SET
-                teacher_user_id=excluded.teacher_user_id,
-                class_id=excluded.class_id,
-                teacher_name_snapshot=excluded.teacher_name_snapshot,
-                class_name_snapshot=excluded.class_name_snapshot,
-                subject_snapshot=excluded.subject_snapshot,
-                mapping_status=excluded.mapping_status,
-                reviewed_by=excluded.reviewed_by,
-                reviewed_at={reviewed_at_expr},
-                updated_at=datetime('now','localtime')
-            """,
-            (
-                record_id,
-                teacher_user_id,
-                class_id,
-                teacher_name_snapshot,
-                class_name_snapshot,
-                subject_snapshot,
-                mapping_status,
-                reviewed_by,
-            ),
-        )
-        after = get_wrong_question_mapping(record_id, conn=conn)
-        _write_audit_log(
-            conn,
-            entity_type="wrong_question_mapping",
-            entity_key=record_id,
-            action="upsert",
-            before=before,
-            after=after,
-            actor_user_id=reviewed_by,
-        )
-        return after
-    finally:
-        if should_close:
-            conn.close()
+    ensure_schema(conn)
+    if teacher_user_id is not None:
+        _require_user(conn, teacher_user_id)
+    if class_id is not None:
+        _require_class(conn, class_id)
+    if reviewed_by is not None:
+        _require_user(conn, reviewed_by)
+
+    before = get_wrong_question_mapping(record_id, conn=conn)
+    reviewed_at_expr = "datetime('now','localtime')" if reviewed_by is not None else "NULL"
+    conn.execute(
+        f"""
+        INSERT INTO wrong_question_mappings (
+            record_id,
+            teacher_user_id,
+            class_id,
+            teacher_name_snapshot,
+            class_name_snapshot,
+            subject_snapshot,
+            mapping_status,
+            reviewed_by,
+            reviewed_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, {reviewed_at_expr}, datetime('now','localtime'))
+        ON CONFLICT(record_id) DO UPDATE SET
+            teacher_user_id=excluded.teacher_user_id,
+            class_id=excluded.class_id,
+            teacher_name_snapshot=excluded.teacher_name_snapshot,
+            class_name_snapshot=excluded.class_name_snapshot,
+            subject_snapshot=excluded.subject_snapshot,
+            mapping_status=excluded.mapping_status,
+            reviewed_by=excluded.reviewed_by,
+            reviewed_at={reviewed_at_expr},
+            updated_at=datetime('now','localtime')
+        """,
+        (
+            record_id,
+            teacher_user_id,
+            class_id,
+            teacher_name_snapshot,
+            class_name_snapshot,
+            subject_snapshot,
+            mapping_status,
+            reviewed_by,
+        ),
+    )
+    after = get_wrong_question_mapping(record_id, conn=conn)
+    _write_audit_log(
+        conn,
+        entity_type="wrong_question_mapping",
+        entity_key=record_id,
+        action="upsert",
+        before=before,
+        after=after,
+        actor_user_id=reviewed_by,
+    )
+    return after
 
 
 def get_wrong_question_mapping(record_id: str, conn: Optional[sqlite3.Connection] = None):
