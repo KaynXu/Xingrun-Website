@@ -21,6 +21,8 @@ ENV_VAR_MAP = {
     "n1n_model": "XR_N1N_MODEL",
     "admin_username": "XR_ADMIN_USERNAME",
     "admin_password_hash": "XR_ADMIN_PASSWORD_HASH",
+    "wrong_question_service_url": "XR_WRONG_QUESTION_SERVICE_URL",
+    "wrong_question_service_token": "XR_WRONG_QUESTION_SERVICE_TOKEN",
 }
 
 DEFAULTS = {
@@ -29,6 +31,8 @@ DEFAULTS = {
     "n1n_base_url": "https://api.n1n.ai/v1",
     "n1n_model": "gpt-4o",
     "deepseek_model": "deepseek-chat",
+    "wrong_question_service_url": "",
+    "wrong_question_service_token": "",
 }
 
 

@@ -7,6 +7,7 @@
 """
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -44,22 +45,46 @@ CORS(app, resources={r"/api/*": {"origins": [
 ]}})
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
-from lesson_manager import (delete_lesson as db_delete_lesson, get_conn,
-                             get_lesson, get_questions, init_db, list_lessons,
-                             save_lesson,
-                             save_class, get_class, list_classes,
-                             update_class, delete_class as db_delete_class,
-                             get_lessons_by_week, get_class_weeks, week_label,
-                             DEFAULT_ORGANIZATION_NAME, authenticate_user,
-                             create_auth_session, create_registration_request,
-                             approve_registration_request, reject_registration_request,
-                             list_registration_requests, get_current_user,
-                             list_all_users, get_user_class_ids, set_user_class_ids,
-                             get_class_teacher_user_id, list_class_teacher_bindings,
-                             set_class_teacher_user_id, update_user_role, update_user_profile,
-                             list_consultations, get_consultation,
-                             create_consultation, update_consultation,
-                             delete_consultation, list_consultation_teachers)
+from lesson_manager import (
+    DEFAULT_ORGANIZATION_NAME,
+    approve_registration_request,
+    authenticate_user,
+    create_auth_session,
+    create_consultation,
+    create_registration_request,
+    delete_class as db_delete_class,
+    delete_consultation,
+    delete_lesson as db_delete_lesson,
+    get_class,
+    get_class_teacher_user_id,
+    get_class_weeks,
+    get_conn,
+    get_consultation,
+    get_current_user,
+    get_lesson,
+    get_lessons_by_week,
+    get_questions,
+    get_user_class_ids,
+    init_db,
+    list_all_users,
+    list_class_teacher_bindings,
+    list_classes,
+    list_consultation_teachers,
+    list_consultations,
+    list_lessons,
+    list_registration_requests,
+    reject_registration_request,
+    save_class,
+    save_lesson,
+    set_class_teacher_user_id,
+    set_user_class_ids,
+    update_class,
+    update_consultation,
+    update_user_profile,
+    update_user_role,
+    week_label,
+)
+import smart_wrong_questions
 
 init_db()
 
@@ -869,6 +894,59 @@ def api_admin_user_classes_set(user_id):
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
+
+
+@app.route("/api/wrong-questions", methods=["GET"])
+def api_wrong_questions_list():
+    _, error = _require_staff()
+    if error:
+        return error
+    try:
+        return jsonify(smart_wrong_questions.fetch_wrong_question_records(request.args))
+    except smart_wrong_questions.WrongQuestionProxyError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+
+@app.route("/api/wrong-questions/summary/export", methods=["GET"])
+def api_wrong_question_summary_export():
+    _, error = _require_staff()
+    if error:
+        return error
+    try:
+        export_result = smart_wrong_questions.export_wrong_question_summary(request.args)
+    except smart_wrong_questions.WrongQuestionProxyError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    return send_file(
+        io.BytesIO(export_result["content"]),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=export_result["filename"],
+    )
+
+
+@app.route("/api/wrong-questions/<record_id>", methods=["GET"])
+def api_wrong_question_detail(record_id):
+    _, error = _require_staff()
+    if error:
+        return error
+    try:
+        return jsonify(smart_wrong_questions.fetch_wrong_question_record(record_id, request.args))
+    except smart_wrong_questions.WrongQuestionProxyError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+
+@app.route("/api/wrong-questions/<record_id>/review", methods=["PUT"])
+def api_wrong_question_review_save(record_id):
+    _, error = _require_staff()
+    if error:
+        return error
+    try:
+        return jsonify(
+            smart_wrong_questions.save_wrong_question_review(record_id, request.args, request.json or {})
+        )
+    except smart_wrong_questions.WrongQuestionProxyError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
 
 
 @app.route("/api/consultations", methods=["GET"])
