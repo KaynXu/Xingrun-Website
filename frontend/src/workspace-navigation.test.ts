@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(appSource, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -21,7 +21,7 @@ test('review generation source replaces separate lesson input and library pages 
   const sidebarBlock = appSource.match(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.ok(sidebarBlock);
-  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(sidebarBlock[0], /id: 'review-generation'[\s\S]*label: '复习生成'/);
   assert.doesNotMatch(sidebarBlock[0], /id: 'input'[\s\S]*label: '添加课程'/);
   assert.doesNotMatch(sidebarBlock[0], /id: 'library'[\s\S]*label: '课程列表'/);
@@ -60,6 +60,16 @@ test('lesson input source keeps subject class and date controls in a fluid grid 
   assert.match(lessonInputBlock[0], /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
   assert.doesNotMatch(lessonInputBlock[0], /sm:w-40/);
   assert.doesNotMatch(subjectComboboxBlock[0], /sm:w-32/);
+});
+
+test('workspace navigation wires smart wrong questions into the owner admin shell only', () => {
+  const sidebarBlock = appSource.match(/const menuItems = \[[\s\S]*?\n  \];/);
+
+  assert.ok(sidebarBlock);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(sidebarBlock[0], /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
+  assert.match(appSource, /smartWrongQuestions: '智能错题'/);
+  assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
