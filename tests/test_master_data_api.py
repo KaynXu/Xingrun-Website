@@ -339,6 +339,27 @@ class MasterDataApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["error"], "request body must be a JSON object")
 
+    def test_owner_gets_400_for_non_string_user_alias_elements(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+        owner_id = owner_payload["user"]["id"]
+
+        response = self.client.put(
+            f"/api/master-data/users/{owner_id}/aliases",
+            headers=self.auth_headers(owner_token),
+            json={"aliases": ["Kayn 老师", 123]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "aliases must contain only strings")
+
+        get_response = self.client.get(
+            f"/api/master-data/users/{owner_id}/aliases",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.get_json()["aliases"], [])
+
     def test_owner_get_user_aliases_returns_404_for_missing_user(self):
         owner_payload = self.login_owner()
         owner_token = owner_payload["token"]
@@ -391,6 +412,27 @@ class MasterDataApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["error"], "request body must be a JSON object")
+
+    def test_owner_gets_400_for_non_string_class_alias_elements(self):
+        owner_payload = self.login_owner()
+        owner_token = owner_payload["token"]
+        class_id = lesson_manager.save_class("六年级 2 班", subject="数学", grade="六年级")
+
+        response = self.client.put(
+            f"/api/master-data/classes/{class_id}/aliases",
+            headers=self.auth_headers(owner_token),
+            json={"aliases": ["六年级2班", 123]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "aliases must contain only strings")
+
+        get_response = self.client.get(
+            f"/api/master-data/classes/{class_id}/aliases",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.get_json()["aliases"], [])
 
     def test_owner_get_class_aliases_returns_404_for_missing_class(self):
         owner_payload = self.login_owner()
