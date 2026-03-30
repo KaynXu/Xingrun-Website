@@ -19,12 +19,19 @@ export interface WrongQuestionReviewDraft {
   studentNote: string;
 }
 
+export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
+
 export interface WrongQuestionRecord {
   id: string;
   studentName: string;
   className: string;
+  classNameSnapshot: string;
+  classId: number | null;
   subject: string;
   teacherName: string;
+  teacherNameSnapshot: string;
+  teacherUserId: number | null;
+  mappingStatus: WrongQuestionMappingStatus;
   createdAt: string;
   imageUrl?: string;
   analysis: WrongQuestionAnalysis;
@@ -105,6 +112,29 @@ function pickStringArrayValue(source: Record<string, unknown>, keys: string[]): 
   return [];
 }
 
+function normalizeWrongQuestionMappingStatus(value: string, fallback: WrongQuestionMappingStatus = 'mapped'): WrongQuestionMappingStatus {
+  if (value === 'mapped' || value === 'unmapped' || value === 'ambiguous' || value === 'needs_review') {
+    return value;
+  }
+
+  return fallback;
+}
+
+function pickWrongQuestionMappingStatusValue(
+  source: Record<string, unknown>,
+  keys: string[],
+  fallback: WrongQuestionMappingStatus = 'mapped',
+): WrongQuestionMappingStatus {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string') {
+      return normalizeWrongQuestionMappingStatus(value.trim(), fallback);
+    }
+  }
+
+  return fallback;
+}
+
 function normalizeWrongQuestionAnalysis(rawAnalysis: unknown): WrongQuestionAnalysis {
   const source = isObjectRecord(rawAnalysis) ? rawAnalysis : {};
   const selectedKnowledgePoints = pickStringArrayValue(source, ['selectedKnowledgePoints', 'selected_knowledge_points']);
@@ -156,13 +186,22 @@ function normalizeWrongQuestionAnalysis(rawAnalysis: unknown): WrongQuestionAnal
 export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex = 0): WrongQuestionRecord {
   const source = isObjectRecord(rawRecord) ? rawRecord : {};
   const rawId = source.id;
+  const className = pickStringValue(source, ['classDisplayName', 'class_display_name', 'className', 'class_name']);
+  const classNameSnapshot = pickStringValue(source, ['classNameSnapshot', 'class_name_snapshot', 'className', 'class_name']) || className;
+  const teacherName = pickStringValue(source, ['teacherDisplayName', 'teacher_display_name', 'teacherName', 'teacher_name']);
+  const teacherNameSnapshot = pickStringValue(source, ['teacherNameSnapshot', 'teacher_name_snapshot', 'teacherName', 'teacher_name']) || teacherName;
 
   return {
     id: typeof rawId === 'string' || typeof rawId === 'number' ? String(rawId) : `wrong-question-${fallbackIndex}`,
     studentName: pickStringValue(source, ['studentName', 'student_name', 'studentNickname', 'student_nickname']),
-    className: pickStringValue(source, ['className', 'class_name']),
+    className,
+    classNameSnapshot,
+    classId: pickNumberValue(source, ['classId', 'class_id']),
     subject: pickStringValue(source, ['subject']),
-    teacherName: pickStringValue(source, ['teacherName', 'teacher_name']),
+    teacherName,
+    teacherNameSnapshot,
+    teacherUserId: pickNumberValue(source, ['teacherUserId', 'teacher_user_id']),
+    mappingStatus: pickWrongQuestionMappingStatusValue(source, ['mappingStatus', 'mapping_status']),
     createdAt: pickStringValue(source, ['createdAt', 'created_at']),
     imageUrl: pickStringValue(source, ['imageUrl', 'image_url']),
     analysis: normalizeWrongQuestionAnalysis(source.analysis),
