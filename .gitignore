@@ -19,8 +19,7 @@ data/lessons.db
 data/consultations.csv
 
 # Generated PDF output files
-data/pdfs/
-data/*.pdf
+data/**/*.pdf
 student_review_plan_fill_blanks.pdf
 
 # Local asset candidates (not wired into the product)
