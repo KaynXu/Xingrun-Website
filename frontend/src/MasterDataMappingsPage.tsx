@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 import {
+  apiFetch,
   workspaceCardClass,
   workspaceFieldClass,
   workspacePageClass,
@@ -28,6 +29,17 @@ type MappingFormState = {
   teacherUserId: string;
   classId: string;
   mappingStatus: WrongQuestionMappingStatus;
+};
+
+type MappingClassOption = {
+  id: number;
+  name: string;
+  subject: string;
+};
+
+type MappingTeacherOption = {
+  id: number;
+  name: string;
 };
 
 const mappingStatusOptions: Array<{ value: WrongQuestionMappingStatus; label: string }> = [
@@ -61,8 +73,12 @@ function getStatusLabel(status: WrongQuestionMappingStatus): string {
 
 export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPageProps) {
   const [items, setItems] = useState<WrongQuestionMappingQueueItem[]>([]);
+  const [classOptions, setClassOptions] = useState<MappingClassOption[]>([]);
+  const [teacherOptions, setTeacherOptions] = useState<MappingTeacherOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [optionsError, setOptionsError] = useState('');
   const [savingRecordIds, setSavingRecordIds] = useState<Record<string, boolean>>({});
   const [saveErrorByRecordId, setSaveErrorByRecordId] = useState<Record<string, string>>({});
   const [formByRecordId, setFormByRecordId] = useState<Record<string, MappingFormState>>({});
@@ -89,6 +105,38 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
       setLoading(false);
     }
   }, []);
+
+  const loadOptions = useCallback(async () => {
+    setOptionsLoading(true);
+    setOptionsError('');
+
+    try {
+      const [nextClassItems, nextTeacherItems] = await Promise.all([
+        apiFetch<Array<{ id: number; name: string; subject?: string }>>('/api/classes'),
+        apiFetch<Array<{ id: number; name: string }>>('/api/admin/users'),
+      ]);
+
+      setClassOptions(nextClassItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        subject: item.subject?.trim() ?? '',
+      })));
+      setTeacherOptions(nextTeacherItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+      })));
+    } catch (loadOptionsError) {
+      setClassOptions([]);
+      setTeacherOptions([]);
+      setOptionsError(loadOptionsError instanceof Error ? loadOptionsError.message : '老师和班级选项加载失败');
+    } finally {
+      setOptionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOptions();
+  }, [loadOptions]);
 
   useEffect(() => {
     void loadQueue();
@@ -171,12 +219,12 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
           <button
             type="button"
             onClick={() => {
-              void loadQueue();
+              void Promise.all([loadQueue(), loadOptions()]);
             }}
-            disabled={loading || hasPendingSaves}
+            disabled={loading || optionsLoading || hasPendingSaves}
             className={workspaceSecondaryButtonClass}
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : undefined} />
+            <RefreshCw size={16} className={loading || optionsLoading ? 'animate-spin' : undefined} />
             刷新队列
           </button>
         </div>
@@ -185,6 +233,13 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
           <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
             <AlertCircle size={18} className="mt-0.5 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {optionsError && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+            <span>{optionsError}</span>
           </div>
         )}
 
@@ -237,32 +292,40 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
 
                   <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_auto]">
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                      <span>老师 ID</span>
-                      <input
+                      <span>老师</span>
+                      <select
+                        aria-label="老师"
                         name="teacher_user_id"
-                        type="number"
-                        inputMode="numeric"
                         className={workspaceFieldClass}
                         value={form.teacherUserId}
-                        disabled={saving}
-                        onInput={(event) => updateFormField(item.recordId, { teacherUserId: (event.target as HTMLInputElement).value })}
+                        disabled={saving || optionsLoading}
                         onChange={(event) => updateFormField(item.recordId, { teacherUserId: event.target.value })}
-                        placeholder="teacher_user_id"
-                      />
+                      >
+                        <option value="">选择老师</option>
+                        {teacherOptions.map((option) => (
+                          <option key={option.id} value={String(option.id)}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                      <span>班级 ID</span>
-                      <input
+                      <span>班级</span>
+                      <select
+                        aria-label="班级"
                         name="class_id"
-                        type="number"
-                        inputMode="numeric"
                         className={workspaceFieldClass}
                         value={form.classId}
-                        disabled={saving}
-                        onInput={(event) => updateFormField(item.recordId, { classId: (event.target as HTMLInputElement).value })}
+                        disabled={saving || optionsLoading}
                         onChange={(event) => updateFormField(item.recordId, { classId: event.target.value })}
-                        placeholder="class_id"
-                      />
+                      >
+                        <option value="">选择班级</option>
+                        {classOptions.map((option) => (
+                          <option key={option.id} value={String(option.id)}>
+                            {option.subject ? `${option.name} · ${option.subject}` : option.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
                       <span>映射状态</span>
@@ -270,7 +333,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
                         name="mapping_status"
                         className={workspaceFieldClass}
                         value={form.mappingStatus}
-                        disabled={saving}
+                        disabled={saving || optionsLoading}
                         onChange={(event) => updateFormField(item.recordId, { mappingStatus: event.target.value as WrongQuestionMappingStatus })}
                       >
                         {mappingStatusOptions.map((option) => (
@@ -284,7 +347,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
                       <button
                         type="button"
                         data-record-id={item.recordId}
-                        disabled={saving}
+                        disabled={saving || optionsLoading}
                         onClick={() => {
                           void handleResolve(item.recordId);
                         }}
