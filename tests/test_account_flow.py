@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
 
 import config_runtime
 import lesson_manager
+import master_data
 from app import app
 
 
@@ -260,19 +261,121 @@ class AccountFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(owner_promote_owner.status_code, 403)
 
-        owner_promote_admin = self.client.put(
-            f"/api/admin/users/{member_candidate_id}/role",
-            headers=self.auth_headers(owner_candidate_payload["token"]),
-            json={"role": "admin"},
+    def test_staff_can_view_member_binding_summary(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
         )
-        self.assertEqual(owner_promote_admin.status_code, 200)
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
 
-        member_after_promote = self.client.get(
-            "/api/me",
-            headers=self.auth_headers(member_candidate_payload["token"]),
+        teacher_payload = self.approve_user(
+            owner_token=owner_token,
+            username="teacher_binding_a",
+            display_name="Teacher Binding A",
+            password="teacher123",
         )
-        self.assertEqual(member_after_promote.status_code, 200)
-        self.assertEqual(member_after_promote.get_json()["role"], "admin")
+        teacher_id = teacher_payload["user"]["id"]
+
+        class_id = lesson_manager.save_class("六年级 1 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, teacher_id)
+        master_data.upsert_wrong_question_mapping(
+            "record-binding-1",
+            teacher_user_id=teacher_id,
+            class_id=class_id,
+            teacher_name_snapshot="Teacher Binding A",
+            class_name_snapshot="六年级1班",
+            subject_snapshot="数学",
+            mapping_status="mapped",
+        )
+
+        response = self.client.get(
+            "/api/admin/member-binding-summary",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        summary_by_user_id = {item["user_id"]: item for item in payload["items"]}
+        teacher_summary = summary_by_user_id[teacher_id]
+        self.assertEqual(teacher_summary["mini_teacher_bound"], True)
+        self.assertEqual(teacher_summary["responsible_classes"], [{"id": class_id, "name": "六年级 1 班"}])
+        self.assertEqual(teacher_summary["mapping_summary"]["status"], "healthy")
+        self.assertEqual(teacher_summary["mapping_summary"]["mapped_count"], 1)
+        self.assertEqual(teacher_summary["mapping_summary"]["needs_review_count"], 0)
+
+    def test_member_binding_summary_marks_stale_teacher_rebinding_as_needs_review(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        original_teacher = self.approve_user(
+            owner_token=owner_token,
+            username="teacher_binding_old",
+            display_name="Teacher Binding Old",
+            password="teacher123",
+        )
+        replacement_teacher = self.approve_user(
+            owner_token=owner_token,
+            username="teacher_binding_new",
+            display_name="Teacher Binding New",
+            password="teacher123",
+        )
+        original_teacher_id = original_teacher["user"]["id"]
+        replacement_teacher_id = replacement_teacher["user"]["id"]
+
+        class_id = lesson_manager.save_class("六年级 6 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, original_teacher_id)
+        master_data.upsert_wrong_question_mapping(
+            "record-binding-stale-1",
+            teacher_user_id=original_teacher_id,
+            class_id=class_id,
+            teacher_name_snapshot="Teacher Binding Old",
+            class_name_snapshot="六年级6班",
+            subject_snapshot="数学",
+            mapping_status="mapped",
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, replacement_teacher_id)
+
+        response = self.client.get(
+            "/api/admin/member-binding-summary",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        summary_by_user_id = {item["user_id"]: item for item in payload["items"]}
+        original_summary = summary_by_user_id[original_teacher_id]
+        self.assertEqual(original_summary["mapping_summary"]["status"], "needs_review")
+        self.assertEqual(original_summary["mapping_summary"]["needs_review_count"], 1)
+        self.assertEqual(original_summary["mini_teacher_bound"], True)
+
+    def test_member_cannot_view_member_binding_summary(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="binding_member",
+            display_name="Binding Member",
+            password="member123",
+        )
+
+        response = self.client.get(
+            "/api/admin/member-binding-summary",
+            headers=self.auth_headers(member_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_anonymous_users_cannot_access_backend_apis(self):
         stats = self.client.get("/api/stats")

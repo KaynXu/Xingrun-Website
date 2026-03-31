@@ -518,6 +518,74 @@ def list_wrong_question_mapping_queue(status: Optional[str] = None) -> list[dict
         return [item for item in items if not _is_final_wrong_question_mapping(item, conn=conn)]
 
 
+def list_member_binding_summaries() -> list[dict[str, Any]]:
+    users = lesson_manager.list_all_users()
+    classes = lesson_manager.list_classes()
+
+    with lesson_manager.get_conn() as conn:
+        ensure_schema(conn)
+        raw_rows = conn.execute(
+            """
+            SELECT wqm.*, u.display_name AS teacher_display_name, c.name AS class_display_name
+            FROM wrong_question_mappings wqm
+            LEFT JOIN users u ON u.id = wqm.teacher_user_id
+            LEFT JOIN classes c ON c.id = wqm.class_id
+            ORDER BY wqm.updated_at DESC, wqm.record_id DESC
+            """
+        ).fetchall()
+        raw_mappings = [dict(row) for row in raw_rows]
+
+        summaries: list[dict[str, Any]] = []
+        for user in users:
+            user_id = user["id"]
+            responsible_classes = sorted(
+                [
+                    {"id": item["id"], "name": item["name"]}
+                    for item in classes
+                    if item.get("teacher_user_id") == user_id
+                ],
+                key=lambda item: item["name"],
+            )
+            responsible_class_ids = {item["id"] for item in responsible_classes}
+            relevant_mappings = [
+                _present_wrong_question_mapping(dict(mapping), conn=conn)
+                for mapping in raw_mappings
+                if mapping.get("teacher_user_id") == user_id or mapping.get("class_id") in responsible_class_ids
+            ]
+
+            mapped_count = sum(1 for item in relevant_mappings if item and item.get("mapping_status") == "mapped")
+            needs_review_count = sum(1 for item in relevant_mappings if item and item.get("mapping_status") == "needs_review")
+            unmapped_count = sum(1 for item in relevant_mappings if item and item.get("mapping_status") == "unmapped")
+            ambiguous_count = sum(1 for item in relevant_mappings if item and item.get("mapping_status") == "ambiguous")
+            mini_teacher_bound = bool(responsible_classes) or any(
+                mapping.get("teacher_user_id") == user_id for mapping in raw_mappings
+            )
+
+            summaries.append(
+                {
+                    "user_id": user_id,
+                    "mini_teacher_bound": mini_teacher_bound,
+                    "responsible_classes": responsible_classes,
+                    "mapping_summary": {
+                        "status": _summarize_member_binding_status(
+                            mini_teacher_bound=mini_teacher_bound,
+                            class_count=len(responsible_classes),
+                            mapped_count=mapped_count,
+                            needs_review_count=needs_review_count,
+                            unmapped_count=unmapped_count,
+                            ambiguous_count=ambiguous_count,
+                        ),
+                        "mapped_count": mapped_count,
+                        "needs_review_count": needs_review_count,
+                        "unmapped_count": unmapped_count,
+                        "ambiguous_count": ambiguous_count,
+                    },
+                }
+            )
+
+        return summaries
+
+
 def resolve_wrong_question_mapping(
     *,
     actor_user_id: int,
@@ -669,6 +737,24 @@ def _mapping_resolution_rank(
         1 if mapping.get("class_id") is not None else 0,
         1 if mapping.get("teacher_user_id") is not None else 0,
     )
+
+
+def _summarize_member_binding_status(
+    *,
+    mini_teacher_bound: bool,
+    class_count: int,
+    mapped_count: int,
+    needs_review_count: int,
+    unmapped_count: int,
+    ambiguous_count: int,
+) -> str:
+    if needs_review_count > 0:
+        return "needs_review"
+    if (not mini_teacher_bound) or unmapped_count > 0 or ambiguous_count > 0:
+        return "incomplete"
+    if class_count > 0 and mapped_count == 0:
+        return "incomplete"
+    return "healthy"
 
 
 def _suggest_mapping_status(teacher_row, class_row) -> str:
