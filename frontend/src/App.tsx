@@ -213,6 +213,10 @@ function hasStaffAccess(role: Role): boolean {
   return hasOwnerAccess(role) || role === 'admin';
 }
 
+function canAccessSmartWrongQuestions(role: Role): boolean {
+  return hasStaffAccess(role) || role === 'member';
+}
+
 function canManageOwnerRole(role: Role): boolean {
   return role === 'super_owner';
 }
@@ -1208,10 +1212,10 @@ const Sidebar = ({
     { id: 'review-generation', icon: Library, label: '复习生成' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
-    ...(hasStaffAccess(currentUser.role)
+    ...(canAccessSmartWrongQuestions(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
       : []),
-    ...(hasStaffAccess(currentUser.role)
+    ...(hasOwnerAccess(currentUser.role)
       ? [{ id: 'masterDataMappings', icon: Database, label: '主数据映射' }]
       : []),
     ...(hasStaffAccess(currentUser.role)
@@ -5217,10 +5221,10 @@ export default function App() {
                     />
                   ))}
                 {activePage === 'smartWrongQuestions' &&
-                  hasStaffAccess(currentUser.role) &&
+                  canAccessSmartWrongQuestions(currentUser.role) &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
                 {activePage === 'masterDataMappings' &&
-                  hasStaffAccess(currentUser.role) &&
+                  hasOwnerAccess(currentUser.role) &&
                   <MasterDataMappingsPage currentUser={currentUser} focusUserId={masterDataFocusUserId} />}
                 {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
                   <ClassManagementPage currentUser={currentUser} />

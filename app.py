@@ -797,6 +797,87 @@ def _require_super_owner():
     return user, None
 
 
+def _can_access_wrong_question_record(user, record: object, owned_class_ids: set[int] | None = None) -> bool:
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return True
+    if not isinstance(record, dict):
+        return False
+
+    teacher_user_id = record.get("teacher_user_id")
+    if isinstance(teacher_user_id, int) and teacher_user_id == user.get("id"):
+        return True
+
+    class_id = record.get("class_id")
+    if isinstance(class_id, int):
+        member_class_ids = owned_class_ids
+        if member_class_ids is None:
+            member_class_ids = set(get_user_class_ids(user["id"]))
+        return class_id in member_class_ids
+
+    return False
+
+
+def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
+    summary = {
+        "total_count": 0,
+        "repeated_mistake_count": 0,
+        "high_priority_count": 0,
+        "pending_review_count": 0,
+    }
+
+    for item in items:
+        analysis = item.get("analysis") if isinstance(item.get("analysis"), dict) else {}
+        summary["total_count"] += 1
+
+        repeated_mistake = str(
+            analysis.get("is_repeated_mistake")
+            or analysis.get("isRepeatedMistake")
+            or ""
+        ).strip()
+        if repeated_mistake and repeated_mistake != "否":
+            summary["repeated_mistake_count"] += 1
+
+        teacher_priority = str(
+            analysis.get("teacher_priority")
+            or analysis.get("teacherPriority")
+            or ""
+        ).strip()
+        if teacher_priority == "高":
+            summary["high_priority_count"] += 1
+
+        selected_error_type = str(
+            analysis.get("selected_error_type")
+            or analysis.get("selectedErrorType")
+            or ""
+        ).strip()
+        if not selected_error_type:
+            summary["pending_review_count"] += 1
+
+    return summary
+
+
+def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
+    if not isinstance(items, list):
+        return []
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return [item for item in items if isinstance(item, dict)]
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [
+        item
+        for item in items
+        if isinstance(item, dict) and _can_access_wrong_question_record(user, item, owned_class_ids)
+    ]
+
+
+def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return classes
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [item for item in classes if item.get("id") in owned_class_ids]
+
+
 @app.route("/api/me", methods=["GET"])
 def api_me():
     user, error = _require_auth()
@@ -925,7 +1006,7 @@ def api_admin_user_classes_set(user_id):
 
 @app.route("/api/master-data/mappings/wrong-questions", methods=["GET"])
 def api_master_data_wrong_question_mapping_queue():
-    _, error = _require_staff()
+    _, error = _require_owner()
     if error:
         return error
     status = (request.args.get("status") or "").strip() or None
@@ -934,7 +1015,7 @@ def api_master_data_wrong_question_mapping_queue():
 
 @app.route("/api/master-data/mappings/wrong-questions/<record_id>", methods=["PUT"])
 def api_master_data_wrong_question_mapping_resolve(record_id):
-    user, error = _require_staff()
+    user, error = _require_owner()
     if error:
         return error
     payload = request.get_json(silent=True)
@@ -959,7 +1040,7 @@ def api_master_data_wrong_question_mapping_resolve(record_id):
 
 @app.route("/api/master-data/users/<int:user_id>/aliases", methods=["GET"])
 def api_master_data_user_aliases_get(user_id):
-    _, error = _require_staff()
+    _, error = _require_owner()
     if error:
         return error
     try:
@@ -970,7 +1051,7 @@ def api_master_data_user_aliases_get(user_id):
 
 @app.route("/api/master-data/users/<int:user_id>/aliases", methods=["PUT"])
 def api_master_data_user_aliases_put(user_id):
-    user, error = _require_staff()
+    user, error = _require_owner()
     if error:
         return error
     payload = request.get_json(silent=True)
@@ -996,7 +1077,7 @@ def api_master_data_user_aliases_put(user_id):
 
 @app.route("/api/master-data/classes/<int:class_id>/aliases", methods=["GET"])
 def api_master_data_class_aliases_get(class_id):
-    _, error = _require_staff()
+    _, error = _require_owner()
     if error:
         return error
     try:
@@ -1007,7 +1088,7 @@ def api_master_data_class_aliases_get(class_id):
 
 @app.route("/api/master-data/classes/<int:class_id>/aliases", methods=["PUT"])
 def api_master_data_class_aliases_put(class_id):
-    user, error = _require_staff()
+    user, error = _require_owner()
     if error:
         return error
     payload = request.get_json(silent=True)
@@ -1033,13 +1114,19 @@ def api_master_data_class_aliases_put(class_id):
 
 @app.route("/api/wrong-questions", methods=["GET"])
 def api_wrong_questions_list():
-    _, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     try:
-        return jsonify(smart_wrong_questions.fetch_wrong_question_records(request.args))
+        payload = smart_wrong_questions.fetch_wrong_question_records(request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+
+    scoped_items = _filter_wrong_question_items_for_user(user, payload.get("items"))
+    payload["items"] = scoped_items
+    if user.get("role") == "member":
+        payload["summary"] = _summarize_wrong_question_records(scoped_items)
+    return jsonify(payload)
 
 
 @app.route("/api/wrong-questions/summary/export", methods=["GET"])
@@ -1062,21 +1149,28 @@ def api_wrong_question_summary_export():
 
 @app.route("/api/wrong-questions/<record_id>", methods=["GET"])
 def api_wrong_question_detail(record_id):
-    _, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     try:
-        return jsonify(smart_wrong_questions.fetch_wrong_question_record(record_id, request.args))
+        record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+
+    if not _can_access_wrong_question_record(user, record):
+        return jsonify({"error": "not found"}), 404
+    return jsonify(record)
 
 
 @app.route("/api/wrong-questions/<record_id>/review", methods=["PUT"])
 def api_wrong_question_review_save(record_id):
-    _, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     try:
+        record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
+        if not _can_access_wrong_question_record(user, record):
+            return jsonify({"error": "not found"}), 404
         return jsonify(
             smart_wrong_questions.save_wrong_question_review(record_id, request.args, request.json or {})
         )
@@ -1162,10 +1256,10 @@ def api_stats():
 
 @app.route("/api/classes", methods=["GET"])
 def api_classes_list():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_classes())
+    return jsonify(_filter_classes_for_user(user, list_classes()))
 
 
 @app.route("/api/classes", methods=["POST"])

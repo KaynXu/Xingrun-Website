@@ -66,25 +66,26 @@ test('lesson input source keeps subject class and date controls in a fluid grid 
   assert.doesNotMatch(subjectComboboxBlock[0], /sm:w-32/);
 });
 
-test('workspace navigation wires smart wrong questions into the owner admin shell only', () => {
+test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {
   const sidebarBlock = appSource.match(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.ok(sidebarBlock);
   assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
-  assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{/);
-  assert.match(sidebarBlock[0], /hasStaffAccess\(currentUser\.role\)[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
+  assert.match(appSource, /function canAccessSmartWrongQuestions\(role: Role\): boolean \{/);
+  assert.match(appSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
+  assert.match(sidebarBlock[0], /canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
-  assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
-test('workspace navigation wires master data mappings into the owner admin shell only', () => {
+test('workspace navigation wires master data mappings into the owner shell only', () => {
   const sidebarBlock = appSource.match(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.ok(sidebarBlock);
   assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
-  assert.match(sidebarBlock[0], /hasStaffAccess\(currentUser\.role\)[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '主数据映射' \}/);
+  assert.match(sidebarBlock[0], /hasOwnerAccess\(currentUser\.role\)[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '主数据映射' \}/);
   assert.match(appSource, /masterDataMappings: '主数据映射'/);
-  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} focusUserId=\{masterDataFocusUserId\} \/>/);
+  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*hasOwnerAccess\(currentUser\.role\)[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} focusUserId=\{masterDataFocusUserId\} \/>/);
   assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} onStartBinding=\{handleStartMemberBinding\} \/>/);
 });
 

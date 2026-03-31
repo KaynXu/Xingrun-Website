@@ -728,6 +728,7 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
           currentUser: {
             display_name: '管理员',
             organization_name: '星润Starain',
+            role: 'owner',
           },
         }),
       );
@@ -851,6 +852,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
           currentUser: {
             display_name: '管理员',
             organization_name: '星润Starain',
+            role: 'owner',
           },
         }),
       );
@@ -1015,6 +1017,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
           currentUser: {
             display_name: '管理员',
             organization_name: '星润Starain',
+            role: 'owner',
           },
         }),
       );
@@ -1157,6 +1160,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
           currentUser: {
             display_name: '管理员',
             organization_name: '星润Starain',
+            role: 'owner',
           },
         }),
       );
@@ -1288,6 +1292,7 @@ test('SmartWrongQuestionsPage loads teacher and class filter options as selects 
           currentUser: {
             display_name: 'Kayn',
             organization_name: '星润Starain',
+            role: 'owner',
           },
         }),
       );
@@ -1307,6 +1312,110 @@ test('SmartWrongQuestionsPage loads teacher and class filter options as selects 
       assert.equal(teacherSelect.options[1]?.textContent?.trim(), 'Kayn');
       assert.equal(fetchCalls[0]?.input, '/api/classes');
       assert.equal(fetchCalls[1]?.input, '/api/admin/users');
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage hides teacher filter and avoids admin user fetches for members', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 11, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-member-scope',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 11,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T08:00:00Z',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-member-scope' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-member-scope',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 11,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T08:00:00Z',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      if (input === '/api/admin/users') {
+        throw new Error('Members should not request admin user options');
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      const teacherSelect = domEnvironment.container.querySelector('select[aria-label="老师"]');
+      const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+
+      assert.ok(classSelect);
+      assert.equal(teacherSelect, null);
+      assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), false);
+      assert.match(pageText, /仅查看你负责班级与学生的错题记录/);
     });
   } finally {
     if (root) {
