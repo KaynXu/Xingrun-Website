@@ -551,7 +551,7 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
             normalized_fields = {
                 field: value
                 for field, value in normalized_fields.items()
-                if value != ""
+                if value.strip() != ""
             }
         items.append(
             {

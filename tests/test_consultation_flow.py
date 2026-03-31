@@ -560,8 +560,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
                         "reason": "文本显式提到记录 ID 182",
                         "fields": {
                             "follow_up_status": "跟进中",
-                            "parent_wechat_name": "",
-                            "consultation_subject": "",
+                            "parent_wechat_name": "   ",
+                            "consultation_subject": "\n\t",
                         },
                         "warnings": [],
                     }
