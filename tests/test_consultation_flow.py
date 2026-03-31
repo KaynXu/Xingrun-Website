@@ -71,6 +71,25 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(approve.status_code, 200)
         return self.login("teacher_a", "secret123")
 
+    def create_admin_token(self) -> str:
+        member_token = self.create_member_token()
+
+        me_response = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_token),
+        )
+        self.assertEqual(me_response.status_code, 200)
+        me_payload = me_response.get_json()
+        self.assertIsNotNone(me_payload)
+
+        promote_response = self.client.put(
+            f"/api/admin/users/{me_payload['id']}/role",
+            headers=self.auth_headers(self.owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote_response.status_code, 200)
+        return member_token
+
     def write_legacy_csv(self, rows: list[dict[str, str]]) -> None:
         lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
         with lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH.open("w", newline="", encoding="utf-8-sig") as fh:
@@ -102,7 +121,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "提醒时间": "2026-03-12 18:00",
                 "提醒状态": "已设置",
                 "提醒任务ID": "task-1",
-                "跟进状态": "待联系",
+                "跟进状态": "待邀约",
                 "跟进备注": "首轮记录",
                 "录入时间": "2026-03-10 10:00:00",
                 "最后更新": "2026-03-10 10:00:00",
@@ -135,7 +154,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         update_response = self.client.put(
             "/api/consultations/1",
             headers=self.auth_headers(self.owner_token),
-            json={"跟进状态": "已联系", "跟进备注": "已经回访"},
+            json={"跟进状态": "跟进中", "跟进备注": "已经回访"},
         )
         self.assertEqual(update_response.status_code, 200)
 
@@ -143,7 +162,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(rows_after_update[0]["提醒时间"], "2026-03-12 18:00")
         self.assertEqual(rows_after_update[0]["提醒状态"], "已设置")
         self.assertEqual(rows_after_update[0]["提醒任务ID"], "task-1")
-        self.assertEqual(rows_after_update[0]["跟进状态"], "已联系")
+        self.assertEqual(rows_after_update[0]["跟进状态"], "跟进中")
         self.assertEqual(rows_after_update[0]["跟进备注"], "已经回访")
 
         create_response = self.client.post(
@@ -160,7 +179,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "具体需求": "阅读提升",
                 "来源渠道": "朋友圈",
                 "截图": "",
-                "跟进状态": "待联系",
+                "跟进状态": "待邀约",
                 "跟进备注": "",
             },
         )
@@ -178,6 +197,33 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(len(remaining_rows), 1)
         self.assertEqual(remaining_rows[0]["id"], "2")
         self.assertEqual(remaining_rows[0]["家长微信名"], "李妈妈")
+
+    def test_admin_can_edit_but_only_owner_can_delete(self):
+        self.write_legacy_csv([self.sample_row()])
+        admin_token = self.create_admin_token()
+
+        list_response = self.client.get("/api/consultations", headers=self.auth_headers(admin_token))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(len(list_response.get_json()), 1)
+
+        update_response = self.client.put(
+            "/api/consultations/1",
+            headers=self.auth_headers(admin_token),
+            json={"跟进状态": "已报班", "跟进备注": "管理员已确认报班"},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        updated = update_response.get_json()
+        self.assertEqual(updated["follow_up_status"], "已报班")
+        self.assertEqual(updated["follow_up_note"], "管理员已确认报班")
+
+        rows_after_update = self.read_project_csv_rows()
+        self.assertEqual(rows_after_update[0]["跟进状态"], "已报班")
+
+        delete_response = self.client.delete(
+            "/api/consultations/1",
+            headers=self.auth_headers(admin_token),
+        )
+        self.assertEqual(delete_response.status_code, 403)
 
     def test_members_can_view_and_create_but_not_edit_or_delete(self):
         self.write_legacy_csv([self.sample_row()])
@@ -201,7 +247,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "具体需求": "作文提高",
                 "来源渠道": "家长群",
                 "截图": "",
-                "跟进状态": "待联系",
+                "跟进状态": "待邀约",
                 "跟进备注": "",
             },
         )
@@ -302,7 +348,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "具体需求": "作文提高",
                 "来源渠道": "张妈妈",
                 "截图": "",
-                "跟进状态": "待联系",
+                "跟进状态": "待邀约",
                 "跟进备注": "",
             },
         )
@@ -338,7 +384,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "来源渠道": "转介绍",
                 "来源渠道备注": "张妈妈",
                 "截图": "",
-                "跟进状态": "待联系",
+                "跟进状态": "待邀约",
                 "跟进备注": "",
             },
         )

@@ -1096,7 +1096,7 @@ def api_consultation_create():
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["PUT"])
 def api_consultation_update(consultation_id):
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     item = update_consultation(consultation_id, request.json or {})
