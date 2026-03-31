@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -416,6 +417,106 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(teacher_by_id["teacher_a"]["display_name"], "Teacher A")
         self.assertEqual(teacher_by_id["dXiaoDi"]["display_name"], "华奥鑫")
         self.assertIn("华老师", teacher_by_id["dXiaoDi"]["aliases"])
+
+    @patch("app.parse_consultation_batch_text")
+    def test_ai_parse_endpoint_returns_create_and_explicit_id_update_drafts(self, mock_parse):
+        self.write_teacher_aliases({"teacher-1": ["雷文浩"]})
+        mock_parse.return_value = {
+            "items": [
+                {
+                    "action": "create",
+                    "target_id": None,
+                    "reason": "未检测到显式记录ID，按新增处理",
+                    "fields": {
+                        "date": "2026-03-31",
+                        "parent_wechat_name": "张妈妈",
+                        "grade": "5年级",
+                        "receiving_teacher": "雷文浩",
+                        "consultation_subject": "数学",
+                        "need_detail": "想补基础",
+                        "source_channel": "朋友介绍",
+                        "source_channel_note": "张裕空",
+                        "follow_up_status": "待邀约",
+                    },
+                    "warnings": [],
+                },
+                {
+                    "action": "update",
+                    "target_id": 182,
+                    "reason": "文本显式提到记录 ID 182",
+                    "fields": {
+                        "follow_up_status": "跟进中",
+                        "follow_up_note": "已约周四试听",
+                    },
+                    "warnings": [],
+                },
+            ],
+            "warnings": [],
+        }
+
+        response = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(self.owner_token),
+            json={"raw_text": "新增：张妈妈，五年级数学。修改 ID 182：改成跟进中。"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([item["action"] for item in payload["items"]], ["create", "update"])
+        self.assertEqual(payload["items"][0]["fields"]["grade"], "五年级")
+        self.assertEqual(payload["items"][0]["fields"]["source_channel"], "转介绍")
+        self.assertEqual(payload["items"][0]["fields"]["teacher_id"], "teacher-1")
+        self.assertEqual(payload["items"][1]["target_id"], 182)
+
+    @patch("app.parse_consultation_batch_text")
+    def test_ai_parse_endpoint_cleans_wechat_forwarded_text_before_parsing(self, mock_parse):
+        captured = {}
+
+        def fake_parse(cleaned_text):
+            captured["cleaned_text"] = cleaned_text
+            return {
+                "items": [
+                    {
+                        "action": "create",
+                        "target_id": None,
+                        "reason": "未检测到显式记录ID，按新增处理",
+                        "fields": {
+                            "parent_wechat_name": "李妈妈",
+                            "consultation_subject": "英语",
+                            "need_detail": "想先测评",
+                        },
+                        "warnings": [],
+                    },
+                    {
+                        "action": "create",
+                        "target_id": None,
+                        "reason": "未检测到显式记录ID，按新增处理",
+                        "fields": {
+                            "parent_wechat_name": "王爸爸",
+                            "consultation_subject": "数学",
+                            "need_detail": "想补计算",
+                        },
+                        "warnings": [],
+                    },
+                ],
+                "warnings": [],
+            }
+
+        mock_parse.side_effect = fake_parse
+
+        response = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "raw_text": "[聊天记录]\n张老师 2026-03-31 10:22\n李妈妈：孩子英语想先测评\n\n张老师 2026-03-31 10:25\n王爸爸：数学计算总错，想补基础"
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("2026-03-31 10:22", captured["cleaned_text"])
+        self.assertIn("李妈妈", captured["cleaned_text"])
+        self.assertIn("王爸爸", captured["cleaned_text"])
+        self.assertEqual(len(response.get_json()["items"]), 2)
 
 
 if __name__ == "__main__":

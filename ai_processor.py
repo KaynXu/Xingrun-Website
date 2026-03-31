@@ -267,6 +267,38 @@ MONTHLY_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师。
 """
 
 
+CONSULTATION_BATCH_SYSTEM_PROMPT = """你是咨询记录整理助手。
+你只能输出 JSON，不要输出额外说明。
+
+请把输入文本拆成 items 数组，每一项都必须是：
+- action: 只能是 create 或 update
+- target_id: 只有文本中明确出现记录 ID 时才允许填写整数，否则必须是 null
+- reason: 简短说明判断依据
+- fields: 只能包含以下字段中的一部分：
+    date
+    parent_wechat_name
+    child_name
+    grade
+    receiving_teacher
+    teacher_id
+    consultation_subject
+    need_detail
+    source_channel
+    source_channel_note
+    screenshot
+    follow_up_status
+    follow_up_note
+- warnings: 字符串数组
+
+严格规则：
+1. 只有文本中明确出现 ID 182、记录182、#182 这类显式记录 ID 时，action 才能是 update。
+2. 没有显式记录 ID 时，必须输出 action=create 且 target_id=null。
+3. 不要编造记录 ID。
+4. 如果一段文本信息不足，可以保留 fields 的部分字段，不要补全虚构内容。
+5. 顶层返回 {"items": [...], "warnings": [...]}。
+"""
+
+
 # ─── 音频转录 ──────────────────────────────────────────────────────────────────
 def transcribe_audio(audio_path: str) -> str:
     """使用 OpenAI Whisper 转录音频文件，返回转录文本。"""
@@ -341,6 +373,26 @@ def parse_and_generate_plan(
     
     print("复习计划生成完成。")
     return plan
+
+
+def parse_consultation_batch_text(raw_text: str) -> dict:
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": CONSULTATION_BATCH_SYSTEM_PROMPT},
+            {"role": "user", "content": str(raw_text or "")},
+        ],
+        temperature=0.1,
+        response_format={"type": "json_object"},
+    )
+    payload = json.loads(response.choices[0].message.content)
+    if not isinstance(payload.get("items"), list):
+        raise RuntimeError("咨询记录批量解析返回了无效结果")
+    return {
+        "items": payload.get("items", []),
+        "warnings": payload.get("warnings", []),
+    }
 
 
 # ─── 月度复习计划聚合 ──────────────────────────────────────────────────────────

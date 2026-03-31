@@ -249,6 +249,25 @@ def _normalize_consultation_source_channel(value: str, *, parent_wechat_name: st
     return source_channel
 
 
+def clean_consultation_batch_input(raw_text: str) -> str:
+    text = str(raw_text or "").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned_lines: list[str] = []
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if re.fullmatch(r"\[.*聊天记录.*\]", line):
+            continue
+        if re.fullmatch(r"[^：:\n]{1,20}\s+\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}", line):
+            continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}", line):
+            continue
+        line = re.sub(r"\b\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}\b", "", line).strip()
+        if line:
+            cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
+
+
 def _load_consultation_teacher_aliases() -> dict[str, list[str]]:
     alias_map: dict[str, list[str]] = {}
     for teacher_file in CONSULTATION_TEACHERS_JSON_CANDIDATES:
@@ -360,6 +379,29 @@ def list_consultation_teachers() -> list[dict]:
     )
 
 
+def _normalize_consultation_teacher_assignment(receiving_teacher: str, teacher_id: str = "") -> tuple[str, str]:
+    teacher_value = (receiving_teacher or "").strip()
+    teacher_id_value = (teacher_id or "").strip()
+    if not teacher_value and not teacher_id_value:
+        return "", ""
+
+    for item in list_consultation_teachers():
+        candidates = {item.get("teacher_id", "").strip().lower()}
+        display_name = (item.get("display_name") or "").strip()
+        if display_name:
+            candidates.add(display_name.lower())
+        for alias in item.get("aliases", []):
+            alias_value = str(alias).strip().lower()
+            if alias_value:
+                candidates.add(alias_value)
+        if teacher_value and teacher_value.lower() in candidates:
+            return display_name or teacher_value, item.get("teacher_id", "")
+        if teacher_id_value and teacher_id_value.lower() in candidates:
+            return display_name or teacher_value or teacher_id_value, item.get("teacher_id", "")
+
+    return teacher_value, teacher_id_value
+
+
 def _serialize_consultation_row(row: dict, teacher_directory: Optional[dict[str, str]] = None) -> dict:
     serialized = dict(row)
     serialized["id"] = int(serialized["id"]) if serialized.get("id") else 0
@@ -397,6 +439,76 @@ def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
             value = payload.get(api_field, "")
             updates[csv_field] = "" if value is None else str(value)
     return updates
+
+
+def _normalize_consultation_batch_fields(fields: Optional[dict]) -> dict[str, str]:
+    updates = _extract_consultation_updates(fields or {})
+    normalized: dict[str, str] = {}
+    for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
+        if csv_field in CONSULTATION_EDITABLE_FIELDS and csv_field in updates:
+            normalized[api_field] = updates[csv_field]
+
+    if "grade" in normalized:
+        normalized["grade"] = _normalize_consultation_grade(normalized.get("grade", ""))
+
+    receiving_teacher, teacher_id = _normalize_consultation_teacher_assignment(
+        normalized.get("receiving_teacher", ""),
+        normalized.get("teacher_id", ""),
+    )
+    if receiving_teacher:
+        normalized["receiving_teacher"] = receiving_teacher
+    if teacher_id:
+        normalized["teacher_id"] = teacher_id
+
+    source_channel, source_note = _normalize_consultation_source_fields(
+        normalized.get("source_channel", ""),
+        source_note=normalized.get("source_channel_note", ""),
+        parent_wechat_name=normalized.get("parent_wechat_name", ""),
+        child_name=normalized.get("child_name", ""),
+    )
+    if source_channel or "source_channel" in normalized:
+        normalized["source_channel"] = source_channel
+    if source_note or "source_channel_note" in normalized:
+        normalized["source_channel_note"] = source_note
+
+    return normalized
+
+
+def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
+    data = payload or {}
+    items = []
+    for raw_item in data.get("items", []):
+        action = str(raw_item.get("action", "create")).strip().lower()
+        target_id = raw_item.get("target_id")
+        normalized_target_id = None
+        if action == "update" and target_id not in (None, ""):
+            try:
+                normalized_target_id = int(target_id)
+            except (TypeError, ValueError):
+                normalized_target_id = None
+        if normalized_target_id is None:
+            action = "create"
+        items.append(
+            {
+                "action": action,
+                "target_id": normalized_target_id if action == "update" else None,
+                "reason": str(raw_item.get("reason", "")).strip(),
+                "fields": _normalize_consultation_batch_fields(raw_item.get("fields")),
+                "warnings": [
+                    str(item).strip()
+                    for item in raw_item.get("warnings", [])
+                    if str(item).strip()
+                ],
+            }
+        )
+    return {
+        "items": items,
+        "warnings": [
+            str(item).strip()
+            for item in data.get("warnings", [])
+            if str(item).strip()
+        ],
+    }
 
 
 def _read_consultation_rows() -> list[dict]:
