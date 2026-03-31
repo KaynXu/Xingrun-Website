@@ -16,6 +16,7 @@ import threading
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
+from typing import Optional, Set
 
 from flask import (Flask, abort, flash, redirect, render_template,
                    request, send_file, url_for, jsonify)
@@ -797,7 +798,7 @@ def _require_super_owner():
     return user, None
 
 
-def _can_access_wrong_question_record(user, record: object, owned_class_ids: set[int] | None = None) -> bool:
+def _can_access_wrong_question_record(user, record: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
     if user.get("role") in {"super_owner", "owner", "admin"}:
         return True
     if not isinstance(record, dict):
