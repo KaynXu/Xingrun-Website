@@ -94,6 +94,35 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(days[0]["blanks"][0], ("[ ] 折射率公式->____", "n=c/v"))
         self.assertEqual(days[0]["quotes"], ["注意：易错点：别把质点振动当成随波迁移"])
 
+    def test_quote_replay_text_uses_day_quotes_instead_of_static_copy(self):
+        from review_plan_templates.generate_review_pdfs import build_labels, build_quote_replay_text
+
+        labels = build_labels(True)
+        day = {
+            "quotes": [
+                "先看图像再判断增减性。",
+                "定义域先卡住，不要急着代数变形。",
+            ]
+        }
+
+        replay_text = build_quote_replay_text(day, labels, True)
+
+        self.assertIn("先看图像再判断增减性。", replay_text)
+        self.assertIn("定义域先卡住，不要急着代数变形。", replay_text)
+        self.assertNotEqual(replay_text, labels["quote_replay_text"])
+
+    def test_quote_summary_text_uses_numbered_lines_without_bullets(self):
+        from review_plan_templates.generate_review_pdfs import build_quote_summary_text
+
+        summary_text = build_quote_summary_text([
+            "出发口令：分类讨论，步步清晰！",
+            "课堂原话回放：分类讨论的关键是有序思考，确保不重不漏。",
+        ], True)
+
+        self.assertIn("1. “出发口令：分类讨论，步步清晰！”", summary_text)
+        self.assertIn("2. “课堂原话回放：分类讨论的关键是有序思考，确保不重不漏。”", summary_text)
+        self.assertNotIn("- “", summary_text)
+
     def test_api_lessons_uses_review_template_generator(self):
         token = self.owner_token()
 

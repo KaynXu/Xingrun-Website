@@ -4,6 +4,7 @@ import importlib.util
 import platform
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -842,6 +843,41 @@ def build_labels(chinese_only):
     }
 
 
+def build_quote_replay_text(day, labels, chinese_only):
+    quotes = []
+    for quote in day.get("quotes", []):
+        normalized_quote = normalize_portable_text(str(quote or "").strip())
+        if normalized_quote and normalized_quote not in quotes:
+            quotes.append(normalized_quote)
+
+    if not quotes:
+        return labels["quote_replay_text"]
+
+    replay_intro = "先回想老师当时强调过的这几句，再动笔："
+    if not chinese_only:
+        replay_intro = "先回想老师当时强调过的这几句，再动笔。Replay these class cues before writing:"
+
+    replay_lines = [
+        f"{index}. {escape(localize_text(quote, chinese_only))}"
+        for index, quote in enumerate(quotes[:2], start=1)
+    ]
+    return "<br/>".join([replay_intro, *replay_lines])
+
+
+def build_quote_summary_text(quotes, chinese_only):
+    normalized_quotes = []
+    for quote in quotes:
+        normalized_quote = normalize_portable_text(str(quote or "").strip())
+        if normalized_quote and normalized_quote not in normalized_quotes:
+            normalized_quotes.append(normalized_quote)
+
+    quote_lines = [
+        f"{index}. “{escape(localize_text(quote, chinese_only))}”"
+        for index, quote in enumerate(normalized_quotes, start=1)
+    ]
+    return "<br/>".join(quote_lines)
+
+
 def knowledge_mode_for_day(day, variant_key):
     if variant_key == "mixed":
         return "mixed"
@@ -1134,8 +1170,8 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
     story.append(Spacer(1, 3 * mm))
     story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, colors.white))
     story.append(Spacer(1, 3 * mm))
-    golden_quotes = [f"“{quote}”" for quote in lesson.get("quotes", [])]
-    story.append(make_box(labels["quotes_title"], bullet_paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
+    golden_quotes = build_quote_summary_text(lesson.get("quotes", []), chinese_only)
+    story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
     story.append(PageBreak())
 
     for index, day in enumerate(days):
@@ -1173,7 +1209,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
             story.append(make_box(labels["teacher_quote_title"], quote_body, styles, styles["quote_bg"]))
             story.append(Spacer(1, 2 * mm))
 
-        replay_text = labels["quote_replay_text"]
+        replay_text = build_quote_replay_text(day, labels, chinese_only)
         story.append(make_box(labels["quote_replay_title"], Paragraph(replay_text, styles["body"]), styles, styles["quote_bg"]))
         story.append(Spacer(1, 2 * mm))
         story.append(Paragraph(labels["check_text"], styles["body"]))
