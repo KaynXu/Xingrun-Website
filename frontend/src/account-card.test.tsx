@@ -244,9 +244,12 @@ test('consultation batch modal source keeps only remaining drafts after a partia
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
+  const importLoopBlock = batchModalBlock[0].match(/for \(const \[index, draft\] of drafts\.entries\(\)\) \{[\s\S]*?remainingDrafts\.shift\(\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);\s*\}/);
+
+  assert.ok(importLoopBlock);
   assert.match(batchModalBlock[0], /const remainingDrafts = \[\.\.\.drafts\];/);
-  assert.match(batchModalBlock[0], /for \(const \[index, draft\] of drafts\.entries\(\)\) \{/);
-  assert.match(batchModalBlock[0], /remainingDrafts\.shift\(\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.match(importLoopBlock[0], /if \(draft\.action === 'update' && draft\.target_id\) \{\s*await apiFetch\(`\/api\/consultations\/\$\{draft\.target_id\}`,[\s\S]*?\}\s*else \{\s*await apiFetch\('\/api\/consultations',[\s\S]*?\}\s*remainingDrafts\.shift\(\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.doesNotMatch(importLoopBlock[0], /continue;/);
   assert.match(batchModalBlock[0], /setError\(`\$\{draftLabel\}导入失败：\$\{message\}`\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
 });
 

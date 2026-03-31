@@ -2503,13 +2503,12 @@ const ConsultationBatchModal = ({
               method: 'PUT',
               body: JSON.stringify(draft.fields),
             });
-            continue;
+          } else {
+            await apiFetch('/api/consultations', {
+              method: 'POST',
+              body: JSON.stringify(buildConsultationBatchCreatePayload(draft.fields)),
+            });
           }
-
-          await apiFetch('/api/consultations', {
-            method: 'POST',
-            body: JSON.stringify(buildConsultationBatchCreatePayload(draft.fields)),
-          });
         } catch (err) {
           const message = err instanceof Error ? err.message : '批量导入失败';
           setError(`${draftLabel}导入失败：${message}`);
