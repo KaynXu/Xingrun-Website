@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -10,6 +11,7 @@ if str(ROOT) not in sys.path:
 import config_runtime
 import lesson_manager
 import master_data
+import app as app_module
 from app import app
 
 
@@ -376,6 +378,257 @@ class AccountFlowTestCase(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_admin_cannot_access_master_data_binding_endpoints(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="binding_admin",
+            display_name="Binding Admin",
+            password="admin123",
+        )
+        admin_id = admin_payload["user"]["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        queue_response = self.client.get(
+            "/api/master-data/mappings/wrong-questions",
+            headers=self.auth_headers(admin_payload["token"]),
+        )
+        self.assertEqual(queue_response.status_code, 403)
+
+        alias_get = self.client.get(
+            "/api/master-data/users/1/aliases",
+            headers=self.auth_headers(admin_payload["token"]),
+        )
+        self.assertEqual(alias_get.status_code, 403)
+
+        alias_put = self.client.put(
+            "/api/master-data/users/1/aliases",
+            headers=self.auth_headers(admin_payload["token"]),
+            json={"aliases": ["Kayn老师"]},
+        )
+        self.assertEqual(alias_put.status_code, 403)
+
+    def test_member_wrong_question_list_is_scoped_to_owned_teacher_and_classes(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        target_member = self.approve_user(
+            owner_token=owner_token,
+            username="wrong_member_a",
+            display_name="Wrong Member A",
+            password="member123",
+        )
+        target_member_id = target_member["user"]["id"]
+        other_member = self.approve_user(
+            owner_token=owner_token,
+            username="wrong_member_b",
+            display_name="Wrong Member B",
+            password="member123",
+        )
+        other_member_id = other_member["user"]["id"]
+
+        owned_class_id = lesson_manager.save_class("六年级 1 班", subject="数学", grade="六年级")
+        other_class_id = lesson_manager.save_class("初一 2 班", subject="英语", grade="初一")
+        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+
+        downstream_payload = {
+            "items": [
+                {
+                    "id": "record-owned-teacher",
+                    "student_name": "Alice",
+                    "class_name": "未分班",
+                    "class_id": None,
+                    "subject": "数学",
+                    "teacher_name": "Wrong Member A",
+                    "teacher_user_id": target_member_id,
+                    "mapping_status": "mapped",
+                    "created_at": "2026-04-01T10:00:00Z",
+                    "analysis": {
+                        "question_category": "计算",
+                        "error_type": "计算错误",
+                        "knowledge_points": ["分数运算"],
+                        "is_repeated_mistake": "是",
+                        "teacher_priority": "高",
+                    },
+                },
+                {
+                    "id": "record-owned-class",
+                    "student_name": "Bob",
+                    "class_name": "六年级 1 班",
+                    "class_id": owned_class_id,
+                    "subject": "数学",
+                    "teacher_name": "代课老师",
+                    "teacher_user_id": None,
+                    "mapping_status": "needs_review",
+                    "created_at": "2026-04-01T11:00:00Z",
+                    "analysis": {
+                        "question_category": "应用题",
+                        "error_type": "审题错误",
+                        "knowledge_points": ["列式"],
+                        "is_repeated_mistake": "否",
+                        "teacher_priority": "中",
+                    },
+                },
+                {
+                    "id": "record-other",
+                    "student_name": "Cathy",
+                    "class_name": "初一 2 班",
+                    "class_id": other_class_id,
+                    "subject": "英语",
+                    "teacher_name": "Wrong Member B",
+                    "teacher_user_id": other_member_id,
+                    "mapping_status": "mapped",
+                    "created_at": "2026-04-01T12:00:00Z",
+                    "analysis": {
+                        "question_category": "阅读",
+                        "error_type": "定位错误",
+                        "knowledge_points": ["细节定位"],
+                        "is_repeated_mistake": "是",
+                        "teacher_priority": "高",
+                        "selected_error_type": "定位错误",
+                    },
+                },
+            ],
+            "summary": {
+                "total_count": 3,
+                "repeated_mistake_count": 2,
+                "high_priority_count": 2,
+                "pending_review_count": 2,
+            },
+        }
+
+        with patch.object(app_module.smart_wrong_questions, "fetch_wrong_question_records", return_value=downstream_payload):
+            response = self.client.get(
+                "/api/wrong-questions",
+                headers=self.auth_headers(target_member["token"]),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual([item["id"] for item in payload["items"]], ["record-owned-teacher", "record-owned-class"])
+        self.assertEqual(
+            payload["summary"],
+            {
+                "total_count": 2,
+                "repeated_mistake_count": 1,
+                "high_priority_count": 1,
+                "pending_review_count": 2,
+            },
+        )
+
+    def test_member_cannot_access_unrelated_wrong_question_detail_or_review(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        target_member = self.approve_user(
+            owner_token=owner_token,
+            username="wrong_detail_member",
+            display_name="Wrong Detail Member",
+            password="member123",
+        )
+        other_member = self.approve_user(
+            owner_token=owner_token,
+            username="wrong_detail_other",
+            display_name="Wrong Detail Other",
+            password="member123",
+        )
+        other_member_id = other_member["user"]["id"]
+
+        other_class_id = lesson_manager.save_class("高一 3 班", subject="物理", grade="高一")
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+
+        unrelated_record = {
+            "id": "record-unrelated",
+            "student_name": "Dana",
+            "class_name": "高一 3 班",
+            "class_id": other_class_id,
+            "subject": "物理",
+            "teacher_name": "Wrong Detail Other",
+            "teacher_user_id": other_member_id,
+            "mapping_status": "mapped",
+            "created_at": "2026-04-01T13:00:00Z",
+            "analysis": {
+                "question_category": "受力",
+                "error_type": "模型错误",
+                "knowledge_points": ["受力分析"],
+            },
+        }
+
+        with patch.object(app_module.smart_wrong_questions, "fetch_wrong_question_record", return_value=unrelated_record):
+            detail_response = self.client.get(
+                "/api/wrong-questions/record-unrelated",
+                headers=self.auth_headers(target_member["token"]),
+            )
+
+        self.assertEqual(detail_response.status_code, 404)
+
+        with patch.object(app_module.smart_wrong_questions, "fetch_wrong_question_record", return_value=unrelated_record), patch.object(app_module.smart_wrong_questions, "save_wrong_question_review") as save_review:
+            review_response = self.client.put(
+                "/api/wrong-questions/record-unrelated/review",
+                headers=self.auth_headers(target_member["token"]),
+                json={"selectedErrorType": "模型错误"},
+            )
+
+        self.assertEqual(review_response.status_code, 404)
+        save_review.assert_not_called()
+
+    def test_owner_can_access_master_data_binding_endpoints(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        owner_payload = self.approve_user(
+            owner_token=owner_token,
+            username="binding_owner",
+            display_name="Binding Owner",
+            password="owner123",
+        )
+        owner_id = owner_payload["user"]["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{owner_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "owner"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        queue_response = self.client.get(
+            "/api/master-data/mappings/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        self.assertEqual(queue_response.status_code, 200)
+
+        alias_put = self.client.put(
+            "/api/master-data/users/1/aliases",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={"aliases": ["Kayn老师"]},
+        )
+        self.assertEqual(alias_put.status_code, 200)
+        self.assertEqual(alias_put.get_json()["aliases"], ["Kayn老师"])
 
     def test_anonymous_users_cannot_access_backend_apis(self):
         stats = self.client.get("/api/stats")
