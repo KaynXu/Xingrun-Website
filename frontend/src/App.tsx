@@ -45,7 +45,7 @@ import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 
 // --- Types ---
 
-type Role = 'owner' | 'admin' | 'member';
+type Role = 'super_owner' | 'owner' | 'admin' | 'member';
 type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'masterDataMappings' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 
@@ -176,9 +176,22 @@ const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五�
 const gradeFilterOptions = ['全部', ...gradeOptions];
 
 function getRoleLabel(role: Role): string {
-  if (role === 'owner') return '最高权限账号';
+  if (role === 'super_owner') return 'Super Owner';
+  if (role === 'owner') return 'Owner';
   if (role === 'admin') return '管理员';
   return '机构成员';
+}
+
+function hasOwnerAccess(role: Role): boolean {
+  return role === 'super_owner' || role === 'owner';
+}
+
+function hasStaffAccess(role: Role): boolean {
+  return hasOwnerAccess(role) || role === 'admin';
+}
+
+function canManageOwnerRole(role: Role): boolean {
+  return role === 'super_owner';
 }
 
 function createEmptyClassForm(): ClassFormValues {
@@ -285,8 +298,11 @@ export function resolveTeacherBindingRollbackTeacherBindings(
 }
 
 function getRoleBadgeClass(role: Role): string {
-  if (role === 'owner') {
+  if (role === 'super_owner') {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
+  }
+  if (role === 'owner') {
+    return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300';
   }
   if (role === 'admin') {
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
@@ -1153,16 +1169,16 @@ const Sidebar = ({
     { id: 'review-generation', icon: Library, label: '复习生成' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
-    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+    ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
       : []),
-    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+    ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'masterDataMappings', icon: Database, label: '主数据映射' }]
       : []),
-    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+    ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
       : []),
-    ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
+    ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
 
@@ -1997,7 +2013,7 @@ const ConsultationModal = ({
   }
 
   const readOnly = mode === 'view';
-  const canEdit = currentUser.role === 'owner' || currentUser.role === 'admin';
+  const canEdit = hasStaffAccess(currentUser.role);
   const titleMap = {
     view: '查看咨询记录',
     create: '新增咨询记录',
@@ -2348,7 +2364,7 @@ const ConsultationModal = ({
               {readOnly ? '查看模式下可直接切换到编辑或删除。' : '保存后会刷新列表，不需要跳转到其他页面。'}
             </div>
             <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
-              {readOnly && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
+              {readOnly && hasStaffAccess(currentUser.role) && (
                 <>
                   <button
                     type="button"
@@ -2397,7 +2413,7 @@ const ConsultationModal = ({
 };
 
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
-  const canManage = currentUser.role === 'owner' || currentUser.role === 'admin';
+  const canManage = hasStaffAccess(currentUser.role);
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2874,11 +2890,26 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleRoleToggle = async (userId: number, currentRole: Role) => {
-    if (currentRole === 'owner') {
+    if (currentRole === 'super_owner') {
       return;
     }
 
-    const nextRole: Exclude<Role, 'owner'> = currentRole === 'admin' ? 'member' : 'admin';
+    let nextRole: Exclude<Role, 'super_owner'>;
+    if (canManageOwnerRole(currentUser.role)) {
+      if (currentRole === 'owner') {
+        nextRole = 'admin';
+      } else if (currentRole === 'admin') {
+        nextRole = 'owner';
+      } else {
+        nextRole = 'admin';
+      }
+    } else {
+      if (currentRole === 'owner') {
+        return;
+      }
+      nextRole = currentRole === 'admin' ? 'member' : 'admin';
+    }
+
     setRoleSavingUserId(userId);
     setUsersError('');
     setUsers((current) => current.map((user) => (user.id === userId ? { ...user, role: nextRole } : user)));
@@ -2901,9 +2932,9 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
         <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
-            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Owner</p>
+            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Super Owner / Owner</p>
             <h3 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">账号审批</h3>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Super Owner 与 Owner 都可以审核注册申请，并为用户开通后台访问权限。</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-5`}>
             <p className="text-xs uppercase tracking-[0.25em] text-sky-600">Current Account</p>
@@ -3011,13 +3042,13 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         </section>
       </div>
 
-      {currentUser.role === 'owner' && (
+      {hasOwnerAccess(currentUser.role) && (
         <section className={`${workspaceCardClass} p-6`}>
           <div className="flex flex-col gap-3 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
             <div>
               <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员权限</h4>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                只有 owner 可以在这里切换管理员与普通成员权限，班级分配不再放在审批页。
+                Super Owner 可以命名或撤销 Owner；Owner 只可切换管理员与普通成员权限，班级分配不再放在审批页。
               </p>
             </div>
             <button onClick={() => loadUsers().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
@@ -3042,7 +3073,12 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <div className="mt-5 space-y-4">
               {users.map((user) => {
                 const busy = roleSavingUserId === user.id;
-                const isOwner = user.role === 'owner';
+                const roleFixed = user.role === 'super_owner' || (user.role === 'owner' && !canManageOwnerRole(currentUser.role));
+                const roleActionLabel = user.role === 'owner'
+                  ? '降为管理员'
+                  : user.role === 'admin'
+                    ? (canManageOwnerRole(currentUser.role) ? '设为 Owner' : '降为成员')
+                    : '设为管理员';
                 return (
                   <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -3055,8 +3091,10 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </div>
                         <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
                       </div>
-                      {isOwner ? (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">Owner 权限固定，不可调整</span>
+                      {roleFixed ? (
+                        <span className="text-sm text-slate-500 dark:text-slate-400">
+                          {user.role === 'super_owner' ? 'Super Owner 权限固定，不可调整' : 'Owner 权限仅可由 Super Owner 调整'}
+                        </span>
                       ) : (
                         <button
                           type="button"
@@ -3064,7 +3102,7 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           disabled={busy}
                           className={workspaceSecondaryButtonClass}
                         >
-                          {busy ? '保存中...' : user.role === 'admin' ? '降为成员' : '设为管理员'}
+                          {busy ? '保存中...' : roleActionLabel}
                         </button>
                       )}
                     </div>
@@ -4812,10 +4850,10 @@ export default function App() {
         }
         setCurrentUser(user);
         setActivePage((page) => {
-          if (page === 'accounts' && user.role !== 'owner') {
+          if (page === 'accounts' && !hasOwnerAccess(user.role)) {
             return 'dashboard';
           }
-          if (page === 'classes' && user.role !== 'owner' && user.role !== 'admin') {
+          if (page === 'classes' && !hasStaffAccess(user.role)) {
             return 'dashboard';
           }
           return page;
@@ -5057,15 +5095,15 @@ export default function App() {
                     />
                   ))}
                 {activePage === 'smartWrongQuestions' &&
-                  (currentUser.role === 'owner' || currentUser.role === 'admin') &&
+                  hasStaffAccess(currentUser.role) &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
                 {activePage === 'masterDataMappings' &&
-                  (currentUser.role === 'owner' || currentUser.role === 'admin') &&
+                  hasStaffAccess(currentUser.role) &&
                   <MasterDataMappingsPage currentUser={currentUser} />}
-                {activePage === 'classes' && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
+                {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
-                {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
+                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>

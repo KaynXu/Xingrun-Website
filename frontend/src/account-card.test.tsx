@@ -13,7 +13,7 @@ test('sidebar account sheet shows account info and logout actions', () => {
       id: number;
       username: string;
       display_name: string;
-      role: 'owner' | 'member';
+      role: 'super_owner' | 'owner' | 'member';
       status: string;
       organization_id: number;
       organization_name: string;
@@ -33,7 +33,7 @@ test('sidebar account sheet shows account info and logout actions', () => {
         id: 1,
         username: 'Kayn',
         display_name: 'Kayn',
-        role: 'owner',
+        role: 'super_owner',
         status: 'active',
         organization_id: 1,
         organization_name: '星润Starain',
@@ -57,7 +57,7 @@ test('sidebar account sheet includes dark theme surface classes', () => {
       id: number;
       username: string;
       display_name: string;
-      role: 'owner' | 'member';
+      role: 'super_owner' | 'owner' | 'member';
       status: string;
       organization_id: number;
       organization_name: string;
@@ -77,7 +77,7 @@ test('sidebar account sheet includes dark theme surface classes', () => {
         id: 1,
         username: 'Kayn',
         display_name: 'Kayn',
-        role: 'owner',
+        role: 'super_owner',
         status: 'active',
         organization_id: 1,
         organization_name: '星润Starain',
