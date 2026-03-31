@@ -12,10 +12,23 @@ frontend/public/.DS_Store
 .DS_Store
 **/.DS_Store
 
+# Python cache files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+
 # Local runtime databases (not baseline data)
 data/database.db
 data/local.db
 data/consultations.csv
+data/lessons.db
+data/pdfs/
+data/uploads/
+
+# Local configuration with secrets
+config.json
+.flask_secret_key
 
 # Local asset candidates (not wired into the product)
 Assets/

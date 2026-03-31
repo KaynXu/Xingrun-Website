@@ -5,7 +5,7 @@
   "deepseek_api_key": "",
   "mimo_api_key": "",
   "mimo_base_url": "",
-  "n1n_api_key": "sk-ovzzt5JH3v7Bl1IXK2fsiz3bLh1NIEmrVuVByDEmXE34tXan",
+  "n1n_api_key": "",
   "n1n_base_url": "https://api.n1n.ai/v1",
   "n1n_model": "gpt-4o"
 }

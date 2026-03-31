@@ -106,7 +106,8 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload
 
-    def test_member_cannot_access_wrong_question_routes(self):
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_member_cannot_access_wrong_question_routes(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
         member_payload = self.approve_user(
             owner_token=owner_payload["token"],
@@ -114,13 +115,29 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             display_name="Member Wrong Question",
             password="member123",
         )
+        fetch_wrong_question_records.return_value = {
+            "items": [
+                {
+                    "id": "record-other",
+                    "student_name": "Alice",
+                    "class_id": 999,
+                    "teacher_user_id": 999,
+                    "subject": "Math",
+                }
+            ],
+            "total": 1,
+        }
 
         response = self.client.get(
             "/api/wrong-questions",
             headers=self.auth_headers(member_payload["token"]),
         )
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()["error"], "无权限")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        # member with no class assignments sees no items (scoped to empty)
+        self.assertEqual(payload["items"], [])
+        # summary is provided for members
+        self.assertIn("summary", payload)
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_staff_can_list_wrong_question_records(self, fetch_wrong_question_records):
@@ -509,8 +526,14 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(payload["mapping_status"], "mapped")
 
     @patch("smart_wrong_questions.save_wrong_question_review")
-    def test_staff_can_save_wrong_question_review(self, save_wrong_question_review):
+    @patch("smart_wrong_questions.fetch_wrong_question_record")
+    def test_staff_can_save_wrong_question_review(self, fetch_wrong_question_record, save_wrong_question_review):
         owner_payload = self.login_owner()
+        fetch_wrong_question_record.return_value = {
+            "id": "record-42",
+            "teacher_user_id": None,
+            "class_id": None,
+        }
         save_wrong_question_review.return_value = {
             "ok": True,
             "record": {"id": "record-42", "teacher_comment": "需要重做"},
@@ -551,8 +574,14 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(response.get_json(), {"error": "智能错题服务尚未配置"})
 
     @patch("smart_wrong_questions.save_wrong_question_review")
-    def test_review_route_translates_downstream_proxy_errors(self, save_wrong_question_review):
+    @patch("smart_wrong_questions.fetch_wrong_question_record")
+    def test_review_route_translates_downstream_proxy_errors(self, fetch_wrong_question_record, save_wrong_question_review):
         owner_payload = self.login_owner()
+        fetch_wrong_question_record.return_value = {
+            "id": "record-42",
+            "teacher_user_id": None,
+            "class_id": None,
+        }
         save_wrong_question_review.side_effect = smart_wrong_questions.WrongQuestionProxyError(
             "下游服务不可用: timeout",
             502,

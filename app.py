@@ -35,9 +35,23 @@ CFG_PATH   = BASE_DIR / "config.json"
 for _d in (DATA_DIR, PDF_DIR, UPLOAD_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
+# Resolved once at startup to avoid repeated resolve() calls and TOCTOU drift
+_PDF_DIR_RESOLVED = PDF_DIR.resolve()
+
+# Allowed prompt style codes for AI plan generation
+VALID_PROMPT_STYLES: frozenset[str] = frozenset({"B", "C", "D", "E"})
+
 # ─── Flask ────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = "review_plan_local_2026"
+_secret_key = os.environ.get("FLASK_SECRET_KEY", "")
+if not _secret_key:
+    _key_file = BASE_DIR / ".flask_secret_key"
+    if _key_file.exists():
+        _secret_key = _key_file.read_text().strip()
+    if not _secret_key:
+        _secret_key = secrets.token_hex(32)
+        _key_file.write_text(_secret_key)
+app.secret_key = _secret_key
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:8080", "http://127.0.0.1:8080",
@@ -237,7 +251,7 @@ def add_lesson():
     # AI 生成计划
     try:
         from ai_processor import parse_and_generate_plan
-        prompt_styles = request.form.getlist("prompt_styles")
+        prompt_styles = [s for s in request.form.getlist("prompt_styles") if s in VALID_PROMPT_STYLES]
         plan = parse_and_generate_plan(
             summary_text=raw_text,
             subject=subject, grade=grade, topic=topic,
@@ -492,17 +506,29 @@ def delete_lesson(lesson_id):
 
 
 # ─── PDF 查看 / 下载 ────────────────────────────────────────────────────────────
+def _safe_pdf_path(pdf_path: str) -> Optional[Path]:
+    """Return resolved Path only if it is inside PDF_DIR; else None."""
+    if not pdf_path:
+        return None
+    resolved = Path(pdf_path).resolve()
+    try:
+        resolved.relative_to(_PDF_DIR_RESOLVED)
+    except ValueError:
+        return None
+    return resolved
+
+
 @app.route("/pdf/<int:lesson_id>")
 @app.route("/api/pdf/<int:lesson_id>")
 def serve_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
+    resolved = _safe_pdf_path(lesson.get("pdf_path", ""))
+    if not resolved or not resolved.exists():
         abort(404)
-    return send_file(pdf_path, mimetype="application/pdf",
-                     download_name=Path(pdf_path).name)
+    return send_file(str(resolved), mimetype="application/pdf",
+                     download_name=resolved.name)
 
 
 @app.route("/pdf/download/<int:lesson_id>")
@@ -511,11 +537,11 @@ def download_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
+    resolved = _safe_pdf_path(lesson.get("pdf_path", ""))
+    if not resolved or not resolved.exists():
         abort(404)
-    return send_file(pdf_path, as_attachment=True,
-                     download_name=Path(pdf_path).name)
+    return send_file(str(resolved), as_attachment=True,
+                     download_name=resolved.name)
 
 
 @app.route("/pdf/answer/<int:lesson_id>")
@@ -524,14 +550,14 @@ def serve_answer_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path:
+    base = _safe_pdf_path(lesson.get("pdf_path", ""))
+    if not base:
         abort(404)
-    answer_path = pdf_path.replace(".pdf", "_答案版.pdf")
-    if not Path(answer_path).exists():
+    answer_resolved = _safe_pdf_path(str(base).replace(".pdf", "_答案版.pdf"))
+    if not answer_resolved or not answer_resolved.exists():
         abort(404)
-    return send_file(answer_path, mimetype="application/pdf",
-                     download_name=Path(answer_path).name)
+    return send_file(str(answer_resolved), mimetype="application/pdf",
+                     download_name=answer_resolved.name)
 
 
 @app.route("/pdf/download/answer/<int:lesson_id>")
@@ -540,14 +566,14 @@ def download_answer_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson:
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path:
+    base = _safe_pdf_path(lesson.get("pdf_path", ""))
+    if not base:
         abort(404)
-    answer_path = pdf_path.replace(".pdf", "_答案版.pdf")
-    if not Path(answer_path).exists():
+    answer_resolved = _safe_pdf_path(str(base).replace(".pdf", "_答案版.pdf"))
+    if not answer_resolved or not answer_resolved.exists():
         abort(404)
-    return send_file(answer_path, as_attachment=True,
-                     download_name=Path(answer_path).name)
+    return send_file(str(answer_resolved), as_attachment=True,
+                     download_name=answer_resolved.name)
 
 
 # ─── 月度复习 ──────────────────────────────────────────────────────────────────
@@ -1472,8 +1498,8 @@ def api_lesson_create():
         pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
         pdf_path = str(PDF_DIR / pdf_name)
         generate_single_lesson_pdf(plan, pdf_path)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[WARN] PDF 生成失败（课程仍已保存）：{e}")
     lesson_id = save_lesson(
         date_str=lesson_date, subject=subject, grade=grade,
         topic=topic, summary=raw_text, weak_points=weak_points,
