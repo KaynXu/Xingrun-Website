@@ -217,6 +217,28 @@ test('consultation batch modal source previews key written fields before confirm
   assert.match(batchModalBlock[0], /来源备注 \/ 跟进备注/);
 });
 
+test('consultation batch modal source lets users remove individual drafts before import', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const handleRemoveDraft = \(draftIndex: number\) => \{/);
+  assert.match(batchModalBlock[0], /setDrafts\(\(current\) => current\.filter\(\(_draft, index\) => index !== draftIndex\)\);/);
+  assert.match(batchModalBlock[0], /onClick=\{\(\) => handleRemoveDraft\(index\)\}/);
+  assert.match(batchModalBlock[0], /移除这条草稿/);
+});
+
+test('consultation batch modal source attributes write failures to a specific draft and always clears importing', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /for \(const \[index, draft\] of drafts\.entries\(\)\) \{/);
+  assert.match(batchModalBlock[0], /const draftLabel = draft\.fields\.child_name\?\.trim\(\) \|\| \(draft\.action === 'update' && draft\.target_id \? `ID \$\{draft\.target_id\}` : `第 \$\{index \+ 1\} 条草稿`\);/);
+  assert.match(batchModalBlock[0], /setError\(`\$\{draftLabel\}导入失败：\$\{message\}`\);/);
+  assert.match(batchModalBlock[0], /setImporting\(true\);[\s\S]*try \{[\s\S]*for \(const \[index, draft\] of drafts\.entries\(\)\)[\s\S]*\} catch \(err\) \{[\s\S]*\} finally \{\s*setImporting\(false\);\s*\}/);
+});
+
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
   const parseConsultationQuickEntry = (AppModule as {
     parseConsultationQuickEntry?: (

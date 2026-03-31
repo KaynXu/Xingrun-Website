@@ -2452,6 +2452,11 @@ const ConsultationBatchModal = ({
 
   const busy = parsing || importing;
 
+  const handleRemoveDraft = (draftIndex: number) => {
+    setDrafts((current) => current.filter((_draft, index) => index !== draftIndex));
+    setError('');
+  };
+
   const handleParse = async () => {
     if (!rawText.trim()) {
       setError('先粘贴一段原始咨询文本，再进行 AI 解析。');
@@ -2489,43 +2494,47 @@ const ConsultationBatchModal = ({
     setError('');
     let importSucceeded = false;
     try {
-      for (const draft of drafts) {
-        if (draft.action === 'update' && draft.target_id) {
-          await apiFetch(`/api/consultations/${draft.target_id}`, {
-            method: 'PUT',
-            body: JSON.stringify(draft.fields),
-          });
-          continue;
-        }
+      for (const [index, draft] of drafts.entries()) {
+        const draftLabel = draft.fields.child_name?.trim() || (draft.action === 'update' && draft.target_id ? `ID ${draft.target_id}` : `第 ${index + 1} 条草稿`);
+        try {
+          if (draft.action === 'update' && draft.target_id) {
+            await apiFetch(`/api/consultations/${draft.target_id}`, {
+              method: 'PUT',
+              body: JSON.stringify(draft.fields),
+            });
+            continue;
+          }
 
-        await apiFetch('/api/consultations', {
-          method: 'POST',
-          body: JSON.stringify(buildConsultationBatchCreatePayload(draft.fields)),
-        });
+          await apiFetch('/api/consultations', {
+            method: 'POST',
+            body: JSON.stringify(buildConsultationBatchCreatePayload(draft.fields)),
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '批量导入失败';
+          setError(`${draftLabel}导入失败：${message}`);
+          return;
+        }
       }
       importSucceeded = true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '批量导入失败');
-      return;
-    }
 
-    let refreshSucceeded = false;
-    try {
-      await onImported();
-      refreshSucceeded = true;
-    } catch (err) {
-      if (importSucceeded) {
-        setDrafts([]);
-        setWarnings([]);
-        setRawText('');
-        setError('导入已完成，但刷新咨询记录失败，请手动刷新列表确认结果。');
+      let refreshSucceeded = false;
+      try {
+        await onImported();
+        refreshSucceeded = true;
+      } catch (err) {
+        if (importSucceeded) {
+          setDrafts([]);
+          setWarnings([]);
+          setRawText('');
+          setError('导入已完成，但刷新咨询记录失败，请手动刷新列表确认结果。');
+        }
+      }
+
+      if (refreshSucceeded) {
+        onClose();
       }
     } finally {
       setImporting(false);
-    }
-
-    if (refreshSucceeded) {
-      onClose();
     }
   };
 
@@ -2662,7 +2671,19 @@ const ConsultationBatchModal = ({
                           </div>
                           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{draft.reason || '等待人工确认'}</p>
                         </div>
-                        <div className="text-sm text-slate-500 dark:text-slate-400">第 {index + 1} 条</div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-sm text-slate-500 dark:text-slate-400">第 {index + 1} 条</div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDraft(index)}
+                            disabled={busy}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-rose-400/30 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                            aria-label="移除这条草稿"
+                            title="移除这条草稿"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
