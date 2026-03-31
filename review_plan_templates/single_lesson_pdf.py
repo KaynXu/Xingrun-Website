@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from review_plan_templates.generate_review_pdfs import render_review_plan_pdf
+from review_plan_templates.generate_review_pdfs import normalize_portable_text, render_review_plan_pdf
 
 
 DEFAULT_FINAL_REMINDERS = [
@@ -13,7 +13,7 @@ DEFAULT_FINAL_REMINDERS = [
 
 
 def _clean_text(value: object, default: str = "") -> str:
-    text = str(value or "").strip()
+    text = normalize_portable_text(str(value or "").strip())
     return text or default
 
 
@@ -124,13 +124,14 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
     lesson_info = plan_data.get("lesson_info", {})
     topic = _clean_text(lesson_info.get("topic"), "课后")
     weak_points = _clean_text(plan_data.get("weak_points_summary"))
+    full_review_topics = [_clean_text(item) for item in (lesson_info.get("key_categories", []) or []) if _clean_text(item)]
     lesson = {
         "title": f"{topic}复习计划",
         "subtitle": "",
         "audience": "老师发给学生使用",
         "duration": "每次 10-20 分钟",
         "core_points": [weak_points] if weak_points else [],
-        "full_review_topics": lesson_info.get("key_categories", []) or [topic],
+        "full_review_topics": full_review_topics or [topic],
         "quotes": collect_plan_quotes(plan_data),
     }
     question_pool = _question_pool(plan_data)
