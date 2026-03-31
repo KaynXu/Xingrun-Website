@@ -183,6 +183,40 @@ test('consultation batch modal source parses text, previews drafts, and reuses c
   assert.match(batchModalBlock[0], /await apiFetch\('\/api\/consultations'/);
 });
 
+test('consultation batch modal source keeps refresh failure separate after successful writes', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /let importSucceeded = false;/);
+  assert.match(batchModalBlock[0], /importSucceeded = true;/);
+  assert.match(batchModalBlock[0], /try \{[\s\S]*await onImported\(\);[\s\S]*\} catch \(err\) \{/);
+  assert.match(batchModalBlock[0], /导入已完成，但刷新咨询记录失败，请手动刷新列表确认结果。/);
+});
+
+test('consultation batch modal source blocks dismissal while parsing or importing', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const busy = parsing \|\| importing;/);
+  assert.match(batchModalBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !busy && onClose\(\)\}/);
+  assert.match(batchModalBlock[0], /disabled=\{busy\}/);
+});
+
+test('consultation batch modal source previews key written fields before confirm', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const dateLabel = draft\.fields\.date\?\.trim\(\) \|\| '未填写咨询日期';/);
+  assert.match(batchModalBlock[0], /const childLabel = draft\.fields\.child_name\?\.trim\(\) \|\| '未填写学生姓名';/);
+  assert.match(batchModalBlock[0], /const sourceNoteLabel = draft\.fields\.source_channel_note\?\.trim\(\);/);
+  assert.match(batchModalBlock[0], /const followUpNoteLabel = draft\.fields\.follow_up_note\?\.trim\(\);/);
+  assert.match(batchModalBlock[0], /咨询日期 \/ 学生/);
+  assert.match(batchModalBlock[0], /来源备注 \/ 跟进备注/);
+});
+
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
   const parseConsultationQuickEntry = (AppModule as {
     parseConsultationQuickEntry?: (

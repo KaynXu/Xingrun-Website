@@ -2450,6 +2450,8 @@ const ConsultationBatchModal = ({
     return null;
   }
 
+  const busy = parsing || importing;
+
   const handleParse = async () => {
     if (!rawText.trim()) {
       setError('先粘贴一段原始咨询文本，再进行 AI 解析。');
@@ -2485,6 +2487,7 @@ const ConsultationBatchModal = ({
 
     setImporting(true);
     setError('');
+    let importSucceeded = false;
     try {
       for (const draft of drafts) {
         if (draft.action === 'update' && draft.target_id) {
@@ -2500,12 +2503,29 @@ const ConsultationBatchModal = ({
           body: JSON.stringify(buildConsultationBatchCreatePayload(draft.fields)),
         });
       }
-      await onImported();
-      onClose();
+      importSucceeded = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : '批量导入失败');
+      return;
+    }
+
+    let refreshSucceeded = false;
+    try {
+      await onImported();
+      refreshSucceeded = true;
+    } catch (err) {
+      if (importSucceeded) {
+        setDrafts([]);
+        setWarnings([]);
+        setRawText('');
+        setError('导入已完成，但刷新咨询记录失败，请手动刷新列表确认结果。');
+      }
     } finally {
       setImporting(false);
+    }
+
+    if (refreshSucceeded) {
+      onClose();
     }
   };
 
@@ -2515,7 +2535,7 @@ const ConsultationBatchModal = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && !busy && onClose()}
     >
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
       <motion.div
@@ -2535,7 +2555,13 @@ const ConsultationBatchModal = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (busy) {
+                return;
+              }
+              onClose();
+            }}
+            disabled={busy}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
             aria-label="关闭 AI 批量整理窗口"
           >
@@ -2562,7 +2588,7 @@ const ConsultationBatchModal = ({
               <button
                 type="button"
                 onClick={handleParse}
-                disabled={parsing || importing}
+                disabled={busy}
                 className={workspacePrimaryButtonClass}
               >
                 <Cpu size={18} />
@@ -2608,11 +2634,15 @@ const ConsultationBatchModal = ({
             ) : (
               <div className="space-y-3">
                 {drafts.map((draft, index) => {
+                  const dateLabel = draft.fields.date?.trim() || '未填写咨询日期';
+                  const childLabel = draft.fields.child_name?.trim() || '未填写学生姓名';
                   const subjectLabel = draft.fields.consultation_subject?.trim() || '未填写咨询科目';
                   const parentLabel = draft.fields.parent_wechat_name?.trim() || '未填写家长微信';
                   const statusLabel = draft.fields.follow_up_status?.trim() || '待确认跟进状态';
                   const teacherLabel = draft.fields.receiving_teacher?.trim() || draft.fields.teacher_id?.trim() || '待确认老师';
                   const sourceLabel = draft.fields.source_channel?.trim() || '未标注来源渠道';
+                  const sourceNoteLabel = draft.fields.source_channel_note?.trim();
+                  const followUpNoteLabel = draft.fields.follow_up_note?.trim();
                   return (
                     <article key={`${draft.action}-${draft.target_id ?? 'create'}-${index}`} className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -2637,6 +2667,11 @@ const ConsultationBatchModal = ({
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期 / 学生</p>
+                          <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{dateLabel}</p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{childLabel}</p>
+                        </div>
+                        <div>
                           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">家长微信 / 科目</p>
                           <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{parentLabel}</p>
                           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subjectLabel}</p>
@@ -2652,6 +2687,14 @@ const ConsultationBatchModal = ({
                           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{draft.fields.grade?.trim() || '未填写年级'}</p>
                         </div>
                       </div>
+
+                      {(sourceNoteLabel || followUpNoteLabel) && (
+                        <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/50 p-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">来源备注 / 跟进备注</p>
+                          {sourceNoteLabel && <p className="mt-2">来源备注：{sourceNoteLabel}</p>}
+                          {followUpNoteLabel && <p className={sourceNoteLabel ? 'mt-1' : 'mt-2'}>跟进备注：{followUpNoteLabel}</p>}
+                        </div>
+                      )}
 
                       {draft.fields.need_detail?.trim() && (
                         <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/50 p-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
@@ -2680,7 +2723,7 @@ const ConsultationBatchModal = ({
             <button
               type="button"
               onClick={onClose}
-              disabled={parsing || importing}
+              disabled={busy}
               className={`${workspaceSecondaryButtonClass} w-full sm:w-auto`}
             >
               取消
@@ -2688,7 +2731,7 @@ const ConsultationBatchModal = ({
             <button
               type="button"
               onClick={handleImport}
-              disabled={drafts.length === 0 || parsing || importing}
+              disabled={drafts.length === 0 || busy}
               className={`${workspacePrimaryButtonClass} w-full sm:w-auto`}
             >
               {importing ? '导入中...' : '确认导入'}
