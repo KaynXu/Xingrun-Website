@@ -442,6 +442,10 @@ def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
 
 
 def _normalize_consultation_batch_fields(fields: Optional[dict]) -> dict[str, str]:
+    if fields is None:
+        fields = {}
+    if not isinstance(fields, dict):
+        raise ValueError("AI 解析返回了无效结果")
     updates = _extract_consultation_updates(fields or {})
     normalized: dict[str, str] = {}
     for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
@@ -476,8 +480,23 @@ def _normalize_consultation_batch_fields(fields: Optional[dict]) -> dict[str, st
 
 def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
     data = payload or {}
+    if not isinstance(data, dict):
+        raise ValueError("AI 解析返回了无效结果")
+
+    raw_items = data.get("items", [])
+    if not isinstance(raw_items, list):
+        raise ValueError("AI 解析返回了无效结果")
+
+    raw_warnings = data.get("warnings", [])
+    if raw_warnings is None:
+        raw_warnings = []
+    if not isinstance(raw_warnings, list):
+        raise ValueError("AI 解析返回了无效结果")
+
     items = []
-    for raw_item in data.get("items", []):
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            raise ValueError("AI 解析返回了无效结果")
         action = str(raw_item.get("action", "create")).strip().lower()
         target_id = raw_item.get("target_id")
         normalized_target_id = None
@@ -496,7 +515,7 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
                 "fields": _normalize_consultation_batch_fields(raw_item.get("fields")),
                 "warnings": [
                     str(item).strip()
-                    for item in raw_item.get("warnings", [])
+                    for item in (raw_item.get("warnings", []) if isinstance(raw_item.get("warnings", []), list) else [])
                     if str(item).strip()
                 ],
             }
@@ -505,7 +524,7 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
         "items": items,
         "warnings": [
             str(item).strip()
-            for item in data.get("warnings", [])
+            for item in raw_warnings
             if str(item).strip()
         ],
     }

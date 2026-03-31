@@ -270,6 +270,20 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(delete_response.status_code, 403)
 
+    @patch("app.parse_consultation_batch_text")
+    def test_members_cannot_access_ai_parse_endpoint(self, mock_parse):
+        member_token = self.create_member_token()
+
+        response = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(member_token),
+            json={"raw_text": "新增：张妈妈，五年级数学。"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "无权限")
+        mock_parse.assert_not_called()
+
     def test_list_exposes_teacher_display_name_from_user_directory(self):
         self.write_legacy_csv([
             self.sample_row(
@@ -517,6 +531,24 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertIn("李妈妈", captured["cleaned_text"])
         self.assertIn("王爸爸", captured["cleaned_text"])
         self.assertEqual(len(response.get_json()["items"]), 2)
+
+    @patch("app.parse_consultation_batch_text")
+    def test_ai_parse_endpoint_returns_502_for_malformed_model_items(self, mock_parse):
+        mock_parse.return_value = {
+            "items": [
+                "not-a-dict-item"
+            ],
+            "warnings": ["top-level"],
+        }
+
+        response = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(self.owner_token),
+            json={"raw_text": "新增：张妈妈，五年级数学。"},
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json()["error"], "AI 解析返回了无效结果")
 
 
 if __name__ == "__main__":

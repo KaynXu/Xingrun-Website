@@ -1071,7 +1071,7 @@ def api_consultations_list():
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
 def api_consultation_ai_parse():
-    _, error = _require_auth()
+    _, error = _require_staff()
     if error:
         return error
 
@@ -1091,10 +1091,15 @@ def api_consultation_ai_parse():
 
     try:
         parsed = parse_consultation_batch_text(cleaned_text)
+        normalized = normalize_consultation_batch_parse_result(parsed)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 502
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
     except Exception as exc:
-        return jsonify({"error": f"AI 解析失败：{exc}"}), 500
+        return jsonify({"error": f"AI 解析失败：{exc}"}), 502
 
-    return jsonify(normalize_consultation_batch_parse_result(parsed))
+    return jsonify(normalized)
 
 
 @app.route("/api/consultation-teachers", methods=["GET"])
