@@ -533,6 +533,11 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
         raise ValueError("AI 解析返回了无效结果")
 
     items = []
+    warnings = [
+        str(item).strip()
+        for item in raw_warnings
+        if str(item).strip()
+    ]
     for raw_item in raw_items:
         if not isinstance(raw_item, dict):
             raise ValueError("AI 解析返回了无效结果")
@@ -553,6 +558,11 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
                 for field, value in normalized_fields.items()
                 if value.strip() != ""
             }
+            if not normalized_fields:
+                warnings.append(
+                    f"显式记录 ID {normalized_target_id} 的更新草稿已跳过，因为清洗后没有剩余有效字段。"
+                )
+                continue
         items.append(
             {
                 "action": action,
@@ -568,11 +578,7 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
         )
     return {
         "items": items,
-        "warnings": [
-            str(item).strip()
-            for item in raw_warnings
-            if str(item).strip()
-        ],
+        "warnings": warnings,
     }
 
 

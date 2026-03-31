@@ -550,6 +550,31 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.get_json()["error"], "AI 解析返回了无效结果")
 
+    def test_normalize_batch_parse_result_skips_explicit_id_update_when_no_valid_fields_remain(self):
+        payload = lesson_manager.normalize_consultation_batch_parse_result(
+            {
+                "items": [
+                    {
+                        "action": "update",
+                        "target_id": 182,
+                        "reason": "文本显式提到记录 ID 182",
+                        "fields": {
+                            "parent_wechat_name": "   ",
+                            "consultation_subject": "\n\t",
+                        },
+                        "warnings": [],
+                    }
+                ],
+                "warnings": [],
+            }
+        )
+
+        self.assertEqual(payload["items"], [])
+        self.assertEqual(
+            payload["warnings"],
+            ["显式记录 ID 182 的更新草稿已跳过，因为清洗后没有剩余有效字段。"],
+        )
+
     def test_normalize_batch_parse_result_drops_blank_string_fields_from_update_draft(self):
         payload = lesson_manager.normalize_consultation_batch_parse_result(
             {
