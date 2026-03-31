@@ -550,6 +550,31 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.get_json()["error"], "AI 解析返回了无效结果")
 
+    def test_normalize_batch_parse_result_drops_blank_string_fields_from_update_draft(self):
+        payload = lesson_manager.normalize_consultation_batch_parse_result(
+            {
+                "items": [
+                    {
+                        "action": "update",
+                        "target_id": 182,
+                        "reason": "文本显式提到记录 ID 182",
+                        "fields": {
+                            "follow_up_status": "跟进中",
+                            "parent_wechat_name": "",
+                            "consultation_subject": "",
+                        },
+                        "warnings": [],
+                    }
+                ],
+                "warnings": [],
+            }
+        )
+
+        draft = payload["items"][0]
+        self.assertEqual(draft["action"], "update")
+        self.assertEqual(draft["target_id"], 182)
+        self.assertEqual(draft["fields"], {"follow_up_status": "跟进中"})
+
 
 if __name__ == "__main__":
     unittest.main()

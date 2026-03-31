@@ -546,12 +546,19 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
                 normalized_target_id = None
         if normalized_target_id is None:
             action = "create"
+        normalized_fields = _normalize_consultation_batch_fields(raw_item.get("fields"))
+        if action == "update":
+            normalized_fields = {
+                field: value
+                for field, value in normalized_fields.items()
+                if value != ""
+            }
         items.append(
             {
                 "action": action,
                 "target_id": normalized_target_id if action == "update" else None,
                 "reason": str(raw_item.get("reason", "")).strip(),
-                "fields": _normalize_consultation_batch_fields(raw_item.get("fields")),
+                "fields": normalized_fields,
                 "warnings": [
                     str(item).strip()
                     for item in (raw_item.get("warnings", []) if isinstance(raw_item.get("warnings", []), list) else [])
