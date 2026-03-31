@@ -15,7 +15,13 @@ frontend/public/.DS_Store
 # Local runtime databases (not baseline data)
 data/database.db
 data/local.db
+data/lessons.db
 data/consultations.csv
+
+# Generated PDF output files
+data/pdfs/
+data/*.pdf
+student_review_plan_fill_blanks.pdf
 
 # Local asset candidates (not wired into the product)
 Assets/
