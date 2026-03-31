@@ -84,7 +84,8 @@ test('workspace navigation wires master data mappings into the owner admin shell
   assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(sidebarBlock[0], /hasStaffAccess\(currentUser\.role\)[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '主数据映射' \}/);
   assert.match(appSource, /masterDataMappings: '主数据映射'/);
-  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} focusUserId=\{masterDataFocusUserId\} \/>/);
+  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} onStartBinding=\{handleStartMemberBinding\} \/>/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {

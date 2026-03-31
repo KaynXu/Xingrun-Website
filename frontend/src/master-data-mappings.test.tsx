@@ -68,9 +68,17 @@ function createMappingOptionResponse(input: RequestInfo | URL): Response | null 
 
   if (input === '/api/admin/users') {
     return createJsonResponse([
-      { id: 12, name: '陈老师' },
-      { id: 18, name: '王老师' },
+      { id: 12, name: '陈老师', org: '星润Starain', role: 'owner' },
+      { id: 18, name: '王老师', org: '星润Starain', role: 'member' },
     ]);
+  }
+
+  if (input === '/api/master-data/users/12/aliases') {
+    return createJsonResponse({ aliases: ['陈老师'] });
+  }
+
+  if (input === '/api/master-data/users/18/aliases') {
+    return createJsonResponse({ aliases: [] });
   }
 
   return null;
@@ -367,7 +375,8 @@ test('master data mappings page sends the expected PUT payload when resolving a 
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 4);
+      const putCall = fetchCalls.find((call) => call.input === '/api/master-data/mappings/wrong-questions/record-1' && call.init?.method === 'PUT');
+      assert.ok(putCall);
     });
   } finally {
     if (root) {
@@ -379,12 +388,161 @@ test('master data mappings page sends the expected PUT payload when resolving a 
     cleanup();
   }
 
-  assert.equal(fetchCalls[3]?.input, '/api/master-data/mappings/wrong-questions/record-1');
-  assert.equal(fetchCalls[3]?.init?.method, 'PUT');
-  assert.deepEqual(JSON.parse(String(fetchCalls[3]?.init?.body)), {
+  const resolvePutCall = fetchCalls.find((call) => call.input === '/api/master-data/mappings/wrong-questions/record-1' && call.init?.method === 'PUT');
+  assert.equal(resolvePutCall?.input, '/api/master-data/mappings/wrong-questions/record-1');
+  assert.equal(resolvePutCall?.init?.method, 'PUT');
+  assert.deepEqual(JSON.parse(String(resolvePutCall?.init?.body)), {
     teacher_user_id: 12,
     class_id: 34,
     mapping_status: 'mapped',
+  });
+});
+
+test('master data mappings page still shows proactive member binding controls when the wrong-question queue is empty', async () => {
+  const { container, cleanup } = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
+      if (input === '/api/master-data/mappings/wrong-questions') {
+        return createJsonResponse({ items: [] });
+      }
+
+      if (input === '/api/master-data/users/12/aliases') {
+        return createJsonResponse({ aliases: ['陈老师', '陈老师数学'] });
+      }
+
+      if (input === '/api/master-data/users/18/aliases') {
+        return createJsonResponse({ aliases: [] });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <MasterDataMappingsPage
+          currentUser={{
+            display_name: 'Owner',
+            organization_name: '星润Starain',
+          }}
+          focusUserId={12}
+        />,
+      );
+    });
+
+    await waitForAssertion(() => {
+      const text = container.textContent || '';
+      assert.match(text, /主动绑定成员/);
+      assert.match(text, /陈老师/);
+      assert.match(text, /老师别名/);
+      assert.match(text, /开始绑定/);
+      assert.match(text, /当前没有待处理的错题映射记录。/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root!.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    cleanup();
+  }
+});
+
+test('master data mappings page saves proactive member aliases with the expected PUT payload', async () => {
+  const { container, cleanup } = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
+      if (input === '/api/master-data/mappings/wrong-questions') {
+        return createJsonResponse({ items: [] });
+      }
+
+      if (input === '/api/master-data/users/12/aliases' && !init?.method) {
+        return createJsonResponse({ aliases: ['陈老师'] });
+      }
+
+      if (input === '/api/master-data/users/18/aliases' && !init?.method) {
+        return createJsonResponse({ aliases: [] });
+      }
+
+      if (input === '/api/master-data/users/12/aliases' && init?.method === 'PUT') {
+        return createJsonResponse({ aliases: ['陈老师', '陈老师数学'] });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <MasterDataMappingsPage
+          currentUser={{
+            display_name: 'Owner',
+            organization_name: '星润Starain',
+          }}
+          focusUserId={12}
+        />,
+      );
+    });
+
+    await waitForAssertion(() => {
+      assert.ok(container.querySelector('textarea[name="user_aliases_12"]'));
+      assert.ok(container.querySelector('button[data-user-alias-save-id="12"]'));
+    });
+
+    const aliasInput = container.querySelector('textarea[name="user_aliases_12"]') as HTMLTextAreaElement;
+    const saveButton = container.querySelector('button[data-user-alias-save-id="12"]') as HTMLButtonElement;
+
+    await act(async () => {
+      aliasInput.value = '陈老师\n陈老师数学';
+      aliasInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+      aliasInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      assert.equal(aliasInput.value, '陈老师\n陈老师数学');
+    });
+
+    await act(async () => {
+      saveButton.click();
+    });
+
+    await waitForAssertion(() => {
+      const putCall = fetchCalls.find((call) => call.input === '/api/master-data/users/12/aliases' && call.init?.method === 'PUT');
+      assert.ok(putCall);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root!.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    cleanup();
+  }
+
+  const putCall = fetchCalls.find((call) => call.input === '/api/master-data/users/12/aliases' && call.init?.method === 'PUT');
+  assert.deepEqual(JSON.parse(String(putCall?.init?.body)), {
+    aliases: ['陈老师', '陈老师数学'],
   });
 });
 

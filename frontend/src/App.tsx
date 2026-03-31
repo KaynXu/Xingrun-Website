@@ -157,6 +157,11 @@ interface MemberBindingSummary {
   };
 }
 
+interface ApprovalPageProps {
+  currentUser: CurrentUser;
+  onStartBinding: (userId: number) => void;
+}
+
 interface ClassFormValues {
   name: string;
   subject: string;
@@ -2867,7 +2872,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   );
 };
 
-const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [bindingSummaryByUserId, setBindingSummaryByUserId] = useState<Record<number, MemberBindingSummary>>({});
@@ -3193,20 +3198,29 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           )}
                         </div>
                       </div>
-                      {roleFixed ? (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                          {user.role === 'super_owner' ? 'Super Owner 权限固定，不可调整' : 'Owner 权限仅可由 Super Owner 调整'}
-                        </span>
-                      ) : (
+                      <div className="flex flex-wrap items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => handleRoleToggle(user.id, user.role)}
-                          disabled={busy}
+                          onClick={() => onStartBinding(user.id)}
                           className={workspaceSecondaryButtonClass}
                         >
-                          {busy ? '保存中...' : roleActionLabel}
+                          开始绑定
                         </button>
-                      )}
+                        {roleFixed ? (
+                          <span className="text-sm text-slate-500 dark:text-slate-400">
+                            {user.role === 'super_owner' ? 'Super Owner 权限固定，不可调整' : 'Owner 权限仅可由 Super Owner 调整'}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRoleToggle(user.id, user.role)}
+                            disabled={busy}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            {busy ? '保存中...' : roleActionLabel}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -4896,6 +4910,7 @@ export default function App() {
   const [showRegister, setShowRegister] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [masterDataFocusUserId, setMasterDataFocusUserId] = useState<number | null>(null);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
@@ -5035,6 +5050,11 @@ export default function App() {
 
   const handleReviewGenerationSuccess = () => {
     setActivePage('review-generation');
+  };
+
+  const handleStartMemberBinding = (userId: number) => {
+    setMasterDataFocusUserId(userId);
+    setActivePage('masterDataMappings');
   };
 
   const handlePreviousCalendarWeek = () => {
@@ -5201,11 +5221,11 @@ export default function App() {
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
                 {activePage === 'masterDataMappings' &&
                   hasStaffAccess(currentUser.role) &&
-                  <MasterDataMappingsPage currentUser={currentUser} />}
+                  <MasterDataMappingsPage currentUser={currentUser} focusUserId={masterDataFocusUserId} />}
                 {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
-                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
+                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onStartBinding={handleStartMemberBinding} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>
