@@ -365,6 +365,22 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
 });
 
+test('approval page source loads and renders member teaching binding summaries', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /apiFetch<\{ items: MemberBindingSummary\[] \}>\('\/api\/admin\/member-binding-summary'\)/);
+  assert.match(approvalBlock[0], /教学绑定/);
+  assert.match(approvalBlock[0], /小程序老师/);
+  assert.match(approvalBlock[0], /负责班级/);
+  assert.match(approvalBlock[0], /映射状态/);
+  assert.match(approvalBlock[0], /教学绑定摘要加载失败/);
+  assert.match(approvalBlock[0], /bindingSummaryByUserId\[user\.id\]/);
+  assert.match(approvalBlock[0], /responsible_classes/);
+  assert.match(approvalBlock[0], /mini_teacher_bound/);
+});
+
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);

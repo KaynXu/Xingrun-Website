@@ -867,6 +867,14 @@ def api_admin_users():
     return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
 
 
+@app.route("/api/admin/member-binding-summary", methods=["GET"])
+def api_admin_member_binding_summary():
+    _, error = _require_staff()
+    if error:
+        return error
+    return jsonify({"items": master_data.list_member_binding_summaries()})
+
+
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
 def api_admin_user_role_set(user_id):
     user, error = _require_owner()

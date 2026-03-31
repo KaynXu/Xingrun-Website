@@ -139,6 +139,24 @@ interface UserItem {
   role: Role;
 }
 
+type MemberBindingSummaryStatus = 'healthy' | 'needs_review' | 'incomplete';
+
+interface MemberBindingSummary {
+  user_id: number;
+  mini_teacher_bound: boolean;
+  responsible_classes: Array<{
+    id: number;
+    name: string;
+  }>;
+  mapping_summary: {
+    status: MemberBindingSummaryStatus;
+    mapped_count: number;
+    needs_review_count: number;
+    unmapped_count: number;
+    ambiguous_count: number;
+  };
+}
+
 interface ClassFormValues {
   name: string;
   subject: string;
@@ -192,6 +210,22 @@ function hasStaffAccess(role: Role): boolean {
 
 function canManageOwnerRole(role: Role): boolean {
   return role === 'super_owner';
+}
+
+function getMemberBindingStatusLabel(status: MemberBindingSummaryStatus): string {
+  if (status === 'healthy') return '正常';
+  if (status === 'needs_review') return '待复核';
+  return '未完成';
+}
+
+function getMemberBindingStatusBadgeClass(status: MemberBindingSummaryStatus): string {
+  if (status === 'healthy') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300';
+  }
+  if (status === 'needs_review') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
+  }
+  return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
 }
 
 function createEmptyClassForm(): ClassFormValues {
@@ -2836,10 +2870,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [bindingSummaryByUserId, setBindingSummaryByUserId] = useState<Record<number, MemberBindingSummary>>({});
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [bindingSummaryLoading, setBindingSummaryLoading] = useState(true);
   const [error, setError] = useState('');
   const [usersError, setUsersError] = useState('');
+  const [bindingSummaryError, setBindingSummaryError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
   const [roleSavingUserId, setRoleSavingUserId] = useState<number | null>(null);
 
@@ -2869,10 +2906,30 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   }, []);
 
+  const loadBindingSummaries = useCallback(async () => {
+    setBindingSummaryLoading(true);
+    setBindingSummaryError('');
+    try {
+      const data = await apiFetch<{ items: MemberBindingSummary[] }>('/api/admin/member-binding-summary');
+      setBindingSummaryByUserId(
+        data.items.reduce<Record<number, MemberBindingSummary>>((accumulator, item) => {
+          accumulator[item.user_id] = item;
+          return accumulator;
+        }, {}),
+      );
+    } catch (err) {
+      setBindingSummaryByUserId({});
+      setBindingSummaryError(err instanceof Error ? err.message : '教学绑定摘要加载失败');
+    } finally {
+      setBindingSummaryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadItems().catch(() => undefined);
     loadUsers().catch(() => undefined);
-  }, [loadItems, loadUsers]);
+    loadBindingSummaries().catch(() => undefined);
+  }, [loadItems, loadUsers, loadBindingSummaries]);
 
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
@@ -3051,7 +3108,7 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 Super Owner 可以命名或撤销 Owner；Owner 只可切换管理员与普通成员权限，班级分配不再放在审批页。
               </p>
             </div>
-            <button onClick={() => loadUsers().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
               刷新成员
             </button>
           </div>
@@ -3073,6 +3130,14 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <div className="mt-5 space-y-4">
               {users.map((user) => {
                 const busy = roleSavingUserId === user.id;
+                const bindingSummary = bindingSummaryByUserId[user.id];
+                const responsibleClasses = bindingSummary?.responsible_classes ?? [];
+                const bindingStatus = bindingSummary?.mapping_summary.status ?? 'incomplete';
+                const visibleClassNames = responsibleClasses.slice(0, 3).map((item) => item.name);
+                const hiddenClassCount = Math.max(responsibleClasses.length - visibleClassNames.length, 0);
+                const unresolvedCount = (bindingSummary?.mapping_summary.needs_review_count ?? 0)
+                  + (bindingSummary?.mapping_summary.unmapped_count ?? 0)
+                  + (bindingSummary?.mapping_summary.ambiguous_count ?? 0);
                 const roleFixed = user.role === 'super_owner' || (user.role === 'owner' && !canManageOwnerRole(currentUser.role));
                 const roleActionLabel = user.role === 'owner'
                   ? '降为管理员'
@@ -3090,6 +3155,43 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           </span>
                         </div>
                         <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
+                        <div className="mt-4 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+                          <div className="flex items-center justify-between gap-3">
+                            <h5 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">教学绑定</h5>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getMemberBindingStatusBadgeClass(bindingStatus)}`}>
+                              {getMemberBindingStatusLabel(bindingStatus)}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">小程序老师</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                                {bindingSummaryLoading && !bindingSummary ? '加载中...' : bindingSummary?.mini_teacher_bound ? '已绑定' : '未绑定'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责班级</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{responsibleClasses.length} 个班级</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {visibleClassNames.length > 0 ? `${visibleClassNames.join('、')}${hiddenClassCount > 0 ? ` +${hiddenClassCount}` : ''}` : '暂无负责班级'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">映射状态</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{getMemberBindingStatusLabel(bindingStatus)}</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {bindingSummary
+                                  ? `已映射 ${bindingSummary.mapping_summary.mapped_count} / 未完成 ${unresolvedCount}`
+                                  : bindingSummaryLoading
+                                    ? '教学绑定摘要加载中...'
+                                    : '未加载到教学绑定摘要'}
+                              </p>
+                            </div>
+                          </div>
+                          {bindingSummaryError && !bindingSummary && (
+                            <p className="mt-3 text-xs text-rose-500 dark:text-rose-300">教学绑定摘要加载失败</p>
+                          )}
+                        </div>
                       </div>
                       {roleFixed ? (
                         <span className="text-sm text-slate-500 dark:text-slate-400">
