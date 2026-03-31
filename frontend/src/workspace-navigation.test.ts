@@ -240,13 +240,14 @@ test('consultation modal source exposes quick parsing and structured confirmatio
   assert.match(appSource, /apiFetch<ConsultationTeacherOption\[]>\('\/api\/consultation-teachers'\)/);
 });
 
-test('consultation workspace source allows admins to edit records and uses the new follow-up status set', () => {
+test('consultation workspace source allows admins to edit and delete records and uses the new follow-up status set', () => {
   assert.match(appSource, /const consultationStatusOptions = \['待邀约', '跟进中', '已报班', '已劝退'\];/);
   assert.match(appSource, /follow_up_status: '待邀约',/);
   assert.match(appSource, /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'/);
   assert.match(appSource, /\{readOnly && \(currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'\) && \(/);
-  assert.match(appSource, /\{canEdit && \(/);
-  assert.match(appSource, /onDelete=\{isOwner \? handleDelete : undefined\}/);
+  assert.match(appSource, /const canManage = currentUser\.role === 'owner' \|\| currentUser\.role === 'admin';/);
+  assert.match(appSource, /\{canManage && \(/);
+  assert.match(appSource, /onDelete=\{canManage \? handleDelete : undefined\}/);
 });
 
 test('approval page source keeps member role controls separate from class assignment', () => {

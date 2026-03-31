@@ -1107,7 +1107,7 @@ def api_consultation_update(consultation_id):
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["DELETE"])
 def api_consultation_delete(consultation_id):
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     deleted = delete_consultation(consultation_id)
