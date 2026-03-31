@@ -13,7 +13,7 @@ test('sidebar account sheet shows account info and logout actions', () => {
       id: number;
       username: string;
       display_name: string;
-      role: 'owner' | 'member';
+      role: 'super_owner' | 'owner' | 'member';
       status: string;
       organization_id: number;
       organization_name: string;
@@ -33,7 +33,7 @@ test('sidebar account sheet shows account info and logout actions', () => {
         id: 1,
         username: 'Kayn',
         display_name: 'Kayn',
-        role: 'owner',
+        role: 'super_owner',
         status: 'active',
         organization_id: 1,
         organization_name: '星润Starain',
@@ -57,7 +57,7 @@ test('sidebar account sheet includes dark theme surface classes', () => {
       id: number;
       username: string;
       display_name: string;
-      role: 'owner' | 'member';
+      role: 'super_owner' | 'owner' | 'member';
       status: string;
       organization_id: number;
       organization_name: string;
@@ -77,7 +77,7 @@ test('sidebar account sheet includes dark theme surface classes', () => {
         id: 1,
         username: 'Kayn',
         display_name: 'Kayn',
-        role: 'owner',
+        role: 'super_owner',
         status: 'active',
         organization_id: 1,
         organization_name: '星润Starain',
@@ -244,13 +244,39 @@ test('consultation batch modal source keeps only remaining drafts after a partia
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
-  const importLoopBlock = batchModalBlock[0].match(/for \(const \[index, draft\] of drafts\.entries\(\)\) \{[\s\S]*?remainingDrafts\.shift\(\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);\s*\}/);
-
-  assert.ok(importLoopBlock);
   assert.match(batchModalBlock[0], /const remainingDrafts = \[\.\.\.drafts\];/);
-  assert.match(importLoopBlock[0], /if \(draft\.action === 'update' && draft\.target_id\) \{\s*await apiFetch\(`\/api\/consultations\/\$\{draft\.target_id\}`,[\s\S]*?\}\s*else \{\s*await apiFetch\('\/api\/consultations',[\s\S]*?\}\s*remainingDrafts\.shift\(\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
-  assert.doesNotMatch(importLoopBlock[0], /continue;/);
+  assert.match(batchModalBlock[0], /for \(const \[index, draft\] of drafts\.entries\(\)\) \{/);
+  assert.match(batchModalBlock[0], /if \(draft\.action === 'update' && draft\.target_id\) \{\s*await apiFetch\(`\/api\/consultations\/\$\{draft\.target_id\}`,[\s\S]*?\}\s*else \{\s*await apiFetch\('\/api\/consultations',[\s\S]*?\}/);
+  assert.match(batchModalBlock[0], /remainingDrafts\.shift\(\);\s*setImportedDrafts\(\(current\) => \[\.\.\.current, draft\]\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.doesNotMatch(batchModalBlock[0], /continue;/);
   assert.match(batchModalBlock[0], /setError\(`\$\{draftLabel\}导入失败：\$\{message\}`\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+});
+
+test('consultation batch modal source preserves the current preview when parsing fails', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  const parseCatchBlock = batchModalBlock[0].match(/const handleParse = async \(\) => \{[\s\S]*?\} catch \(err\) \{([\s\S]*?)\}\s*finally \{/);
+
+  assert.ok(parseCatchBlock);
+  assert.doesNotMatch(parseCatchBlock[1], /setDrafts\(\[\]\);/);
+  assert.doesNotMatch(parseCatchBlock[1], /setWarnings\(\[\]\);/);
+  assert.match(parseCatchBlock[1], /setError\(err instanceof Error \? err\.message : 'AI 批量解析失败'\);/);
+});
+
+test('consultation batch modal source keeps imported drafts visible while retries only include unsaved drafts', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const \[importedDrafts, setImportedDrafts\] = useState<ConsultationBatchDraftItem\[\]>\(\[\]\);/);
+  assert.match(batchModalBlock[0], /setImportedDrafts\(\[\]\);/);
+  assert.match(batchModalBlock[0], /remainingDrafts\.shift\(\);\s*setImportedDrafts\(\(current\) => \[\.\.\.current, draft\]\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.match(batchModalBlock[0], /already-saved|已导入草稿|已保存草稿/);
+  assert.match(batchModalBlock[0], /importedDrafts\.length > 0/);
+  assert.match(batchModalBlock[0], /共 \{importedDrafts\.length\} 条/);
+  assert.match(batchModalBlock[0], /共 \{drafts\.length\} 条/);
 });
 
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
