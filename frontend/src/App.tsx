@@ -2493,6 +2493,7 @@ const ConsultationBatchModal = ({
     setImporting(true);
     setError('');
     let importSucceeded = false;
+    const remainingDrafts = [...drafts];
     try {
       for (const [index, draft] of drafts.entries()) {
         const draftLabel = draft.fields.child_name?.trim() || (draft.action === 'update' && draft.target_id ? `ID ${draft.target_id}` : `第 ${index + 1} 条草稿`);
@@ -2512,8 +2513,12 @@ const ConsultationBatchModal = ({
         } catch (err) {
           const message = err instanceof Error ? err.message : '批量导入失败';
           setError(`${draftLabel}导入失败：${message}`);
+          setDrafts([...remainingDrafts]);
           return;
         }
+
+        remainingDrafts.shift();
+        setDrafts([...remainingDrafts]);
       }
       importSucceeded = true;
 

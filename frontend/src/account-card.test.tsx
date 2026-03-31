@@ -239,6 +239,17 @@ test('consultation batch modal source attributes write failures to a specific dr
   assert.match(batchModalBlock[0], /setImporting\(true\);[\s\S]*try \{[\s\S]*for \(const \[index, draft\] of drafts\.entries\(\)\)[\s\S]*\} catch \(err\) \{[\s\S]*\} finally \{\s*setImporting\(false\);\s*\}/);
 });
 
+test('consultation batch modal source keeps only remaining drafts after a partial import failure', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const remainingDrafts = \[\.\.\.drafts\];/);
+  assert.match(batchModalBlock[0], /for \(const \[index, draft\] of drafts\.entries\(\)\) \{/);
+  assert.match(batchModalBlock[0], /remainingDrafts\.shift\(\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.match(batchModalBlock[0], /setError\(`\$\{draftLabel\}导入失败：\$\{message\}`\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+});
+
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
   const parseConsultationQuickEntry = (AppModule as {
     parseConsultationQuickEntry?: (
