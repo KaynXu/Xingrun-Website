@@ -36,6 +36,10 @@ export type ResolveWrongQuestionMappingPayload = {
   mapping_status: WrongQuestionMappingStatus;
 };
 
+type AliasResponse = {
+  aliases?: string[];
+};
+
 function getToken(): string {
   return localStorage.getItem('xr_token') || '';
 }
@@ -107,4 +111,18 @@ export async function resolveWrongQuestionMapping(
   );
 
   return normalizeQueueItem(response);
+}
+
+export async function fetchUserAliases(userId: number): Promise<string[]> {
+  const response = await masterDataFetch<AliasResponse>(`/api/master-data/users/${userId}/aliases`);
+  return Array.isArray(response.aliases) ? response.aliases : [];
+}
+
+export async function updateUserAliases(userId: number, aliases: string[]): Promise<string[]> {
+  const response = await masterDataFetch<AliasResponse>(`/api/master-data/users/${userId}/aliases`, {
+    method: 'PUT',
+    body: JSON.stringify({ aliases }),
+  });
+
+  return Array.isArray(response.aliases) ? response.aliases : [];
 }

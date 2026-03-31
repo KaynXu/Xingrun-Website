@@ -11,8 +11,10 @@ import {
   workspaceSoftCardClass,
 } from './App';
 import {
+  fetchUserAliases,
   fetchWrongQuestionMappingQueue,
   resolveWrongQuestionMapping,
+  updateUserAliases,
   type ResolveWrongQuestionMappingPayload,
   type WrongQuestionMappingQueueItem,
   type WrongQuestionMappingStatus,
@@ -23,6 +25,7 @@ type MasterDataMappingsPageProps = {
     display_name: string;
     organization_name: string;
   };
+  focusUserId?: number | null;
 };
 
 type MappingFormState = {
@@ -40,6 +43,13 @@ type MappingClassOption = {
 type MappingTeacherOption = {
   id: number;
   name: string;
+};
+
+type BindableUserOption = {
+  id: number;
+  name: string;
+  org: string;
+  role?: string;
 };
 
 const mappingStatusOptions: Array<{ value: WrongQuestionMappingStatus; label: string }> = [
@@ -71,10 +81,11 @@ function getStatusLabel(status: WrongQuestionMappingStatus): string {
   return mappingStatusOptions.find((option) => option.value === status)?.label || status;
 }
 
-export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPageProps) {
+export function MasterDataMappingsPage({ currentUser, focusUserId = null }: MasterDataMappingsPageProps) {
   const [items, setItems] = useState<WrongQuestionMappingQueueItem[]>([]);
   const [classOptions, setClassOptions] = useState<MappingClassOption[]>([]);
   const [teacherOptions, setTeacherOptions] = useState<MappingTeacherOption[]>([]);
+  const [bindableUsers, setBindableUsers] = useState<BindableUserOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -82,6 +93,9 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
   const [savingRecordIds, setSavingRecordIds] = useState<Record<string, boolean>>({});
   const [saveErrorByRecordId, setSaveErrorByRecordId] = useState<Record<string, string>>({});
   const [formByRecordId, setFormByRecordId] = useState<Record<string, MappingFormState>>({});
+  const [userAliasDraftByUserId, setUserAliasDraftByUserId] = useState<Record<number, string>>({});
+  const [userAliasSavingByUserId, setUserAliasSavingByUserId] = useState<Record<number, boolean>>({});
+  const [userAliasErrorByUserId, setUserAliasErrorByUserId] = useState<Record<number, string>>({});
   const hasPendingSaves = Object.values(savingRecordIds).some(Boolean);
 
   const loadQueue = useCallback(async () => {
@@ -113,7 +127,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
     try {
       const [nextClassItems, nextTeacherItems] = await Promise.all([
         apiFetch<Array<{ id: number; name: string; subject?: string }>>('/api/classes'),
-        apiFetch<Array<{ id: number; name: string }>>('/api/admin/users'),
+        apiFetch<Array<{ id: number; name: string; org: string; role?: string }>>('/api/admin/users'),
       ]);
 
       setClassOptions(nextClassItems.map((item) => ({
@@ -125,9 +139,21 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
         id: item.id,
         name: item.name,
       })));
+      setBindableUsers(nextTeacherItems);
+
+      const aliasEntries = await Promise.all(
+        nextTeacherItems.map(async (item) => [item.id, await fetchUserAliases(item.id)] as const),
+      );
+      setUserAliasDraftByUserId(
+        aliasEntries.reduce<Record<number, string>>((accumulator, [userId, aliases]) => {
+          accumulator[userId] = aliases.join('\n');
+          return accumulator;
+        }, {}),
+      );
     } catch (loadOptionsError) {
       setClassOptions([]);
       setTeacherOptions([]);
+      setBindableUsers([]);
       setOptionsError(loadOptionsError instanceof Error ? loadOptionsError.message : '老师和班级选项加载失败');
     } finally {
       setOptionsLoading(false);
@@ -203,6 +229,59 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
     }
   };
 
+  const parseAliasDraft = (value: string): string[] => value
+    .split(/[\n,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const handleUserAliasDraftChange = (userId: number, value: string) => {
+    setUserAliasDraftByUserId((current) => ({
+      ...current,
+      [userId]: value,
+    }));
+  };
+
+  const handleSaveUserAliases = async (userId: number) => {
+    setUserAliasSavingByUserId((current) => ({
+      ...current,
+      [userId]: true,
+    }));
+    setUserAliasErrorByUserId((current) => ({
+      ...current,
+      [userId]: '',
+    }));
+
+    try {
+      const aliases = parseAliasDraft(userAliasDraftByUserId[userId] ?? '');
+      const savedAliases = await updateUserAliases(userId, aliases);
+      setUserAliasDraftByUserId((current) => ({
+        ...current,
+        [userId]: savedAliases.join('\n'),
+      }));
+    } catch (saveError) {
+      setUserAliasErrorByUserId((current) => ({
+        ...current,
+        [userId]: saveError instanceof Error ? saveError.message : '老师别名保存失败',
+      }));
+    } finally {
+      setUserAliasSavingByUserId((current) => {
+        const nextState = { ...current };
+        delete nextState[userId];
+        return nextState;
+      });
+    }
+  };
+
+  const sortedBindableUsers = [...bindableUsers].sort((left, right) => {
+    if (left.id === focusUserId) {
+      return -1;
+    }
+    if (right.id === focusUserId) {
+      return 1;
+    }
+    return left.name.localeCompare(right.name, 'zh-Hans-CN');
+  });
+
   return (
     <div className={workspacePageClass}>
       <section className={`${workspaceCardClass} space-y-6 p-6 sm:p-7`}>
@@ -242,6 +321,78 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
             <span>{optionsError}</span>
           </div>
         )}
+
+        <div className={`${workspaceSoftCardClass} space-y-4 p-5`}>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">主动绑定成员</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">不依赖错题待处理队列，直接给成员维护老师别名，供后续自动映射使用。</p>
+          </div>
+
+          {sortedBindableUsers.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-4 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前暂无可绑定成员。
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sortedBindableUsers.map((user) => {
+                const aliasSaving = Boolean(userAliasSavingByUserId[user.id]);
+                const isFocused = user.id === focusUserId;
+                return (
+                  <article
+                    key={user.id}
+                    className={`rounded-2xl border p-4 ${isFocused ? 'border-sky-300 bg-sky-50/70 dark:border-sky-500/40 dark:bg-sky-500/10' : 'border-sky-100 bg-white/75 dark:border-white/10 dark:bg-slate-950/70'}`}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-base font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                          {isFocused && (
+                            <span className="rounded-full border border-sky-200 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200">
+                              开始绑定
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] lg:w-[34rem]">
+                        <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                          <span>老师别名</span>
+                          <textarea
+                            name={`user_aliases_${user.id}`}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            value={userAliasDraftByUserId[user.id] ?? ''}
+                            disabled={aliasSaving || optionsLoading}
+                            onInput={(event) => handleUserAliasDraftChange(user.id, (event.target as HTMLTextAreaElement).value)}
+                            onChange={(event) => handleUserAliasDraftChange(user.id, event.target.value)}
+                            placeholder="每行一个别名，也支持中英文逗号分隔"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            data-user-alias-save-id={user.id}
+                            disabled={aliasSaving || optionsLoading}
+                            onClick={() => {
+                              void handleSaveUserAliases(user.id);
+                            }}
+                            className={workspacePrimaryButtonClass}
+                          >
+                            {aliasSaving ? '保存中...' : '保存绑定'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    {userAliasErrorByUserId[user.id] && (
+                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                        {userAliasErrorByUserId[user.id]}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {loading ? (
           <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
