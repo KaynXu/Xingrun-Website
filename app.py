@@ -777,7 +777,7 @@ def _require_staff():
     user, error = _require_auth()
     if error:
         return None, error
-    if user.get("role") not in {"owner", "admin"}:
+    if user.get("role") not in {"super_owner", "owner", "admin"}:
         return None, (jsonify({"error": "无权限"}), 403)
     return user, None
 
@@ -786,7 +786,16 @@ def _require_owner():
     user, error = _require_auth()
     if error:
         return None, error
-    if user.get("role") != "owner":
+    if user.get("role") not in {"super_owner", "owner"}:
+        return None, (jsonify({"error": "无权限"}), 403)
+    return user, None
+
+
+def _require_super_owner():
+    user, error = _require_auth()
+    if error:
+        return None, error
+    if user.get("role") != "super_owner":
         return None, (jsonify({"error": "无权限"}), 403)
     return user, None
 
@@ -863,14 +872,23 @@ def api_admin_users():
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
 def api_admin_user_role_set(user_id):
-    _, error = _require_owner()
+    user, error = _require_owner()
     if error:
         return error
     data = request.json or {}
     role = data.get("role")
-    if role not in ("admin", "member"):
-        return jsonify({"error": "role must be admin or member"}), 400
-    update_user_role(user_id, role)
+    if role not in ("owner", "admin", "member"):
+        return jsonify({"error": "role must be owner, admin or member"}), 400
+    if role == "owner" and user.get("role") != "super_owner":
+        return jsonify({"error": "无权限"}), 403
+    try:
+        update_user_role(user_id, role)
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        if str(exc) == "super owner role is fixed":
+            return jsonify({"error": str(exc)}), 409
+        return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True})
 
 

@@ -91,8 +91,8 @@ class AccountFlowTestCase(unittest.TestCase):
         me = self.client.get("/api/me", headers=self.auth_headers(owner_token))
         self.assertEqual(me.status_code, 200)
         me_payload = me.get_json()
-        self.assertEqual(me_payload["username"], "Kayn")
-        self.assertEqual(me_payload["role"], "owner")
+        self.assertEqual(me_payload["username"], "kayn")
+        self.assertEqual(me_payload["role"], "super_owner")
         self.assertEqual(me_payload["organization_name"], "星润Starain")
 
         submit = self.client.post(
@@ -143,6 +143,136 @@ class AccountFlowTestCase(unittest.TestCase):
         member_me_payload = member_me.get_json()
         self.assertEqual(member_me_payload["role"], "member")
         self.assertEqual(member_me_payload["organization_name"], "星润Starain")
+
+    def test_kayn_login_maps_to_reserved_owner_account(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_payload = owner_login.get_json()
+        self.assertIsNotNone(owner_payload)
+
+        me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        self.assertEqual(me.status_code, 200)
+        me_payload = me.get_json()
+        self.assertEqual(me_payload["username"].lower(), "kayn")
+        self.assertEqual(me_payload["role"], "super_owner")
+
+        duplicate_submit = self.client.post(
+            "/api/register-request",
+            json={
+                "username": "kayn",
+                "display_name": "Fake Kayn",
+                "password": "secret123",
+                "organization_name": "星润Starain",
+            },
+        )
+        self.assertEqual(duplicate_submit.status_code, 409)
+
+    def test_owner_username_cannot_be_changed_away_from_kayn(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        rename_response = self.client.put(
+            "/api/profile",
+            headers=self.auth_headers(owner_token),
+            json={"username": "other_owner", "display_name": "Other Owner"},
+        )
+        self.assertEqual(rename_response.status_code, 409)
+
+    def test_only_super_owner_can_assign_owner_role(self):
+        super_owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(super_owner_login.status_code, 200)
+        super_owner_token = super_owner_login.get_json()["token"]
+
+        owner_candidate_payload = self.approve_user(
+            owner_token=super_owner_token,
+            username="owner_candidate",
+            display_name="Owner Candidate",
+            password="ownerpass123",
+        )
+        owner_candidate_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+        )
+        self.assertEqual(owner_candidate_me.status_code, 200)
+        owner_candidate_id = owner_candidate_me.get_json()["id"]
+
+        promote_owner = self.client.put(
+            f"/api/admin/users/{owner_candidate_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "owner"},
+        )
+        self.assertEqual(promote_owner.status_code, 200)
+
+        owner_me_after_promote = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+        )
+        self.assertEqual(owner_me_after_promote.status_code, 200)
+        self.assertEqual(owner_me_after_promote.get_json()["role"], "owner")
+
+        pending_submit = self.client.post(
+            "/api/register-request",
+            json={
+                "username": "pending_teacher",
+                "display_name": "Pending Teacher",
+                "password": "pending123",
+                "organization_name": "星润Starain",
+            },
+        )
+        self.assertEqual(pending_submit.status_code, 201)
+
+        owner_pending_list = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+        )
+        self.assertEqual(owner_pending_list.status_code, 200)
+
+        member_candidate_payload = self.approve_user(
+            owner_token=owner_candidate_payload["token"],
+            username="member_candidate",
+            display_name="Member Candidate",
+            password="memberpass123",
+        )
+        member_candidate_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_candidate_payload["token"]),
+        )
+        self.assertEqual(member_candidate_me.status_code, 200)
+        member_candidate_id = member_candidate_me.get_json()["id"]
+
+        owner_promote_owner = self.client.put(
+            f"/api/admin/users/{member_candidate_id}/role",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+            json={"role": "owner"},
+        )
+        self.assertEqual(owner_promote_owner.status_code, 403)
+
+        owner_promote_admin = self.client.put(
+            f"/api/admin/users/{member_candidate_id}/role",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+            json={"role": "admin"},
+        )
+        self.assertEqual(owner_promote_admin.status_code, 200)
+
+        member_after_promote = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_candidate_payload["token"]),
+        )
+        self.assertEqual(member_after_promote.status_code, 200)
+        self.assertEqual(member_after_promote.get_json()["role"], "admin")
 
     def test_anonymous_users_cannot_access_backend_apis(self):
         stats = self.client.get("/api/stats")
