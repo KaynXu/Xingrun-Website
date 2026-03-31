@@ -704,13 +704,13 @@ export function parseConsultationQuickEntry(
   return parsed;
 }
 
-const consultationStatusOptions = ['待跟进', '跟进中', '已跟进', '已完成'];
+const consultationStatusOptions = ['待邀约', '跟进中', '已报班', '已劝退'];
 
 function consultationStatusClass(status: string): string {
-  if (status === '待跟进') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  if (status === '待邀约') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
   if (status === '跟进中') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
-  if (status === '已跟进') return 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300';
-  if (status === '已完成') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  if (status === '已报班') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  if (status === '已劝退') return 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300';
   return 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400';
 }
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
@@ -755,7 +755,7 @@ const consultationFormDefaults: ConsultationFormValues = {
   source_channel: '',
   source_channel_note: '',
   screenshot: '',
-  follow_up_status: '待跟进',
+  follow_up_status: '待邀约',
   follow_up_note: '',
 };
 
@@ -1997,6 +1997,7 @@ const ConsultationModal = ({
   }
 
   const readOnly = mode === 'view';
+  const canEdit = currentUser.role === 'owner' || currentUser.role === 'admin';
   const titleMap = {
     view: '查看咨询记录',
     create: '新增咨询记录',
@@ -2101,7 +2102,7 @@ const ConsultationModal = ({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              {readOnly ? '记录详情只读展示，owner 可以在这里进入编辑或删除。' : '先用快速录入整理信息，再确认下方结构化字段。'}
+              {readOnly ? '记录详情只读展示，管理员和 owner 可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
             </p>
           </div>
           <button
@@ -2344,19 +2345,21 @@ const ConsultationModal = ({
 
           <div className="mt-5 flex flex-col gap-3 border-t border-sky-100/80 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:pt-5 dark:border-white/10">
             <div className="text-sm text-slate-500 dark:text-slate-400">
-              {readOnly ? '查看模式下可直接切换到编辑或删除记录。' : '保存后会刷新列表，不需要跳转到其他页面。'}
+              {readOnly ? '查看模式下可直接切换到编辑，删除仍仅 owner 可用。' : '保存后会刷新列表，不需要跳转到其他页面。'}
             </div>
             <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
+              {readOnly && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
+                <button
+                  type="button"
+                  onClick={onRequestEdit}
+                  className={`${workspaceSecondaryButtonClass} w-full sm:w-auto`}
+                >
+                  <Pencil size={18} />
+                  编辑
+                </button>
+              )}
               {readOnly && currentUser.role === 'owner' && (
                 <>
-                  <button
-                    type="button"
-                    onClick={onRequestEdit}
-                    className={`${workspaceSecondaryButtonClass} w-full sm:w-auto`}
-                  >
-                    <Pencil size={18} />
-                    编辑
-                  </button>
                   <button
                     type="button"
                     onClick={onDelete}
@@ -2397,6 +2400,7 @@ const ConsultationModal = ({
 
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const isOwner = currentUser.role === 'owner';
+  const canEdit = currentUser.role === 'owner' || currentUser.role === 'admin';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2644,7 +2648,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <Eye size={16} />
                         查看
                       </button>
-                      {isOwner && (
+                      {canEdit && (
                         <>
                           <button
                             type="button"
@@ -2655,28 +2659,30 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             <Pencil size={16} />
                             编辑
                           </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!window.confirm('确定删除这条咨询记录吗？')) {
-                                return;
-                              }
-                              setDeletingId(record.id);
-                              try {
-                                await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
-                                await load(search);
-                              } catch (err) {
-                                setError(err instanceof Error ? err.message : '删除咨询记录失败');
-                              } finally {
-                                setDeletingId(null);
-                              }
-                            }}
-                            className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                            disabled={busy}
-                          >
-                            <Trash2 size={16} />
-                            删除
-                          </button>
+                          {isOwner && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!window.confirm('确定删除这条咨询记录吗？')) {
+                                  return;
+                                }
+                                setDeletingId(record.id);
+                                try {
+                                  await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
+                                  await load(search);
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : '删除咨询记录失败');
+                                } finally {
+                                  setDeletingId(null);
+                                }
+                              }}
+                              className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                              disabled={busy}
+                            >
+                              <Trash2 size={16} />
+                              删除
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -2748,7 +2754,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         >
                           <Eye size={16} />
                         </button>
-                        {isOwner && (
+                        {canEdit && (
                           <>
                             <button
                               type="button"
@@ -2759,28 +2765,30 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             >
                               <Pencil size={16} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!window.confirm('确定删除这条咨询记录吗？')) {
-                                  return;
-                                }
-                                setDeletingId(record.id);
-                                try {
-                                  await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
-                                  await load(search);
-                                } catch (err) {
-                                  setError(err instanceof Error ? err.message : '删除咨询记录失败');
-                                } finally {
-                                  setDeletingId(null);
-                                }
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                              title="删除"
-                              disabled={busy}
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {isOwner && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!window.confirm('确定删除这条咨询记录吗？')) {
+                                    return;
+                                  }
+                                  setDeletingId(record.id);
+                                  try {
+                                    await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
+                                    await load(search);
+                                  } catch (err) {
+                                    setError(err instanceof Error ? err.message : '删除咨询记录失败');
+                                  } finally {
+                                    setDeletingId(null);
+                                  }
+                                }}
+                                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                                title="删除"
+                                disabled={busy}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
