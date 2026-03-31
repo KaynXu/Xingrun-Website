@@ -71,7 +71,8 @@ test('workspace navigation wires smart wrong questions into the owner admin shel
 
   assert.ok(sidebarBlock);
   assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
-  assert.match(sidebarBlock[0], /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
+  assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{/);
+  assert.match(sidebarBlock[0], /hasStaffAccess\(currentUser\.role\)[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
   assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
@@ -81,7 +82,7 @@ test('workspace navigation wires master data mappings into the owner admin shell
 
   assert.ok(sidebarBlock);
   assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
-  assert.match(sidebarBlock[0], /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '主数据映射' \}/);
+  assert.match(sidebarBlock[0], /hasStaffAccess\(currentUser\.role\)[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '主数据映射' \}/);
   assert.match(appSource, /masterDataMappings: '主数据映射'/);
   assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} \/>/);
 });
@@ -91,7 +92,7 @@ test('workspace navigation source reserves classes management for owner and admi
 
   assert.ok(classManagementBlock);
   assert.match(appSource, /type Page = [^;]*'classes'[^;]*;/);
-  assert.match(appSource, /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'/);
+  assert.match(appSource, /hasStaffAccess\(currentUser\.role\)/);
   assert.match(appSource, /id: 'classes'[\s\S]*label: '班级管理'/);
   assert.match(appSource, /classes: '班级管理'/);
   assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
@@ -102,6 +103,15 @@ test('workspace navigation source reserves classes management for owner and admi
   assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
   assert.doesNotMatch(appSource, /const ClassManagementPage = [\s\S]*升为管理员/);
+});
+
+test('workspace navigation source exposes explicit super owner hierarchy for account controls', () => {
+  assert.match(appSource, /type Role = 'super_owner' \| 'owner' \| 'admin' \| 'member';/);
+  assert.match(appSource, /if \(role === 'super_owner'\) return 'Super Owner';/);
+  assert.match(appSource, /if \(role === 'owner'\) return 'Owner';/);
+  assert.match(appSource, /function hasOwnerAccess\(role: Role\): boolean \{/);
+  assert.match(appSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
+  assert.match(appSource, /Super Owner 可以命名或撤销 Owner；Owner 只可切换管理员与普通成员权限/);
 });
 
 test('class management source guards selection and refresh during class save delete locks', () => {
@@ -243,9 +253,9 @@ test('consultation modal source exposes quick parsing and structured confirmatio
 test('consultation workspace source allows admins to edit and delete records and uses the new follow-up status set', () => {
   assert.match(appSource, /const consultationStatusOptions = \['待邀约', '跟进中', '已报班', '已劝退'\];/);
   assert.match(appSource, /follow_up_status: '待邀约',/);
-  assert.match(appSource, /currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'/);
-  assert.match(appSource, /\{readOnly && \(currentUser\.role === 'owner' \|\| currentUser\.role === 'admin'\) && \(/);
-  assert.match(appSource, /const canManage = currentUser\.role === 'owner' \|\| currentUser\.role === 'admin';/);
+  assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{/);
+  assert.match(appSource, /\{readOnly && hasStaffAccess\(currentUser\.role\) && \(/);
+  assert.match(appSource, /const canManage = hasStaffAccess\(currentUser\.role\);/);
   assert.match(appSource, /\{canManage && \(/);
   assert.match(appSource, /onDelete=\{canManage \? handleDelete : undefined\}/);
 });

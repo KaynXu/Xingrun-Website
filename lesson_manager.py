@@ -42,8 +42,12 @@ CFG_PATH   = BASE_DIR / "config.json"
 CONSULTATIONS_CSV_PATH = DATA_DIR / "consultations.csv"
 LEGACY_CONSULTATIONS_CSV_PATH = Path.home() / "咨询记录" / "consultations.csv"
 DEFAULT_ORGANIZATION_NAME = "星润Starain"
-OWNER_USERNAME = "Kayn"
+OWNER_USERNAME = "kayn"
 OWNER_DISPLAY_NAME = "Kayn"
+SUPER_OWNER_ROLE = "super_owner"
+OWNER_ROLE = "owner"
+ADMIN_ROLE = "admin"
+MEMBER_ROLE = "member"
 CONSULTATION_TEACHERS_JSON_CANDIDATES = [
     DATA_DIR / "teachers.json",
     Path.home() / ".openclaw" / "workspace-wecom" / "teachers.json",
@@ -132,6 +136,41 @@ CONSULTATION_API_FIELD_MAP = {
 
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
+
+
+def _normalize_username(username: str) -> str:
+    return (username or "").strip()
+
+
+def _is_owner_username(username: str) -> bool:
+    return _normalize_username(username).casefold() == OWNER_USERNAME
+
+
+def _is_super_owner_role(role: str) -> bool:
+    return (role or "").strip() == SUPER_OWNER_ROLE
+
+
+def _user_exists_with_username(conn: sqlite3.Connection, username: str, exclude_user_id: int = 0) -> bool:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        return False
+    query = "SELECT 1 FROM users WHERE lower(username)=lower(?)"
+    params: list[object] = [normalized_username]
+    if exclude_user_id:
+        query += " AND id!=?"
+        params.append(exclude_user_id)
+    query += " LIMIT 1"
+    return conn.execute(query, params).fetchone() is not None
+
+
+def _pending_registration_exists(conn: sqlite3.Connection, username: str) -> bool:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        return False
+    return conn.execute(
+        "SELECT 1 FROM registration_requests WHERE lower(username)=lower(?) AND status='pending' LIMIT 1",
+        (normalized_username,),
+    ).fetchone() is not None
 
 
 def _ensure_consultations_csv() -> Path:
@@ -619,9 +658,11 @@ def _fetch_user_row_by_username(conn: sqlite3.Connection, username: str):
         SELECT u.*, o.name AS organization_name
         FROM users u
         JOIN organizations o ON o.id = u.organization_id
-        WHERE u.username=?
+        WHERE lower(u.username)=lower(?)
+        ORDER BY CASE WHEN lower(u.username)=lower(?) THEN 0 ELSE 1 END, u.id
+        LIMIT 1
         """,
-        (username,),
+        (_normalize_username(username), _normalize_username(username)),
     ).fetchone()
 
 
@@ -647,8 +688,8 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
         SELECT u.*, o.name AS organization_name
         FROM users u
         JOIN organizations o ON o.id = u.organization_id
-        WHERE u.role='owner' OR u.username IN (?, ?)
-        ORDER BY CASE WHEN u.username=? THEN 0 WHEN u.role='owner' THEN 1 ELSE 2 END, u.id
+        WHERE u.role='owner' OR lower(u.username) IN (lower(?), lower(?))
+        ORDER BY CASE WHEN lower(u.username)=lower(?) THEN 0 WHEN u.role='owner' THEN 1 ELSE 2 END, u.id
         LIMIT 1
         """,
         (OWNER_USERNAME, old_username, OWNER_USERNAME),
@@ -658,18 +699,18 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             UPDATE users
-            SET username=?, password_hash=?, display_name=?, role='owner', status='active', organization_id=?
+            SET username=?, password_hash=?, display_name=?, role=?, status='active', organization_id=?
             WHERE id=?
             """,
-            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, org["id"], owner["id"]),
+            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, SUPER_OWNER_ROLE, org["id"], owner["id"]),
         )
     else:
         conn.execute(
             """
             INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-            VALUES (?, ?, ?, 'owner', 'active', ?)
+            VALUES (?, ?, ?, ?, 'active', ?)
             """,
-            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, org["id"]),
+            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, SUPER_OWNER_ROLE, org["id"]),
         )
 
 
@@ -933,8 +974,10 @@ def list_all_users() -> list:
             FROM users u
             JOIN organizations o ON o.id = u.organization_id
             WHERE u.status = 'active'
-            ORDER BY CASE WHEN u.role='owner' THEN 0 ELSE 1 END, u.display_name
+            ORDER BY CASE WHEN u.role=? THEN 0 WHEN u.role=? THEN 1 ELSE 2 END, u.display_name
             """
+            ,
+            (SUPER_OWNER_ROLE, OWNER_ROLE),
         ).fetchall()
         return [_public_user_dict(row) for row in rows]
 
@@ -998,16 +1041,23 @@ def set_user_class_ids(user_id: int, class_ids: list):
 
 
 def update_user_profile(user_id: int, new_username: str, new_display_name: str):
+    normalized_username = _normalize_username(new_username)
+    normalized_display_name = new_display_name.strip()
     with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT id FROM users WHERE username=? AND id!=?",
-            (new_username, user_id)
-        ).fetchone()
-        if existing:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if _is_super_owner_role(user_row["role"]):
+            if normalized_username.casefold() != OWNER_USERNAME:
+                raise ValueError("最高权限账号用户名固定为 kayn")
+            normalized_username = OWNER_USERNAME
+        elif _is_owner_username(normalized_username):
+            raise ValueError("用户名已存在")
+        if _user_exists_with_username(conn, normalized_username, exclude_user_id=user_id):
             raise ValueError("用户名已被占用")
         conn.execute(
             "UPDATE users SET username=?, display_name=? WHERE id=?",
-            (new_username, new_display_name, user_id)
+            (normalized_username, normalized_display_name, user_id)
         )
         class_rows = conn.execute(
             "SELECT class_id FROM user_classes WHERE user_id=?",
@@ -1017,9 +1067,16 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
 
 
 def update_user_role(user_id: int, role: str):
+    if role not in {OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
+        raise ValueError("role must be owner, admin or member")
     with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if _is_super_owner_role(user_row["role"]):
+            raise ValueError("super owner role is fixed")
         conn.execute(
-            "UPDATE users SET role=? WHERE id=? AND role != 'owner'",
+            "UPDATE users SET role=? WHERE id=?",
             (role, user_id)
         )
 
@@ -1071,14 +1128,11 @@ def create_auth_session(user_id: int) -> str:
 
 
 def authenticate_user(username: str, password: str):
+    normalized_username = _normalize_username(username)
     with get_conn() as conn:
-        row = _fetch_user_row_by_username(conn, username)
+        row = _fetch_user_row_by_username(conn, normalized_username)
         if not row:
-            pending = conn.execute(
-                "SELECT 1 FROM registration_requests WHERE username=? AND status='pending' LIMIT 1",
-                (username,),
-            ).fetchone()
-            if pending:
+            if _pending_registration_exists(conn, normalized_username):
                 return None, "该账号申请正在等待审批"
             return None, "用户名或密码错误"
         if row["status"] != "active":
@@ -1090,26 +1144,19 @@ def authenticate_user(username: str, password: str):
 
 def create_registration_request(username: str, display_name: str, password: str,
                                 organization_name: str = DEFAULT_ORGANIZATION_NAME):
+    normalized_username = _normalize_username(username)
     with get_conn() as conn:
         org = _ensure_organization(conn, organization_name)
-        existing_user = conn.execute(
-            "SELECT 1 FROM users WHERE username=? LIMIT 1",
-            (username,),
-        ).fetchone()
-        if existing_user:
+        if _is_owner_username(normalized_username) or _user_exists_with_username(conn, normalized_username):
             raise ValueError("用户名已存在")
-        existing_pending = conn.execute(
-            "SELECT 1 FROM registration_requests WHERE username=? AND status='pending' LIMIT 1",
-            (username,),
-        ).fetchone()
-        if existing_pending:
+        if _pending_registration_exists(conn, normalized_username):
             raise ValueError("该用户名已有待审批申请")
         cur = conn.execute(
             """
             INSERT INTO registration_requests (username, password_hash, display_name, organization_id, status)
             VALUES (?, ?, ?, ?, 'pending')
             """,
-            (username, hash_password(password), display_name, org["id"]),
+            (normalized_username, hash_password(password), display_name, org["id"]),
         )
         row = conn.execute(
             """
@@ -1153,18 +1200,14 @@ def approve_registration_request(request_id: int, reviewer_id: int):
             raise LookupError("申请不存在")
         if req["status"] != "pending":
             raise ValueError("该申请已处理")
-        existing_user = conn.execute(
-            "SELECT 1 FROM users WHERE username=? LIMIT 1",
-            (req["username"],),
-        ).fetchone()
-        if existing_user:
+        if _is_owner_username(req["username"]) or _user_exists_with_username(conn, req["username"]):
             raise ValueError("用户名已存在")
         cur = conn.execute(
             """
             INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-            VALUES (?, ?, ?, 'member', 'active', ?)
+            VALUES (?, ?, ?, ?, 'active', ?)
             """,
-            (req["username"], req["password_hash"], req["display_name"], req["organization_id"]),
+            (req["username"], req["password_hash"], req["display_name"], MEMBER_ROLE, req["organization_id"]),
         )
         conn.execute(
             """
