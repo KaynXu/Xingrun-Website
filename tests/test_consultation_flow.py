@@ -198,7 +198,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(remaining_rows[0]["id"], "2")
         self.assertEqual(remaining_rows[0]["家长微信名"], "李妈妈")
 
-    def test_admin_can_edit_but_only_owner_can_delete(self):
+    def test_admin_can_edit_and_delete(self):
         self.write_legacy_csv([self.sample_row()])
         admin_token = self.create_admin_token()
 
@@ -223,7 +223,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             "/api/consultations/1",
             headers=self.auth_headers(admin_token),
         )
-        self.assertEqual(delete_response.status_code, 403)
+        self.assertEqual(delete_response.status_code, 200)
+
+        remaining_rows = self.read_project_csv_rows()
+        self.assertEqual(remaining_rows, [])
 
     def test_members_can_view_and_create_but_not_edit_or_delete(self):
         self.write_legacy_csv([self.sample_row()])
