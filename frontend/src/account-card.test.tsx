@@ -158,6 +158,31 @@ test('consultation modal source supports quick parsing and structured source met
   assert.match(source, /source_channel_note/);
 });
 
+test('consultation page source adds ai batch entry in the existing action area', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /AI 批量整理/);
+  assert.match(consultationPageBlock[0], /onClick=\{openBatchModal\}/);
+  assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
+});
+
+test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /apiFetch<ConsultationBatchParseResponse>\('\/api\/consultations\/ai-parse'/);
+  assert.match(batchModalBlock[0], /raw_text: rawText\.trim\(\)/);
+  assert.match(batchModalBlock[0], /预览草稿/);
+  assert.match(batchModalBlock[0], /确认导入/);
+  assert.match(batchModalBlock[0], /只有文本里写了明确记录 ID（如 ID 182、记录182、#182）时，才会覆盖旧记录/);
+  assert.match(batchModalBlock[0], /draft\.action === 'update' && draft\.target_id/);
+  assert.match(batchModalBlock[0], /await apiFetch\(`\/api\/consultations\/\$\{draft\.target_id\}`/);
+  assert.match(batchModalBlock[0], /await apiFetch\('\/api\/consultations'/);
+});
+
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
   const parseConsultationQuickEntry = (AppModule as {
     parseConsultationQuickEntry?: (
