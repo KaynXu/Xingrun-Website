@@ -69,7 +69,10 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
             lesson_id=lesson_id,
             class_id=class_id,
             merged_text="张晨：已编辑反馈",
-            student_index=[{"student_id": student_a["id"], "name": "张晨"}],
+            student_index=[
+                {"student_id": student_a["id"], "name": "张晨"},
+                {"student_id": student_b["id"], "name": "李好"},
+            ],
             editor_state={
                 "students": [
                     {
@@ -100,6 +103,41 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(hydrated["students"][1]["remark"], "")
         self.assertEqual(hydrated["custom_templates"][0]["label"], "回家复述")
         self.assertTrue(hydrated["updated_at"])
+
+    def test_build_lesson_feedback_editor_state_ignores_stale_feedback_class_id_and_uses_lesson_class(self):
+        class_a = lesson_manager.save_class("高二数学A班", subject="数学", grade="高二")
+        class_b = lesson_manager.save_class("高二数学B班", subject="数学", grade="高二")
+        lesson_id = lesson_manager.save_lesson(
+            date_str="2026-04-02",
+            subject="数学",
+            grade="高二",
+            topic="数列",
+            summary="课堂笔记",
+            weak_points="",
+            plan={"lesson_info": {"topic": "数列"}},
+            pdf_path="",
+            class_id=class_a,
+        )
+
+        student_a = lesson_manager.create_student_for_class(class_a, "甲同学")
+        lesson_manager.create_student_for_class(class_b, "乙同学")
+        lesson_manager.save_lesson_feedback(
+            lesson_id=lesson_id,
+            class_id=class_b,
+            merged_text="测试",
+            student_index=[{"student_id": student_a["id"], "name": "甲同学"}],
+            editor_state={"students": [], "custom_templates": []},
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE lesson_feedbacks SET class_id=? WHERE lesson_id=?",
+                (class_b, lesson_id),
+            )
+
+        hydrated = lesson_manager.build_lesson_feedback_editor_state(lesson_id)
+
+        self.assertEqual(hydrated["class_id"], class_a)
+        self.assertEqual([item["name"] for item in hydrated["students"]], ["甲同学"])
 
     def test_build_lesson_feedback_editor_state_raises_lookup_error_when_lesson_missing(self):
         with self.assertRaises(LookupError) as ctx:

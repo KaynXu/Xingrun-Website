@@ -978,12 +978,33 @@ def list_students_for_class(class_id: int) -> list:
     return [dict(row) for row in rows]
 
 
-def _dedupe_student_name_in_class(class_id: int, raw_name: str) -> str:
+def _dedupe_student_name_in_class(
+    class_id: int,
+    raw_name: str,
+    conn: Optional[sqlite3.Connection] = None,
+) -> str:
     base_name = (raw_name or "").strip()
     if not base_name:
         raise ValueError("student name is required")
 
-    existing_names = [student["name"] for student in list_students_for_class(class_id)]
+    owns_conn = False
+    if conn is None:
+        conn = get_conn()
+        owns_conn = True
+    rows = conn.execute(
+        """
+        SELECT s.name
+        FROM class_students cs
+        JOIN students s ON s.id = cs.student_id
+        WHERE cs.class_id=?
+        ORDER BY cs.id
+        """,
+        (class_id,),
+    ).fetchall()
+    existing_names = [row["name"] for row in rows]
+    if owns_conn:
+        conn.close()
+
     if base_name not in existing_names:
         return base_name
 
@@ -1000,11 +1021,12 @@ def _dedupe_student_name_in_class(class_id: int, raw_name: str) -> str:
 
 def create_student_for_class(class_id: int, raw_name: str):
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
         if not class_row:
             raise LookupError("class not found")
 
-        student_name = _dedupe_student_name_in_class(class_id, raw_name)
+        student_name = _dedupe_student_name_in_class(class_id, raw_name, conn=conn)
         cur = conn.execute("INSERT INTO students (name) VALUES (?)", (student_name,))
         student_id = cur.lastrowid
         conn.execute(
@@ -1032,6 +1054,13 @@ def save_lesson_feedback(
     editor_state: dict,
 ) -> dict:
     with get_conn() as conn:
+        lesson_row = conn.execute(
+            "SELECT id, class_id FROM lessons WHERE id=?",
+            (lesson_id,),
+        ).fetchone()
+        if not lesson_row:
+            raise LookupError("lesson not found")
+        lesson_class_id = lesson_row["class_id"]
         conn.execute(
             """
             INSERT INTO lesson_feedbacks
@@ -1046,7 +1075,7 @@ def save_lesson_feedback(
             """,
             (
                 lesson_id,
-                class_id if class_id else None,
+                lesson_class_id if lesson_class_id else None,
                 merged_text or "",
                 json.dumps(student_index or [], ensure_ascii=False),
                 json.dumps(editor_state or {}, ensure_ascii=False),
@@ -1081,9 +1110,10 @@ def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
     if not lesson:
         raise LookupError("lesson not found")
     saved_feedback = get_lesson_feedback(lesson_id) or {}
-    class_id = saved_feedback.get("class_id") or lesson.get("class_id")
+    class_id = lesson.get("class_id")
 
     roster = list_students_for_class(class_id) if class_id else []
+    roster_by_id = {student["id"]: student for student in roster}
     saved_editor_state = saved_feedback.get("editor_state") or {}
     saved_students = saved_editor_state.get("students")
     if not isinstance(saved_students, list):
@@ -1109,12 +1139,27 @@ def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
     custom_templates = saved_editor_state.get("custom_templates")
     if not isinstance(custom_templates, list):
         custom_templates = []
+    saved_student_index = saved_feedback.get("student_index")
+    if not isinstance(saved_student_index, list):
+        saved_student_index = []
+    filtered_student_index = []
+    for item in saved_student_index:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if student_id in roster_by_id:
+            filtered_student_index.append(
+                {
+                    "student_id": student_id,
+                    "name": roster_by_id[student_id]["name"],
+                }
+            )
 
     return {
         "lesson_id": lesson_id,
         "class_id": class_id,
         "merged_text": saved_feedback.get("merged_text", "") or "",
-        "student_index": saved_feedback.get("student_index", []),
+        "student_index": filtered_student_index,
         "students": hydrated_students,
         "custom_templates": custom_templates,
         "updated_at": saved_feedback.get("updated_at"),
