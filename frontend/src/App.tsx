@@ -48,6 +48,7 @@ import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 type Role = 'super_owner' | 'owner' | 'admin' | 'member';
 type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'masterDataMappings' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
+type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
 
 interface Lesson {
   id: number;
@@ -132,6 +133,22 @@ interface RegistrationRequestItem {
   created_at: string;
 }
 
+interface OrganizationRequestItem {
+  id: number;
+  organization_name: string;
+  username: string;
+  display_name: string;
+  status: string;
+  created_at: string;
+}
+
+interface OrganizationInviteInfo {
+  organization_name: string;
+  invite_code: string;
+  invite_link: string;
+  join_path?: string;
+}
+
 interface UserItem {
   id: number;
   name: string;
@@ -199,8 +216,8 @@ const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五�
 const gradeFilterOptions = ['全部', ...gradeOptions];
 
 function getRoleLabel(role: Role): string {
-  if (role === 'super_owner') return 'Super Owner';
-  if (role === 'owner') return 'Owner';
+  if (role === 'super_owner') return '超级管理员';
+  if (role === 'owner') return '机构负责人';
   if (role === 'admin') return '管理员';
   return '机构成员';
 }
@@ -503,6 +520,21 @@ function getInitialDarkModePreference(): boolean {
   }
 
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+}
+
+function getJoinInviteTokenFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/join\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function clearJoinInvitePathIfNeeded(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (!getJoinInviteTokenFromPath(window.location.pathname)) {
+    return;
+  }
+  window.history.replaceState({}, '', '/');
 }
 
 function getTodayIsoDate(): string {
@@ -1216,7 +1248,7 @@ const Sidebar = ({
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
       : []),
     ...(hasOwnerAccess(currentUser.role)
-      ? [{ id: 'masterDataMappings', icon: Database, label: '主数据映射' }]
+      ? [{ id: 'masterDataMappings', icon: Database, label: '老师与班级匹配' }]
       : []),
     ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
@@ -1239,7 +1271,7 @@ const Sidebar = ({
         <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Starain 工作台</h1>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">AI EDU PLATFORM</p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">机构工作台</p>
           </div>
         </div>
       </div>
@@ -2998,12 +3030,12 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
         <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
-            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Super Owner / Owner</p>
+            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">账号审批与权限</p>
             <h3 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">账号审批</h3>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Super Owner 与 Owner 都可以审核注册申请，并为用户开通后台访问权限。</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">超级管理员和机构负责人都可以审核注册申请，并为用户开通后台访问权限。</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-5`}>
-            <p className="text-xs uppercase tracking-[0.25em] text-sky-600">Current Account</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-sky-600">当前账号</p>
             <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-4">
@@ -3114,7 +3146,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
             <div>
               <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员权限</h4>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Super Owner 可以命名或撤销 Owner；Owner 只可切换管理员与普通成员权限，班级分配不再放在审批页。
+                超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限，班级分配不再放在审批页。
               </p>
             </div>
             <button onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
@@ -3151,7 +3183,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                 const roleActionLabel = user.role === 'owner'
                   ? '降为管理员'
                   : user.role === 'admin'
-                    ? (canManageOwnerRole(currentUser.role) ? '设为 Owner' : '降为成员')
+                    ? (canManageOwnerRole(currentUser.role) ? '设为机构负责人' : '降为成员')
                     : '设为管理员';
                 return (
                   <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
@@ -3212,7 +3244,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                         </button>
                         {roleFixed ? (
                           <span className="text-sm text-slate-500 dark:text-slate-400">
-                            {user.role === 'super_owner' ? 'Super Owner 权限固定，不可调整' : 'Owner 权限仅可由 Super Owner 调整'}
+                            {user.role === 'super_owner' ? '超级管理员权限固定，不可调整' : '机构负责人权限仅可由超级管理员调整'}
                           </span>
                         ) : (
                           <button
@@ -4052,11 +4084,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 const LoginModal = ({
   onLogin,
   onClose,
-  onOpenRegister,
+  onOpenApplyOrganization,
+  onOpenJoinOrganization,
 }: {
   onLogin: (token: string) => void;
   onClose: () => void;
-  onOpenRegister: () => void;
+  onOpenApplyOrganization: () => void;
+  onOpenJoinOrganization: () => void;
 }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -4165,13 +4199,22 @@ const LoginModal = ({
             </button>
           </form>
 
-          <button
-            type="button"
-            onClick={onOpenRegister}
-            className="w-full mt-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
-          >
-            还没有账号？提交注册申请
-          </button>
+          <div className="mt-4 space-y-3">
+            <button
+              type="button"
+              onClick={onOpenApplyOrganization}
+              className="w-full py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+            >
+              申请开通机构
+            </button>
+            <button
+              type="button"
+              onClick={onOpenJoinOrganization}
+              className="w-full py-3 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sm font-medium text-sky-100 transition-colors"
+            >
+              加入已有机构
+            </button>
+          </div>
         </div>
       </motion.div>
     </motion.div>
@@ -4198,14 +4241,14 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/register-request', {
+      const res = await fetch('/api/organization-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          organization_name: displayName || username,
           username,
           display_name: displayName,
           password,
-          organization_name: '星润Starain',
         }),
       });
       const raw = await res.text();
@@ -4245,8 +4288,8 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
         <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-semibold">提交注册申请</h2>
-              <p className="text-sm text-gray-500 mt-1">所有新账号默认加入机构 星润Starain，审批通过后才能进入后台。</p>
+              <h2 className="text-xl font-semibold">申请开通机构</h2>
+              <p className="text-sm text-gray-500 mt-1">旧注册入口已切换为机构申请，建议从新的机构开通流程提交完整信息。</p>
             </div>
             <button
               onClick={onClose}
@@ -4293,13 +4336,6 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
                   placeholder="后台显示的名字，可修改"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm text-gray-400">机构</label>
-              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-gray-200">
-                星润Starain
               </div>
             </div>
 
@@ -4353,6 +4389,383 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
+const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
+  const [organizationName, setOrganizationName] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiFetch<{ id: number; status: string }>('/api/organization-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          organization_name: organizationName,
+          username,
+          display_name: displayName,
+          password,
+        }),
+      });
+      setSuccess('机构申请已提交，等待 Kayn 审批。');
+      setOrganizationName('');
+      setUsername('');
+      setDisplayName('');
+      setPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '机构申请提交失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-xl"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold">申请开通机构</h2>
+              <p className="text-sm text-gray-400 mt-1">提交机构名称和首位管理者信息，由 Kayn 统一审批。</p>
+            </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-2xl leading-none">×</button>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-300 text-sm">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm text-gray-400">机构名称</label>
+              <input
+                type="text"
+                value={organizationName}
+                onChange={(e) => setOrganizationName(e.target.value)}
+                required
+                placeholder="例如：北辰实验学校"
+                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">用户名</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  placeholder="首位 owner 登录账号"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">显示名称</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  placeholder="后台显示名称"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入密码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all shadow-lg shadow-blue-600/20 mt-2"
+            >
+              {loading ? '提交中...' : '提交机构申请'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const JoinOrganizationModal = ({
+  onClose,
+  inviteToken,
+}: {
+  onClose: () => void;
+  inviteToken?: string | null;
+}) => {
+  const [inviteCode, setInviteCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [organizationName, setOrganizationName] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!inviteToken) {
+      setOrganizationName('');
+      return;
+    }
+    let cancelled = false;
+    setPreviewLoading(true);
+    apiFetch<{ organization_name: string }>(`/api/invite/${inviteToken}`)
+      .then((payload) => {
+        if (!cancelled) {
+          setOrganizationName(payload.organization_name);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setOrganizationName('');
+          setError(err instanceof Error ? err.message : '邀请链接已失效');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      const path = inviteToken ? `/api/join-by-invite-link/${inviteToken}` : '/api/join-by-invite-code';
+      const payload = await apiFetch<{ user: CurrentUser }>(path, {
+        method: 'POST',
+        body: inviteToken
+          ? JSON.stringify({ username, display_name: displayName, password })
+          : JSON.stringify({ invite_code: inviteCode, username, display_name: displayName, password }),
+      });
+      setSuccess(`已加入 ${payload.user.organization_name}，现在可以使用新账号登录。`);
+      setInviteCode('');
+      setUsername('');
+      setDisplayName('');
+      setPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加入机构失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-xl"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold">加入已有机构</h2>
+              <p className="text-sm text-gray-400 mt-1">通过邀请码或邀请链接加入机构，成功后即可直接登录。</p>
+            </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-2xl leading-none">×</button>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-300 text-sm">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {inviteToken ? (
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">邀请链接目标机构</label>
+                <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-gray-200">
+                  {previewLoading ? '正在识别机构...' : organizationName || '邀请链接已失效'}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">邀请码</label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required
+                  placeholder="输入机构邀请码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">用户名</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  placeholder="用于登录"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">显示名称</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  placeholder="后台显示名称"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入密码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading || previewLoading || (Boolean(inviteToken) && !organizationName)}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all shadow-lg shadow-blue-600/20 mt-2"
+            >
+              {loading ? '提交中...' : '加入机构'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 // --- Landing Page ---
 
 export const LandingLegalPage = ({
@@ -4376,7 +4789,7 @@ export const LandingLegalPage = ({
             <img src="/logo.png" alt="Starain logo" className="w-11 h-11 object-contain" />
             <div className="min-w-0">
               <p className="text-lg font-bold tracking-tight truncate dark:text-white">Starain</p>
-              <p className="text-xs text-sky-700 tracking-[0.28em]">AI Edu Platform</p>
+              <p className="text-xs text-sky-700 tracking-[0.28em]">学习全流程 AI 平台</p>
             </div>
           </div>
           <a
@@ -4399,7 +4812,7 @@ export const LandingLegalPage = ({
           <div className="flex flex-col gap-5 border-b border-sky-100 pb-8 dark:border-white/10">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
               <ShieldCheck size={14} />
-              LEGAL
+              法律文件
             </div>
             <div className="space-y-4">
               <h1 className="text-4xl md:text-5xl font-black tracking-tight dark:text-white">{document.title}</h1>
@@ -4428,7 +4841,7 @@ export const LandingLegalPage = ({
 
       <footer className="relative z-10 border-t border-sky-100/80 py-10 dark:border-white/8">
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-slate-500 dark:text-slate-400">
-          <p>© 2026 Starain. All rights reserved.</p>
+          <p>© 2026 Starain. 保留所有权利。</p>
           <div className="flex items-center gap-6">
             <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
             <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
@@ -4441,13 +4854,15 @@ export const LandingLegalPage = ({
 
 export const LandingPage = ({
   onLogin,
-  onRegister,
+  onApplyOrganization,
+  onJoinOrganization,
   activeLegalPage,
   isDark = false,
   onToggleDarkMode,
 }: {
   onLogin: () => void;
-  onRegister: () => void;
+  onApplyOrganization: () => void;
+  onJoinOrganization: () => void;
   activeLegalPage?: LandingLegalDocumentKey | null;
   isDark?: boolean;
   onToggleDarkMode?: () => void;
@@ -4485,7 +4900,7 @@ export const LandingPage = ({
             <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
             <span className="text-xl font-bold tracking-tight">星润Starain</span>
             <span className="hidden sm:block text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
-              AI Edu Platform
+              学习全流程 AI 平台
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -4501,10 +4916,10 @@ export const LandingPage = ({
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button
-              onClick={onRegister}
+              onClick={onApplyOrganization}
               className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
             >
-              申请注册
+              申请开通机构
             </button>
             <button
               onClick={onLogin}
@@ -4551,7 +4966,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.08, duration: 0.5 }}
                 className="inline-flex items-center rounded-full border border-white/50 bg-white/55 px-4 py-1.5 text-[11px] font-semibold tracking-[0.32em] text-slate-700 backdrop-blur-md dark:border-white/12 dark:bg-slate-950/35 dark:text-sky-200"
               >
-                AI EDUCATION PLATFORM FOR INSTITUTIONS
+                服务学校与机构的 AI 教育平台
               </motion.span>
               <motion.h1
                 initial={{ opacity: 0, y: 16 }}
@@ -4599,7 +5014,7 @@ export const LandingPage = ({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.58, duration: 0.78 }}
-                className="mt-10 flex flex-col gap-4 sm:flex-row"
+                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap"
               >
                 <a
                   href="#features"
@@ -4609,11 +5024,18 @@ export const LandingPage = ({
                   <ArrowRight size={18} />
                 </a>
                 <button
-                  onClick={onRegister}
+                  onClick={onApplyOrganization}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
                 >
                   <User size={18} />
-                  申请试用
+                  申请开通机构
+                </button>
+                <button
+                  onClick={onJoinOrganization}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200/70 bg-sky-50/85 px-8 py-4 text-base font-bold text-sky-900 transition-all hover:bg-sky-100 active:scale-95 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                >
+                  <ArrowRight size={18} />
+                  加入已有机构
                 </button>
               </motion.div>
             </motion.div>
@@ -4627,11 +5049,11 @@ export const LandingPage = ({
               <div className="overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.38)_100%)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] dark:shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
                 <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 pb-4 dark:border-white/10">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">PLATFORM SNAPSHOT</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">不止一个助手，而是一套持续扩展的 AI Edu Platform</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">平台概览</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">面向学习全流程的 AI 教育平台</p>
                   </div>
                   <div className="rounded-full border border-emerald-200/80 bg-emerald-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                    Live
+                    已上线
                   </div>
                 </div>
 
@@ -4879,7 +5301,7 @@ export const LandingPage = ({
               <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
               <span className="text-lg font-bold tracking-tight dark:text-white">星润Starain</span>
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
-                AI Edu Platform
+                学习全流程 AI 平台
               </span>
             </div>
             <p className="max-w-md text-sm text-gray-500 text-center md:text-left dark:text-slate-400">
@@ -4896,7 +5318,7 @@ export const LandingPage = ({
             <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
             <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 Starain. All rights reserved.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 Starain. 保留所有权利。</p>
         </div>
       </footer>
     </div>
@@ -5075,7 +5497,7 @@ export default function App() {
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
-    masterDataMappings: '主数据映射',
+    masterDataMappings: '老师与班级匹配',
     classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',

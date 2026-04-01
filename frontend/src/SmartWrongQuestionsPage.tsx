@@ -365,7 +365,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <section className={`${workspaceCardClass} space-y-4 p-6`}>
-        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Wrong Question Workspace</p>
+        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">错题工作区</p>
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
@@ -618,8 +618,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           <p className="font-semibold">主数据映射待处理</p>
                           <p className="mt-1">
                             {hasStaffScope
-                              ? '当前老师或班级仍在沿用原始快照，请先在“主数据映射”里确认 canonical 身份。'
-                              : '当前老师或班级仍在沿用原始快照，请联系 Owner 在“主数据映射”里确认 canonical 身份。'}
+                              ? '当前老师或班级仍在沿用原始信息，请先在“主数据映射”里确认对应的正式老师和班级。'
+                              : '当前老师或班级仍在沿用原始信息，请联系机构负责人，在“主数据映射”里确认对应的正式老师和班级。'}
                           </p>
                         </div>
                       </div>
@@ -678,7 +678,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <label className="space-y-2 text-sm sm:col-span-2">
-                          <span className="text-slate-500 dark:text-slate-400">selectedErrorType</span>
+                          <span className="text-slate-500 dark:text-slate-400">最终错误类型</span>
                           <input
                             type="text"
                             value={selectedDraft.selectedErrorType}
@@ -688,7 +688,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">selectedKnowledgePoints</span>
+                          <span className="text-slate-500 dark:text-slate-400">核心知识点</span>
                           <textarea
                             value={selectedKnowledgePointText}
                             onChange={(event) => handleDraftChange('selectedKnowledgePoints', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
@@ -697,7 +697,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">selectedActions</span>
+                          <span className="text-slate-500 dark:text-slate-400">后续练习建议</span>
                           <textarea
                             value={selectedActionsText}
                             onChange={(event) => handleDraftChange('selectedActions', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
@@ -706,7 +706,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">selectedReasons</span>
+                          <span className="text-slate-500 dark:text-slate-400">原因分析</span>
                           <textarea
                             value={selectedReasonsText}
                             onChange={(event) => handleDraftChange('selectedReasons', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
@@ -715,7 +715,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">studentNote</span>
+                          <span className="text-slate-500 dark:text-slate-400">教师备注</span>
                           <textarea
                             value={selectedDraft.studentNote}
                             onChange={(event) => handleDraftChange('studentNote', event.target.value)}

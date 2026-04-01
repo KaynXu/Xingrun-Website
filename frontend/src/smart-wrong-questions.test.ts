@@ -643,11 +643,11 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /apiFetch<[^>]+>\(buildWrongQuestionDetailPath\([^)]+\)\)/);
   assert.match(pageSource, /setReviewDraftByRecordId\(\(current\) => \{/);
   assert.match(pageSource, /hydrateWrongQuestionReviewDraftFromDetail\(/);
-  assert.match(pageSource, /selectedErrorType/);
-  assert.match(pageSource, /selectedKnowledgePoints/);
-  assert.match(pageSource, /selectedActions/);
-  assert.match(pageSource, /selectedReasons/);
-  assert.match(pageSource, /studentNote/);
+  assert.match(pageSource, /最终错误类型/);
+  assert.match(pageSource, /核心知识点/);
+  assert.match(pageSource, /后续练习建议/);
+  assert.match(pageSource, /原因分析/);
+  assert.match(pageSource, /教师备注/);
 });
 
 test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unresolved mapping warning', async () => {

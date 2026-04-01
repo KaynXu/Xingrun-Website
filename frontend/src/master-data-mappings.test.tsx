@@ -212,7 +212,7 @@ test('master data mappings page fetches and renders unresolved queue items', asy
 
     await waitForAssertion(() => {
       const text = container.textContent || '';
-      assert.match(text, /主数据映射/);
+      assert.match(text, /老师与班级匹配/);
       assert.match(text, /陈老师/);
       assert.match(text, /六年级 2 班/);
       assert.match(text, /数学/);

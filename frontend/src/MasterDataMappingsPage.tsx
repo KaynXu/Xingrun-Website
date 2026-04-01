@@ -114,7 +114,7 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
       });
     } catch (loadError) {
       setItems([]);
-      setError(loadError instanceof Error ? loadError.message : '主数据映射队列加载失败');
+      setError(loadError instanceof Error ? loadError.message : '待处理匹配记录加载失败');
     } finally {
       setLoading(false);
     }
@@ -218,7 +218,7 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
     } catch (saveError) {
       setSaveErrorByRecordId((current) => ({
         ...current,
-        [recordId]: saveError instanceof Error ? saveError.message : '主数据映射保存失败',
+        [recordId]: saveError instanceof Error ? saveError.message : '匹配结果保存失败',
       }));
     } finally {
       setSavingRecordIds((current) => {
@@ -287,11 +287,11 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
       <section className={`${workspaceCardClass} space-y-6 p-6 sm:p-7`}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600">MASTER DATA</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600">基础信息整理</p>
             <div className="space-y-1">
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">主数据映射</h2>
+              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">老师与班级匹配</h2>
               <p className="max-w-3xl text-sm leading-7 text-slate-500 dark:text-slate-400">
-                仅供 {currentUser.organization_name} 管理员处理错题记录中的老师与班级主数据映射，当前登录账号为 {currentUser.display_name}。
+                用于整理错题记录中的老师与班级信息，方便后续自动识别与归档，当前登录账号为 {currentUser.display_name}。
               </p>
             </div>
           </div>
@@ -324,8 +324,8 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
 
         <div className={`${workspaceSoftCardClass} space-y-4 p-5`}>
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">主动绑定成员</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">不依赖错题待处理队列，直接给成员维护老师别名，供后续自动映射使用。</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">维护老师别名</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">不依赖待处理记录，直接为成员补充老师别名，方便后续自动识别。</p>
           </div>
 
           {sortedBindableUsers.length === 0 ? (
@@ -396,11 +396,11 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
 
         {loading ? (
           <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
-            正在加载主数据映射队列...
+            正在加载待处理匹配记录...
           </div>
         ) : items.length === 0 ? (
           <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
-            当前没有待处理的错题映射记录。
+            当前没有待处理的匹配记录。
           </div>
         ) : (
           <div className="space-y-4">
@@ -479,7 +479,7 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
                       </select>
                     </label>
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                      <span>映射状态</span>
+                      <span>处理结果</span>
                       <select
                         name="mapping_status"
                         className={workspaceFieldClass}
@@ -504,7 +504,7 @@ export function MasterDataMappingsPage({ currentUser, focusUserId = null }: Mast
                         }}
                         className={workspacePrimaryButtonClass}
                       >
-                        {saving ? '提交中...' : '提交映射'}
+                        {saving ? '保存中...' : '保存匹配'}
                       </button>
                     </div>
                   </div>

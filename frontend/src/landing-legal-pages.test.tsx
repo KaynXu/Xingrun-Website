@@ -21,7 +21,7 @@ test('landing page renders Starain hero branding and approved messaging', () => 
   );
 
   assert.match(markup, /Starain/);
-  assert.match(markup, /AI Edu Platform/);
+  assert.match(markup, /学习全流程 AI 平台/);
   assert.match(markup, /Starain，用 AI 赋能教育机构。/);
   assert.match(markup, /Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台/);
   assert.match(markup, /查看平台方案/);
@@ -45,12 +45,12 @@ test('landing hero uses exhibition-panel copy with a light result preview instea
     <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
   );
 
-  assert.match(markup, /AI EDUCATION PLATFORM FOR INSTITUTIONS/);
+  assert.match(markup, /服务学校与机构的 AI 教育平台/);
   assert.match(markup, /复习资料生成/);
   assert.match(markup, /题库与内容沉淀/);
   assert.match(markup, /教学协同交付/);
-  assert.match(markup, /PLATFORM SNAPSHOT/);
-  assert.match(markup, /不止一个助手，而是一套持续扩展的 AI Edu Platform/);
+  assert.match(markup, /平台概览/);
+  assert.match(markup, /面向学习全流程的 AI 教育平台/);
   assert.match(markup, /复习资料/);
   assert.match(markup, /题库系统/);
   assert.match(markup, /教学交付/);
@@ -101,7 +101,7 @@ test('legal pages use Starain branding in the chrome', () => {
   );
 
   assert.match(markup, /Starain/);
-  assert.match(markup, /AI Edu Platform/);
+  assert.match(markup, /学习全流程 AI 平台/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
 
@@ -245,7 +245,7 @@ test('landing page dark mode styles cover the about section and footer shell', (
   assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(2,6,23,0\.42\)_0%,rgba\(15,23,42,0\.7\)_100%\)\]/);
   assert.match(markup, /dark:text-white/);
   assert.match(markup, /<footer class="border-t border-sky-100\/80 py-20 dark:border-white\/8"/);
-  assert.match(markup, /All rights reserved/);
+  assert.match(markup, /保留所有权利/);
 });
 
 test('landing page source does not contain stray navbar characters after the brand block', () => {
