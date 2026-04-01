@@ -504,8 +504,16 @@ def delete_lesson(lesson_id):
 @app.route("/pdf/<int:lesson_id>")
 @app.route("/api/pdf/<int:lesson_id>")
 def serve_pdf(lesson_id):
+    if request.path.startswith("/api/"):
+        user, error = _require_auth()
+        if error:
+            return error
+    else:
+        user = None
     lesson = get_lesson(lesson_id)
     if not lesson:
+        abort(404)
+    if user is not None and not _can_access_lesson(user, lesson):
         abort(404)
     pdf_path = lesson.get("pdf_path", "")
     if not pdf_path or not Path(pdf_path).exists():
@@ -517,8 +525,16 @@ def serve_pdf(lesson_id):
 @app.route("/pdf/download/<int:lesson_id>")
 @app.route("/api/pdf/download/<int:lesson_id>")
 def download_pdf(lesson_id):
+    if request.path.startswith("/api/"):
+        user, error = _require_auth()
+        if error:
+            return error
+    else:
+        user = None
     lesson = get_lesson(lesson_id)
     if not lesson:
+        abort(404)
+    if user is not None and not _can_access_lesson(user, lesson):
         abort(404)
     pdf_path = lesson.get("pdf_path", "")
     if not pdf_path or not Path(pdf_path).exists():
@@ -854,7 +870,10 @@ def api_join_by_invite_link(invite_token: str):
 
 
 def _require_auth():
-    token = request.headers.get("X-Auth-Token", "").strip()
+    token = (
+        request.headers.get("X-Auth-Token", "").strip()
+        or request.args.get("token", "").strip()
+    )
     user = get_current_user(token)
     if not user:
         return None, (jsonify({"error": "未授权"}), 401)
@@ -978,6 +997,36 @@ def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [item for item in classes if item.get("id") in owned_class_ids]
+
+
+def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return True
+    if not isinstance(lesson, dict):
+        return False
+
+    class_id = lesson.get("class_id")
+    if not isinstance(class_id, int):
+        return False
+
+    member_class_ids = owned_class_ids
+    if member_class_ids is None:
+        member_class_ids = set(get_user_class_ids(user["id"]))
+    return class_id in member_class_ids
+
+
+def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
+    if not isinstance(lessons, list):
+        return []
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return [item for item in lessons if isinstance(item, dict)]
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [
+        item
+        for item in lessons
+        if isinstance(item, dict) and _can_access_lesson(user, item, owned_class_ids)
+    ]
 
 
 @app.route("/api/me", methods=["GET"])
@@ -1536,22 +1585,25 @@ def api_class_delete(class_id):
 
 @app.route("/api/lessons", methods=["GET"])
 def api_lessons_list():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
-    return jsonify(list_lessons(month_str=month if month else None,
-                                class_id=class_id if class_id else None))
+    lessons = list_lessons(
+        month_str=month if month else None,
+        class_id=class_id if class_id else None,
+    )
+    return jsonify(_filter_lessons_for_user(user, lessons))
 
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
 def api_lesson_get(lesson_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     lesson = get_lesson(lesson_id)
-    if not lesson:
+    if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
     questions = get_questions(lesson_id=lesson_id)
     return jsonify({**lesson, "questions": questions})
@@ -1559,11 +1611,11 @@ def api_lesson_get(lesson_id):
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
 def api_lesson_delete(lesson_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     lesson = get_lesson(lesson_id)
-    if not lesson:
+    if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
     pdf_path = lesson.get("pdf_path", "")
     if pdf_path and Path(pdf_path).exists():
@@ -1574,7 +1626,7 @@ def api_lesson_delete(lesson_id):
 
 @app.route("/api/lessons", methods=["POST"])
 def api_lesson_create():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     if not has_api_key():
@@ -1586,8 +1638,16 @@ def api_lesson_create():
         data = request.form or {}
         
     lesson_date = data.get("date") or str(date.today())
-    class_id    = int(data.get("class_id") or 0)
-    cls         = get_class(class_id) if class_id else None
+    class_id = int(data.get("class_id") or 0)
+    if not class_id:
+        return jsonify({"error": "请选择班级后再生成复习记录"}), 400
+
+    cls = get_class(class_id)
+    if not cls:
+        return jsonify({"error": "class not found"}), 404
+    if not _can_access_lesson(user, {"class_id": class_id}):
+        return jsonify({"error": "forbidden"}), 403
+
     subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
     topic       = data.get("topic", "").strip()

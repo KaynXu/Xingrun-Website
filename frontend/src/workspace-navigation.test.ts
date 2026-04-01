@@ -30,13 +30,13 @@ test('review generation source replaces separate lesson input and library pages 
   assert.doesNotMatch(sidebarBlock[0], /id: 'input'[\s\S]*label: '娣诲姞璇剧▼'/);
   assert.doesNotMatch(sidebarBlock[0], /id: 'library'[\s\S]*label: '璇剧▼鍒楄〃'/);
   assert.match(appSource, /'review-generation': '澶嶄範鐢熸垚'/);
-  assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage onSuccess=\{handleReviewGenerationSuccess\} \/>/);
+  assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage onSuccess=\{handleReviewGenerationSuccess\} currentUser=\{currentUser\} \/>/);
   assert.doesNotMatch(appSource, /activePage === 'input'/);
   assert.doesNotMatch(appSource, /activePage === 'library'/);
 });
 
 test('review generation source defaults to 鍘嗗彶鏂囨。 and expands 鐢熸垚澶嶄範鏂囨。 from 鏂板缓澶嶄範鏂囨。 CTA', () => {
-  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess \}: \{ onSuccess: \(\) => void \}\) => \{[\s\S]*?\n};/);
+  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess, currentUser \}: \{ onSuccess: \(\) => void; currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
 
   assert.ok(reviewGenerationBlock);
   assert.match(reviewGenerationBlock[0], /const \[composerOpen, setComposerOpen\] = useState\(false\);/);
@@ -47,7 +47,7 @@ test('review generation source defaults to 鍘嗗彶鏂囨。 and expands 鐢熸
 });
 
 test('review generation source collapses the inline composer after successful generation', () => {
-  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess \}: \{ onSuccess: \(\) => void \}\) => \{[\s\S]*?\n};/);
+  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess, currentUser \}: \{ onSuccess: \(\) => void; currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
 
   assert.ok(reviewGenerationBlock);
   assert.match(reviewGenerationBlock[0], /const handleComposerSuccess = \(\) => \{\s*setComposerOpen\(false\);\s*onSuccess\(\);\s*\};/);
@@ -55,7 +55,7 @@ test('review generation source collapses the inline composer after successful ge
 });
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
-  const lessonInputBlock = appSource.match(/const LessonInput = \(\{ onSuccess \}: \{ onSuccess: \(\) => void \}\) => \{[\s\S]*?\n};/);
+  const lessonInputBlock = appSource.match(/const LessonInput = \(\{ onSuccess, currentUser \}: \{ onSuccess: \(\) => void; currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
   const subjectComboboxBlock = appSource.match(/const SubjectCombobox = \([\s\S]*?\n};/);
 
   assert.ok(lessonInputBlock);
@@ -64,6 +64,24 @@ test('lesson input source keeps subject class and date controls in a fluid grid 
   assert.match(lessonInputBlock[0], /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
   assert.doesNotMatch(lessonInputBlock[0], /sm:w-40/);
   assert.doesNotMatch(subjectComboboxBlock[0], /sm:w-32/);
+});
+
+test('review generation source requires class selection before generation and carries currentUser into LessonInput', () => {
+  const lessonInputBlock = appSource.match(/const LessonInput = \(\{ onSuccess, currentUser \}: \{ onSuccess: \(\) => void; currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+  const reviewGenerationBlock = appSource.match(/const ReviewGenerationPage = \(\{ onSuccess, currentUser \}: \{ onSuccess: \(\) => void; currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+
+  assert.ok(lessonInputBlock);
+  assert.ok(reviewGenerationBlock);
+  assert.match(lessonInputBlock[0], /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
+  assert.match(reviewGenerationBlock[0], /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage onSuccess=\{handleReviewGenerationSuccess\} currentUser=\{currentUser\} \/>/);
+});
+
+test('review generation source appends auth token to lesson pdf links', () => {
+  assert.match(appSource, /function buildAuthedPath\(path: string\): string \{/);
+  assert.match(appSource, /const token = getToken\(\);/);
+  assert.match(appSource, /href=\{buildAuthedPath\(`\/api\/pdf\/\$\{lesson\.id\}`\)\}/);
+  assert.match(appSource, /href=\{buildAuthedPath\(`\/api\/pdf\/download\/\$\{lesson\.id\}`\)\}/);
 });
 
 test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {

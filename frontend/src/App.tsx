@@ -479,6 +479,15 @@ function getToken(): string {
   return localStorage.getItem('xr_token') || '';
 }
 
+function buildAuthedPath(path: string): string {
+  const token = getToken();
+  if (!token) {
+    return path;
+  }
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
   const token = getToken();
@@ -1561,14 +1570,14 @@ const Dashboard = ({
                 {lesson.pdf_path && (
                   <div className="flex gap-2">
                     <a
-                      href={`/api/pdf/download/${lesson.id}`}
+                      href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
                       className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                       title="下载"
                     >
                       <Download size={18} />
                     </a>
                     <a
-                      href={`/api/pdf/${lesson.id}`}
+                      href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                       target="_blank"
                       rel="noreferrer"
                       className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
@@ -1638,7 +1647,7 @@ const SubjectCombobox = ({
   );
 };
 
-const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
+const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; currentUser: CurrentUser }) => {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1648,14 +1657,21 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [classesLoading, setClassesLoading] = useState(true);
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    apiFetch<ClassItem[]>('/api/classes').then(setClasses).catch(console.error);
+    setClassesLoading(true);
+    apiFetch<ClassItem[]>('/api/classes')
+      .then(setClasses)
+      .catch(console.error)
+      .finally(() => setClassesLoading(false));
   }, []);
+
+  const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
 
   const handleClassChange = (id: number) => {
     setClassId(id);
@@ -1683,6 +1699,14 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
 
   const handleGenerate = async () => {
     setError('');
+    if (hasNoAssignableClasses) {
+      setError('当前账号未分配负责班级，请先联系管理员分配班级');
+      return;
+    }
+    if (!classId) {
+      setError('请选择班级后再生成复习记录');
+      return;
+    }
     if (inputType === 'text' && !summaryText.trim()) {
       setError('请填写课堂笔记内容');
       return;
@@ -1715,11 +1739,7 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         if (file) formData.append('upload_file', file);
-        const res = await fetch('/api/lessons', { method: 'POST', body: formData });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error((err as { error?: string }).error || res.statusText);
-        }
+        await apiFetch('/api/lessons', { method: 'POST', body: formData });
       }
       onSuccess();
     } catch (e: unknown) {
@@ -1781,6 +1801,11 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   className={`${workspaceFieldClass} w-full`}
                 />
               </div>
+              {hasNoAssignableClasses && (
+                <p className="text-sm text-amber-600 dark:text-amber-300">
+                  当前账号未分配负责班级，请先联系管理员分配班级后再生成复习记录。
+                </p>
+              )}
             </div>
 
             {error && (
@@ -1969,7 +1994,7 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
                     {lesson.pdf_path && (
                       <>
                         <a
-                          href={`/api/pdf/${lesson.id}`}
+                          href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                           target="_blank"
                           rel="noreferrer"
                           className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
@@ -1978,7 +2003,7 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
                           <Eye size={16} />
                         </a>
                         <a
-                          href={`/api/pdf/download/${lesson.id}`}
+                          href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
                           className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                           title="下载"
                         >
@@ -2004,7 +2029,7 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
   );
 };
 
-const ReviewGenerationPage = ({ onSuccess }: { onSuccess: () => void }) => {
+const ReviewGenerationPage = ({ onSuccess, currentUser }: { onSuccess: () => void; currentUser: CurrentUser }) => {
   const [composerOpen, setComposerOpen] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
 
@@ -2037,7 +2062,7 @@ const ReviewGenerationPage = ({ onSuccess }: { onSuccess: () => void }) => {
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">上传课堂内容并生成新的复习文档。</p>
           </div>
-          <LessonInput onSuccess={handleFormSuccess} />
+          <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} />
         </div>
       )}
 
@@ -5920,7 +5945,7 @@ export default function App() {
                     activeClassCount={calendarClasses.length}
                   />
                 )}
-                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} />}
+                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
                 {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
                 {activePage === 'calendar' &&
                   (calendarLoading ? (

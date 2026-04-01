@@ -1113,6 +1113,283 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(review_response.status_code, 404)
         save_review.assert_not_called()
 
+    def test_member_lessons_list_only_returns_owned_class_records(self):
+        owner_token = self.login_as_kayn()
+
+        target_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_member_a",
+            display_name="Lesson Member A",
+            password="member123",
+        )
+        target_member_id = target_member["user"]["id"]
+        other_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_member_b",
+            display_name="Lesson Member B",
+            password="member123",
+        )
+        other_member_id = other_member["user"]["id"]
+
+        owned_class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 6")
+        other_class_id = lesson_manager.save_class("Class B", subject="English", grade="Grade 7")
+        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+
+        owned_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Math",
+            "Grade 6",
+            "Fractions",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            owned_class_id,
+        )
+        lesson_manager.save_lesson(
+            "2026-04-02",
+            "English",
+            "Grade 7",
+            "Reading",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            other_class_id,
+        )
+        lesson_manager.save_lesson(
+            "2026-04-02",
+            "Science",
+            "Grade 8",
+            "Legacy No Class",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            0,
+        )
+
+        response = self.client.get(
+            "/api/lessons",
+            headers=self.auth_headers(target_member["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual([item["id"] for item in payload], [owned_lesson_id])
+
+    def test_member_cannot_access_unowned_lesson_detail_delete_or_pdf(self):
+        owner_token = self.login_as_kayn()
+
+        target_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_detail_member",
+            display_name="Lesson Detail Member",
+            password="member123",
+        )
+        target_member_id = target_member["user"]["id"]
+        other_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_detail_other",
+            display_name="Lesson Detail Other",
+            password="member123",
+        )
+        other_member_id = other_member["user"]["id"]
+
+        owned_class_id = lesson_manager.save_class("Owned Class", subject="Physics", grade="Grade 10")
+        other_class_id = lesson_manager.save_class("Other Class", subject="Physics", grade="Grade 10")
+        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+
+        detail_delete_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Physics",
+            "Grade 10",
+            "Kinematics",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            other_class_id,
+        )
+
+        pdf_path = self.base / "restricted.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n%fake pdf\n")
+
+        pdf_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Physics",
+            "Grade 10",
+            "Momentum",
+            "summary",
+            "weak",
+            {"questions": []},
+            str(pdf_path),
+            other_class_id,
+        )
+
+        detail_response = self.client.get(
+            f"/api/lessons/{detail_delete_lesson_id}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        preview_response = self.client.get(
+            f"/api/pdf/{pdf_lesson_id}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        download_response = self.client.get(
+            f"/api/pdf/download/{pdf_lesson_id}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        delete_response = self.client.delete(
+            f"/api/lessons/{detail_delete_lesson_id}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+
+        self.assertEqual(detail_response.status_code, 404)
+        self.assertEqual(preview_response.status_code, 404)
+        self.assertEqual(download_response.status_code, 404)
+        self.assertEqual(delete_response.status_code, 404)
+
+    def test_member_lesson_creation_requires_owned_class(self):
+        owner_token = self.login_as_kayn()
+
+        target_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_create_member",
+            display_name="Lesson Create Member",
+            password="member123",
+        )
+        other_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_create_other",
+            display_name="Lesson Create Other",
+            password="member123",
+        )
+        target_member_id = target_member["user"]["id"]
+        other_member_id = other_member["user"]["id"]
+
+        owned_class_id = lesson_manager.save_class("Owned Create Class", subject="Chemistry", grade="Grade 9")
+        other_class_id = lesson_manager.save_class("Other Create Class", subject="Chemistry", grade="Grade 9")
+        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+
+        with patch("app.has_api_key", return_value=True), \
+             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}), \
+             patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf"):
+            missing_class_response = self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(target_member["token"]),
+                json={
+                    "subject": "Chemistry",
+                    "topic": "Acid Base",
+                    "date": "2026-04-02",
+                    "weak_points": "equations",
+                    "summary_text": "class summary",
+                    "input_type": "text",
+                },
+            )
+            forbidden_class_response = self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(target_member["token"]),
+                json={
+                    "subject": "Chemistry",
+                    "class_id": other_class_id,
+                    "topic": "Acid Base",
+                    "date": "2026-04-02",
+                    "weak_points": "equations",
+                    "summary_text": "class summary",
+                    "input_type": "text",
+                },
+            )
+            allowed_class_response = self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(target_member["token"]),
+                json={
+                    "subject": "Chemistry",
+                    "class_id": owned_class_id,
+                    "topic": "Acid Base",
+                    "date": "2026-04-02",
+                    "weak_points": "equations",
+                    "summary_text": "class summary",
+                    "input_type": "text",
+                },
+            )
+
+        self.assertEqual(missing_class_response.status_code, 400)
+        self.assertEqual(forbidden_class_response.status_code, 403)
+        self.assertEqual(allowed_class_response.status_code, 201)
+
+    def test_owner_and_admin_still_have_full_lesson_visibility(self):
+        owner_token = self.login_as_kayn()
+
+        admin_member = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_admin_scope",
+            display_name="Lesson Admin Scope",
+            password="member123",
+        )
+        admin_id = admin_member["user"]["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        class_member_a = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_scope_helper_a",
+            display_name="Lesson Scope Helper A",
+            password="member123",
+        )
+        class_member_b = self.approve_user(
+            owner_token=owner_token,
+            username="lesson_scope_helper_b",
+            display_name="Lesson Scope Helper B",
+            password="member123",
+        )
+        class_a = lesson_manager.save_class("Owner Scope Class", subject="Biology", grade="Grade 11")
+        class_b = lesson_manager.save_class("Admin Scope Class", subject="Biology", grade="Grade 11")
+        lesson_manager.set_class_teacher_user_id(class_a, class_member_a["user"]["id"])
+        lesson_manager.set_class_teacher_user_id(class_b, class_member_b["user"]["id"])
+
+        lesson_a_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Biology",
+            "Grade 11",
+            "Cell",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            class_a,
+        )
+        lesson_b_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Biology",
+            "Grade 11",
+            "Genetics",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            class_b,
+        )
+
+        owner_response = self.client.get("/api/lessons", headers=self.auth_headers(owner_token))
+        admin_response = self.client.get("/api/lessons", headers=self.auth_headers(admin_member["token"]))
+
+        self.assertEqual(owner_response.status_code, 200)
+        self.assertEqual(admin_response.status_code, 200)
+        owner_payload = owner_response.get_json()
+        admin_payload = admin_response.get_json()
+        self.assertIsNotNone(owner_payload)
+        self.assertIsNotNone(admin_payload)
+        self.assertCountEqual([item["id"] for item in owner_payload], [lesson_a_id, lesson_b_id])
+        self.assertCountEqual([item["id"] for item in admin_payload], [lesson_a_id, lesson_b_id])
+
     def test_owner_can_access_master_data_binding_endpoints(self):
         owner_login = self.client.post(
             "/api/login",
