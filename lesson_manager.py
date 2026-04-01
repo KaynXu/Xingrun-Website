@@ -613,6 +613,30 @@ def init_db():
             class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             PRIMARY KEY (user_id, class_id)
         );
+
+        CREATE TABLE IF NOT EXISTS students (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS class_students (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id    INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id  INTEGER NOT NULL REFERENCES students(id),
+            created_at  TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(class_id, student_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS lesson_feedbacks (
+            lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
+            class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+            merged_text         TEXT DEFAULT '',
+            student_index_json  TEXT DEFAULT '[]',
+            editor_state_json   TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now','localtime')),
+            updated_at          TEXT DEFAULT (datetime('now','localtime'))
+        );
         """)
         import master_data
 
@@ -621,6 +645,21 @@ def init_db():
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+
+        feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_feedbacks)").fetchall()]
+        if feedback_cols:
+            if "class_id" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+            if "merged_text" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
+            if "student_index_json" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
+            if "editor_state_json" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
+            if "created_at" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
+            if "updated_at" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
         _bootstrap_account_state(conn)
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -916,6 +955,170 @@ def delete_class(class_id: int):
         )
         conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
+
+
+def get_student(student_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_students_for_class(class_id: int) -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.*
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY cs.id
+            """,
+            (class_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _dedupe_student_name_in_class(class_id: int, raw_name: str) -> str:
+    base_name = (raw_name or "").strip()
+    if not base_name:
+        raise ValueError("student name is required")
+
+    existing_names = [student["name"] for student in list_students_for_class(class_id)]
+    if base_name not in existing_names:
+        return base_name
+
+    suffix_pattern = re.compile(rf"^{re.escape(base_name)}（(\d+)）$")
+    max_suffix = 1
+    for name in existing_names:
+        if name == base_name:
+            continue
+        matched = suffix_pattern.match(name or "")
+        if matched:
+            max_suffix = max(max_suffix, int(matched.group(1)))
+    return f"{base_name}（{max_suffix + 1}）"
+
+
+def create_student_for_class(class_id: int, raw_name: str):
+    with get_conn() as conn:
+        class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        student_name = _dedupe_student_name_in_class(class_id, raw_name)
+        cur = conn.execute("INSERT INTO students (name) VALUES (?)", (student_name,))
+        student_id = cur.lastrowid
+        conn.execute(
+            "INSERT INTO class_students (class_id, student_id) VALUES (?, ?)",
+            (class_id, student_id),
+        )
+        row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+    return dict(row)
+
+
+def remove_student_from_class(class_id: int, student_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM class_students WHERE class_id=? AND student_id=?",
+            (class_id, student_id),
+        )
+    return cur.rowcount > 0
+
+
+def save_lesson_feedback(
+    lesson_id: int,
+    class_id: int,
+    merged_text: str,
+    student_index: list,
+    editor_state: dict,
+) -> dict:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO lesson_feedbacks
+                (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
+            ON CONFLICT(lesson_id) DO UPDATE SET
+                class_id=excluded.class_id,
+                merged_text=excluded.merged_text,
+                student_index_json=excluded.student_index_json,
+                editor_state_json=excluded.editor_state_json,
+                updated_at=datetime('now','localtime')
+            """,
+            (
+                lesson_id,
+                class_id if class_id else None,
+                merged_text or "",
+                json.dumps(student_index or [], ensure_ascii=False),
+                json.dumps(editor_state or {}, ensure_ascii=False),
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            (lesson_id,),
+        ).fetchone()
+    feedback = dict(row)
+    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
+    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
+    return feedback
+
+
+def get_lesson_feedback(lesson_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            (lesson_id,),
+        ).fetchone()
+    if not row:
+        return None
+    feedback = dict(row)
+    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
+    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
+    return feedback
+
+
+def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        raise LookupError("lesson not found")
+    saved_feedback = get_lesson_feedback(lesson_id) or {}
+    class_id = saved_feedback.get("class_id") or lesson.get("class_id")
+
+    roster = list_students_for_class(class_id) if class_id else []
+    saved_editor_state = saved_feedback.get("editor_state") or {}
+    saved_students = saved_editor_state.get("students")
+    if not isinstance(saved_students, list):
+        saved_students = []
+    saved_by_student_id = {
+        item.get("student_id"): item
+        for item in saved_students
+        if isinstance(item, dict) and item.get("student_id") is not None
+    }
+
+    hydrated_students = []
+    for student in roster:
+        saved_student_state = saved_by_student_id.get(student["id"], {})
+        hydrated_students.append(
+            {
+                "student_id": student["id"],
+                "name": student["name"],
+                "selected_template_id": saved_student_state.get("selected_template_id", "") or "",
+                "remark": saved_student_state.get("remark", "") or "",
+            }
+        )
+
+    custom_templates = saved_editor_state.get("custom_templates")
+    if not isinstance(custom_templates, list):
+        custom_templates = []
+
+    return {
+        "lesson_id": lesson_id,
+        "class_id": class_id,
+        "merged_text": saved_feedback.get("merged_text", "") or "",
+        "student_index": saved_feedback.get("student_index", []),
+        "students": hydrated_students,
+        "custom_templates": custom_templates,
+        "updated_at": saved_feedback.get("updated_at"),
+    }
 
 
 def get_class_teacher_user_id(class_id: int) -> Optional[int]:
