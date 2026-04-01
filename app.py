@@ -48,8 +48,10 @@ CORS(app, resources={r"/api/*": {"origins": [
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
     DEFAULT_ORGANIZATION_NAME,
+    approve_organization_request,
     approve_registration_request,
     authenticate_user,
+    create_organization_request,
     create_auth_session,
     create_consultation,
     create_registration_request,
@@ -64,6 +66,8 @@ from lesson_manager import (
     get_current_user,
     get_lesson,
     get_lessons_by_week,
+    get_or_create_active_organization_invite,
+    get_organization_invite_by_token,
     get_questions,
     get_user_class_ids,
     init_db,
@@ -73,8 +77,13 @@ from lesson_manager import (
     list_consultation_teachers,
     list_consultations,
     list_lessons,
+    list_organization_requests,
     list_registration_requests,
+    join_organization_by_invite_code,
+    join_organization_by_invite_link_token,
+    reject_organization_request,
     reject_registration_request,
+    reset_organization_invite,
     save_class,
     save_lesson,
     set_class_teacher_user_id,
@@ -763,6 +772,87 @@ def api_register_request():
     return jsonify({"id": item["id"], "status": item["status"]}), 201
 
 
+@app.route("/api/organization-requests", methods=["POST"])
+def api_organization_request_create():
+    data = request.json or {}
+    organization_name = data.get("organization_name", "").strip()
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+
+    if not organization_name or not username or not display_name or not password:
+        return jsonify({"error": "organization_name, username, display_name and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    try:
+        item = create_organization_request(
+            organization_name=organization_name,
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"id": item["id"], "status": item["status"]}), 201
+
+
+@app.route("/api/invite/<invite_token>", methods=["GET"])
+def api_invite_preview(invite_token: str):
+    invite = get_organization_invite_by_token(invite_token)
+    if not invite:
+        return jsonify({"error": "invite not found"}), 404
+    return jsonify({"organization_name": invite["organization_name"]})
+
+
+@app.route("/api/join-by-invite-code", methods=["POST"])
+def api_join_by_invite_code():
+    data = request.json or {}
+    invite_code = data.get("invite_code", "").strip()
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+    if not invite_code or not username or not display_name or not password:
+        return jsonify({"error": "invite_code, username, display_name and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    try:
+        user = join_organization_by_invite_code(
+            invite_code=invite_code,
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"user": user}), 201
+
+
+@app.route("/api/join-by-invite-link/<invite_token>", methods=["POST"])
+def api_join_by_invite_link(invite_token: str):
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not display_name or not password:
+        return jsonify({"error": "username, display_name and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    try:
+        user = join_organization_by_invite_link_token(
+            invite_token=invite_token,
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"user": user}), 201
+
+
 def _require_auth():
     token = request.headers.get("X-Auth-Token", "").strip()
     user = get_current_user(token)
@@ -796,6 +886,17 @@ def _require_super_owner():
     if user.get("role") != "super_owner":
         return None, (jsonify({"error": "无权限"}), 403)
     return user, None
+
+
+def _organization_invite_response_payload(invite: dict) -> dict:
+    join_path = f"/join/{invite['invite_token']}"
+    base_url = request.url_root.rstrip("/")
+    return {
+        "organization_name": invite["organization_name"],
+        "invite_code": invite["invite_code"],
+        "invite_link": f"{base_url}{join_path}",
+        "join_path": join_path,
+    }
 
 
 def _can_access_wrong_question_record(user, record: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
@@ -902,6 +1003,78 @@ def api_profile_update():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/organization-requests", methods=["GET"])
+def api_admin_organization_requests():
+    _, error = _require_super_owner()
+    if error:
+        return error
+    return jsonify({"items": list_organization_requests()})
+
+
+@app.route("/api/admin/organization-requests/<int:request_id>/approve", methods=["POST"])
+def api_admin_organization_request_approve(request_id: int):
+    user, error = _require_super_owner()
+    if error:
+        return error
+    try:
+        approved_user, invite = approve_organization_request(request_id=request_id, reviewer_id=user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify(
+        {
+            "ok": True,
+            "user": approved_user,
+            "invite": _organization_invite_response_payload(invite),
+        }
+    )
+
+
+@app.route("/api/admin/organization-requests/<int:request_id>/reject", methods=["POST"])
+def api_admin_organization_request_reject(request_id: int):
+    user, error = _require_super_owner()
+    if error:
+        return error
+    try:
+        reject_organization_request(request_id=request_id, reviewer_id=user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/organization/invite", methods=["GET"])
+def api_organization_invite_get():
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        invite = get_or_create_active_organization_invite(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(_organization_invite_response_payload(invite))
+
+
+@app.route("/api/organization/invite/reset", methods=["POST"])
+def api_organization_invite_reset():
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        invite = reset_organization_invite(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(_organization_invite_response_payload(invite))
 
 
 @app.route("/api/admin/registration-requests", methods=["GET"])

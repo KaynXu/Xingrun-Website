@@ -1,8 +1,10 @@
 import sys
 import tempfile
 import unittest
+import gc
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -26,6 +28,7 @@ class AccountFlowTestCase(unittest.TestCase):
         self.client = app.test_client()
 
     def tearDown(self):
+        gc.collect()
         self.temp_dir.cleanup()
 
     @staticmethod
@@ -80,6 +83,85 @@ class AccountFlowTestCase(unittest.TestCase):
         login_payload = login.get_json()
         self.assertIsNotNone(login_payload)
         return login_payload
+
+    def submit_organization_request(
+        self,
+        organization_name: str,
+        username: str,
+        display_name: str,
+        password: str,
+    ):
+        return self.client.post(
+            "/api/organization-requests",
+            json={
+                "organization_name": organization_name,
+                "username": username,
+                "display_name": display_name,
+                "password": password,
+            },
+        )
+
+    def approve_organization_request(self, super_owner_token: str, request_id: int):
+        return self.client.post(
+            f"/api/admin/organization-requests/{request_id}/approve",
+            headers=self.auth_headers(super_owner_token),
+        )
+
+    def login_as_kayn(self) -> str:
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        payload = owner_login.get_json()
+        self.assertIsNotNone(payload)
+        return payload["token"]
+
+    def create_approved_organization_with_invite(
+        self,
+        organization_name: str,
+        owner_username: str,
+        owner_display_name: str,
+        owner_password: str,
+    ) -> tuple[str, dict]:
+        kayn_token = self.login_as_kayn()
+        submit_response = self.submit_organization_request(
+            organization_name=organization_name,
+            username=owner_username,
+            display_name=owner_display_name,
+            password=owner_password,
+        )
+        self.assertEqual(submit_response.status_code, 201)
+        submit_payload = submit_response.get_json()
+        self.assertIsNotNone(submit_payload)
+        request_id = submit_payload["id"]
+        approve = self.client.post(
+            f"/api/admin/organization-requests/{request_id}/approve",
+            headers=self.auth_headers(kayn_token),
+        )
+        self.assertEqual(approve.status_code, 200)
+
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": owner_username, "password": owner_password},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_payload = owner_login.get_json()
+        self.assertIsNotNone(owner_payload)
+        owner_token = owner_payload["token"]
+
+        invite_response = self.client.get(
+            "/api/organization/invite",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(invite_response.status_code, 200)
+        invite_payload = invite_response.get_json()
+        self.assertIsNotNone(invite_payload)
+        return owner_token, invite_payload
+
+    def _token_from_invite_link(self, invite_link: str) -> str:
+        parsed = urlparse(invite_link)
+        return parsed.path.rsplit("/", 1)[-1]
 
     def test_owner_seed_and_approval_flow(self):
         owner_login = self.client.post(
@@ -146,6 +228,443 @@ class AccountFlowTestCase(unittest.TestCase):
         member_me_payload = member_me.get_json()
         self.assertEqual(member_me_payload["role"], "member")
         self.assertEqual(member_me_payload["organization_name"], "星润Starain")
+
+    def test_backend_super_owner_approves_org_request_and_bootstraps_owner_and_invite(self):
+        kayn_token = self.login_as_kayn()
+        submit = self.client.post(
+            "/api/organization-requests",
+            json={
+                "organization_name": "Beichen Academy",
+                "username": "beichen_owner",
+                "display_name": "Beichen Principal",
+                "password": "secret123",
+            },
+        )
+        self.assertEqual(submit.status_code, 201)
+        request_id = submit.get_json()["id"]
+
+        pending = self.client.get(
+            "/api/admin/organization-requests",
+            headers=self.auth_headers(kayn_token),
+        )
+        self.assertEqual(pending.status_code, 200)
+        pending_payload = pending.get_json()
+        self.assertIsNotNone(pending_payload)
+        self.assertTrue(any(item["id"] == request_id for item in pending_payload["items"]))
+
+        approve = self.client.post(
+            f"/api/admin/organization-requests/{request_id}/approve",
+            headers=self.auth_headers(kayn_token),
+        )
+        self.assertEqual(approve.status_code, 200)
+        approved_payload = approve.get_json()
+        self.assertIsNotNone(approved_payload)
+        self.assertEqual(approved_payload["user"]["role"], "owner")
+        self.assertEqual(approved_payload["user"]["organization_name"], "Beichen Academy")
+
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "beichen_owner", "password": "secret123"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_payload = owner_login.get_json()
+        self.assertIsNotNone(owner_payload)
+        owner_token = owner_payload["token"]
+
+        invite_response = self.client.get(
+            "/api/organization/invite",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(invite_response.status_code, 200)
+        invite_payload = invite_response.get_json()
+        self.assertIsNotNone(invite_payload)
+        self.assertEqual(invite_payload["organization_name"], "Beichen Academy")
+        self.assertTrue(invite_payload["invite_code"])
+        self.assertTrue(invite_payload["invite_link"])
+        self.assertIn("/join/", invite_payload["invite_link"])
+
+        conn = lesson_manager.get_conn()
+        try:
+            active_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM organization_invites WHERE organization_id=? AND status='active'",
+                (approved_payload["user"]["organization_id"],),
+            ).fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(active_count, 1)
+
+    def test_backend_non_super_owner_cannot_approve_org_request(self):
+        kayn_token = self.login_as_kayn()
+        submit_response = self.submit_organization_request(
+            organization_name="Forbidden Approver School",
+            username="forbidden_owner",
+            display_name="Forbidden Owner",
+            password="forbidden123",
+        )
+        self.assertEqual(submit_response.status_code, 201)
+        submit_payload = submit_response.get_json()
+        self.assertIsNotNone(submit_payload)
+        request_id = submit_payload["id"]
+
+        owner_candidate_payload = self.approve_user(
+            owner_token=kayn_token,
+            username="owner_reviewer",
+            display_name="Owner Reviewer",
+            password="ownerreview123",
+        )
+        owner_candidate_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+        )
+        self.assertEqual(owner_candidate_me.status_code, 200)
+        owner_candidate_id = owner_candidate_me.get_json()["id"]
+
+        promote = self.client.put(
+            f"/api/admin/users/{owner_candidate_id}/role",
+            headers=self.auth_headers(kayn_token),
+            json={"role": "owner"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        pending_list = self.client.get(
+            "/api/admin/organization-requests",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+        )
+        self.assertEqual(pending_list.status_code, 403)
+
+        approve = self.client.post(
+            f"/api/admin/organization-requests/{request_id}/approve",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+        )
+        self.assertEqual(approve.status_code, 403)
+
+    def test_backend_join_by_invite_code_creates_active_member_in_target_org(self):
+        _, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Code Join School",
+            owner_username="code_join_owner",
+            owner_display_name="Code Join Owner",
+            owner_password="ownerpass123",
+        )
+
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "code_join_member",
+                "display_name": "Code Join Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        join_payload = join.get_json()
+        self.assertIsNotNone(join_payload)
+        self.assertEqual(join_payload["user"]["role"], "member")
+        self.assertEqual(join_payload["user"]["status"], "active")
+        self.assertEqual(join_payload["user"]["organization_name"], "Code Join School")
+
+        member_login = self.client.post(
+            "/api/login",
+            json={"username": "code_join_member", "password": "memberpass123"},
+        )
+        self.assertEqual(member_login.status_code, 200)
+
+    def test_backend_join_by_invite_link_creates_active_member_in_target_org(self):
+        _, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Link Join School",
+            owner_username="link_join_owner",
+            owner_display_name="Link Join Owner",
+            owner_password="ownerpass123",
+        )
+        token = self._token_from_invite_link(invite_payload["invite_link"])
+
+        preview = self.client.get(f"/api/invite/{token}")
+        self.assertEqual(preview.status_code, 200)
+        preview_payload = preview.get_json()
+        self.assertIsNotNone(preview_payload)
+        self.assertEqual(preview_payload["organization_name"], "Link Join School")
+
+        join = self.client.post(
+            f"/api/join-by-invite-link/{token}",
+            json={
+                "username": "link_join_member",
+                "display_name": "Link Join Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        join_payload = join.get_json()
+        self.assertIsNotNone(join_payload)
+        self.assertEqual(join_payload["user"]["role"], "member")
+        self.assertEqual(join_payload["user"]["status"], "active")
+        self.assertEqual(join_payload["user"]["organization_name"], "Link Join School")
+
+    def test_backend_invite_reset_invalidates_old_code_and_link(self):
+        owner_token, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Reset Invite School",
+            owner_username="reset_owner",
+            owner_display_name="Reset Owner",
+            owner_password="ownerpass123",
+        )
+        old_code = invite_payload["invite_code"]
+        old_token = self._token_from_invite_link(invite_payload["invite_link"])
+
+        reset = self.client.post(
+            "/api/organization/invite/reset",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(reset.status_code, 200)
+        new_invite_payload = reset.get_json()
+        self.assertIsNotNone(new_invite_payload)
+        self.assertNotEqual(new_invite_payload["invite_code"], old_code)
+        self.assertNotEqual(
+            self._token_from_invite_link(new_invite_payload["invite_link"]),
+            old_token,
+        )
+
+        stale_code_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": old_code,
+                "username": "stale_code_member",
+                "display_name": "Stale Code Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(stale_code_join.status_code, 404)
+
+        stale_link_join = self.client.post(
+            f"/api/join-by-invite-link/{old_token}",
+            json={
+                "username": "stale_link_member",
+                "display_name": "Stale Link Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(stale_link_join.status_code, 404)
+
+    def test_super_owner_approves_organization_request_and_bootstraps_owner_and_invite(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        submit = self.submit_organization_request(
+            organization_name="Beichen Academy",
+            username="beichen_owner",
+            display_name="Beichen Principal",
+            password="secret123",
+        )
+        self.assertEqual(submit.status_code, 201)
+        submit_payload = submit.get_json()
+        self.assertIsNotNone(submit_payload)
+        request_id = submit_payload["id"]
+
+        pending = self.client.get(
+            "/api/admin/organization-requests",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(pending.status_code, 200)
+        pending_payload = pending.get_json()
+        self.assertIsNotNone(pending_payload)
+        self.assertEqual(pending_payload["items"][0]["organization_name"], "Beichen Academy")
+
+        approve = self.approve_organization_request(owner_token, request_id)
+        self.assertEqual(approve.status_code, 200)
+        approve_payload = approve.get_json()
+        self.assertIsNotNone(approve_payload)
+        self.assertEqual(approve_payload["user"]["role"], "owner")
+        self.assertEqual(approve_payload["user"]["organization_name"], "Beichen Academy")
+
+        organization_owner_login = self.client.post(
+            "/api/login",
+            json={"username": "beichen_owner", "password": "secret123"},
+        )
+        self.assertEqual(organization_owner_login.status_code, 200)
+        organization_owner_token = organization_owner_login.get_json()["token"]
+
+        invite = self.client.get(
+            "/api/organization/invite",
+            headers=self.auth_headers(organization_owner_token),
+        )
+        self.assertEqual(invite.status_code, 200)
+        invite_payload = invite.get_json()
+        self.assertIsNotNone(invite_payload)
+        self.assertEqual(invite_payload["organization_name"], "Beichen Academy")
+        self.assertTrue(invite_payload["invite_code"])
+        self.assertTrue(invite_payload["invite_link"])
+
+    def test_non_super_owner_cannot_approve_organization_requests(self):
+        super_owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(super_owner_login.status_code, 200)
+        super_owner_token = super_owner_login.get_json()["token"]
+
+        submit = self.submit_organization_request(
+            organization_name="Xinghe School",
+            username="xinghe_owner",
+            display_name="Xinghe Owner",
+            password="ownerpass123",
+        )
+        self.assertEqual(submit.status_code, 201)
+        request_id = submit.get_json()["id"]
+
+        owner_payload = self.approve_user(
+            owner_token=super_owner_token,
+            username="org_review_owner",
+            display_name="Org Review Owner",
+            password="review123",
+        )
+        owner_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(owner_payload["token"]),
+        ).get_json()["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{owner_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "owner"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        forbidden = self.approve_organization_request(owner_payload["token"], request_id)
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_members_can_join_by_invite_code_and_old_invites_fail_after_reset(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        submit = self.submit_organization_request(
+            organization_name="Xinghe School",
+            username="xinghe_owner",
+            display_name="Xinghe Owner",
+            password="ownerpass123",
+        )
+        self.assertEqual(submit.status_code, 201)
+        request_id = submit.get_json()["id"]
+
+        approve = self.approve_organization_request(owner_token, request_id)
+        self.assertEqual(approve.status_code, 200)
+
+        organization_owner_login = self.client.post(
+            "/api/login",
+            json={"username": "xinghe_owner", "password": "ownerpass123"},
+        )
+        self.assertEqual(organization_owner_login.status_code, 200)
+        organization_owner_token = organization_owner_login.get_json()["token"]
+
+        invite = self.client.get(
+            "/api/organization/invite",
+            headers=self.auth_headers(organization_owner_token),
+        )
+        self.assertEqual(invite.status_code, 200)
+        invite_payload = invite.get_json()
+        self.assertIsNotNone(invite_payload)
+
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "teacher_joined",
+                "display_name": "Teacher Joined",
+                "password": "joinpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        join_payload = join.get_json()
+        self.assertIsNotNone(join_payload)
+        self.assertEqual(join_payload["user"]["organization_name"], "Xinghe School")
+        self.assertEqual(join_payload["user"]["role"], "member")
+
+        reset = self.client.post(
+            "/api/organization/invite/reset",
+            headers=self.auth_headers(organization_owner_token),
+        )
+        self.assertEqual(reset.status_code, 200)
+        reset_payload = reset.get_json()
+        self.assertIsNotNone(reset_payload)
+        self.assertNotEqual(reset_payload["invite_code"], invite_payload["invite_code"])
+
+        stale_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "teacher_old_code",
+                "display_name": "Teacher Old Code",
+                "password": "joinpass123",
+            },
+        )
+        self.assertEqual(stale_join.status_code, 404)
+
+        next_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": reset_payload["invite_code"],
+                "username": "teacher_new_code",
+                "display_name": "Teacher New Code",
+                "password": "joinpass123",
+            },
+        )
+        self.assertEqual(next_join.status_code, 201)
+
+    def test_members_can_join_by_invite_link(self):
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        owner_token = owner_login.get_json()["token"]
+
+        submit = self.submit_organization_request(
+            organization_name="Tianqi International",
+            username="tianqi_owner",
+            display_name="Tianqi Owner",
+            password="ownerpass123",
+        )
+        self.assertEqual(submit.status_code, 201)
+        request_id = submit.get_json()["id"]
+
+        approve = self.approve_organization_request(owner_token, request_id)
+        self.assertEqual(approve.status_code, 200)
+
+        organization_owner_login = self.client.post(
+            "/api/login",
+            json={"username": "tianqi_owner", "password": "ownerpass123"},
+        )
+        self.assertEqual(organization_owner_login.status_code, 200)
+        organization_owner_token = organization_owner_login.get_json()["token"]
+
+        invite = self.client.get(
+            "/api/organization/invite",
+            headers=self.auth_headers(organization_owner_token),
+        )
+        self.assertEqual(invite.status_code, 200)
+        invite_payload = invite.get_json()
+        self.assertIsNotNone(invite_payload)
+        invite_token = invite_payload["invite_link"].rsplit("/", 1)[-1]
+
+        invite_lookup = self.client.get(f"/api/invite/{invite_token}")
+        self.assertEqual(invite_lookup.status_code, 200)
+        self.assertEqual(invite_lookup.get_json()["organization_name"], "Tianqi International")
+
+        join = self.client.post(
+            f"/api/join-by-invite-link/{invite_token}",
+            json={
+                "username": "teacher_linked",
+                "display_name": "Teacher Linked",
+                "password": "joinpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        join_payload = join.get_json()
+        self.assertIsNotNone(join_payload)
+        self.assertEqual(join_payload["user"]["organization_name"], "Tianqi International")
 
     def test_kayn_login_maps_to_reserved_owner_account(self):
         owner_login = self.client.post(

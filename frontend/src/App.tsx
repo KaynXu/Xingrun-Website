@@ -2920,6 +2920,14 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
   const [bindingSummaryError, setBindingSummaryError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
   const [roleSavingUserId, setRoleSavingUserId] = useState<number | null>(null);
+  const [organizationRequests, setOrganizationRequests] = useState<OrganizationRequestItem[]>([]);
+  const [organizationRequestsLoading, setOrganizationRequestsLoading] = useState(currentUser.role === 'super_owner');
+  const [organizationRequestsError, setOrganizationRequestsError] = useState('');
+  const [organizationActingId, setOrganizationActingId] = useState<number | null>(null);
+  const [organizationInvite, setOrganizationInvite] = useState<OrganizationInviteInfo | null>(null);
+  const [organizationInviteLoading, setOrganizationInviteLoading] = useState(hasOwnerAccess(currentUser.role));
+  const [organizationInviteError, setOrganizationInviteError] = useState('');
+  const [organizationInviteResetting, setOrganizationInviteResetting] = useState(false);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -2966,11 +2974,52 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
     }
   }, []);
 
+  const loadOrganizationRequests = useCallback(async () => {
+    if (currentUser.role !== 'super_owner') {
+      setOrganizationRequests([]);
+      setOrganizationRequestsLoading(false);
+      return;
+    }
+
+    setOrganizationRequestsLoading(true);
+    setOrganizationRequestsError('');
+    try {
+      const data = await apiFetch<{ items: OrganizationRequestItem[] }>('/api/admin/organization-requests');
+      setOrganizationRequests(data.items);
+    } catch (err) {
+      setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批加载失败');
+    } finally {
+      setOrganizationRequestsLoading(false);
+    }
+  }, [currentUser.role]);
+
+  const loadOrganizationInvite = useCallback(async () => {
+    if (!hasOwnerAccess(currentUser.role)) {
+      setOrganizationInvite(null);
+      setOrganizationInviteLoading(false);
+      return;
+    }
+
+    setOrganizationInviteLoading(true);
+    setOrganizationInviteError('');
+    try {
+      const data = await apiFetch<OrganizationInviteInfo>('/api/organization/invite');
+      setOrganizationInvite(data);
+    } catch (err) {
+      setOrganizationInvite(null);
+      setOrganizationInviteError(err instanceof Error ? err.message : '机构邀请设置加载失败');
+    } finally {
+      setOrganizationInviteLoading(false);
+    }
+  }, [currentUser.role]);
+
   useEffect(() => {
     loadItems().catch(() => undefined);
     loadUsers().catch(() => undefined);
     loadBindingSummaries().catch(() => undefined);
-  }, [loadItems, loadUsers, loadBindingSummaries]);
+    loadOrganizationRequests().catch(() => undefined);
+    loadOrganizationInvite().catch(() => undefined);
+  }, [loadItems, loadUsers, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
 
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
@@ -2984,6 +3033,37 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
       setError(err instanceof Error ? err.message : '审批操作失败');
     } finally {
       setActingId(null);
+    }
+  };
+
+  const handleOrganizationRequestDecision = async (requestId: number, action: 'approve' | 'reject') => {
+    setOrganizationActingId(requestId);
+    setOrganizationRequestsError('');
+    try {
+      await apiFetch(`/api/admin/organization-requests/${requestId}/${action}`, {
+        method: 'POST',
+      });
+      setOrganizationRequests((current) => current.filter((item) => item.id !== requestId));
+      loadUsers().catch(() => undefined);
+    } catch (err) {
+      setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批处理失败');
+    } finally {
+      setOrganizationActingId(null);
+    }
+  };
+
+  const handleResetOrganizationInvite = async () => {
+    setOrganizationInviteResetting(true);
+    setOrganizationInviteError('');
+    try {
+      const data = await apiFetch<OrganizationInviteInfo>('/api/organization/invite/reset', {
+        method: 'POST',
+      });
+      setOrganizationInvite(data);
+    } catch (err) {
+      setOrganizationInviteError(err instanceof Error ? err.message : '机构邀请重置失败');
+    } finally {
+      setOrganizationInviteResetting(false);
     }
   };
 
@@ -3027,6 +3107,145 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
+      {currentUser.role === 'super_owner' && (
+        <section className={`${workspaceCardClass} p-6`}>
+          <div className="flex flex-col gap-4 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">机构开通审批</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                审核新机构的开通申请。通过后，申请人会自动成为该机构的首位 owner，并生成当前唯一有效的邀请码与邀请链接。
+              </p>
+            </div>
+            <button onClick={() => loadOrganizationRequests().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+              刷新机构申请
+            </button>
+          </div>
+
+          {organizationRequestsError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {organizationRequestsError}
+            </div>
+          )}
+
+          {organizationRequestsLoading ? (
+            <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载机构开通申请...</div>
+          ) : organizationRequests.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前没有待处理的机构开通申请。
+            </div>
+          ) : (
+            <div className="mt-5 space-y-4">
+              {organizationRequests.map((item) => {
+                const busy = organizationActingId === item.id;
+                return (
+                  <div key={item.id} className={`${workspaceSoftCardClass} p-5`}>
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.organization_name}</span>
+                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
+                            待审批
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">首位账号</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责人称呼</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.display_name}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">申请时间</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.created_at}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => handleOrganizationRequestDecision(item.id, 'reject')}
+                          disabled={busy}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          驳回
+                        </button>
+                        <button
+                          onClick={() => handleOrganizationRequestDecision(item.id, 'approve')}
+                          disabled={busy}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          {busy ? '处理中...' : '通过并开通机构'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {hasOwnerAccess(currentUser.role) && (
+        <section className={`${workspaceCardClass} p-6`}>
+          <div className="flex flex-col gap-4 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">机构邀请设置</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                当前机构仅保留一个有效邀请码。重置后，旧邀请码和旧邀请链接会立刻失效。
+              </p>
+            </div>
+            <button
+              onClick={() => loadOrganizationInvite().catch(() => undefined)}
+              className={workspaceSecondaryButtonClass}
+            >
+              刷新邀请信息
+            </button>
+          </div>
+
+          {organizationInviteError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {organizationInviteError}
+            </div>
+          )}
+
+          {organizationInviteLoading ? (
+            <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载邀请码...</div>
+          ) : organizationInvite ? (
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className={`${workspaceSoftCardClass} grid gap-4 p-5 md:grid-cols-3`}>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">机构</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{organizationInvite.organization_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{organizationInvite.invite_code}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">邀请链接</p>
+                  <p className="mt-1 break-all text-sm text-slate-700 dark:text-slate-200">{organizationInvite.invite_link}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => void handleResetOrganizationInvite()}
+                disabled={organizationInviteResetting}
+                className={workspacePrimaryButtonClass}
+              >
+                {organizationInviteResetting ? '重置中...' : '重置邀请码'}
+              </button>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前没有可用的邀请码信息。
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
         <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
@@ -4113,6 +4332,9 @@ const LoginModal = ({
       if (!res.ok) {
         throw new Error(data.error || '登录服务不可用，请确认后端已启动');
       }
+      if (!data.token) {
+        throw new Error('登录响应缺少令牌，请稍后再试');
+      }
       onLogin(data.token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '登录失败');
@@ -4221,7 +4443,9 @@ const LoginModal = ({
   );
 };
 
-const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
+const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => <OrganizationApplyModal onClose={onClose} />;
+
+const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
@@ -4575,6 +4799,8 @@ const JoinOrganizationModal = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setError('');
+    setSuccess('');
     if (!inviteToken) {
       setOrganizationName('');
       return;
@@ -5332,8 +5558,21 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(localStorage.getItem('xr_token')));
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
-  const [showLogin, setShowLogin] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
+  const [publicAuthModal, setPublicAuthModal] = useState<PublicAuthModal | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    if (window.localStorage?.getItem?.('xr_token')) {
+      return null;
+    }
+    return getJoinInviteTokenFromPath(window.location.pathname) ? 'join-organization' : null;
+  });
+  const [joinInviteToken, setJoinInviteToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return getJoinInviteTokenFromPath(window.location.pathname);
+  });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [masterDataFocusUserId, setMasterDataFocusUserId] = useState<number | null>(null);
@@ -5375,6 +5614,33 @@ export default function App() {
   }, []);
 
   const landingLegalPage = getLandingLegalPageFromHash(landingHash);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const syncInvitePath = () => {
+      if (token) {
+        clearJoinInvitePathIfNeeded();
+        setJoinInviteToken(null);
+        setPublicAuthModal(null);
+        return;
+      }
+
+      const nextToken = getJoinInviteTokenFromPath(window.location.pathname);
+      setJoinInviteToken(nextToken);
+      if (nextToken && !token) {
+        setPublicAuthModal('join-organization');
+        return;
+      }
+      setPublicAuthModal((current) => (current === 'join-organization' ? null : current));
+    };
+
+    syncInvitePath();
+    window.addEventListener('popstate', syncInvitePath);
+    return () => window.removeEventListener('popstate', syncInvitePath);
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
@@ -5459,19 +5725,41 @@ export default function App() {
   }, [authReady, currentUser, token]);
 
   const handleLogin = (t: string) => {
+    clearJoinInvitePathIfNeeded();
     localStorage.setItem('xr_token', t);
     setToken(t);
-    setShowLogin(false);
+    setPublicAuthModal(null);
+    setJoinInviteToken(null);
     setShowLanding(false);
   };
 
   const handleLogout = () => {
+    clearJoinInvitePathIfNeeded();
     localStorage.removeItem('xr_token');
     setToken('');
     setCurrentUser(null);
+    setPublicAuthModal(null);
+    setJoinInviteToken(null);
     setShowLanding(false);
     setActivePage('dashboard');
     setMobileNavOpen(false);
+  };
+
+  const closePublicAuthModal = () => {
+    clearJoinInvitePathIfNeeded();
+    setJoinInviteToken(null);
+    setPublicAuthModal(null);
+  };
+
+  const openApplyOrganization = () => {
+    setJoinInviteToken(null);
+    setPublicAuthModal('apply-organization');
+  };
+
+  const openJoinOrganization = () => {
+    const nextToken = typeof window === 'undefined' ? null : getJoinInviteTokenFromPath(window.location.pathname);
+    setJoinInviteToken(nextToken);
+    setPublicAuthModal('join-organization');
   };
 
   const handleReviewGenerationSuccess = () => {
@@ -5515,31 +5803,39 @@ export default function App() {
     return (
       <>
         <LandingPage
-          onLogin={token ? () => setShowLanding(false) : () => setShowLogin(true)}
-          activeLegalPage={landingLegalPage}
-          isDark={isDark}
-          onToggleDarkMode={() => setIsDark((current) => !current)}
-          onRegister={() => {
+          onLogin={token ? () => setShowLanding(false) : () => setPublicAuthModal('login')}
+          onApplyOrganization={() => {
             if (token) {
               setShowLanding(false);
               return;
             }
-            setShowRegister(true);
+            openApplyOrganization();
           }}
+          onJoinOrganization={() => {
+            if (token) {
+              setShowLanding(false);
+              return;
+            }
+            openJoinOrganization();
+          }}
+          activeLegalPage={landingLegalPage}
+          isDark={isDark}
+          onToggleDarkMode={() => setIsDark((current) => !current)}
         />
         <AnimatePresence>
-          {showLogin && (
+          {publicAuthModal === 'login' && (
             <LoginModal
               onLogin={handleLogin}
-              onClose={() => setShowLogin(false)}
-              onOpenRegister={() => {
-                setShowLogin(false);
-                setShowRegister(true);
-              }}
+              onClose={closePublicAuthModal}
+              onOpenApplyOrganization={openApplyOrganization}
+              onOpenJoinOrganization={openJoinOrganization}
             />
           )}
-          {showRegister && (
-            <RegisterRequestModal onClose={() => setShowRegister(false)} />
+          {publicAuthModal === 'apply-organization' && (
+            <OrganizationApplyModal onClose={closePublicAuthModal} />
+          )}
+          {publicAuthModal === 'join-organization' && (
+            <JoinOrganizationModal onClose={closePublicAuthModal} inviteToken={joinInviteToken} />
           )}
         </AnimatePresence>
       </>
