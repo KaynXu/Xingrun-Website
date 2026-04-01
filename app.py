@@ -118,6 +118,10 @@ DEFAULT_TEACHER_FEEDBACK_TEMPLATES = [
         "guidance": "需要家长帮助孩子尽快回顾课堂内容，并完成基础练习。",
     },
 ]
+DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS = {
+    template["id"]
+    for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
+}
 
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -957,7 +961,13 @@ def _normalize_feedback_custom_templates(custom_templates: list[dict]) -> list[d
         template_id = str(item.get("id") or "").strip()
         label = str(item.get("label") or "").strip()
         guidance = str(item.get("guidance") or "").strip()
-        if not template_id or not label or not guidance or template_id in seen_template_ids:
+        if (
+            not template_id
+            or not label
+            or not guidance
+            or template_id in seen_template_ids
+            or template_id in DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS
+        ):
             continue
         normalized_templates.append(
             {
@@ -975,6 +985,7 @@ def _normalize_feedback_students_for_draft(
     students: list[dict],
     roster_by_id: dict[int, dict],
     template_lookup: dict[str, dict],
+    enforce_roster_membership: bool,
 ) -> tuple[list[dict], int]:
     selected_students: list[dict] = []
     skipped_count = 0
@@ -992,10 +1003,13 @@ def _normalize_feedback_students_for_draft(
             skipped_count += 1
             continue
         roster_student = roster_by_id.get(student_id) if isinstance(student_id, int) else None
-        if roster_by_id and not roster_student:
+        if enforce_roster_membership and not roster_student:
             skipped_count += 1
             continue
         template = template_lookup.get(selected_template_id) or {}
+        if not template:
+            skipped_count += 1
+            continue
         selected_students.append(
             {
                 **item,
@@ -1015,6 +1029,8 @@ def _normalize_feedback_editor_students(
     *,
     students: list[dict],
     roster_by_id: dict[int, dict],
+    enforce_roster_membership: bool,
+    allowed_template_ids: set[str],
 ) -> list[dict]:
     normalized_students: list[dict] = []
     seen_student_ids: set[int] = set()
@@ -1025,13 +1041,16 @@ def _normalize_feedback_editor_students(
         if not isinstance(student_id, int) or student_id in seen_student_ids:
             continue
         roster_student = roster_by_id.get(student_id)
-        if roster_by_id and not roster_student:
+        if enforce_roster_membership and not roster_student:
             continue
+        selected_template_id = str(item.get("selected_template_id") or "").strip()
+        if selected_template_id not in allowed_template_ids:
+            selected_template_id = ""
         normalized_students.append(
             {
                 "student_id": student_id,
                 "name": (roster_student or {}).get("name") or str(item.get("name") or "").strip(),
-                "selected_template_id": str(item.get("selected_template_id") or "").strip(),
+                "selected_template_id": selected_template_id,
                 "remark": str(item.get("remark") or "").strip(),
             }
         )
@@ -1044,6 +1063,7 @@ def _build_feedback_student_index(
     student_index: list[dict],
     students: list[dict],
     roster_by_id: dict[int, dict],
+    enforce_roster_membership: bool,
 ) -> list[dict]:
     source = student_index if student_index else students
     normalized: list[dict] = []
@@ -1055,7 +1075,7 @@ def _build_feedback_student_index(
         if not isinstance(student_id, int) or student_id in seen_student_ids:
             continue
         roster_student = roster_by_id.get(student_id)
-        if roster_by_id and not roster_student:
+        if enforce_roster_membership and not roster_student:
             continue
         student_name = (roster_student or {}).get("name") or str(item.get("name") or "").strip()
         if not student_name:
@@ -1747,6 +1767,7 @@ def api_lesson_feedback_draft(lesson_id):
 
     roster_by_id = {}
     class_id = lesson.get("class_id")
+    enforce_roster_membership = isinstance(class_id, int) and class_id > 0
     if isinstance(class_id, int) and class_id > 0:
         roster_by_id = {
             student["id"]: student
@@ -1757,6 +1778,7 @@ def api_lesson_feedback_draft(lesson_id):
         students=students,
         roster_by_id=roster_by_id,
         template_lookup=template_lookup,
+        enforce_roster_membership=enforce_roster_membership,
     )
     if not selected_students:
         return jsonify({
@@ -1824,20 +1846,26 @@ def api_lesson_feedback_save(lesson_id):
 
     roster_by_id = {}
     class_id = lesson.get("class_id")
+    enforce_roster_membership = isinstance(class_id, int) and class_id > 0
     if isinstance(class_id, int) and class_id > 0:
         roster_by_id = {
             student["id"]: student
             for student in list_students_for_class(class_id)
         }
+    normalized_custom_templates = _normalize_feedback_custom_templates(custom_templates)
+    allowed_template_ids = set(DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS)
+    allowed_template_ids.update(template["id"] for template in normalized_custom_templates)
     normalized_students = _normalize_feedback_editor_students(
         students=students,
         roster_by_id=roster_by_id,
+        enforce_roster_membership=enforce_roster_membership,
+        allowed_template_ids=allowed_template_ids,
     )
-    normalized_custom_templates = _normalize_feedback_custom_templates(custom_templates)
     normalized_student_index = _build_feedback_student_index(
         student_index=student_index,
         students=normalized_students,
         roster_by_id=roster_by_id,
+        enforce_roster_membership=enforce_roster_membership,
     )
     merged_text = data.get("merged_text")
     if merged_text is None:

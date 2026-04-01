@@ -378,6 +378,58 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
         call_kwargs = generate_teacher_feedback_draft.call_args.kwargs
         self.assertEqual([item["student_id"] for item in call_kwargs["students"]], [student["id"]])
 
+    @patch("app.generate_teacher_feedback_draft")
+    def test_feedback_draft_skips_students_when_class_roster_is_empty(self, generate_teacher_feedback_draft):
+        class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
+        lesson_id = self.create_lesson(class_id=class_id)
+
+        response = self.client.post(
+            f"/api/lessons/{lesson_id}/feedback/draft",
+            headers=self.headers,
+            json={
+                "students": [
+                    {
+                        "student_id": 999999,
+                        "name": "Ghost Student",
+                        "selected_template_id": "active",
+                        "remark": "Should not be included.",
+                    }
+                ],
+                "custom_templates": [],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["students_included"], 0)
+        self.assertEqual(response.get_json()["students_skipped"], 1)
+        generate_teacher_feedback_draft.assert_not_called()
+
+    @patch("app.generate_teacher_feedback_draft")
+    def test_feedback_draft_skips_unknown_template_ids(self, generate_teacher_feedback_draft):
+        class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
+        lesson_id = self.create_lesson(class_id=class_id)
+        student = lesson_manager.create_student_for_class(class_id, "Alice")
+
+        response = self.client.post(
+            f"/api/lessons/{lesson_id}/feedback/draft",
+            headers=self.headers,
+            json={
+                "students": [
+                    {
+                        "student_id": student["id"],
+                        "selected_template_id": "unknown-template",
+                        "remark": "Should not be included.",
+                    }
+                ],
+                "custom_templates": [],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["students_included"], 0)
+        self.assertEqual(response.get_json()["students_skipped"], 1)
+        generate_teacher_feedback_draft.assert_not_called()
+
     def test_feedback_save_defaults_student_index_from_students_when_omitted(self):
         class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
         lesson_id = self.create_lesson(class_id=class_id)
@@ -480,6 +532,48 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(reopened_payload["students"][0]["selected_template_id"], "active")
         self.assertEqual(reopened_payload["students"][0]["remark"], "Clear explanation.")
         self.assertEqual(reopened_payload["custom_templates"][0]["id"], "custom-1")
+
+    def test_feedback_save_filters_ghost_students_and_unknown_template_ids(self):
+        class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
+        lesson_id = self.create_lesson(class_id=class_id)
+
+        save = self.client.put(
+            f"/api/lessons/{lesson_id}/feedback",
+            headers=self.headers,
+            json={
+                "merged_text": "Ghost text should not create roster state",
+                "students": [
+                    {
+                        "student_id": 999999,
+                        "name": "Ghost Student",
+                        "selected_template_id": "active",
+                        "remark": "Should not be persisted.",
+                    }
+                ],
+                "custom_templates": [
+                    {
+                        "id": "active",
+                        "label": "Overridden",
+                        "guidance": "Should be ignored.",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(save.status_code, 200)
+        self.assertEqual(save.get_json()["student_index"], [])
+        self.assertEqual(save.get_json()["editor_state"]["students"], [])
+        self.assertEqual(save.get_json()["editor_state"]["custom_templates"], [])
+
+        reopened = self.client.get(
+            f"/api/lessons/{lesson_id}/feedback",
+            headers=self.headers,
+        )
+        reopened_payload = reopened.get_json()
+        self.assertEqual(reopened.status_code, 200)
+        self.assertEqual(reopened_payload["student_index"], [])
+        self.assertEqual(reopened_payload["students"], [])
+        self.assertEqual(reopened_payload["custom_templates"], [])
 
     @patch("app.generate_teacher_feedback_draft")
     def test_feedback_endpoints_save_and_reload_against_the_current_roster(self, generate_teacher_feedback_draft):
