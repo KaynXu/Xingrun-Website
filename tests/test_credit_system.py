@@ -37,24 +37,17 @@ class CreditSystemServiceTestCase(unittest.TestCase):
             amount=120,
             note="seed credits for test",
         )
-        credit_manager.record_ai_charge(
+        credit_manager.apply_manual_adjustment(
             organization_id=self.owner["organization_id"],
-            user_id=self.owner["id"],
-            feature_key="consultation_ai_parse",
-            provider="openai",
-            model="gpt-4o",
-            input_tokens=120,
-            output_tokens=40,
-            credit_cost_final=6,
-            source_record_type="consultation_batch",
-            source_record_id=7,
-            request_id="req-credit-seed",
+            actor_user_id=self.owner["id"],
+            amount=-20,
+            note="manual debit for correction",
         )
 
         updated = credit_manager.get_credit_overview(self.owner["organization_id"])
-        self.assertEqual(updated["credit_balance"], 114)
+        self.assertEqual(updated["credit_balance"], 100)
         self.assertEqual(updated["total_recharged"], 120)
-        self.assertEqual(updated["total_consumed"], 6)
+        self.assertEqual(updated["total_consumed"], 20)
 
     def test_member_usage_summary_groups_by_user(self):
         member = lesson_manager.create_registration_request(
@@ -89,4 +82,3 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         self.assertEqual(summary[0]["user_id"], approved["id"])
         self.assertEqual(summary[0]["credit_consumed"], 5)
         self.assertEqual(summary[0]["usage_count"], 1)
-
