@@ -911,7 +911,7 @@ class AccountFlowTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_admin_cannot_access_master_data_binding_endpoints(self):
+    def test_admin_sees_removed_master_data_binding_endpoints_as_not_found(self):
         owner_login = self.client.post(
             "/api/login",
             json={"username": "Kayn", "password": "xingrun2026"},
@@ -937,20 +937,20 @@ class AccountFlowTestCase(unittest.TestCase):
             "/api/master-data/mappings/wrong-questions",
             headers=self.auth_headers(admin_payload["token"]),
         )
-        self.assertEqual(queue_response.status_code, 403)
+        self.assertEqual(queue_response.status_code, 404)
 
         alias_get = self.client.get(
             "/api/master-data/users/1/aliases",
             headers=self.auth_headers(admin_payload["token"]),
         )
-        self.assertEqual(alias_get.status_code, 403)
+        self.assertEqual(alias_get.status_code, 404)
 
         alias_put = self.client.put(
             "/api/master-data/users/1/aliases",
             headers=self.auth_headers(admin_payload["token"]),
             json={"aliases": ["Kayn老师"]},
         )
-        self.assertEqual(alias_put.status_code, 403)
+        self.assertEqual(alias_put.status_code, 404)
 
     def test_member_wrong_question_list_is_scoped_to_owned_teacher_and_classes(self):
         owner_login = self.client.post(
@@ -1403,7 +1403,7 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertCountEqual([item["id"] for item in owner_payload], [lesson_a_id, lesson_b_id])
         self.assertCountEqual([item["id"] for item in admin_payload], [lesson_a_id, lesson_b_id])
 
-    def test_owner_can_access_master_data_binding_endpoints(self):
+    def test_owner_sees_removed_master_data_binding_endpoints_as_not_found(self):
         owner_login = self.client.post(
             "/api/login",
             json={"username": "Kayn", "password": "xingrun2026"},
@@ -1429,15 +1429,14 @@ class AccountFlowTestCase(unittest.TestCase):
             "/api/master-data/mappings/wrong-questions",
             headers=self.auth_headers(owner_payload["token"]),
         )
-        self.assertEqual(queue_response.status_code, 200)
+        self.assertEqual(queue_response.status_code, 404)
 
         alias_put = self.client.put(
             "/api/master-data/users/1/aliases",
             headers=self.auth_headers(owner_payload["token"]),
             json={"aliases": ["Kayn老师"]},
         )
-        self.assertEqual(alias_put.status_code, 200)
-        self.assertEqual(alias_put.get_json()["aliases"], ["Kayn老师"])
+        self.assertEqual(alias_put.status_code, 404)
 
     def test_anonymous_users_cannot_access_backend_apis(self):
         stats = self.client.get("/api/stats")

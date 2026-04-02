@@ -342,20 +342,6 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertIsNone(second_item["class_id"])
         self.assertEqual(second_item["class_display_name"], "六年级6班")
 
-        queue_response = self.client.get(
-            "/api/master-data/mappings/wrong-questions",
-            headers=self.auth_headers(owner_token),
-        )
-
-        self.assertEqual(queue_response.status_code, 200)
-        queue_item = queue_response.get_json()["items"][0]
-        self.assertEqual(queue_item["record_id"], "record-rebind-1")
-        self.assertEqual(queue_item["mapping_status"], "needs_review")
-        self.assertIsNone(queue_item["teacher_user_id"])
-        self.assertEqual(queue_item["teacher_display_name"], "Kayn 老师")
-        self.assertIsNone(queue_item["class_id"])
-        self.assertEqual(queue_item["class_display_name"], "六年级6班")
-
         persisted = master_data.get_wrong_question_mapping("record-rebind-1")
         self.assertIsNotNone(persisted)
         self.assertEqual(persisted["mapping_status"], "mapped")

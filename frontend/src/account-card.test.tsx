@@ -502,13 +502,13 @@ test('approval page source loads and renders member teaching binding summaries',
   assert.match(approvalBlock[0], /mini_teacher_bound/);
 });
 
-test('approval page source exposes a start binding action for each member card', () => {
+test('approval page source removes the start binding action from member cards', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
-  assert.match(approvalBlock[0], /开始绑定/);
-  assert.match(approvalBlock[0], /onStartBinding\(user\.id\)/);
+  assert.doesNotMatch(approvalBlock[0], /开始绑定/);
+  assert.doesNotMatch(approvalBlock[0], /onStartBinding\(user\.id\)/);
 });
 
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {

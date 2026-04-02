@@ -40,7 +40,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
-import { MasterDataMappingsPage } from './MasterDataMappingsPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
 import {
@@ -60,7 +59,7 @@ import {
 // --- Types ---
 
 type Role = 'super_owner' | 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'masterDataMappings' | 'classes' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
 
@@ -203,7 +202,6 @@ interface MemberBindingSummary {
 
 interface ApprovalPageProps {
   currentUser: CurrentUser;
-  onStartBinding: (userId: number) => void;
 }
 
 interface ClassFormValues {
@@ -1289,9 +1287,6 @@ const Sidebar = ({
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(canAccessSmartWrongQuestions(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
-      : []),
-    ...(hasOwnerAccess(currentUser.role)
-      ? [{ id: 'masterDataMappings', icon: Database, label: '老师与班级匹配' }]
       : []),
     ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
@@ -3662,7 +3657,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   );
 };
 
-const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
+const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [bindingSummaryByUserId, setBindingSummaryByUserId] = useState<Record<number, MemberBindingSummary>>({});
@@ -4208,13 +4203,6 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => onStartBinding(user.id)}
-                          className={workspaceSecondaryButtonClass}
-                        >
-                          开始绑定
-                        </button>
                         {roleFixed ? (
                           <span className="text-sm text-slate-500 dark:text-slate-400">
                             {user.role === 'super_owner' ? '超级管理员权限固定，不可调整' : '机构负责人权限仅可由超级管理员调整'}
@@ -6328,7 +6316,6 @@ export default function App() {
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
-  const [masterDataFocusUserId, setMasterDataFocusUserId] = useState<number | null>(null);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
@@ -6519,11 +6506,6 @@ export default function App() {
     setActivePage('review-generation');
   };
 
-  const handleStartMemberBinding = (userId: number) => {
-    setMasterDataFocusUserId(userId);
-    setActivePage('masterDataMappings');
-  };
-
   const handlePreviousCalendarWeek = () => {
     setCalendarAnchorDate((current) => shiftIsoDate(current, -7));
   };
@@ -6538,7 +6520,6 @@ export default function App() {
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
-    masterDataMappings: '老师与班级匹配',
     classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',
@@ -6694,13 +6675,10 @@ export default function App() {
                 {activePage === 'smartWrongQuestions' &&
                   canAccessSmartWrongQuestions(currentUser.role) &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
-                {activePage === 'masterDataMappings' &&
-                  hasOwnerAccess(currentUser.role) &&
-                  <MasterDataMappingsPage currentUser={currentUser} focusUserId={masterDataFocusUserId} />}
                 {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
-                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onStartBinding={handleStartMemberBinding} />}
+                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>

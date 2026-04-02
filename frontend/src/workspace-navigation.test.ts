@@ -18,7 +18,7 @@ function requireMatch(pattern: RegExp): string {
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'settings';/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -105,13 +105,14 @@ test('workspace navigation wires smart wrong questions into every authenticated 
   assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
-test('workspace navigation wires master data mappings into the owner shell only', () => {
+test('workspace navigation removes the master data mappings page and keeps accounts focused on approval only', () => {
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\)[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '老师与班级匹配' \}/);
-  assert.match(appSource, /masterDataMappings: '老师与班级匹配'/);
-  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*hasOwnerAccess\(currentUser\.role\)[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} focusUserId=\{masterDataFocusUserId\} \/>/);
-  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} onStartBinding=\{handleStartMemberBinding\} \/>/);
+  assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
+  assert.doesNotMatch(appSource, /masterDataMappings/);
+  assert.doesNotMatch(sidebarBlock, /老师与班级匹配/);
+  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} \/>/);
+  assert.doesNotMatch(appSource, /onStartBinding=\{handleStartMemberBinding\}/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
