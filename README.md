@@ -8,6 +8,13 @@
 
 ## 快速开始
 
+## Git 协作
+
+当前项目建议长期只保留一个主分支 `master`，功能开发使用临时分支，合并后及时删除。
+
+协作说明见：
+[`docs/git-collaboration.md`](docs/git-collaboration.md)
+
 ### 方式一：Web UI（推荐）
 
 **macOS** — 双击 `start.command`  
