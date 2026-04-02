@@ -239,6 +239,15 @@ test('consultation batch modal source attributes write failures to a specific dr
   assert.match(batchModalBlock[0], /setImporting\(true\);[\s\S]*try \{[\s\S]*for \(const \[index, draft\] of drafts\.entries\(\)\)[\s\S]*\} catch \(err\) \{[\s\S]*\} finally \{\s*setImporting\(false\);\s*\}/);
 });
 
+test('approval page source supports editing member display names inline', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /编辑姓名/);
+  assert.match(approvalBlock[0], /apiFetch\(`\/api\/admin\/users\/\$\{userId\}\/profile`, \{/);
+});
+
 test('consultation batch modal source keeps only remaining drafts after a partial import failure', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
