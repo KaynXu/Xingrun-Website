@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 import {
+  apiFetch,
   workspaceCardClass,
   workspaceFieldClass,
   workspacePageClass,
@@ -10,8 +11,10 @@ import {
   workspaceSoftCardClass,
 } from './App';
 import {
+  fetchUserAliases,
   fetchWrongQuestionMappingQueue,
   resolveWrongQuestionMapping,
+  updateUserAliases,
   type ResolveWrongQuestionMappingPayload,
   type WrongQuestionMappingQueueItem,
   type WrongQuestionMappingStatus,
@@ -22,12 +25,31 @@ type MasterDataMappingsPageProps = {
     display_name: string;
     organization_name: string;
   };
+  focusUserId?: number | null;
 };
 
 type MappingFormState = {
   teacherUserId: string;
   classId: string;
   mappingStatus: WrongQuestionMappingStatus;
+};
+
+type MappingClassOption = {
+  id: number;
+  name: string;
+  subject: string;
+};
+
+type MappingTeacherOption = {
+  id: number;
+  name: string;
+};
+
+type BindableUserOption = {
+  id: number;
+  name: string;
+  org: string;
+  role?: string;
 };
 
 const mappingStatusOptions: Array<{ value: WrongQuestionMappingStatus; label: string }> = [
@@ -59,13 +81,21 @@ function getStatusLabel(status: WrongQuestionMappingStatus): string {
   return mappingStatusOptions.find((option) => option.value === status)?.label || status;
 }
 
-export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPageProps) {
+export function MasterDataMappingsPage({ currentUser, focusUserId = null }: MasterDataMappingsPageProps) {
   const [items, setItems] = useState<WrongQuestionMappingQueueItem[]>([]);
+  const [classOptions, setClassOptions] = useState<MappingClassOption[]>([]);
+  const [teacherOptions, setTeacherOptions] = useState<MappingTeacherOption[]>([]);
+  const [bindableUsers, setBindableUsers] = useState<BindableUserOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [optionsError, setOptionsError] = useState('');
   const [savingRecordIds, setSavingRecordIds] = useState<Record<string, boolean>>({});
   const [saveErrorByRecordId, setSaveErrorByRecordId] = useState<Record<string, string>>({});
   const [formByRecordId, setFormByRecordId] = useState<Record<string, MappingFormState>>({});
+  const [userAliasDraftByUserId, setUserAliasDraftByUserId] = useState<Record<number, string>>({});
+  const [userAliasSavingByUserId, setUserAliasSavingByUserId] = useState<Record<number, boolean>>({});
+  const [userAliasErrorByUserId, setUserAliasErrorByUserId] = useState<Record<number, string>>({});
   const hasPendingSaves = Object.values(savingRecordIds).some(Boolean);
 
   const loadQueue = useCallback(async () => {
@@ -84,11 +114,55 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
       });
     } catch (loadError) {
       setItems([]);
-      setError(loadError instanceof Error ? loadError.message : '主数据映射队列加载失败');
+      setError(loadError instanceof Error ? loadError.message : '待处理匹配记录加载失败');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const loadOptions = useCallback(async () => {
+    setOptionsLoading(true);
+    setOptionsError('');
+
+    try {
+      const [nextClassItems, nextTeacherItems] = await Promise.all([
+        apiFetch<Array<{ id: number; name: string; subject?: string }>>('/api/classes'),
+        apiFetch<Array<{ id: number; name: string; org: string; role?: string }>>('/api/admin/users'),
+      ]);
+
+      setClassOptions(nextClassItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        subject: item.subject?.trim() ?? '',
+      })));
+      setTeacherOptions(nextTeacherItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+      })));
+      setBindableUsers(nextTeacherItems);
+
+      const aliasEntries = await Promise.all(
+        nextTeacherItems.map(async (item) => [item.id, await fetchUserAliases(item.id)] as const),
+      );
+      setUserAliasDraftByUserId(
+        aliasEntries.reduce<Record<number, string>>((accumulator, [userId, aliases]) => {
+          accumulator[userId] = aliases.join('\n');
+          return accumulator;
+        }, {}),
+      );
+    } catch (loadOptionsError) {
+      setClassOptions([]);
+      setTeacherOptions([]);
+      setBindableUsers([]);
+      setOptionsError(loadOptionsError instanceof Error ? loadOptionsError.message : '老师和班级选项加载失败');
+    } finally {
+      setOptionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOptions();
+  }, [loadOptions]);
 
   useEffect(() => {
     void loadQueue();
@@ -144,7 +218,7 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
     } catch (saveError) {
       setSaveErrorByRecordId((current) => ({
         ...current,
-        [recordId]: saveError instanceof Error ? saveError.message : '主数据映射保存失败',
+        [recordId]: saveError instanceof Error ? saveError.message : '匹配结果保存失败',
       }));
     } finally {
       setSavingRecordIds((current) => {
@@ -155,28 +229,81 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
     }
   };
 
+  const parseAliasDraft = (value: string): string[] => value
+    .split(/[\n,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const handleUserAliasDraftChange = (userId: number, value: string) => {
+    setUserAliasDraftByUserId((current) => ({
+      ...current,
+      [userId]: value,
+    }));
+  };
+
+  const handleSaveUserAliases = async (userId: number) => {
+    setUserAliasSavingByUserId((current) => ({
+      ...current,
+      [userId]: true,
+    }));
+    setUserAliasErrorByUserId((current) => ({
+      ...current,
+      [userId]: '',
+    }));
+
+    try {
+      const aliases = parseAliasDraft(userAliasDraftByUserId[userId] ?? '');
+      const savedAliases = await updateUserAliases(userId, aliases);
+      setUserAliasDraftByUserId((current) => ({
+        ...current,
+        [userId]: savedAliases.join('\n'),
+      }));
+    } catch (saveError) {
+      setUserAliasErrorByUserId((current) => ({
+        ...current,
+        [userId]: saveError instanceof Error ? saveError.message : '老师别名保存失败',
+      }));
+    } finally {
+      setUserAliasSavingByUserId((current) => {
+        const nextState = { ...current };
+        delete nextState[userId];
+        return nextState;
+      });
+    }
+  };
+
+  const sortedBindableUsers = [...bindableUsers].sort((left, right) => {
+    if (left.id === focusUserId) {
+      return -1;
+    }
+    if (right.id === focusUserId) {
+      return 1;
+    }
+    return left.name.localeCompare(right.name, 'zh-Hans-CN');
+  });
+
   return (
     <div className={workspacePageClass}>
       <section className={`${workspaceCardClass} space-y-6 p-6 sm:p-7`}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600">MASTER DATA</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600">基础信息整理</p>
             <div className="space-y-1">
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">主数据映射</h2>
+              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">老师与班级匹配</h2>
               <p className="max-w-3xl text-sm leading-7 text-slate-500 dark:text-slate-400">
-                仅供 {currentUser.organization_name} 管理员处理错题记录中的老师与班级主数据映射，当前登录账号为 {currentUser.display_name}。
+                用于整理错题记录中的老师与班级信息，方便后续自动识别与归档，当前登录账号为 {currentUser.display_name}。
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => {
-              void loadQueue();
+              void Promise.all([loadQueue(), loadOptions()]);
             }}
-            disabled={loading || hasPendingSaves}
+            disabled={loading || optionsLoading || hasPendingSaves}
             className={workspaceSecondaryButtonClass}
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : undefined} />
+            <RefreshCw size={16} className={loading || optionsLoading ? 'animate-spin' : undefined} />
             刷新队列
           </button>
         </div>
@@ -188,13 +315,92 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
           </div>
         )}
 
+        {optionsError && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+            <span>{optionsError}</span>
+          </div>
+        )}
+
+        <div className={`${workspaceSoftCardClass} space-y-4 p-5`}>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">维护老师别名</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">不依赖待处理记录，直接为成员补充老师别名，方便后续自动识别。</p>
+          </div>
+
+          {sortedBindableUsers.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-4 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前暂无可绑定成员。
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sortedBindableUsers.map((user) => {
+                const aliasSaving = Boolean(userAliasSavingByUserId[user.id]);
+                const isFocused = user.id === focusUserId;
+                return (
+                  <article
+                    key={user.id}
+                    className={`rounded-2xl border p-4 ${isFocused ? 'border-sky-300 bg-sky-50/70 dark:border-sky-500/40 dark:bg-sky-500/10' : 'border-sky-100 bg-white/75 dark:border-white/10 dark:bg-slate-950/70'}`}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-base font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                          {isFocused && (
+                            <span className="rounded-full border border-sky-200 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200">
+                              开始绑定
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] lg:w-[34rem]">
+                        <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                          <span>老师别名</span>
+                          <textarea
+                            name={`user_aliases_${user.id}`}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            value={userAliasDraftByUserId[user.id] ?? ''}
+                            disabled={aliasSaving || optionsLoading}
+                            onInput={(event) => handleUserAliasDraftChange(user.id, (event.target as HTMLTextAreaElement).value)}
+                            onChange={(event) => handleUserAliasDraftChange(user.id, event.target.value)}
+                            placeholder="每行一个别名，也支持中英文逗号分隔"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            data-user-alias-save-id={user.id}
+                            disabled={aliasSaving || optionsLoading}
+                            onClick={() => {
+                              void handleSaveUserAliases(user.id);
+                            }}
+                            className={workspacePrimaryButtonClass}
+                          >
+                            {aliasSaving ? '保存中...' : '保存绑定'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    {userAliasErrorByUserId[user.id] && (
+                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                        {userAliasErrorByUserId[user.id]}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {loading ? (
           <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
-            正在加载主数据映射队列...
+            正在加载待处理匹配记录...
           </div>
         ) : items.length === 0 ? (
           <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
-            当前没有待处理的错题映射记录。
+            当前没有待处理的匹配记录。
           </div>
         ) : (
           <div className="space-y-4">
@@ -237,40 +443,48 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
 
                   <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_auto]">
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                      <span>老师 ID</span>
-                      <input
+                      <span>老师</span>
+                      <select
+                        aria-label="老师"
                         name="teacher_user_id"
-                        type="number"
-                        inputMode="numeric"
                         className={workspaceFieldClass}
                         value={form.teacherUserId}
-                        disabled={saving}
-                        onInput={(event) => updateFormField(item.recordId, { teacherUserId: (event.target as HTMLInputElement).value })}
+                        disabled={saving || optionsLoading}
                         onChange={(event) => updateFormField(item.recordId, { teacherUserId: event.target.value })}
-                        placeholder="teacher_user_id"
-                      />
+                      >
+                        <option value="">选择老师</option>
+                        {teacherOptions.map((option) => (
+                          <option key={option.id} value={String(option.id)}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                      <span>班级 ID</span>
-                      <input
+                      <span>班级</span>
+                      <select
+                        aria-label="班级"
                         name="class_id"
-                        type="number"
-                        inputMode="numeric"
                         className={workspaceFieldClass}
                         value={form.classId}
-                        disabled={saving}
-                        onInput={(event) => updateFormField(item.recordId, { classId: (event.target as HTMLInputElement).value })}
+                        disabled={saving || optionsLoading}
                         onChange={(event) => updateFormField(item.recordId, { classId: event.target.value })}
-                        placeholder="class_id"
-                      />
+                      >
+                        <option value="">选择班级</option>
+                        {classOptions.map((option) => (
+                          <option key={option.id} value={String(option.id)}>
+                            {option.subject ? `${option.name} · ${option.subject}` : option.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                      <span>映射状态</span>
+                      <span>处理结果</span>
                       <select
                         name="mapping_status"
                         className={workspaceFieldClass}
                         value={form.mappingStatus}
-                        disabled={saving}
+                        disabled={saving || optionsLoading}
                         onChange={(event) => updateFormField(item.recordId, { mappingStatus: event.target.value as WrongQuestionMappingStatus })}
                       >
                         {mappingStatusOptions.map((option) => (
@@ -284,13 +498,13 @@ export function MasterDataMappingsPage({ currentUser }: MasterDataMappingsPagePr
                       <button
                         type="button"
                         data-record-id={item.recordId}
-                        disabled={saving}
+                        disabled={saving || optionsLoading}
                         onClick={() => {
                           void handleResolve(item.recordId);
                         }}
                         className={workspacePrimaryButtonClass}
                       >
-                        {saving ? '提交中...' : '提交映射'}
+                        {saving ? '保存中...' : '保存匹配'}
                       </button>
                     </div>
                   </div>

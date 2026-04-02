@@ -34,6 +34,7 @@ type SmartWrongQuestionsPageProps = {
   currentUser: {
     display_name: string;
     organization_name: string;
+    role: 'super_owner' | 'owner' | 'admin' | 'member';
   };
 };
 
@@ -107,6 +108,7 @@ function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
 }
 
 export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPageProps) {
+  const hasStaffScope = currentUser.role === 'super_owner' || currentUser.role === 'owner' || currentUser.role === 'admin';
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
   const [records, setRecords] = useState<WrongQuestionRecord[]>([]);
   const [classOptions, setClassOptions] = useState<WrongQuestionClassFilterOption[]>([]);
@@ -191,7 +193,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       try {
         const [classItems, userItems] = await Promise.all([
           apiFetch<Array<{ id: number; name: string; subject?: string }>>('/api/classes'),
-          apiFetch<Array<{ id: number; name: string }>>('/api/admin/users'),
+          hasStaffScope ? apiFetch<Array<{ id: number; name: string }>>('/api/admin/users') : Promise.resolve([]),
         ]);
 
         if (!active) {
@@ -215,7 +217,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     return () => {
       active = false;
     };
-  }, []);
+  }, [hasStaffScope]);
 
   useEffect(() => {
     void loadList(initialFilters);
@@ -363,11 +365,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <section className={`${workspaceCardClass} space-y-4 p-6`}>
-        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Wrong Question Workspace</p>
+        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">错题工作区</p>
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-            在 {currentUser.organization_name} 内部查看错题记录，筛选待跟进条目，并为后续教师复盘预留统一工作区。
+            {hasStaffScope
+              ? `在 ${currentUser.organization_name} 内部查看错题记录，筛选待跟进条目，并为后续教师复盘预留统一工作区。`
+              : '仅查看你负责班级与学生的错题记录，并直接跟进自己的教师复盘。'}
           </p>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前操作人：{currentUser.display_name}</p>
         </div>
@@ -402,12 +406,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">筛选与列表</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">筛选错题、查看详情、保存教师复盘，并按当前筛选条件导出 PDF 汇总。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {hasStaffScope
+                ? '筛选错题、查看详情、保存教师复盘，并按当前筛选条件导出 PDF 汇总。'
+                : '按你负责的班级筛选错题、查看详情，并保存自己的教师复盘。'}
+            </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={handleExportSummary} className={workspaceSecondaryButtonClass}>
-              导出 PDF 汇总
-            </button>
+            {hasStaffScope && (
+              <button type="button" onClick={handleExportSummary} className={workspaceSecondaryButtonClass}>
+                导出 PDF 汇总
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void loadList(filters)}
@@ -457,20 +467,22 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               placeholder="如：数学"
             />
           </label>
-          <label className="space-y-2 text-sm">
-            <span className="text-slate-500 dark:text-slate-400">老师</span>
-            <select
-              aria-label="老师"
-              value={filters.teacherName ?? ''}
-              onChange={(event) => handleFilterChange('teacherName', event.target.value)}
-              className={workspaceFieldClass}
-            >
-              <option value="">全部老师</option>
-              {teacherOptions.map((item) => (
-                <option key={item.id} value={item.name}>{item.name}</option>
-              ))}
-            </select>
-          </label>
+          {hasStaffScope && (
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">老师</span>
+              <select
+                aria-label="老师"
+                value={filters.teacherName ?? ''}
+                onChange={(event) => handleFilterChange('teacherName', event.target.value)}
+                className={workspaceFieldClass}
+              >
+                <option value="">全部老师</option>
+                {teacherOptions.map((item) => (
+                  <option key={item.id} value={item.name}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="space-y-2 text-sm">
             <span className="text-slate-500 dark:text-slate-400">错误类型</span>
             <div className="relative">
@@ -604,7 +616,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         <AlertCircle size={16} className="mt-0.5" />
                         <div>
                           <p className="font-semibold">主数据映射待处理</p>
-                          <p className="mt-1">当前老师或班级仍在沿用原始快照，请先在“主数据映射”里确认 canonical 身份。</p>
+                          <p className="mt-1">
+                            {hasStaffScope
+                              ? '当前老师或班级仍在沿用原始信息，请先在“主数据映射”里确认对应的正式老师和班级。'
+                              : '当前老师或班级仍在沿用原始信息，请联系机构负责人，在“主数据映射”里确认对应的正式老师和班级。'}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -662,7 +678,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <label className="space-y-2 text-sm sm:col-span-2">
-                          <span className="text-slate-500 dark:text-slate-400">selectedErrorType</span>
+                          <span className="text-slate-500 dark:text-slate-400">最终错误类型</span>
                           <input
                             type="text"
                             value={selectedDraft.selectedErrorType}
@@ -672,7 +688,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">selectedKnowledgePoints</span>
+                          <span className="text-slate-500 dark:text-slate-400">核心知识点</span>
                           <textarea
                             value={selectedKnowledgePointText}
                             onChange={(event) => handleDraftChange('selectedKnowledgePoints', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
@@ -681,7 +697,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">selectedActions</span>
+                          <span className="text-slate-500 dark:text-slate-400">后续练习建议</span>
                           <textarea
                             value={selectedActionsText}
                             onChange={(event) => handleDraftChange('selectedActions', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
@@ -690,7 +706,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">selectedReasons</span>
+                          <span className="text-slate-500 dark:text-slate-400">原因分析</span>
                           <textarea
                             value={selectedReasonsText}
                             onChange={(event) => handleDraftChange('selectedReasons', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
@@ -699,7 +715,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           />
                         </label>
                         <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">studentNote</span>
+                          <span className="text-slate-500 dark:text-slate-400">教师备注</span>
                           <textarea
                             value={selectedDraft.studentNote}
                             onChange={(event) => handleDraftChange('studentNote', event.target.value)}

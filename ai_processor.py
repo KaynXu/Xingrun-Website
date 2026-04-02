@@ -344,6 +344,41 @@ def parse_and_generate_plan(
 
 
 # ─── 月度复习计划聚合 ──────────────────────────────────────────────────────────
+def generate_teacher_feedback_draft(*, lesson: dict, students: list[dict], custom_templates: list[dict]) -> str:
+    client = _get_client()
+    plan_json = json.dumps(lesson.get("plan") or {}, ensure_ascii=False)
+    student_block = json.dumps(
+        {"students": students, "custom_templates": custom_templates},
+        ensure_ascii=False,
+    )
+    system_prompt = (
+        "你是一名负责生成家校沟通课后反馈的教研助理。"
+        "输出纯文本，不要 Markdown，不要项目符号。"
+        "每位学生输出四段：本周课堂重点、这节课的作用、课堂状态、家长配合建议。"
+        "本周课堂重点必须控制在20个中文字符以内。"
+        "“这节课的作用”要结合复习计划与课堂内容，识别它更偏向思维训练帮助，还是更偏向中考、小升初、高考等考试帮助，并用家校沟通口吻写清楚。"
+        "“课堂状态”必须优先参考学生的 selected_template_label、selected_template_guidance 和 remark。"
+        "“家长配合建议”必须结合 selected_template_guidance、remark 和复习计划给出可执行建议。"
+        "每位学生都以“学生姓名：”开头。"
+        "只输出已选择状态模板的学生，学生与学生之间空一行。"
+    )
+    user_prompt = (
+        f"课程信息：{lesson.get('subject', '')} {lesson.get('grade', '')} {lesson.get('topic', '')}\n"
+        f"课堂总结：{lesson.get('summary', '')}\n"
+        f"复习计划JSON：{plan_json}\n"
+        f"学生输入：{student_block}"
+    )
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.4,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
 def generate_monthly_plan(lessons, month_str: str) -> dict:
     """
     给定本月所有 lesson 记录列表，生成月度综合复习计划。

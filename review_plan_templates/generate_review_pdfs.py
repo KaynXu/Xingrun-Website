@@ -1,16 +1,20 @@
 import sys
 import re
 import importlib.util
+import platform
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.pdfmetrics import registerFont
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -642,6 +646,39 @@ VARIANTS = {
 
 
 LETTER_SPACING = 0.18
+PORTABLE_FONT_NAME = "ReviewPlanCJK"
+ACTIVE_FONT_NAME = "STSong-Light"
+
+CIRCLED_DIGIT_REPLACEMENTS = {
+    "①": "1.",
+    "②": "2.",
+    "③": "3.",
+    "④": "4.",
+    "⑤": "5.",
+    "⑥": "6.",
+    "⑦": "7.",
+    "⑧": "8.",
+    "⑨": "9.",
+    "⑩": "10.",
+}
+
+PORTABLE_SYMBOL_REPLACEMENTS = (
+    ("☐", "[ ]"),
+    ("□", "[ ]"),
+    ("✅", "[已完成]"),
+    ("❌", "[未完成]"),
+    ("📝", "题型"),
+    ("📌", "提示："),
+    ("⚠️", "注意："),
+    ("⚠", "注意："),
+    ("✏️", ""),
+    ("✏", ""),
+    ("•", "-"),
+    ("▶", "-"),
+    ("★", "-"),
+    ("☆", "-"),
+    ("→", "->"),
+)
 
 
 class TrackingCanvas(Canvas):
@@ -693,12 +730,36 @@ def load_lesson_pack(pack_path):
     FINAL_REMINDER_LINES = getattr(module, "FINAL_REMINDER_LINES", FINAL_REMINDER_LINES)
 
 
-def localize_text(value, chinese_only):
-    if not chinese_only or not isinstance(value, str):
+def normalize_portable_text(value):
+    if not isinstance(value, str):
         return value
+
+    normalized = value
+    normalized = re.sub(r"[👩👨]\u200d?🏫\s*老师追问[:：]?\s*", "老师追问：", normalized)
+    normalized = re.sub(r"[👩👨]\u200d?🏫\s*老师问[:：]?\s*", "老师问：", normalized)
+    normalized = re.sub(r"[👩👨]\u200d?🏫\s*", "老师", normalized)
+
+    for source, target in CIRCLED_DIGIT_REPLACEMENTS.items():
+        normalized = normalized.replace(source, target)
+    for source, target in PORTABLE_SYMBOL_REPLACEMENTS:
+        normalized = normalized.replace(source, target)
+
+    normalized = re.sub(r"([：:])\s+", r"\1", normalized)
+    normalized = re.sub(r"\s{2,}", " ", normalized)
+    normalized = re.sub(r"(^|\s)-\s*", r"\1- ", normalized)
+    return normalized.strip()
+
+
+def localize_text(value, chinese_only):
+    if not isinstance(value, str):
+        return value
+
+    if not chinese_only:
+        return normalize_portable_text(value)
+
     localized = value.split(" / ", 1)[0].strip()
     localized = re.sub(r"([。！？：；）】』”])\s*[A-Za-z][\s\S]*$", r"\1", localized)
-    return localized.strip()
+    return normalize_portable_text(localized.strip())
 
 
 def localize_lines(values, chinese_only):
@@ -729,7 +790,7 @@ def build_labels(chinese_only):
             "teacher_quote_title": "课堂原话",
             "quote_replay_title": "课堂原话回放",
             "quote_replay_text": "先回想老师当时怎么画图、怎么强调方法选择、怎么提醒定义域，再动笔。",
-            "check_text": "<b>完成打卡：</b> □ 我已完整复习整节课  □ 我已完成填空  □ 我已完成选择  □ 我已口头复述方法",
+            "check_text": "<b>完成打卡：</b> [ ] 我已完整复习整节课  [ ] 我已完成填空  [ ] 我已完成选择  [ ] 我已口头复述方法",
             "final_reminder": "总提醒",
             "final_reminder_box": "30天后应留下的内容",
             "answer_key": "自查答案",
@@ -766,7 +827,7 @@ def build_labels(chinese_only):
         "teacher_quote_title": "课堂原话 / Teacher Quote",
         "quote_replay_title": "课堂原话回放 / Quote Replay",
         "quote_replay_text": "先回想老师当时怎么画图、怎么强调方法选择、怎么提醒定义域，再动笔。Replay the teacher's visual explanation and warnings before writing.",
-        "check_text": "<b>完成打卡 / Check:</b> □ 我已完整复习整节课  □ 我已完成填空  □ 我已完成选择  □ 我已口头复述方法",
+        "check_text": "<b>完成打卡 / Check:</b> [ ] 我已完整复习整节课  [ ] 我已完成填空  [ ] 我已完成选择  [ ] 我已口头复述方法",
         "final_reminder": "总提醒 / Final Reminder",
         "final_reminder_box": "30 天后应留下的内容 / What Should Remain After 30 Days",
         "answer_key": "自查答案 / Answer Key",
@@ -780,6 +841,41 @@ def build_labels(chinese_only):
         "oral_prompt_prefix": "Prompt",
         "footer_right": "Quote Replay Layout | Page {page}",
     }
+
+
+def build_quote_replay_text(day, labels, chinese_only):
+    quotes = []
+    for quote in day.get("quotes", []):
+        normalized_quote = normalize_portable_text(str(quote or "").strip())
+        if normalized_quote and normalized_quote not in quotes:
+            quotes.append(normalized_quote)
+
+    if not quotes:
+        return labels["quote_replay_text"]
+
+    replay_intro = "先回想老师当时强调过的这几句，再动笔："
+    if not chinese_only:
+        replay_intro = "先回想老师当时强调过的这几句，再动笔。Replay these class cues before writing:"
+
+    replay_lines = [
+        f"{index}. {escape(localize_text(quote, chinese_only))}"
+        for index, quote in enumerate(quotes[:2], start=1)
+    ]
+    return "<br/>".join([replay_intro, *replay_lines])
+
+
+def build_quote_summary_text(quotes, chinese_only):
+    normalized_quotes = []
+    for quote in quotes:
+        normalized_quote = normalize_portable_text(str(quote or "").strip())
+        if normalized_quote and normalized_quote not in normalized_quotes:
+            normalized_quotes.append(normalized_quote)
+
+    quote_lines = [
+        f"{index}. “{escape(localize_text(quote, chinese_only))}”"
+        for index, quote in enumerate(normalized_quotes, start=1)
+    ]
+    return "<br/>".join(quote_lines)
 
 
 def knowledge_mode_for_day(day, variant_key):
@@ -796,8 +892,55 @@ def knowledge_mode_for_day(day, variant_key):
     return "mixed"
 
 
+def _portable_font_candidates():
+    system = platform.system()
+    if system == "Darwin":
+        return [
+            ("/System/Library/Fonts/PingFang.ttc", 0),
+            ("/System/Library/Fonts/STHeiti Light.ttc", 0),
+            ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0),
+            ("/Library/Fonts/Arial Unicode.ttf", None),
+        ]
+    if system == "Windows":
+        return [
+            ("C:/Windows/Fonts/msyh.ttc", 0),
+            ("C:/Windows/Fonts/msyhl.ttc", 0),
+            ("C:/Windows/Fonts/simhei.ttf", None),
+            ("C:/Windows/Fonts/simsun.ttc", 0),
+        ]
+    return [
+        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 0),
+        ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", 0),
+        ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", 0),
+    ]
+
+
 def register_fonts():
-    registerFont(UnicodeCIDFont("STSong-Light"))
+    global ACTIVE_FONT_NAME
+
+    registered_fonts = set(pdfmetrics.getRegisteredFontNames())
+    if PORTABLE_FONT_NAME in registered_fonts:
+        ACTIVE_FONT_NAME = PORTABLE_FONT_NAME
+        return
+    if "STSong-Light" in registered_fonts:
+        ACTIVE_FONT_NAME = "STSong-Light"
+
+    for font_path, subfont_index in _portable_font_candidates():
+        if not Path(font_path).exists():
+            continue
+        try:
+            if subfont_index is None:
+                registerFont(TTFont(PORTABLE_FONT_NAME, font_path))
+            else:
+                registerFont(TTFont(PORTABLE_FONT_NAME, font_path, subfontIndex=subfont_index))
+            ACTIVE_FONT_NAME = PORTABLE_FONT_NAME
+            return
+        except Exception:
+            continue
+
+    if "STSong-Light" not in registered_fonts:
+        registerFont(UnicodeCIDFont("STSong-Light"))
+    ACTIVE_FONT_NAME = "STSong-Light"
 
 
 def format_iso_date(value):
@@ -817,7 +960,7 @@ def build_styles():
     base = ParagraphStyle(
         "base",
         parent=styles["BodyText"],
-        fontName="STSong-Light",
+        fontName=ACTIVE_FONT_NAME,
         fontSize=10.3,
         leading=15,
         textColor=colors.HexColor("#222222"),
@@ -841,7 +984,7 @@ def build_styles():
 
 
 def bullet_paragraph(items, style):
-    return Paragraph("<br/>".join([f"• {item}" for item in items]), style)
+    return Paragraph("<br/>".join([f"- {item}" for item in items]), style)
 
 
 def make_box(title, body, styles, background):
@@ -999,7 +1142,7 @@ def on_page(styles, variant_key, lesson_title=None):
         canvas.setStrokeColor(styles["accent"])
         canvas.setLineWidth(1)
         canvas.line(doc.leftMargin, A4[1] - 18 * mm, A4[0] - doc.rightMargin, A4[1] - 18 * mm)
-        canvas.setFont("STSong-Light", 8.5)
+        canvas.setFont(ACTIVE_FONT_NAME, 8.5)
         canvas.setFillColor(colors.HexColor("#666666"))
         canvas.drawString(doc.leftMargin, 10 * mm, footer_title)
         canvas.drawRightString(A4[0] - doc.rightMargin, 10 * mm, labels["footer_right"].format(page=canvas.getPageNumber()))
@@ -1027,8 +1170,8 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
     story.append(Spacer(1, 3 * mm))
     story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, colors.white))
     story.append(Spacer(1, 3 * mm))
-    golden_quotes = [f"“{quote}”" for quote in lesson.get("quotes", [])]
-    story.append(make_box(labels["quotes_title"], bullet_paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
+    golden_quotes = build_quote_summary_text(lesson.get("quotes", []), chinese_only)
+    story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
     story.append(PageBreak())
 
     for index, day in enumerate(days):
@@ -1066,7 +1209,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
             story.append(make_box(labels["teacher_quote_title"], quote_body, styles, styles["quote_bg"]))
             story.append(Spacer(1, 2 * mm))
 
-        replay_text = labels["quote_replay_text"]
+        replay_text = build_quote_replay_text(day, labels, chinese_only)
         story.append(make_box(labels["quote_replay_title"], Paragraph(replay_text, styles["body"]), styles, styles["quote_bg"]))
         story.append(Spacer(1, 2 * mm))
         story.append(Paragraph(labels["check_text"], styles["body"]))

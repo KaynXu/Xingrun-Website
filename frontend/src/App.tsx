@@ -42,12 +42,27 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { MasterDataMappingsPage } from './MasterDataMappingsPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
+import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
+import {
+  buildTeacherFeedbackSavePayload,
+  createClassStudent,
+  defaultTeacherFeedbackTemplates,
+  deleteClassStudent,
+  generateLessonFeedbackDraft,
+  listClassStudents,
+  loadLessonFeedback,
+  mergeRosterWithFeedbackDraft,
+  saveLessonFeedback,
+  type TeacherFeedbackStudentDraft,
+  type TeacherFeedbackTemplate,
+} from './reviewGenerationTeacherFeedback';
 
 // --- Types ---
 
-type Role = 'owner' | 'admin' | 'member';
+type Role = 'super_owner' | 'owner' | 'admin' | 'member';
 type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'masterDataMappings' | 'classes' | 'accounts' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
+type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
 
 interface Lesson {
   id: number;
@@ -132,11 +147,50 @@ interface RegistrationRequestItem {
   created_at: string;
 }
 
+interface OrganizationRequestItem {
+  id: number;
+  organization_name: string;
+  username: string;
+  display_name: string;
+  status: string;
+  created_at: string;
+}
+
+interface OrganizationInviteInfo {
+  organization_name: string;
+  invite_code: string;
+  invite_link: string;
+  join_path?: string;
+}
+
 interface UserItem {
   id: number;
   name: string;
   org: string;
   role: Role;
+}
+
+type MemberBindingSummaryStatus = 'healthy' | 'needs_review' | 'incomplete';
+
+interface MemberBindingSummary {
+  user_id: number;
+  mini_teacher_bound: boolean;
+  responsible_classes: Array<{
+    id: number;
+    name: string;
+  }>;
+  mapping_summary: {
+    status: MemberBindingSummaryStatus;
+    mapped_count: number;
+    needs_review_count: number;
+    unmapped_count: number;
+    ambiguous_count: number;
+  };
+}
+
+interface ApprovalPageProps {
+  currentUser: CurrentUser;
+  onStartBinding: (userId: number) => void;
 }
 
 interface ClassFormValues {
@@ -176,9 +230,42 @@ const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五�
 const gradeFilterOptions = ['全部', ...gradeOptions];
 
 function getRoleLabel(role: Role): string {
-  if (role === 'owner') return '最高权限账号';
+  if (role === 'super_owner') return '超级管理员';
+  if (role === 'owner') return '机构负责人';
   if (role === 'admin') return '管理员';
   return '机构成员';
+}
+
+function hasOwnerAccess(role: Role): boolean {
+  return role === 'super_owner' || role === 'owner';
+}
+
+function hasStaffAccess(role: Role): boolean {
+  return hasOwnerAccess(role) || role === 'admin';
+}
+
+function canAccessSmartWrongQuestions(role: Role): boolean {
+  return hasStaffAccess(role) || role === 'member';
+}
+
+function canManageOwnerRole(role: Role): boolean {
+  return role === 'super_owner';
+}
+
+function getMemberBindingStatusLabel(status: MemberBindingSummaryStatus): string {
+  if (status === 'healthy') return '正常';
+  if (status === 'needs_review') return '待复核';
+  return '未完成';
+}
+
+function getMemberBindingStatusBadgeClass(status: MemberBindingSummaryStatus): string {
+  if (status === 'healthy') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300';
+  }
+  if (status === 'needs_review') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
+  }
+  return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
 }
 
 function createEmptyClassForm(): ClassFormValues {
@@ -285,8 +372,11 @@ export function resolveTeacherBindingRollbackTeacherBindings(
 }
 
 function getRoleBadgeClass(role: Role): string {
-  if (role === 'owner') {
+  if (role === 'super_owner') {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
+  }
+  if (role === 'owner') {
+    return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300';
   }
   if (role === 'admin') {
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
@@ -403,6 +493,15 @@ function getToken(): string {
   return localStorage.getItem('xr_token') || '';
 }
 
+function buildAuthedPath(path: string): string {
+  const token = getToken();
+  if (!token) {
+    return path;
+  }
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
   const token = getToken();
@@ -444,6 +543,21 @@ function getInitialDarkModePreference(): boolean {
   }
 
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+}
+
+function getJoinInviteTokenFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/join\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function clearJoinInvitePathIfNeeded(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (!getJoinInviteTokenFromPath(window.location.pathname)) {
+    return;
+  }
+  window.history.replaceState({}, '', '/');
 }
 
 function getTodayIsoDate(): string {
@@ -704,13 +818,13 @@ export function parseConsultationQuickEntry(
   return parsed;
 }
 
-const consultationStatusOptions = ['待跟进', '跟进中', '已跟进', '已完成'];
+const consultationStatusOptions = ['待邀约', '跟进中', '已报班', '已劝退'];
 
 function consultationStatusClass(status: string): string {
-  if (status === '待跟进') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  if (status === '待邀约') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
   if (status === '跟进中') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
-  if (status === '已跟进') return 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300';
-  if (status === '已完成') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  if (status === '已报班') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  if (status === '已劝退') return 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300';
   return 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400';
 }
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
@@ -755,7 +869,7 @@ const consultationFormDefaults: ConsultationFormValues = {
   source_channel: '',
   source_channel_note: '',
   screenshot: '',
-  follow_up_status: '待跟进',
+  follow_up_status: '待邀约',
   follow_up_note: '',
 };
 
@@ -1153,16 +1267,16 @@ const Sidebar = ({
     { id: 'review-generation', icon: Library, label: '复习生成' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
-    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+    ...(canAccessSmartWrongQuestions(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
       : []),
-    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
-      ? [{ id: 'masterDataMappings', icon: Database, label: '主数据映射' }]
+    ...(hasOwnerAccess(currentUser.role)
+      ? [{ id: 'masterDataMappings', icon: Database, label: '老师与班级匹配' }]
       : []),
-    ...(currentUser.role === 'owner' || currentUser.role === 'admin'
+    ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
       : []),
-    ...(currentUser.role === 'owner' ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
+    ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
 
@@ -1180,7 +1294,7 @@ const Sidebar = ({
         <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Starain 工作台</h1>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">AI EDU PLATFORM</p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">机构工作台</p>
           </div>
         </div>
       </div>
@@ -1470,14 +1584,14 @@ const Dashboard = ({
                 {lesson.pdf_path && (
                   <div className="flex gap-2">
                     <a
-                      href={`/api/pdf/download/${lesson.id}`}
+                      href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
                       className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                       title="下载"
                     >
                       <Download size={18} />
                     </a>
                     <a
-                      href={`/api/pdf/${lesson.id}`}
+                      href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                       target="_blank"
                       rel="noreferrer"
                       className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
@@ -1547,7 +1661,7 @@ const SubjectCombobox = ({
   );
 };
 
-const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
+const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; currentUser: CurrentUser }) => {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1557,19 +1671,97 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [classesLoading, setClassesLoading] = useState(true);
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeLessonId, setActiveLessonId] = useState<number | null>(null);
+  const [feedbackStudents, setFeedbackStudents] = useState<TeacherFeedbackStudentDraft[]>([]);
+  const [feedbackTemplates, setFeedbackTemplates] = useState<TeacherFeedbackTemplate[]>(defaultTeacherFeedbackTemplates);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isLoadingFeedbackStudents, setIsLoadingFeedbackStudents] = useState(false);
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [isSavingFeedback, setIsSavingFeedback] = useState(false);
+  const [feedbackStatusMessage, setFeedbackStatusMessage] = useState('先生成复习文档，再完善课后反馈。');
 
   useEffect(() => {
-    apiFetch<ClassItem[]>('/api/classes').then(setClasses).catch(console.error);
+    setClassesLoading(true);
+    apiFetch<ClassItem[]>('/api/classes')
+      .then(setClasses)
+      .catch(console.error)
+      .finally(() => setClassesLoading(false));
   }, []);
+
+  const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
+
+  const resetFeedbackWorkspace = useCallback(() => {
+    setActiveLessonId(null);
+    setFeedbackStudents([]);
+    setFeedbackTemplates(defaultTeacherFeedbackTemplates);
+    setFeedbackText('');
+    setFeedbackStatusMessage('先生成复习文档，再完善课后反馈。');
+  }, []);
+
+  const loadFeedbackWorkspace = useCallback(async (lessonId: number, targetClassId: number) => {
+    setIsLoadingFeedbackStudents(true);
+    try {
+      const [rosterResp, feedbackDoc] = await Promise.all([
+        listClassStudents(targetClassId),
+        loadLessonFeedback(lessonId),
+      ]);
+      const mergedStudents = mergeRosterWithFeedbackDraft({
+        roster: rosterResp.students,
+        savedStudents: feedbackDoc.students,
+      });
+      const customTemplates = feedbackDoc.custom_templates.map((template) => ({ ...template, isCustom: true }));
+      setFeedbackStudents(mergedStudents);
+      setFeedbackTemplates([...defaultTeacherFeedbackTemplates, ...customTemplates]);
+      setFeedbackText(feedbackDoc.merged_text ?? '');
+      setFeedbackStatusMessage(`已同步 ${mergedStudents.length} 名学生，课后反馈可继续编辑。`);
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '课后反馈同步失败，请重试。');
+    } finally {
+      setIsLoadingFeedbackStudents(false);
+    }
+  }, []);
+
+  const saveFeedbackWorkspace = useCallback(async () => {
+    if (!activeLessonId) {
+      return;
+    }
+    setIsSavingFeedback(true);
+    try {
+      const payload = buildTeacherFeedbackSavePayload({
+        mergedText: feedbackText,
+        students: feedbackStudents,
+        customTemplates: feedbackTemplates,
+      });
+      const saved = await saveLessonFeedback(activeLessonId, payload);
+      setFeedbackText(saved.merged_text ?? '');
+      setFeedbackStatusMessage('课后反馈已保存。');
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '课后反馈保存失败，请重试。');
+    } finally {
+      setIsSavingFeedback(false);
+    }
+  }, [activeLessonId, feedbackText, feedbackStudents, feedbackTemplates]);
+
+  useEffect(() => {
+    if (!activeLessonId) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveFeedbackWorkspace();
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [activeLessonId, feedbackText, feedbackStudents, feedbackTemplates, saveFeedbackWorkspace]);
 
   const handleClassChange = (id: number) => {
     setClassId(id);
     const cls = classes.find((c) => c.id === id);
     if (cls?.subject) setSubject(cls.subject);
+    resetFeedbackWorkspace();
   };
 
   const handleAnalyze = async () => {
@@ -1592,6 +1784,14 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
 
   const handleGenerate = async () => {
     setError('');
+    if (hasNoAssignableClasses) {
+      setError('当前账号未分配负责班级，请先联系管理员分配班级');
+      return;
+    }
+    if (!classId) {
+      setError('请选择班级后再生成复习记录');
+      return;
+    }
     if (inputType === 'text' && !summaryText.trim()) {
       setError('请填写课堂笔记内容');
       return;
@@ -1603,8 +1803,9 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
 
     setIsLoading(true);
     try {
+      let createdLesson: { id: number };
       if (inputType === 'text') {
-        await apiFetch('/api/lessons', {
+        createdLesson = await apiFetch<{ id: number }>('/api/lessons', {
           method: 'POST',
           body: JSON.stringify({
             subject,
@@ -1624,17 +1825,87 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         if (file) formData.append('upload_file', file);
-        const res = await fetch('/api/lessons', { method: 'POST', body: formData });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error((err as { error?: string }).error || res.statusText);
-        }
+        createdLesson = await apiFetch<{ id: number }>('/api/lessons', { method: 'POST', body: formData });
+      }
+      setActiveLessonId(createdLesson.id);
+      if (classId) {
+        await loadFeedbackWorkspace(createdLesson.id, classId);
       }
       onSuccess();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '提交失败，请重试');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSelectTemplate = (studentId: number, templateId: string) => {
+    setFeedbackStudents((prev) =>
+      prev.map((item) => (item.studentId === studentId ? { ...item, selectedTemplateId: templateId } : item)),
+    );
+  };
+
+  const handleRemarkChange = (studentId: number, remark: string) => {
+    setFeedbackStudents((prev) => prev.map((item) => (item.studentId === studentId ? { ...item, remark } : item)));
+  };
+
+  const handleAddTemplate = (draft: { label: string; guidance: string }) => {
+    const label = draft.label.trim();
+    const guidance = draft.guidance.trim();
+    if (!label || !guidance) {
+      return;
+    }
+    const templateId = `custom-${Date.now()}`;
+    setFeedbackTemplates((prev) => [...prev, { id: templateId, label, guidance, isCustom: true }]);
+  };
+
+  const handleAddStudent = async (name: string) => {
+    if (!classId || !activeLessonId) {
+      return;
+    }
+    await createClassStudent(classId, name);
+    await loadFeedbackWorkspace(activeLessonId, classId);
+  };
+
+  const handleRemoveStudent = async (studentId: number) => {
+    if (!classId || !activeLessonId) {
+      return;
+    }
+    await deleteClassStudent(classId, studentId);
+    await loadFeedbackWorkspace(activeLessonId, classId);
+  };
+
+  const handleGenerateFeedbackDraft = async () => {
+    if (!activeLessonId) {
+      return;
+    }
+    setIsGeneratingFeedback(true);
+    try {
+      const payload = buildTeacherFeedbackSavePayload({
+        mergedText: feedbackText,
+        students: feedbackStudents,
+        customTemplates: feedbackTemplates,
+      });
+      const draft = await generateLessonFeedbackDraft(activeLessonId, {
+        students: payload.students,
+        custom_templates: payload.custom_templates,
+      });
+      setFeedbackText(draft.merged_text ?? '');
+      setFeedbackStatusMessage(`已生成 ${draft.students_included} 名学生反馈，跳过 ${draft.students_skipped} 名。`);
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '生成课后反馈失败，请重试。');
+    } finally {
+      setIsGeneratingFeedback(false);
+    }
+  };
+
+  const handleCopyAllFeedback = async () => {
+    try {
+      await saveFeedbackWorkspace();
+      await navigator.clipboard.writeText(feedbackText);
+      setFeedbackStatusMessage('课后反馈已复制到剪贴板。');
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '复制失败，请重试。');
     }
   };
 
@@ -1690,6 +1961,11 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                   className={`${workspaceFieldClass} w-full`}
                 />
               </div>
+              {hasNoAssignableClasses && (
+                <p className="text-sm text-amber-600 dark:text-amber-300">
+                  当前账号未分配负责班级，请先联系管理员分配班级后再生成复习记录。
+                </p>
+              )}
             </div>
 
             {error && (
@@ -1795,6 +2071,27 @@ const LessonInput = ({ onSuccess }: { onSuccess: () => void }) => {
                 </button>
               </div>
             </div>
+
+            {activeLessonId && classId ? (
+              <TeacherFeedbackWorkspace
+                students={feedbackStudents}
+                templates={feedbackTemplates}
+                feedbackText={feedbackText}
+                generateLabel="生成课后反馈草稿"
+                isLoadingStudents={isLoadingFeedbackStudents}
+                isGenerating={isGeneratingFeedback}
+                isSaving={isSavingFeedback}
+                statusMessage={feedbackStatusMessage}
+                onSelectTemplate={handleSelectTemplate}
+                onRemarkChange={handleRemarkChange}
+                onFeedbackTextChange={setFeedbackText}
+                onAddTemplate={handleAddTemplate}
+                onAddStudent={handleAddStudent}
+                onRemoveStudent={handleRemoveStudent}
+                onGenerate={handleGenerateFeedbackDraft}
+                onCopyAll={handleCopyAllFeedback}
+              />
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1878,7 +2175,7 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
                     {lesson.pdf_path && (
                       <>
                         <a
-                          href={`/api/pdf/${lesson.id}`}
+                          href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                           target="_blank"
                           rel="noreferrer"
                           className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
@@ -1887,7 +2184,7 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
                           <Eye size={16} />
                         </a>
                         <a
-                          href={`/api/pdf/download/${lesson.id}`}
+                          href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
                           className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
                           title="下载"
                         >
@@ -1913,7 +2210,7 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
   );
 };
 
-const ReviewGenerationPage = ({ onSuccess }: { onSuccess: () => void }) => {
+const ReviewGenerationPage = ({ onSuccess, currentUser }: { onSuccess: () => void; currentUser: CurrentUser }) => {
   const [composerOpen, setComposerOpen] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
 
@@ -1946,7 +2243,7 @@ const ReviewGenerationPage = ({ onSuccess }: { onSuccess: () => void }) => {
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">上传课堂内容并生成新的复习文档。</p>
           </div>
-          <LessonInput onSuccess={handleFormSuccess} />
+          <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} />
         </div>
       )}
 
@@ -1997,6 +2294,7 @@ const ConsultationModal = ({
   }
 
   const readOnly = mode === 'view';
+  const canEdit = hasStaffAccess(currentUser.role);
   const titleMap = {
     view: '查看咨询记录',
     create: '新增咨询记录',
@@ -2101,7 +2399,7 @@ const ConsultationModal = ({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              {readOnly ? '记录详情只读展示，owner 可以在这里进入编辑或删除。' : '先用快速录入整理信息，再确认下方结构化字段。'}
+              {readOnly ? '记录详情只读展示，管理员和 owner 可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
             </p>
           </div>
           <button
@@ -2344,10 +2642,10 @@ const ConsultationModal = ({
 
           <div className="mt-5 flex flex-col gap-3 border-t border-sky-100/80 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:pt-5 dark:border-white/10">
             <div className="text-sm text-slate-500 dark:text-slate-400">
-              {readOnly ? '查看模式下可直接切换到编辑或删除记录。' : '保存后会刷新列表，不需要跳转到其他页面。'}
+              {readOnly ? '查看模式下可直接切换到编辑或删除。' : '保存后会刷新列表，不需要跳转到其他页面。'}
             </div>
             <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
-              {readOnly && currentUser.role === 'owner' && (
+              {readOnly && hasStaffAccess(currentUser.role) && (
                 <>
                   <button
                     type="button"
@@ -2396,7 +2694,7 @@ const ConsultationModal = ({
 };
 
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
-  const isOwner = currentUser.role === 'owner';
+  const canManage = hasStaffAccess(currentUser.role);
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2644,7 +2942,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <Eye size={16} />
                         查看
                       </button>
-                      {isOwner && (
+                      {canManage && (
                         <>
                           <button
                             type="button"
@@ -2748,7 +3046,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         >
                           <Eye size={16} />
                         </button>
-                        {isOwner && (
+                        {canManage && (
                           <>
                             <button
                               type="button"
@@ -2807,7 +3105,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             currentUser={currentUser}
             onClose={closeModal}
             onSubmit={handleSubmit}
-            onDelete={isOwner ? handleDelete : undefined}
+            onDelete={canManage ? handleDelete : undefined}
             onRequestEdit={selectedRecord ? () => openEditModal(selectedRecord) : undefined}
           />
         )}
@@ -2816,15 +3114,26 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   );
 };
 
-const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [bindingSummaryByUserId, setBindingSummaryByUserId] = useState<Record<number, MemberBindingSummary>>({});
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [bindingSummaryLoading, setBindingSummaryLoading] = useState(true);
   const [error, setError] = useState('');
   const [usersError, setUsersError] = useState('');
+  const [bindingSummaryError, setBindingSummaryError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
   const [roleSavingUserId, setRoleSavingUserId] = useState<number | null>(null);
+  const [organizationRequests, setOrganizationRequests] = useState<OrganizationRequestItem[]>([]);
+  const [organizationRequestsLoading, setOrganizationRequestsLoading] = useState(currentUser.role === 'super_owner');
+  const [organizationRequestsError, setOrganizationRequestsError] = useState('');
+  const [organizationActingId, setOrganizationActingId] = useState<number | null>(null);
+  const [organizationInvite, setOrganizationInvite] = useState<OrganizationInviteInfo | null>(null);
+  const [organizationInviteLoading, setOrganizationInviteLoading] = useState(hasOwnerAccess(currentUser.role));
+  const [organizationInviteError, setOrganizationInviteError] = useState('');
+  const [organizationInviteResetting, setOrganizationInviteResetting] = useState(false);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -2852,10 +3161,71 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   }, []);
 
+  const loadBindingSummaries = useCallback(async () => {
+    setBindingSummaryLoading(true);
+    setBindingSummaryError('');
+    try {
+      const data = await apiFetch<{ items: MemberBindingSummary[] }>('/api/admin/member-binding-summary');
+      setBindingSummaryByUserId(
+        data.items.reduce<Record<number, MemberBindingSummary>>((accumulator, item) => {
+          accumulator[item.user_id] = item;
+          return accumulator;
+        }, {}),
+      );
+    } catch (err) {
+      setBindingSummaryByUserId({});
+      setBindingSummaryError(err instanceof Error ? err.message : '教学绑定摘要加载失败');
+    } finally {
+      setBindingSummaryLoading(false);
+    }
+  }, []);
+
+  const loadOrganizationRequests = useCallback(async () => {
+    if (currentUser.role !== 'super_owner') {
+      setOrganizationRequests([]);
+      setOrganizationRequestsLoading(false);
+      return;
+    }
+
+    setOrganizationRequestsLoading(true);
+    setOrganizationRequestsError('');
+    try {
+      const data = await apiFetch<{ items: OrganizationRequestItem[] }>('/api/admin/organization-requests');
+      setOrganizationRequests(data.items);
+    } catch (err) {
+      setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批加载失败');
+    } finally {
+      setOrganizationRequestsLoading(false);
+    }
+  }, [currentUser.role]);
+
+  const loadOrganizationInvite = useCallback(async () => {
+    if (!hasOwnerAccess(currentUser.role)) {
+      setOrganizationInvite(null);
+      setOrganizationInviteLoading(false);
+      return;
+    }
+
+    setOrganizationInviteLoading(true);
+    setOrganizationInviteError('');
+    try {
+      const data = await apiFetch<OrganizationInviteInfo>('/api/organization/invite');
+      setOrganizationInvite(data);
+    } catch (err) {
+      setOrganizationInvite(null);
+      setOrganizationInviteError(err instanceof Error ? err.message : '机构邀请设置加载失败');
+    } finally {
+      setOrganizationInviteLoading(false);
+    }
+  }, [currentUser.role]);
+
   useEffect(() => {
     loadItems().catch(() => undefined);
     loadUsers().catch(() => undefined);
-  }, [loadItems, loadUsers]);
+    loadBindingSummaries().catch(() => undefined);
+    loadOrganizationRequests().catch(() => undefined);
+    loadOrganizationInvite().catch(() => undefined);
+  }, [loadItems, loadUsers, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
 
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
@@ -2872,12 +3242,58 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
+  const handleOrganizationRequestDecision = async (requestId: number, action: 'approve' | 'reject') => {
+    setOrganizationActingId(requestId);
+    setOrganizationRequestsError('');
+    try {
+      await apiFetch(`/api/admin/organization-requests/${requestId}/${action}`, {
+        method: 'POST',
+      });
+      setOrganizationRequests((current) => current.filter((item) => item.id !== requestId));
+      loadUsers().catch(() => undefined);
+    } catch (err) {
+      setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批处理失败');
+    } finally {
+      setOrganizationActingId(null);
+    }
+  };
+
+  const handleResetOrganizationInvite = async () => {
+    setOrganizationInviteResetting(true);
+    setOrganizationInviteError('');
+    try {
+      const data = await apiFetch<OrganizationInviteInfo>('/api/organization/invite/reset', {
+        method: 'POST',
+      });
+      setOrganizationInvite(data);
+    } catch (err) {
+      setOrganizationInviteError(err instanceof Error ? err.message : '机构邀请重置失败');
+    } finally {
+      setOrganizationInviteResetting(false);
+    }
+  };
+
   const handleRoleToggle = async (userId: number, currentRole: Role) => {
-    if (currentRole === 'owner') {
+    if (currentRole === 'super_owner') {
       return;
     }
 
-    const nextRole: Exclude<Role, 'owner'> = currentRole === 'admin' ? 'member' : 'admin';
+    let nextRole: Exclude<Role, 'super_owner'>;
+    if (canManageOwnerRole(currentUser.role)) {
+      if (currentRole === 'owner') {
+        nextRole = 'admin';
+      } else if (currentRole === 'admin') {
+        nextRole = 'owner';
+      } else {
+        nextRole = 'admin';
+      }
+    } else {
+      if (currentRole === 'owner') {
+        return;
+      }
+      nextRole = currentRole === 'admin' ? 'member' : 'admin';
+    }
+
     setRoleSavingUserId(userId);
     setUsersError('');
     setUsers((current) => current.map((user) => (user.id === userId ? { ...user, role: nextRole } : user)));
@@ -2897,15 +3313,154 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
+      {currentUser.role === 'super_owner' && (
+        <section className={`${workspaceCardClass} p-6`}>
+          <div className="flex flex-col gap-4 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">机构开通审批</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                审核新机构的开通申请。通过后，申请人会自动成为该机构的首位 owner，并生成当前唯一有效的邀请码与邀请链接。
+              </p>
+            </div>
+            <button onClick={() => loadOrganizationRequests().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+              刷新机构申请
+            </button>
+          </div>
+
+          {organizationRequestsError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {organizationRequestsError}
+            </div>
+          )}
+
+          {organizationRequestsLoading ? (
+            <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载机构开通申请...</div>
+          ) : organizationRequests.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前没有待处理的机构开通申请。
+            </div>
+          ) : (
+            <div className="mt-5 space-y-4">
+              {organizationRequests.map((item) => {
+                const busy = organizationActingId === item.id;
+                return (
+                  <div key={item.id} className={`${workspaceSoftCardClass} p-5`}>
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.organization_name}</span>
+                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
+                            待审批
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">首位账号</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责人称呼</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.display_name}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">申请时间</p>
+                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.created_at}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => handleOrganizationRequestDecision(item.id, 'reject')}
+                          disabled={busy}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          驳回
+                        </button>
+                        <button
+                          onClick={() => handleOrganizationRequestDecision(item.id, 'approve')}
+                          disabled={busy}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          {busy ? '处理中...' : '通过并开通机构'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {hasOwnerAccess(currentUser.role) && (
+        <section className={`${workspaceCardClass} p-6`}>
+          <div className="flex flex-col gap-4 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">机构邀请设置</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                当前机构仅保留一个有效邀请码。重置后，旧邀请码和旧邀请链接会立刻失效。
+              </p>
+            </div>
+            <button
+              onClick={() => loadOrganizationInvite().catch(() => undefined)}
+              className={workspaceSecondaryButtonClass}
+            >
+              刷新邀请信息
+            </button>
+          </div>
+
+          {organizationInviteError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {organizationInviteError}
+            </div>
+          )}
+
+          {organizationInviteLoading ? (
+            <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载邀请码...</div>
+          ) : organizationInvite ? (
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className={`${workspaceSoftCardClass} grid gap-4 p-5 md:grid-cols-3`}>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">机构</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{organizationInvite.organization_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{organizationInvite.invite_code}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">邀请链接</p>
+                  <p className="mt-1 break-all text-sm text-slate-700 dark:text-slate-200">{organizationInvite.invite_link}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => void handleResetOrganizationInvite()}
+                disabled={organizationInviteResetting}
+                className={workspacePrimaryButtonClass}
+              >
+                {organizationInviteResetting ? '重置中...' : '重置邀请码'}
+              </button>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前没有可用的邀请码信息。
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
         <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
-            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Owner</p>
+            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">账号审批与权限</p>
             <h3 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">账号审批</h3>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">只有最高权限账号可以审核注册申请，并为用户开通后台访问权限。</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">超级管理员和机构负责人都可以审核注册申请，并为用户开通后台访问权限。</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-5`}>
-            <p className="text-xs uppercase tracking-[0.25em] text-sky-600">Current Account</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-sky-600">当前账号</p>
             <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-4">
@@ -3010,16 +3565,16 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         </section>
       </div>
 
-      {currentUser.role === 'owner' && (
+      {hasOwnerAccess(currentUser.role) && (
         <section className={`${workspaceCardClass} p-6`}>
           <div className="flex flex-col gap-3 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
             <div>
               <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员权限</h4>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                只有 owner 可以在这里切换管理员与普通成员权限，班级分配不再放在审批页。
+                超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限，班级分配不再放在审批页。
               </p>
             </div>
-            <button onClick={() => loadUsers().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
               刷新成员
             </button>
           </div>
@@ -3041,7 +3596,20 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <div className="mt-5 space-y-4">
               {users.map((user) => {
                 const busy = roleSavingUserId === user.id;
-                const isOwner = user.role === 'owner';
+                const bindingSummary = bindingSummaryByUserId[user.id];
+                const responsibleClasses = bindingSummary?.responsible_classes ?? [];
+                const bindingStatus = bindingSummary?.mapping_summary.status ?? 'incomplete';
+                const visibleClassNames = responsibleClasses.slice(0, 3).map((item) => item.name);
+                const hiddenClassCount = Math.max(responsibleClasses.length - visibleClassNames.length, 0);
+                const unresolvedCount = (bindingSummary?.mapping_summary.needs_review_count ?? 0)
+                  + (bindingSummary?.mapping_summary.unmapped_count ?? 0)
+                  + (bindingSummary?.mapping_summary.ambiguous_count ?? 0);
+                const roleFixed = user.role === 'super_owner' || (user.role === 'owner' && !canManageOwnerRole(currentUser.role));
+                const roleActionLabel = user.role === 'owner'
+                  ? '降为管理员'
+                  : user.role === 'admin'
+                    ? (canManageOwnerRole(currentUser.role) ? '设为机构负责人' : '降为成员')
+                    : '设为管理员';
                 return (
                   <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -3053,19 +3621,67 @@ const ApprovalPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           </span>
                         </div>
                         <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
+                        <div className="mt-4 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+                          <div className="flex items-center justify-between gap-3">
+                            <h5 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">教学绑定</h5>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getMemberBindingStatusBadgeClass(bindingStatus)}`}>
+                              {getMemberBindingStatusLabel(bindingStatus)}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">小程序老师</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                                {bindingSummaryLoading && !bindingSummary ? '加载中...' : bindingSummary?.mini_teacher_bound ? '已绑定' : '未绑定'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责班级</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{responsibleClasses.length} 个班级</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {visibleClassNames.length > 0 ? `${visibleClassNames.join('、')}${hiddenClassCount > 0 ? ` +${hiddenClassCount}` : ''}` : '暂无负责班级'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">映射状态</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{getMemberBindingStatusLabel(bindingStatus)}</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {bindingSummary
+                                  ? `已映射 ${bindingSummary.mapping_summary.mapped_count} / 未完成 ${unresolvedCount}`
+                                  : bindingSummaryLoading
+                                    ? '教学绑定摘要加载中...'
+                                    : '未加载到教学绑定摘要'}
+                              </p>
+                            </div>
+                          </div>
+                          {bindingSummaryError && !bindingSummary && (
+                            <p className="mt-3 text-xs text-rose-500 dark:text-rose-300">教学绑定摘要加载失败</p>
+                          )}
+                        </div>
                       </div>
-                      {isOwner ? (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">Owner 权限固定，不可调整</span>
-                      ) : (
+                      <div className="flex flex-wrap items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => handleRoleToggle(user.id, user.role)}
-                          disabled={busy}
+                          onClick={() => onStartBinding(user.id)}
                           className={workspaceSecondaryButtonClass}
                         >
-                          {busy ? '保存中...' : user.role === 'admin' ? '降为成员' : '设为管理员'}
+                          开始绑定
                         </button>
-                      )}
+                        {roleFixed ? (
+                          <span className="text-sm text-slate-500 dark:text-slate-400">
+                            {user.role === 'super_owner' ? '超级管理员权限固定，不可调整' : '机构负责人权限仅可由超级管理员调整'}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRoleToggle(user.id, user.role)}
+                            disabled={busy}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            {busy ? '保存中...' : roleActionLabel}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -3893,11 +4509,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 const LoginModal = ({
   onLogin,
   onClose,
-  onOpenRegister,
+  onOpenApplyOrganization,
+  onOpenJoinOrganization,
 }: {
   onLogin: (token: string) => void;
   onClose: () => void;
-  onOpenRegister: () => void;
+  onOpenApplyOrganization: () => void;
+  onOpenJoinOrganization: () => void;
 }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -3919,6 +4537,9 @@ const LoginModal = ({
       const data = raw ? JSON.parse(raw) as { error?: string; token?: string } : {};
       if (!res.ok) {
         throw new Error(data.error || '登录服务不可用，请确认后端已启动');
+      }
+      if (!data.token) {
+        throw new Error('登录响应缺少令牌，请稍后再试');
       }
       onLogin(data.token);
     } catch (e: unknown) {
@@ -4006,20 +4627,31 @@ const LoginModal = ({
             </button>
           </form>
 
-          <button
-            type="button"
-            onClick={onOpenRegister}
-            className="w-full mt-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
-          >
-            还没有账号？提交注册申请
-          </button>
+          <div className="mt-4 space-y-3">
+            <button
+              type="button"
+              onClick={onOpenApplyOrganization}
+              className="w-full py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+            >
+              申请开通机构
+            </button>
+            <button
+              type="button"
+              onClick={onOpenJoinOrganization}
+              className="w-full py-3 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sm font-medium text-sky-100 transition-colors"
+            >
+              加入已有机构
+            </button>
+          </div>
         </div>
       </motion.div>
     </motion.div>
   );
 };
 
-const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
+const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => <OrganizationApplyModal onClose={onClose} />;
+
+const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
@@ -4039,14 +4671,14 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/register-request', {
+      const res = await fetch('/api/organization-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          organization_name: displayName || username,
           username,
           display_name: displayName,
           password,
-          organization_name: '星润Starain',
         }),
       });
       const raw = await res.text();
@@ -4086,8 +4718,8 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
         <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-semibold">提交注册申请</h2>
-              <p className="text-sm text-gray-500 mt-1">所有新账号默认加入机构 星润Starain，审批通过后才能进入后台。</p>
+              <h2 className="text-xl font-semibold">申请开通机构</h2>
+              <p className="text-sm text-gray-500 mt-1">旧注册入口已切换为机构申请，建议从新的机构开通流程提交完整信息。</p>
             </div>
             <button
               onClick={onClose}
@@ -4134,13 +4766,6 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
                   placeholder="后台显示的名字，可修改"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm text-gray-400">机构</label>
-              <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-gray-200">
-                星润Starain
               </div>
             </div>
 
@@ -4194,6 +4819,385 @@ const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
+const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
+  const [organizationName, setOrganizationName] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiFetch<{ id: number; status: string }>('/api/organization-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          organization_name: organizationName,
+          username,
+          display_name: displayName,
+          password,
+        }),
+      });
+      setSuccess('机构申请已提交，等待 Kayn 审批。');
+      setOrganizationName('');
+      setUsername('');
+      setDisplayName('');
+      setPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '机构申请提交失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-xl"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold">申请开通机构</h2>
+              <p className="text-sm text-gray-400 mt-1">提交机构名称和首位管理者信息，由 Kayn 统一审批。</p>
+            </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-2xl leading-none">×</button>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-300 text-sm">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm text-gray-400">机构名称</label>
+              <input
+                type="text"
+                value={organizationName}
+                onChange={(e) => setOrganizationName(e.target.value)}
+                required
+                placeholder="例如：北辰实验学校"
+                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">用户名</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  placeholder="首位 owner 登录账号"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">显示名称</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  placeholder="后台显示名称"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入密码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all shadow-lg shadow-blue-600/20 mt-2"
+            >
+              {loading ? '提交中...' : '提交机构申请'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const JoinOrganizationModal = ({
+  onClose,
+  inviteToken,
+}: {
+  onClose: () => void;
+  inviteToken?: string | null;
+}) => {
+  const [inviteCode, setInviteCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [organizationName, setOrganizationName] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setError('');
+    setSuccess('');
+    if (!inviteToken) {
+      setOrganizationName('');
+      return;
+    }
+    let cancelled = false;
+    setPreviewLoading(true);
+    apiFetch<{ organization_name: string }>(`/api/invite/${inviteToken}`)
+      .then((payload) => {
+        if (!cancelled) {
+          setOrganizationName(payload.organization_name);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setOrganizationName('');
+          setError(err instanceof Error ? err.message : '邀请链接已失效');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      const path = inviteToken ? `/api/join-by-invite-link/${inviteToken}` : '/api/join-by-invite-code';
+      const payload = await apiFetch<{ user: CurrentUser }>(path, {
+        method: 'POST',
+        body: inviteToken
+          ? JSON.stringify({ username, display_name: displayName, password })
+          : JSON.stringify({ invite_code: inviteCode, username, display_name: displayName, password }),
+      });
+      setSuccess(`已加入 ${payload.user.organization_name}，现在可以使用新账号登录。`);
+      setInviteCode('');
+      setUsername('');
+      setDisplayName('');
+      setPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加入机构失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-xl"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold">加入已有机构</h2>
+              <p className="text-sm text-gray-400 mt-1">通过邀请码或邀请链接加入机构，成功后即可直接登录。</p>
+            </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-2xl leading-none">×</button>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-300 text-sm">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {inviteToken ? (
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">邀请链接目标机构</label>
+                <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-gray-200">
+                  {previewLoading ? '正在识别机构...' : organizationName || '邀请链接已失效'}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">邀请码</label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required
+                  placeholder="输入机构邀请码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">用户名</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  placeholder="用于登录"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">显示名称</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  placeholder="后台显示名称"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入密码"
+                  className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading || previewLoading || (Boolean(inviteToken) && !organizationName)}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all shadow-lg shadow-blue-600/20 mt-2"
+            >
+              {loading ? '提交中...' : '加入机构'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 // --- Landing Page ---
 
 export const LandingLegalPage = ({
@@ -4217,7 +5221,7 @@ export const LandingLegalPage = ({
             <img src="/logo.png" alt="Starain logo" className="w-11 h-11 object-contain" />
             <div className="min-w-0">
               <p className="text-lg font-bold tracking-tight truncate dark:text-white">Starain</p>
-              <p className="text-xs text-sky-700 tracking-[0.28em]">AI Edu Platform</p>
+              <p className="text-xs text-sky-700 tracking-[0.28em]">学习全流程 AI 平台</p>
             </div>
           </div>
           <a
@@ -4240,7 +5244,7 @@ export const LandingLegalPage = ({
           <div className="flex flex-col gap-5 border-b border-sky-100 pb-8 dark:border-white/10">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
               <ShieldCheck size={14} />
-              LEGAL
+              法律文件
             </div>
             <div className="space-y-4">
               <h1 className="text-4xl md:text-5xl font-black tracking-tight dark:text-white">{document.title}</h1>
@@ -4269,7 +5273,7 @@ export const LandingLegalPage = ({
 
       <footer className="relative z-10 border-t border-sky-100/80 py-10 dark:border-white/8">
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-slate-500 dark:text-slate-400">
-          <p>© 2026 Starain. All rights reserved.</p>
+          <p>© 2026 Starain. 保留所有权利。</p>
           <div className="flex items-center gap-6">
             <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
             <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
@@ -4282,13 +5286,15 @@ export const LandingLegalPage = ({
 
 export const LandingPage = ({
   onLogin,
-  onRegister,
+  onApplyOrganization,
+  onJoinOrganization,
   activeLegalPage,
   isDark = false,
   onToggleDarkMode,
 }: {
   onLogin: () => void;
-  onRegister: () => void;
+  onApplyOrganization: () => void;
+  onJoinOrganization: () => void;
   activeLegalPage?: LandingLegalDocumentKey | null;
   isDark?: boolean;
   onToggleDarkMode?: () => void;
@@ -4326,7 +5332,7 @@ export const LandingPage = ({
             <img src="/logo.png" alt="Starain logo" className="w-12 h-12 object-contain" />
             <span className="text-xl font-bold tracking-tight">星润Starain</span>
             <span className="hidden sm:block text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
-              AI Edu Platform
+              学习全流程 AI 平台
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -4342,10 +5348,10 @@ export const LandingPage = ({
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button
-              onClick={onRegister}
+              onClick={onApplyOrganization}
               className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
             >
-              申请注册
+              申请开通机构
             </button>
             <button
               onClick={onLogin}
@@ -4392,7 +5398,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.08, duration: 0.5 }}
                 className="inline-flex items-center rounded-full border border-white/50 bg-white/55 px-4 py-1.5 text-[11px] font-semibold tracking-[0.32em] text-slate-700 backdrop-blur-md dark:border-white/12 dark:bg-slate-950/35 dark:text-sky-200"
               >
-                AI EDUCATION PLATFORM FOR INSTITUTIONS
+                服务学校与机构的 AI 教育平台
               </motion.span>
               <motion.h1
                 initial={{ opacity: 0, y: 16 }}
@@ -4440,7 +5446,7 @@ export const LandingPage = ({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.58, duration: 0.78 }}
-                className="mt-10 flex flex-col gap-4 sm:flex-row"
+                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap"
               >
                 <a
                   href="#features"
@@ -4450,11 +5456,18 @@ export const LandingPage = ({
                   <ArrowRight size={18} />
                 </a>
                 <button
-                  onClick={onRegister}
+                  onClick={onApplyOrganization}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
                 >
                   <User size={18} />
-                  申请试用
+                  申请开通机构
+                </button>
+                <button
+                  onClick={onJoinOrganization}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200/70 bg-sky-50/85 px-8 py-4 text-base font-bold text-sky-900 transition-all hover:bg-sky-100 active:scale-95 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                >
+                  <ArrowRight size={18} />
+                  加入已有机构
                 </button>
               </motion.div>
             </motion.div>
@@ -4468,11 +5481,11 @@ export const LandingPage = ({
               <div className="overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.38)_100%)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] dark:shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
                 <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 pb-4 dark:border-white/10">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">PLATFORM SNAPSHOT</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">不止一个助手，而是一套持续扩展的 AI Edu Platform</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">平台概览</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">面向学习全流程的 AI 教育平台</p>
                   </div>
                   <div className="rounded-full border border-emerald-200/80 bg-emerald-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                    Live
+                    已上线
                   </div>
                 </div>
 
@@ -4720,7 +5733,7 @@ export const LandingPage = ({
               <img src="/logo.png" alt="Starain logo" className="w-10 h-10 object-contain" />
               <span className="text-lg font-bold tracking-tight dark:text-white">星润Starain</span>
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
-                AI Edu Platform
+                学习全流程 AI 平台
               </span>
             </div>
             <p className="max-w-md text-sm text-gray-500 text-center md:text-left dark:text-slate-400">
@@ -4737,7 +5750,7 @@ export const LandingPage = ({
             <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
             <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 Starain. All rights reserved.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 Starain. 保留所有权利。</p>
         </div>
       </footer>
     </div>
@@ -4751,10 +5764,24 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(localStorage.getItem('xr_token')));
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
-  const [showLogin, setShowLogin] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
+  const [publicAuthModal, setPublicAuthModal] = useState<PublicAuthModal | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    if (window.localStorage?.getItem?.('xr_token')) {
+      return null;
+    }
+    return getJoinInviteTokenFromPath(window.location.pathname) ? 'join-organization' : null;
+  });
+  const [joinInviteToken, setJoinInviteToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return getJoinInviteTokenFromPath(window.location.pathname);
+  });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [masterDataFocusUserId, setMasterDataFocusUserId] = useState<number | null>(null);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
@@ -4795,6 +5822,33 @@ export default function App() {
   const landingLegalPage = getLandingLegalPageFromHash(landingHash);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const syncInvitePath = () => {
+      if (token) {
+        clearJoinInvitePathIfNeeded();
+        setJoinInviteToken(null);
+        setPublicAuthModal(null);
+        return;
+      }
+
+      const nextToken = getJoinInviteTokenFromPath(window.location.pathname);
+      setJoinInviteToken(nextToken);
+      if (nextToken && !token) {
+        setPublicAuthModal('join-organization');
+        return;
+      }
+      setPublicAuthModal((current) => (current === 'join-organization' ? null : current));
+    };
+
+    syncInvitePath();
+    window.addEventListener('popstate', syncInvitePath);
+    return () => window.removeEventListener('popstate', syncInvitePath);
+  }, [token]);
+
+  useEffect(() => {
     if (!token) {
       setCurrentUser(null);
       setAuthReady(true);
@@ -4811,10 +5865,10 @@ export default function App() {
         }
         setCurrentUser(user);
         setActivePage((page) => {
-          if (page === 'accounts' && user.role !== 'owner') {
+          if (page === 'accounts' && !hasOwnerAccess(user.role)) {
             return 'dashboard';
           }
-          if (page === 'classes' && user.role !== 'owner' && user.role !== 'admin') {
+          if (page === 'classes' && !hasStaffAccess(user.role)) {
             return 'dashboard';
           }
           return page;
@@ -4877,23 +5931,50 @@ export default function App() {
   }, [authReady, currentUser, token]);
 
   const handleLogin = (t: string) => {
+    clearJoinInvitePathIfNeeded();
     localStorage.setItem('xr_token', t);
     setToken(t);
-    setShowLogin(false);
+    setPublicAuthModal(null);
+    setJoinInviteToken(null);
     setShowLanding(false);
   };
 
   const handleLogout = () => {
+    clearJoinInvitePathIfNeeded();
     localStorage.removeItem('xr_token');
     setToken('');
     setCurrentUser(null);
+    setPublicAuthModal(null);
+    setJoinInviteToken(null);
     setShowLanding(false);
     setActivePage('dashboard');
     setMobileNavOpen(false);
   };
 
+  const closePublicAuthModal = () => {
+    clearJoinInvitePathIfNeeded();
+    setJoinInviteToken(null);
+    setPublicAuthModal(null);
+  };
+
+  const openApplyOrganization = () => {
+    setJoinInviteToken(null);
+    setPublicAuthModal('apply-organization');
+  };
+
+  const openJoinOrganization = () => {
+    const nextToken = typeof window === 'undefined' ? null : getJoinInviteTokenFromPath(window.location.pathname);
+    setJoinInviteToken(nextToken);
+    setPublicAuthModal('join-organization');
+  };
+
   const handleReviewGenerationSuccess = () => {
     setActivePage('review-generation');
+  };
+
+  const handleStartMemberBinding = (userId: number) => {
+    setMasterDataFocusUserId(userId);
+    setActivePage('masterDataMappings');
   };
 
   const handlePreviousCalendarWeek = () => {
@@ -4910,7 +5991,7 @@ export default function App() {
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
-    masterDataMappings: '主数据映射',
+    masterDataMappings: '老师与班级匹配',
     classes: '班级管理',
     accounts: '账号审批',
     settings: '系统设置',
@@ -4928,31 +6009,39 @@ export default function App() {
     return (
       <>
         <LandingPage
-          onLogin={token ? () => setShowLanding(false) : () => setShowLogin(true)}
-          activeLegalPage={landingLegalPage}
-          isDark={isDark}
-          onToggleDarkMode={() => setIsDark((current) => !current)}
-          onRegister={() => {
+          onLogin={token ? () => setShowLanding(false) : () => setPublicAuthModal('login')}
+          onApplyOrganization={() => {
             if (token) {
               setShowLanding(false);
               return;
             }
-            setShowRegister(true);
+            openApplyOrganization();
           }}
+          onJoinOrganization={() => {
+            if (token) {
+              setShowLanding(false);
+              return;
+            }
+            openJoinOrganization();
+          }}
+          activeLegalPage={landingLegalPage}
+          isDark={isDark}
+          onToggleDarkMode={() => setIsDark((current) => !current)}
         />
         <AnimatePresence>
-          {showLogin && (
+          {publicAuthModal === 'login' && (
             <LoginModal
               onLogin={handleLogin}
-              onClose={() => setShowLogin(false)}
-              onOpenRegister={() => {
-                setShowLogin(false);
-                setShowRegister(true);
-              }}
+              onClose={closePublicAuthModal}
+              onOpenApplyOrganization={openApplyOrganization}
+              onOpenJoinOrganization={openJoinOrganization}
             />
           )}
-          {showRegister && (
-            <RegisterRequestModal onClose={() => setShowRegister(false)} />
+          {publicAuthModal === 'apply-organization' && (
+            <OrganizationApplyModal onClose={closePublicAuthModal} />
+          )}
+          {publicAuthModal === 'join-organization' && (
+            <JoinOrganizationModal onClose={closePublicAuthModal} inviteToken={joinInviteToken} />
           )}
         </AnimatePresence>
       </>
@@ -5037,7 +6126,7 @@ export default function App() {
                     activeClassCount={calendarClasses.length}
                   />
                 )}
-                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} />}
+                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
                 {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
                 {activePage === 'calendar' &&
                   (calendarLoading ? (
@@ -5056,15 +6145,15 @@ export default function App() {
                     />
                   ))}
                 {activePage === 'smartWrongQuestions' &&
-                  (currentUser.role === 'owner' || currentUser.role === 'admin') &&
+                  canAccessSmartWrongQuestions(currentUser.role) &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
                 {activePage === 'masterDataMappings' &&
-                  (currentUser.role === 'owner' || currentUser.role === 'admin') &&
-                  <MasterDataMappingsPage currentUser={currentUser} />}
-                {activePage === 'classes' && (currentUser.role === 'owner' || currentUser.role === 'admin') && (
+                  hasOwnerAccess(currentUser.role) &&
+                  <MasterDataMappingsPage currentUser={currentUser} focusUserId={masterDataFocusUserId} />}
+                {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
-                {activePage === 'accounts' && currentUser.role === 'owner' && <ApprovalPage currentUser={currentUser} />}
+                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onStartBinding={handleStartMemberBinding} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>

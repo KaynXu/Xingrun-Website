@@ -16,6 +16,7 @@ import threading
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
+from typing import Optional, Set
 
 from flask import (Flask, abort, flash, redirect, render_template,
                    request, send_file, url_for, jsonify)
@@ -47,8 +48,12 @@ CORS(app, resources={r"/api/*": {"origins": [
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
     DEFAULT_ORGANIZATION_NAME,
+    approve_organization_request,
     approve_registration_request,
     authenticate_user,
+    create_organization_request,
+    build_lesson_feedback_editor_state,
+    create_student_for_class,
     create_auth_session,
     create_consultation,
     create_registration_request,
@@ -63,6 +68,8 @@ from lesson_manager import (
     get_current_user,
     get_lesson,
     get_lessons_by_week,
+    get_or_create_active_organization_invite,
+    get_organization_invite_by_token,
     get_questions,
     get_user_class_ids,
     init_db,
@@ -72,9 +79,17 @@ from lesson_manager import (
     list_consultation_teachers,
     list_consultations,
     list_lessons,
+    list_organization_requests,
+    list_students_for_class,
     list_registration_requests,
+    join_organization_by_invite_code,
+    join_organization_by_invite_link_token,
+    reject_organization_request,
     reject_registration_request,
+    reset_organization_invite,
+    remove_student_from_class,
     save_class,
+    save_lesson_feedback,
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
@@ -86,8 +101,36 @@ from lesson_manager import (
 )
 import smart_wrong_questions
 import master_data
+from ai_processor import generate_teacher_feedback_draft
 
 init_db()
+
+DEFAULT_TEACHER_FEEDBACK_TEMPLATES = [
+    {
+        "id": "active",
+        "label": "积极参与，状态很好",
+        "guidance": "上课积极回答问题，理解和表达都比较顺畅。",
+    },
+    {
+        "id": "steady",
+        "label": "状态稳定，吸收较快",
+        "guidance": "课堂理解比较稳定，但还需要课后再巩固一轮。",
+    },
+    {
+        "id": "review-soon",
+        "label": "精神一般，回家及时复习",
+        "guidance": "建议回家马上结合复习计划回忆课堂内容，避免遗忘。",
+    },
+    {
+        "id": "needs-support",
+        "label": "当前吃力，需要家校配合",
+        "guidance": "需要家长帮助孩子尽快回顾课堂内容，并完成基础练习。",
+    },
+]
+DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS = {
+    template["id"]
+    for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
+}
 
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -494,8 +537,16 @@ def delete_lesson(lesson_id):
 @app.route("/pdf/<int:lesson_id>")
 @app.route("/api/pdf/<int:lesson_id>")
 def serve_pdf(lesson_id):
+    if request.path.startswith("/api/"):
+        user, error = _require_auth()
+        if error:
+            return error
+    else:
+        user = None
     lesson = get_lesson(lesson_id)
     if not lesson:
+        abort(404)
+    if user is not None and not _can_access_lesson(user, lesson):
         abort(404)
     pdf_path = lesson.get("pdf_path", "")
     if not pdf_path or not Path(pdf_path).exists():
@@ -507,8 +558,16 @@ def serve_pdf(lesson_id):
 @app.route("/pdf/download/<int:lesson_id>")
 @app.route("/api/pdf/download/<int:lesson_id>")
 def download_pdf(lesson_id):
+    if request.path.startswith("/api/"):
+        user, error = _require_auth()
+        if error:
+            return error
+    else:
+        user = None
     lesson = get_lesson(lesson_id)
     if not lesson:
+        abort(404)
+    if user is not None and not _can_access_lesson(user, lesson):
         abort(404)
     pdf_path = lesson.get("pdf_path", "")
     if not pdf_path or not Path(pdf_path).exists():
@@ -762,8 +821,92 @@ def api_register_request():
     return jsonify({"id": item["id"], "status": item["status"]}), 201
 
 
+@app.route("/api/organization-requests", methods=["POST"])
+def api_organization_request_create():
+    data = request.json or {}
+    organization_name = data.get("organization_name", "").strip()
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+
+    if not organization_name or not username or not display_name or not password:
+        return jsonify({"error": "organization_name, username, display_name and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    try:
+        item = create_organization_request(
+            organization_name=organization_name,
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"id": item["id"], "status": item["status"]}), 201
+
+
+@app.route("/api/invite/<invite_token>", methods=["GET"])
+def api_invite_preview(invite_token: str):
+    invite = get_organization_invite_by_token(invite_token)
+    if not invite:
+        return jsonify({"error": "invite not found"}), 404
+    return jsonify({"organization_name": invite["organization_name"]})
+
+
+@app.route("/api/join-by-invite-code", methods=["POST"])
+def api_join_by_invite_code():
+    data = request.json or {}
+    invite_code = data.get("invite_code", "").strip()
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+    if not invite_code or not username or not display_name or not password:
+        return jsonify({"error": "invite_code, username, display_name and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    try:
+        user = join_organization_by_invite_code(
+            invite_code=invite_code,
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"user": user}), 201
+
+
+@app.route("/api/join-by-invite-link/<invite_token>", methods=["POST"])
+def api_join_by_invite_link(invite_token: str):
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    display_name = data.get("display_name", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not display_name or not password:
+        return jsonify({"error": "username, display_name and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    try:
+        user = join_organization_by_invite_link_token(
+            invite_token=invite_token,
+            username=username,
+            display_name=display_name,
+            password=password,
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"user": user}), 201
+
+
 def _require_auth():
-    token = request.headers.get("X-Auth-Token", "").strip()
+    token = (
+        request.headers.get("X-Auth-Token", "").strip()
+        or request.args.get("token", "").strip()
+    )
     user = get_current_user(token)
     if not user:
         return None, (jsonify({"error": "未授权"}), 401)
@@ -774,7 +917,7 @@ def _require_staff():
     user, error = _require_auth()
     if error:
         return None, error
-    if user.get("role") not in {"owner", "admin"}:
+    if user.get("role") not in {"super_owner", "owner", "admin"}:
         return None, (jsonify({"error": "无权限"}), 403)
     return user, None
 
@@ -783,9 +926,322 @@ def _require_owner():
     user, error = _require_auth()
     if error:
         return None, error
-    if user.get("role") != "owner":
+    if user.get("role") not in {"super_owner", "owner"}:
         return None, (jsonify({"error": "无权限"}), 403)
     return user, None
+
+
+def _require_super_owner():
+    user, error = _require_auth()
+    if error:
+        return None, error
+    if user.get("role") != "super_owner":
+        return None, (jsonify({"error": "无权限"}), 403)
+    return user, None
+
+
+def _organization_invite_response_payload(invite: dict) -> dict:
+    join_path = f"/join/{invite['invite_token']}"
+    base_url = request.url_root.rstrip("/")
+    return {
+        "organization_name": invite["organization_name"],
+        "invite_code": invite["invite_code"],
+        "invite_link": f"{base_url}{join_path}",
+        "join_path": join_path,
+    }
+
+
+def _can_access_wrong_question_record(user, record: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return True
+    if not isinstance(record, dict):
+        return False
+
+    teacher_user_id = record.get("teacher_user_id")
+    if isinstance(teacher_user_id, int) and teacher_user_id == user.get("id"):
+        return True
+
+    class_id = record.get("class_id")
+    if isinstance(class_id, int):
+        member_class_ids = owned_class_ids
+        if member_class_ids is None:
+            member_class_ids = set(get_user_class_ids(user["id"]))
+        return class_id in member_class_ids
+
+    return False
+
+
+def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
+    summary = {
+        "total_count": 0,
+        "repeated_mistake_count": 0,
+        "high_priority_count": 0,
+        "pending_review_count": 0,
+    }
+
+    for item in items:
+        analysis = item.get("analysis") if isinstance(item.get("analysis"), dict) else {}
+        summary["total_count"] += 1
+
+        repeated_mistake = str(
+            analysis.get("is_repeated_mistake")
+            or analysis.get("isRepeatedMistake")
+            or ""
+        ).strip()
+        if repeated_mistake and repeated_mistake != "否":
+            summary["repeated_mistake_count"] += 1
+
+        teacher_priority = str(
+            analysis.get("teacher_priority")
+            or analysis.get("teacherPriority")
+            or ""
+        ).strip()
+        if teacher_priority == "高":
+            summary["high_priority_count"] += 1
+
+        selected_error_type = str(
+            analysis.get("selected_error_type")
+            or analysis.get("selectedErrorType")
+            or ""
+        ).strip()
+        if not selected_error_type:
+            summary["pending_review_count"] += 1
+
+    return summary
+
+
+def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
+    if not isinstance(items, list):
+        return []
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return [item for item in items if isinstance(item, dict)]
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [
+        item
+        for item in items
+        if isinstance(item, dict) and _can_access_wrong_question_record(user, item, owned_class_ids)
+    ]
+
+
+def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return classes
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [item for item in classes if item.get("id") in owned_class_ids]
+
+
+def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return True
+    if not isinstance(lesson, dict):
+        return False
+
+    class_id = lesson.get("class_id")
+    if not isinstance(class_id, int):
+        return False
+
+    member_class_ids = owned_class_ids
+    if member_class_ids is None:
+        member_class_ids = set(get_user_class_ids(user["id"]))
+    return class_id in member_class_ids
+
+
+def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
+    if not isinstance(lessons, list):
+        return []
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return [item for item in lessons if isinstance(item, dict)]
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [
+        item
+        for item in lessons
+        if isinstance(item, dict) and _can_access_lesson(user, item, owned_class_ids)
+    ]
+
+
+def _get_accessible_class_or_error(user: dict, class_id: int):
+    cls = get_class(class_id)
+    if not cls:
+        return None, (jsonify({"error": "not found"}), 404)
+    if _filter_classes_for_user(user, [cls]):
+        return cls, None
+    return None, (jsonify({"error": "forbidden"}), 403)
+
+
+def _validate_lesson_feedback_access(user: dict, lesson: dict):
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return None
+    class_id = lesson.get("class_id")
+    if not isinstance(class_id, int) or class_id <= 0:
+        return jsonify({"error": "forbidden"}), 403
+    _, error = _get_accessible_class_or_error(user, class_id)
+    return error
+
+
+def _build_teacher_feedback_template_lookup(custom_templates: list[dict]) -> dict[str, dict]:
+    lookup: dict[str, dict] = {
+        template["id"]: dict(template)
+        for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
+    }
+    for item in custom_templates:
+        if not isinstance(item, dict):
+            continue
+        template_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        guidance = str(item.get("guidance") or "").strip()
+        if not template_id or not label or not guidance:
+            continue
+        lookup[template_id] = {
+            "id": template_id,
+            "label": label,
+            "guidance": guidance,
+        }
+    return lookup
+
+
+def _normalize_feedback_custom_templates(custom_templates: list[dict]) -> list[dict]:
+    normalized_templates: list[dict] = []
+    seen_template_ids: set[str] = set()
+    for item in custom_templates:
+        if not isinstance(item, dict):
+            continue
+        template_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        guidance = str(item.get("guidance") or "").strip()
+        if (
+            not template_id
+            or not label
+            or not guidance
+            or template_id in seen_template_ids
+            or template_id in DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS
+        ):
+            continue
+        normalized_templates.append(
+            {
+                "id": template_id,
+                "label": label,
+                "guidance": guidance,
+            }
+        )
+        seen_template_ids.add(template_id)
+    return normalized_templates
+
+
+def _normalize_feedback_students_for_draft(
+    *,
+    students: list[dict],
+    roster_by_id: dict[int, dict],
+    template_lookup: dict[str, dict],
+    enforce_roster_membership: bool,
+) -> tuple[list[dict], int]:
+    selected_students: list[dict] = []
+    skipped_count = 0
+    seen_student_ids: set[int] = set()
+    for item in students:
+        if not isinstance(item, dict):
+            skipped_count += 1
+            continue
+        selected_template_id = str(item.get("selected_template_id") or "").strip()
+        if not selected_template_id:
+            skipped_count += 1
+            continue
+        student_id = item.get("student_id")
+        if isinstance(student_id, int) and student_id in seen_student_ids:
+            skipped_count += 1
+            continue
+        roster_student = roster_by_id.get(student_id) if isinstance(student_id, int) else None
+        if enforce_roster_membership and not roster_student:
+            skipped_count += 1
+            continue
+        template = template_lookup.get(selected_template_id) or {}
+        if not template:
+            skipped_count += 1
+            continue
+        selected_students.append(
+            {
+                **item,
+                "name": (roster_student or {}).get("name") or str(item.get("name") or "").strip(),
+                "selected_template_id": selected_template_id,
+                "selected_template_label": str(template.get("label") or "").strip(),
+                "selected_template_guidance": str(template.get("guidance") or "").strip(),
+                "remark": str(item.get("remark") or "").strip(),
+            }
+        )
+        if isinstance(student_id, int):
+            seen_student_ids.add(student_id)
+    return selected_students, skipped_count
+
+
+def _normalize_feedback_editor_students(
+    *,
+    students: list[dict],
+    roster_by_id: dict[int, dict],
+    enforce_roster_membership: bool,
+    allowed_template_ids: set[str],
+) -> list[dict]:
+    normalized_students: list[dict] = []
+    seen_student_ids: set[int] = set()
+    for item in students:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if not isinstance(student_id, int) or student_id in seen_student_ids:
+            continue
+        roster_student = roster_by_id.get(student_id)
+        if enforce_roster_membership and not roster_student:
+            continue
+        selected_template_id = str(item.get("selected_template_id") or "").strip()
+        if selected_template_id not in allowed_template_ids:
+            selected_template_id = ""
+        normalized_students.append(
+            {
+                "student_id": student_id,
+                "name": (roster_student or {}).get("name") or str(item.get("name") or "").strip(),
+                "selected_template_id": selected_template_id,
+                "remark": str(item.get("remark") or "").strip(),
+            }
+        )
+        seen_student_ids.add(student_id)
+    return normalized_students
+
+
+def _build_feedback_student_index(
+    *,
+    student_index: list[dict],
+    students: list[dict],
+    roster_by_id: dict[int, dict],
+    enforce_roster_membership: bool,
+) -> list[dict]:
+    source = student_index if student_index else students
+    normalized: list[dict] = []
+    seen_student_ids: set[int] = set()
+    for item in source:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if not isinstance(student_id, int) or student_id in seen_student_ids:
+            continue
+        roster_student = roster_by_id.get(student_id)
+        if enforce_roster_membership and not roster_student:
+            continue
+        student_name = (roster_student or {}).get("name") or str(item.get("name") or "").strip()
+        if not student_name:
+            continue
+        normalized.append({"student_id": student_id, "name": student_name})
+        seen_student_ids.add(student_id)
+    return normalized
+
+
+def _get_json_object_payload():
+    if not request.is_json:
+        return {}, None
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "request body must be a JSON object"}), 400)
+    return data, None
 
 
 @app.route("/api/me", methods=["GET"])
@@ -811,6 +1267,78 @@ def api_profile_update():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/organization-requests", methods=["GET"])
+def api_admin_organization_requests():
+    _, error = _require_super_owner()
+    if error:
+        return error
+    return jsonify({"items": list_organization_requests()})
+
+
+@app.route("/api/admin/organization-requests/<int:request_id>/approve", methods=["POST"])
+def api_admin_organization_request_approve(request_id: int):
+    user, error = _require_super_owner()
+    if error:
+        return error
+    try:
+        approved_user, invite = approve_organization_request(request_id=request_id, reviewer_id=user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify(
+        {
+            "ok": True,
+            "user": approved_user,
+            "invite": _organization_invite_response_payload(invite),
+        }
+    )
+
+
+@app.route("/api/admin/organization-requests/<int:request_id>/reject", methods=["POST"])
+def api_admin_organization_request_reject(request_id: int):
+    user, error = _require_super_owner()
+    if error:
+        return error
+    try:
+        reject_organization_request(request_id=request_id, reviewer_id=user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/organization/invite", methods=["GET"])
+def api_organization_invite_get():
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        invite = get_or_create_active_organization_invite(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(_organization_invite_response_payload(invite))
+
+
+@app.route("/api/organization/invite/reset", methods=["POST"])
+def api_organization_invite_reset():
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        invite = reset_organization_invite(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(_organization_invite_response_payload(invite))
 
 
 @app.route("/api/admin/registration-requests", methods=["GET"])
@@ -858,16 +1386,33 @@ def api_admin_users():
     return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
 
 
+@app.route("/api/admin/member-binding-summary", methods=["GET"])
+def api_admin_member_binding_summary():
+    _, error = _require_staff()
+    if error:
+        return error
+    return jsonify({"items": master_data.list_member_binding_summaries()})
+
+
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
 def api_admin_user_role_set(user_id):
-    _, error = _require_owner()
+    user, error = _require_owner()
     if error:
         return error
     data = request.json or {}
     role = data.get("role")
-    if role not in ("admin", "member"):
-        return jsonify({"error": "role must be admin or member"}), 400
-    update_user_role(user_id, role)
+    if role not in ("owner", "admin", "member"):
+        return jsonify({"error": "role must be owner, admin or member"}), 400
+    if role == "owner" and user.get("role") != "super_owner":
+        return jsonify({"error": "无权限"}), 403
+    try:
+        update_user_role(user_id, role)
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        if str(exc) == "super owner role is fixed":
+            return jsonify({"error": str(exc)}), 409
+        return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True})
 
 
@@ -899,7 +1444,7 @@ def api_admin_user_classes_set(user_id):
 
 @app.route("/api/master-data/mappings/wrong-questions", methods=["GET"])
 def api_master_data_wrong_question_mapping_queue():
-    _, error = _require_staff()
+    _, error = _require_owner()
     if error:
         return error
     status = (request.args.get("status") or "").strip() or None
@@ -908,7 +1453,7 @@ def api_master_data_wrong_question_mapping_queue():
 
 @app.route("/api/master-data/mappings/wrong-questions/<record_id>", methods=["PUT"])
 def api_master_data_wrong_question_mapping_resolve(record_id):
-    user, error = _require_staff()
+    user, error = _require_owner()
     if error:
         return error
     payload = request.get_json(silent=True)
@@ -933,7 +1478,7 @@ def api_master_data_wrong_question_mapping_resolve(record_id):
 
 @app.route("/api/master-data/users/<int:user_id>/aliases", methods=["GET"])
 def api_master_data_user_aliases_get(user_id):
-    _, error = _require_staff()
+    _, error = _require_owner()
     if error:
         return error
     try:
@@ -944,7 +1489,7 @@ def api_master_data_user_aliases_get(user_id):
 
 @app.route("/api/master-data/users/<int:user_id>/aliases", methods=["PUT"])
 def api_master_data_user_aliases_put(user_id):
-    user, error = _require_staff()
+    user, error = _require_owner()
     if error:
         return error
     payload = request.get_json(silent=True)
@@ -970,7 +1515,7 @@ def api_master_data_user_aliases_put(user_id):
 
 @app.route("/api/master-data/classes/<int:class_id>/aliases", methods=["GET"])
 def api_master_data_class_aliases_get(class_id):
-    _, error = _require_staff()
+    _, error = _require_owner()
     if error:
         return error
     try:
@@ -981,7 +1526,7 @@ def api_master_data_class_aliases_get(class_id):
 
 @app.route("/api/master-data/classes/<int:class_id>/aliases", methods=["PUT"])
 def api_master_data_class_aliases_put(class_id):
-    user, error = _require_staff()
+    user, error = _require_owner()
     if error:
         return error
     payload = request.get_json(silent=True)
@@ -1007,13 +1552,19 @@ def api_master_data_class_aliases_put(class_id):
 
 @app.route("/api/wrong-questions", methods=["GET"])
 def api_wrong_questions_list():
-    _, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     try:
-        return jsonify(smart_wrong_questions.fetch_wrong_question_records(request.args))
+        payload = smart_wrong_questions.fetch_wrong_question_records(request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+
+    scoped_items = _filter_wrong_question_items_for_user(user, payload.get("items"))
+    payload["items"] = scoped_items
+    if user.get("role") == "member":
+        payload["summary"] = _summarize_wrong_question_records(scoped_items)
+    return jsonify(payload)
 
 
 @app.route("/api/wrong-questions/summary/export", methods=["GET"])
@@ -1036,21 +1587,28 @@ def api_wrong_question_summary_export():
 
 @app.route("/api/wrong-questions/<record_id>", methods=["GET"])
 def api_wrong_question_detail(record_id):
-    _, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     try:
-        return jsonify(smart_wrong_questions.fetch_wrong_question_record(record_id, request.args))
+        record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+
+    if not _can_access_wrong_question_record(user, record):
+        return jsonify({"error": "not found"}), 404
+    return jsonify(record)
 
 
 @app.route("/api/wrong-questions/<record_id>/review", methods=["PUT"])
 def api_wrong_question_review_save(record_id):
-    _, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     try:
+        record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
+        if not _can_access_wrong_question_record(user, record):
+            return jsonify({"error": "not found"}), 404
         return jsonify(
             smart_wrong_questions.save_wrong_question_review(record_id, request.args, request.json or {})
         )
@@ -1096,7 +1654,7 @@ def api_consultation_create():
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["PUT"])
 def api_consultation_update(consultation_id):
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     item = update_consultation(consultation_id, request.json or {})
@@ -1107,7 +1665,7 @@ def api_consultation_update(consultation_id):
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["DELETE"])
 def api_consultation_delete(consultation_id):
-    _, error = _require_owner()
+    _, error = _require_staff()
     if error:
         return error
     deleted = delete_consultation(consultation_id)
@@ -1136,10 +1694,10 @@ def api_stats():
 
 @app.route("/api/classes", methods=["GET"])
 def api_classes_list():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_classes())
+    return jsonify(_filter_classes_for_user(user, list_classes()))
 
 
 @app.route("/api/classes", methods=["POST"])
@@ -1179,6 +1737,51 @@ def api_class_get(class_id):
         return jsonify({"error": "not found"}), 404
     lessons = list_lessons(class_id=class_id)
     return jsonify({**cls, "lessons": lessons})
+
+
+@app.route("/api/classes/<int:class_id>/students", methods=["GET"])
+def api_class_students_list(class_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    return jsonify({"students": list_students_for_class(class_id)})
+
+
+@app.route("/api/classes/<int:class_id>/students", methods=["POST"])
+def api_class_students_create(class_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    requested_name = (data.get("name") or "").strip()
+    if not requested_name:
+        return jsonify({"error": "student name is required"}), 400
+    student = create_student_for_class(class_id, requested_name)
+    return jsonify({
+        "student": student,
+        "requested_name": requested_name,
+        "deduplicated": student["name"] != requested_name,
+    }), 201
+
+
+@app.route("/api/classes/<int:class_id>/students/<int:student_id>", methods=["DELETE"])
+def api_class_students_delete(class_id, student_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    removed = remove_student_from_class(class_id, student_id)
+    return jsonify({"ok": True, "removed": removed})
 
 
 @app.route("/api/classes/<int:class_id>/teacher", methods=["PUT"])
@@ -1242,22 +1845,25 @@ def api_class_delete(class_id):
 
 @app.route("/api/lessons", methods=["GET"])
 def api_lessons_list():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
-    return jsonify(list_lessons(month_str=month if month else None,
-                                class_id=class_id if class_id else None))
+    lessons = list_lessons(
+        month_str=month if month else None,
+        class_id=class_id if class_id else None,
+    )
+    return jsonify(_filter_lessons_for_user(user, lessons))
 
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
 def api_lesson_get(lesson_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     lesson = get_lesson(lesson_id)
-    if not lesson:
+    if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
     questions = get_questions(lesson_id=lesson_id)
     return jsonify({**lesson, "questions": questions})
@@ -1265,11 +1871,11 @@ def api_lesson_get(lesson_id):
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
 def api_lesson_delete(lesson_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     lesson = get_lesson(lesson_id)
-    if not lesson:
+    if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
     pdf_path = lesson.get("pdf_path", "")
     if pdf_path and Path(pdf_path).exists():
@@ -1280,7 +1886,7 @@ def api_lesson_delete(lesson_id):
 
 @app.route("/api/lessons", methods=["POST"])
 def api_lesson_create():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     if not has_api_key():
@@ -1292,8 +1898,16 @@ def api_lesson_create():
         data = request.form or {}
         
     lesson_date = data.get("date") or str(date.today())
-    class_id    = int(data.get("class_id") or 0)
-    cls         = get_class(class_id) if class_id else None
+    class_id = int(data.get("class_id") or 0)
+    if not class_id:
+        return jsonify({"error": "请选择班级后再生成复习记录"}), 400
+
+    cls = get_class(class_id)
+    if not cls:
+        return jsonify({"error": "class not found"}), 404
+    if not _can_access_lesson(user, {"class_id": class_id}):
+        return jsonify({"error": "forbidden"}), 403
+
     subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
     topic       = data.get("topic", "").strip()
@@ -1359,6 +1973,151 @@ def api_lesson_create():
         plan=plan, pdf_path=pdf_path, class_id=class_id,
     )
     return jsonify({"id": lesson_id, "success": True}), 201
+
+
+@app.route("/api/lessons/<int:lesson_id>/feedback/draft", methods=["POST"])
+def api_lesson_feedback_draft(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    error = _validate_lesson_feedback_access(user, lesson)
+    if error:
+        return error
+
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    students = data.get("students")
+    custom_templates = data.get("custom_templates")
+    if not isinstance(students, list):
+        students = []
+    if not isinstance(custom_templates, list):
+        custom_templates = []
+    custom_templates = _normalize_feedback_custom_templates(custom_templates)
+
+    roster_by_id = {}
+    class_id = lesson.get("class_id")
+    enforce_roster_membership = isinstance(class_id, int) and class_id > 0
+    if isinstance(class_id, int) and class_id > 0:
+        roster_by_id = {
+            student["id"]: student
+            for student in list_students_for_class(class_id)
+        }
+    template_lookup = _build_teacher_feedback_template_lookup(custom_templates)
+    selected_students, skipped_count = _normalize_feedback_students_for_draft(
+        students=students,
+        roster_by_id=roster_by_id,
+        template_lookup=template_lookup,
+        enforce_roster_membership=enforce_roster_membership,
+    )
+    if not selected_students:
+        return jsonify({
+            "lesson_id": lesson_id,
+            "merged_text": "",
+            "students_included": 0,
+            "students_skipped": skipped_count,
+        })
+
+    try:
+        merged_text = generate_teacher_feedback_draft(
+            lesson=lesson,
+            students=selected_students,
+            custom_templates=custom_templates,
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "lesson_id": lesson_id,
+        "merged_text": merged_text,
+        "students_included": len(selected_students),
+        "students_skipped": skipped_count,
+    })
+
+
+@app.route("/api/lessons/<int:lesson_id>/feedback", methods=["GET"])
+def api_lesson_feedback_get(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    error = _validate_lesson_feedback_access(user, lesson)
+    if error:
+        return error
+    return jsonify(build_lesson_feedback_editor_state(lesson_id))
+
+
+@app.route("/api/lessons/<int:lesson_id>/feedback", methods=["PUT"])
+def api_lesson_feedback_save(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    error = _validate_lesson_feedback_access(user, lesson)
+    if error:
+        return error
+
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    existing_feedback = build_lesson_feedback_editor_state(lesson_id)
+    student_index = data.get("student_index")
+    students = data.get("students")
+    custom_templates = data.get("custom_templates")
+    if not isinstance(student_index, list):
+        student_index = existing_feedback.get("student_index") or []
+    if not isinstance(students, list):
+        students = existing_feedback.get("students") or []
+    if not isinstance(custom_templates, list):
+        custom_templates = existing_feedback.get("custom_templates") or []
+
+    roster_by_id = {}
+    class_id = lesson.get("class_id")
+    enforce_roster_membership = isinstance(class_id, int) and class_id > 0
+    if isinstance(class_id, int) and class_id > 0:
+        roster_by_id = {
+            student["id"]: student
+            for student in list_students_for_class(class_id)
+        }
+    normalized_custom_templates = _normalize_feedback_custom_templates(custom_templates)
+    allowed_template_ids = set(DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS)
+    allowed_template_ids.update(template["id"] for template in normalized_custom_templates)
+    normalized_students = _normalize_feedback_editor_students(
+        students=students,
+        roster_by_id=roster_by_id,
+        enforce_roster_membership=enforce_roster_membership,
+        allowed_template_ids=allowed_template_ids,
+    )
+    normalized_student_index = _build_feedback_student_index(
+        student_index=student_index,
+        students=normalized_students,
+        roster_by_id=roster_by_id,
+        enforce_roster_membership=enforce_roster_membership,
+    )
+    merged_text = data.get("merged_text")
+    if merged_text is None:
+        merged_text = existing_feedback.get("merged_text", "")
+
+    try:
+        feedback = save_lesson_feedback(
+            lesson_id=lesson_id,
+            class_id=lesson.get("class_id") or 0,
+            merged_text=str(merged_text),
+            student_index=normalized_student_index,
+            editor_state={
+                "students": normalized_students,
+                "custom_templates": normalized_custom_templates,
+            },
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(feedback)
 
 
 @app.route("/api/quiz", methods=["GET"])

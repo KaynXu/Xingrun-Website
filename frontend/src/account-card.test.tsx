@@ -13,7 +13,7 @@ test('sidebar account sheet shows account info and logout actions', () => {
       id: number;
       username: string;
       display_name: string;
-      role: 'owner' | 'member';
+      role: 'super_owner' | 'owner' | 'member';
       status: string;
       organization_id: number;
       organization_name: string;
@@ -33,7 +33,7 @@ test('sidebar account sheet shows account info and logout actions', () => {
         id: 1,
         username: 'Kayn',
         display_name: 'Kayn',
-        role: 'owner',
+        role: 'super_owner',
         status: 'active',
         organization_id: 1,
         organization_name: '星润Starain',
@@ -57,7 +57,7 @@ test('sidebar account sheet includes dark theme surface classes', () => {
       id: number;
       username: string;
       display_name: string;
-      role: 'owner' | 'member';
+      role: 'super_owner' | 'owner' | 'member';
       status: string;
       organization_id: number;
       organization_name: string;
@@ -77,7 +77,7 @@ test('sidebar account sheet includes dark theme surface classes', () => {
         id: 1,
         username: 'Kayn',
         display_name: 'Kayn',
-        role: 'owner',
+        role: 'super_owner',
         status: 'active',
         organization_id: 1,
         organization_name: '星润Starain',
@@ -325,7 +325,7 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /min-h-\[320px\][^\n]*border border-sky-100[^\n]*text-slate-700[^\n]*dark:border-white\/10[^\n]*dark:bg-slate-900\/70[^\n]*dark:text-slate-100/);
   assert.match(appSource, /<tr className="border-b border-sky-100\/80 text-xs uppercase tracking-wider text-slate-400[^\"]*dark:border-white\/10[^\"]*dark:text-slate-500"/);
   assert.match(appSource, /hover:bg-sky-50\/70[^\"]*dark:hover:bg-white\/5/);
-  assert.match(appSource, /Owner<\/p>[\s\S]*账号审批[\s\S]*dark:text-white/);
+  assert.match(appSource, /机构负责人[\s\S]*账号审批与权限[\s\S]*dark:text-white/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);
   assert.match(appSource, /负责老师<\/h4>[\s\S]*dark:text-white/);
@@ -363,6 +363,31 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
   assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
+});
+
+test('approval page source loads and renders member teaching binding summaries', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /apiFetch<\{ items: MemberBindingSummary\[] \}>\('\/api\/admin\/member-binding-summary'\)/);
+  assert.match(approvalBlock[0], /教学绑定/);
+  assert.match(approvalBlock[0], /小程序老师/);
+  assert.match(approvalBlock[0], /负责班级/);
+  assert.match(approvalBlock[0], /映射状态/);
+  assert.match(approvalBlock[0], /教学绑定摘要加载失败/);
+  assert.match(approvalBlock[0], /bindingSummaryByUserId\[user\.id\]/);
+  assert.match(approvalBlock[0], /responsible_classes/);
+  assert.match(approvalBlock[0], /mini_teacher_bound/);
+});
+
+test('approval page source exposes a start binding action for each member card', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /开始绑定/);
+  assert.match(approvalBlock[0], /onStartBinding\(user\.id\)/);
 });
 
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {

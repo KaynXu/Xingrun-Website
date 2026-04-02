@@ -58,6 +58,32 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
+function createMappingOptionResponse(input: RequestInfo | URL): Response | null {
+  if (input === '/api/classes') {
+    return createJsonResponse([
+      { id: 34, name: '六年级 2 班', subject: '数学' },
+      { id: 35, name: '初一 1 班', subject: '英语' },
+    ]);
+  }
+
+  if (input === '/api/admin/users') {
+    return createJsonResponse([
+      { id: 12, name: '陈老师', org: '星润Starain', role: 'owner' },
+      { id: 18, name: '王老师', org: '星润Starain', role: 'member' },
+    ]);
+  }
+
+  if (input === '/api/master-data/users/12/aliases') {
+    return createJsonResponse({ aliases: ['陈老师'] });
+  }
+
+  if (input === '/api/master-data/users/18/aliases') {
+    return createJsonResponse({ aliases: [] });
+  }
+
+  return null;
+}
+
 async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
@@ -152,18 +178,25 @@ test('master data mappings page fetches and renders unresolved queue items', asy
   let root: Root | null = null;
 
   try {
-    globalThis.fetch = (async () => createJsonResponse({
-      items: [
-        {
-          record_id: 'record-1',
-          teacher_name_snapshot: '陈老师',
-          class_name_snapshot: '六年级 2 班',
-          subject_snapshot: '数学',
-          mapping_status: 'needs_review',
-          updated_at: '2026-03-31 10:00:00',
-        },
-      ],
-    })) as typeof fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
+      return createJsonResponse({
+        items: [
+          {
+            record_id: 'record-1',
+            teacher_name_snapshot: '陈老师',
+            class_name_snapshot: '六年级 2 班',
+            subject_snapshot: '数学',
+            mapping_status: 'needs_review',
+            updated_at: '2026-03-31 10:00:00',
+          },
+        ],
+      });
+    }) as typeof fetch;
 
     root = createRoot(container);
     await act(async () => {
@@ -179,10 +212,82 @@ test('master data mappings page fetches and renders unresolved queue items', asy
 
     await waitForAssertion(() => {
       const text = container.textContent || '';
-      assert.match(text, /主数据映射/);
+      assert.match(text, /老师与班级匹配/);
       assert.match(text, /陈老师/);
       assert.match(text, /六年级 2 班/);
       assert.match(text, /数学/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root!.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    cleanup();
+  }
+});
+
+test('master data mappings page loads teacher and class options as selects instead of numeric inputs', async () => {
+  const { container, cleanup } = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
+      if (input === '/api/master-data/mappings/wrong-questions') {
+        return createJsonResponse({
+          items: [
+            {
+              record_id: 'record-selects',
+              teacher_name_snapshot: '陈老师',
+              class_name_snapshot: '六年级 2 班',
+              subject_snapshot: '数学',
+              mapping_status: 'needs_review',
+              updated_at: '2026-03-31 10:00:00',
+            },
+          ],
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <MasterDataMappingsPage
+          currentUser={{
+            display_name: 'Admin',
+            organization_name: '星润Starain',
+          }}
+        />,
+      );
+    });
+
+    await waitForAssertion(() => {
+      const teacherSelect = container.querySelector('select[name="teacher_user_id"]') as HTMLSelectElement | null;
+      const classSelect = container.querySelector('select[name="class_id"]') as HTMLSelectElement | null;
+      const teacherInput = container.querySelector('input[name="teacher_user_id"]');
+      const classInput = container.querySelector('input[name="class_id"]');
+
+      assert.ok(teacherSelect);
+      assert.ok(classSelect);
+      assert.equal(teacherInput, null);
+      assert.equal(classInput, null);
+      assert.equal(teacherSelect.options[1]?.textContent?.trim(), '陈老师');
+      assert.equal(classSelect.options[1]?.textContent?.trim(), '六年级 2 班 · 数学');
+      assert.equal(fetchCalls[0]?.input, '/api/classes');
+      assert.equal(fetchCalls[1]?.input, '/api/admin/users');
     });
   } finally {
     if (root) {
@@ -204,6 +309,11 @@ test('master data mappings page sends the expected PUT payload when resolving a 
   try {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchCalls.push({ input, init });
+
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
 
       if (typeof input === 'string' && input === '/api/master-data/mappings/wrong-questions') {
         return createJsonResponse({
@@ -244,30 +354,29 @@ test('master data mappings page sends the expected PUT payload when resolving a 
     });
 
     await waitForAssertion(() => {
-      assert.ok(container.querySelector('input[name="teacher_user_id"]'));
-      assert.ok(container.querySelector('input[name="class_id"]'));
+      assert.ok(container.querySelector('select[name="teacher_user_id"]'));
+      assert.ok(container.querySelector('select[name="class_id"]'));
       assert.ok(container.querySelector('select[name="mapping_status"]'));
     });
 
-    const teacherInput = container.querySelector('input[name="teacher_user_id"]') as HTMLInputElement;
-    const classInput = container.querySelector('input[name="class_id"]') as HTMLInputElement;
+    const teacherSelect = container.querySelector('select[name="teacher_user_id"]') as HTMLSelectElement;
+    const classSelect = container.querySelector('select[name="class_id"]') as HTMLSelectElement;
     const statusSelect = container.querySelector('select[name="mapping_status"]') as HTMLSelectElement;
     const submitButton = container.querySelector('button[data-record-id="record-1"]') as HTMLButtonElement;
 
     await act(async () => {
-      teacherInput.value = '12';
-      teacherInput.dispatchEvent(new window.Event('input', { bubbles: true }));
-      teacherInput.dispatchEvent(new window.Event('change', { bubbles: true }));
-      classInput.value = '34';
-      classInput.dispatchEvent(new window.Event('input', { bubbles: true }));
-      classInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+      teacherSelect.value = '12';
+      teacherSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+      classSelect.value = '34';
+      classSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
       statusSelect.value = 'mapped';
       statusSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
       submitButton.click();
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 2);
+      const putCall = fetchCalls.find((call) => call.input === '/api/master-data/mappings/wrong-questions/record-1' && call.init?.method === 'PUT');
+      assert.ok(putCall);
     });
   } finally {
     if (root) {
@@ -279,12 +388,161 @@ test('master data mappings page sends the expected PUT payload when resolving a 
     cleanup();
   }
 
-  assert.equal(fetchCalls[1]?.input, '/api/master-data/mappings/wrong-questions/record-1');
-  assert.equal(fetchCalls[1]?.init?.method, 'PUT');
-  assert.deepEqual(JSON.parse(String(fetchCalls[1]?.init?.body)), {
+  const resolvePutCall = fetchCalls.find((call) => call.input === '/api/master-data/mappings/wrong-questions/record-1' && call.init?.method === 'PUT');
+  assert.equal(resolvePutCall?.input, '/api/master-data/mappings/wrong-questions/record-1');
+  assert.equal(resolvePutCall?.init?.method, 'PUT');
+  assert.deepEqual(JSON.parse(String(resolvePutCall?.init?.body)), {
     teacher_user_id: 12,
     class_id: 34,
     mapping_status: 'mapped',
+  });
+});
+
+test('master data mappings page still shows proactive member binding controls when the wrong-question queue is empty', async () => {
+  const { container, cleanup } = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
+      if (input === '/api/master-data/mappings/wrong-questions') {
+        return createJsonResponse({ items: [] });
+      }
+
+      if (input === '/api/master-data/users/12/aliases') {
+        return createJsonResponse({ aliases: ['陈老师', '陈老师数学'] });
+      }
+
+      if (input === '/api/master-data/users/18/aliases') {
+        return createJsonResponse({ aliases: [] });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <MasterDataMappingsPage
+          currentUser={{
+            display_name: 'Owner',
+            organization_name: '星润Starain',
+          }}
+          focusUserId={12}
+        />,
+      );
+    });
+
+    await waitForAssertion(() => {
+      const text = container.textContent || '';
+      assert.match(text, /主动绑定成员/);
+      assert.match(text, /陈老师/);
+      assert.match(text, /老师别名/);
+      assert.match(text, /开始绑定/);
+      assert.match(text, /当前没有待处理的错题映射记录。/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root!.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    cleanup();
+  }
+});
+
+test('master data mappings page saves proactive member aliases with the expected PUT payload', async () => {
+  const { container, cleanup } = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
+      if (input === '/api/master-data/mappings/wrong-questions') {
+        return createJsonResponse({ items: [] });
+      }
+
+      if (input === '/api/master-data/users/12/aliases' && !init?.method) {
+        return createJsonResponse({ aliases: ['陈老师'] });
+      }
+
+      if (input === '/api/master-data/users/18/aliases' && !init?.method) {
+        return createJsonResponse({ aliases: [] });
+      }
+
+      if (input === '/api/master-data/users/12/aliases' && init?.method === 'PUT') {
+        return createJsonResponse({ aliases: ['陈老师', '陈老师数学'] });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <MasterDataMappingsPage
+          currentUser={{
+            display_name: 'Owner',
+            organization_name: '星润Starain',
+          }}
+          focusUserId={12}
+        />,
+      );
+    });
+
+    await waitForAssertion(() => {
+      assert.ok(container.querySelector('textarea[name="user_aliases_12"]'));
+      assert.ok(container.querySelector('button[data-user-alias-save-id="12"]'));
+    });
+
+    const aliasInput = container.querySelector('textarea[name="user_aliases_12"]') as HTMLTextAreaElement;
+    const saveButton = container.querySelector('button[data-user-alias-save-id="12"]') as HTMLButtonElement;
+
+    await act(async () => {
+      aliasInput.value = '陈老师\n陈老师数学';
+      aliasInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+      aliasInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      assert.equal(aliasInput.value, '陈老师\n陈老师数学');
+    });
+
+    await act(async () => {
+      saveButton.click();
+    });
+
+    await waitForAssertion(() => {
+      const putCall = fetchCalls.find((call) => call.input === '/api/master-data/users/12/aliases' && call.init?.method === 'PUT');
+      assert.ok(putCall);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root!.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    cleanup();
+  }
+
+  const putCall = fetchCalls.find((call) => call.input === '/api/master-data/users/12/aliases' && call.init?.method === 'PUT');
+  assert.deepEqual(JSON.parse(String(putCall?.init?.body)), {
+    aliases: ['陈老师', '陈老师数学'],
   });
 });
 
@@ -295,6 +553,11 @@ test('master data mappings page keeps a record visible when resolve succeeds wit
 
   try {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
       if (typeof input === 'string' && input === '/api/master-data/mappings/wrong-questions') {
         return createJsonResponse({
           items: [
@@ -376,6 +639,11 @@ test('master data mappings page keeps each row loading while overlapping saves a
 
   try {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const optionResponse = createMappingOptionResponse(input);
+      if (optionResponse) {
+        return optionResponse;
+      }
+
       if (typeof input === 'string' && input === '/api/master-data/mappings/wrong-questions') {
         return createJsonResponse({
           items: [

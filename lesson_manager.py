@@ -42,8 +42,17 @@ CFG_PATH   = BASE_DIR / "config.json"
 CONSULTATIONS_CSV_PATH = DATA_DIR / "consultations.csv"
 LEGACY_CONSULTATIONS_CSV_PATH = Path.home() / "咨询记录" / "consultations.csv"
 DEFAULT_ORGANIZATION_NAME = "星润Starain"
-OWNER_USERNAME = "Kayn"
+OWNER_USERNAME = "kayn"
 OWNER_DISPLAY_NAME = "Kayn"
+SUPER_OWNER_ROLE = "super_owner"
+OWNER_ROLE = "owner"
+ADMIN_ROLE = "admin"
+MEMBER_ROLE = "member"
+ORGANIZATION_REQUEST_PENDING = "pending"
+ORGANIZATION_REQUEST_APPROVED = "approved"
+ORGANIZATION_REQUEST_REJECTED = "rejected"
+ORGANIZATION_INVITE_ACTIVE = "active"
+ORGANIZATION_INVITE_REVOKED = "revoked"
 CONSULTATION_TEACHERS_JSON_CANDIDATES = [
     DATA_DIR / "teachers.json",
     Path.home() / ".openclaw" / "workspace-wecom" / "teachers.json",
@@ -132,6 +141,175 @@ CONSULTATION_API_FIELD_MAP = {
 
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
+
+
+def _normalize_username(username: str) -> str:
+    return (username or "").strip()
+
+
+def _is_owner_username(username: str) -> bool:
+    return _normalize_username(username).casefold() == OWNER_USERNAME
+
+
+def _is_super_owner_role(role: str) -> bool:
+    return (role or "").strip() == SUPER_OWNER_ROLE
+
+
+def _user_exists_with_username(conn: sqlite3.Connection, username: str, exclude_user_id: int = 0) -> bool:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        return False
+    query = "SELECT 1 FROM users WHERE lower(username)=lower(?)"
+    params: list[object] = [normalized_username]
+    if exclude_user_id:
+        query += " AND id!=?"
+        params.append(exclude_user_id)
+    query += " LIMIT 1"
+    return conn.execute(query, params).fetchone() is not None
+
+
+def _pending_registration_exists(conn: sqlite3.Connection, username: str) -> bool:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        return False
+    return conn.execute(
+        "SELECT 1 FROM registration_requests WHERE lower(username)=lower(?) AND status='pending' LIMIT 1",
+        (normalized_username,),
+    ).fetchone() is not None
+
+
+def _organization_exists(conn: sqlite3.Connection, organization_name: str) -> bool:
+    normalized_name = (organization_name or "").strip()
+    if not normalized_name:
+        return False
+    return conn.execute(
+        "SELECT 1 FROM organizations WHERE lower(name)=lower(?) LIMIT 1",
+        (normalized_name,),
+    ).fetchone() is not None
+
+
+def _pending_organization_request_exists(conn: sqlite3.Connection, organization_name: str) -> bool:
+    normalized_name = (organization_name or "").strip()
+    if not normalized_name:
+        return False
+    return conn.execute(
+        """
+        SELECT 1
+        FROM organization_requests
+        WHERE lower(organization_name)=lower(?) AND status='pending'
+        LIMIT 1
+        """,
+        (normalized_name,),
+    ).fetchone() is not None
+
+
+def _pending_organization_request_username_exists(conn: sqlite3.Connection, username: str) -> bool:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        return False
+    return conn.execute(
+        """
+        SELECT 1
+        FROM organization_requests
+        WHERE lower(username)=lower(?) AND status='pending'
+        LIMIT 1
+        """,
+        (normalized_username,),
+    ).fetchone() is not None
+
+
+def _generate_invite_code(conn: sqlite3.Connection) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    while True:
+        invite_code = "".join(secrets.choice(alphabet) for _ in range(8))
+        exists = conn.execute(
+            "SELECT 1 FROM organization_invites WHERE invite_code=? LIMIT 1",
+            (invite_code,),
+        ).fetchone()
+        if not exists:
+            return invite_code
+
+
+def _invite_link_from_token(token: str) -> str:
+    return f"/join/{token}"
+
+
+def _serialize_organization_invite(row: sqlite3.Row | None) -> Optional[dict]:
+    if not row:
+        return None
+    invite_token = row["invite_token"]
+    return {
+        "id": row["id"],
+        "organization_id": row["organization_id"],
+        "organization_name": row["organization_name"],
+        "invite_code": row["invite_code"],
+        "invite_token": invite_token,
+        "invite_link": _invite_link_from_token(invite_token),
+        "status": row["status"],
+        "created_at": row["created_at"],
+    }
+
+
+def _revoke_active_invites(conn: sqlite3.Connection, organization_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE organization_invites
+        SET status='revoked', revoked_at=datetime('now','localtime')
+        WHERE organization_id=? AND status='active'
+        """,
+        (organization_id,),
+    )
+
+
+def _create_organization_invite(conn: sqlite3.Connection, organization_id: int, created_by: int) -> dict:
+    invite_code = _generate_invite_code(conn)
+    invite_token = secrets.token_urlsafe(24)
+    cur = conn.execute(
+        """
+        INSERT INTO organization_invites (organization_id, invite_code, invite_token, status, created_by)
+        VALUES (?, ?, ?, 'active', ?)
+        """,
+        (organization_id, invite_code, invite_token, created_by),
+    )
+    row = conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE oi.id=?
+        """,
+        (cur.lastrowid,),
+    ).fetchone()
+    invite = _serialize_organization_invite(row)
+    if invite is None:
+        raise LookupError("invite not found")
+    return invite
+
+
+def _get_active_organization_invite_row_by_code(conn: sqlite3.Connection, invite_code: str):
+    return conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE oi.invite_code=? AND oi.status='active'
+        LIMIT 1
+        """,
+        ((invite_code or "").strip(),),
+    ).fetchone()
+
+
+def _get_active_organization_invite_row_by_token(conn: sqlite3.Connection, invite_token: str):
+    return conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE oi.invite_token=? AND oi.status='active'
+        LIMIT 1
+        """,
+        ((invite_token or "").strip(),),
+    ).fetchone()
 
 
 def _ensure_consultations_csv() -> Path:
@@ -563,6 +741,29 @@ def init_db():
             created_at      TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS organization_requests (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_name TEXT NOT NULL,
+            username          TEXT NOT NULL,
+            password_hash     TEXT NOT NULL,
+            display_name      TEXT NOT NULL,
+            status            TEXT NOT NULL DEFAULT 'pending',
+            reviewed_by       INTEGER REFERENCES users(id),
+            reviewed_at       TEXT,
+            created_at        TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS organization_invites (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            invite_code     TEXT NOT NULL UNIQUE,
+            invite_token    TEXT NOT NULL UNIQUE,
+            status          TEXT NOT NULL DEFAULT 'active',
+            created_by      INTEGER REFERENCES users(id),
+            revoked_at      TEXT,
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS auth_sessions (
             token       TEXT PRIMARY KEY,
             user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -574,6 +775,30 @@ def init_db():
             class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             PRIMARY KEY (user_id, class_id)
         );
+
+        CREATE TABLE IF NOT EXISTS students (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS class_students (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id    INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id  INTEGER NOT NULL REFERENCES students(id),
+            created_at  TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(class_id, student_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS lesson_feedbacks (
+            lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
+            class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+            merged_text         TEXT DEFAULT '',
+            student_index_json  TEXT DEFAULT '[]',
+            editor_state_json   TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now','localtime')),
+            updated_at          TEXT DEFAULT (datetime('now','localtime'))
+        );
         """)
         import master_data
 
@@ -582,6 +807,21 @@ def init_db():
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+
+        feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_feedbacks)").fetchall()]
+        if feedback_cols:
+            if "class_id" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+            if "merged_text" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
+            if "student_index_json" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
+            if "editor_state_json" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
+            if "created_at" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
+            if "updated_at" not in feedback_cols:
+                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
         _bootstrap_account_state(conn)
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -619,9 +859,11 @@ def _fetch_user_row_by_username(conn: sqlite3.Connection, username: str):
         SELECT u.*, o.name AS organization_name
         FROM users u
         JOIN organizations o ON o.id = u.organization_id
-        WHERE u.username=?
+        WHERE lower(u.username)=lower(?)
+        ORDER BY CASE WHEN lower(u.username)=lower(?) THEN 0 ELSE 1 END, u.id
+        LIMIT 1
         """,
-        (username,),
+        (_normalize_username(username), _normalize_username(username)),
     ).fetchone()
 
 
@@ -637,6 +879,156 @@ def _fetch_user_row_by_id(conn: sqlite3.Connection, user_id: int):
     ).fetchone()
 
 
+def _organization_exists(conn: sqlite3.Connection, organization_name: str) -> bool:
+    normalized_name = (organization_name or "").strip()
+    if not normalized_name:
+        return False
+    return conn.execute(
+        "SELECT 1 FROM organizations WHERE lower(name)=lower(?) LIMIT 1",
+        (normalized_name,),
+    ).fetchone() is not None
+
+
+def _pending_organization_request_exists(conn: sqlite3.Connection, organization_name: str) -> bool:
+    normalized_name = (organization_name or "").strip()
+    if not normalized_name:
+        return False
+    return conn.execute(
+        """
+        SELECT 1
+        FROM organization_requests
+        WHERE lower(organization_name)=lower(?) AND status=?
+        LIMIT 1
+        """,
+        (normalized_name, ORGANIZATION_REQUEST_PENDING),
+    ).fetchone() is not None
+
+
+def _pending_organization_request_username_exists(conn: sqlite3.Connection, username: str) -> bool:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        return False
+    return conn.execute(
+        """
+        SELECT 1
+        FROM organization_requests
+        WHERE lower(username)=lower(?) AND status=?
+        LIMIT 1
+        """,
+        (normalized_username, ORGANIZATION_REQUEST_PENDING),
+    ).fetchone() is not None
+
+
+def _generate_invite_code(length: int = 8) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _fetch_organization_invite_row_by_id(conn: sqlite3.Connection, invite_id: int):
+    return conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE oi.id=?
+        """,
+        (invite_id,),
+    ).fetchone()
+
+
+def _fetch_active_organization_invite(conn: sqlite3.Connection, organization_id: int):
+    return conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE oi.organization_id=? AND oi.status=?
+        ORDER BY oi.created_at DESC, oi.id DESC
+        LIMIT 1
+        """,
+        (organization_id, ORGANIZATION_INVITE_ACTIVE),
+    ).fetchone()
+
+
+def _fetch_active_organization_invite_by_code(conn: sqlite3.Connection, invite_code: str):
+    normalized_code = (invite_code or "").strip().upper()
+    if not normalized_code:
+        return None
+    return conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE upper(oi.invite_code)=upper(?) AND oi.status=?
+        LIMIT 1
+        """,
+        (normalized_code, ORGANIZATION_INVITE_ACTIVE),
+    ).fetchone()
+
+
+def _fetch_active_organization_invite_by_token(conn: sqlite3.Connection, invite_token: str):
+    normalized_token = (invite_token or "").strip()
+    if not normalized_token:
+        return None
+    return conn.execute(
+        """
+        SELECT oi.*, o.name AS organization_name
+        FROM organization_invites oi
+        JOIN organizations o ON o.id = oi.organization_id
+        WHERE oi.invite_token=? AND oi.status=?
+        LIMIT 1
+        """,
+        (normalized_token, ORGANIZATION_INVITE_ACTIVE),
+    ).fetchone()
+
+
+def _public_invite_dict(row):
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "organization_id": row["organization_id"],
+        "organization_name": row["organization_name"],
+        "invite_code": row["invite_code"],
+        "invite_token": row["invite_token"],
+        "status": row["status"],
+        "created_by": row["created_by"],
+        "revoked_at": row["revoked_at"],
+        "created_at": row["created_at"],
+    }
+
+
+def _revoke_active_organization_invites(conn: sqlite3.Connection, organization_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE organization_invites
+        SET status=?, revoked_at=datetime('now','localtime')
+        WHERE organization_id=? AND status=?
+        """,
+        (ORGANIZATION_INVITE_REVOKED, organization_id, ORGANIZATION_INVITE_ACTIVE),
+    )
+
+
+def _create_organization_invite(conn: sqlite3.Connection, organization_id: int, created_by: int):
+    for _ in range(20):
+        invite_code = _generate_invite_code()
+        invite_token = secrets.token_urlsafe(24)
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO organization_invites
+                    (organization_id, invite_code, invite_token, status, created_by)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (organization_id, invite_code, invite_token, ORGANIZATION_INVITE_ACTIVE, created_by),
+            )
+            row = _fetch_organization_invite_row_by_id(conn, cur.lastrowid)
+            return _public_invite_dict(row)
+        except sqlite3.IntegrityError:
+            continue
+    raise ValueError("failed to generate invite")
+
+
 def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
     runtime_cfg = get_runtime_config()
     org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
@@ -647,8 +1039,8 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
         SELECT u.*, o.name AS organization_name
         FROM users u
         JOIN organizations o ON o.id = u.organization_id
-        WHERE u.role='owner' OR u.username IN (?, ?)
-        ORDER BY CASE WHEN u.username=? THEN 0 WHEN u.role='owner' THEN 1 ELSE 2 END, u.id
+        WHERE u.role='owner' OR lower(u.username) IN (lower(?), lower(?))
+        ORDER BY CASE WHEN lower(u.username)=lower(?) THEN 0 WHEN u.role='owner' THEN 1 ELSE 2 END, u.id
         LIMIT 1
         """,
         (OWNER_USERNAME, old_username, OWNER_USERNAME),
@@ -658,18 +1050,18 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             UPDATE users
-            SET username=?, password_hash=?, display_name=?, role='owner', status='active', organization_id=?
+            SET username=?, password_hash=?, display_name=?, role=?, status='active', organization_id=?
             WHERE id=?
             """,
-            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, org["id"], owner["id"]),
+            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, SUPER_OWNER_ROLE, org["id"], owner["id"]),
         )
     else:
         conn.execute(
             """
             INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-            VALUES (?, ?, ?, 'owner', 'active', ?)
+            VALUES (?, ?, ?, ?, 'active', ?)
             """,
-            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, org["id"]),
+            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, SUPER_OWNER_ROLE, org["id"]),
         )
 
 
@@ -877,6 +1269,215 @@ def delete_class(class_id: int):
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
 
 
+def get_student(student_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_students_for_class(class_id: int) -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.*
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY cs.id
+            """,
+            (class_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _dedupe_student_name_in_class(
+    class_id: int,
+    raw_name: str,
+    conn: Optional[sqlite3.Connection] = None,
+) -> str:
+    base_name = (raw_name or "").strip()
+    if not base_name:
+        raise ValueError("student name is required")
+
+    owns_conn = False
+    if conn is None:
+        conn = get_conn()
+        owns_conn = True
+    rows = conn.execute(
+        """
+        SELECT s.name
+        FROM class_students cs
+        JOIN students s ON s.id = cs.student_id
+        WHERE cs.class_id=?
+        ORDER BY cs.id
+        """,
+        (class_id,),
+    ).fetchall()
+    existing_names = [row["name"] for row in rows]
+    if owns_conn:
+        conn.close()
+
+    if base_name not in existing_names:
+        return base_name
+
+    suffix_pattern = re.compile(rf"^{re.escape(base_name)}（(\d+)）$")
+    max_suffix = 1
+    for name in existing_names:
+        if name == base_name:
+            continue
+        matched = suffix_pattern.match(name or "")
+        if matched:
+            max_suffix = max(max_suffix, int(matched.group(1)))
+    return f"{base_name}（{max_suffix + 1}）"
+
+
+def create_student_for_class(class_id: int, raw_name: str):
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        student_name = _dedupe_student_name_in_class(class_id, raw_name, conn=conn)
+        cur = conn.execute("INSERT INTO students (name) VALUES (?)", (student_name,))
+        student_id = cur.lastrowid
+        conn.execute(
+            "INSERT INTO class_students (class_id, student_id) VALUES (?, ?)",
+            (class_id, student_id),
+        )
+        row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+    return dict(row)
+
+
+def remove_student_from_class(class_id: int, student_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM class_students WHERE class_id=? AND student_id=?",
+            (class_id, student_id),
+        )
+    return cur.rowcount > 0
+
+
+def save_lesson_feedback(
+    lesson_id: int,
+    class_id: int,
+    merged_text: str,
+    student_index: list,
+    editor_state: dict,
+) -> dict:
+    with get_conn() as conn:
+        lesson_row = conn.execute(
+            "SELECT id, class_id FROM lessons WHERE id=?",
+            (lesson_id,),
+        ).fetchone()
+        if not lesson_row:
+            raise LookupError("lesson not found")
+        lesson_class_id = lesson_row["class_id"]
+        conn.execute(
+            """
+            INSERT INTO lesson_feedbacks
+                (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
+            ON CONFLICT(lesson_id) DO UPDATE SET
+                class_id=excluded.class_id,
+                merged_text=excluded.merged_text,
+                student_index_json=excluded.student_index_json,
+                editor_state_json=excluded.editor_state_json,
+                updated_at=datetime('now','localtime')
+            """,
+            (
+                lesson_id,
+                lesson_class_id if lesson_class_id else None,
+                merged_text or "",
+                json.dumps(student_index or [], ensure_ascii=False),
+                json.dumps(editor_state or {}, ensure_ascii=False),
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            (lesson_id,),
+        ).fetchone()
+    feedback = dict(row)
+    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
+    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
+    return feedback
+
+
+def get_lesson_feedback(lesson_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            (lesson_id,),
+        ).fetchone()
+    if not row:
+        return None
+    feedback = dict(row)
+    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
+    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
+    return feedback
+
+
+def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        raise LookupError("lesson not found")
+    saved_feedback = get_lesson_feedback(lesson_id) or {}
+    class_id = lesson.get("class_id")
+
+    roster = list_students_for_class(class_id) if class_id else []
+    roster_by_id = {student["id"]: student for student in roster}
+    saved_editor_state = saved_feedback.get("editor_state") or {}
+    saved_students = saved_editor_state.get("students")
+    if not isinstance(saved_students, list):
+        saved_students = []
+    saved_by_student_id = {
+        item.get("student_id"): item
+        for item in saved_students
+        if isinstance(item, dict) and item.get("student_id") is not None
+    }
+
+    hydrated_students = []
+    for student in roster:
+        saved_student_state = saved_by_student_id.get(student["id"], {})
+        hydrated_students.append(
+            {
+                "student_id": student["id"],
+                "name": student["name"],
+                "selected_template_id": saved_student_state.get("selected_template_id", "") or "",
+                "remark": saved_student_state.get("remark", "") or "",
+            }
+        )
+
+    custom_templates = saved_editor_state.get("custom_templates")
+    if not isinstance(custom_templates, list):
+        custom_templates = []
+    saved_student_index = saved_feedback.get("student_index")
+    if not isinstance(saved_student_index, list):
+        saved_student_index = []
+    filtered_student_index = []
+    for item in saved_student_index:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if student_id in roster_by_id:
+            filtered_student_index.append(
+                {
+                    "student_id": student_id,
+                    "name": roster_by_id[student_id]["name"],
+                }
+            )
+
+    return {
+        "lesson_id": lesson_id,
+        "class_id": class_id,
+        "merged_text": saved_feedback.get("merged_text", "") or "",
+        "student_index": filtered_student_index,
+        "students": hydrated_students,
+        "custom_templates": custom_templates,
+        "updated_at": saved_feedback.get("updated_at"),
+    }
+
+
 def get_class_teacher_user_id(class_id: int) -> Optional[int]:
     with get_conn() as conn:
         row = conn.execute(
@@ -933,8 +1534,10 @@ def list_all_users() -> list:
             FROM users u
             JOIN organizations o ON o.id = u.organization_id
             WHERE u.status = 'active'
-            ORDER BY CASE WHEN u.role='owner' THEN 0 ELSE 1 END, u.display_name
+            ORDER BY CASE WHEN u.role=? THEN 0 WHEN u.role=? THEN 1 ELSE 2 END, u.display_name
             """
+            ,
+            (SUPER_OWNER_ROLE, OWNER_ROLE),
         ).fetchall()
         return [_public_user_dict(row) for row in rows]
 
@@ -998,16 +1601,23 @@ def set_user_class_ids(user_id: int, class_ids: list):
 
 
 def update_user_profile(user_id: int, new_username: str, new_display_name: str):
+    normalized_username = _normalize_username(new_username)
+    normalized_display_name = new_display_name.strip()
     with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT id FROM users WHERE username=? AND id!=?",
-            (new_username, user_id)
-        ).fetchone()
-        if existing:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if _is_super_owner_role(user_row["role"]):
+            if normalized_username.casefold() != OWNER_USERNAME:
+                raise ValueError("最高权限账号用户名固定为 kayn")
+            normalized_username = OWNER_USERNAME
+        elif _is_owner_username(normalized_username):
+            raise ValueError("用户名已存在")
+        if _user_exists_with_username(conn, normalized_username, exclude_user_id=user_id):
             raise ValueError("用户名已被占用")
         conn.execute(
             "UPDATE users SET username=?, display_name=? WHERE id=?",
-            (new_username, new_display_name, user_id)
+            (normalized_username, normalized_display_name, user_id)
         )
         class_rows = conn.execute(
             "SELECT class_id FROM user_classes WHERE user_id=?",
@@ -1017,9 +1627,16 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
 
 
 def update_user_role(user_id: int, role: str):
+    if role not in {OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
+        raise ValueError("role must be owner, admin or member")
     with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if _is_super_owner_role(user_row["role"]):
+            raise ValueError("super owner role is fixed")
         conn.execute(
-            "UPDATE users SET role=? WHERE id=? AND role != 'owner'",
+            "UPDATE users SET role=? WHERE id=?",
             (role, user_id)
         )
 
@@ -1071,14 +1688,11 @@ def create_auth_session(user_id: int) -> str:
 
 
 def authenticate_user(username: str, password: str):
+    normalized_username = _normalize_username(username)
     with get_conn() as conn:
-        row = _fetch_user_row_by_username(conn, username)
+        row = _fetch_user_row_by_username(conn, normalized_username)
         if not row:
-            pending = conn.execute(
-                "SELECT 1 FROM registration_requests WHERE username=? AND status='pending' LIMIT 1",
-                (username,),
-            ).fetchone()
-            if pending:
+            if _pending_registration_exists(conn, normalized_username):
                 return None, "该账号申请正在等待审批"
             return None, "用户名或密码错误"
         if row["status"] != "active":
@@ -1088,28 +1702,205 @@ def authenticate_user(username: str, password: str):
     return _public_user_dict(row), None
 
 
+def create_organization_request(
+    organization_name: str,
+    username: str,
+    display_name: str,
+    password: str,
+):
+    normalized_name = (organization_name or "").strip()
+    normalized_username = _normalize_username(username)
+    normalized_display_name = (display_name or "").strip()
+    if not normalized_name or not normalized_username or not normalized_display_name or not password:
+        raise ValueError("organization request fields are required")
+    with get_conn() as conn:
+        if _organization_exists(conn, normalized_name) or _pending_organization_request_exists(conn, normalized_name):
+            raise ValueError("organization already exists")
+        if _is_owner_username(normalized_username) or _user_exists_with_username(conn, normalized_username):
+            raise ValueError("username already exists")
+        if _pending_registration_exists(conn, normalized_username) or _pending_organization_request_username_exists(conn, normalized_username):
+            raise ValueError("username already pending")
+        cur = conn.execute(
+            """
+            INSERT INTO organization_requests
+                (organization_name, username, password_hash, display_name, status)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_name,
+                normalized_username,
+                hash_password(password),
+                normalized_display_name,
+                ORGANIZATION_REQUEST_PENDING,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM organization_requests WHERE id=?",
+            (cur.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+def list_organization_requests(status: str = ORGANIZATION_REQUEST_PENDING) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM organization_requests
+            WHERE status=?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (status,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def approve_organization_request(request_id: int, reviewer_id: int):
+    with get_conn() as conn:
+        req = conn.execute(
+            "SELECT * FROM organization_requests WHERE id=?",
+            (request_id,),
+        ).fetchone()
+        if not req:
+            raise LookupError("organization request not found")
+        if req["status"] != ORGANIZATION_REQUEST_PENDING:
+            raise ValueError("organization request already handled")
+        if _organization_exists(conn, req["organization_name"]):
+            raise ValueError("organization already exists")
+        if _is_owner_username(req["username"]) or _user_exists_with_username(conn, req["username"]):
+            raise ValueError("username already exists")
+
+        org = _ensure_organization(conn, req["organization_name"])
+        cur = conn.execute(
+            """
+            INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+            VALUES (?, ?, ?, ?, 'active', ?)
+            """,
+            (req["username"], req["password_hash"], req["display_name"], OWNER_ROLE, org["id"]),
+        )
+        conn.execute(
+            """
+            UPDATE organization_requests
+            SET status=?, reviewed_by=?, reviewed_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (ORGANIZATION_REQUEST_APPROVED, reviewer_id, request_id),
+        )
+        _revoke_active_organization_invites(conn, org["id"])
+        invite = _create_organization_invite(conn, org["id"], reviewer_id)
+        user_row = _fetch_user_row_by_id(conn, cur.lastrowid)
+    return _public_user_dict(user_row), invite
+
+
+def reject_organization_request(request_id: int, reviewer_id: int) -> None:
+    with get_conn() as conn:
+        req = conn.execute(
+            "SELECT * FROM organization_requests WHERE id=?",
+            (request_id,),
+        ).fetchone()
+        if not req:
+            raise LookupError("organization request not found")
+        if req["status"] != ORGANIZATION_REQUEST_PENDING:
+            raise ValueError("organization request already handled")
+        conn.execute(
+            """
+            UPDATE organization_requests
+            SET status=?, reviewed_by=?, reviewed_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (ORGANIZATION_REQUEST_REJECTED, reviewer_id, request_id),
+        )
+
+
+def get_or_create_active_organization_invite(organization_id: int, actor_user_id: int):
+    with get_conn() as conn:
+        org_row = conn.execute("SELECT id FROM organizations WHERE id=?", (organization_id,)).fetchone()
+        if not org_row:
+            raise LookupError("organization not found")
+        invite_row = _fetch_active_organization_invite(conn, organization_id)
+        if invite_row:
+            return _public_invite_dict(invite_row)
+        return _create_organization_invite(conn, organization_id, actor_user_id)
+
+
+def reset_organization_invite(organization_id: int, actor_user_id: int):
+    with get_conn() as conn:
+        org_row = conn.execute("SELECT id FROM organizations WHERE id=?", (organization_id,)).fetchone()
+        if not org_row:
+            raise LookupError("organization not found")
+        _revoke_active_organization_invites(conn, organization_id)
+        return _create_organization_invite(conn, organization_id, actor_user_id)
+
+
+def get_organization_invite_by_token(invite_token: str):
+    with get_conn() as conn:
+        row = _fetch_active_organization_invite_by_token(conn, invite_token)
+    return _public_invite_dict(row)
+
+
+def _create_member_from_invite_row(
+    conn: sqlite3.Connection,
+    invite_row: sqlite3.Row,
+    username: str,
+    display_name: str,
+    password: str,
+):
+    normalized_username = _normalize_username(username)
+    normalized_display_name = (display_name or "").strip()
+    if not normalized_username or not normalized_display_name or not password:
+        raise ValueError("join fields are required")
+    if _is_owner_username(normalized_username) or _user_exists_with_username(conn, normalized_username):
+        raise ValueError("username already exists")
+    if _pending_registration_exists(conn, normalized_username) or _pending_organization_request_username_exists(conn, normalized_username):
+        raise ValueError("username already pending")
+    cur = conn.execute(
+        """
+        INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+        VALUES (?, ?, ?, ?, 'active', ?)
+        """,
+        (
+            normalized_username,
+            hash_password(password),
+            normalized_display_name,
+            MEMBER_ROLE,
+            invite_row["organization_id"],
+        ),
+    )
+    user_row = _fetch_user_row_by_id(conn, cur.lastrowid)
+    return _public_user_dict(user_row)
+
+
+def join_organization_by_invite_code(invite_code: str, username: str, display_name: str, password: str):
+    with get_conn() as conn:
+        invite_row = _fetch_active_organization_invite_by_code(conn, invite_code)
+        if not invite_row:
+            raise LookupError("invite not found")
+        return _create_member_from_invite_row(conn, invite_row, username, display_name, password)
+
+
+def join_organization_by_invite_link_token(invite_token: str, username: str, display_name: str, password: str):
+    with get_conn() as conn:
+        invite_row = _fetch_active_organization_invite_by_token(conn, invite_token)
+        if not invite_row:
+            raise LookupError("invite not found")
+        return _create_member_from_invite_row(conn, invite_row, username, display_name, password)
+
+
 def create_registration_request(username: str, display_name: str, password: str,
                                 organization_name: str = DEFAULT_ORGANIZATION_NAME):
+    normalized_username = _normalize_username(username)
     with get_conn() as conn:
         org = _ensure_organization(conn, organization_name)
-        existing_user = conn.execute(
-            "SELECT 1 FROM users WHERE username=? LIMIT 1",
-            (username,),
-        ).fetchone()
-        if existing_user:
+        if _is_owner_username(normalized_username) or _user_exists_with_username(conn, normalized_username):
             raise ValueError("用户名已存在")
-        existing_pending = conn.execute(
-            "SELECT 1 FROM registration_requests WHERE username=? AND status='pending' LIMIT 1",
-            (username,),
-        ).fetchone()
-        if existing_pending:
+        if _pending_registration_exists(conn, normalized_username):
             raise ValueError("该用户名已有待审批申请")
         cur = conn.execute(
             """
             INSERT INTO registration_requests (username, password_hash, display_name, organization_id, status)
             VALUES (?, ?, ?, ?, 'pending')
             """,
-            (username, hash_password(password), display_name, org["id"]),
+            (normalized_username, hash_password(password), display_name, org["id"]),
         )
         row = conn.execute(
             """
@@ -1153,18 +1944,14 @@ def approve_registration_request(request_id: int, reviewer_id: int):
             raise LookupError("申请不存在")
         if req["status"] != "pending":
             raise ValueError("该申请已处理")
-        existing_user = conn.execute(
-            "SELECT 1 FROM users WHERE username=? LIMIT 1",
-            (req["username"],),
-        ).fetchone()
-        if existing_user:
+        if _is_owner_username(req["username"]) or _user_exists_with_username(conn, req["username"]):
             raise ValueError("用户名已存在")
         cur = conn.execute(
             """
             INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-            VALUES (?, ?, ?, 'member', 'active', ?)
+            VALUES (?, ?, ?, ?, 'active', ?)
             """,
-            (req["username"], req["password_hash"], req["display_name"], req["organization_id"]),
+            (req["username"], req["password_hash"], req["display_name"], MEMBER_ROLE, req["organization_id"]),
         )
         conn.execute(
             """
