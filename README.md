@@ -58,6 +58,27 @@ XR_ADMIN_PASSWORD_HASH=<sha256_hex>
 优先级规则：环境变量 > `config.json`。
 `config.json` 仍可用于本地开发和保存登录 token，但生产环境推荐把敏感配置放进环境变量。
 
+服务器发布可直接执行：
+
+```bash
+./scripts/deploy_backend.sh
+```
+
+如需指定分支：
+
+```bash
+./scripts/deploy_backend.sh master-sync
+```
+
+这个脚本会自动：
+- `git fetch` + `git pull --ff-only`
+- 检查并更新 `.venv` 依赖
+- 执行 `init_db()`
+- 停掉旧的 `app.py` 进程并后台重启
+- 对 `http://127.0.0.1:5001/` 做健康检查
+
+部署脚本会自动设置 `XR_OPEN_BROWSER=0`，避免服务器重启时尝试打开本地浏览器。
+
 ---
 
 ### 2. 添加一节课

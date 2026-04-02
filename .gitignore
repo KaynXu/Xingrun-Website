@@ -7,6 +7,8 @@ frontend/.DS_Store
 frontend/public/.DS_Store
 .superpowers/
 .worktrees/
+.run/
+logs/
 
 # macOS system files
 .DS_Store

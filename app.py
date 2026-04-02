@@ -2263,9 +2263,15 @@ def _open_browser():
     webbrowser.open("http://127.0.0.1:5001")
 
 
+def _should_open_browser() -> bool:
+    raw = os.environ.get("XR_OPEN_BROWSER", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
 if __name__ == "__main__":
     init_db()
-    threading.Thread(target=_open_browser, daemon=True).start()
+    if _should_open_browser():
+        threading.Thread(target=_open_browser, daemon=True).start()
     print("\n" + "=" * 50)
     print("  📚 复习计划管理系统已启动")
     print("  浏览器即将自动打开")
