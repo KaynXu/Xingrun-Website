@@ -1670,19 +1670,23 @@ def set_class_teacher_user_id(class_id: int, teacher_user_id: Optional[int]):
 
 
 # ─── 用户-班级关联 ──────────────────────────────────────────────────────────────
-def list_all_users() -> list:
+def list_all_users(organization_id: Optional[int] = None) -> list:
     with get_conn() as conn:
-        rows = conn.execute(
-            """
+        params: list[object] = []
+        query = """
             SELECT u.*, o.name AS organization_name
             FROM users u
             JOIN organizations o ON o.id = u.organization_id
             WHERE u.status = 'active'
+        """
+        if organization_id is not None:
+            query += " AND u.organization_id = ?"
+            params.append(organization_id)
+        query += """
             ORDER BY CASE WHEN u.role=? THEN 0 WHEN u.role=? THEN 1 ELSE 2 END, u.display_name
-            """
-            ,
-            (SUPER_OWNER_ROLE, OWNER_ROLE),
-        ).fetchall()
+        """
+        params.extend([SUPER_OWNER_ROLE, OWNER_ROLE])
+        rows = conn.execute(query, tuple(params)).fetchall()
         return [_public_user_dict(row) for row in rows]
 
 
@@ -1770,12 +1774,14 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
         _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
 
 
-def update_user_role(user_id: int, role: str):
+def update_user_role(user_id: int, role: str, organization_id: Optional[int] = None):
     if role not in {OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
         raise ValueError("role must be owner, admin or member")
     with get_conn() as conn:
         user_row = _fetch_user_row_by_id(conn, user_id)
         if not user_row:
+            raise LookupError("user not found")
+        if organization_id is not None and user_row["organization_id"] != organization_id:
             raise LookupError("user not found")
         if _is_super_owner_role(user_row["role"]):
             raise ValueError("super owner role is fixed")
@@ -2058,22 +2064,26 @@ def create_registration_request(username: str, display_name: str, password: str,
     return dict(row)
 
 
-def list_registration_requests(status: str = "pending") -> list[dict]:
+def list_registration_requests(status: str = "pending", organization_id: Optional[int] = None) -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute(
-            """
+        params: list[object] = [status]
+        query = """
             SELECT rr.*, o.name AS organization_name
             FROM registration_requests rr
             JOIN organizations o ON o.id = rr.organization_id
             WHERE rr.status=?
+        """
+        if organization_id is not None:
+            query += " AND rr.organization_id=?"
+            params.append(organization_id)
+        query += """
             ORDER BY rr.created_at ASC, rr.id ASC
-            """,
-            (status,),
-        ).fetchall()
+        """
+        rows = conn.execute(query, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 
-def approve_registration_request(request_id: int, reviewer_id: int):
+def approve_registration_request(request_id: int, reviewer_id: int, organization_id: Optional[int] = None):
     with get_conn() as conn:
         req = conn.execute(
             """
@@ -2085,6 +2095,8 @@ def approve_registration_request(request_id: int, reviewer_id: int):
             (request_id,),
         ).fetchone()
         if not req:
+            raise LookupError("申请不存在")
+        if organization_id is not None and req["organization_id"] != organization_id:
             raise LookupError("申请不存在")
         if req["status"] != "pending":
             raise ValueError("该申请已处理")
@@ -2109,13 +2121,15 @@ def approve_registration_request(request_id: int, reviewer_id: int):
     return _public_user_dict(user_row)
 
 
-def reject_registration_request(request_id: int, reviewer_id: int) -> None:
+def reject_registration_request(request_id: int, reviewer_id: int, organization_id: Optional[int] = None) -> None:
     with get_conn() as conn:
         req = conn.execute(
             "SELECT * FROM registration_requests WHERE id=?",
             (request_id,),
         ).fetchone()
         if not req:
+            raise LookupError("申请不存在")
+        if organization_id is not None and req["organization_id"] != organization_id:
             raise LookupError("申请不存在")
         if req["status"] != "pending":
             raise ValueError("该申请已处理")

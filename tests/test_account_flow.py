@@ -911,6 +911,113 @@ class AccountFlowTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_owner_admin_endpoints_are_scoped_to_their_organization(self):
+        super_owner_token = self.login_as_kayn()
+
+        other_org_owner_token, other_org_invite = self.create_approved_organization_with_invite(
+            organization_name="Beichen Academy",
+            owner_username="beichen_owner",
+            owner_display_name="Beichen Principal",
+            owner_password="secret123",
+        )
+        other_org_owner_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(other_org_owner_token),
+        )
+        self.assertEqual(other_org_owner_me.status_code, 200)
+        other_org_owner_id = other_org_owner_me.get_json()["id"]
+
+        same_org_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": other_org_invite["invite_code"],
+                "username": "beichen_member",
+                "display_name": "Beichen Member",
+                "password": "member123",
+            },
+        )
+        self.assertEqual(same_org_join.status_code, 201)
+        same_org_member_id = same_org_join.get_json()["user"]["id"]
+
+        default_org_pending_submit = self.client.post(
+            "/api/register-request",
+            json={
+                "username": "starain_pending",
+                "display_name": "Starain Pending",
+                "password": "pending123",
+                "organization_name": "星润Starain",
+            },
+        )
+        self.assertEqual(default_org_pending_submit.status_code, 201)
+
+        default_org_member = self.approve_user(
+            owner_token=super_owner_token,
+            username="starain_member",
+            display_name="Starain Member",
+            password="member123",
+        )
+        default_org_member_id = default_org_member["user"]["id"]
+
+        pending_list = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(other_org_owner_token),
+        )
+        self.assertEqual(pending_list.status_code, 200)
+        pending_payload = pending_list.get_json()
+        self.assertIsNotNone(pending_payload)
+        self.assertEqual(pending_payload["items"], [])
+
+        super_owner_pending_list = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(super_owner_token),
+        )
+        self.assertEqual(super_owner_pending_list.status_code, 200)
+        super_owner_pending_payload = super_owner_pending_list.get_json()
+        self.assertIsNotNone(super_owner_pending_payload)
+        starain_pending_id = next(
+            item["id"]
+            for item in super_owner_pending_payload["items"]
+            if item["username"] == "starain_pending"
+        )
+
+        approve_other_org_pending = self.client.post(
+            f"/api/admin/registration-requests/{starain_pending_id}/approve",
+            headers=self.auth_headers(other_org_owner_token),
+        )
+        self.assertEqual(approve_other_org_pending.status_code, 404)
+
+        users_response = self.client.get(
+            "/api/admin/users",
+            headers=self.auth_headers(other_org_owner_token),
+        )
+        self.assertEqual(users_response.status_code, 200)
+        users_payload = users_response.get_json()
+        self.assertIsNotNone(users_payload)
+        self.assertCountEqual(
+            [item["id"] for item in users_payload],
+            [other_org_owner_id, same_org_member_id],
+        )
+        self.assertTrue(all(item["org"] == "Beichen Academy" for item in users_payload))
+
+        binding_summary_response = self.client.get(
+            "/api/admin/member-binding-summary",
+            headers=self.auth_headers(other_org_owner_token),
+        )
+        self.assertEqual(binding_summary_response.status_code, 200)
+        binding_summary_payload = binding_summary_response.get_json()
+        self.assertIsNotNone(binding_summary_payload)
+        self.assertCountEqual(
+            [item["user_id"] for item in binding_summary_payload["items"]],
+            [other_org_owner_id, same_org_member_id],
+        )
+
+        update_other_org_user = self.client.put(
+            f"/api/admin/users/{default_org_member_id}/role",
+            headers=self.auth_headers(other_org_owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(update_other_org_user.status_code, 404)
+
     def test_admin_sees_removed_master_data_binding_endpoints_as_not_found(self):
         owner_login = self.client.post(
             "/api/login",

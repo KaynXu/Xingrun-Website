@@ -954,6 +954,12 @@ def _organization_invite_response_payload(invite: dict) -> dict:
     }
 
 
+def _organization_scope_for_user(user: Optional[dict]) -> Optional[int]:
+    if not user or user.get("role") == "super_owner":
+        return None
+    return user.get("organization_id")
+
+
 def _can_access_wrong_question_record(user, record: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
     if user.get("role") in {"super_owner", "owner", "admin"}:
         return True
@@ -1346,10 +1352,17 @@ def api_organization_invite_reset():
 
 @app.route("/api/admin/registration-requests", methods=["GET"])
 def api_admin_registration_requests():
-    _, error = _require_owner()
+    user, error = _require_owner()
     if error:
         return error
-    return jsonify({"items": list_registration_requests("pending")})
+    return jsonify(
+        {
+            "items": list_registration_requests(
+                "pending",
+                organization_id=_organization_scope_for_user(user),
+            )
+        }
+    )
 
 
 @app.route("/api/admin/registration-requests/<int:request_id>/approve", methods=["POST"])
@@ -1358,7 +1371,11 @@ def api_admin_registration_request_approve(request_id):
     if error:
         return error
     try:
-        approved = approve_registration_request(request_id=request_id, reviewer_id=user["id"])
+        approved = approve_registration_request(
+            request_id=request_id,
+            reviewer_id=user["id"],
+            organization_id=_organization_scope_for_user(user),
+        )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1372,7 +1389,11 @@ def api_admin_registration_request_reject(request_id):
     if error:
         return error
     try:
-        reject_registration_request(request_id=request_id, reviewer_id=user["id"])
+        reject_registration_request(
+            request_id=request_id,
+            reviewer_id=user["id"],
+            organization_id=_organization_scope_for_user(user),
+        )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1382,19 +1403,27 @@ def api_admin_registration_request_reject(request_id):
 
 @app.route("/api/admin/users", methods=["GET"])
 def api_admin_users():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    users = list_all_users()
+    users = list_all_users(organization_id=_organization_scope_for_user(user))
     return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
 
 
 @app.route("/api/admin/member-binding-summary", methods=["GET"])
 def api_admin_member_binding_summary():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    return jsonify({"items": master_data.list_member_binding_summaries()})
+    items = master_data.list_member_binding_summaries()
+    organization_id = _organization_scope_for_user(user)
+    if organization_id is not None:
+        allowed_user_ids = {
+            item["id"]
+            for item in list_all_users(organization_id=organization_id)
+        }
+        items = [item for item in items if item["user_id"] in allowed_user_ids]
+    return jsonify({"items": items})
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
@@ -1409,7 +1438,11 @@ def api_admin_user_role_set(user_id):
     if role == "owner" and user.get("role") != "super_owner":
         return jsonify({"error": "无权限"}), 403
     try:
-        update_user_role(user_id, role)
+        update_user_role(
+            user_id,
+            role,
+            organization_id=_organization_scope_for_user(user),
+        )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
