@@ -5234,7 +5234,7 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
       if (!res.ok) {
         throw new Error(data.error || '注册申请提交失败');
       }
-      setSuccess('申请已提交，等待 Kayn 审批通过后即可登录后台。');
+      setSuccess('申请已提交，等待审核通过后即可登录后台。');
       setUsername('');
       setDisplayName('');
       setPassword('');
@@ -5397,7 +5397,7 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
           password,
         }),
       });
-      setSuccess('机构申请已提交，等待 Kayn 审批。');
+      setSuccess('机构申请已提交，等待审核。');
       setOrganizationName('');
       setUsername('');
       setDisplayName('');

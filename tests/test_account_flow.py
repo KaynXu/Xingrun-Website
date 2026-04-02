@@ -177,6 +177,7 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(me.status_code, 200)
         me_payload = me.get_json()
         self.assertEqual(me_payload["username"], "kayn")
+        self.assertEqual(me_payload["display_name"], "平台管理员")
         self.assertEqual(me_payload["role"], "super_owner")
         self.assertEqual(me_payload["organization_name"], "星润Starain")
 
