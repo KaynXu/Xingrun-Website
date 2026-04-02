@@ -52,7 +52,7 @@ def record_ai_charge(
 ) -> dict:
     if int(credit_cost_final) <= 0:
         raise ValueError("credit_cost_final must be positive")
-    usage_row = lesson_manager.insert_ai_usage_row(
+    return lesson_manager.insert_ai_usage_and_debit(
         organization_id=organization_id,
         user_id=user_id,
         feature_key=feature_key,
@@ -65,18 +65,7 @@ def record_ai_charge(
         source_record_id=str(source_record_id),
         request_id=request_id,
     )
-    lesson_manager.insert_credit_ledger_entry(
-        organization_id=organization_id,
-        direction="debit",
-        amount=int(credit_cost_final),
-        source_type="ai_usage",
-        source_id=str(usage_row["id"]),
-        note=feature_key,
-        operator_user_id=user_id,
-    )
-    return usage_row
 
 
 def list_member_usage_summary(organization_id: int) -> list[dict]:
     return lesson_manager.list_member_usage_summary_rows(organization_id)
-

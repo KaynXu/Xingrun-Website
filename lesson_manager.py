@@ -1004,6 +1004,10 @@ def init_db():
             request_id TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_usage_ledger_org_request_id
+        ON ai_usage_ledger (organization_id, request_id)
+        WHERE request_id <> '';
         """)
         import master_data
 
@@ -1058,7 +1062,19 @@ def ensure_credit_account(organization_id: int) -> dict:
         return dict(_ensure_credit_account_row(conn, organization_id))
 
 
-def insert_credit_ledger_entry(
+def _ensure_user_in_organization(conn: sqlite3.Connection, user_id: int, organization_id: int, label: str) -> None:
+    row = conn.execute(
+        "SELECT organization_id FROM users WHERE id=?",
+        (user_id,),
+    ).fetchone()
+    if not row:
+        raise LookupError(f"{label} user not found")
+    if int(row["organization_id"]) != int(organization_id):
+        raise ValueError(f"{label} user does not belong to organization")
+
+
+def _insert_credit_ledger_entry_with_conn(
+    conn: sqlite3.Connection,
     *,
     organization_id: int,
     direction: str,
@@ -1073,56 +1089,131 @@ def insert_credit_ledger_entry(
         raise ValueError("direction must be credit or debit")
     if amount <= 0:
         raise ValueError("amount must be positive")
+    if operator_user_id is not None:
+        _ensure_user_in_organization(conn, operator_user_id, organization_id, "operator")
 
+    account_row = _ensure_credit_account_row(conn, organization_id)
+    balance_before = int(account_row["credit_balance"] or 0)
+    recharge_before = int(account_row["total_recharged"] or 0)
+    consumed_before = int(account_row["total_consumed"] or 0)
+
+    if normalized_direction == "credit":
+        balance_after = balance_before + amount
+        total_recharged = recharge_before + amount
+        total_consumed = consumed_before
+    else:
+        if balance_before < amount:
+            raise ValueError("insufficient credit balance")
+        balance_after = balance_before - amount
+        total_recharged = recharge_before
+        total_consumed = consumed_before + amount
+
+    conn.execute(
+        """
+        UPDATE organization_credit_accounts
+        SET credit_balance=?,
+            total_recharged=?,
+            total_consumed=?,
+            updated_at=datetime('now','localtime')
+        WHERE organization_id=?
+        """,
+        (balance_after, total_recharged, total_consumed, organization_id),
+    )
+    cur = conn.execute(
+        """
+        INSERT INTO organization_credit_ledger
+            (organization_id, direction, amount, balance_after, source_type, source_id, note, operator_user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            organization_id,
+            normalized_direction,
+            amount,
+            balance_after,
+            source_type,
+            source_id,
+            note,
+            operator_user_id,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM organization_credit_ledger WHERE id=?",
+        (cur.lastrowid,),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def insert_credit_ledger_entry(
+    *,
+    organization_id: int,
+    direction: str,
+    amount: int,
+    source_type: str,
+    source_id: str = "",
+    note: str = "",
+    operator_user_id: Optional[int] = None,
+) -> dict:
     with get_conn() as conn:
-        account_row = _ensure_credit_account_row(conn, organization_id)
-        balance_before = int(account_row["credit_balance"] or 0)
-        recharge_before = int(account_row["total_recharged"] or 0)
-        consumed_before = int(account_row["total_consumed"] or 0)
-
-        if normalized_direction == "credit":
-            balance_after = balance_before + amount
-            total_recharged = recharge_before + amount
-            total_consumed = consumed_before
-        else:
-            if balance_before < amount:
-                raise ValueError("insufficient credit balance")
-            balance_after = balance_before - amount
-            total_recharged = recharge_before
-            total_consumed = consumed_before + amount
-
-        conn.execute(
-            """
-            UPDATE organization_credit_accounts
-            SET credit_balance=?,
-                total_recharged=?,
-                total_consumed=?,
-                updated_at=datetime('now','localtime')
-            WHERE organization_id=?
-            """,
-            (balance_after, total_recharged, total_consumed, organization_id),
+        return _insert_credit_ledger_entry_with_conn(
+            conn,
+            organization_id=organization_id,
+            direction=direction,
+            amount=amount,
+            source_type=source_type,
+            source_id=source_id,
+            note=note,
+            operator_user_id=operator_user_id,
         )
-        cur = conn.execute(
-            """
-            INSERT INTO organization_credit_ledger
-                (organization_id, direction, amount, balance_after, source_type, source_id, note, operator_user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                organization_id,
-                normalized_direction,
-                amount,
-                balance_after,
-                source_type,
-                source_id,
-                note,
-                operator_user_id,
-            ),
-        )
-        row = conn.execute(
-            "SELECT * FROM organization_credit_ledger WHERE id=?",
-            (cur.lastrowid,),
-        ).fetchone()
+
+
+def _insert_ai_usage_row_with_conn(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    user_id: int,
+    feature_key: str,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    credit_cost_final: int,
+    source_record_type: str,
+    source_record_id: str,
+    request_id: str,
+    token_cost_raw: float = 0.0,
+) -> dict:
+    _ensure_credit_account_row(conn, organization_id)
+    _ensure_user_in_organization(conn, user_id, organization_id, "usage")
+
+    total_tokens = max(0, int(input_tokens)) + max(0, int(output_tokens))
+    normalized_request_id = (request_id or "").strip()
+    cur = conn.execute(
+        """
+        INSERT INTO ai_usage_ledger
+            (organization_id, user_id, feature_key, provider, model, input_tokens, output_tokens, total_tokens,
+             token_cost_raw, credit_cost_final, source_record_type, source_record_id, request_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            organization_id,
+            user_id,
+            feature_key,
+            provider,
+            model,
+            max(0, int(input_tokens)),
+            max(0, int(output_tokens)),
+            total_tokens,
+            float(token_cost_raw or 0.0),
+            int(credit_cost_final),
+            source_record_type,
+            str(source_record_id),
+            normalized_request_id,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM ai_usage_ledger WHERE id=?",
+        (cur.lastrowid,),
+    ).fetchone()
     return dict(row) if row else {}
 
 
@@ -1141,37 +1232,84 @@ def insert_ai_usage_row(
     request_id: str,
     token_cost_raw: float = 0.0,
 ) -> dict:
-    total_tokens = max(0, int(input_tokens)) + max(0, int(output_tokens))
+    with get_conn() as conn:
+        return _insert_ai_usage_row_with_conn(
+            conn,
+            organization_id=organization_id,
+            user_id=user_id,
+            feature_key=feature_key,
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            credit_cost_final=credit_cost_final,
+            source_record_type=source_record_type,
+            source_record_id=source_record_id,
+            request_id=request_id,
+            token_cost_raw=token_cost_raw,
+        )
+
+
+def insert_ai_usage_and_debit(
+    *,
+    organization_id: int,
+    user_id: int,
+    feature_key: str,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    credit_cost_final: int,
+    source_record_type: str,
+    source_record_id: str,
+    request_id: str,
+    token_cost_raw: float = 0.0,
+) -> dict:
+    normalized_request_id = (request_id or "").strip()
     with get_conn() as conn:
         _ensure_credit_account_row(conn, organization_id)
-        cur = conn.execute(
-            """
-            INSERT INTO ai_usage_ledger
-                (organization_id, user_id, feature_key, provider, model, input_tokens, output_tokens, total_tokens,
-                 token_cost_raw, credit_cost_final, source_record_type, source_record_id, request_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                organization_id,
-                user_id,
-                feature_key,
-                provider,
-                model,
-                max(0, int(input_tokens)),
-                max(0, int(output_tokens)),
-                total_tokens,
-                float(token_cost_raw or 0.0),
-                int(credit_cost_final),
-                source_record_type,
-                str(source_record_id),
-                request_id,
-            ),
+        _ensure_user_in_organization(conn, user_id, organization_id, "usage")
+
+        if normalized_request_id:
+            existing = conn.execute(
+                """
+                SELECT *
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND request_id=?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (organization_id, normalized_request_id),
+            ).fetchone()
+            if existing:
+                return dict(existing)
+
+        usage_row = _insert_ai_usage_row_with_conn(
+            conn,
+            organization_id=organization_id,
+            user_id=user_id,
+            feature_key=feature_key,
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            credit_cost_final=credit_cost_final,
+            source_record_type=source_record_type,
+            source_record_id=source_record_id,
+            request_id=normalized_request_id,
+            token_cost_raw=token_cost_raw,
         )
-        row = conn.execute(
-            "SELECT * FROM ai_usage_ledger WHERE id=?",
-            (cur.lastrowid,),
-        ).fetchone()
-    return dict(row) if row else {}
+        _insert_credit_ledger_entry_with_conn(
+            conn,
+            organization_id=organization_id,
+            direction="debit",
+            amount=int(credit_cost_final),
+            source_type="ai_usage",
+            source_id=str(usage_row["id"]),
+            note=feature_key,
+            operator_user_id=user_id,
+        )
+        return usage_row
 
 
 def list_member_usage_summary_rows(organization_id: int) -> list[dict]:
