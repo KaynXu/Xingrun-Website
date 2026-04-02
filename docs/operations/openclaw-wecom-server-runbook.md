@@ -8,7 +8,8 @@ This runbook captures the current server-side OpenClaw setup for Xingrun and the
 - Verified on: `2026-04-02`
 - OpenClaw binary: `/usr/bin/openclaw`
 - PM2 process: `openclaw`
-- Gateway command: `openclaw gateway run --port 18789`
+- OpenClaw version: `2026.3.13`
+- Gateway command: `openclaw gateway --port 18789`
 - PM2 working directory: `/home/ubuntu`
 - Gateway port: `127.0.0.1:18789`
 - OpenClaw config directory: `/home/ubuntu/.openclaw`
@@ -33,12 +34,16 @@ SSH_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' ./scripts/manage_remote_opencl
 SSH_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' SUDO_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' ./scripts/manage_remote_openclaw.sh update
 ```
 
+The helper script intentionally defaults to the currently stable server version:
+
+- `TARGET_VERSION=2026.3.13`
+- `OPENCLAW_GATEWAY_COMMAND="openclaw gateway --port 18789"`
+
 Directly on the server:
 
 ```bash
 openclaw --version
 pm2 show openclaw
-openclaw gateway --help | head -n 20
 ss -ltnp | grep 18789
 tail -n 100 /home/ubuntu/.pm2/logs/openclaw-out.log
 tail -n 100 /home/ubuntu/.pm2/logs/openclaw-error.log
@@ -115,16 +120,36 @@ tail -n 200 /home/ubuntu/.pm2/logs/openclaw-out.log
 jq '.channels.wecom' /home/ubuntu/.openclaw/openclaw.json
 ```
 
-If OpenClaw was recently upgraded, verify that PM2 is still using the current gateway command. Older PM2 entries may still point at the pre-2026.4 syntax:
+If OpenClaw was recently upgraded, verify that PM2 is still using the intended gateway command:
 
 ```bash
 pm2 show openclaw | grep 'script args'
 ```
 
-Expected:
+Current stable expected value:
 
 ```text
--c openclaw gateway run --port 18789
+-lc cd /home/ubuntu && openclaw gateway --port 18789
+```
+
+## Version Pin Note
+
+The server was tested on `2026-04-02` with a newly provided WeCom bot credential set.
+
+Observed behavior:
+
+- `openclaw@2026.4.1` plus `@wecom/wecom-openclaw-plugin@2026.4.2` did not stabilize the WeCom channel for this bot.
+- the stable server baseline remains `openclaw@2026.3.13`
+- do not upgrade the production OpenClaw runtime past `2026.3.13` for the WeCom bot path until the newer channel/plugin combination is re-validated
+
+If you intentionally test a newer version later, override both the version and the PM2 gateway command explicitly:
+
+```bash
+SSH_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' \
+SUDO_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' \
+TARGET_VERSION='2026.4.1' \
+OPENCLAW_GATEWAY_COMMAND='openclaw gateway run --port 18789' \
+./scripts/manage_remote_openclaw.sh update
 ```
 
 ## Consultation Assistant Next Step

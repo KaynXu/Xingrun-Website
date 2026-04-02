@@ -7,7 +7,8 @@ SERVER_PORT="${SERVER_PORT:-22}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
 OPENCLAW_PROCESS_NAME="${OPENCLAW_PROCESS_NAME:-openclaw}"
 OPENCLAW_CWD="${OPENCLAW_CWD:-/home/ubuntu}"
-TARGET_VERSION="${TARGET_VERSION:-latest}"
+OPENCLAW_GATEWAY_COMMAND="${OPENCLAW_GATEWAY_COMMAND:-openclaw gateway --port ${OPENCLAW_PORT}}"
+TARGET_VERSION="${TARGET_VERSION:-2026.3.13}"
 
 usage() {
   cat <<'EOF'
@@ -23,7 +24,9 @@ Environment:
   SERVER_USER      Defaults to ubuntu
   SERVER_PORT      Defaults to 22
   OPENCLAW_CWD     Defaults to /home/ubuntu
-  TARGET_VERSION   Defaults to latest
+  OPENCLAW_GATEWAY_COMMAND
+                  Defaults to "openclaw gateway --port 18789"
+  TARGET_VERSION   Defaults to 2026.3.13
 EOF
 }
 
@@ -89,7 +92,7 @@ recreate_pm2_process() {
 set -euo pipefail
 pm2 delete ${OPENCLAW_PROCESS_NAME} >/dev/null 2>&1 || true
 cd ${OPENCLAW_CWD}
-pm2 start bash --name ${OPENCLAW_PROCESS_NAME} -- -lc 'cd ${OPENCLAW_CWD} && openclaw gateway run --port ${OPENCLAW_PORT}'
+pm2 start bash --name ${OPENCLAW_PROCESS_NAME} -- -lc 'cd ${OPENCLAW_CWD} && ${OPENCLAW_GATEWAY_COMMAND}'
 sleep 2
 pm2 show ${OPENCLAW_PROCESS_NAME} | sed -n '1,40p'
 "
