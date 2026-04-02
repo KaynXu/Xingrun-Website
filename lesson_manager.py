@@ -1284,21 +1284,38 @@ def insert_ai_usage_and_debit(
             if existing:
                 return dict(existing)
 
-        usage_row = _insert_ai_usage_row_with_conn(
-            conn,
-            organization_id=organization_id,
-            user_id=user_id,
-            feature_key=feature_key,
-            provider=provider,
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            credit_cost_final=credit_cost_final,
-            source_record_type=source_record_type,
-            source_record_id=source_record_id,
-            request_id=normalized_request_id,
-            token_cost_raw=token_cost_raw,
-        )
+        try:
+            usage_row = _insert_ai_usage_row_with_conn(
+                conn,
+                organization_id=organization_id,
+                user_id=user_id,
+                feature_key=feature_key,
+                provider=provider,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                credit_cost_final=credit_cost_final,
+                source_record_type=source_record_type,
+                source_record_id=source_record_id,
+                request_id=normalized_request_id,
+                token_cost_raw=token_cost_raw,
+            )
+        except sqlite3.IntegrityError:
+            if not normalized_request_id:
+                raise
+            existing = conn.execute(
+                """
+                SELECT *
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND request_id=?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (organization_id, normalized_request_id),
+            ).fetchone()
+            if not existing:
+                raise
+            return dict(existing)
         _insert_credit_ledger_entry_with_conn(
             conn,
             organization_id=organization_id,

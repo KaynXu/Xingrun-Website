@@ -1,8 +1,10 @@
 import gc
+import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -208,3 +210,68 @@ class CreditSystemServiceTestCase(unittest.TestCase):
                 (self.owner["organization_id"], "req-idempotent-charge"),
             ).fetchone()
         self.assertEqual(usage_count["total"], 1)
+
+    def test_duplicate_request_id_race_loser_returns_existing_row(self):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner["organization_id"],
+            actor_user_id=self.owner["id"],
+            amount=50,
+            note="seed balance for race idempotency",
+        )
+
+        original_insert = lesson_manager._insert_ai_usage_row_with_conn
+        inserted: dict[str, int] = {}
+
+        def race_loser_insert(conn, **kwargs):
+            row = original_insert(conn, **kwargs)
+            inserted["id"] = row["id"]
+            lesson_manager._insert_credit_ledger_entry_with_conn(
+                conn,
+                organization_id=self.owner["organization_id"],
+                direction="debit",
+                amount=5,
+                source_type="ai_usage",
+                source_id=str(row["id"]),
+                note="teacher_feedback_draft",
+                operator_user_id=self.owner["id"],
+            )
+            raise sqlite3.IntegrityError(
+                "UNIQUE constraint failed: ai_usage_ledger.organization_id, ai_usage_ledger.request_id"
+            )
+
+        with patch("lesson_manager._insert_ai_usage_row_with_conn", side_effect=race_loser_insert):
+            result = credit_manager.record_ai_charge(
+                organization_id=self.owner["organization_id"],
+                user_id=self.owner["id"],
+                feature_key="teacher_feedback_draft",
+                provider="openai",
+                model="gpt-4o",
+                input_tokens=60,
+                output_tokens=20,
+                credit_cost_final=5,
+                source_record_type="lesson",
+                source_record_id=77,
+                request_id="req-concurrent-idempotent",
+            )
+
+        self.assertEqual(result["id"], inserted["id"])
+
+        with lesson_manager.get_conn() as conn:
+            usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND request_id=?
+                """,
+                (self.owner["organization_id"], "req-concurrent-idempotent"),
+            ).fetchone()
+            debit_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM organization_credit_ledger
+                WHERE organization_id=? AND source_type='ai_usage' AND note=?
+                """,
+                (self.owner["organization_id"], "teacher_feedback_draft"),
+            ).fetchone()
+        self.assertEqual(usage_count["total"], 1)
+        self.assertEqual(debit_count["total"], 1)
