@@ -665,7 +665,6 @@ class AccountFlowTestCase(unittest.TestCase):
         join_payload = join.get_json()
         self.assertIsNotNone(join_payload)
         self.assertEqual(join_payload["user"]["organization_name"], "Tianqi International")
-
     def test_kayn_login_maps_to_reserved_owner_account(self):
         owner_login = self.client.post(
             "/api/login",
@@ -781,6 +780,19 @@ class AccountFlowTestCase(unittest.TestCase):
             json={"role": "owner"},
         )
         self.assertEqual(owner_promote_owner.status_code, 403)
+        owner_promote_admin = self.client.put(
+            f"/api/admin/users/{member_candidate_id}/role",
+            headers=self.auth_headers(owner_candidate_payload["token"]),
+            json={"role": "admin"},
+        )
+        self.assertEqual(owner_promote_admin.status_code, 200)
+
+        member_after_promote = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_candidate_payload["token"]),
+        )
+        self.assertEqual(member_after_promote.status_code, 200)
+        self.assertEqual(member_after_promote.get_json()["role"], "admin")
 
     def test_staff_can_view_member_binding_summary(self):
         owner_login = self.client.post(

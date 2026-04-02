@@ -47,6 +47,7 @@ CORS(app, resources={r"/api/*": {"origins": [
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
+    clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
     approve_registration_request,
@@ -84,6 +85,7 @@ from lesson_manager import (
     list_registration_requests,
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
+    normalize_consultation_batch_parse_result,
     reject_organization_request,
     reject_registration_request,
     reset_organization_invite,
@@ -99,6 +101,7 @@ from lesson_manager import (
     update_user_role,
     week_label,
 )
+from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
 import master_data
 from ai_processor import generate_teacher_feedback_draft
@@ -1622,6 +1625,39 @@ def api_consultations_list():
     if error:
         return error
     return jsonify(list_consultations(query=request.args.get("q", "")))
+
+
+@app.route("/api/consultations/ai-parse", methods=["POST"])
+def api_consultation_ai_parse():
+    _, error = _require_staff()
+    if error:
+        return error
+
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    raw_text = str(payload.get("raw_text", "")).strip()
+    if not raw_text:
+        return jsonify({"error": "raw_text is required"}), 400
+
+    cleaned_text = clean_consultation_batch_input(raw_text)
+    if not cleaned_text:
+        return jsonify({"error": "raw_text is empty after cleanup"}), 400
+
+    try:
+        parsed = parse_consultation_batch_text(cleaned_text)
+        normalized = normalize_consultation_batch_parse_result(parsed)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 502
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    except Exception as exc:
+        return jsonify({"error": f"AI 解析失败：{exc}"}), 502
+
+    return jsonify(normalized)
 
 
 @app.route("/api/consultation-teachers", methods=["GET"])

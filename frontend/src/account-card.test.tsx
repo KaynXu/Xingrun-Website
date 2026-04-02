@@ -158,6 +158,127 @@ test('consultation modal source supports quick parsing and structured source met
   assert.match(source, /source_channel_note/);
 });
 
+test('consultation page source adds ai batch entry in the existing action area', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /AI 批量整理/);
+  assert.match(consultationPageBlock[0], /onClick=\{openBatchModal\}/);
+  assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
+});
+
+test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /apiFetch<ConsultationBatchParseResponse>\('\/api\/consultations\/ai-parse'/);
+  assert.match(batchModalBlock[0], /raw_text: rawText\.trim\(\)/);
+  assert.match(batchModalBlock[0], /预览草稿/);
+  assert.match(batchModalBlock[0], /确认导入/);
+  assert.match(batchModalBlock[0], /只有文本里写了明确记录 ID（如 ID 182、记录182、#182）时，才会覆盖旧记录/);
+  assert.match(batchModalBlock[0], /draft\.action === 'update' && draft\.target_id/);
+  assert.match(batchModalBlock[0], /await apiFetch\(`\/api\/consultations\/\$\{draft\.target_id\}`/);
+  assert.match(batchModalBlock[0], /await apiFetch\('\/api\/consultations'/);
+});
+
+test('consultation batch modal source keeps refresh failure separate after successful writes', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /let importSucceeded = false;/);
+  assert.match(batchModalBlock[0], /importSucceeded = true;/);
+  assert.match(batchModalBlock[0], /try \{[\s\S]*await onImported\(\);[\s\S]*\} catch \(err\) \{/);
+  assert.match(batchModalBlock[0], /导入已完成，但刷新咨询记录失败，请手动刷新列表确认结果。/);
+});
+
+test('consultation batch modal source blocks dismissal while parsing or importing', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const busy = parsing \|\| importing;/);
+  assert.match(batchModalBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !busy && onClose\(\)\}/);
+  assert.match(batchModalBlock[0], /disabled=\{busy\}/);
+});
+
+test('consultation batch modal source previews key written fields before confirm', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const dateLabel = draft\.fields\.date\?\.trim\(\) \|\| '未填写咨询日期';/);
+  assert.match(batchModalBlock[0], /const childLabel = draft\.fields\.child_name\?\.trim\(\) \|\| '未填写学生姓名';/);
+  assert.match(batchModalBlock[0], /const sourceNoteLabel = draft\.fields\.source_channel_note\?\.trim\(\);/);
+  assert.match(batchModalBlock[0], /const followUpNoteLabel = draft\.fields\.follow_up_note\?\.trim\(\);/);
+  assert.match(batchModalBlock[0], /咨询日期 \/ 学生/);
+  assert.match(batchModalBlock[0], /来源备注 \/ 跟进备注/);
+});
+
+test('consultation batch modal source lets users remove individual drafts before import', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const handleRemoveDraft = \(draftIndex: number\) => \{/);
+  assert.match(batchModalBlock[0], /setDrafts\(\(current\) => current\.filter\(\(_draft, index\) => index !== draftIndex\)\);/);
+  assert.match(batchModalBlock[0], /onClick=\{\(\) => handleRemoveDraft\(index\)\}/);
+  assert.match(batchModalBlock[0], /移除这条草稿/);
+});
+
+test('consultation batch modal source attributes write failures to a specific draft and always clears importing', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /for \(const \[index, draft\] of drafts\.entries\(\)\) \{/);
+  assert.match(batchModalBlock[0], /const draftLabel = draft\.fields\.child_name\?\.trim\(\) \|\| \(draft\.action === 'update' && draft\.target_id \? `ID \$\{draft\.target_id\}` : `第 \$\{index \+ 1\} 条草稿`\);/);
+  assert.match(batchModalBlock[0], /setError\(`\$\{draftLabel\}导入失败：\$\{message\}`\);/);
+  assert.match(batchModalBlock[0], /setImporting\(true\);[\s\S]*try \{[\s\S]*for \(const \[index, draft\] of drafts\.entries\(\)\)[\s\S]*\} catch \(err\) \{[\s\S]*\} finally \{\s*setImporting\(false\);\s*\}/);
+});
+
+test('consultation batch modal source keeps only remaining drafts after a partial import failure', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const remainingDrafts = \[\.\.\.drafts\];/);
+  assert.match(batchModalBlock[0], /for \(const \[index, draft\] of drafts\.entries\(\)\) \{/);
+  assert.match(batchModalBlock[0], /if \(draft\.action === 'update' && draft\.target_id\) \{\s*await apiFetch\(`\/api\/consultations\/\$\{draft\.target_id\}`,[\s\S]*?\}\s*else \{\s*await apiFetch\('\/api\/consultations',[\s\S]*?\}/);
+  assert.match(batchModalBlock[0], /remainingDrafts\.shift\(\);\s*setImportedDrafts\(\(current\) => \[\.\.\.current, draft\]\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.doesNotMatch(batchModalBlock[0], /continue;/);
+  assert.match(batchModalBlock[0], /setError\(`\$\{draftLabel\}导入失败：\$\{message\}`\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+});
+
+test('consultation batch modal source preserves the current preview when parsing fails', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  const parseCatchBlock = batchModalBlock[0].match(/const handleParse = async \(\) => \{[\s\S]*?\} catch \(err\) \{([\s\S]*?)\}\s*finally \{/);
+
+  assert.ok(parseCatchBlock);
+  assert.doesNotMatch(parseCatchBlock[1], /setDrafts\(\[\]\);/);
+  assert.doesNotMatch(parseCatchBlock[1], /setWarnings\(\[\]\);/);
+  assert.match(parseCatchBlock[1], /setError\(err instanceof Error \? err\.message : 'AI 批量解析失败'\);/);
+});
+
+test('consultation batch modal source keeps imported drafts visible while retries only include unsaved drafts', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /const \[importedDrafts, setImportedDrafts\] = useState<ConsultationBatchDraftItem\[\]>\(\[\]\);/);
+  assert.match(batchModalBlock[0], /setImportedDrafts\(\[\]\);/);
+  assert.match(batchModalBlock[0], /remainingDrafts\.shift\(\);\s*setImportedDrafts\(\(current\) => \[\.\.\.current, draft\]\);\s*setDrafts\(\[\.\.\.remainingDrafts\]\);/);
+  assert.match(batchModalBlock[0], /already-saved|已导入草稿|已保存草稿/);
+  assert.match(batchModalBlock[0], /importedDrafts\.length > 0/);
+  assert.match(batchModalBlock[0], /共 \{importedDrafts\.length\} 条/);
+  assert.match(batchModalBlock[0], /共 \{drafts\.length\} 条/);
+});
+
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
   const parseConsultationQuickEntry = (AppModule as {
     parseConsultationQuickEntry?: (
