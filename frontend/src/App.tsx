@@ -404,7 +404,7 @@ const LANDING_LEGAL_DOCUMENTS: Record<
       {
         title: '我们如何收集和使用信息',
         paragraphs: [
-          '当你申请注册、登录或使用机构账号时，我们会收集并使用你主动提交的账号信息、显示名称、机构名称以及必要的身份校验信息，用于完成账号开通、权限管理与服务支持。',
+          '当你申请注册、登录或使用机构账号时，我们会收集并使用你主动提交的账号信息、姓名、机构名称以及必要的身份校验信息，用于完成账号开通、权限管理与服务支持。',
           '当你使用产品处理教学内容时，我们可能处理课堂录音、笔记、PDF、课程主题、题目素材以及对应的 AI 生成结果，用于生成课后复习资料、题库内容、讲义草稿和相关教学交付材料。',
         ],
       },
@@ -1110,7 +1110,7 @@ export const SidebarAccountSheet = ({
 
   const saveEdit = async () => {
     if (!editUsername.trim() || !editDisplayName.trim()) {
-      setEditError('用户名和昵称不能为空');
+      setEditError('账号和姓名不能为空');
       return;
     }
     setSaving(true);
@@ -1161,7 +1161,7 @@ export const SidebarAccountSheet = ({
           {editing ? (
             <div className="mt-5 space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-500 dark:text-slate-400">用户名 <span className="text-slate-400 dark:text-slate-500">· 登录用</span></label>
+                <label className="text-xs text-slate-500 dark:text-slate-400">账号 <span className="text-slate-400 dark:text-slate-500">· 登录用</span></label>
                 <input
                   type="text"
                   value={editUsername}
@@ -1171,13 +1171,13 @@ export const SidebarAccountSheet = ({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-500 dark:text-slate-400">昵称 <span className="text-slate-400 dark:text-slate-500">· 显示用</span></label>
+                <label className="text-xs text-slate-500 dark:text-slate-400">姓名 <span className="text-slate-400 dark:text-slate-500">· 对外显示</span></label>
                 <input
                   type="text"
                   value={editDisplayName}
                   onChange={(e) => setEditDisplayName(e.target.value)}
                   className={`${workspaceFieldClass} w-full`}
-                  placeholder="后台显示的名字"
+                  placeholder="对外显示的姓名"
                 />
               </div>
               {editError && (
@@ -1213,7 +1213,7 @@ export const SidebarAccountSheet = ({
                   onClick={startEdit}
                   className="w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
                 >
-                  修改用户名 / 昵称
+                  修改账号 / 姓名
                 </button>
                 <button
                   type="button"
@@ -2493,7 +2493,7 @@ const ConsultationModal = ({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              {readOnly ? '记录详情只读展示，管理员和 owner 可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
+              {readOnly ? '记录详情只读展示，管理员和机构负责人可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
             </p>
           </div>
           <button
@@ -3413,7 +3413,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
             <div>
               <h4 className="text-xl font-semibold text-slate-900 dark:text-white">机构开通审批</h4>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                审核新机构的开通申请。通过后，申请人会自动成为该机构的首位 owner，并生成当前唯一有效的邀请码与邀请链接。
+                审核新机构的开通申请。通过后，申请人会自动成为该机构的首位管理员，并生成当前唯一有效的邀请码与邀请链接。
               </p>
             </div>
             <button onClick={() => loadOrganizationRequests().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
@@ -3450,11 +3450,11 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                         </div>
                         <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
                           <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">首位账号</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">首位管理员账号</p>
                             <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
                           </div>
                           <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责人称呼</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责人姓名</p>
                             <p className="mt-1 text-slate-700 dark:text-slate-200">{item.display_name}</p>
                           </div>
                           <div>
@@ -3558,7 +3558,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
             <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500 dark:text-slate-400">用户名</span>
+                <span className="text-slate-500 dark:text-slate-400">账号</span>
                 <span className="text-slate-700 dark:text-slate-200">{currentUser.username}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
@@ -3621,7 +3621,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                         </div>
                         <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
                           <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">用户名</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">账号</p>
                             <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
                           </div>
                           <div>
@@ -3798,7 +3798,7 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
         <div className={`${workspaceCardClass} flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between`}>
           <div>
             <p className="font-medium text-slate-900 dark:text-white">当前账号</p>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">登出后需重新输入用户名和密码。</p>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">登出后需重新输入账号和密码。</p>
             <div className="mt-4 flex flex-wrap gap-2 text-xs">
               <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
                 {currentUser.display_name}
@@ -4681,14 +4681,14 @@ const LoginModal = ({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm text-gray-400">用户名</label>
+              <label className="text-sm text-gray-400">账号</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 autoFocus
-                placeholder="请输入用户名"
+                placeholder="请输入账号"
                 className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
@@ -4840,7 +4840,7 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">用户名 <span className="text-gray-600 font-normal">· 登录用</span></label>
+                <label className="text-sm text-gray-400">账号 <span className="text-gray-600 font-normal">· 登录用</span></label>
                 <input
                   type="text"
                   value={username}
@@ -4851,13 +4851,13 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">昵称 <span className="text-gray-600 font-normal">· 显示用</span></label>
+                <label className="text-sm text-gray-400">姓名 <span className="text-gray-600 font-normal">· 对外显示</span></label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
-                  placeholder="后台显示的名字，可修改"
+                  placeholder="对外显示的姓名，可修改"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -4976,7 +4976,6 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-semibold">申请开通机构</h2>
-              <p className="text-sm text-gray-400 mt-1">提交机构名称和首位管理者信息，由 Kayn 统一审批。</p>
             </div>
             <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-2xl leading-none">×</button>
           </div>
@@ -5008,24 +5007,24 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">用户名</label>
+                <label className="text-sm text-gray-400">账号</label>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
-                  placeholder="首位 owner 登录账号"
+                  placeholder="首位管理员登录账号"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">显示名称</label>
+                <label className="text-sm text-gray-400">姓名</label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
-                  placeholder="后台显示名称"
+                  placeholder="对外显示的姓名"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -5221,7 +5220,7 @@ const JoinOrganizationModal = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">用户名</label>
+                <label className="text-sm text-gray-400">账号</label>
                 <input
                   type="text"
                   value={username}
@@ -5232,13 +5231,13 @@ const JoinOrganizationModal = ({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm text-gray-400">显示名称</label>
+                <label className="text-sm text-gray-400">姓名</label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
-                  placeholder="后台显示名称"
+                  placeholder="对外显示的姓名"
                   className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>

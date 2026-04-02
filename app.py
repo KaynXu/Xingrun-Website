@@ -1261,7 +1261,7 @@ def api_profile_update():
     new_username = data.get("username", "").strip()
     new_display_name = data.get("display_name", "").strip()
     if not new_username or not new_display_name:
-        return jsonify({"error": "用户名和昵称不能为空"}), 400
+        return jsonify({"error": "账号和姓名不能为空"}), 400
     try:
         update_user_profile(user["id"], new_username, new_display_name)
     except ValueError as exc:
