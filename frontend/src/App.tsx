@@ -1661,7 +1661,15 @@ const SubjectCombobox = ({
   );
 };
 
-const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; currentUser: CurrentUser }) => {
+const LessonInput = ({
+  onSuccess,
+  currentUser,
+  initialLesson = null,
+}: {
+  onSuccess: () => void;
+  currentUser: CurrentUser;
+  initialLesson?: Lesson | null;
+}) => {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1684,6 +1692,7 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
   const [isSavingFeedback, setIsSavingFeedback] = useState(false);
   const [feedbackStatusMessage, setFeedbackStatusMessage] = useState('先生成复习文档，再完善课后反馈。');
+  const isContinuingFeedback = initialLesson !== null;
 
   useEffect(() => {
     setClassesLoading(true);
@@ -1725,6 +1734,34 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
       setIsLoadingFeedbackStudents(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!initialLesson) {
+      return;
+    }
+
+    setError('');
+    setInputType('text');
+    setFile(null);
+    setSubject(initialLesson.subject ?? '');
+    setTopic(initialLesson.topic ?? '');
+    setLessonDate(initialLesson.date || new Date().toISOString().split('T')[0]);
+    setWeakPoints(initialLesson.weak_points ?? '');
+    setSummaryText(initialLesson.summary ?? '');
+    setClassId(initialLesson.class_id ?? null);
+    setActiveLessonId(initialLesson.id);
+
+    if (!initialLesson.class_id) {
+      setFeedbackStudents([]);
+      setFeedbackTemplates(defaultTeacherFeedbackTemplates);
+      setFeedbackText('');
+      setFeedbackStatusMessage('这条历史记录还没有关联班级，暂时无法继续编辑课后反馈。');
+      return;
+    }
+
+    setFeedbackStatusMessage('正在同步历史课后反馈...');
+    void loadFeedbackWorkspace(initialLesson.id, initialLesson.class_id);
+  }, [initialLesson, loadFeedbackWorkspace]);
 
   const saveFeedbackWorkspace = useCallback(async () => {
     if (!activeLessonId) {
@@ -2065,10 +2102,16 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
                     />
                   </div>
                 )}
-                <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
-                  生成复习文档
-                  <ArrowRight size={20} />
-                </button>
+                {isContinuingFeedback ? (
+                  <div className={`${workspaceSoftCardClass} mt-6 p-4 text-sm text-slate-500 dark:text-slate-400`}>
+                    已载入历史复习记录，可直接继续编辑下方课后反馈；如需新建新的复习记录，请返回点击“新建复习文档”。
+                  </div>
+                ) : (
+                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
+                    生成复习文档
+                    <ArrowRight size={20} />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2099,7 +2142,13 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
   );
 };
 
-const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) => {
+const ReviewDocumentHistory = ({
+  refreshToken = 0,
+  onContinueFeedback,
+}: {
+  refreshToken?: number;
+  onContinueFeedback?: (lesson: Lesson) => void;
+}) => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -2174,6 +2223,20 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
                   <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                     {lesson.pdf_path && (
                       <>
+                        <button
+                          type="button"
+                          onClick={() => onContinueFeedback?.(lesson)}
+                          disabled={!lesson.class_id}
+                          className={cn(
+                            'flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all dark:bg-white/5 dark:text-slate-300',
+                            lesson.class_id
+                              ? 'hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-sky-300'
+                              : 'cursor-not-allowed opacity-40',
+                          )}
+                          title={lesson.class_id ? '继续编辑反馈' : '未关联班级，暂无法编辑反馈'}
+                        >
+                          <Pencil size={16} />
+                        </button>
                         <a
                           href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                           target="_blank"
@@ -2210,18 +2273,37 @@ const ReviewDocumentHistory = ({ refreshToken = 0 }: { refreshToken?: number }) 
   );
 };
 
-const ReviewGenerationPage = ({ onSuccess, currentUser }: { onSuccess: () => void; currentUser: CurrentUser }) => {
+const ReviewGenerationPage = ({
+  onSuccess,
+  currentUser,
+}: {
+  onSuccess: () => void;
+  currentUser: CurrentUser;
+}) => {
   const [composerOpen, setComposerOpen] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+  const [selectedLessonForFeedback, setSelectedLessonForFeedback] = useState<Lesson | null>(null);
 
-  const handleComposerSuccess = () => {
-    setComposerOpen(false);
+  const handleFormSuccess = () => {
+    setSelectedLessonForFeedback(null);
+    setComposerOpen(true);
+    setHistoryRefreshToken((current) => current + 1);
     onSuccess();
   };
 
-  const handleFormSuccess = () => {
-    handleComposerSuccess();
-    setHistoryRefreshToken((current) => current + 1);
+  const handleToggleComposer = () => {
+    if (composerOpen && !selectedLessonForFeedback) {
+      setComposerOpen(false);
+      return;
+    }
+
+    setSelectedLessonForFeedback(null);
+    setComposerOpen(true);
+  };
+
+  const handleStartEditingFeedback = (lesson: Lesson) => {
+    setSelectedLessonForFeedback(lesson);
+    setComposerOpen(true);
   };
 
   return (
@@ -2231,7 +2313,7 @@ const ReviewGenerationPage = ({ onSuccess, currentUser }: { onSuccess: () => voi
           <h3 className={workspaceSectionTitleClass}>历史文档</h3>
           <p className={`${workspaceSectionTextClass} mt-2`}>查看已生成的复习文档，支持下载、预览与删除。</p>
         </div>
-        <button onClick={() => setComposerOpen((current) => !current)} className={workspacePrimaryButtonClass}>
+        <button onClick={handleToggleComposer} className={workspacePrimaryButtonClass}>
           <PlusCircle size={20} />
           新建复习文档
         </button>
@@ -2240,14 +2322,26 @@ const ReviewGenerationPage = ({ onSuccess, currentUser }: { onSuccess: () => voi
       {composerOpen && (
         <div className={`${workspaceSoftCardClass} p-4 sm:p-6`}>
           <div className="mb-4">
-            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">上传课堂内容并生成新的复习文档。</p>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">
+              {selectedLessonForFeedback ? '继续编辑课后反馈' : '生成复习文档'}
+            </h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {selectedLessonForFeedback
+                ? '已载入历史复习记录，可按当前班级名单继续完善老师反馈。'
+                : '上传课堂内容并生成新的复习文档。'}
+            </p>
           </div>
-          <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} />
+          <React.Fragment key={selectedLessonForFeedback ? `edit-${selectedLessonForFeedback.id}` : 'create'}>
+            <LessonInput
+              onSuccess={handleFormSuccess}
+              currentUser={currentUser}
+              initialLesson={selectedLessonForFeedback}
+            />
+          </React.Fragment>
         </div>
       )}
 
-      <ReviewDocumentHistory refreshToken={historyRefreshToken} />
+      <ReviewDocumentHistory refreshToken={historyRefreshToken} onContinueFeedback={handleStartEditingFeedback} />
     </div>
   );
 };

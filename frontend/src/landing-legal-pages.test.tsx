@@ -26,7 +26,7 @@ test('landing page renders Starain hero branding and approved messaging', () => 
   assert.match(markup, /Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台/);
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);
-  assert.match(markup, /申请试用/);
+  assert.match(markup, /申请开通机构/);
   assert.match(markup, /data-stream-src="https:\/\/stream\.mux\.com\/ef2TghmWccnsK54qnxtFWjv36zXb01cK02CAfgDNQMgn4\.m3u8"/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });

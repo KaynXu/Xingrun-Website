@@ -440,11 +440,11 @@ test('master data mappings page still shows proactive member binding controls wh
 
     await waitForAssertion(() => {
       const text = container.textContent || '';
-      assert.match(text, /主动绑定成员/);
+      assert.match(text, /维护老师别名/);
       assert.match(text, /陈老师/);
       assert.match(text, /老师别名/);
       assert.match(text, /开始绑定/);
-      assert.match(text, /当前没有待处理的错题映射记录。/);
+      assert.match(text, /当前没有待处理的匹配记录。/);
     });
   } finally {
     if (root) {
@@ -617,7 +617,7 @@ test('master data mappings page keeps a record visible when resolve succeeds wit
       assert.match(text, /记录 ID: record-keep/);
       assert.match(text, /待复核/);
       assert.match(text, /当前老师映射: 陈老师（候选）/);
-      assert.doesNotMatch(text, /当前没有待处理的错题映射记录。/);
+      assert.doesNotMatch(text, /当前没有待处理的匹配记录。/);
     });
   } finally {
     if (root) {
@@ -701,7 +701,7 @@ test('master data mappings page keeps each row loading while overlapping saves a
     await waitForAssertion(() => {
       const button = container.querySelector('button[data-record-id="record-1"]') as HTMLButtonElement | null;
       assert.ok(button);
-      assert.equal(button.textContent, '提交中...');
+      assert.equal(button.textContent, '保存中...');
       assert.equal(button.disabled, true);
     });
 
@@ -714,8 +714,8 @@ test('master data mappings page keeps each row loading while overlapping saves a
       const secondButton = container.querySelector('button[data-record-id="record-2"]') as HTMLButtonElement | null;
       assert.ok(firstButton);
       assert.ok(secondButton);
-      assert.equal(firstButton.textContent, '提交中...');
-      assert.equal(secondButton.textContent, '提交中...');
+      assert.equal(firstButton.textContent, '保存中...');
+      assert.equal(secondButton.textContent, '保存中...');
       assert.equal(firstButton.disabled, true);
       assert.equal(secondButton.disabled, true);
     });
@@ -739,7 +739,7 @@ test('master data mappings page keeps each row loading while overlapping saves a
       const firstButton = container.querySelector('button[data-record-id="record-1"]') as HTMLButtonElement | null;
       const secondButton = container.querySelector('button[data-record-id="record-2"]') as HTMLButtonElement | null;
       assert.ok(firstButton);
-      assert.equal(firstButton.textContent, '提交中...');
+      assert.equal(firstButton.textContent, '保存中...');
       assert.equal(firstButton.disabled, true);
       assert.equal(secondButton, null);
     });
@@ -760,7 +760,7 @@ test('master data mappings page keeps each row loading while overlapping saves a
     });
 
     await waitForAssertion(() => {
-      assert.match(container.textContent || '', /当前没有待处理的错题映射记录。/);
+      assert.match(container.textContent || '', /当前没有待处理的匹配记录。/);
     });
   } finally {
     if (root) {

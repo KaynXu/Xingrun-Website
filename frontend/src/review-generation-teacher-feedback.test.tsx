@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -9,6 +10,8 @@ import {
   mergeRosterWithFeedbackDraft,
 } from './reviewGenerationTeacherFeedback';
 import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
+
+const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('defaultTeacherFeedbackTemplates exposes the expected built-in template ids in order', () => {
   assert.deepEqual(
@@ -105,4 +108,14 @@ test('TeacherFeedbackWorkspace renders the student area, custom template entry, 
   assert.match(markup, /复制全部/);
   assert.doesNotMatch(markup, /课程信息/);
   assert.doesNotMatch(markup, /重新生成/);
+});
+
+test('review generation source wires teacher feedback loading, autosave, and copy-before-save into the shared lesson editor', () => {
+  assert.match(appSource, /const loadFeedbackWorkspace = useCallback\(async \(lessonId: number, targetClassId: number\) => \{/);
+  assert.match(appSource, /const isContinuingFeedback = initialLesson !== null;/);
+  assert.match(appSource, /await loadFeedbackWorkspace\(createdLesson\.id, classId\);/);
+  assert.match(appSource, /const timer = window\.setTimeout\(\(\) => \{\s*void saveFeedbackWorkspace\(\);\s*\}, 2500\);/);
+  assert.match(appSource, /await saveFeedbackWorkspace\(\);\s*await navigator\.clipboard\.writeText\(feedbackText\);/);
+  assert.match(appSource, /isContinuingFeedback \? \(/);
+  assert.match(appSource, /<TeacherFeedbackWorkspace[\s\S]*onGenerate=\{handleGenerateFeedbackDraft\}[\s\S]*onCopyAll=\{handleCopyAllFeedback\}/);
 });
