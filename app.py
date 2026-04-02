@@ -52,6 +52,8 @@ from lesson_manager import (
     approve_registration_request,
     authenticate_user,
     create_organization_request,
+    build_lesson_feedback_editor_state,
+    create_student_for_class,
     create_auth_session,
     create_consultation,
     create_registration_request,
@@ -78,13 +80,16 @@ from lesson_manager import (
     list_consultations,
     list_lessons,
     list_organization_requests,
+    list_students_for_class,
     list_registration_requests,
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
     reject_organization_request,
     reject_registration_request,
     reset_organization_invite,
+    remove_student_from_class,
     save_class,
+    save_lesson_feedback,
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
@@ -96,8 +101,36 @@ from lesson_manager import (
 )
 import smart_wrong_questions
 import master_data
+from ai_processor import generate_teacher_feedback_draft
 
 init_db()
+
+DEFAULT_TEACHER_FEEDBACK_TEMPLATES = [
+    {
+        "id": "active",
+        "label": "积极参与，状态很好",
+        "guidance": "上课积极回答问题，理解和表达都比较顺畅。",
+    },
+    {
+        "id": "steady",
+        "label": "状态稳定，吸收较快",
+        "guidance": "课堂理解比较稳定，但还需要课后再巩固一轮。",
+    },
+    {
+        "id": "review-soon",
+        "label": "精神一般，回家及时复习",
+        "guidance": "建议回家马上结合复习计划回忆课堂内容，避免遗忘。",
+    },
+    {
+        "id": "needs-support",
+        "label": "当前吃力，需要家校配合",
+        "guidance": "需要家长帮助孩子尽快回顾课堂内容，并完成基础练习。",
+    },
+]
+DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS = {
+    template["id"]
+    for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
+}
 
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -1029,6 +1062,188 @@ def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
     ]
 
 
+def _get_accessible_class_or_error(user: dict, class_id: int):
+    cls = get_class(class_id)
+    if not cls:
+        return None, (jsonify({"error": "not found"}), 404)
+    if _filter_classes_for_user(user, [cls]):
+        return cls, None
+    return None, (jsonify({"error": "forbidden"}), 403)
+
+
+def _validate_lesson_feedback_access(user: dict, lesson: dict):
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return None
+    class_id = lesson.get("class_id")
+    if not isinstance(class_id, int) or class_id <= 0:
+        return jsonify({"error": "forbidden"}), 403
+    _, error = _get_accessible_class_or_error(user, class_id)
+    return error
+
+
+def _build_teacher_feedback_template_lookup(custom_templates: list[dict]) -> dict[str, dict]:
+    lookup: dict[str, dict] = {
+        template["id"]: dict(template)
+        for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
+    }
+    for item in custom_templates:
+        if not isinstance(item, dict):
+            continue
+        template_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        guidance = str(item.get("guidance") or "").strip()
+        if not template_id or not label or not guidance:
+            continue
+        lookup[template_id] = {
+            "id": template_id,
+            "label": label,
+            "guidance": guidance,
+        }
+    return lookup
+
+
+def _normalize_feedback_custom_templates(custom_templates: list[dict]) -> list[dict]:
+    normalized_templates: list[dict] = []
+    seen_template_ids: set[str] = set()
+    for item in custom_templates:
+        if not isinstance(item, dict):
+            continue
+        template_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        guidance = str(item.get("guidance") or "").strip()
+        if (
+            not template_id
+            or not label
+            or not guidance
+            or template_id in seen_template_ids
+            or template_id in DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS
+        ):
+            continue
+        normalized_templates.append(
+            {
+                "id": template_id,
+                "label": label,
+                "guidance": guidance,
+            }
+        )
+        seen_template_ids.add(template_id)
+    return normalized_templates
+
+
+def _normalize_feedback_students_for_draft(
+    *,
+    students: list[dict],
+    roster_by_id: dict[int, dict],
+    template_lookup: dict[str, dict],
+    enforce_roster_membership: bool,
+) -> tuple[list[dict], int]:
+    selected_students: list[dict] = []
+    skipped_count = 0
+    seen_student_ids: set[int] = set()
+    for item in students:
+        if not isinstance(item, dict):
+            skipped_count += 1
+            continue
+        selected_template_id = str(item.get("selected_template_id") or "").strip()
+        if not selected_template_id:
+            skipped_count += 1
+            continue
+        student_id = item.get("student_id")
+        if isinstance(student_id, int) and student_id in seen_student_ids:
+            skipped_count += 1
+            continue
+        roster_student = roster_by_id.get(student_id) if isinstance(student_id, int) else None
+        if enforce_roster_membership and not roster_student:
+            skipped_count += 1
+            continue
+        template = template_lookup.get(selected_template_id) or {}
+        if not template:
+            skipped_count += 1
+            continue
+        selected_students.append(
+            {
+                **item,
+                "name": (roster_student or {}).get("name") or str(item.get("name") or "").strip(),
+                "selected_template_id": selected_template_id,
+                "selected_template_label": str(template.get("label") or "").strip(),
+                "selected_template_guidance": str(template.get("guidance") or "").strip(),
+                "remark": str(item.get("remark") or "").strip(),
+            }
+        )
+        if isinstance(student_id, int):
+            seen_student_ids.add(student_id)
+    return selected_students, skipped_count
+
+
+def _normalize_feedback_editor_students(
+    *,
+    students: list[dict],
+    roster_by_id: dict[int, dict],
+    enforce_roster_membership: bool,
+    allowed_template_ids: set[str],
+) -> list[dict]:
+    normalized_students: list[dict] = []
+    seen_student_ids: set[int] = set()
+    for item in students:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if not isinstance(student_id, int) or student_id in seen_student_ids:
+            continue
+        roster_student = roster_by_id.get(student_id)
+        if enforce_roster_membership and not roster_student:
+            continue
+        selected_template_id = str(item.get("selected_template_id") or "").strip()
+        if selected_template_id not in allowed_template_ids:
+            selected_template_id = ""
+        normalized_students.append(
+            {
+                "student_id": student_id,
+                "name": (roster_student or {}).get("name") or str(item.get("name") or "").strip(),
+                "selected_template_id": selected_template_id,
+                "remark": str(item.get("remark") or "").strip(),
+            }
+        )
+        seen_student_ids.add(student_id)
+    return normalized_students
+
+
+def _build_feedback_student_index(
+    *,
+    student_index: list[dict],
+    students: list[dict],
+    roster_by_id: dict[int, dict],
+    enforce_roster_membership: bool,
+) -> list[dict]:
+    source = student_index if student_index else students
+    normalized: list[dict] = []
+    seen_student_ids: set[int] = set()
+    for item in source:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if not isinstance(student_id, int) or student_id in seen_student_ids:
+            continue
+        roster_student = roster_by_id.get(student_id)
+        if enforce_roster_membership and not roster_student:
+            continue
+        student_name = (roster_student or {}).get("name") or str(item.get("name") or "").strip()
+        if not student_name:
+            continue
+        normalized.append({"student_id": student_id, "name": student_name})
+        seen_student_ids.add(student_id)
+    return normalized
+
+
+def _get_json_object_payload():
+    if not request.is_json:
+        return {}, None
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "request body must be a JSON object"}), 400)
+    return data, None
+
+
 @app.route("/api/me", methods=["GET"])
 def api_me():
     user, error = _require_auth()
@@ -1524,6 +1739,51 @@ def api_class_get(class_id):
     return jsonify({**cls, "lessons": lessons})
 
 
+@app.route("/api/classes/<int:class_id>/students", methods=["GET"])
+def api_class_students_list(class_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    return jsonify({"students": list_students_for_class(class_id)})
+
+
+@app.route("/api/classes/<int:class_id>/students", methods=["POST"])
+def api_class_students_create(class_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    requested_name = (data.get("name") or "").strip()
+    if not requested_name:
+        return jsonify({"error": "student name is required"}), 400
+    student = create_student_for_class(class_id, requested_name)
+    return jsonify({
+        "student": student,
+        "requested_name": requested_name,
+        "deduplicated": student["name"] != requested_name,
+    }), 201
+
+
+@app.route("/api/classes/<int:class_id>/students/<int:student_id>", methods=["DELETE"])
+def api_class_students_delete(class_id, student_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    removed = remove_student_from_class(class_id, student_id)
+    return jsonify({"ok": True, "removed": removed})
+
+
 @app.route("/api/classes/<int:class_id>/teacher", methods=["PUT"])
 def api_class_teacher_set(class_id):
     _, error = _require_staff()
@@ -1713,6 +1973,151 @@ def api_lesson_create():
         plan=plan, pdf_path=pdf_path, class_id=class_id,
     )
     return jsonify({"id": lesson_id, "success": True}), 201
+
+
+@app.route("/api/lessons/<int:lesson_id>/feedback/draft", methods=["POST"])
+def api_lesson_feedback_draft(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    error = _validate_lesson_feedback_access(user, lesson)
+    if error:
+        return error
+
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    students = data.get("students")
+    custom_templates = data.get("custom_templates")
+    if not isinstance(students, list):
+        students = []
+    if not isinstance(custom_templates, list):
+        custom_templates = []
+    custom_templates = _normalize_feedback_custom_templates(custom_templates)
+
+    roster_by_id = {}
+    class_id = lesson.get("class_id")
+    enforce_roster_membership = isinstance(class_id, int) and class_id > 0
+    if isinstance(class_id, int) and class_id > 0:
+        roster_by_id = {
+            student["id"]: student
+            for student in list_students_for_class(class_id)
+        }
+    template_lookup = _build_teacher_feedback_template_lookup(custom_templates)
+    selected_students, skipped_count = _normalize_feedback_students_for_draft(
+        students=students,
+        roster_by_id=roster_by_id,
+        template_lookup=template_lookup,
+        enforce_roster_membership=enforce_roster_membership,
+    )
+    if not selected_students:
+        return jsonify({
+            "lesson_id": lesson_id,
+            "merged_text": "",
+            "students_included": 0,
+            "students_skipped": skipped_count,
+        })
+
+    try:
+        merged_text = generate_teacher_feedback_draft(
+            lesson=lesson,
+            students=selected_students,
+            custom_templates=custom_templates,
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "lesson_id": lesson_id,
+        "merged_text": merged_text,
+        "students_included": len(selected_students),
+        "students_skipped": skipped_count,
+    })
+
+
+@app.route("/api/lessons/<int:lesson_id>/feedback", methods=["GET"])
+def api_lesson_feedback_get(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    error = _validate_lesson_feedback_access(user, lesson)
+    if error:
+        return error
+    return jsonify(build_lesson_feedback_editor_state(lesson_id))
+
+
+@app.route("/api/lessons/<int:lesson_id>/feedback", methods=["PUT"])
+def api_lesson_feedback_save(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return jsonify({"error": "not found"}), 404
+    error = _validate_lesson_feedback_access(user, lesson)
+    if error:
+        return error
+
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    existing_feedback = build_lesson_feedback_editor_state(lesson_id)
+    student_index = data.get("student_index")
+    students = data.get("students")
+    custom_templates = data.get("custom_templates")
+    if not isinstance(student_index, list):
+        student_index = existing_feedback.get("student_index") or []
+    if not isinstance(students, list):
+        students = existing_feedback.get("students") or []
+    if not isinstance(custom_templates, list):
+        custom_templates = existing_feedback.get("custom_templates") or []
+
+    roster_by_id = {}
+    class_id = lesson.get("class_id")
+    enforce_roster_membership = isinstance(class_id, int) and class_id > 0
+    if isinstance(class_id, int) and class_id > 0:
+        roster_by_id = {
+            student["id"]: student
+            for student in list_students_for_class(class_id)
+        }
+    normalized_custom_templates = _normalize_feedback_custom_templates(custom_templates)
+    allowed_template_ids = set(DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS)
+    allowed_template_ids.update(template["id"] for template in normalized_custom_templates)
+    normalized_students = _normalize_feedback_editor_students(
+        students=students,
+        roster_by_id=roster_by_id,
+        enforce_roster_membership=enforce_roster_membership,
+        allowed_template_ids=allowed_template_ids,
+    )
+    normalized_student_index = _build_feedback_student_index(
+        student_index=student_index,
+        students=normalized_students,
+        roster_by_id=roster_by_id,
+        enforce_roster_membership=enforce_roster_membership,
+    )
+    merged_text = data.get("merged_text")
+    if merged_text is None:
+        merged_text = existing_feedback.get("merged_text", "")
+
+    try:
+        feedback = save_lesson_feedback(
+            lesson_id=lesson_id,
+            class_id=lesson.get("class_id") or 0,
+            merged_text=str(merged_text),
+            student_index=normalized_student_index,
+            editor_state={
+                "students": normalized_students,
+                "custom_templates": normalized_custom_templates,
+            },
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(feedback)
 
 
 @app.route("/api/quiz", methods=["GET"])

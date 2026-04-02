@@ -42,6 +42,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { MasterDataMappingsPage } from './MasterDataMappingsPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
+import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
+import {
+  buildTeacherFeedbackSavePayload,
+  createClassStudent,
+  defaultTeacherFeedbackTemplates,
+  deleteClassStudent,
+  generateLessonFeedbackDraft,
+  listClassStudents,
+  loadLessonFeedback,
+  mergeRosterWithFeedbackDraft,
+  saveLessonFeedback,
+  type TeacherFeedbackStudentDraft,
+  type TeacherFeedbackTemplate,
+} from './reviewGenerationTeacherFeedback';
 
 // --- Types ---
 
@@ -1662,6 +1676,14 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeLessonId, setActiveLessonId] = useState<number | null>(null);
+  const [feedbackStudents, setFeedbackStudents] = useState<TeacherFeedbackStudentDraft[]>([]);
+  const [feedbackTemplates, setFeedbackTemplates] = useState<TeacherFeedbackTemplate[]>(defaultTeacherFeedbackTemplates);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isLoadingFeedbackStudents, setIsLoadingFeedbackStudents] = useState(false);
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [isSavingFeedback, setIsSavingFeedback] = useState(false);
+  const [feedbackStatusMessage, setFeedbackStatusMessage] = useState('先生成复习文档，再完善课后反馈。');
 
   useEffect(() => {
     setClassesLoading(true);
@@ -1673,10 +1695,73 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
 
   const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
 
+  const resetFeedbackWorkspace = useCallback(() => {
+    setActiveLessonId(null);
+    setFeedbackStudents([]);
+    setFeedbackTemplates(defaultTeacherFeedbackTemplates);
+    setFeedbackText('');
+    setFeedbackStatusMessage('先生成复习文档，再完善课后反馈。');
+  }, []);
+
+  const loadFeedbackWorkspace = useCallback(async (lessonId: number, targetClassId: number) => {
+    setIsLoadingFeedbackStudents(true);
+    try {
+      const [rosterResp, feedbackDoc] = await Promise.all([
+        listClassStudents(targetClassId),
+        loadLessonFeedback(lessonId),
+      ]);
+      const mergedStudents = mergeRosterWithFeedbackDraft({
+        roster: rosterResp.students,
+        savedStudents: feedbackDoc.students,
+      });
+      const customTemplates = feedbackDoc.custom_templates.map((template) => ({ ...template, isCustom: true }));
+      setFeedbackStudents(mergedStudents);
+      setFeedbackTemplates([...defaultTeacherFeedbackTemplates, ...customTemplates]);
+      setFeedbackText(feedbackDoc.merged_text ?? '');
+      setFeedbackStatusMessage(`已同步 ${mergedStudents.length} 名学生，课后反馈可继续编辑。`);
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '课后反馈同步失败，请重试。');
+    } finally {
+      setIsLoadingFeedbackStudents(false);
+    }
+  }, []);
+
+  const saveFeedbackWorkspace = useCallback(async () => {
+    if (!activeLessonId) {
+      return;
+    }
+    setIsSavingFeedback(true);
+    try {
+      const payload = buildTeacherFeedbackSavePayload({
+        mergedText: feedbackText,
+        students: feedbackStudents,
+        customTemplates: feedbackTemplates,
+      });
+      const saved = await saveLessonFeedback(activeLessonId, payload);
+      setFeedbackText(saved.merged_text ?? '');
+      setFeedbackStatusMessage('课后反馈已保存。');
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '课后反馈保存失败，请重试。');
+    } finally {
+      setIsSavingFeedback(false);
+    }
+  }, [activeLessonId, feedbackText, feedbackStudents, feedbackTemplates]);
+
+  useEffect(() => {
+    if (!activeLessonId) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveFeedbackWorkspace();
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [activeLessonId, feedbackText, feedbackStudents, feedbackTemplates, saveFeedbackWorkspace]);
+
   const handleClassChange = (id: number) => {
     setClassId(id);
     const cls = classes.find((c) => c.id === id);
     if (cls?.subject) setSubject(cls.subject);
+    resetFeedbackWorkspace();
   };
 
   const handleAnalyze = async () => {
@@ -1718,8 +1803,9 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
 
     setIsLoading(true);
     try {
+      let createdLesson: { id: number };
       if (inputType === 'text') {
-        await apiFetch('/api/lessons', {
+        createdLesson = await apiFetch<{ id: number }>('/api/lessons', {
           method: 'POST',
           body: JSON.stringify({
             subject,
@@ -1739,13 +1825,87 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         if (file) formData.append('upload_file', file);
-        await apiFetch('/api/lessons', { method: 'POST', body: formData });
+        createdLesson = await apiFetch<{ id: number }>('/api/lessons', { method: 'POST', body: formData });
+      }
+      setActiveLessonId(createdLesson.id);
+      if (classId) {
+        await loadFeedbackWorkspace(createdLesson.id, classId);
       }
       onSuccess();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '提交失败，请重试');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSelectTemplate = (studentId: number, templateId: string) => {
+    setFeedbackStudents((prev) =>
+      prev.map((item) => (item.studentId === studentId ? { ...item, selectedTemplateId: templateId } : item)),
+    );
+  };
+
+  const handleRemarkChange = (studentId: number, remark: string) => {
+    setFeedbackStudents((prev) => prev.map((item) => (item.studentId === studentId ? { ...item, remark } : item)));
+  };
+
+  const handleAddTemplate = (draft: { label: string; guidance: string }) => {
+    const label = draft.label.trim();
+    const guidance = draft.guidance.trim();
+    if (!label || !guidance) {
+      return;
+    }
+    const templateId = `custom-${Date.now()}`;
+    setFeedbackTemplates((prev) => [...prev, { id: templateId, label, guidance, isCustom: true }]);
+  };
+
+  const handleAddStudent = async (name: string) => {
+    if (!classId || !activeLessonId) {
+      return;
+    }
+    await createClassStudent(classId, name);
+    await loadFeedbackWorkspace(activeLessonId, classId);
+  };
+
+  const handleRemoveStudent = async (studentId: number) => {
+    if (!classId || !activeLessonId) {
+      return;
+    }
+    await deleteClassStudent(classId, studentId);
+    await loadFeedbackWorkspace(activeLessonId, classId);
+  };
+
+  const handleGenerateFeedbackDraft = async () => {
+    if (!activeLessonId) {
+      return;
+    }
+    setIsGeneratingFeedback(true);
+    try {
+      const payload = buildTeacherFeedbackSavePayload({
+        mergedText: feedbackText,
+        students: feedbackStudents,
+        customTemplates: feedbackTemplates,
+      });
+      const draft = await generateLessonFeedbackDraft(activeLessonId, {
+        students: payload.students,
+        custom_templates: payload.custom_templates,
+      });
+      setFeedbackText(draft.merged_text ?? '');
+      setFeedbackStatusMessage(`已生成 ${draft.students_included} 名学生反馈，跳过 ${draft.students_skipped} 名。`);
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '生成课后反馈失败，请重试。');
+    } finally {
+      setIsGeneratingFeedback(false);
+    }
+  };
+
+  const handleCopyAllFeedback = async () => {
+    try {
+      await saveFeedbackWorkspace();
+      await navigator.clipboard.writeText(feedbackText);
+      setFeedbackStatusMessage('课后反馈已复制到剪贴板。');
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '复制失败，请重试。');
     }
   };
 
@@ -1911,6 +2071,27 @@ const LessonInput = ({ onSuccess, currentUser }: { onSuccess: () => void; curren
                 </button>
               </div>
             </div>
+
+            {activeLessonId && classId ? (
+              <TeacherFeedbackWorkspace
+                students={feedbackStudents}
+                templates={feedbackTemplates}
+                feedbackText={feedbackText}
+                generateLabel="生成课后反馈草稿"
+                isLoadingStudents={isLoadingFeedbackStudents}
+                isGenerating={isGeneratingFeedback}
+                isSaving={isSavingFeedback}
+                statusMessage={feedbackStatusMessage}
+                onSelectTemplate={handleSelectTemplate}
+                onRemarkChange={handleRemarkChange}
+                onFeedbackTextChange={setFeedbackText}
+                onAddTemplate={handleAddTemplate}
+                onAddStudent={handleAddStudent}
+                onRemoveStudent={handleRemoveStudent}
+                onGenerate={handleGenerateFeedbackDraft}
+                onCopyAll={handleCopyAllFeedback}
+              />
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
