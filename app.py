@@ -47,6 +47,7 @@ CORS(app, resources={r"/api/*": {"origins": [
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
+    actor_can_manage_user,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -72,17 +73,22 @@ from lesson_manager import (
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
     get_questions,
+    get_registration_request,
+    get_user_by_id,
     get_user_class_ids,
     init_db,
-    list_all_users,
     list_class_teacher_bindings,
     list_classes,
+    list_classes_for_actor,
     list_consultation_teachers,
-    list_consultations,
+    list_consultations_for_actor,
     list_lessons,
+    list_lessons_for_actor,
+    list_organizations,
     list_organization_requests,
     list_students_for_class,
-    list_registration_requests,
+    list_registration_requests_for_actor,
+    list_users_for_actor,
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
     normalize_consultation_batch_parse_result,
@@ -95,6 +101,7 @@ from lesson_manager import (
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
+    update_user_display_name_for_actor,
     update_class,
     update_consultation,
     update_user_profile,
@@ -954,11 +961,29 @@ def _organization_invite_response_payload(invite: dict) -> dict:
     }
 
 
-def _can_access_wrong_question_record(user, record: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+def _can_access_wrong_question_record(
+    user,
+    record: object,
+    owned_class_ids: Optional[Set[int]] = None,
+    allowed_user_ids: Optional[Set[int]] = None,
+) -> bool:
+    if user.get("role") == "super_owner":
         return True
     if not isinstance(record, dict):
         return False
+
+    if user.get("role") in {"owner", "admin"}:
+        scoped_class_ids = owned_class_ids
+        if scoped_class_ids is None:
+            scoped_class_ids = {item["id"] for item in list_classes_for_actor(user)}
+        scoped_user_ids = allowed_user_ids
+        if scoped_user_ids is None:
+            scoped_user_ids = {item["id"] for item in list_users_for_actor(user)}
+        teacher_user_id = record.get("teacher_user_id")
+        if isinstance(teacher_user_id, int) and teacher_user_id in scoped_user_ids:
+            return True
+        class_id = record.get("class_id")
+        return isinstance(class_id, int) and class_id in scoped_class_ids
 
     teacher_user_id = record.get("teacher_user_id")
     if isinstance(teacher_user_id, int) and teacher_user_id == user.get("id"):
@@ -1016,8 +1041,24 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
 def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
     if not isinstance(items, list):
         return []
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return [item for item in items if isinstance(item, dict)]
+    if user.get("role") in {"owner", "admin"}:
+        scoped_classes = list_classes_for_actor(user)
+        scoped_users = list_users_for_actor(user)
+        scoped_class_ids = {item["id"] for item in scoped_classes}
+        scoped_user_ids = {item["id"] for item in scoped_users}
+        return [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and _can_access_wrong_question_record(
+                user,
+                item,
+                scoped_class_ids,
+                scoped_user_ids,
+            )
+        ]
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [
@@ -1028,18 +1069,26 @@ def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
 
 
 def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return classes
+    if user.get("role") in {"owner", "admin"}:
+        return [
+            item
+            for item in classes
+            if item.get("organization_id") == user.get("organization_id")
+        ]
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [item for item in classes if item.get("id") in owned_class_ids]
 
 
 def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return True
     if not isinstance(lesson, dict):
         return False
+    if user.get("role") in {"owner", "admin"}:
+        return lesson.get("organization_id") == user.get("organization_id")
 
     class_id = lesson.get("class_id")
     if not isinstance(class_id, int):
@@ -1054,8 +1103,14 @@ def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]]
 def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
     if not isinstance(lessons, list):
         return []
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return [item for item in lessons if isinstance(item, dict)]
+    if user.get("role") in {"owner", "admin"}:
+        return [
+            item
+            for item in lessons
+            if isinstance(item, dict) and item.get("organization_id") == user.get("organization_id")
+        ]
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [
@@ -1346,10 +1401,10 @@ def api_organization_invite_reset():
 
 @app.route("/api/admin/registration-requests", methods=["GET"])
 def api_admin_registration_requests():
-    _, error = _require_owner()
+    user, error = _require_owner()
     if error:
         return error
-    return jsonify({"items": list_registration_requests("pending")})
+    return jsonify({"items": list_registration_requests_for_actor(user, "pending")})
 
 
 @app.route("/api/admin/registration-requests/<int:request_id>/approve", methods=["POST"])
@@ -1357,6 +1412,14 @@ def api_admin_registration_request_approve(request_id):
     user, error = _require_owner()
     if error:
         return error
+    registration_request = get_registration_request(request_id)
+    if not registration_request:
+        return jsonify({"error": "申请不存在"}), 404
+    if (
+        user.get("role") != "super_owner"
+        and registration_request.get("organization_id") != user.get("organization_id")
+    ):
+        return jsonify({"error": "申请不存在"}), 404
     try:
         approved = approve_registration_request(request_id=request_id, reviewer_id=user["id"])
     except LookupError as exc:
@@ -1371,6 +1434,14 @@ def api_admin_registration_request_reject(request_id):
     user, error = _require_owner()
     if error:
         return error
+    registration_request = get_registration_request(request_id)
+    if not registration_request:
+        return jsonify({"error": "申请不存在"}), 404
+    if (
+        user.get("role") != "super_owner"
+        and registration_request.get("organization_id") != user.get("organization_id")
+    ):
+        return jsonify({"error": "申请不存在"}), 404
     try:
         reject_registration_request(request_id=request_id, reviewer_id=user["id"])
     except LookupError as exc:
@@ -1382,19 +1453,27 @@ def api_admin_registration_request_reject(request_id):
 
 @app.route("/api/admin/users", methods=["GET"])
 def api_admin_users():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    users = list_all_users()
+    users = list_users_for_actor(user)
     return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
 
 
 @app.route("/api/admin/member-binding-summary", methods=["GET"])
 def api_admin_member_binding_summary():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    return jsonify({"items": master_data.list_member_binding_summaries()})
+    return jsonify({"items": master_data.list_member_binding_summaries(actor_user=user)})
+
+
+@app.route("/api/admin/organizations", methods=["GET"])
+def api_admin_organizations():
+    _, error = _require_super_owner()
+    if error:
+        return error
+    return jsonify({"items": list_organizations()})
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
@@ -1408,6 +1487,11 @@ def api_admin_user_role_set(user_id):
         return jsonify({"error": "role must be owner, admin or member"}), 400
     if role == "owner" and user.get("role") != "super_owner":
         return jsonify({"error": "无权限"}), 403
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner" and not actor_can_manage_user(user, target_user):
+        return jsonify({"error": "user not found"}), 404
     try:
         update_user_role(user_id, role)
     except LookupError as exc:
@@ -1421,21 +1505,38 @@ def api_admin_user_role_set(user_id):
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["GET"])
 def api_admin_user_classes_get(user_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner" and target_user.get("organization_id") != user.get("organization_id"):
+        return jsonify({"error": "user not found"}), 404
     return jsonify({"class_ids": get_user_class_ids(user_id)})
 
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["PUT"])
 def api_admin_user_classes_set(user_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     data = request.json or {}
     class_ids = data.get("class_ids", [])
     if not isinstance(class_ids, list):
         return jsonify({"error": "class_ids must be a list"}), 400
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner" and target_user.get("organization_id") != user.get("organization_id"):
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner":
+        for class_id in class_ids:
+            cls = get_class(class_id)
+            if not cls:
+                return jsonify({"error": f"class not found: {class_id}"}), 404
+            if cls.get("organization_id") != user.get("organization_id"):
+                return jsonify({"error": "class not found"}), 404
     try:
         set_user_class_ids(user_id, class_ids)
     except ValueError as exc:
@@ -1443,6 +1544,22 @@ def api_admin_user_classes_set(user_id):
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:user_id>/profile", methods=["PUT"])
+def api_admin_user_profile_update(user_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    display_name = (data.get("display_name") or "").strip()
+    try:
+        updated_user = update_user_display_name_for_actor(user, user_id, display_name)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True, "user": updated_user})
 
 
 @app.route("/api/master-data/mappings/wrong-questions", methods=["GET"])
@@ -1621,10 +1738,10 @@ def api_wrong_question_review_save(record_id):
 
 @app.route("/api/consultations", methods=["GET"])
 def api_consultations_list():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_consultations(query=request.args.get("q", "")))
+    return jsonify(list_consultations_for_actor(user, query=request.args.get("q", "")))
 
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
@@ -1670,10 +1787,13 @@ def api_consultation_teachers():
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["GET"])
 def api_consultation_get(consultation_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    item = get_consultation(consultation_id)
+    item = get_consultation(
+        consultation_id,
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+    )
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
@@ -1681,19 +1801,23 @@ def api_consultation_get(consultation_id):
 
 @app.route("/api/consultations", methods=["POST"])
 def api_consultation_create():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    item = create_consultation(request.json or {})
+    item = create_consultation(request.json or {}, user["organization_id"])
     return jsonify(item), 201
 
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["PUT"])
 def api_consultation_update(consultation_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    item = update_consultation(consultation_id, request.json or {})
+    item = update_consultation(
+        consultation_id,
+        request.json or {},
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+    )
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
@@ -1701,10 +1825,13 @@ def api_consultation_update(consultation_id):
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["DELETE"])
 def api_consultation_delete(consultation_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    deleted = delete_consultation(consultation_id)
+    deleted = delete_consultation(
+        consultation_id,
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+    )
     if not deleted:
         return jsonify({"error": "not found"}), 404
     return jsonify({"ok": True})
@@ -1712,17 +1839,28 @@ def api_consultation_delete(consultation_id):
 
 @app.route("/api/stats")
 def api_stats():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     month_now = datetime.now().strftime("%Y-%m")
-    all_lessons = list_lessons()
+    all_lessons = list_lessons_for_actor(user)
     total_pdfs = sum(1 for l in all_lessons if l.get("pdf_path") and Path(l["pdf_path"]).exists())
     with get_conn() as conn:
-        total_questions = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        if user.get("role") == "super_owner":
+            total_questions = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        else:
+            total_questions = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM questions q
+                JOIN lessons l ON l.id = q.lesson_id
+                WHERE l.organization_id=?
+                """,
+                (user["organization_id"],),
+            ).fetchone()[0]
     return jsonify({
         "total_lessons": len(all_lessons),
-        "month_lessons": len(list_lessons(month_now)),
+        "month_lessons": len(list_lessons_for_actor(user, month_str=month_now)),
         "total_pdfs": total_pdfs,
         "total_questions": total_questions,
     })
@@ -1733,12 +1871,12 @@ def api_classes_list():
     user, error = _require_auth()
     if error:
         return error
-    return jsonify(_filter_classes_for_user(user, list_classes()))
+    return jsonify(list_classes_for_actor(user) if user.get("role") in {"super_owner", "owner", "admin"} else _filter_classes_for_user(user, list_classes()))
 
 
 @app.route("/api/classes", methods=["POST"])
 def api_class_create():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     data = request.json or {}
@@ -1751,6 +1889,7 @@ def api_class_create():
         grade=data.get("grade", "").strip(),
         teacher_name=data.get("teacher_name", "").strip(),
         teacher_email=data.get("teacher_email", "").strip(),
+        organization_id=user.get("organization_id"),
     )
     return jsonify({"id": cid, "name": name}), 201
 
@@ -1765,13 +1904,15 @@ def api_class_teacher_bindings_list():
 
 @app.route("/api/classes/<int:class_id>", methods=["GET"])
 def api_class_get(class_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
-    lessons = list_lessons(class_id=class_id)
+    if not _filter_classes_for_user(user, [cls]):
+        return jsonify({"error": "forbidden"}), 403
+    lessons = list_lessons_for_actor(user, class_id=class_id)
     return jsonify({**cls, "lessons": lessons})
 
 
@@ -1822,11 +1963,18 @@ def api_class_students_delete(class_id, student_id):
 
 @app.route("/api/classes/<int:class_id>/teacher", methods=["PUT"])
 def api_class_teacher_set(class_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
+    _, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
     data = request.json or {}
     teacher_user_id = data.get("teacher_user_id")
+    if teacher_user_id is not None and user.get("role") != "super_owner":
+        teacher_user = get_user_by_id(teacher_user_id)
+        if not teacher_user or teacher_user.get("organization_id") != user.get("organization_id"):
+            return jsonify({"error": "user not found"}), 404
     try:
         set_class_teacher_user_id(class_id, teacher_user_id)
     except ValueError as exc:
@@ -1840,12 +1988,14 @@ def api_class_teacher_set(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
 def api_class_update(class_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
+    if not _filter_classes_for_user(user, [cls]):
+        return jsonify({"error": "forbidden"}), 403
     data = request.json or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -1869,12 +2019,14 @@ def api_class_update(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["DELETE"])
 def api_class_delete(class_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
+    if not _filter_classes_for_user(user, [cls]):
+        return jsonify({"error": "forbidden"}), 403
     db_delete_class(class_id)
     return jsonify({"ok": True})
 
@@ -1886,9 +2038,10 @@ def api_lessons_list():
         return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
-    lessons = list_lessons(
-        month_str=month if month else None,
-        class_id=class_id if class_id else None,
+    lessons = list_lessons_for_actor(
+        user,
+        month_str=month if month else "",
+        class_id=class_id if class_id else 0,
     )
     return jsonify(_filter_lessons_for_user(user, lessons))
 
