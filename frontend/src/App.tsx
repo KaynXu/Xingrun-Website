@@ -176,6 +176,16 @@ interface OrganizationInviteInfo {
   join_path?: string;
 }
 
+interface OrganizationSummaryItem {
+  id: number;
+  name: string;
+  created_at: string;
+  member_count: number;
+  owner_count: number;
+  class_count: number;
+  lesson_count: number;
+}
+
 interface UserItem {
   id: number;
   name: string;
@@ -3665,15 +3675,21 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationSummaryItem[]>([]);
   const [bindingSummaryByUserId, setBindingSummaryByUserId] = useState<Record<number, MemberBindingSummary>>({});
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [organizationsLoading, setOrganizationsLoading] = useState(currentUser.role === 'super_owner');
   const [bindingSummaryLoading, setBindingSummaryLoading] = useState(true);
   const [error, setError] = useState('');
   const [usersError, setUsersError] = useState('');
+  const [organizationsError, setOrganizationsError] = useState('');
   const [bindingSummaryError, setBindingSummaryError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
   const [roleSavingUserId, setRoleSavingUserId] = useState<number | null>(null);
+  const [editingDisplayNameUserId, setEditingDisplayNameUserId] = useState<number | null>(null);
+  const [pendingDisplayName, setPendingDisplayName] = useState('');
+  const [displayNameSavingUserId, setDisplayNameSavingUserId] = useState<number | null>(null);
   const [organizationRequests, setOrganizationRequests] = useState<OrganizationRequestItem[]>([]);
   const [organizationRequestsLoading, setOrganizationRequestsLoading] = useState(currentUser.role === 'super_owner');
   const [organizationRequestsError, setOrganizationRequestsError] = useState('');
@@ -3708,6 +3724,26 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
       setUsersLoading(false);
     }
   }, []);
+
+  const loadOrganizations = useCallback(async () => {
+    if (currentUser.role !== 'super_owner') {
+      setOrganizations([]);
+      setOrganizationsLoading(false);
+      return;
+    }
+
+    setOrganizationsLoading(true);
+    setOrganizationsError('');
+    try {
+      const data = await apiFetch<{ items: OrganizationSummaryItem[] }>('/api/admin/organizations');
+      setOrganizations(data.items);
+    } catch (err) {
+      setOrganizations([]);
+      setOrganizationsError(err instanceof Error ? err.message : '已注册机构加载失败');
+    } finally {
+      setOrganizationsLoading(false);
+    }
+  }, [currentUser.role]);
 
   const loadBindingSummaries = useCallback(async () => {
     setBindingSummaryLoading(true);
@@ -3770,10 +3806,11 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
   useEffect(() => {
     loadItems().catch(() => undefined);
     loadUsers().catch(() => undefined);
+    loadOrganizations().catch(() => undefined);
     loadBindingSummaries().catch(() => undefined);
     loadOrganizationRequests().catch(() => undefined);
     loadOrganizationInvite().catch(() => undefined);
-  }, [loadItems, loadUsers, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
+  }, [loadItems, loadUsers, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
 
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
@@ -3799,6 +3836,7 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
       });
       setOrganizationRequests((current) => current.filter((item) => item.id !== requestId));
       loadUsers().catch(() => undefined);
+      loadOrganizations().catch(() => undefined);
     } catch (err) {
       setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批处理失败');
     } finally {
@@ -3856,6 +3894,44 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
       setUsersError(err instanceof Error ? err.message : '成员权限更新失败');
     } finally {
       setRoleSavingUserId(null);
+    }
+  };
+
+  const handleStartDisplayNameEdit = (userId: number, currentName: string) => {
+    setEditingDisplayNameUserId(userId);
+    setPendingDisplayName(currentName);
+    setUsersError('');
+  };
+
+  const handleCancelDisplayNameEdit = () => {
+    setEditingDisplayNameUserId(null);
+    setPendingDisplayName('');
+  };
+
+  const handleSaveDisplayName = async (userId: number) => {
+    const nextDisplayName = pendingDisplayName.trim();
+    if (!nextDisplayName) {
+      setUsersError('姓名不能为空');
+      return;
+    }
+
+    const currentName = users.find((user) => user.id === userId)?.name ?? '';
+    setDisplayNameSavingUserId(userId);
+    setUsersError('');
+    setUsers((current) => current.map((user) => (user.id === userId ? { ...user, name: nextDisplayName } : user)));
+
+    try {
+      await apiFetch(`/api/admin/users/${userId}/profile`, {
+        method: 'PUT',
+        body: JSON.stringify({ display_name: nextDisplayName }),
+      });
+      setEditingDisplayNameUserId(null);
+      setPendingDisplayName('');
+    } catch (err) {
+      setUsers((current) => current.map((user) => (user.id === userId ? { ...user, name: currentName } : user)));
+      setUsersError(err instanceof Error ? err.message : '成员姓名更新失败');
+    } finally {
+      setDisplayNameSavingUserId(null);
     }
   };
 
@@ -3995,6 +4071,72 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
           ) : (
             <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
               当前没有可用的邀请码信息。
+            </div>
+          )}
+        </section>
+      )}
+
+      {currentUser.role === 'super_owner' && (
+        <section className={`${workspaceCardClass} p-6`}>
+          <div className="flex flex-col gap-4 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
+            <div>
+              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">已注册机构</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                查看已经开通的机构规模，快速确认负责人、成员和班级是否已正常落库。
+              </p>
+            </div>
+            <button onClick={() => loadOrganizations().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+              刷新机构列表
+            </button>
+          </div>
+
+          {organizationsError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <AlertCircle size={16} />
+              {organizationsError}
+            </div>
+          )}
+
+          {organizationsLoading ? (
+            <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载已注册机构...</div>
+          ) : organizations.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前还没有已开通机构。
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {organizations.map((organization) => (
+                <div key={organization.id} className={`${workspaceSoftCardClass} p-5`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h5 className="text-lg font-semibold text-slate-900 dark:text-white">{organization.name}</h5>
+                      <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">开通时间</p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{organization.created_at}</p>
+                    </div>
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
+                      已开通
+                    </span>
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">成员</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{organization.member_count}</p>
+                    </div>
+                    <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责人</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{organization.owner_count}</p>
+                    </div>
+                    <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">班级</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{organization.class_count}</p>
+                    </div>
+                    <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">课程记录</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{organization.lesson_count}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
@@ -4144,6 +4286,8 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
             <div className="mt-5 space-y-4">
               {users.map((user) => {
                 const busy = roleSavingUserId === user.id;
+                const displayNameBusy = displayNameSavingUserId === user.id;
+                const editingName = editingDisplayNameUserId === user.id;
                 const bindingSummary = bindingSummaryByUserId[user.id];
                 const responsibleClasses = bindingSummary?.responsible_classes ?? [];
                 const bindingStatus = bindingSummary?.mapping_summary.status ?? 'incomplete';
@@ -4163,7 +4307,34 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                          {editingName ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                value={pendingDisplayName}
+                                onChange={(event) => setPendingDisplayName(event.target.value)}
+                                className="min-w-[220px] rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:focus:border-sky-400 dark:focus:ring-sky-500/20"
+                                placeholder="输入成员姓名"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveDisplayName(user.id)}
+                                disabled={displayNameBusy}
+                                className={workspacePrimaryButtonClass}
+                              >
+                                {displayNameBusy ? '保存中...' : '保存姓名'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelDisplayNameEdit}
+                                disabled={displayNameBusy}
+                                className={workspaceSecondaryButtonClass}
+                              >
+                                取消
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-lg font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                          )}
                           <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
                             {getRoleLabel(user.role)}
                           </span>
@@ -4215,6 +4386,16 @@ const ApprovalPage = ({ currentUser, onStartBinding }: ApprovalPageProps) => {
                         >
                           开始绑定
                         </button>
+                        {user.role !== 'super_owner' && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartDisplayNameEdit(user.id, user.name)}
+                            disabled={displayNameBusy || busy}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            编辑姓名
+                          </button>
+                        )}
                         {roleFixed ? (
                           <span className="text-sm text-slate-500 dark:text-slate-400">
                             {user.role === 'super_owner' ? '超级管理员权限固定，不可调整' : '机构负责人权限仅可由超级管理员调整'}

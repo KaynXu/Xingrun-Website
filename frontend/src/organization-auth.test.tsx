@@ -29,6 +29,8 @@ test('approval page source includes organization review and invite management se
   assert.match(approvalBlock[0], /机构邀请设置/);
   assert.match(approvalBlock[0], /apiFetch<OrganizationInviteInfo>\('\/api\/organization\/invite'\)/);
   assert.match(approvalBlock[0], /apiFetch<OrganizationInviteInfo>\('\/api\/organization\/invite\/reset'/);
+  assert.match(approvalBlock[0], /apiFetch<\{ items: OrganizationSummaryItem\[] \}>\('\/api\/admin\/organizations'\)/);
+  assert.match(approvalBlock[0], /已注册机构/);
 });
 
 test('organization application success copy stays neutral and does not mention a specific reviewer name', () => {
