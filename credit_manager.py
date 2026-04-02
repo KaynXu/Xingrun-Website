@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import sqlite3
+
 import lesson_manager
 
 CREDIT_PRICING_RULES = {
@@ -69,3 +72,194 @@ def record_ai_charge(
 
 def list_member_usage_summary(organization_id: int) -> list[dict]:
     return lesson_manager.list_member_usage_summary_rows(organization_id)
+
+
+def list_credit_ledger(organization_id: int, *, limit: int = 100) -> list[dict]:
+    normalized_limit = max(1, min(int(limit), 500))
+    with lesson_manager.get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM organization_credit_ledger
+            WHERE organization_id=?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (organization_id, normalized_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_member_usage_detail(organization_id: int, user_id: int, *, limit: int = 200) -> list[dict]:
+    normalized_limit = max(1, min(int(limit), 500))
+    with lesson_manager.get_conn() as conn:
+        belongs_to_org = conn.execute(
+            "SELECT 1 FROM users WHERE id=? AND organization_id=? LIMIT 1",
+            (user_id, organization_id),
+        ).fetchone()
+        if not belongs_to_org:
+            return []
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                feature_key,
+                provider,
+                model,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                credit_cost_final,
+                source_record_type,
+                source_record_id,
+                request_id,
+                created_at
+            FROM ai_usage_ledger
+            WHERE organization_id=? AND user_id=?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (organization_id, user_id, normalized_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def redeem_xhs_order(
+    *,
+    organization_id: int,
+    actor_user_id: int,
+    platform_order_id: str,
+    phone_suffix: str,
+    order_payload: dict,
+) -> dict:
+    normalized_order_id = (platform_order_id or "").strip()
+    normalized_suffix = (phone_suffix or "").strip()
+    if not normalized_order_id or not normalized_suffix:
+        raise ValueError("platform_order_id and phone_suffix are required")
+    if not isinstance(order_payload, dict):
+        raise ValueError("order payload is invalid")
+
+    buyer_phone = str(order_payload.get("buyer_masked_phone") or "").strip()
+    if not buyer_phone or not buyer_phone.endswith(normalized_suffix):
+        raise ValueError("order verification does not match phone suffix")
+
+    order_status = str(order_payload.get("order_status") or "").strip().lower()
+    if order_status != "paid":
+        raise ValueError("order is not paid")
+
+    credit_amount = int(order_payload.get("credit_amount") or 0)
+    if credit_amount <= 0:
+        raise ValueError("credit_amount must be positive")
+
+    product_id = str(order_payload.get("product_id") or "").strip()
+    sku_id = str(order_payload.get("sku_id") or "").strip()
+    product_name = str(order_payload.get("product_name") or "").strip()
+    paid_amount = int(order_payload.get("paid_amount") or 0)
+    currency = str(order_payload.get("currency") or "CNY").strip() or "CNY"
+    raw_order_payload = order_payload.get("raw_order_payload", order_payload)
+
+    with lesson_manager.get_conn() as conn:
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM xhs_order_redemptions
+            WHERE platform='xiaohongshu' AND platform_order_id=?
+            LIMIT 1
+            """,
+            (normalized_order_id,),
+        ).fetchone()
+        if existing and existing["redeem_status"] == "redeemed":
+            raise ValueError("order already redeemed")
+
+        raw_payload_json = json.dumps(raw_order_payload, ensure_ascii=False)
+
+        if existing:
+            redemption_id = int(existing["id"])
+            conn.execute(
+                """
+                UPDATE xhs_order_redemptions
+                SET product_id=?,
+                    sku_id=?,
+                    product_name=?,
+                    paid_amount=?,
+                    currency=?,
+                    buyer_masked_phone=?,
+                    order_status=?,
+                    redeem_status='redeemed',
+                    credit_amount=?,
+                    redeemed_organization_id=?,
+                    redeemed_by_user_id=?,
+                    redeemed_at=datetime('now','localtime'),
+                    raw_order_payload=?,
+                    updated_at=datetime('now','localtime')
+                WHERE id=?
+                """,
+                (
+                    product_id,
+                    sku_id,
+                    product_name,
+                    paid_amount,
+                    currency,
+                    buyer_phone,
+                    order_status,
+                    credit_amount,
+                    organization_id,
+                    actor_user_id,
+                    raw_payload_json,
+                    redemption_id,
+                ),
+            )
+        else:
+            try:
+                cur = conn.execute(
+                    """
+                    INSERT INTO xhs_order_redemptions
+                        (platform, platform_order_id, product_id, sku_id, product_name, paid_amount, currency,
+                         buyer_masked_phone, order_status, redeem_status, credit_amount, redeemed_organization_id,
+                         redeemed_by_user_id, redeemed_at, raw_order_payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'redeemed', ?, ?, ?, datetime('now','localtime'), ?)
+                    """,
+                    (
+                        "xiaohongshu",
+                        normalized_order_id,
+                        product_id,
+                        sku_id,
+                        product_name,
+                        paid_amount,
+                        currency,
+                        buyer_phone,
+                        order_status,
+                        credit_amount,
+                        organization_id,
+                        actor_user_id,
+                        raw_payload_json,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("order already redeemed") from exc
+            redemption_id = int(cur.lastrowid)
+
+        row = conn.execute(
+            "SELECT * FROM xhs_order_redemptions WHERE id=?",
+            (redemption_id,),
+        ).fetchone()
+        if not row:
+            raise LookupError("redemption not found")
+        redemption = dict(row)
+
+        lesson_manager._insert_credit_ledger_entry_with_conn(
+            conn,
+            organization_id=organization_id,
+            direction="credit",
+            amount=credit_amount,
+            source_type="xhs_order_redeem",
+            source_id=str(redemption_id),
+            note=normalized_order_id,
+            operator_user_id=actor_user_id,
+        )
+
+    return {
+        "redemption": redemption,
+        "overview": get_credit_overview(organization_id),
+    }

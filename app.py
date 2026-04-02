@@ -105,6 +105,14 @@ from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
 import master_data
 from ai_processor import generate_teacher_feedback_draft
+from credit_manager import (
+    get_credit_overview,
+    list_credit_ledger,
+    list_member_usage_detail,
+    list_member_usage_summary,
+    redeem_xhs_order,
+)
+from xhs_open_platform import fetch_xhs_order_for_redemption
 
 init_db()
 
@@ -1245,6 +1253,77 @@ def _get_json_object_payload():
     if not isinstance(data, dict):
         return None, (jsonify({"error": "request body must be a JSON object"}), 400)
     return data, None
+
+
+@app.route("/api/credits/overview", methods=["GET"])
+def api_credit_overview():
+    user, error = _require_owner()
+    if error:
+        return error
+    return jsonify(get_credit_overview(user["organization_id"]))
+
+
+@app.route("/api/credits/ledger", methods=["GET"])
+def api_credit_ledger():
+    user, error = _require_owner()
+    if error:
+        return error
+    limit = request.args.get("limit", "100")
+    try:
+        items = list_credit_ledger(user["organization_id"], limit=int(limit))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be a positive integer"}), 400
+    return jsonify({"items": items})
+
+
+@app.route("/api/credits/member-usage", methods=["GET"])
+def api_credit_member_usage():
+    user, error = _require_owner()
+    if error:
+        return error
+    return jsonify({"items": list_member_usage_summary(user["organization_id"])})
+
+
+@app.route("/api/credits/member-usage/<int:user_id>", methods=["GET"])
+def api_credit_member_usage_detail(user_id: int):
+    user, error = _require_owner()
+    if error:
+        return error
+    return jsonify({"items": list_member_usage_detail(user["organization_id"], user_id)})
+
+
+@app.route("/api/credits/redeem/xhs", methods=["POST"])
+def api_credit_redeem_xhs():
+    user, error = _require_owner()
+    if error:
+        return error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    platform_order_id = str(data.get("platform_order_id", "")).strip()
+    phone_suffix = str(data.get("phone_suffix", "")).strip()
+    if not platform_order_id or not phone_suffix:
+        return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
+    if len(phone_suffix) != 4 or not phone_suffix.isdigit():
+        return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
+
+    try:
+        order_payload = fetch_xhs_order_for_redemption(
+            platform_order_id=platform_order_id,
+            phone_suffix=phone_suffix,
+        )
+        result = redeem_xhs_order(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+            platform_order_id=platform_order_id,
+            phone_suffix=phone_suffix,
+            order_payload=order_payload,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result)
 
 
 @app.route("/api/me", methods=["GET"])

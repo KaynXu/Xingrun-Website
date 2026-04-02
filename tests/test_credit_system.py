@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 import config_runtime
 import credit_manager
 import lesson_manager
+import app as app_module
 
 
 class CreditSystemServiceTestCase(unittest.TestCase):
@@ -275,3 +276,248 @@ class CreditSystemServiceTestCase(unittest.TestCase):
             ).fetchone()
         self.assertEqual(usage_count["total"], 1)
         self.assertEqual(debit_count["total"], 1)
+
+
+class CreditSystemApiTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        lesson_manager.DB_PATH = self.base / "lessons.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({})
+        lesson_manager.init_db()
+        self.client = app_module.app.test_client()
+        login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(login.status_code, 200)
+        payload = login.get_json()
+        self.assertIsNotNone(payload)
+        self.owner_token = payload["token"]
+        self.owner_user = payload["user"]
+
+    def tearDown(self):
+        gc.collect()
+        self.temp_dir.cleanup()
+
+    @staticmethod
+    def auth_headers(token: str) -> dict[str, str]:
+        return {"X-Auth-Token": token}
+
+    def _create_member_token(self) -> str:
+        submit = self.client.post(
+            "/api/register-request",
+            json={
+                "username": "member_credit_api",
+                "display_name": "Member Credit Api",
+                "password": "secret123",
+                "organization_name": self.owner_user["organization_name"],
+            },
+        )
+        self.assertEqual(submit.status_code, 201)
+
+        pending = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(pending.status_code, 200)
+        pending_payload = pending.get_json()
+        self.assertIsNotNone(pending_payload)
+        request_id = None
+        for item in pending_payload["items"]:
+            if item["username"] == "member_credit_api":
+                request_id = item["id"]
+                break
+        self.assertIsNotNone(request_id)
+
+        approve = self.client.post(
+            f"/api/admin/registration-requests/{request_id}/approve",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(approve.status_code, 200)
+
+        login = self.client.post(
+            "/api/login",
+            json={"username": "member_credit_api", "password": "secret123"},
+        )
+        self.assertEqual(login.status_code, 200)
+        login_payload = login.get_json()
+        self.assertIsNotNone(login_payload)
+        return login_payload["token"]
+
+    @patch("app.fetch_xhs_order_for_redemption")
+    def test_owner_can_redeem_paid_xhs_order_once(self, mock_fetch):
+        mock_fetch.return_value = {
+            "platform_order_id": "XHS-1001",
+            "product_id": "sku-credit-300",
+            "sku_id": "sku-credit-300",
+            "product_name": "300 points pack",
+            "paid_amount": 9900,
+            "currency": "CNY",
+            "buyer_masked_phone": "13800001234",
+            "order_status": "paid",
+            "credit_amount": 300,
+            "raw_order_payload": {"status": "paid"},
+        }
+
+        redeem = self.client.post(
+            "/api/credits/redeem/xhs",
+            headers=self.auth_headers(self.owner_token),
+            json={"platform_order_id": "XHS-1001", "phone_suffix": "1234"},
+        )
+        self.assertEqual(redeem.status_code, 200)
+        payload = redeem.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["overview"]["credit_balance"], 300)
+
+        duplicate = self.client.post(
+            "/api/credits/redeem/xhs",
+            headers=self.auth_headers(self.owner_token),
+            json={"platform_order_id": "XHS-1001", "phone_suffix": "1234"},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+    def test_redeem_requires_platform_order_and_phone_suffix(self):
+        invalid_order = self.client.post(
+            "/api/credits/redeem/xhs",
+            headers=self.auth_headers(self.owner_token),
+            json={"platform_order_id": "", "phone_suffix": "1234"},
+        )
+        invalid_suffix = self.client.post(
+            "/api/credits/redeem/xhs",
+            headers=self.auth_headers(self.owner_token),
+            json={"platform_order_id": "XHS-REQ", "phone_suffix": "12"},
+        )
+
+        self.assertEqual(invalid_order.status_code, 400)
+        self.assertEqual(invalid_suffix.status_code, 400)
+
+    def test_credit_routes_require_owner_access(self):
+        member_token = self._create_member_token()
+        routes = [
+            ("get", "/api/credits/overview", None),
+            ("get", "/api/credits/ledger", None),
+            ("get", "/api/credits/member-usage", None),
+            ("get", "/api/credits/member-usage/1", None),
+            ("post", "/api/credits/redeem/xhs", {"platform_order_id": "XHS-401", "phone_suffix": "1234"}),
+        ]
+        for method, route, body in routes:
+            response = self.client.open(
+                route,
+                method=method.upper(),
+                headers=self.auth_headers(member_token),
+                json=body,
+            )
+            self.assertEqual(response.status_code, 403, route)
+
+    @patch("app.fetch_xhs_order_for_redemption")
+    def test_credit_center_read_apis_return_overview_ledger_member_summary_and_member_detail(self, mock_fetch):
+        mock_fetch.return_value = {
+            "platform_order_id": "XHS-2002",
+            "product_id": "sku-credit-100",
+            "sku_id": "sku-credit-100",
+            "product_name": "100 points pack",
+            "paid_amount": 3900,
+            "currency": "CNY",
+            "buyer_masked_phone": "13600005678",
+            "order_status": "paid",
+            "credit_amount": 100,
+            "raw_order_payload": {"status": "paid"},
+        }
+        redeem = self.client.post(
+            "/api/credits/redeem/xhs",
+            headers=self.auth_headers(self.owner_token),
+            json={"platform_order_id": "XHS-2002", "phone_suffix": "5678"},
+        )
+        self.assertEqual(redeem.status_code, 200)
+
+        member_request = lesson_manager.create_registration_request(
+            username="member_usage_api",
+            display_name="Member Usage Api",
+            password="secret123",
+            organization_name=self.owner_user["organization_name"],
+        )
+        member_user = lesson_manager.approve_registration_request(member_request["id"], self.owner_user["id"])
+        credit_manager.record_ai_charge(
+            organization_id=self.owner_user["organization_id"],
+            user_id=member_user["id"],
+            feature_key="teacher_feedback_draft",
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=90,
+            output_tokens=20,
+            credit_cost_final=5,
+            source_record_type="lesson",
+            source_record_id=22,
+            request_id="req-member-detail-api",
+        )
+
+        overview = self.client.get("/api/credits/overview", headers=self.auth_headers(self.owner_token))
+        ledger = self.client.get("/api/credits/ledger", headers=self.auth_headers(self.owner_token))
+        members = self.client.get("/api/credits/member-usage", headers=self.auth_headers(self.owner_token))
+        member_details = self.client.get(
+            f"/api/credits/member-usage/{member_user['id']}",
+            headers=self.auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(overview.status_code, 200)
+        self.assertEqual(ledger.status_code, 200)
+        self.assertEqual(members.status_code, 200)
+        self.assertEqual(member_details.status_code, 200)
+
+        overview_payload = overview.get_json()
+        self.assertIsNotNone(overview_payload)
+        self.assertEqual(overview_payload["credit_balance"], 95)
+
+        ledger_payload = ledger.get_json()
+        self.assertIsNotNone(ledger_payload)
+        self.assertEqual(ledger_payload["items"][0]["source_type"], "ai_usage")
+        self.assertEqual(ledger_payload["items"][1]["source_type"], "xhs_order_redeem")
+
+        members_payload = members.get_json()
+        self.assertIsNotNone(members_payload)
+        member_ids = [item["user_id"] for item in members_payload["items"]]
+        self.assertIn(member_user["id"], member_ids)
+
+        details_payload = member_details.get_json()
+        self.assertIsNotNone(details_payload)
+        self.assertEqual(details_payload["items"][0]["feature_key"], "teacher_feedback_draft")
+        self.assertEqual(details_payload["items"][0]["credit_cost_final"], 5)
+
+    def test_member_usage_detail_is_scoped_to_owner_organization(self):
+        request = lesson_manager.create_organization_request(
+            organization_name="Cross Org Academy",
+            username="cross_org_owner",
+            display_name="Cross Org Owner",
+            password="secret123",
+        )
+        other_owner, _invite = lesson_manager.approve_organization_request(request["id"], self.owner_user["id"])
+        credit_manager.apply_manual_adjustment(
+            organization_id=other_owner["organization_id"],
+            actor_user_id=other_owner["id"],
+            amount=50,
+            note="seed cross org",
+        )
+        credit_manager.record_ai_charge(
+            organization_id=other_owner["organization_id"],
+            user_id=other_owner["id"],
+            feature_key="teacher_feedback_draft",
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=60,
+            output_tokens=20,
+            credit_cost_final=5,
+            source_record_type="lesson",
+            source_record_id=31,
+            request_id="req-cross-org-usage",
+        )
+
+        response = self.client.get(
+            f"/api/credits/member-usage/{other_owner['id']}",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["items"], [])
