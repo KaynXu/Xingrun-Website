@@ -88,6 +88,13 @@ test('review generation source requires class selection before generation and ca
   assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
 });
 
+test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {
+  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?initialLesson\?: Lesson \| null;[\s\S]*?\n};/);
+
+  assert.match(lessonInputBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(lessonInputBlock, /\}, \[currentUser\.id, currentUser\.role\]\);/);
+});
+
 test('review generation source appends auth token to lesson pdf links', () => {
   assert.match(appSource, /function buildAuthedPath\(path: string\): string \{/);
   assert.match(appSource, /const token = getToken\(\);/);

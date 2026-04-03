@@ -736,79 +736,156 @@ def _write_consultation_rows(rows: list[dict]) -> None:
             writer.writerow(_normalize_consultation_row(row))
 
 
-def list_consultations(query: str = "") -> list[dict]:
-    rows = _read_consultation_rows()
+def list_consultations(query: str = "", organization_id: Optional[int] = None) -> list[dict]:
     teacher_directory = _get_consultation_teacher_directory()
-    rows.sort(
-        key=lambda row: (
-            row.get("最后更新", "") or row.get("录入时间", "") or row.get("日期", ""),
-            row.get("id", ""),
-        ),
-        reverse=True,
-    )
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM consultations"
+        params: list[object] = []
+        if organization_id is not None:
+            query_sql += " WHERE organization_id=?"
+            params.append(organization_id)
+        query_sql += " ORDER BY updated_at DESC, created_at DESC, id DESC"
+        rows = conn.execute(query_sql, params).fetchall()
+
+    serialized_rows = [
+        _consultation_storage_row_to_public_dict(row, teacher_directory)
+        for row in rows
+    ]
     keyword = (query or "").strip().lower()
     if keyword:
-        rows = [
-            row for row in rows
+        serialized_rows = [
+            row for row in serialized_rows
             if keyword in " ".join(row.get(field, "").lower() for field in CONSULTATION_FIELDNAMES)
         ]
-    return [_serialize_consultation_row(row, teacher_directory) for row in rows]
+    return serialized_rows
 
 
-def get_consultation(consultation_id: int):
+def get_consultation(consultation_id: int, organization_id: Optional[int] = None):
     teacher_directory = _get_consultation_teacher_directory()
-    target_id = str(consultation_id)
-    for row in _read_consultation_rows():
-        if row["id"] == target_id:
-            return _serialize_consultation_row(row, teacher_directory)
-    return None
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM consultations WHERE id=?"
+        params: list[object] = [consultation_id]
+        if organization_id is not None:
+            query_sql += " AND organization_id=?"
+            params.append(organization_id)
+        row = conn.execute(query_sql, params).fetchone()
+    return _consultation_storage_row_to_public_dict(row, teacher_directory) if row else None
 
 
-def create_consultation(data: dict) -> dict:
-    rows = _read_consultation_rows()
-    next_id = max((int(row["id"]) for row in rows if row.get("id")), default=0) + 1
+def create_consultation(data: dict, organization_id: int) -> dict:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_row = {field: "" for field in CONSULTATION_FIELDNAMES}
-    new_row["id"] = str(next_id)
     new_row["录入时间"] = now
     new_row["最后更新"] = now
     for field, value in _extract_consultation_updates(data).items():
         new_row[field] = value
     if not new_row["日期"]:
         new_row["日期"] = str(date.today())
-    rows.append(new_row)
-    _write_consultation_rows(rows)
-    return _serialize_consultation_row(new_row, _get_consultation_teacher_directory())
+    stored = _consultation_row_to_storage(new_row, organization_id)
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO consultations (
+                organization_id, date, parent_wechat_name, child_name, grade,
+                receiving_teacher, teacher_id, consultation_subject, need_detail,
+                source_channel, source_channel_note, screenshot, reminder_at,
+                reminder_status, reminder_task_id, follow_up_status, follow_up_note,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                organization_id,
+                stored["date"] or str(date.today()),
+                stored["parent_wechat_name"],
+                stored["child_name"],
+                stored["grade"],
+                stored["receiving_teacher"],
+                stored["teacher_id"],
+                stored["consultation_subject"],
+                stored["need_detail"],
+                stored["source_channel"],
+                stored["source_channel_note"],
+                stored["screenshot"],
+                stored["reminder_at"],
+                stored["reminder_status"],
+                stored["reminder_task_id"],
+                stored["follow_up_status"],
+                stored["follow_up_note"],
+                now,
+                now,
+            ),
+        )
+        row = conn.execute("SELECT * FROM consultations WHERE id=?", (cur.lastrowid,)).fetchone()
+    return _consultation_storage_row_to_public_dict(row, _get_consultation_teacher_directory())
 
 
-def update_consultation(consultation_id: int, data: dict):
-    rows = _read_consultation_rows()
-    target_id = str(consultation_id)
+def update_consultation(consultation_id: int, data: dict, organization_id: Optional[int] = None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    updated_row = None
-    updates = _extract_consultation_updates(data)
-    for row in rows:
-        if row["id"] != target_id:
-            continue
-        for field, value in updates.items():
-            row[field] = value
-        row["最后更新"] = now
-        updated_row = row
-        break
-    if updated_row is None:
-        return None
-    _write_consultation_rows(rows)
-    return _serialize_consultation_row(updated_row, _get_consultation_teacher_directory())
+    teacher_directory = _get_consultation_teacher_directory()
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM consultations WHERE id=?"
+        params: list[object] = [consultation_id]
+        if organization_id is not None:
+            query_sql += " AND organization_id=?"
+            params.append(organization_id)
+        current = conn.execute(query_sql, params).fetchone()
+        if not current:
+            return None
+
+        public_row = _consultation_storage_row_to_public_dict(current, teacher_directory)
+        for field, value in _extract_consultation_updates(data).items():
+            public_row[field] = value
+        stored = _consultation_row_to_storage(public_row, current["organization_id"])
+        conn.execute(
+            """
+            UPDATE consultations
+            SET date=?,
+                parent_wechat_name=?,
+                child_name=?,
+                grade=?,
+                receiving_teacher=?,
+                teacher_id=?,
+                consultation_subject=?,
+                need_detail=?,
+                source_channel=?,
+                source_channel_note=?,
+                screenshot=?,
+                follow_up_status=?,
+                follow_up_note=?,
+                updated_at=?
+            WHERE id=?
+            """,
+            (
+                stored["date"],
+                stored["parent_wechat_name"],
+                stored["child_name"],
+                stored["grade"],
+                stored["receiving_teacher"],
+                stored["teacher_id"],
+                stored["consultation_subject"],
+                stored["need_detail"],
+                stored["source_channel"],
+                stored["source_channel_note"],
+                stored["screenshot"],
+                stored["follow_up_status"],
+                stored["follow_up_note"],
+                now,
+                consultation_id,
+            ),
+        )
+        updated = conn.execute("SELECT * FROM consultations WHERE id=?", (consultation_id,)).fetchone()
+    return _consultation_storage_row_to_public_dict(updated, teacher_directory)
 
 
-def delete_consultation(consultation_id: int) -> bool:
-    rows = _read_consultation_rows()
-    target_id = str(consultation_id)
-    filtered_rows = [row for row in rows if row["id"] != target_id]
-    if len(filtered_rows) == len(rows):
-        return False
-    _write_consultation_rows(filtered_rows)
-    return True
+def delete_consultation(consultation_id: int, organization_id: Optional[int] = None) -> bool:
+    with get_conn() as conn:
+        query_sql = "DELETE FROM consultations WHERE id=?"
+        params: list[object] = [consultation_id]
+        if organization_id is not None:
+            query_sql += " AND organization_id=?"
+            params.append(organization_id)
+        cur = conn.execute(query_sql, params)
+    return cur.rowcount > 0
 
 
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
@@ -819,11 +896,172 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column in columns:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, str | int]:
+    teacher_directory = _get_consultation_teacher_directory()
+    serialized = _serialize_consultation_row(row, teacher_directory)
+    return {
+        "organization_id": organization_id,
+        "date": serialized.get("date", ""),
+        "parent_wechat_name": serialized.get("parent_wechat_name", ""),
+        "child_name": serialized.get("child_name", ""),
+        "grade": serialized.get("grade", ""),
+        "receiving_teacher": serialized.get("receiving_teacher", ""),
+        "teacher_id": serialized.get("teacher_id", ""),
+        "consultation_subject": serialized.get("consultation_subject", ""),
+        "need_detail": serialized.get("need_detail", ""),
+        "source_channel": serialized.get("source_channel", ""),
+        "source_channel_note": serialized.get("source_channel_note", ""),
+        "screenshot": serialized.get("screenshot", ""),
+        "reminder_at": serialized.get("提醒时间", ""),
+        "reminder_status": serialized.get("提醒状态", ""),
+        "reminder_task_id": serialized.get("提醒任务ID", ""),
+        "follow_up_status": serialized.get("follow_up_status", ""),
+        "follow_up_note": serialized.get("follow_up_note", ""),
+        "created_at": serialized.get("created_at", ""),
+        "updated_at": serialized.get("updated_at", ""),
+    }
+
+
+def _consultation_storage_row_to_public_dict(
+    row: sqlite3.Row | dict,
+    teacher_directory: Optional[dict[str, str]] = None,
+) -> dict:
+    payload = dict(row)
+    legacy_row = {field: "" for field in CONSULTATION_FIELDNAMES}
+    legacy_row["id"] = str(payload.get("id") or "")
+    legacy_row["日期"] = payload.get("date", "") or ""
+    legacy_row["家长微信名"] = payload.get("parent_wechat_name", "") or ""
+    legacy_row["孩子姓名"] = payload.get("child_name", "") or ""
+    legacy_row["年级"] = payload.get("grade", "") or ""
+    legacy_row["接待老师"] = payload.get("receiving_teacher", "") or ""
+    legacy_row["老师ID"] = payload.get("teacher_id", "") or ""
+    legacy_row["咨询科目"] = payload.get("consultation_subject", "") or ""
+    legacy_row["具体需求"] = payload.get("need_detail", "") or ""
+    legacy_row["来源渠道"] = payload.get("source_channel", "") or ""
+    legacy_row["来源渠道备注"] = payload.get("source_channel_note", "") or ""
+    legacy_row["截图"] = payload.get("screenshot", "") or ""
+    legacy_row["提醒时间"] = payload.get("reminder_at", "") or ""
+    legacy_row["提醒状态"] = payload.get("reminder_status", "") or ""
+    legacy_row["提醒任务ID"] = payload.get("reminder_task_id", "") or ""
+    legacy_row["跟进状态"] = payload.get("follow_up_status", "") or ""
+    legacy_row["跟进备注"] = payload.get("follow_up_note", "") or ""
+    legacy_row["录入时间"] = payload.get("created_at", "") or ""
+    legacy_row["最后更新"] = payload.get("updated_at", "") or ""
+    serialized = _serialize_consultation_row(legacy_row, teacher_directory)
+    serialized["organization_id"] = payload.get("organization_id")
+    return serialized
+
+
+def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS consultations (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id      INTEGER NOT NULL REFERENCES organizations(id),
+            date                 TEXT DEFAULT '',
+            parent_wechat_name   TEXT DEFAULT '',
+            child_name           TEXT DEFAULT '',
+            grade                TEXT DEFAULT '',
+            receiving_teacher    TEXT DEFAULT '',
+            teacher_id           TEXT DEFAULT '',
+            consultation_subject TEXT DEFAULT '',
+            need_detail          TEXT DEFAULT '',
+            source_channel       TEXT DEFAULT '',
+            source_channel_note  TEXT DEFAULT '',
+            screenshot           TEXT DEFAULT '',
+            reminder_at          TEXT DEFAULT '',
+            reminder_status      TEXT DEFAULT '',
+            reminder_task_id     TEXT DEFAULT '',
+            follow_up_status     TEXT DEFAULT '',
+            follow_up_note       TEXT DEFAULT '',
+            created_at           TEXT DEFAULT (datetime('now','localtime')),
+            updated_at           TEXT DEFAULT (datetime('now','localtime'))
+        )
+        """
+    )
+
+
+def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:
+    starain = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
+    _ensure_column(conn, "classes", "organization_id", "INTEGER REFERENCES organizations(id)")
+    _ensure_column(conn, "lessons", "organization_id", "INTEGER REFERENCES organizations(id)")
+    _ensure_consultations_table(conn)
+
+    conn.execute(
+        "UPDATE classes SET organization_id=? WHERE organization_id IS NULL",
+        (starain["id"],),
+    )
+    conn.execute(
+        """
+        UPDATE lessons
+        SET organization_id=COALESCE(
+            organization_id,
+            (SELECT c.organization_id FROM classes c WHERE c.id = lessons.class_id),
+            ?
+        )
+        WHERE organization_id IS NULL
+        """,
+        (starain["id"],),
+    )
+
+    consultation_count = conn.execute("SELECT COUNT(*) AS c FROM consultations").fetchone()["c"]
+    if consultation_count:
+        return
+
+    legacy_rows = _read_consultation_rows()
+    if not legacy_rows:
+        return
+
+    for row in legacy_rows:
+        stored = _consultation_row_to_storage(row, starain["id"])
+        conn.execute(
+            """
+            INSERT INTO consultations (
+                id, organization_id, date, parent_wechat_name, child_name, grade,
+                receiving_teacher, teacher_id, consultation_subject, need_detail,
+                source_channel, source_channel_note, screenshot, reminder_at,
+                reminder_status, reminder_task_id, follow_up_status, follow_up_note,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(row["id"]) if row.get("id") else None,
+                stored["organization_id"],
+                stored["date"],
+                stored["parent_wechat_name"],
+                stored["child_name"],
+                stored["grade"],
+                stored["receiving_teacher"],
+                stored["teacher_id"],
+                stored["consultation_subject"],
+                stored["need_detail"],
+                stored["source_channel"],
+                stored["source_channel_note"],
+                stored["screenshot"],
+                stored["reminder_at"],
+                stored["reminder_status"],
+                stored["reminder_task_id"],
+                stored["follow_up_status"],
+                stored["follow_up_note"],
+                stored["created_at"] or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                stored["updated_at"] or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS classes (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER REFERENCES organizations(id),
             name         TEXT NOT NULL,
             subject      TEXT DEFAULT '',
             grade        TEXT DEFAULT '',
@@ -834,6 +1072,7 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS lessons (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER REFERENCES organizations(id),
             date        TEXT NOT NULL,
             subject     TEXT,
             grade       TEXT,
@@ -943,71 +1182,6 @@ def init_db():
             created_at          TEXT DEFAULT (datetime('now','localtime')),
             updated_at          TEXT DEFAULT (datetime('now','localtime'))
         );
-
-        CREATE TABLE IF NOT EXISTS organization_credit_accounts (
-            organization_id INTEGER PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
-            credit_balance INTEGER NOT NULL DEFAULT 0,
-            total_recharged INTEGER NOT NULL DEFAULT 0,
-            total_consumed INTEGER NOT NULL DEFAULT 0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS organization_credit_ledger (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-            direction TEXT NOT NULL CHECK(direction IN ('credit','debit')),
-            amount INTEGER NOT NULL,
-            balance_after INTEGER NOT NULL,
-            source_type TEXT NOT NULL,
-            source_id TEXT,
-            note TEXT NOT NULL DEFAULT '',
-            operator_user_id INTEGER REFERENCES users(id),
-            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS xhs_order_redemptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            platform TEXT NOT NULL DEFAULT 'xiaohongshu',
-            platform_order_id TEXT NOT NULL,
-            product_id TEXT NOT NULL,
-            sku_id TEXT NOT NULL DEFAULT '',
-            product_name TEXT NOT NULL,
-            paid_amount INTEGER NOT NULL,
-            currency TEXT NOT NULL DEFAULT 'CNY',
-            buyer_masked_phone TEXT NOT NULL DEFAULT '',
-            order_status TEXT NOT NULL,
-            redeem_status TEXT NOT NULL DEFAULT 'pending',
-            credit_amount INTEGER NOT NULL,
-            redeemed_organization_id INTEGER REFERENCES organizations(id),
-            redeemed_by_user_id INTEGER REFERENCES users(id),
-            redeemed_at TEXT,
-            raw_order_payload TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-            UNIQUE(platform, platform_order_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS ai_usage_ledger (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            feature_key TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            model TEXT NOT NULL,
-            input_tokens INTEGER NOT NULL DEFAULT 0,
-            output_tokens INTEGER NOT NULL DEFAULT 0,
-            total_tokens INTEGER NOT NULL DEFAULT 0,
-            token_cost_raw REAL NOT NULL DEFAULT 0,
-            credit_cost_final INTEGER NOT NULL,
-            source_record_type TEXT NOT NULL,
-            source_record_id TEXT NOT NULL,
-            request_id TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_usage_ledger_org_request_id
-        ON ai_usage_ledger (organization_id, request_id)
-        WHERE request_id <> '';
         """)
         import master_data
 
@@ -1031,323 +1205,9 @@ def init_db():
                 conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
             if "updated_at" not in feedback_cols:
                 conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        _migrate_legacy_organization_scope(conn)
         _bootstrap_account_state(conn)
     print(f"数据库已初始化：{DB_PATH}")
-
-
-def _ensure_credit_account_row(conn: sqlite3.Connection, organization_id: int) -> sqlite3.Row:
-    org_row = conn.execute("SELECT id FROM organizations WHERE id=?", (organization_id,)).fetchone()
-    if not org_row:
-        raise LookupError("organization not found")
-
-    conn.execute(
-        """
-        INSERT INTO organization_credit_accounts (organization_id)
-        VALUES (?)
-        ON CONFLICT(organization_id) DO NOTHING
-        """,
-        (organization_id,),
-    )
-    account_row = conn.execute(
-        "SELECT * FROM organization_credit_accounts WHERE organization_id=?",
-        (organization_id,),
-    ).fetchone()
-    if not account_row:
-        raise LookupError("credit account not found")
-    return account_row
-
-
-def ensure_credit_account(organization_id: int) -> dict:
-    with get_conn() as conn:
-        return dict(_ensure_credit_account_row(conn, organization_id))
-
-
-def _ensure_user_in_organization(conn: sqlite3.Connection, user_id: int, organization_id: int, label: str) -> None:
-    row = conn.execute(
-        "SELECT organization_id FROM users WHERE id=?",
-        (user_id,),
-    ).fetchone()
-    if not row:
-        raise LookupError(f"{label} user not found")
-    if int(row["organization_id"]) != int(organization_id):
-        raise ValueError(f"{label} user does not belong to organization")
-
-
-def _insert_credit_ledger_entry_with_conn(
-    conn: sqlite3.Connection,
-    *,
-    organization_id: int,
-    direction: str,
-    amount: int,
-    source_type: str,
-    source_id: str = "",
-    note: str = "",
-    operator_user_id: Optional[int] = None,
-) -> dict:
-    normalized_direction = (direction or "").strip().lower()
-    if normalized_direction not in {"credit", "debit"}:
-        raise ValueError("direction must be credit or debit")
-    if amount <= 0:
-        raise ValueError("amount must be positive")
-    if operator_user_id is not None:
-        _ensure_user_in_organization(conn, operator_user_id, organization_id, "operator")
-
-    account_row = _ensure_credit_account_row(conn, organization_id)
-    balance_before = int(account_row["credit_balance"] or 0)
-    recharge_before = int(account_row["total_recharged"] or 0)
-    consumed_before = int(account_row["total_consumed"] or 0)
-
-    if normalized_direction == "credit":
-        balance_after = balance_before + amount
-        total_recharged = recharge_before + amount
-        total_consumed = consumed_before
-    else:
-        if balance_before < amount:
-            raise ValueError("insufficient credit balance")
-        balance_after = balance_before - amount
-        total_recharged = recharge_before
-        total_consumed = consumed_before + amount
-
-    conn.execute(
-        """
-        UPDATE organization_credit_accounts
-        SET credit_balance=?,
-            total_recharged=?,
-            total_consumed=?,
-            updated_at=datetime('now','localtime')
-        WHERE organization_id=?
-        """,
-        (balance_after, total_recharged, total_consumed, organization_id),
-    )
-    cur = conn.execute(
-        """
-        INSERT INTO organization_credit_ledger
-            (organization_id, direction, amount, balance_after, source_type, source_id, note, operator_user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            organization_id,
-            normalized_direction,
-            amount,
-            balance_after,
-            source_type,
-            source_id,
-            note,
-            operator_user_id,
-        ),
-    )
-    row = conn.execute(
-        "SELECT * FROM organization_credit_ledger WHERE id=?",
-        (cur.lastrowid,),
-    ).fetchone()
-    return dict(row) if row else {}
-
-
-def insert_credit_ledger_entry(
-    *,
-    organization_id: int,
-    direction: str,
-    amount: int,
-    source_type: str,
-    source_id: str = "",
-    note: str = "",
-    operator_user_id: Optional[int] = None,
-) -> dict:
-    with get_conn() as conn:
-        return _insert_credit_ledger_entry_with_conn(
-            conn,
-            organization_id=organization_id,
-            direction=direction,
-            amount=amount,
-            source_type=source_type,
-            source_id=source_id,
-            note=note,
-            operator_user_id=operator_user_id,
-        )
-
-
-def _insert_ai_usage_row_with_conn(
-    conn: sqlite3.Connection,
-    *,
-    organization_id: int,
-    user_id: int,
-    feature_key: str,
-    provider: str,
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    credit_cost_final: int,
-    source_record_type: str,
-    source_record_id: str,
-    request_id: str,
-    token_cost_raw: float = 0.0,
-) -> dict:
-    _ensure_credit_account_row(conn, organization_id)
-    _ensure_user_in_organization(conn, user_id, organization_id, "usage")
-
-    total_tokens = max(0, int(input_tokens)) + max(0, int(output_tokens))
-    normalized_request_id = (request_id or "").strip()
-    cur = conn.execute(
-        """
-        INSERT INTO ai_usage_ledger
-            (organization_id, user_id, feature_key, provider, model, input_tokens, output_tokens, total_tokens,
-             token_cost_raw, credit_cost_final, source_record_type, source_record_id, request_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            organization_id,
-            user_id,
-            feature_key,
-            provider,
-            model,
-            max(0, int(input_tokens)),
-            max(0, int(output_tokens)),
-            total_tokens,
-            float(token_cost_raw or 0.0),
-            int(credit_cost_final),
-            source_record_type,
-            str(source_record_id),
-            normalized_request_id,
-        ),
-    )
-    row = conn.execute(
-        "SELECT * FROM ai_usage_ledger WHERE id=?",
-        (cur.lastrowid,),
-    ).fetchone()
-    return dict(row) if row else {}
-
-
-def insert_ai_usage_row(
-    *,
-    organization_id: int,
-    user_id: int,
-    feature_key: str,
-    provider: str,
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    credit_cost_final: int,
-    source_record_type: str,
-    source_record_id: str,
-    request_id: str,
-    token_cost_raw: float = 0.0,
-) -> dict:
-    with get_conn() as conn:
-        return _insert_ai_usage_row_with_conn(
-            conn,
-            organization_id=organization_id,
-            user_id=user_id,
-            feature_key=feature_key,
-            provider=provider,
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            credit_cost_final=credit_cost_final,
-            source_record_type=source_record_type,
-            source_record_id=source_record_id,
-            request_id=request_id,
-            token_cost_raw=token_cost_raw,
-        )
-
-
-def insert_ai_usage_and_debit(
-    *,
-    organization_id: int,
-    user_id: int,
-    feature_key: str,
-    provider: str,
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    credit_cost_final: int,
-    source_record_type: str,
-    source_record_id: str,
-    request_id: str,
-    token_cost_raw: float = 0.0,
-) -> dict:
-    normalized_request_id = (request_id or "").strip()
-    with get_conn() as conn:
-        _ensure_credit_account_row(conn, organization_id)
-        _ensure_user_in_organization(conn, user_id, organization_id, "usage")
-
-        if normalized_request_id:
-            existing = conn.execute(
-                """
-                SELECT *
-                FROM ai_usage_ledger
-                WHERE organization_id=? AND request_id=?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (organization_id, normalized_request_id),
-            ).fetchone()
-            if existing:
-                return dict(existing)
-
-        try:
-            usage_row = _insert_ai_usage_row_with_conn(
-                conn,
-                organization_id=organization_id,
-                user_id=user_id,
-                feature_key=feature_key,
-                provider=provider,
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                credit_cost_final=credit_cost_final,
-                source_record_type=source_record_type,
-                source_record_id=source_record_id,
-                request_id=normalized_request_id,
-                token_cost_raw=token_cost_raw,
-            )
-        except sqlite3.IntegrityError:
-            if not normalized_request_id:
-                raise
-            existing = conn.execute(
-                """
-                SELECT *
-                FROM ai_usage_ledger
-                WHERE organization_id=? AND request_id=?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (organization_id, normalized_request_id),
-            ).fetchone()
-            if not existing:
-                raise
-            return dict(existing)
-        _insert_credit_ledger_entry_with_conn(
-            conn,
-            organization_id=organization_id,
-            direction="debit",
-            amount=int(credit_cost_final),
-            source_type="ai_usage",
-            source_id=str(usage_row["id"]),
-            note=feature_key,
-            operator_user_id=user_id,
-        )
-        return usage_row
-
-
-def list_member_usage_summary_rows(organization_id: int) -> list[dict]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                u.id AS user_id,
-                u.display_name AS display_name,
-                COALESCE(SUM(a.credit_cost_final), 0) AS credit_consumed,
-                COUNT(a.id) AS usage_count,
-                MAX(a.created_at) AS last_used_at
-            FROM ai_usage_ledger a
-            JOIN users u ON u.id = a.user_id
-            WHERE a.organization_id=?
-            GROUP BY u.id, u.display_name
-            ORDER BY credit_consumed DESC, usage_count DESC, u.id ASC
-            """,
-            (organization_id,),
-        ).fetchall()
-    return [dict(row) for row in rows]
 
 
 def hash_password(password: str) -> str:
@@ -1594,13 +1454,22 @@ def save_lesson(date_str: str, subject: str, grade: str, topic: str,
                 plan: dict, pdf_path: str, class_id: int = 0) -> int:
     """保存一节课及其复习计划，返回 lesson_id。"""
     with get_conn() as conn:
+        organization_id = None
+        if class_id:
+            class_row = conn.execute(
+                "SELECT organization_id FROM classes WHERE id=?",
+                (class_id,),
+            ).fetchone()
+            organization_id = class_row["organization_id"] if class_row else None
+        if organization_id is None:
+            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
         cur = conn.execute(
             """INSERT INTO lessons
-               (date, subject, grade, topic, summary, weak_points, plan_json, pdf_path, class_id)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (date, subject, grade, topic, summary, weak_points, plan_json, pdf_path, class_id, organization_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (date_str, subject, grade, topic, summary, weak_points,
              json.dumps(plan, ensure_ascii=False), pdf_path,
-             class_id if class_id else None)
+             class_id if class_id else None, organization_id)
         )
         lesson_id = cur.lastrowid
 
@@ -1660,11 +1529,16 @@ def delete_lesson(lesson_id: int):
 
 # ─── 班级 CRUD ─────────────────────────────────────────────────────────────────
 def save_class(name: str, subject: str = "", grade: str = "",
-               teacher_name: str = "", teacher_email: str = "") -> int:
+               teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None) -> int:
     with get_conn() as conn:
+        if organization_id is None:
+            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
         cur = conn.execute(
-            "INSERT INTO classes (name, subject, grade, teacher_name, teacher_email) VALUES (?,?,?,?,?)",
-            (name, subject, grade, teacher_name, teacher_email)
+            """
+            INSERT INTO classes (organization_id, name, subject, grade, teacher_name, teacher_email)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (organization_id, name, subject, grade, teacher_name, teacher_email)
         )
         return cur.lastrowid
 
@@ -2050,24 +1924,159 @@ def set_class_teacher_user_id(class_id: int, teacher_user_id: Optional[int]):
 
 
 # ─── 用户-班级关联 ──────────────────────────────────────────────────────────────
-def list_all_users(organization_id: Optional[int] = None) -> list:
+def list_all_users() -> list:
     with get_conn() as conn:
-        params: list[object] = []
-        query = """
+        rows = conn.execute(
+            """
             SELECT u.*, o.name AS organization_name
             FROM users u
             JOIN organizations o ON o.id = u.organization_id
             WHERE u.status = 'active'
-        """
-        if organization_id is not None:
-            query += " AND u.organization_id = ?"
-            params.append(organization_id)
-        query += """
             ORDER BY CASE WHEN u.role=? THEN 0 WHEN u.role=? THEN 1 ELSE 2 END, u.display_name
-        """
-        params.extend([SUPER_OWNER_ROLE, OWNER_ROLE])
-        rows = conn.execute(query, tuple(params)).fetchall()
+            """
+            ,
+            (SUPER_OWNER_ROLE, OWNER_ROLE),
+        ).fetchall()
         return [_public_user_dict(row) for row in rows]
+
+
+def get_user_by_id(user_id: int):
+    with get_conn() as conn:
+        row = _fetch_user_row_by_id(conn, user_id)
+    return _public_user_dict(row)
+
+
+def list_users_for_actor(actor_user: dict) -> list[dict]:
+    if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
+        return list_all_users()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.*, o.name AS organization_name
+            FROM users u
+            JOIN organizations o ON o.id = u.organization_id
+            WHERE u.status='active' AND u.organization_id=?
+            ORDER BY CASE WHEN u.role=? THEN 0 WHEN u.role=? THEN 1 ELSE 2 END, u.display_name
+            """,
+            (actor_user["organization_id"], OWNER_ROLE, ADMIN_ROLE),
+        ).fetchall()
+    return [_public_user_dict(row) for row in rows]
+
+
+def list_registration_requests_for_actor(actor_user: dict, status: str = "pending") -> list[dict]:
+    if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
+        return list_registration_requests(status)
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT rr.*, o.name AS organization_name
+            FROM registration_requests rr
+            JOIN organizations o ON o.id = rr.organization_id
+            WHERE rr.status=? AND rr.organization_id=?
+            ORDER BY rr.created_at ASC, rr.id ASC
+            """,
+            (status, actor_user["organization_id"]),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_registration_request(request_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT rr.*, o.name AS organization_name
+            FROM registration_requests rr
+            JOIN organizations o ON o.id = rr.organization_id
+            WHERE rr.id=?
+            """,
+            (request_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_organizations() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                o.id,
+                o.name,
+                o.created_at,
+                COUNT(DISTINCT CASE WHEN u.status='active' THEN u.id END) AS member_count,
+                COUNT(DISTINCT CASE WHEN u.status='active' AND u.role=? THEN u.id END) AS owner_count,
+                COUNT(DISTINCT c.id) AS class_count,
+                COUNT(DISTINCT l.id) AS lesson_count
+            FROM organizations o
+            LEFT JOIN users u ON u.organization_id = o.id
+            LEFT JOIN classes c ON c.organization_id = o.id
+            LEFT JOIN lessons l ON l.organization_id = o.id
+            GROUP BY o.id
+            ORDER BY CASE WHEN o.name=? THEN 0 ELSE 1 END, o.created_at ASC, o.id ASC
+            """,
+            (OWNER_ROLE, DEFAULT_ORGANIZATION_NAME),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def actor_can_manage_user(actor_user: dict, target_user: dict) -> bool:
+    if not actor_user or not target_user:
+        return False
+    if actor_user.get("id") == target_user.get("id"):
+        return False
+    if actor_user.get("role") == SUPER_OWNER_ROLE:
+        return target_user.get("role") != SUPER_OWNER_ROLE
+    if actor_user.get("role") != OWNER_ROLE:
+        return False
+    if actor_user.get("organization_id") != target_user.get("organization_id"):
+        return False
+    return target_user.get("role") in {ADMIN_ROLE, MEMBER_ROLE}
+
+
+def list_classes_for_actor(actor_user: dict) -> list[dict]:
+    if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
+        return list_classes()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.*, COUNT(l.id) as lesson_count,
+                   (
+                       SELECT uc.user_id
+                       FROM user_classes uc
+                       WHERE uc.class_id = c.id
+                       ORDER BY uc.user_id
+                       LIMIT 1
+                   ) AS teacher_user_id
+            FROM classes c
+            LEFT JOIN lessons l ON l.class_id = c.id
+            WHERE c.organization_id=?
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+            """,
+            (actor_user["organization_id"],),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int = 0) -> list[dict]:
+    if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
+        return list_lessons(month_str=month_str, class_id=class_id)
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM lessons WHERE organization_id=?"
+        params: list[object] = [actor_user["organization_id"]]
+        if class_id:
+            query_sql += " AND class_id=?"
+            params.append(class_id)
+        if month_str:
+            query_sql += " AND date LIKE ?"
+            params.append(f"{month_str}%")
+        query_sql += " ORDER BY date DESC, id DESC"
+        rows = conn.execute(query_sql, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_consultations_for_actor(actor_user: dict, query: str = "") -> list[dict]:
+    organization_id = None if (actor_user or {}).get("role") == SUPER_OWNER_ROLE else actor_user["organization_id"]
+    return list_consultations(query=query, organization_id=organization_id)
 
 
 def get_user_class_ids(user_id: int) -> list:
@@ -2154,14 +2163,36 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
         _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
 
 
-def update_user_role(user_id: int, role: str, organization_id: Optional[int] = None):
+def update_user_display_name_for_actor(actor_user: dict, target_user_id: int, display_name: str):
+    normalized_display_name = (display_name or "").strip()
+    if not normalized_display_name:
+        raise ValueError("display_name is required")
+    with get_conn() as conn:
+        target_row = _fetch_user_row_by_id(conn, target_user_id)
+        if not target_row:
+            raise LookupError("user not found")
+        target_user = _public_user_dict(target_row)
+        if not actor_can_manage_user(actor_user, target_user):
+            raise LookupError("user not found")
+        conn.execute(
+            "UPDATE users SET display_name=? WHERE id=?",
+            (normalized_display_name, target_user_id),
+        )
+        class_rows = conn.execute(
+            "SELECT class_id FROM user_classes WHERE user_id=?",
+            (target_user_id,),
+        ).fetchall()
+        _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
+        updated = _fetch_user_row_by_id(conn, target_user_id)
+    return _public_user_dict(updated)
+
+
+def update_user_role(user_id: int, role: str):
     if role not in {OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
         raise ValueError("role must be owner, admin or member")
     with get_conn() as conn:
         user_row = _fetch_user_row_by_id(conn, user_id)
         if not user_row:
-            raise LookupError("user not found")
-        if organization_id is not None and user_row["organization_id"] != organization_id:
             raise LookupError("user not found")
         if _is_super_owner_role(user_row["role"]):
             raise ValueError("super owner role is fixed")
@@ -2444,26 +2475,22 @@ def create_registration_request(username: str, display_name: str, password: str,
     return dict(row)
 
 
-def list_registration_requests(status: str = "pending", organization_id: Optional[int] = None) -> list[dict]:
+def list_registration_requests(status: str = "pending") -> list[dict]:
     with get_conn() as conn:
-        params: list[object] = [status]
-        query = """
+        rows = conn.execute(
+            """
             SELECT rr.*, o.name AS organization_name
             FROM registration_requests rr
             JOIN organizations o ON o.id = rr.organization_id
             WHERE rr.status=?
-        """
-        if organization_id is not None:
-            query += " AND rr.organization_id=?"
-            params.append(organization_id)
-        query += """
             ORDER BY rr.created_at ASC, rr.id ASC
-        """
-        rows = conn.execute(query, tuple(params)).fetchall()
+            """,
+            (status,),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
-def approve_registration_request(request_id: int, reviewer_id: int, organization_id: Optional[int] = None):
+def approve_registration_request(request_id: int, reviewer_id: int):
     with get_conn() as conn:
         req = conn.execute(
             """
@@ -2475,8 +2502,6 @@ def approve_registration_request(request_id: int, reviewer_id: int, organization
             (request_id,),
         ).fetchone()
         if not req:
-            raise LookupError("申请不存在")
-        if organization_id is not None and req["organization_id"] != organization_id:
             raise LookupError("申请不存在")
         if req["status"] != "pending":
             raise ValueError("该申请已处理")
@@ -2501,15 +2526,13 @@ def approve_registration_request(request_id: int, reviewer_id: int, organization
     return _public_user_dict(user_row)
 
 
-def reject_registration_request(request_id: int, reviewer_id: int, organization_id: Optional[int] = None) -> None:
+def reject_registration_request(request_id: int, reviewer_id: int) -> None:
     with get_conn() as conn:
         req = conn.execute(
             "SELECT * FROM registration_requests WHERE id=?",
             (request_id,),
         ).fetchone()
         if not req:
-            raise LookupError("申请不存在")
-        if organization_id is not None and req["organization_id"] != organization_id:
             raise LookupError("申请不存在")
         if req["status"] != "pending":
             raise ValueError("该申请已处理")

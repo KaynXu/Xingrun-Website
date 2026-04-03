@@ -518,9 +518,15 @@ def list_wrong_question_mapping_queue(status: Optional[str] = None) -> list[dict
         return [item for item in items if not _is_final_wrong_question_mapping(item, conn=conn)]
 
 
-def list_member_binding_summaries() -> list[dict[str, Any]]:
-    users = lesson_manager.list_all_users()
-    classes = lesson_manager.list_classes()
+def list_member_binding_summaries(actor_user: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+    if actor_user:
+        users = lesson_manager.list_users_for_actor(actor_user)
+        classes = lesson_manager.list_classes_for_actor(actor_user)
+    else:
+        users = lesson_manager.list_all_users()
+        classes = lesson_manager.list_classes()
+    allowed_user_ids = {user["id"] for user in users}
+    allowed_class_ids = {item["id"] for item in classes}
 
     with lesson_manager.get_conn() as conn:
         ensure_schema(conn)
@@ -533,7 +539,16 @@ def list_member_binding_summaries() -> list[dict[str, Any]]:
             ORDER BY wqm.updated_at DESC, wqm.record_id DESC
             """
         ).fetchall()
-        raw_mappings = [dict(row) for row in raw_rows]
+        raw_mappings = [
+            dict(row)
+            for row in raw_rows
+            if (
+                not actor_user
+                or actor_user.get("role") == "super_owner"
+                or row["teacher_user_id"] in allowed_user_ids
+                or row["class_id"] in allowed_class_ids
+            )
+        ]
 
         summaries: list[dict[str, Any]] = []
         for user in users:

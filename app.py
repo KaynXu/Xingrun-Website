@@ -11,11 +11,11 @@ import io
 import json
 import os
 import re
+import secrets
 import threading
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
-from time import monotonic
 from typing import Optional, Set
 
 from flask import (Flask, abort, flash, redirect, render_template,
@@ -47,6 +47,7 @@ CORS(app, resources={r"/api/*": {"origins": [
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
+    actor_can_manage_user,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -72,17 +73,22 @@ from lesson_manager import (
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
     get_questions,
+    get_registration_request,
+    get_user_by_id,
     get_user_class_ids,
     init_db,
-    list_all_users,
     list_class_teacher_bindings,
     list_classes,
+    list_classes_for_actor,
     list_consultation_teachers,
-    list_consultations,
+    list_consultations_for_actor,
     list_lessons,
+    list_lessons_for_actor,
+    list_organizations,
     list_organization_requests,
     list_students_for_class,
-    list_registration_requests,
+    list_registration_requests_for_actor,
+    list_users_for_actor,
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
     normalize_consultation_batch_parse_result,
@@ -95,6 +101,7 @@ from lesson_manager import (
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
+    update_user_display_name_for_actor,
     update_class,
     update_consultation,
     update_user_profile,
@@ -105,18 +112,6 @@ from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
 import master_data
 from ai_processor import generate_teacher_feedback_draft
-from credit_manager import (
-    CreditBalanceError,
-    ensure_feature_credits_available,
-    finalize_ai_charge,
-    get_ai_usage_by_request_id,
-    get_credit_overview,
-    list_credit_ledger,
-    list_member_usage_detail,
-    list_member_usage_summary,
-    redeem_xhs_order,
-)
-from xhs_open_platform import fetch_xhs_order_for_redemption
 
 init_db()
 
@@ -147,313 +142,10 @@ DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS = {
     for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
 }
 
-_CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS = 3
-_CREDIT_REDEEM_FAILURE_LOCK_SECONDS = 300.0
-_CREDIT_REDEEM_FAILURE_STATE: dict[tuple[int, str], dict[str, float | int]] = {}
-_CREDIT_REDEEM_FAILURE_LOCK = threading.Lock()
-_AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS = 60.0
-_AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
-_AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
-_AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
-_AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
-_AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
-
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
     return get_runtime_config()
-
-
-def _default_ai_provider_name() -> str:
-    return str(get_config().get("provider", "openai") or "openai")
-
-
-def _default_chat_model_name() -> str:
-    cfg = get_config()
-    provider = _default_ai_provider_name()
-    if provider == "deepseek":
-        return str(cfg.get("deepseek_model", "deepseek-chat") or "deepseek-chat")
-    if provider == "mimo":
-        return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
-    if provider == "n1n":
-        return str(cfg.get("n1n_model", "gpt-4o") or "gpt-4o")
-    return "gpt-4o"
-
-
-def _normalize_ai_usage_payload(usage: object, *, provider: str, model: str) -> dict:
-    usage_payload = usage if isinstance(usage, dict) else {}
-    return {
-        "provider": str(usage_payload.get("provider", "") or provider),
-        "model": str(usage_payload.get("model", "") or model),
-        "input_tokens": max(0, int(usage_payload.get("input_tokens", 0) or 0)),
-        "output_tokens": max(0, int(usage_payload.get("output_tokens", 0) or 0)),
-    }
-
-
-def _split_ai_result_with_usage(result: object, *, provider: str, model: str) -> tuple[object, dict]:
-    if (
-        isinstance(result, tuple)
-        and len(result) == 2
-        and isinstance(result[1], dict)
-    ):
-        return result[0], _normalize_ai_usage_payload(result[1], provider=provider, model=model)
-    return result, _normalize_ai_usage_payload({}, provider=provider, model=model)
-
-
-class DuplicateAiRequestError(RuntimeError):
-    pass
-
-
-def _normalize_request_payload_for_fingerprint(value: object) -> object:
-    if isinstance(value, dict):
-        return {
-            str(key): _normalize_request_payload_for_fingerprint(value[key])
-            for key in sorted(value)
-        }
-    if isinstance(value, list):
-        return [_normalize_request_payload_for_fingerprint(item) for item in value]
-    if isinstance(value, tuple):
-        return [_normalize_request_payload_for_fingerprint(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)
-
-
-def _uploaded_file_size(file_storage) -> int:
-    content_length = getattr(file_storage, "content_length", None)
-    if content_length not in (None, ""):
-        try:
-            return max(0, int(content_length))
-        except (TypeError, ValueError):
-            pass
-    stream = getattr(file_storage, "stream", None)
-    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
-        return 0
-    try:
-        position = stream.tell()
-        stream.seek(0, os.SEEK_END)
-        size = max(0, int(stream.tell() or 0))
-        stream.seek(position)
-        return size
-    except (OSError, ValueError):
-        return 0
-
-
-def _uploaded_file_content_fingerprint(file_storage) -> str:
-    stream = getattr(file_storage, "stream", None)
-    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
-        return ""
-    try:
-        position = stream.tell()
-        stream.seek(0)
-        digest = hashlib.sha256()
-        while True:
-            chunk = stream.read(1024 * 1024)
-            if not chunk:
-                break
-            if isinstance(chunk, str):
-                chunk = chunk.encode("utf-8")
-            digest.update(chunk)
-        stream.seek(position)
-        return digest.hexdigest()
-    except (OSError, ValueError):
-        return ""
-
-
-def _request_payload_fingerprint(*, include_file_content: bool = False) -> str:
-    payload: dict[str, object] = {
-        "method": request.method,
-        "path": request.path,
-    }
-    if request.is_json:
-        payload["json"] = _normalize_request_payload_for_fingerprint(request.get_json(silent=True))
-    if request.form:
-        payload["form"] = {
-            key: [_normalize_request_payload_for_fingerprint(item) for item in request.form.getlist(key)]
-            for key in sorted(request.form.keys())
-        }
-    if request.files:
-        files_payload = []
-        for field_name in sorted(request.files.keys()):
-            for storage in request.files.getlist(field_name):
-                files_payload.append(
-                    {
-                        "field": field_name,
-                        "filename": str(getattr(storage, "filename", "") or ""),
-                        "content_type": str(getattr(storage, "content_type", "") or ""),
-                        "size": _uploaded_file_size(storage),
-                        "content_sha256": (
-                            _uploaded_file_content_fingerprint(storage)
-                            if include_file_content
-                            else ""
-                        ),
-                    }
-                )
-        payload["files"] = files_payload
-    serialized = json.dumps(
-        _normalize_request_payload_for_fingerprint(payload),
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-
-def _ai_fallback_request_bucket() -> int:
-    return int(monotonic() // _AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS)
-
-
-def _current_ai_request_key() -> str:
-    request_key = str(request.environ.get("_credit_request_key") or "").strip()
-    if request_key:
-        return request_key
-    header_key = (
-        request.headers.get("X-Request-Id", "").strip()
-        or request.headers.get("Idempotency-Key", "").strip()
-    )
-    payload_fingerprint = _request_payload_fingerprint()
-    if header_key:
-        request_key = f"header:{header_key}:{payload_fingerprint}"
-    else:
-        request_key = f"fallback:{_ai_fallback_request_bucket()}:{payload_fingerprint}"
-    request.environ["_credit_request_key"] = request_key
-    return request_key
-
-
-def _current_audio_upload_request_key() -> str:
-    request_key = str(request.environ.get("_credit_request_key") or "").strip()
-    if request_key:
-        return request_key
-    header_key = (
-        request.headers.get("X-Request-Id", "").strip()
-        or request.headers.get("Idempotency-Key", "").strip()
-    )
-    payload_fingerprint = _request_payload_fingerprint(include_file_content=True)
-    if header_key:
-        request_key = f"header:{header_key}:{payload_fingerprint}"
-    else:
-        request_key = f"audio-fallback:{payload_fingerprint}"
-    request.environ["_credit_request_key"] = request_key
-    return request_key
-
-
-def _build_ai_charge_request_id(
-    *,
-    user_id: int,
-    feature_key: str,
-    source_record_type: str,
-    source_record_id: int | str,
-    request_key: str | None = None,
-) -> str:
-    raw_value = (
-        f"{user_id}:{request_key or _current_ai_request_key()}:"
-        f"{feature_key}:{source_record_type}:{source_record_id}"
-    )
-    return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
-
-
-def _claim_ai_request_identity(*, organization_id: int, request_id: str) -> None:
-    now = monotonic()
-    with _AI_REQUEST_IN_FLIGHT_LOCK:
-        expired = [
-            key
-            for key, started_at in _AI_REQUEST_IN_FLIGHT.items()
-            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
-        ]
-        for key in expired:
-            _AI_REQUEST_IN_FLIGHT.pop(key, None)
-        if request_id in _AI_REQUEST_IN_FLIGHT:
-            raise DuplicateAiRequestError("重复请求正在处理中，请勿重复提交")
-        existing_usage = get_ai_usage_by_request_id(
-            organization_id=organization_id,
-            request_id=request_id,
-        )
-        if existing_usage:
-            raise DuplicateAiRequestError("重复请求已处理，请勿重复提交")
-        _AI_REQUEST_IN_FLIGHT[request_id] = now
-
-
-def _release_ai_request_identity(request_id: str) -> None:
-    with _AI_REQUEST_IN_FLIGHT_LOCK:
-        _AI_REQUEST_IN_FLIGHT.pop(request_id, None)
-
-
-def _claim_ai_organization_execution(organization_id: int) -> None:
-    now = monotonic()
-    with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
-        expired = [
-            org_id
-            for org_id, started_at in _AI_ORGANIZATION_IN_FLIGHT.items()
-            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
-        ]
-        for org_id in expired:
-            _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
-        if organization_id in _AI_ORGANIZATION_IN_FLIGHT:
-            raise DuplicateAiRequestError("当前机构已有 AI 请求正在处理中，请稍后再试")
-        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = now
-
-
-def _release_ai_organization_execution(organization_id: int) -> None:
-    with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
-        _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
-
-
-def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
-    try:
-        return helper(*args, include_usage=True, **kwargs)
-    except TypeError as exc:
-        if "include_usage" not in str(exc):
-            raise
-        return helper(*args, **kwargs)
-
-
-def _run_ai_feature_with_charge(
-    *,
-    user: dict,
-    feature_key: str,
-    source_record_type: str,
-    source_record_id: int | str,
-    producer,
-    provider: str,
-    model: str,
-    after_success=None,
-    request_key: str | None = None,
-):
-    organization_id = int(user["organization_id"])
-    request_id = _build_ai_charge_request_id(
-        user_id=int(user["id"]),
-        feature_key=feature_key,
-        source_record_type=source_record_type,
-        source_record_id=source_record_id,
-        request_key=request_key,
-    )
-    _claim_ai_request_identity(
-        organization_id=organization_id,
-        request_id=request_id,
-    )
-    try:
-        _claim_ai_organization_execution(organization_id)
-        ensure_feature_credits_available(
-            organization_id=organization_id,
-            feature_key=feature_key,
-        )
-        result = producer()
-        business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
-        if after_success is not None:
-            after_success(business_value)
-        finalize_ai_charge(
-            organization_id=organization_id,
-            user_id=int(user["id"]),
-            feature_key=feature_key,
-            usage=usage,
-            source_record_type=source_record_type,
-            source_record_id=source_record_id,
-            request_id=request_id,
-        )
-        return business_value
-    finally:
-        _release_ai_organization_execution(organization_id)
-        _release_ai_request_identity(request_id)
 
 
 def has_api_key():
@@ -1269,17 +961,29 @@ def _organization_invite_response_payload(invite: dict) -> dict:
     }
 
 
-def _organization_scope_for_user(user: Optional[dict]) -> Optional[int]:
-    if not user or user.get("role") == "super_owner":
-        return None
-    return user.get("organization_id")
-
-
-def _can_access_wrong_question_record(user, record: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+def _can_access_wrong_question_record(
+    user,
+    record: object,
+    owned_class_ids: Optional[Set[int]] = None,
+    allowed_user_ids: Optional[Set[int]] = None,
+) -> bool:
+    if user.get("role") == "super_owner":
         return True
     if not isinstance(record, dict):
         return False
+
+    if user.get("role") in {"owner", "admin"}:
+        scoped_class_ids = owned_class_ids
+        if scoped_class_ids is None:
+            scoped_class_ids = {item["id"] for item in list_classes_for_actor(user)}
+        scoped_user_ids = allowed_user_ids
+        if scoped_user_ids is None:
+            scoped_user_ids = {item["id"] for item in list_users_for_actor(user)}
+        teacher_user_id = record.get("teacher_user_id")
+        if isinstance(teacher_user_id, int) and teacher_user_id in scoped_user_ids:
+            return True
+        class_id = record.get("class_id")
+        return isinstance(class_id, int) and class_id in scoped_class_ids
 
     teacher_user_id = record.get("teacher_user_id")
     if isinstance(teacher_user_id, int) and teacher_user_id == user.get("id"):
@@ -1337,8 +1041,24 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
 def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
     if not isinstance(items, list):
         return []
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return [item for item in items if isinstance(item, dict)]
+    if user.get("role") in {"owner", "admin"}:
+        scoped_classes = list_classes_for_actor(user)
+        scoped_users = list_users_for_actor(user)
+        scoped_class_ids = {item["id"] for item in scoped_classes}
+        scoped_user_ids = {item["id"] for item in scoped_users}
+        return [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and _can_access_wrong_question_record(
+                user,
+                item,
+                scoped_class_ids,
+                scoped_user_ids,
+            )
+        ]
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [
@@ -1349,18 +1069,47 @@ def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
 
 
 def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return classes
+    if user.get("role") in {"owner", "admin"}:
+        return [
+            item
+            for item in classes
+            if item.get("organization_id") == user.get("organization_id")
+        ]
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [item for item in classes if item.get("id") in owned_class_ids]
 
 
+def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
+    if not isinstance(lesson, dict):
+        return None
+    serialized = dict(lesson)
+    pdf_path = serialized.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        serialized["pdf_path"] = ""
+    return serialized
+
+
+def _serialize_lessons_for_response(lessons: object) -> list[dict]:
+    if not isinstance(lessons, list):
+        return []
+    serialized_lessons = []
+    for lesson in lessons:
+        serialized = _serialize_lesson_for_response(lesson)
+        if serialized is not None:
+            serialized_lessons.append(serialized)
+    return serialized_lessons
+
+
 def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return True
     if not isinstance(lesson, dict):
         return False
+    if user.get("role") in {"owner", "admin"}:
+        return lesson.get("organization_id") == user.get("organization_id")
 
     class_id = lesson.get("class_id")
     if not isinstance(class_id, int):
@@ -1375,8 +1124,14 @@ def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]]
 def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
     if not isinstance(lessons, list):
         return []
-    if user.get("role") in {"super_owner", "owner", "admin"}:
+    if user.get("role") == "super_owner":
         return [item for item in lessons if isinstance(item, dict)]
+    if user.get("role") in {"owner", "admin"}:
+        return [
+            item
+            for item in lessons
+            if isinstance(item, dict) and item.get("organization_id") == user.get("organization_id")
+        ]
 
     owned_class_ids = set(get_user_class_ids(user["id"]))
     return [
@@ -1568,123 +1323,6 @@ def _get_json_object_payload():
     return data, None
 
 
-def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
-    return (int(user_id), (platform_order_id or "").strip().upper())
-
-
-def _is_credit_redeem_attempt_blocked(user_id: int, platform_order_id: str) -> bool:
-    now = monotonic()
-    key = _credit_redeem_failure_key(user_id, platform_order_id)
-    with _CREDIT_REDEEM_FAILURE_LOCK:
-        entry = _CREDIT_REDEEM_FAILURE_STATE.get(key)
-        if not entry:
-            return False
-        blocked_until = float(entry.get("blocked_until", 0.0))
-        if blocked_until > now:
-            return True
-        if blocked_until:
-            _CREDIT_REDEEM_FAILURE_STATE.pop(key, None)
-        return False
-
-
-def _record_credit_redeem_failure(user_id: int, platform_order_id: str) -> None:
-    now = monotonic()
-    key = _credit_redeem_failure_key(user_id, platform_order_id)
-    with _CREDIT_REDEEM_FAILURE_LOCK:
-        entry = _CREDIT_REDEEM_FAILURE_STATE.get(key) or {"failures": 0, "blocked_until": 0.0}
-        failures = int(entry.get("failures", 0)) + 1
-        blocked_until = float(entry.get("blocked_until", 0.0))
-        if failures >= _CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS:
-            blocked_until = now + _CREDIT_REDEEM_FAILURE_LOCK_SECONDS
-        _CREDIT_REDEEM_FAILURE_STATE[key] = {
-            "failures": failures,
-            "blocked_until": blocked_until,
-        }
-
-
-def _reset_credit_redeem_failure(user_id: int, platform_order_id: str) -> None:
-    key = _credit_redeem_failure_key(user_id, platform_order_id)
-    with _CREDIT_REDEEM_FAILURE_LOCK:
-        _CREDIT_REDEEM_FAILURE_STATE.pop(key, None)
-
-
-@app.route("/api/credits/overview", methods=["GET"])
-def api_credit_overview():
-    user, error = _require_owner()
-    if error:
-        return error
-    return jsonify(get_credit_overview(user["organization_id"]))
-
-
-@app.route("/api/credits/ledger", methods=["GET"])
-def api_credit_ledger():
-    user, error = _require_owner()
-    if error:
-        return error
-    limit = request.args.get("limit", "100")
-    try:
-        items = list_credit_ledger(user["organization_id"], limit=int(limit))
-    except (TypeError, ValueError):
-        return jsonify({"error": "limit must be a positive integer"}), 400
-    return jsonify({"items": items})
-
-
-@app.route("/api/credits/member-usage", methods=["GET"])
-def api_credit_member_usage():
-    user, error = _require_owner()
-    if error:
-        return error
-    return jsonify({"items": list_member_usage_summary(user["organization_id"])})
-
-
-@app.route("/api/credits/member-usage/<int:user_id>", methods=["GET"])
-def api_credit_member_usage_detail(user_id: int):
-    user, error = _require_owner()
-    if error:
-        return error
-    return jsonify({"items": list_member_usage_detail(user["organization_id"], user_id)})
-
-
-@app.route("/api/credits/redeem/xhs", methods=["POST"])
-def api_credit_redeem_xhs():
-    user, error = _require_owner()
-    if error:
-        return error
-    data, payload_error = _get_json_object_payload()
-    if payload_error:
-        return payload_error
-    platform_order_id = str(data.get("platform_order_id", "")).strip()
-    phone_suffix = str(data.get("phone_suffix", "")).strip()
-    if not platform_order_id or not phone_suffix:
-        return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
-    if len(phone_suffix) != 4 or not phone_suffix.isdigit():
-        return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
-    if _is_credit_redeem_attempt_blocked(user["id"], platform_order_id):
-        return jsonify({"error": "too many failed redemption attempts, please try later"}), 429
-
-    try:
-        order_payload = fetch_xhs_order_for_redemption(
-            platform_order_id=platform_order_id,
-            phone_suffix=phone_suffix,
-        )
-        result = redeem_xhs_order(
-            organization_id=user["organization_id"],
-            actor_user_id=user["id"],
-            platform_order_id=platform_order_id,
-            phone_suffix=phone_suffix,
-            order_payload=order_payload,
-        )
-        _reset_credit_redeem_failure(user["id"], platform_order_id)
-    except ValueError as exc:
-        if str(exc) == "order already redeemed":
-            return jsonify({"error": str(exc)}), 409
-        _record_credit_redeem_failure(user["id"], platform_order_id)
-        return jsonify({"error": "unable to verify order for redemption"}), 422
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 502
-    return jsonify(result)
-
-
 @app.route("/api/me", methods=["GET"])
 def api_me():
     user, error = _require_auth()
@@ -1787,14 +1425,7 @@ def api_admin_registration_requests():
     user, error = _require_owner()
     if error:
         return error
-    return jsonify(
-        {
-            "items": list_registration_requests(
-                "pending",
-                organization_id=_organization_scope_for_user(user),
-            )
-        }
-    )
+    return jsonify({"items": list_registration_requests_for_actor(user, "pending")})
 
 
 @app.route("/api/admin/registration-requests/<int:request_id>/approve", methods=["POST"])
@@ -1802,12 +1433,16 @@ def api_admin_registration_request_approve(request_id):
     user, error = _require_owner()
     if error:
         return error
+    registration_request = get_registration_request(request_id)
+    if not registration_request:
+        return jsonify({"error": "申请不存在"}), 404
+    if (
+        user.get("role") != "super_owner"
+        and registration_request.get("organization_id") != user.get("organization_id")
+    ):
+        return jsonify({"error": "申请不存在"}), 404
     try:
-        approved = approve_registration_request(
-            request_id=request_id,
-            reviewer_id=user["id"],
-            organization_id=_organization_scope_for_user(user),
-        )
+        approved = approve_registration_request(request_id=request_id, reviewer_id=user["id"])
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1820,12 +1455,16 @@ def api_admin_registration_request_reject(request_id):
     user, error = _require_owner()
     if error:
         return error
+    registration_request = get_registration_request(request_id)
+    if not registration_request:
+        return jsonify({"error": "申请不存在"}), 404
+    if (
+        user.get("role") != "super_owner"
+        and registration_request.get("organization_id") != user.get("organization_id")
+    ):
+        return jsonify({"error": "申请不存在"}), 404
     try:
-        reject_registration_request(
-            request_id=request_id,
-            reviewer_id=user["id"],
-            organization_id=_organization_scope_for_user(user),
-        )
+        reject_registration_request(request_id=request_id, reviewer_id=user["id"])
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1838,7 +1477,7 @@ def api_admin_users():
     user, error = _require_staff()
     if error:
         return error
-    users = list_all_users(organization_id=_organization_scope_for_user(user))
+    users = list_users_for_actor(user)
     return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
 
 
@@ -1847,15 +1486,15 @@ def api_admin_member_binding_summary():
     user, error = _require_staff()
     if error:
         return error
-    items = master_data.list_member_binding_summaries()
-    organization_id = _organization_scope_for_user(user)
-    if organization_id is not None:
-        allowed_user_ids = {
-            item["id"]
-            for item in list_all_users(organization_id=organization_id)
-        }
-        items = [item for item in items if item["user_id"] in allowed_user_ids]
-    return jsonify({"items": items})
+    return jsonify({"items": master_data.list_member_binding_summaries(actor_user=user)})
+
+
+@app.route("/api/admin/organizations", methods=["GET"])
+def api_admin_organizations():
+    _, error = _require_super_owner()
+    if error:
+        return error
+    return jsonify({"items": list_organizations()})
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
@@ -1869,12 +1508,13 @@ def api_admin_user_role_set(user_id):
         return jsonify({"error": "role must be owner, admin or member"}), 400
     if role == "owner" and user.get("role") != "super_owner":
         return jsonify({"error": "无权限"}), 403
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner" and not actor_can_manage_user(user, target_user):
+        return jsonify({"error": "user not found"}), 404
     try:
-        update_user_role(
-            user_id,
-            role,
-            organization_id=_organization_scope_for_user(user),
-        )
+        update_user_role(user_id, role)
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1886,21 +1526,38 @@ def api_admin_user_role_set(user_id):
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["GET"])
 def api_admin_user_classes_get(user_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner" and target_user.get("organization_id") != user.get("organization_id"):
+        return jsonify({"error": "user not found"}), 404
     return jsonify({"class_ids": get_user_class_ids(user_id)})
 
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["PUT"])
 def api_admin_user_classes_set(user_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     data = request.json or {}
     class_ids = data.get("class_ids", [])
     if not isinstance(class_ids, list):
         return jsonify({"error": "class_ids must be a list"}), 400
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner" and target_user.get("organization_id") != user.get("organization_id"):
+        return jsonify({"error": "user not found"}), 404
+    if user.get("role") != "super_owner":
+        for class_id in class_ids:
+            cls = get_class(class_id)
+            if not cls:
+                return jsonify({"error": f"class not found: {class_id}"}), 404
+            if cls.get("organization_id") != user.get("organization_id"):
+                return jsonify({"error": "class not found"}), 404
     try:
         set_user_class_ids(user_id, class_ids)
     except ValueError as exc:
@@ -1908,6 +1565,22 @@ def api_admin_user_classes_set(user_id):
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:user_id>/profile", methods=["PUT"])
+def api_admin_user_profile_update(user_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    display_name = (data.get("display_name") or "").strip()
+    try:
+        updated_user = update_user_display_name_for_actor(user, user_id, display_name)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True, "user": updated_user})
 
 
 @app.route("/api/wrong-questions", methods=["GET"])
@@ -1978,15 +1651,15 @@ def api_wrong_question_review_save(record_id):
 
 @app.route("/api/consultations", methods=["GET"])
 def api_consultations_list():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_consultations(query=request.args.get("q", "")))
+    return jsonify(list_consultations_for_actor(user, query=request.args.get("q", "")))
 
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
 def api_consultation_ai_parse():
-    user, error = _require_staff()
+    _, error = _require_staff()
     if error:
         return error
 
@@ -2004,33 +1677,9 @@ def api_consultation_ai_parse():
     if not cleaned_text:
         return jsonify({"error": "raw_text is empty after cleanup"}), 400
 
-    provider = _default_ai_provider_name()
-    model = _default_chat_model_name()
-
-    def _produce_consultation_parse():
-        parsed_result = _call_ai_helper_with_usage(parse_consultation_batch_text, cleaned_text)
-        parsed_payload, usage = _split_ai_result_with_usage(
-            parsed_result,
-            provider=provider,
-            model=model,
-        )
-        normalized_payload = normalize_consultation_batch_parse_result(parsed_payload)
-        return normalized_payload, usage
-
     try:
-        normalized = _run_ai_feature_with_charge(
-            user=user,
-            feature_key="consultation_ai_parse",
-            source_record_type="consultation_batch",
-            source_record_id=hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()[:16],
-            producer=_produce_consultation_parse,
-            provider=provider,
-            model=model,
-        )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
+        parsed = parse_consultation_batch_text(cleaned_text)
+        normalized = normalize_consultation_batch_parse_result(parsed)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 502
     except RuntimeError as exc:
@@ -2051,10 +1700,13 @@ def api_consultation_teachers():
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["GET"])
 def api_consultation_get(consultation_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    item = get_consultation(consultation_id)
+    item = get_consultation(
+        consultation_id,
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+    )
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
@@ -2062,19 +1714,23 @@ def api_consultation_get(consultation_id):
 
 @app.route("/api/consultations", methods=["POST"])
 def api_consultation_create():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
-    item = create_consultation(request.json or {})
+    item = create_consultation(request.json or {}, user["organization_id"])
     return jsonify(item), 201
 
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["PUT"])
 def api_consultation_update(consultation_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    item = update_consultation(consultation_id, request.json or {})
+    item = update_consultation(
+        consultation_id,
+        request.json or {},
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+    )
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
@@ -2082,10 +1738,13 @@ def api_consultation_update(consultation_id):
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["DELETE"])
 def api_consultation_delete(consultation_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
-    deleted = delete_consultation(consultation_id)
+    deleted = delete_consultation(
+        consultation_id,
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+    )
     if not deleted:
         return jsonify({"error": "not found"}), 404
     return jsonify({"ok": True})
@@ -2093,17 +1752,28 @@ def api_consultation_delete(consultation_id):
 
 @app.route("/api/stats")
 def api_stats():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     month_now = datetime.now().strftime("%Y-%m")
-    all_lessons = list_lessons()
+    all_lessons = list_lessons_for_actor(user)
     total_pdfs = sum(1 for l in all_lessons if l.get("pdf_path") and Path(l["pdf_path"]).exists())
     with get_conn() as conn:
-        total_questions = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        if user.get("role") == "super_owner":
+            total_questions = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        else:
+            total_questions = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM questions q
+                JOIN lessons l ON l.id = q.lesson_id
+                WHERE l.organization_id=?
+                """,
+                (user["organization_id"],),
+            ).fetchone()[0]
     return jsonify({
         "total_lessons": len(all_lessons),
-        "month_lessons": len(list_lessons(month_now)),
+        "month_lessons": len(list_lessons_for_actor(user, month_str=month_now)),
         "total_pdfs": total_pdfs,
         "total_questions": total_questions,
     })
@@ -2114,12 +1784,12 @@ def api_classes_list():
     user, error = _require_auth()
     if error:
         return error
-    return jsonify(_filter_classes_for_user(user, list_classes()))
+    return jsonify(list_classes_for_actor(user) if user.get("role") in {"super_owner", "owner", "admin"} else _filter_classes_for_user(user, list_classes()))
 
 
 @app.route("/api/classes", methods=["POST"])
 def api_class_create():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     data = request.json or {}
@@ -2132,6 +1802,7 @@ def api_class_create():
         grade=data.get("grade", "").strip(),
         teacher_name=data.get("teacher_name", "").strip(),
         teacher_email=data.get("teacher_email", "").strip(),
+        organization_id=user.get("organization_id"),
     )
     return jsonify({"id": cid, "name": name}), 201
 
@@ -2146,14 +1817,16 @@ def api_class_teacher_bindings_list():
 
 @app.route("/api/classes/<int:class_id>", methods=["GET"])
 def api_class_get(class_id):
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
-    lessons = list_lessons(class_id=class_id)
-    return jsonify({**cls, "lessons": lessons})
+    if not _filter_classes_for_user(user, [cls]):
+        return jsonify({"error": "forbidden"}), 403
+    lessons = list_lessons_for_actor(user, class_id=class_id)
+    return jsonify({**cls, "lessons": _serialize_lessons_for_response(lessons)})
 
 
 @app.route("/api/classes/<int:class_id>/students", methods=["GET"])
@@ -2203,11 +1876,18 @@ def api_class_students_delete(class_id, student_id):
 
 @app.route("/api/classes/<int:class_id>/teacher", methods=["PUT"])
 def api_class_teacher_set(class_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
+    _, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
     data = request.json or {}
     teacher_user_id = data.get("teacher_user_id")
+    if teacher_user_id is not None and user.get("role") != "super_owner":
+        teacher_user = get_user_by_id(teacher_user_id)
+        if not teacher_user or teacher_user.get("organization_id") != user.get("organization_id"):
+            return jsonify({"error": "user not found"}), 404
     try:
         set_class_teacher_user_id(class_id, teacher_user_id)
     except ValueError as exc:
@@ -2221,12 +1901,14 @@ def api_class_teacher_set(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
 def api_class_update(class_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
+    if not _filter_classes_for_user(user, [cls]):
+        return jsonify({"error": "forbidden"}), 403
     data = request.json or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -2250,12 +1932,14 @@ def api_class_update(class_id):
 
 @app.route("/api/classes/<int:class_id>", methods=["DELETE"])
 def api_class_delete(class_id):
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
     cls = get_class(class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
+    if not _filter_classes_for_user(user, [cls]):
+        return jsonify({"error": "forbidden"}), 403
     db_delete_class(class_id)
     return jsonify({"ok": True})
 
@@ -2267,11 +1951,12 @@ def api_lessons_list():
         return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
-    lessons = list_lessons(
-        month_str=month if month else None,
-        class_id=class_id if class_id else None,
+    lessons = list_lessons_for_actor(
+        user,
+        month_str=month if month else "",
+        class_id=class_id if class_id else 0,
     )
-    return jsonify(_filter_lessons_for_user(user, lessons))
+    return jsonify(_serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)))
 
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
@@ -2283,7 +1968,10 @@ def api_lesson_get(lesson_id):
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
     questions = get_questions(lesson_id=lesson_id)
-    return jsonify({**lesson, "questions": questions})
+    serialized_lesson = _serialize_lesson_for_response(lesson)
+    if serialized_lesson is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({**serialized_lesson, "questions": questions})
 
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
@@ -2316,15 +2004,12 @@ def api_lesson_create():
         
     lesson_date = data.get("date") or str(date.today())
     class_id = int(data.get("class_id") or 0)
-    if not class_id and user.get("role") == "member":
+    if not class_id:
         return jsonify({"error": "请选择班级后再生成复习记录"}), 400
 
-    cls = get_class(class_id) if class_id else None
-    if class_id:
-        if not cls:
-            return jsonify({"error": "class not found"}), 404
-        if not _can_access_lesson(user, {"class_id": class_id}):
-            return jsonify({"error": "forbidden"}), 403
+    cls, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
 
     subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
@@ -2333,8 +2018,6 @@ def api_lesson_create():
     
     input_type = data.get("input_type", "text")
     raw_text = ""
-    chat_provider = _default_ai_provider_name()
-    chat_model = _default_chat_model_name()
     
     if input_type == "text" or request.is_json:
         raw_text = data.get("summary_text", "").strip()
@@ -2357,22 +2040,7 @@ def api_lesson_create():
                 
             try:
                 from ai_processor import transcribe_audio
-                raw_text = _run_ai_feature_with_charge(
-                    user=user,
-                    feature_key="audio_transcription",
-                    source_record_type="lesson_upload",
-                    source_record_id=f"upload:{_request_payload_fingerprint()}",
-                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
-                    provider="openai",
-                    model="whisper-1",
-                    request_key=_current_audio_upload_request_key(),
-                )
-            except DuplicateAiRequestError as exc:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": str(exc)}), 409
-            except CreditBalanceError as exc:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": str(exc)}), 402
+                raw_text = transcribe_audio(str(save_path))
             except Exception as e:
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": f"音频转录失败：{e}"}), 500
@@ -2387,27 +2055,10 @@ def api_lesson_create():
 
     try:
         from ai_processor import parse_and_generate_plan
-        plan = _run_ai_feature_with_charge(
-            user=user,
-            feature_key="lesson_plan_generate",
-            source_record_type="lesson",
-            source_record_id=f"draft:{class_id}:{lesson_date}:{topic or 'lesson'}",
-            producer=lambda: _call_ai_helper_with_usage(
-                parse_and_generate_plan,
-                summary_text=raw_text,
-                subject=subject,
-                grade=grade,
-                topic=topic,
-                weak_points=weak_points,
-                lesson_date=lesson_date,
-            ),
-            provider=chat_provider,
-            model=chat_model,
+        plan = parse_and_generate_plan(
+            summary_text=raw_text, subject=subject, grade=grade,
+            topic=topic, weak_points=weak_points, lesson_date=lesson_date,
         )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
     except Exception as e:
         return jsonify({"error": f"AI 生成失败：{e}"}), 500
     pdf_path = ""
@@ -2473,27 +2124,12 @@ def api_lesson_feedback_draft(lesson_id):
             "students_skipped": skipped_count,
         })
 
-    provider = _default_ai_provider_name()
-    model = _default_chat_model_name()
     try:
-        merged_text = _run_ai_feature_with_charge(
-            user=user,
-            feature_key="teacher_feedback_draft",
-            source_record_type="lesson",
-            source_record_id=lesson_id,
-            producer=lambda: _call_ai_helper_with_usage(
-                generate_teacher_feedback_draft,
-                lesson=lesson,
-                students=selected_students,
-                custom_templates=custom_templates,
-            ),
-            provider=provider,
-            model=model,
+        merged_text = generate_teacher_feedback_draft(
+            lesson=lesson,
+            students=selected_students,
+            custom_templates=custom_templates,
         )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({
@@ -2617,7 +2253,7 @@ def api_monthly_list():
 
 @app.route("/api/monthly/generate", methods=["POST"])
 def api_monthly_generate():
-    user, error = _require_auth()
+    _, error = _require_auth()
     if error:
         return error
     if not has_api_key():
@@ -2631,33 +2267,12 @@ def api_monthly_generate():
                      "grade": l["grade"] or "", "topic": l["topic"] or "",
                      "summary": (l["summary"] or "")[:800],
                      "weak_points": l["weak_points"] or ""} for l in lessons]
-    provider = _default_ai_provider_name()
-    model = _default_chat_model_name()
-    pdf_name = f"{month_str}_月度综合复习.pdf"
     try:
         from ai_processor import generate_monthly_plan
+        plan = generate_monthly_plan(lesson_dicts, month_str)
         from pdf_engine import generate_monthly_pdf
-        _run_ai_feature_with_charge(
-            user=user,
-            feature_key="monthly_plan_generate",
-            source_record_type="monthly_plan",
-            source_record_id=month_str,
-            producer=lambda: _call_ai_helper_with_usage(
-                generate_monthly_plan,
-                lesson_dicts,
-                month_str,
-            ),
-            provider=provider,
-            model=model,
-            after_success=lambda generated_plan: generate_monthly_pdf(
-                generated_plan,
-                str(PDF_DIR / pdf_name),
-            ),
-        )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
+        pdf_name = f"{month_str}_月度综合复习.pdf"
+        generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"ok": True, "filename": pdf_name})

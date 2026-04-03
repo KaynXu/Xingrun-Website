@@ -107,6 +107,17 @@ class AccountFlowTestCase(unittest.TestCase):
             headers=self.auth_headers(super_owner_token),
         )
 
+    def create_class(self, token: str, name: str, subject: str = "数学", grade: str = "初一"):
+        return self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(token),
+            json={
+                "name": name,
+                "subject": subject,
+                "grade": grade,
+            },
+        )
+
     def login_as_kayn(self) -> str:
         owner_login = self.client.post(
             "/api/login",
@@ -532,6 +543,177 @@ class AccountFlowTestCase(unittest.TestCase):
 
         forbidden = self.approve_organization_request(owner_payload["token"], request_id)
         self.assertEqual(forbidden.status_code, 403)
+
+    def test_owner_only_sees_members_classes_and_requests_from_own_organization(self):
+        kayn_token = self.login_as_kayn()
+        alpha_owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Alpha School",
+            owner_username="alpha_owner",
+            owner_display_name="Alpha Owner",
+            owner_password="ownerpass123",
+        )
+        beta_owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Beta School",
+            owner_username="beta_owner",
+            owner_display_name="Beta Owner",
+            owner_password="ownerpass123",
+        )
+
+        alpha_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": self.client.get(
+                    "/api/organization/invite",
+                    headers=self.auth_headers(alpha_owner_token),
+                ).get_json()["invite_code"],
+                "username": "alpha_member",
+                "display_name": "Alpha Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(alpha_join.status_code, 201)
+
+        beta_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": self.client.get(
+                    "/api/organization/invite",
+                    headers=self.auth_headers(beta_owner_token),
+                ).get_json()["invite_code"],
+                "username": "beta_member",
+                "display_name": "Beta Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(beta_join.status_code, 201)
+
+        starain_pending = self.client.post(
+            "/api/register-request",
+            json={
+                "username": "starain_pending",
+                "display_name": "Starain Pending",
+                "password": "pending123",
+                "organization_name": "星润Starain",
+            },
+        )
+        self.assertEqual(starain_pending.status_code, 201)
+
+        alpha_class = self.create_class(alpha_owner_token, "Alpha 一班")
+        self.assertEqual(alpha_class.status_code, 201)
+
+        beta_class = self.create_class(beta_owner_token, "Beta 一班")
+        self.assertEqual(beta_class.status_code, 201)
+
+        alpha_users = self.client.get("/api/admin/users", headers=self.auth_headers(alpha_owner_token))
+        self.assertEqual(alpha_users.status_code, 200)
+        alpha_user_names = {item["name"] for item in alpha_users.get_json()}
+        self.assertEqual(alpha_user_names, {"Alpha Owner", "Alpha Member"})
+        self.assertEqual({item["org"] for item in alpha_users.get_json()}, {"Alpha School"})
+
+        alpha_classes = self.client.get("/api/classes", headers=self.auth_headers(alpha_owner_token))
+        self.assertEqual(alpha_classes.status_code, 200)
+        self.assertEqual({item["name"] for item in alpha_classes.get_json()}, {"Alpha 一班"})
+
+        alpha_requests = self.client.get(
+            "/api/admin/registration-requests",
+            headers=self.auth_headers(alpha_owner_token),
+        )
+        self.assertEqual(alpha_requests.status_code, 200)
+        self.assertEqual(alpha_requests.get_json()["items"], [])
+
+    def test_super_owner_can_list_registered_organizations(self):
+        kayn_token = self.login_as_kayn()
+        alpha_owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Alpha School",
+            owner_username="alpha_owner",
+            owner_display_name="Alpha Owner",
+            owner_password="ownerpass123",
+        )
+        self.create_class(alpha_owner_token, "Alpha 一班")
+
+        organizations = self.client.get(
+            "/api/admin/organizations",
+            headers=self.auth_headers(kayn_token),
+        )
+        self.assertEqual(organizations.status_code, 200)
+        payload = organizations.get_json()
+        self.assertIsInstance(payload, dict)
+        names = {item["name"] for item in payload["items"]}
+        self.assertIn("星润Starain", names)
+        self.assertIn("Alpha School", names)
+        alpha_item = next(item for item in payload["items"] if item["name"] == "Alpha School")
+        self.assertGreaterEqual(alpha_item["member_count"], 1)
+        self.assertGreaterEqual(alpha_item["owner_count"], 1)
+        self.assertGreaterEqual(alpha_item["class_count"], 1)
+
+    def test_owner_can_update_member_display_name_in_own_organization(self):
+        owner_token, invite = self.create_approved_organization_with_invite(
+            organization_name="Alpha School",
+            owner_username="alpha_owner",
+            owner_display_name="Alpha Owner",
+            owner_password="ownerpass123",
+        )
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite["invite_code"],
+                "username": "alpha_member",
+                "display_name": "Alpha Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        member_id = join.get_json()["user"]["id"]
+
+        update = self.client.put(
+            f"/api/admin/users/{member_id}/profile",
+            headers=self.auth_headers(owner_token),
+            json={"display_name": "Alpha Member Renamed"},
+        )
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.get_json()["user"]["display_name"], "Alpha Member Renamed")
+
+        users = self.client.get("/api/admin/users", headers=self.auth_headers(owner_token))
+        self.assertEqual(users.status_code, 200)
+        renamed = next(item for item in users.get_json() if item["id"] == member_id)
+        self.assertEqual(renamed["name"], "Alpha Member Renamed")
+
+    def test_owner_cannot_update_member_display_name_in_other_organization(self):
+        alpha_owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Alpha School",
+            owner_username="alpha_owner",
+            owner_display_name="Alpha Owner",
+            owner_password="ownerpass123",
+        )
+        beta_owner_token, beta_invite = self.create_approved_organization_with_invite(
+            organization_name="Beta School",
+            owner_username="beta_owner",
+            owner_display_name="Beta Owner",
+            owner_password="ownerpass123",
+        )
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": beta_invite["invite_code"],
+                "username": "beta_member",
+                "display_name": "Beta Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        beta_member_id = join.get_json()["user"]["id"]
+
+        forbidden = self.client.put(
+            f"/api/admin/users/{beta_member_id}/profile",
+            headers=self.auth_headers(alpha_owner_token),
+            json={"display_name": "Should Fail"},
+        )
+        self.assertEqual(forbidden.status_code, 404)
+
+        beta_users = self.client.get("/api/admin/users", headers=self.auth_headers(beta_owner_token))
+        self.assertEqual(beta_users.status_code, 200)
+        beta_member = next(item for item in beta_users.get_json() if item["id"] == beta_member_id)
+        self.assertEqual(beta_member["name"], "Beta Member")
 
     def test_members_can_join_by_invite_code_and_old_invites_fail_after_reset(self):
         owner_login = self.client.post(
@@ -1396,8 +1578,7 @@ class AccountFlowTestCase(unittest.TestCase):
         lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
 
         with patch("app.has_api_key", return_value=True), \
-             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}), \
-             patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf"):
+             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
             missing_class_response = self.client.post(
                 "/api/lessons",
                 headers=self.auth_headers(target_member["token"]),
@@ -1440,6 +1621,98 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(missing_class_response.status_code, 400)
         self.assertEqual(forbidden_class_response.status_code, 403)
         self.assertEqual(allowed_class_response.status_code, 201)
+
+    def test_owner_can_create_lesson_for_org_visible_class(self):
+        owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Lesson Org",
+            owner_username="lesson_org_owner",
+            owner_display_name="Lesson Org Owner",
+            owner_password="owner123",
+        )
+
+        class_response = self.create_class(
+            owner_token,
+            name="Lesson Org Class",
+            subject="Math",
+            grade="高一",
+        )
+        self.assertEqual(class_response.status_code, 201)
+        class_payload = class_response.get_json()
+        self.assertIsNotNone(class_payload)
+        class_id = class_payload["id"]
+
+        with patch("app.has_api_key", return_value=True), \
+             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
+            owner_response = self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(owner_token),
+                json={
+                    "subject": "Math",
+                    "class_id": class_id,
+                    "topic": "Functions",
+                    "date": "2026-04-03",
+                    "weak_points": "graphs",
+                    "summary_text": "owner class summary",
+                    "input_type": "text",
+                },
+            )
+
+        self.assertEqual(owner_response.status_code, 201)
+
+    def test_lesson_api_hides_stale_pdf_paths_when_file_is_missing(self):
+        owner_token = self.login_as_kayn()
+
+        missing_pdf_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Math",
+            "Grade 10",
+            "Functions",
+            "summary",
+            "weak",
+            {"questions": []},
+            str(self.base / "missing.pdf"),
+            0,
+        )
+
+        existing_pdf_path = self.base / "existing.pdf"
+        existing_pdf_path.write_bytes(b"%PDF-1.4\n%fake pdf\n")
+        existing_pdf_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Math",
+            "Grade 10",
+            "Sequences",
+            "summary",
+            "weak",
+            {"questions": []},
+            str(existing_pdf_path),
+            0,
+        )
+
+        lessons_response = self.client.get(
+            "/api/lessons",
+            headers=self.auth_headers(owner_token),
+        )
+        missing_detail_response = self.client.get(
+            f"/api/lessons/{missing_pdf_lesson_id}",
+            headers=self.auth_headers(owner_token),
+        )
+        existing_detail_response = self.client.get(
+            f"/api/lessons/{existing_pdf_lesson_id}",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(lessons_response.status_code, 200)
+        self.assertEqual(missing_detail_response.status_code, 200)
+        self.assertEqual(existing_detail_response.status_code, 200)
+
+        lessons_payload = lessons_response.get_json()
+        self.assertIsNotNone(lessons_payload)
+        lessons_by_id = {item["id"]: item for item in lessons_payload}
+
+        self.assertEqual(lessons_by_id[missing_pdf_lesson_id]["pdf_path"], "")
+        self.assertEqual(missing_detail_response.get_json()["pdf_path"], "")
+        self.assertEqual(lessons_by_id[existing_pdf_lesson_id]["pdf_path"], str(existing_pdf_path))
+        self.assertEqual(existing_detail_response.get_json()["pdf_path"], str(existing_pdf_path))
 
     def test_owner_and_admin_still_have_full_lesson_visibility(self):
         owner_token = self.login_as_kayn()
