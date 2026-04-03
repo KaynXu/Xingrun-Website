@@ -26,8 +26,12 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         config_runtime.write_file_config({})
         lesson_manager.init_db()
         self.owner, _ = lesson_manager.authenticate_user("Kayn", "xingrun2026")
+        if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
+            app_module._AI_REQUEST_IN_FLIGHT.clear()
 
     def tearDown(self):
+        if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
+            app_module._AI_REQUEST_IN_FLIGHT.clear()
         gc.collect()
         self.temp_dir.cleanup()
 
@@ -278,6 +282,52 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         self.assertEqual(usage_count["total"], 1)
         self.assertEqual(debit_count["total"], 1)
 
+    def test_claim_ai_request_identity_blocks_inflight_and_completed_duplicates(self):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner["organization_id"],
+            actor_user_id=self.owner["id"],
+            amount=50,
+            note="seed balance for request identity claim",
+        )
+        request_id = "req-claim-idempotency"
+        app_module._AI_REQUEST_IN_FLIGHT.clear()
+
+        try:
+            app_module._claim_ai_request_identity(
+                organization_id=self.owner["organization_id"],
+                request_id=request_id,
+            )
+            with self.assertRaises(app_module.DuplicateAiRequestError):
+                app_module._claim_ai_request_identity(
+                    organization_id=self.owner["organization_id"],
+                    request_id=request_id,
+                )
+
+            app_module._release_ai_request_identity(request_id)
+
+            credit_manager.record_ai_charge(
+                organization_id=self.owner["organization_id"],
+                user_id=self.owner["id"],
+                feature_key="teacher_feedback_draft",
+                provider="openai",
+                model="gpt-4o",
+                input_tokens=70,
+                output_tokens=30,
+                credit_cost_final=5,
+                source_record_type="lesson",
+                source_record_id=88,
+                request_id=request_id,
+            )
+
+            with self.assertRaises(app_module.DuplicateAiRequestError):
+                app_module._claim_ai_request_identity(
+                    organization_id=self.owner["organization_id"],
+                    request_id=request_id,
+                )
+        finally:
+            app_module._release_ai_request_identity(request_id)
+            app_module._AI_REQUEST_IN_FLIGHT.clear()
+
 
 class CreditSystemApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -299,8 +349,12 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.owner_user = payload["user"]
         if hasattr(app_module, "_CREDIT_REDEEM_FAILURE_STATE"):
             app_module._CREDIT_REDEEM_FAILURE_STATE.clear()
+        if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
+            app_module._AI_REQUEST_IN_FLIGHT.clear()
 
     def tearDown(self):
+        if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
+            app_module._AI_REQUEST_IN_FLIGHT.clear()
         gc.collect()
         self.temp_dir.cleanup()
 
@@ -523,6 +577,117 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(overview["credit_balance"], 28)
         self.assertEqual(ledger[0]["source_type"], "ai_usage")
         self.assertEqual(ledger[0]["note"], "teacher_feedback_draft")
+
+    @patch("app.parse_consultation_batch_text")
+    def test_consultation_ai_parse_duplicate_idempotency_header_skips_second_ai_call_and_charge(self, mock_parse):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=20,
+            note="seed parse credits",
+        )
+        mock_parse.return_value = (
+            {"items": [], "warnings": []},
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 120,
+                "output_tokens": 40,
+            },
+        )
+        headers = {
+            **self.auth_headers(self.owner_token),
+            "Idempotency-Key": "parse-dup-1",
+        }
+
+        first = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=headers,
+            json={"raw_text": "张妈妈，五年级数学"},
+        )
+        second = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=headers,
+            json={"raw_text": "张妈妈，五年级数学"},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 409)
+        self.assertIn("重复请求", second.get_json()["error"])
+        self.assertEqual(mock_parse.call_count, 1)
+
+        overview = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        self.assertEqual(overview["credit_balance"], 17)
+
+        with lesson_manager.get_conn() as conn:
+            usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND feature_key='consultation_ai_parse'
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+        self.assertEqual(usage_count["total"], 1)
+
+    @patch("app._ai_fallback_request_bucket", return_value=12345)
+    @patch("app.parse_consultation_batch_text")
+    def test_consultation_ai_parse_fallback_request_identity_skips_immediate_retry_and_charge(
+        self,
+        mock_parse,
+        _mock_bucket,
+    ):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=20,
+            note="seed fallback parse credits",
+        )
+        mock_parse.return_value = (
+            {"items": [], "warnings": []},
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 90,
+                "output_tokens": 30,
+            },
+        )
+
+        first = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(self.owner_token),
+            json={"raw_text": "李妈妈，四年级英语"},
+        )
+        second = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(self.owner_token),
+            json={"raw_text": "李妈妈，四年级英语"},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 409)
+        self.assertIn("重复请求", second.get_json()["error"])
+        self.assertEqual(mock_parse.call_count, 1)
+
+        overview = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        self.assertEqual(overview["credit_balance"], 17)
+
+        with lesson_manager.get_conn() as conn:
+            usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND feature_key='consultation_ai_parse'
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+        self.assertEqual(usage_count["total"], 1)
 
     @patch("ai_processor.parse_and_generate_plan")
     @patch("app.has_api_key", return_value=True)

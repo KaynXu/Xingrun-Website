@@ -136,6 +136,24 @@ def list_member_usage_summary(organization_id: int) -> list[dict]:
     return lesson_manager.list_member_usage_summary_rows(organization_id)
 
 
+def get_ai_usage_by_request_id(*, organization_id: int, request_id: str) -> dict | None:
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_request_id:
+        return None
+    with lesson_manager.get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM ai_usage_ledger
+            WHERE organization_id=? AND request_id=?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (organization_id, normalized_request_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def list_credit_ledger(organization_id: int, *, limit: int = 100) -> list[dict]:
     normalized_limit = max(1, min(int(limit), 500))
     with lesson_manager.get_conn() as conn:

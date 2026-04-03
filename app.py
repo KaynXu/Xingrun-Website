@@ -110,6 +110,7 @@ from credit_manager import (
     CreditBalanceError,
     ensure_feature_credits_available,
     finalize_ai_charge,
+    get_ai_usage_by_request_id,
     get_credit_overview,
     list_credit_ledger,
     list_member_usage_detail,
@@ -151,6 +152,10 @@ _CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS = 3
 _CREDIT_REDEEM_FAILURE_LOCK_SECONDS = 300.0
 _CREDIT_REDEEM_FAILURE_STATE: dict[tuple[int, str], dict[str, float | int]] = {}
 _CREDIT_REDEEM_FAILURE_LOCK = threading.Lock()
+_AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS = 60.0
+_AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
+_AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
+_AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
 
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -194,6 +199,83 @@ def _split_ai_result_with_usage(result: object, *, provider: str, model: str) ->
     return result, _normalize_ai_usage_payload({}, provider=provider, model=model)
 
 
+class DuplicateAiRequestError(RuntimeError):
+    pass
+
+
+def _normalize_request_payload_for_fingerprint(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_request_payload_for_fingerprint(value[key])
+            for key in sorted(value)
+        }
+    if isinstance(value, list):
+        return [_normalize_request_payload_for_fingerprint(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_request_payload_for_fingerprint(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _uploaded_file_size(file_storage) -> int:
+    content_length = getattr(file_storage, "content_length", None)
+    if content_length not in (None, ""):
+        try:
+            return max(0, int(content_length))
+        except (TypeError, ValueError):
+            pass
+    stream = getattr(file_storage, "stream", None)
+    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
+        return 0
+    try:
+        position = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        size = max(0, int(stream.tell() or 0))
+        stream.seek(position)
+        return size
+    except (OSError, ValueError):
+        return 0
+
+
+def _request_payload_fingerprint() -> str:
+    payload: dict[str, object] = {
+        "method": request.method,
+        "path": request.path,
+    }
+    if request.is_json:
+        payload["json"] = _normalize_request_payload_for_fingerprint(request.get_json(silent=True))
+    if request.form:
+        payload["form"] = {
+            key: [_normalize_request_payload_for_fingerprint(item) for item in request.form.getlist(key)]
+            for key in sorted(request.form.keys())
+        }
+    if request.files:
+        files_payload = []
+        for field_name in sorted(request.files.keys()):
+            for storage in request.files.getlist(field_name):
+                files_payload.append(
+                    {
+                        "field": field_name,
+                        "filename": str(getattr(storage, "filename", "") or ""),
+                        "content_type": str(getattr(storage, "content_type", "") or ""),
+                        "size": _uploaded_file_size(storage),
+                    }
+                )
+        payload["files"] = files_payload
+    serialized = json.dumps(
+        _normalize_request_payload_for_fingerprint(payload),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _ai_fallback_request_bucket() -> int:
+    return int(monotonic() // _AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS)
+
+
 def _current_ai_request_key() -> str:
     request_key = str(request.environ.get("_credit_request_key") or "").strip()
     if request_key:
@@ -202,14 +284,50 @@ def _current_ai_request_key() -> str:
         request.headers.get("X-Request-Id", "").strip()
         or request.headers.get("Idempotency-Key", "").strip()
     )
-    request_key = header_key or secrets.token_hex(16)
+    payload_fingerprint = _request_payload_fingerprint()
+    if header_key:
+        request_key = f"header:{header_key}:{payload_fingerprint}"
+    else:
+        request_key = f"fallback:{_ai_fallback_request_bucket()}:{payload_fingerprint}"
     request.environ["_credit_request_key"] = request_key
     return request_key
 
 
-def _build_ai_charge_request_id(*, feature_key: str, source_record_type: str, source_record_id: int | str) -> str:
-    raw_value = f"{_current_ai_request_key()}:{feature_key}:{source_record_type}:{source_record_id}"
+def _build_ai_charge_request_id(
+    *,
+    user_id: int,
+    feature_key: str,
+    source_record_type: str,
+    source_record_id: int | str,
+) -> str:
+    raw_value = f"{user_id}:{_current_ai_request_key()}:{feature_key}:{source_record_type}:{source_record_id}"
     return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
+
+
+def _claim_ai_request_identity(*, organization_id: int, request_id: str) -> None:
+    now = monotonic()
+    with _AI_REQUEST_IN_FLIGHT_LOCK:
+        expired = [
+            key
+            for key, started_at in _AI_REQUEST_IN_FLIGHT.items()
+            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+        ]
+        for key in expired:
+            _AI_REQUEST_IN_FLIGHT.pop(key, None)
+        if request_id in _AI_REQUEST_IN_FLIGHT:
+            raise DuplicateAiRequestError("重复请求正在处理中，请勿重复提交")
+        existing_usage = get_ai_usage_by_request_id(
+            organization_id=organization_id,
+            request_id=request_id,
+        )
+        if existing_usage:
+            raise DuplicateAiRequestError("重复请求已处理，请勿重复提交")
+        _AI_REQUEST_IN_FLIGHT[request_id] = now
+
+
+def _release_ai_request_identity(request_id: str) -> None:
+    with _AI_REQUEST_IN_FLIGHT_LOCK:
+        _AI_REQUEST_IN_FLIGHT.pop(request_id, None)
 
 
 def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
@@ -232,26 +350,35 @@ def _run_ai_feature_with_charge(
     model: str,
 ):
     organization_id = int(user["organization_id"])
-    ensure_feature_credits_available(
-        organization_id=organization_id,
-        feature_key=feature_key,
-    )
-    result = producer()
-    business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
-    finalize_ai_charge(
-        organization_id=organization_id,
+    request_id = _build_ai_charge_request_id(
         user_id=int(user["id"]),
         feature_key=feature_key,
-        usage=usage,
         source_record_type=source_record_type,
         source_record_id=source_record_id,
-        request_id=_build_ai_charge_request_id(
+    )
+    _claim_ai_request_identity(
+        organization_id=organization_id,
+        request_id=request_id,
+    )
+    try:
+        ensure_feature_credits_available(
+            organization_id=organization_id,
             feature_key=feature_key,
+        )
+        result = producer()
+        business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
+        finalize_ai_charge(
+            organization_id=organization_id,
+            user_id=int(user["id"]),
+            feature_key=feature_key,
+            usage=usage,
             source_record_type=source_record_type,
             source_record_id=source_record_id,
-        ),
-    )
-    return business_value
+            request_id=request_id,
+        )
+        return business_value
+    finally:
+        _release_ai_request_identity(request_id)
 
 
 def has_api_key():
@@ -1792,6 +1919,8 @@ def api_consultation_ai_parse():
             provider=provider,
             model=model,
         )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
     except CreditBalanceError as exc:
         return jsonify({"error": str(exc)}), 402
     except ValueError as exc:
@@ -2129,6 +2258,9 @@ def api_lesson_create():
                     provider="openai",
                     model="whisper-1",
                 )
+            except DuplicateAiRequestError as exc:
+                save_path.unlink(missing_ok=True)
+                return jsonify({"error": str(exc)}), 409
             except CreditBalanceError as exc:
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": str(exc)}), 402
@@ -2163,6 +2295,8 @@ def api_lesson_create():
             provider=chat_provider,
             model=chat_model,
         )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
     except CreditBalanceError as exc:
         return jsonify({"error": str(exc)}), 402
     except Exception as e:
@@ -2247,6 +2381,8 @@ def api_lesson_feedback_draft(lesson_id):
             provider=provider,
             model=model,
         )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
     except CreditBalanceError as exc:
         return jsonify({"error": str(exc)}), 402
     except Exception as exc:
@@ -2406,6 +2542,8 @@ def api_monthly_generate():
         from pdf_engine import generate_monthly_pdf
         pdf_name = f"{month_str}_月度综合复习.pdf"
         generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
     except CreditBalanceError as exc:
         return jsonify({"error": str(exc)}), 402
     except Exception as e:

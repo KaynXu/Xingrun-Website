@@ -32,6 +32,7 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
         payload = login.get_json()
         self.assertIsNotNone(payload)
         self.owner_token = payload["token"]
+        self.owner_user = payload["user"]
         self.headers = {"X-Auth-Token": self.owner_token}
 
     def tearDown(self):
@@ -43,8 +44,8 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
 
     def seed_owner_credits(self, amount: int = 20) -> None:
         credit_manager.apply_manual_adjustment(
-            organization_id=1,
-            actor_user_id=1,
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
             amount=amount,
             note="seed feedback ai credits",
         )
