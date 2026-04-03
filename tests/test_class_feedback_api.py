@@ -225,7 +225,6 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
                     {
                         "student_id": student["id"],
                         "final_text": "正式学生反馈",
-                        "checked_at": "2026-04-09 20:00:00",
                     }
                 ],
             },
@@ -237,6 +236,10 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         reopened_payload = reopened.get_json()
         self.assertIsNotNone(reopened_payload)
         self.assertEqual(reopened_payload["status"], "confirmed")
+        self.assertRegex(
+            reopened_payload["student_entries"][0]["checked_at"],
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
+        )
         baseline = lesson_manager.find_previous_confirmed_class_feedback_entry(
             class_id=class_id,
             student_id=student["id"],
@@ -446,6 +449,50 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
             payload["student_highlights"],
             [{"student_id": student["id"], "labels": ["进步明显"], "note": "主动表达增加"}],
         )
+
+    def test_draft_save_route_round_trips_class_summary_and_student_feedback_edits(self):
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        first_student = lesson_manager.create_student_for_class(class_id, "张三")
+        second_student = lesson_manager.create_student_for_class(class_id, "李四")
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=None,
+            teacher_name_snapshot=self.owner["display_name"],
+            start_date="2026-04-03",
+            end_date="2026-04-09",
+            created_by=self.owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            task["id"],
+            class_summary_ai_draft="AI 班级草稿",
+            student_entries=[
+                {"student_id": first_student["id"], "name": "张三", "ai_draft": "张三AI草稿"},
+                {"student_id": second_student["id"], "name": "李四", "ai_draft": "李四AI草稿"},
+            ],
+        )
+
+        response = self.client.post(
+            f"/api/class-feedback/tasks/{task['id']}/draft",
+            headers=self.headers,
+            json={
+                "class_summary_draft_text": "老师修改后的班级草稿",
+                "student_entries": [
+                    {"student_id": first_student["id"], "final_text": "张三修改稿"},
+                    {"student_id": second_student["id"], "final_text": "李四修改稿"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        reopened = self.client.get(f"/api/class-feedback/tasks/{task['id']}", headers=self.headers)
+        self.assertEqual(reopened.status_code, 200)
+        payload = reopened.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "draft")
+        self.assertEqual(payload["class_summary_ai_draft"], "老师修改后的班级草稿")
+        self.assertEqual(payload["student_entries"][0]["final_text"], "张三修改稿")
+        self.assertEqual(payload["student_entries"][1]["final_text"], "李四修改稿")
+        self.assertIsNone(payload["student_entries"][0]["checked_at"])
 
     def test_label_config_round_trip_keeps_custom_group(self):
         save = self.client.put(
