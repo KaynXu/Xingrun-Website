@@ -1719,16 +1719,6 @@ const LessonInput = ({
   const [feedbackStatusMessage, setFeedbackStatusMessage] = useState('先生成复习文档，再完善课后反馈。');
   const isContinuingFeedback = initialLesson !== null;
 
-  useEffect(() => {
-    setClassesLoading(true);
-    apiFetch<ClassItem[]>('/api/classes')
-      .then(setClasses)
-      .catch(console.error)
-      .finally(() => setClassesLoading(false));
-  }, []);
-
-  const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
-
   const resetFeedbackWorkspace = useCallback(() => {
     setActiveLessonId(null);
     setFeedbackStudents([]);
@@ -1736,6 +1726,46 @@ const LessonInput = ({
     setFeedbackText('');
     setFeedbackStatusMessage('先生成复习文档，再完善课后反馈。');
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setClassesLoading(true);
+    apiFetch<ClassItem[]>('/api/classes')
+      .then((nextClasses) => {
+        if (cancelled) {
+          return;
+        }
+        setClasses(nextClasses);
+      })
+      .catch((fetchError) => {
+        if (cancelled) {
+          return;
+        }
+        setClasses([]);
+        console.error(fetchError);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setClassesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, currentUser.role]);
+
+  useEffect(() => {
+    if (classesLoading || classId === null) {
+      return;
+    }
+    if (classes.some((item) => item.id === classId)) {
+      return;
+    }
+    setClassId(null);
+    resetFeedbackWorkspace();
+  }, [classId, classes, classesLoading, resetFeedbackWorkspace]);
+
+  const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
 
   const loadFeedbackWorkspace = useCallback(async (lessonId: number, targetClassId: number) => {
     setIsLoadingFeedbackStudents(true);
