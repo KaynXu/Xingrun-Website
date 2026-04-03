@@ -1,0 +1,238 @@
+import sys
+import tempfile
+import unittest
+import importlib
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import config_runtime
+import lesson_manager
+
+
+class ClassFeedbackApiTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        lesson_manager.DB_PATH = self.base / "lessons.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({})
+        lesson_manager.init_db()
+        app_module = importlib.import_module("app")
+        self.client = app_module.app.test_client()
+
+        login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(login.status_code, 200)
+        payload = login.get_json()
+        self.assertIsNotNone(payload)
+        self.owner = payload["user"]
+        self.owner_token = payload["token"]
+        self.headers = {"X-Auth-Token": self.owner_token}
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _create_lesson(self, *, class_id: int, date_str: str, topic: str, summary: str) -> int:
+        return lesson_manager.save_lesson(
+            date_str=date_str,
+            subject="英语",
+            grade="六年级",
+            topic=topic,
+            summary=summary,
+            weak_points="",
+            plan={"lesson_info": {"topic": topic}, "questions": []},
+            pdf_path="",
+            class_id=class_id,
+        )
+
+    def test_create_task_uses_current_user_snapshot_when_class_has_no_teacher_binding(self):
+        class_id = lesson_manager.save_class("假期冲刺班", subject="英语", grade="六年级")
+        lesson_manager.create_student_for_class(class_id, "张三")
+
+        response = self.client.post(
+            "/api/class-feedback/tasks",
+            headers=self.headers,
+            json={"class_id": class_id, "start_date": "2026-07-12", "end_date": "2026-07-12"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertIsNone(payload["teacher_user_id"])
+        self.assertEqual(payload["teacher_name_snapshot"], self.owner["display_name"])
+        self.assertEqual(payload["period_granularity"], "daily")
+
+    @patch("app.generate_class_feedback_bundle")
+    def test_generate_route_returns_class_summary_and_student_entries(self, generate_class_feedback_bundle):
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        student = lesson_manager.create_student_for_class(class_id, "张三")
+        previous_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=None,
+            teacher_name_snapshot=self.owner["display_name"],
+            start_date="2026-03-27",
+            end_date="2026-04-02",
+            created_by=self.owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            previous_task["id"],
+            class_summary_ai_draft="上阶段草稿",
+            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "上阶段学生草稿"}],
+        )
+        lesson_manager.confirm_class_feedback_task(
+            previous_task["id"],
+            class_summary_final_text="上阶段正式班级反馈",
+            student_entries=[
+                {
+                    "student_id": student["id"],
+                    "final_text": "张三上阶段表达更稳定。",
+                    "checked_at": "2026-04-02 20:00:00",
+                }
+            ],
+        )
+
+        lesson_id = self._create_lesson(
+            class_id=class_id,
+            date_str="2026-04-05",
+            topic="Week 1",
+            summary="本周围绕阅读表达和句型迁移做训练。",
+        )
+        lesson_manager.save_lesson_feedback(
+            lesson_id=lesson_id,
+            class_id=class_id,
+            merged_text="张三课堂开口次数增加。",
+            student_index=[{"student_id": student["id"], "name": "张三"}],
+            editor_state={
+                "students": [
+                    {
+                        "student_id": student["id"],
+                        "name": "张三",
+                        "selected_template_id": "active",
+                        "remark": "主动表达增加",
+                    }
+                ],
+                "custom_templates": [],
+            },
+        )
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=None,
+            teacher_name_snapshot=self.owner["display_name"],
+            start_date="2026-04-03",
+            end_date="2026-04-09",
+            created_by=self.owner["id"],
+        )
+
+        generate_class_feedback_bundle.return_value = {
+            "class_summary": "本阶段班级整体状态稳定。",
+            "student_entries": [
+                {"student_id": student["id"], "name": "张三", "text": "张三这阶段开口更主动了。"}
+            ],
+        }
+
+        response = self.client.post(
+            f"/api/class-feedback/tasks/{task['id']}/generate",
+            headers=self.headers,
+            json={
+                "class_status_tags": ["进入状态快"],
+                "student_highlights": [
+                    {"student_id": student["id"], "labels": ["进步明显"], "note": "主动表达增加"}
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["class_summary_ai_draft"], "本阶段班级整体状态稳定。")
+        self.assertEqual(len(payload["student_entries"]), 1)
+        self.assertEqual(payload["student_entries"][0]["ai_draft"], "张三这阶段开口更主动了。")
+
+        generate_class_feedback_bundle.assert_called_once()
+        context = generate_class_feedback_bundle.call_args.kwargs
+        self.assertEqual(context["class_name"], "S01A1")
+        self.assertEqual(context["teacher_name"], self.owner["display_name"])
+        self.assertEqual(context["start_date"], "2026-04-03")
+        self.assertEqual(context["end_date"], "2026-04-09")
+        self.assertEqual(context["stage_notes"]["class_status_tags"], ["进入状态快"])
+        self.assertEqual(context["stage_notes"]["lesson_feedbacks"][0]["merged_text"], "张三课堂开口次数增加。")
+        self.assertEqual(context["students"][0]["previous_baseline"]["final_text"], "张三上阶段表达更稳定。")
+        self.assertEqual(context["students"][0]["stage_highlight"]["labels"], ["进步明显"])
+
+    def test_confirm_route_promotes_final_text_into_memory(self):
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        student = lesson_manager.create_student_for_class(class_id, "张三")
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=None,
+            teacher_name_snapshot=self.owner["display_name"],
+            start_date="2026-04-03",
+            end_date="2026-04-09",
+            created_by=self.owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            task["id"],
+            class_summary_ai_draft="草稿班级反馈",
+            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "草稿学生反馈"}],
+        )
+
+        response = self.client.post(
+            f"/api/class-feedback/tasks/{task['id']}/confirm",
+            headers=self.headers,
+            json={
+                "class_summary_final_text": "正式班级反馈",
+                "student_entries": [
+                    {
+                        "student_id": student["id"],
+                        "final_text": "正式学生反馈",
+                        "checked_at": "2026-04-09 20:00:00",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        reopened = self.client.get(f"/api/class-feedback/tasks/{task['id']}", headers=self.headers)
+        self.assertEqual(reopened.status_code, 200)
+        reopened_payload = reopened.get_json()
+        self.assertIsNotNone(reopened_payload)
+        self.assertEqual(reopened_payload["status"], "confirmed")
+        baseline = lesson_manager.find_previous_confirmed_class_feedback_entry(
+            class_id=class_id,
+            student_id=student["id"],
+            period_granularity="weekly",
+            before_end_date="2026-04-10",
+        )
+        self.assertIsNotNone(baseline)
+        self.assertEqual(baseline["final_text"], "正式学生反馈")
+
+    def test_label_config_round_trip_keeps_custom_group(self):
+        save = self.client.put(
+            "/api/class-feedback/labels",
+            headers=self.headers,
+            json={
+                "groups": [
+                    {"group": "阶段变化", "labels": ["进步明显", "有点回落", "变化不大", "需要重点关注"]},
+                    {"group": "老师自定义", "labels": ["假期每日打卡稳定"]},
+                ]
+            },
+        )
+
+        self.assertEqual(save.status_code, 200)
+        reloaded = self.client.get("/api/class-feedback/labels", headers=self.headers)
+        self.assertEqual(reloaded.status_code, 200)
+        payload = reloaded.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["groups"][-1]["group"], "老师自定义")
+        self.assertEqual(payload["groups"][-1]["labels"], ["假期每日打卡稳定"])
+
+
+if __name__ == "__main__":
+    unittest.main()
