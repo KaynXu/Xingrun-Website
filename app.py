@@ -9,6 +9,7 @@
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import secrets
@@ -44,6 +45,7 @@ CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:5173", "http://127.0.0.1:5173",
     "http://localhost:3000", "http://127.0.0.1:3000",
 ]}})
+logger = logging.getLogger(__name__)
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
@@ -82,6 +84,7 @@ from lesson_manager import (
     list_class_feedback_label_configs,
     list_class_teacher_bindings,
     list_classes,
+    list_recent_confirmed_class_feedback_summaries,
     list_consultation_teachers,
     list_consultations,
     list_lessons,
@@ -96,6 +99,7 @@ from lesson_manager import (
     remove_student_from_class,
     save_class_feedback_generation_result,
     save_class_feedback_label_configs,
+    save_class_feedback_task_notes,
     save_class,
     save_lesson_feedback,
     save_lesson,
@@ -1286,7 +1290,52 @@ def _normalize_class_feedback_student_highlights(items: object) -> dict[int, dic
     return normalized
 
 
-def _build_class_feedback_generation_context(task: dict, data: dict, user: dict) -> dict:
+def _normalize_class_feedback_notes_payload(task: dict, data: dict) -> dict:
+    existing_highlights = _normalize_class_feedback_student_highlights(task.get("student_highlights"))
+    student_highlights = (
+        _normalize_class_feedback_student_highlights(data.get("student_highlights"))
+        if "student_highlights" in data
+        else existing_highlights
+    )
+    class_status_tags = (
+        [
+            str(tag or "").strip()
+            for tag in (data.get("class_status_tags") or [])
+            if str(tag or "").strip()
+        ]
+        if "class_status_tags" in data
+        else list(task.get("class_status_tags") or [])
+    )
+    return {
+        "class_status_tags": class_status_tags,
+        "class_status_note": (
+            str(data.get("class_status_note") or "").strip()
+            if "class_status_note" in data
+            else str(task.get("class_status_note") or "").strip()
+        ),
+        "parent_feedback_note": (
+            str(data.get("parent_feedback_note") or "").strip()
+            if "parent_feedback_note" in data
+            else str(task.get("parent_feedback_note") or "").strip()
+        ),
+        "teaching_focus_note": (
+            str(data.get("teaching_focus_note") or "").strip()
+            if "teaching_focus_note" in data
+            else str(task.get("teaching_focus_note") or "").strip()
+        ),
+        "next_stage_preview_note": (
+            str(data.get("next_stage_preview_note") or "").strip()
+            if "next_stage_preview_note" in data
+            else str(task.get("next_stage_preview_note") or "").strip()
+        ),
+        "student_highlights": [
+            {"student_id": student_id, **highlight}
+            for student_id, highlight in student_highlights.items()
+        ],
+    }
+
+
+def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
     cls = get_class(task["class_id"]) or {}
     all_lessons = list_lessons(class_id=task["class_id"])
     source_lessons = []
@@ -1326,7 +1375,15 @@ def _build_class_feedback_generation_context(task: dict, data: dict, user: dict)
             }
         )
 
-    student_highlights_by_id = _normalize_class_feedback_student_highlights(data.get("student_highlights"))
+    if not source_lessons:
+        raise ValueError("所选时间范围内没有可用课次记录")
+
+    student_highlights_by_id = _normalize_class_feedback_student_highlights(task.get("student_highlights"))
+    recent_confirmed_summaries = list_recent_confirmed_class_feedback_summaries(
+        class_id=task["class_id"],
+        before_end_date=task["end_date"],
+        limit=3,
+    )
     students = []
     for roster_student in list_students_for_class(task["class_id"]):
         baseline = find_previous_confirmed_class_feedback_entry(
@@ -1368,16 +1425,14 @@ def _build_class_feedback_generation_context(task: dict, data: dict, user: dict)
         "end_date": task["end_date"],
         "source_summary": source_summary,
         "stage_notes": {
-            "class_status_tags": [
-                str(tag or "").strip()
-                for tag in (data.get("class_status_tags") or [])
-                if str(tag or "").strip()
-            ],
+            "class_status_tags": list(task.get("class_status_tags") or []),
+            "class_status_note": str(task.get("class_status_note") or ""),
+            "parent_feedback_note": str(task.get("parent_feedback_note") or ""),
+            "teaching_focus_note": str(task.get("teaching_focus_note") or ""),
+            "next_stage_preview_note": str(task.get("next_stage_preview_note") or ""),
             "lesson_feedbacks": lesson_feedbacks,
-            "student_highlights": [
-                {"student_id": student_id, **highlight}
-                for student_id, highlight in student_highlights_by_id.items()
-            ],
+            "student_highlights": list(task.get("student_highlights") or []),
+            "recent_confirmed_class_summaries": recent_confirmed_summaries,
         },
         "students": students,
     }
@@ -2350,8 +2405,13 @@ def api_class_feedback_generate(task_id: int):
     if error:
         return error
 
+    if task.get("status") == "confirmed":
+        return jsonify({"error": "已确认任务不能重新生成，请先创建新任务"}), 409
+
     try:
-        context = _build_class_feedback_generation_context(task, data, user)
+        notes_payload = _normalize_class_feedback_notes_payload(task, data)
+        task = save_class_feedback_task_notes(task_id, **notes_payload)
+        context = _build_class_feedback_generation_context(task, user)
         bundle = generate_class_feedback_bundle(**context)
         student_entries = []
         for item in bundle.get("student_entries") or []:
@@ -2376,8 +2436,9 @@ def api_class_feedback_generate(task_id: int):
         return jsonify({"error": "not found"}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("Class feedback generation failed for task %s", task_id)
+        return jsonify({"error": "生成班级反馈时发生错误，请稍后重试"}), 500
     return jsonify(saved_task)
 
 
@@ -2403,6 +2464,9 @@ def api_class_feedback_confirm(task_id: int):
         return jsonify({"error": "not found"}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.exception("Class feedback confirm failed for task %s", task_id)
+        return jsonify({"error": "确认班级反馈时发生错误，请稍后重试"}), 500
     return jsonify(confirmed_task)
 
 
