@@ -2007,11 +2007,9 @@ def api_lesson_create():
     if not class_id:
         return jsonify({"error": "请选择班级后再生成复习记录"}), 400
 
-    cls = get_class(class_id)
-    if not cls:
-        return jsonify({"error": "class not found"}), 404
-    if not _can_access_lesson(user, {"class_id": class_id}):
-        return jsonify({"error": "forbidden"}), 403
+    cls, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
 
     subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")

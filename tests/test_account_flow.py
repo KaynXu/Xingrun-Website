@@ -1471,8 +1471,7 @@ class AccountFlowTestCase(unittest.TestCase):
         lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
 
         with patch("app.has_api_key", return_value=True), \
-             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}), \
-             patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf"):
+             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
             missing_class_response = self.client.post(
                 "/api/lessons",
                 headers=self.auth_headers(target_member["token"]),
@@ -1515,6 +1514,43 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(missing_class_response.status_code, 400)
         self.assertEqual(forbidden_class_response.status_code, 403)
         self.assertEqual(allowed_class_response.status_code, 201)
+
+    def test_owner_can_create_lesson_for_org_visible_class(self):
+        owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Lesson Org",
+            owner_username="lesson_org_owner",
+            owner_display_name="Lesson Org Owner",
+            owner_password="owner123",
+        )
+
+        class_response = self.create_class(
+            owner_token,
+            name="Lesson Org Class",
+            subject="Math",
+            grade="高一",
+        )
+        self.assertEqual(class_response.status_code, 201)
+        class_payload = class_response.get_json()
+        self.assertIsNotNone(class_payload)
+        class_id = class_payload["id"]
+
+        with patch("app.has_api_key", return_value=True), \
+             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
+            owner_response = self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(owner_token),
+                json={
+                    "subject": "Math",
+                    "class_id": class_id,
+                    "topic": "Functions",
+                    "date": "2026-04-03",
+                    "weak_points": "graphs",
+                    "summary_text": "owner class summary",
+                    "input_type": "text",
+                },
+            )
+
+        self.assertEqual(owner_response.status_code, 201)
 
     def test_lesson_api_hides_stale_pdf_paths_when_file_is_missing(self):
         owner_token = self.login_as_kayn()
