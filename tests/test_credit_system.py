@@ -1,8 +1,11 @@
 import gc
+import io
 import sqlite3
 import sys
 import tempfile
+import threading
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,10 +31,14 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         self.owner, _ = lesson_manager.authenticate_user("Kayn", "xingrun2026")
         if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
             app_module._AI_REQUEST_IN_FLIGHT.clear()
+        if hasattr(app_module, "_AI_ORGANIZATION_IN_FLIGHT"):
+            app_module._AI_ORGANIZATION_IN_FLIGHT.clear()
 
     def tearDown(self):
         if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
             app_module._AI_REQUEST_IN_FLIGHT.clear()
+        if hasattr(app_module, "_AI_ORGANIZATION_IN_FLIGHT"):
+            app_module._AI_ORGANIZATION_IN_FLIGHT.clear()
         gc.collect()
         self.temp_dir.cleanup()
 
@@ -351,10 +358,14 @@ class CreditSystemApiTestCase(unittest.TestCase):
             app_module._CREDIT_REDEEM_FAILURE_STATE.clear()
         if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
             app_module._AI_REQUEST_IN_FLIGHT.clear()
+        if hasattr(app_module, "_AI_ORGANIZATION_IN_FLIGHT"):
+            app_module._AI_ORGANIZATION_IN_FLIGHT.clear()
 
     def tearDown(self):
         if hasattr(app_module, "_AI_REQUEST_IN_FLIGHT"):
             app_module._AI_REQUEST_IN_FLIGHT.clear()
+        if hasattr(app_module, "_AI_ORGANIZATION_IN_FLIGHT"):
+            app_module._AI_ORGANIZATION_IN_FLIGHT.clear()
         gc.collect()
         self.temp_dir.cleanup()
 
@@ -688,6 +699,253 @@ class CreditSystemApiTestCase(unittest.TestCase):
                 (self.owner_user["organization_id"],),
             ).fetchone()
         self.assertEqual(usage_count["total"], 1)
+
+    @patch("app.datetime")
+    @patch("app._ai_fallback_request_bucket", return_value=12345)
+    @patch("app.has_api_key", return_value=True)
+    @patch("ai_processor.parse_and_generate_plan")
+    @patch("ai_processor.transcribe_audio")
+    def test_audio_upload_retry_uses_stable_identity_and_skips_second_transcription_charge(
+        self,
+        mock_transcribe,
+        mock_generate_plan,
+        _mock_has_api_key,
+        _mock_bucket,
+        mock_datetime,
+    ):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=20,
+            note="seed audio retry credits",
+        )
+        mock_datetime.now.side_effect = [
+            datetime(2026, 4, 3, 10, 0, 0),
+            datetime(2026, 4, 3, 10, 0, 1),
+        ]
+        mock_transcribe.return_value = (
+            "课堂录音整理",
+            {
+                "provider": "openai",
+                "model": "whisper-1",
+                "input_tokens": 0,
+                "output_tokens": 0,
+            },
+        )
+        mock_generate_plan.return_value = (
+            {"days": [], "questions": []},
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 120,
+                "output_tokens": 40,
+            },
+        )
+
+        def post_audio_retry():
+            return self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(self.owner_token),
+                data={
+                    "date": "2026-04-03",
+                    "subject": "数学",
+                    "grade": "五年级",
+                    "topic": "方程",
+                    "input_type": "audio",
+                    "upload_file": (io.BytesIO(b"same-audio-upload"), "lesson.m4a"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        first = post_audio_retry()
+        second = post_audio_retry()
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 409)
+        self.assertIn("重复请求", second.get_json()["error"])
+        self.assertEqual(mock_transcribe.call_count, 1)
+
+        overview = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        self.assertEqual(overview["credit_balance"], 8)
+
+        with lesson_manager.get_conn() as conn:
+            audio_usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND feature_key='audio_transcription'
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+            total_usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=?
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+        self.assertEqual(audio_usage_count["total"], 1)
+        self.assertEqual(total_usage_count["total"], 2)
+
+    @patch("app.has_api_key", return_value=True)
+    @patch("pdf_engine.generate_monthly_pdf")
+    @patch("ai_processor.generate_monthly_plan")
+    def test_monthly_generate_pdf_failure_does_not_charge_and_retry_can_succeed(
+        self,
+        mock_generate_plan,
+        mock_generate_pdf,
+        _mock_has_api_key,
+    ):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=20,
+            note="seed monthly retry credits",
+        )
+        lesson_manager.save_lesson(
+            date_str="2026-04-08",
+            subject="数学",
+            grade="五年级",
+            topic="分数",
+            summary="课堂总结",
+            weak_points="计算",
+            plan={"days": [], "questions": []},
+            pdf_path="",
+            class_id=None,
+        )
+        mock_generate_plan.return_value = (
+            {"days": [{"day": 1, "tasks": ["复习"]}], "questions": []},
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 300,
+                "output_tokens": 120,
+            },
+        )
+        mock_generate_pdf.side_effect = [RuntimeError("pdf failed"), None]
+        headers = {
+            **self.auth_headers(self.owner_token),
+            "Idempotency-Key": "monthly-pdf-retry",
+        }
+
+        first = self.client.post(
+            "/api/monthly/generate",
+            headers=headers,
+            json={"month": "2026-04"},
+        )
+
+        self.assertEqual(first.status_code, 500)
+        self.assertIn("pdf failed", first.get_json()["error"])
+
+        overview_after_failure = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        self.assertEqual(overview_after_failure["credit_balance"], 20)
+
+        with lesson_manager.get_conn() as conn:
+            failed_usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND feature_key='monthly_plan_generate'
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+        self.assertEqual(failed_usage_count["total"], 0)
+
+        second = self.client.post(
+            "/api/monthly/generate",
+            headers=headers,
+            json={"month": "2026-04"},
+        )
+
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.get_json()["ok"])
+        self.assertEqual(mock_generate_plan.call_count, 2)
+        self.assertEqual(mock_generate_pdf.call_count, 2)
+
+        overview_after_success = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        self.assertEqual(overview_after_success["credit_balance"], 10)
+
+        with lesson_manager.get_conn() as conn:
+            success_usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND feature_key='monthly_plan_generate'
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+        self.assertEqual(success_usage_count["total"], 1)
+
+    @patch("app.parse_consultation_batch_text")
+    def test_same_org_concurrent_ai_request_is_rejected_while_first_is_in_flight(self, mock_parse):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=20,
+            note="seed concurrent ai credits",
+        )
+        first_call_entered = threading.Event()
+        release_first_call = threading.Event()
+
+        def slow_parse(*_args, **_kwargs):
+            if not first_call_entered.is_set():
+                first_call_entered.set()
+                release_first_call.wait(timeout=1.0)
+            return (
+                {"items": [], "warnings": []},
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "input_tokens": 90,
+                    "output_tokens": 30,
+                },
+            )
+
+        mock_parse.side_effect = slow_parse
+        first_response: dict[str, object] = {}
+
+        def run_first_request():
+            with app_module.app.test_client() as client:
+                first_response["response"] = client.post(
+                    "/api/consultations/ai-parse",
+                    headers={
+                        **self.auth_headers(self.owner_token),
+                        "Idempotency-Key": "concurrent-parse-1",
+                    },
+                    json={"raw_text": "张妈妈，五年级数学"},
+                )
+
+        first_thread = threading.Thread(target=run_first_request)
+        first_thread.start()
+        self.assertTrue(first_call_entered.wait(timeout=1.0))
+
+        second = self.client.post(
+            "/api/consultations/ai-parse",
+            headers={
+                **self.auth_headers(self.owner_token),
+                "Idempotency-Key": "concurrent-parse-2",
+            },
+            json={"raw_text": "李妈妈，六年级英语"},
+        )
+
+        release_first_call.set()
+        first_thread.join(timeout=1.0)
+
+        self.assertIn("response", first_response)
+        self.assertEqual(first_response["response"].status_code, 200)
+        self.assertEqual(second.status_code, 409)
+        self.assertIn("机构", second.get_json()["error"])
+        self.assertEqual(mock_parse.call_count, 1)
 
     @patch("ai_processor.parse_and_generate_plan")
     @patch("app.has_api_key", return_value=True)

@@ -11,7 +11,6 @@ import io
 import json
 import os
 import re
-import secrets
 import threading
 import webbrowser
 from datetime import date, datetime
@@ -156,6 +155,8 @@ _AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS = 60.0
 _AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
 _AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
 _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
+_AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
+_AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
 
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -330,6 +331,26 @@ def _release_ai_request_identity(request_id: str) -> None:
         _AI_REQUEST_IN_FLIGHT.pop(request_id, None)
 
 
+def _claim_ai_organization_execution(organization_id: int) -> None:
+    now = monotonic()
+    with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
+        expired = [
+            org_id
+            for org_id, started_at in _AI_ORGANIZATION_IN_FLIGHT.items()
+            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+        ]
+        for org_id in expired:
+            _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
+        if organization_id in _AI_ORGANIZATION_IN_FLIGHT:
+            raise DuplicateAiRequestError("当前机构已有 AI 请求正在处理中，请稍后再试")
+        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = now
+
+
+def _release_ai_organization_execution(organization_id: int) -> None:
+    with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
+        _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
+
+
 def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
     try:
         return helper(*args, include_usage=True, **kwargs)
@@ -348,6 +369,7 @@ def _run_ai_feature_with_charge(
     producer,
     provider: str,
     model: str,
+    after_success=None,
 ):
     organization_id = int(user["organization_id"])
     request_id = _build_ai_charge_request_id(
@@ -361,12 +383,15 @@ def _run_ai_feature_with_charge(
         request_id=request_id,
     )
     try:
+        _claim_ai_organization_execution(organization_id)
         ensure_feature_credits_available(
             organization_id=organization_id,
             feature_key=feature_key,
         )
         result = producer()
         business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
+        if after_success is not None:
+            after_success(business_value)
         finalize_ai_charge(
             organization_id=organization_id,
             user_id=int(user["id"]),
@@ -378,6 +403,7 @@ def _run_ai_feature_with_charge(
         )
         return business_value
     finally:
+        _release_ai_organization_execution(organization_id)
         _release_ai_request_identity(request_id)
 
 
@@ -2253,7 +2279,7 @@ def api_lesson_create():
                     user=user,
                     feature_key="audio_transcription",
                     source_record_type="lesson_upload",
-                    source_record_id=save_path.name,
+                    source_record_id=f"upload:{_request_payload_fingerprint()}",
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
                     provider="openai",
                     model="whisper-1",
@@ -2524,9 +2550,11 @@ def api_monthly_generate():
                      "weak_points": l["weak_points"] or ""} for l in lessons]
     provider = _default_ai_provider_name()
     model = _default_chat_model_name()
+    pdf_name = f"{month_str}_月度综合复习.pdf"
     try:
         from ai_processor import generate_monthly_plan
-        plan = _run_ai_feature_with_charge(
+        from pdf_engine import generate_monthly_pdf
+        _run_ai_feature_with_charge(
             user=user,
             feature_key="monthly_plan_generate",
             source_record_type="monthly_plan",
@@ -2538,10 +2566,11 @@ def api_monthly_generate():
             ),
             provider=provider,
             model=model,
+            after_success=lambda generated_plan: generate_monthly_pdf(
+                generated_plan,
+                str(PDF_DIR / pdf_name),
+            ),
         )
-        from pdf_engine import generate_monthly_pdf
-        pdf_name = f"{month_str}_月度综合复习.pdf"
-        generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
     except DuplicateAiRequestError as exc:
         return jsonify({"error": str(exc)}), 409
     except CreditBalanceError as exc:
