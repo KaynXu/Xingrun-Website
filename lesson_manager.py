@@ -2611,6 +2611,78 @@ def save_class_feedback_generation_result(task_id: int, class_summary_ai_draft: 
     return get_class_feedback_task(task_id)
 
 
+def save_class_feedback_draft(task_id: int, class_summary_draft_text: str, student_entries: list[dict]):
+    with get_conn() as conn:
+        task_row = _load_class_feedback_task_row(conn, task_id)
+        if task_row["status"] == "confirmed":
+            raise ValueError("confirmed tasks cannot be edited as draft")
+        normalized_student_entries = _normalize_class_feedback_student_entries(
+            task_row=task_row,
+            conn=conn,
+            student_entries=student_entries,
+        )
+        _ensure_class_feedback_student_entries_cover_current_roster(
+            task_row=task_row,
+            conn=conn,
+            normalized_student_entries=normalized_student_entries,
+        )
+        existing_entries = {
+            row["student_id"]: dict(row)
+            for row in conn.execute(
+                """
+                SELECT *
+                FROM class_feedback_student_entries
+                WHERE task_id=?
+                """,
+                (task_id,),
+            ).fetchall()
+        }
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """
+            UPDATE class_feedback_tasks
+            SET class_summary_ai_draft=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (class_summary_draft_text or "", task_id),
+        )
+        for item in normalized_student_entries:
+            existing_entry = existing_entries.get(item["student_id"])
+            if existing_entry:
+                conn.execute(
+                    """
+                    UPDATE class_feedback_student_entries
+                    SET student_name_snapshot=?,
+                        ai_draft=?,
+                        final_text=?,
+                        updated_at=datetime('now','localtime')
+                    WHERE task_id=? AND student_id=?
+                    """,
+                    (
+                        item["student_name_snapshot"],
+                        existing_entry.get("ai_draft") or "",
+                        item["final_text"],
+                        task_id,
+                        item["student_id"],
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO class_feedback_student_entries (
+                        task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
+                    ) VALUES (?, ?, ?, '', ?, NULL)
+                    """,
+                    (
+                        task_id,
+                        item["student_id"],
+                        item["student_name_snapshot"],
+                        item["final_text"],
+                    ),
+                )
+    return get_class_feedback_task(task_id)
+
+
 def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, student_entries: list[dict]):
     with get_conn() as conn:
         task_row = _load_class_feedback_task_row(conn, task_id)
@@ -2619,7 +2691,6 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
             conn=conn,
             student_entries=student_entries,
             require_final_text=True,
-            require_checked_at=True,
         )
         roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
         _ensure_class_feedback_student_entries_cover_current_roster(
@@ -2628,6 +2699,9 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
             normalized_student_entries=normalized_student_entries,
         )
         conn.execute("BEGIN IMMEDIATE")
+        checked_at_value = conn.execute(
+            "SELECT datetime('now','localtime') AS checked_at"
+        ).fetchone()["checked_at"]
         if roster_by_id:
             placeholders = ",".join("?" for _ in roster_by_id)
             conn.execute(
@@ -2655,7 +2729,7 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
                 """,
                 (
                     item["final_text"],
-                    item["checked_at"],
+                    checked_at_value,
                     task_id,
                     item["student_id"],
                 ),
@@ -2672,7 +2746,7 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
                         item["student_id"],
                         roster_by_id[item["student_id"]]["name"],
                         item["final_text"],
-                        item["checked_at"],
+                        checked_at_value,
                     ),
                 )
     return get_class_feedback_task(task_id)

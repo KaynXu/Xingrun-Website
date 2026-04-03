@@ -66,6 +66,7 @@ import {
   generateClassFeedbackTask,
   loadClassFeedbackLabels,
   loadClassFeedbackTask,
+  saveClassFeedbackTaskDraft,
   type ClassFeedbackStageNotes,
   type ClassFeedbackStudentCard,
   type StageLabelGroup,
@@ -2310,6 +2311,7 @@ const ClassFeedbackGenerationPage = ({
   const [isGeneratingClassFeedback, setIsGeneratingClassFeedback] = useState(false);
   const [isSavingClassFeedback, setIsSavingClassFeedback] = useState(false);
   const [isConfirmingClassFeedback, setIsConfirmingClassFeedback] = useState(false);
+  const classFeedbackDraftSnapshotRef = useRef('');
 
   const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
 
@@ -2321,35 +2323,41 @@ const ClassFeedbackGenerationPage = ({
 
   const hydrateClassFeedbackTask = useCallback(
     async (taskId: number, classId: number) => {
-      setIsRefreshingTask(true);
-      try {
-        const [task, roster] = await Promise.all([
-          loadClassFeedbackTask(taskId),
-          listClassStudents(classId),
-        ]);
-        setActiveClassFeedbackTaskId(task.id);
-        setSelectedClassId(task.class_id);
-        setTeacherNameLabel(task.teacher_name_snapshot || selectedClass?.teacher_name || currentUser.display_name);
-        setClassFeedbackStatusTags(task.class_status_tags ?? []);
-        setClassFeedbackStageNotes({
-          classStatusNote: task.class_status_note ?? '',
-          parentFeedbackNote: task.parent_feedback_note ?? '',
-          teachingFocusNote: task.teaching_focus_note ?? '',
-          nextStagePreviewNote: task.next_stage_preview_note ?? '',
-        });
-        setClassFeedbackStudents(
-          buildClassFeedbackStudentCards({
-            roster: roster.students,
-            task,
-          }),
-        );
-        setClassFeedbackSummary(
-          task.class_summary_final_text?.trim() ? task.class_summary_final_text : task.class_summary_ai_draft ?? '',
-        );
-        setCurrentTaskStatus(task.status);
-        setClassFeedbackStatusMessage(
-          task.status === 'confirmed'
-            ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
+    setIsRefreshingTask(true);
+    try {
+      const [task, roster] = await Promise.all([
+        loadClassFeedbackTask(taskId),
+        listClassStudents(classId),
+      ]);
+      const hydratedStudents = buildClassFeedbackStudentCards({
+        roster: roster.students,
+        task,
+      });
+      const hydratedSummary =
+        task.class_summary_final_text?.trim() ? task.class_summary_final_text : task.class_summary_ai_draft ?? '';
+      setActiveClassFeedbackTaskId(task.id);
+      setSelectedClassId(task.class_id);
+      setTeacherNameLabel(task.teacher_name_snapshot || selectedClass?.teacher_name || currentUser.display_name);
+      setClassFeedbackStatusTags(task.class_status_tags ?? []);
+      setClassFeedbackStageNotes({
+        classStatusNote: task.class_status_note ?? '',
+        parentFeedbackNote: task.parent_feedback_note ?? '',
+        teachingFocusNote: task.teaching_focus_note ?? '',
+        nextStagePreviewNote: task.next_stage_preview_note ?? '',
+      });
+      setClassFeedbackStudents(hydratedStudents);
+      setClassFeedbackSummary(hydratedSummary);
+      setCurrentTaskStatus(task.status);
+      classFeedbackDraftSnapshotRef.current = JSON.stringify({
+        classSummary: hydratedSummary,
+        students: hydratedStudents.map((student) => ({
+          studentId: student.studentId,
+          finalText: student.finalText,
+        })),
+      });
+      setClassFeedbackStatusMessage(
+        task.status === 'confirmed'
+          ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
             : `已同步 ${roster.students.length} 名学生，继续补充阶段备注后可生成草稿。`,
         );
       } finally {
@@ -2394,6 +2402,7 @@ const ClassFeedbackGenerationPage = ({
     setClassFeedbackSummary('');
     setClassFeedbackStatusTags([]);
     setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
+    classFeedbackDraftSnapshotRef.current = '';
 
     if (!nextClassId) {
       setClassFeedbackStudents([]);
@@ -2461,6 +2470,12 @@ const ClassFeedbackGenerationPage = ({
     }));
   };
 
+  const handleClassStatusTagToggle = (label: string) => {
+    setClassFeedbackStatusTags((current) =>
+      current.includes(label) ? current.filter((item) => item !== label) : [...current, label],
+    );
+  };
+
   const handleHighlightToggle = (studentId: number, label: string) => {
     setClassFeedbackStudents((current) =>
       current.map((student) => {
@@ -2495,6 +2510,94 @@ const ClassFeedbackGenerationPage = ({
       current.map((student) => (student.studentId === studentId ? { ...student, checked } : student)),
     );
   };
+
+  const saveCurrentClassFeedbackDraft = useCallback(async () => {
+    if (!activeClassFeedbackTaskId || currentTaskStatus === 'confirmed') {
+      return;
+    }
+
+    const nextSnapshot = JSON.stringify({
+      classSummary: classFeedbackSummary,
+      students: classFeedbackStudents.map((student) => ({
+        studentId: student.studentId,
+        finalText: student.finalText,
+      })),
+    });
+    if (nextSnapshot === classFeedbackDraftSnapshotRef.current) {
+      return;
+    }
+
+    setIsSavingClassFeedback(true);
+    try {
+      const savedTask = await saveClassFeedbackTaskDraft(activeClassFeedbackTaskId, {
+        classSummaryDraftText: classFeedbackSummary,
+        studentEntries: classFeedbackStudents.map((student) => ({
+          studentId: student.studentId,
+          finalText: student.finalText,
+        })),
+      });
+      const savedStudents = buildClassFeedbackStudentCards({
+        roster: classFeedbackStudents.map((student) => ({
+          id: student.studentId,
+          name: student.name,
+        })),
+        task: savedTask,
+      }).map((student) => {
+        const currentCard = classFeedbackStudents.find((item) => item.studentId === student.studentId);
+        return currentCard
+          ? {
+              ...student,
+              checked: currentCard.checked,
+              highlightLabels: currentCard.highlightLabels,
+              highlightNote: currentCard.highlightNote,
+            }
+          : student;
+      });
+      setClassFeedbackSummary(savedTask.class_summary_ai_draft ?? '');
+      setClassFeedbackStudents(savedStudents);
+      classFeedbackDraftSnapshotRef.current = JSON.stringify({
+        classSummary: savedTask.class_summary_ai_draft ?? '',
+        students: savedStudents.map((student) => ({
+          studentId: student.studentId,
+          finalText: student.finalText,
+        })),
+      });
+      setClassFeedbackStatusMessage('班级反馈草稿已保存。');
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '保存班级反馈草稿失败，请重试。');
+    } finally {
+      setIsSavingClassFeedback(false);
+    }
+  }, [activeClassFeedbackTaskId, classFeedbackStudents, classFeedbackSummary, currentTaskStatus]);
+
+  useEffect(() => {
+    if (!activeClassFeedbackTaskId || currentTaskStatus === 'confirmed' || isRefreshingTask || isGeneratingClassFeedback || isConfirmingClassFeedback) {
+      return;
+    }
+    const nextSnapshot = JSON.stringify({
+      classSummary: classFeedbackSummary,
+      students: classFeedbackStudents.map((student) => ({
+        studentId: student.studentId,
+        finalText: student.finalText,
+      })),
+    });
+    if (nextSnapshot === classFeedbackDraftSnapshotRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveCurrentClassFeedbackDraft();
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeClassFeedbackTaskId,
+    classFeedbackStudents,
+    classFeedbackSummary,
+    currentTaskStatus,
+    isConfirmingClassFeedback,
+    isGeneratingClassFeedback,
+    isRefreshingTask,
+    saveCurrentClassFeedbackDraft,
+  ]);
 
   const handleAddStudent = async (name: string) => {
     if (!selectedClassId) {
@@ -2544,7 +2647,7 @@ const ClassFeedbackGenerationPage = ({
         })),
       });
       await hydrateClassFeedbackTask(generated.id, selectedClassId);
-      setClassFeedbackStatusMessage(`已生成 ${classFeedbackStudents.length} 名学生反馈草稿。`);
+      setClassFeedbackStatusMessage(`已生成班级总评和 ${classFeedbackStudents.length} 名学生反馈草稿。`);
     } catch (error) {
       setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成班级反馈失败，请重试。');
     } finally {
@@ -2699,6 +2802,7 @@ const ClassFeedbackGenerationPage = ({
         teacherNameLabel={teacherNameLabel}
         sourceSummaryItems={sourceSummaryItems}
         labelGroups={labelGroups}
+        classStatusTags={classFeedbackStatusTags}
         students={classFeedbackStudents}
         classSummaryText={classFeedbackSummary}
         statusMessage={classFeedbackStatusMessage}
@@ -2708,12 +2812,14 @@ const ClassFeedbackGenerationPage = ({
         isConfirming={isConfirmingClassFeedback}
         onClassSummaryChange={setClassFeedbackSummary}
         onStageNoteChange={handleStageNoteChange}
+        onClassStatusTagToggle={handleClassStatusTagToggle}
         onHighlightToggle={handleHighlightToggle}
         onHighlightNoteChange={handleHighlightNoteChange}
         onStudentFinalTextChange={handleStudentFinalTextChange}
         onStudentCheckedChange={handleStudentCheckedChange}
         onAddStudent={handleAddStudent}
         onGenerate={handleGenerateClassFeedback}
+        onSaveDraft={saveCurrentClassFeedbackDraft}
         onCopyClassSummary={handleCopyClassFeedbackSummary}
         onCopyAllStudents={handleCopyAllClassFeedbackStudents}
         onConfirm={handleConfirmClassFeedback}

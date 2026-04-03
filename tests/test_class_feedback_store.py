@@ -239,6 +239,47 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(refreshed_task["class_summary_final_text"], "正式班级反馈")
         self.assertEqual(refreshed_task["student_entries"][0]["final_text"], "正式学生反馈")
 
+    def test_save_draft_persists_class_summary_and_student_final_text_without_confirming(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        first_student = lesson_manager.create_student_for_class(class_id, "张三")
+        second_student = lesson_manager.create_student_for_class(class_id, "李四")
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-04",
+            end_date="2026-04-10",
+            created_by=owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            task["id"],
+            class_summary_ai_draft="初始班级草稿",
+            student_entries=[
+                {"student_id": first_student["id"], "name": "张三", "ai_draft": "张三AI草稿"},
+                {"student_id": second_student["id"], "name": "李四", "ai_draft": "李四AI草稿"},
+            ],
+        )
+
+        saved = lesson_manager.save_class_feedback_draft(
+            task["id"],
+            class_summary_draft_text="老师手改后的班级草稿",
+            student_entries=[
+                {"student_id": first_student["id"], "final_text": "张三草稿终版"},
+                {"student_id": second_student["id"], "final_text": "李四草稿终版"},
+            ],
+        )
+
+        self.assertEqual(saved["status"], "draft")
+        self.assertEqual(saved["class_summary_ai_draft"], "老师手改后的班级草稿")
+        self.assertEqual(saved["student_entries"][0]["ai_draft"], "张三AI草稿")
+        self.assertEqual(saved["student_entries"][0]["final_text"], "张三草稿终版")
+        self.assertEqual(saved["student_entries"][1]["ai_draft"], "李四AI草稿")
+        self.assertEqual(saved["student_entries"][1]["final_text"], "李四草稿终版")
+        self.assertIsNone(saved["student_entries"][0]["checked_at"])
+
     def test_save_generation_result_rejects_empty_class_roster(self):
         owner = self._owner()
         class_id = lesson_manager.save_class("空班", subject="英语", grade="六年级")
@@ -278,6 +319,35 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
                 class_summary_final_text="正式班级反馈",
                 student_entries=[],
             )
+
+    def test_confirm_generates_real_checked_at_timestamp(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        student = lesson_manager.create_student_for_class(class_id, "张三")
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-04",
+            end_date="2026-04-10",
+            created_by=owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            task["id"],
+            class_summary_ai_draft="初始草稿",
+            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "AI草稿"}],
+        )
+
+        confirmed = lesson_manager.confirm_class_feedback_task(
+            task["id"],
+            class_summary_final_text="正式班级反馈",
+            student_entries=[{"student_id": student["id"], "final_text": "正式学生反馈"}],
+        )
+
+        checked_at = confirmed["student_entries"][0]["checked_at"]
+        self.assertIsInstance(checked_at, str)
+        self.assertRegex(checked_at, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 
     def test_database_trigger_rejects_cross_class_student_entry(self):
         owner = self._owner()
@@ -545,7 +615,7 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertIsNotNone(latest)
         self.assertEqual(latest["task_id"], valid_task["id"])
         self.assertEqual(latest["final_text"], "有效终稿")
-        self.assertEqual(latest["checked_at"], "2026-03-26 20:00:00")
+        self.assertEqual(latest["checked_at"], valid_task["student_entries"][0]["checked_at"])
 
     def test_label_config_round_trip_keeps_custom_group(self):
         owner = self._owner()

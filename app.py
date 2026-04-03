@@ -112,6 +112,7 @@ from lesson_manager import (
     reset_organization_invite,
     remove_student_from_class,
     save_class_feedback_generation_result,
+    save_class_feedback_draft,
     save_class_feedback_label_configs,
     save_class_feedback_task_notes,
     save_class,
@@ -2838,6 +2839,34 @@ def api_class_feedback_generate(task_id: int):
         logger.exception("Class feedback generation failed for task %s", task_id)
         return jsonify({"error": "生成班级反馈时发生错误，请稍后重试"}), 500
     return jsonify(saved_task)
+
+
+@app.route("/api/class-feedback/tasks/<int:task_id>/draft", methods=["POST"])
+def api_class_feedback_save_draft(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_feedback_task_or_error(user, task_id)
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    try:
+        draft_task = save_class_feedback_draft(
+            task_id,
+            class_summary_draft_text=str(data.get("class_summary_draft_text") or "").strip(),
+            student_entries=data.get("student_entries") or [],
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.exception("Class feedback draft save failed for task %s", task_id)
+        return jsonify({"error": "保存班级反馈草稿时发生错误，请稍后重试"}), 500
+    return jsonify(draft_task)
 
 
 @app.route("/api/class-feedback/tasks/<int:task_id>/confirm", methods=["POST"])
