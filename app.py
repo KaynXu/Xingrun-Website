@@ -63,6 +63,7 @@ from lesson_manager import (
     delete_class as db_delete_class,
     delete_consultation,
     delete_lesson as db_delete_lesson,
+    delete_organization,
     get_class,
     get_class_teacher_user_id,
     get_class_weeks,
@@ -1924,6 +1925,20 @@ def api_admin_organizations():
     if error:
         return error
     return jsonify({"items": list_organizations()})
+
+
+@app.route("/api/admin/organizations/<int:org_id>", methods=["DELETE"])
+def api_admin_organization_delete(org_id: int):
+    _, error = _require_super_owner()
+    if error:
+        return error
+    try:
+        delete_organization(org_id)
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])

@@ -3768,6 +3768,8 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [organizationInviteLoading, setOrganizationInviteLoading] = useState(hasOwnerAccess(currentUser.role));
   const [organizationInviteError, setOrganizationInviteError] = useState('');
   const [organizationInviteResetting, setOrganizationInviteResetting] = useState(false);
+  const [deletingOrgId, setDeletingOrgId] = useState<number | null>(null);
+  const [confirmDeleteOrgId, setConfirmDeleteOrgId] = useState<number | null>(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -3914,8 +3916,21 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     }
   };
 
-  const handleResetOrganizationInvite = async () => {
-    setOrganizationInviteResetting(true);
+  const handleDeleteOrganization = async (orgId: number) => {
+    setDeletingOrgId(orgId);
+    setOrganizationsError('');
+    try {
+      await apiFetch(`/api/admin/organizations/${orgId}`, { method: 'DELETE' });
+      setOrganizations((current) => current.filter((o) => o.id !== orgId));
+      setConfirmDeleteOrgId(null);
+    } catch (err) {
+      setOrganizationsError(err instanceof Error ? err.message : '删除机构失败');
+    } finally {
+      setDeletingOrgId(null);
+    }
+  };
+
+  const handleResetOrganizationInvite = async () => {    setOrganizationInviteResetting(true);
     setOrganizationInviteError('');
     try {
       const data = await apiFetch<OrganizationInviteInfo>('/api/organization/invite/reset', {
@@ -4204,6 +4219,36 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-400">课程记录</p>
                       <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{organization.lesson_count}</p>
                     </div>
+                  </div>
+                  <div className="mt-4 border-t border-rose-100/60 pt-4 dark:border-rose-500/10">
+                    {confirmDeleteOrgId === organization.id ? (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs text-rose-600 dark:text-rose-400">确认删除「{organization.name}」？此操作将清空该机构下所有账号和数据，不可恢复。</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => void handleDeleteOrganization(organization.id)}
+                            disabled={deletingOrgId === organization.id}
+                            className="flex-1 rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300"
+                          >
+                            {deletingOrgId === organization.id ? '删除中...' : '确认删除'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteOrgId(null)}
+                            disabled={deletingOrgId === organization.id}
+                            className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-300"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteOrgId(organization.id)}
+                        className="w-full rounded-xl border border-rose-200 bg-rose-50/60 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-900/10 dark:text-rose-400 dark:hover:bg-rose-900/30"
+                      >
+                        删除机构
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

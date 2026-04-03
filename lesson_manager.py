@@ -2754,6 +2754,69 @@ def reject_organization_request(request_id: int, reviewer_id: int) -> None:
         )
 
 
+def delete_organization(org_id: int) -> None:
+    """Delete an organization and all its data. Cannot delete the default org."""
+    with get_conn() as conn:
+        org_row = conn.execute("SELECT id, name FROM organizations WHERE id=?", (org_id,)).fetchone()
+        if not org_row:
+            raise LookupError("organization not found")
+        if org_row["name"] == DEFAULT_ORGANIZATION_NAME:
+            raise ValueError("不能删除默认机构")
+        # 1. questions (via lessons)
+        conn.execute(
+            "DELETE FROM questions WHERE lesson_id IN (SELECT id FROM lessons WHERE organization_id=?)",
+            (org_id,),
+        )
+        # 2. lesson_feedbacks (via lessons) — has ON DELETE CASCADE but delete explicitly for safety
+        conn.execute(
+            "DELETE FROM lesson_feedbacks WHERE lesson_id IN (SELECT id FROM lessons WHERE organization_id=?)",
+            (org_id,),
+        )
+        # 3. lessons
+        conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
+        # 4. user_classes and class_students (via classes)
+        conn.execute(
+            "DELETE FROM user_classes WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
+            (org_id,),
+        )
+        conn.execute(
+            "DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
+            (org_id,),
+        )
+        # 5. classes
+        conn.execute("DELETE FROM classes WHERE organization_id=?", (org_id,))
+        # 6. consultations
+        conn.execute("DELETE FROM consultations WHERE organization_id=?", (org_id,))
+        # 7. registration_requests
+        conn.execute("DELETE FROM registration_requests WHERE organization_id=?", (org_id,))
+        # 8. organization_invites
+        conn.execute("DELETE FROM organization_invites WHERE organization_id=?", (org_id,))
+        # 9. auth_sessions (via users)
+        conn.execute(
+            "DELETE FROM auth_sessions WHERE user_id IN (SELECT id FROM users WHERE organization_id=?)",
+            (org_id,),
+        )
+        # 10. user_classes (via users)
+        conn.execute(
+            "DELETE FROM user_classes WHERE user_id IN (SELECT id FROM users WHERE organization_id=?)",
+            (org_id,),
+        )
+        # 11. ai_usage_ledger (via users, ON DELETE CASCADE but explicit for safety)
+        conn.execute("DELETE FROM ai_usage_ledger WHERE organization_id=?", (org_id,))
+        # 12. credit ledger and accounts (ON DELETE CASCADE but explicit)
+        conn.execute("DELETE FROM organization_credit_ledger WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM organization_credit_accounts WHERE organization_id=?", (org_id,))
+        # 13. nullify xhs_order_redemptions references (nullable FK, no cascade)
+        conn.execute(
+            "UPDATE xhs_order_redemptions SET redeemed_organization_id=NULL WHERE redeemed_organization_id=?",
+            (org_id,),
+        )
+        # 14. users
+        conn.execute("DELETE FROM users WHERE organization_id=?", (org_id,))
+        # 15. organization
+        conn.execute("DELETE FROM organizations WHERE id=?", (org_id,))
+
+
 def get_or_create_active_organization_invite(organization_id: int, actor_user_id: int):
     with get_conn() as conn:
         org_row = conn.execute("SELECT id FROM organizations WHERE id=?", (organization_id,)).fetchone()
