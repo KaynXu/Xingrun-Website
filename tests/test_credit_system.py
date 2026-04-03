@@ -701,7 +701,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(usage_count["total"], 1)
 
     @patch("app.datetime")
-    @patch("app._ai_fallback_request_bucket", return_value=12345)
+    @patch("app._ai_fallback_request_bucket", side_effect=[12345, 54321])
     @patch("app.has_api_key", return_value=True)
     @patch("ai_processor.parse_and_generate_plan")
     @patch("ai_processor.transcribe_audio")
@@ -716,7 +716,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
             actor_user_id=self.owner_user["id"],
-            amount=20,
+            amount=40,
             note="seed audio retry credits",
         )
         mock_datetime.now.side_effect = [
@@ -769,7 +769,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
             "/api/credits/overview",
             headers=self.auth_headers(self.owner_token),
         ).get_json()
-        self.assertEqual(overview["credit_balance"], 8)
+        self.assertEqual(overview["credit_balance"], 28)
 
         with lesson_manager.get_conn() as conn:
             audio_usage_count = conn.execute(

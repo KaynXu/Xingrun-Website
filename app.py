@@ -294,14 +294,29 @@ def _current_ai_request_key() -> str:
     return request_key
 
 
+def _current_audio_upload_request_key() -> str:
+    header_key = (
+        request.headers.get("X-Request-Id", "").strip()
+        or request.headers.get("Idempotency-Key", "").strip()
+    )
+    payload_fingerprint = _request_payload_fingerprint()
+    if header_key:
+        return f"header:{header_key}:{payload_fingerprint}"
+    return f"audio-fallback:{payload_fingerprint}"
+
+
 def _build_ai_charge_request_id(
     *,
     user_id: int,
     feature_key: str,
     source_record_type: str,
     source_record_id: int | str,
+    request_key: str | None = None,
 ) -> str:
-    raw_value = f"{user_id}:{_current_ai_request_key()}:{feature_key}:{source_record_type}:{source_record_id}"
+    raw_value = (
+        f"{user_id}:{request_key or _current_ai_request_key()}:"
+        f"{feature_key}:{source_record_type}:{source_record_id}"
+    )
     return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
 
 
@@ -370,6 +385,7 @@ def _run_ai_feature_with_charge(
     provider: str,
     model: str,
     after_success=None,
+    request_key: str | None = None,
 ):
     organization_id = int(user["organization_id"])
     request_id = _build_ai_charge_request_id(
@@ -377,6 +393,7 @@ def _run_ai_feature_with_charge(
         feature_key=feature_key,
         source_record_type=source_record_type,
         source_record_id=source_record_id,
+        request_key=request_key,
     )
     _claim_ai_request_identity(
         organization_id=organization_id,
@@ -2283,6 +2300,7 @@ def api_lesson_create():
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
                     provider="openai",
                     model="whisper-1",
+                    request_key=_current_audio_upload_request_key(),
                 )
             except DuplicateAiRequestError as exc:
                 save_path.unlink(missing_ok=True)
