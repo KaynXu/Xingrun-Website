@@ -252,10 +252,30 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             created_by=owner["id"],
         )
 
-        with self.assertRaisesRegex(ValueError, "class roster must not be empty"):
+        with self.assertRaisesRegex(ValueError, "当前班级还没有学生，无法生成班级反馈"):
             lesson_manager.save_class_feedback_generation_result(
                 task["id"],
                 class_summary_ai_draft="初始草稿",
+                student_entries=[],
+            )
+
+    def test_confirm_rejects_empty_class_roster(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("空班", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-04",
+            end_date="2026-04-10",
+            created_by=owner["id"],
+        )
+
+        with self.assertRaisesRegex(ValueError, "当前班级还没有学生，无法生成班级反馈"):
+            lesson_manager.confirm_class_feedback_task(
+                task["id"],
+                class_summary_final_text="正式班级反馈",
                 student_entries=[],
             )
 

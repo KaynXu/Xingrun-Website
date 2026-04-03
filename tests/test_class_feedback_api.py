@@ -388,7 +388,7 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()["error"], "当前班级还没有学生，请先添加学生")
+        self.assertEqual(response.get_json()["error"], "当前班级还没有学生，无法生成班级反馈")
         generate_class_feedback_bundle.assert_not_called()
 
     @patch("app.generate_class_feedback_bundle")
