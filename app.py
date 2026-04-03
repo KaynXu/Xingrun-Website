@@ -114,7 +114,6 @@ from credit_manager import (
     list_credit_ledger,
     list_member_usage_detail,
     list_member_usage_summary,
-    organization_has_credit_activity,
     redeem_xhs_order,
 )
 from xhs_open_platform import fetch_xhs_order_for_redemption
@@ -233,28 +232,25 @@ def _run_ai_feature_with_charge(
     model: str,
 ):
     organization_id = int(user["organization_id"])
-    should_charge = organization_has_credit_activity(organization_id)
-    if should_charge:
-        ensure_feature_credits_available(
-            organization_id=organization_id,
-            feature_key=feature_key,
-        )
+    ensure_feature_credits_available(
+        organization_id=organization_id,
+        feature_key=feature_key,
+    )
     result = producer()
     business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
-    if should_charge:
-        finalize_ai_charge(
-            organization_id=organization_id,
-            user_id=int(user["id"]),
+    finalize_ai_charge(
+        organization_id=organization_id,
+        user_id=int(user["id"]),
+        feature_key=feature_key,
+        usage=usage,
+        source_record_type=source_record_type,
+        source_record_id=source_record_id,
+        request_id=_build_ai_charge_request_id(
             feature_key=feature_key,
-            usage=usage,
             source_record_type=source_record_type,
             source_record_id=source_record_id,
-            request_id=_build_ai_charge_request_id(
-                feature_key=feature_key,
-                source_record_type=source_record_type,
-                source_record_id=source_record_id,
-            ),
-        )
+        ),
+    )
     return business_value
 
 

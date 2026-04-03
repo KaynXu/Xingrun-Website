@@ -449,19 +449,6 @@ class CreditSystemApiTestCase(unittest.TestCase):
 
     @patch("app.parse_consultation_batch_text")
     def test_consultation_ai_parse_blocks_when_balance_is_insufficient(self, mock_parse):
-        credit_manager.apply_manual_adjustment(
-            organization_id=self.owner_user["organization_id"],
-            actor_user_id=self.owner_user["id"],
-            amount=3,
-            note="activate org credits",
-        )
-        credit_manager.apply_manual_adjustment(
-            organization_id=self.owner_user["organization_id"],
-            actor_user_id=self.owner_user["id"],
-            amount=-3,
-            note="drain org credits",
-        )
-
         response = self.client.post(
             "/api/consultations/ai-parse",
             headers=self.auth_headers(self.owner_token),
@@ -536,6 +523,39 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(overview["credit_balance"], 28)
         self.assertEqual(ledger[0]["source_type"], "ai_usage")
         self.assertEqual(ledger[0]["note"], "teacher_feedback_draft")
+
+    @patch("ai_processor.parse_and_generate_plan")
+    @patch("app.has_api_key", return_value=True)
+    def test_lesson_generation_blocks_when_balance_cannot_cover_max_configured_charge(
+        self,
+        _mock_has_api_key,
+        mock_generate_plan,
+    ):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=8,
+            note="seed only base lesson credits",
+        )
+
+        response = self.client.post(
+            "/api/lessons",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-02",
+                "subject": "数学",
+                "grade": "五年级",
+                "topic": "应用题",
+                "summary_text": "课堂总结",
+                "input_type": "text",
+            },
+        )
+
+        self.assertEqual(response.status_code, 402)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertIn("积分不足", payload["error"])
+        mock_generate_plan.assert_not_called()
 
     @patch("app.fetch_xhs_order_for_redemption")
     def test_credit_center_read_apis_return_overview_ledger_member_summary_and_member_detail(self, mock_fetch):

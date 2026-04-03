@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config_runtime
+import credit_manager
 import lesson_manager
 from app import DEFAULT_TEACHER_FEEDBACK_TEMPLATES, app
 
@@ -39,6 +40,14 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
     @staticmethod
     def auth_headers(token: str) -> dict[str, str]:
         return {"X-Auth-Token": token}
+
+    def seed_owner_credits(self, amount: int = 20) -> None:
+        credit_manager.apply_manual_adjustment(
+            organization_id=1,
+            actor_user_id=1,
+            amount=amount,
+            note="seed feedback ai credits",
+        )
 
     def create_lesson(self, *, class_id: int, topic: str = "Functions") -> int:
         return lesson_manager.save_lesson(
@@ -267,6 +276,7 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
 
     @patch("app.generate_teacher_feedback_draft")
     def test_feedback_draft_passes_builtin_template_details_to_ai(self, generate_teacher_feedback_draft):
+        self.seed_owner_credits()
         class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
         lesson_id = self.create_lesson(class_id=class_id)
         student = lesson_manager.create_student_for_class(class_id, "Alice")
@@ -306,6 +316,7 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
 
     @patch("app.generate_teacher_feedback_draft")
     def test_feedback_draft_passes_custom_template_details_to_ai(self, generate_teacher_feedback_draft):
+        self.seed_owner_credits()
         class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
         lesson_id = self.create_lesson(class_id=class_id)
         student = lesson_manager.create_student_for_class(class_id, "Alice")
@@ -344,6 +355,7 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
 
     @patch("app.generate_teacher_feedback_draft")
     def test_feedback_draft_skips_students_outside_the_current_roster(self, generate_teacher_feedback_draft):
+        self.seed_owner_credits()
         class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
         lesson_id = self.create_lesson(class_id=class_id)
         student = lesson_manager.create_student_for_class(class_id, "Alice")
@@ -576,6 +588,7 @@ class TeacherFeedbackApiTestCase(unittest.TestCase):
 
     @patch("app.generate_teacher_feedback_draft")
     def test_feedback_endpoints_save_and_reload_against_the_current_roster(self, generate_teacher_feedback_draft):
+        self.seed_owner_credits()
         class_id = lesson_manager.save_class("Class A", subject="Math", grade="Grade 9")
         lesson_id = self.create_lesson(class_id=class_id, topic="Function Graphs")
         student_a = lesson_manager.create_student_for_class(class_id, "Alice")

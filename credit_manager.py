@@ -25,12 +25,9 @@ def _pricing_for_feature(feature_key: str) -> dict:
     return pricing
 
 
-def organization_has_credit_activity(organization_id: int) -> bool:
-    overview = get_credit_overview(organization_id)
-    return any(
-        int(overview.get(field) or 0) > 0
-        for field in ("credit_balance", "total_recharged", "total_consumed")
-    )
+def max_configured_charge_for_feature(feature_key: str) -> int:
+    pricing = _pricing_for_feature(feature_key)
+    return int(pricing["base_credits"] or 0) + int(pricing["extra_credits"] or 0)
 
 
 def get_credit_overview(organization_id: int) -> dict:
@@ -90,9 +87,8 @@ def record_ai_charge(
 
 
 def ensure_feature_credits_available(*, organization_id: int, feature_key: str) -> None:
-    pricing = _pricing_for_feature(feature_key)
     overview = get_credit_overview(organization_id)
-    minimum = int(pricing["base_credits"] or 0)
+    minimum = max_configured_charge_for_feature(feature_key)
     if int(overview["credit_balance"] or 0) < minimum:
         raise CreditBalanceError("机构积分不足，请先充值后再使用 AI 功能")
 
