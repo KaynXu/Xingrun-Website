@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+import sqlite3
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -160,7 +161,48 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(refreshed_task["student_entries"][0]["student_id"], class_one_student["id"])
         self.assertEqual(refreshed_task["student_entries"][0]["ai_draft"], "张三草稿")
 
-    def test_confirm_rejects_bad_student_payload_and_keeps_existing_entries(self):
+    def test_confirm_rejects_missing_student_and_keeps_task_in_draft(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        class_one_student = lesson_manager.create_student_for_class(class_id, "张三")
+        class_two_student = lesson_manager.create_student_for_class(class_id, "李四")
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-04",
+            end_date="2026-04-04",
+            created_by=owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            task["id"],
+            class_summary_ai_draft="待确认草稿",
+            student_entries=[
+                {"student_id": class_one_student["id"], "name": "张三", "ai_draft": "张三草稿"},
+                {"student_id": class_two_student["id"], "name": "李四", "ai_draft": "李四草稿"},
+            ],
+        )
+
+        with self.assertRaises(ValueError):
+            lesson_manager.confirm_class_feedback_task(
+                task["id"],
+                class_summary_final_text="坏终稿",
+                student_entries=[{"student_id": class_one_student["id"], "final_text": "张三终稿", "checked_at": "2026-04-04 20:00:00"}],
+            )
+
+        refreshed_task = lesson_manager.get_class_feedback_task(task["id"])
+        self.assertEqual(refreshed_task["status"], "draft")
+        self.assertEqual(len(refreshed_task["student_entries"]), 2)
+        self.assertEqual(refreshed_task["student_entries"][0]["student_id"], class_one_student["id"])
+        self.assertEqual(refreshed_task["student_entries"][0]["ai_draft"], "张三草稿")
+        self.assertEqual(refreshed_task["student_entries"][0]["final_text"], "")
+        self.assertEqual(refreshed_task["student_entries"][1]["student_id"], class_two_student["id"])
+        self.assertEqual(refreshed_task["student_entries"][1]["ai_draft"], "李四草稿")
+        self.assertEqual(refreshed_task["student_entries"][1]["final_text"], "")
+
+    def test_database_trigger_rejects_cross_class_student_entry(self):
         owner = self._owner()
         class_one_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         class_two_id = lesson_manager.save_class("S01A2", subject="英语", grade="六年级")
@@ -177,25 +219,63 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             end_date="2026-04-04",
             created_by=owner["id"],
         )
-        lesson_manager.save_class_feedback_generation_result(
-            task["id"],
-            class_summary_ai_draft="待确认草稿",
-            student_entries=[{"student_id": class_one_student["id"], "name": "张三", "ai_draft": "张三草稿"}],
-        )
 
-        with self.assertRaises(ValueError):
-            lesson_manager.confirm_class_feedback_task(
-                task["id"],
-                class_summary_final_text="坏终稿",
-                student_entries=[{"student_id": "bad", "final_text": "李四终稿", "checked_at": "2026-04-04 20:00:00"}],
+        with lesson_manager.get_conn() as conn:
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """
+                    INSERT INTO class_feedback_student_entries (
+                        task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (task["id"], class_two_student["id"], "李四", "跨班草稿", "", None),
+                )
+
+            conn.execute(
+                """
+                INSERT INTO class_feedback_student_entries (
+                    task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (task["id"], class_one_student["id"], "张三", "张三草稿", "", None),
             )
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """
+                    INSERT INTO class_feedback_student_entries (
+                        task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (task["id"], class_one_student["id"], "张三", "重复草稿", "", None),
+                )
 
-        refreshed_task = lesson_manager.get_class_feedback_task(task["id"])
-        self.assertEqual(refreshed_task["status"], "draft")
-        self.assertEqual(len(refreshed_task["student_entries"]), 1)
-        self.assertEqual(refreshed_task["student_entries"][0]["student_id"], class_one_student["id"])
-        self.assertEqual(refreshed_task["student_entries"][0]["ai_draft"], "张三草稿")
-        self.assertEqual(refreshed_task["student_entries"][0]["final_text"], "")
+    def test_database_trigger_rejects_mismatched_teacher_binding_on_task_insert(self):
+        owner = self._owner()
+        other_teacher = self._create_member_user("teacher-c", "Teacher C")
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+
+        with lesson_manager.get_conn() as conn:
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """
+                    INSERT INTO class_feedback_tasks (
+                        class_id, teacher_user_id, teacher_name_snapshot,
+                        start_date, end_date, period_length_days, period_granularity,
+                        status, class_summary_ai_draft, class_summary_final_text, created_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', '', '', ?)
+                    """,
+                    (
+                        class_id,
+                        other_teacher["id"],
+                        other_teacher["display_name"],
+                        "2026-04-04",
+                        "2026-04-04",
+                        1,
+                        "daily",
+                        owner["id"],
+                    ),
+                )
 
     def test_previous_confirmed_entry_prefers_same_granularity_before_falling_back(self):
         owner = self._owner()
