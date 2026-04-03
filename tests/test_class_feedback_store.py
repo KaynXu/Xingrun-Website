@@ -202,6 +202,43 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(refreshed_task["student_entries"][1]["ai_draft"], "李四草稿")
         self.assertEqual(refreshed_task["student_entries"][1]["final_text"], "")
 
+    def test_save_generation_result_rejects_confirmed_task_and_preserves_final_text(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        student = lesson_manager.create_student_for_class(class_id, "张三")
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-04",
+            end_date="2026-04-10",
+            created_by=owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            task["id"],
+            class_summary_ai_draft="初始草稿",
+            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "初始学生草稿"}],
+        )
+        lesson_manager.confirm_class_feedback_task(
+            task["id"],
+            class_summary_final_text="正式班级反馈",
+            student_entries=[{"student_id": student["id"], "final_text": "正式学生反馈", "checked_at": "2026-04-10 20:00:00"}],
+        )
+
+        with self.assertRaises(ValueError):
+            lesson_manager.save_class_feedback_generation_result(
+                task["id"],
+                class_summary_ai_draft="重新生成草稿",
+                student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "重新生成学生草稿"}],
+            )
+
+        refreshed_task = lesson_manager.get_class_feedback_task(task["id"])
+        self.assertEqual(refreshed_task["status"], "confirmed")
+        self.assertEqual(refreshed_task["class_summary_final_text"], "正式班级反馈")
+        self.assertEqual(refreshed_task["student_entries"][0]["final_text"], "正式学生反馈")
+
     def test_database_trigger_rejects_cross_class_student_entry(self):
         owner = self._owner()
         class_one_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
