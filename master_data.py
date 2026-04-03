@@ -173,6 +173,7 @@ def set_user_aliases(*, actor_user_id: int, user_id: int, aliases: Iterable[str]
     with lesson_manager.get_conn() as conn:
         ensure_schema(conn)
         _require_user(conn, user_id)
+        _ensure_user_aliases_are_unique(conn, user_id=user_id, aliases=normalized_aliases)
         before = list_user_aliases(user_id, conn=conn)
         conn.execute("DELETE FROM user_aliases WHERE user_id=?", (user_id,))
         for alias in normalized_aliases:
@@ -239,6 +240,7 @@ def merge_user_alias(conn: sqlite3.Connection, user_id: int, alias: str) -> list
     cleaned_alias = (alias or "").strip()
     if not cleaned_alias:
         return list_user_aliases(user_id, conn=conn)
+    _ensure_user_aliases_are_unique(conn, user_id=user_id, aliases=[cleaned_alias])
     conn.execute(
         "INSERT OR IGNORE INTO user_aliases (user_id, alias, normalized_alias) VALUES (?, ?, ?)",
         (user_id, cleaned_alias, normalize_alias(cleaned_alias)),
@@ -835,6 +837,31 @@ def _normalize_aliases(aliases: Iterable[str]) -> list[str]:
             continue
         unique_aliases[normalized] = cleaned_alias
     return sorted(unique_aliases.values(), key=lambda value: value.lower())
+
+
+def _ensure_user_aliases_are_unique(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    aliases: Iterable[str],
+):
+    normalized_aliases = [normalize_alias(alias) for alias in aliases]
+    normalized_aliases = [alias for alias in normalized_aliases if alias]
+    if not normalized_aliases:
+        return
+
+    placeholders = ", ".join("?" for _ in normalized_aliases)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT normalized_alias
+        FROM user_aliases
+        WHERE normalized_alias IN ({placeholders})
+          AND user_id != ?
+        """,
+        (*normalized_aliases, user_id),
+    ).fetchall()
+    if rows:
+        raise ValueError("alias already assigned to another user")
 
 
 def _find_user_match(conn: sqlite3.Connection, raw_name: str):
