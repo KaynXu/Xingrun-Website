@@ -59,7 +59,7 @@ import {
 // --- Types ---
 
 type Role = 'super_owner' | 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'settings';
+type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
 
@@ -85,6 +85,50 @@ interface Stats {
 
 interface ApiSettings {
   provider: string;
+}
+
+interface CreditOverview {
+  organization_id: number;
+  credit_balance: number;
+  total_recharged: number;
+  total_consumed: number;
+  updated_at: string;
+}
+
+interface CreditLedgerItem {
+  id: number;
+  direction: 'credit' | 'debit';
+  amount: number;
+  balance_after: number;
+  source_type: string;
+  source_id: string;
+  note: string;
+  operator_user_id: number | null;
+  created_at: string;
+}
+
+interface CreditMemberUsageItem {
+  user_id: number;
+  display_name: string;
+  credit_consumed: number;
+  usage_count: number;
+  last_used_at: string | null;
+}
+
+interface CreditMemberUsageDetailItem {
+  id: number;
+  user_id: number;
+  feature_key: string;
+  provider: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  credit_cost_final: number;
+  source_record_type: string | null;
+  source_record_id: number | string | null;
+  request_id: string;
+  created_at: string;
 }
 
 interface ClassItem {
@@ -1301,6 +1345,7 @@ const Sidebar = ({
     ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
       : []),
+    ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
@@ -4491,6 +4536,368 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
   );
 };
 
+const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+  const [creditOverview, setCreditOverview] = useState<CreditOverview | null>(null);
+  const [creditLedger, setCreditLedger] = useState<CreditLedgerItem[]>([]);
+  const [creditUsage, setCreditUsage] = useState<CreditMemberUsageItem[]>([]);
+  const [creditLoading, setCreditLoading] = useState(true);
+  const [creditError, setCreditError] = useState('');
+  const [redeemOrderId, setRedeemOrderId] = useState('');
+  const [redeemPhoneSuffix, setRedeemPhoneSuffix] = useState('');
+  const [redeemLoading, setRedeemLoading] = useState(false);
+  const [redeemMessage, setRedeemMessage] = useState('');
+  const [selectedUsageUser, setSelectedUsageUser] = useState<CreditMemberUsageItem | null>(null);
+  const [usageDetailItems, setUsageDetailItems] = useState<CreditMemberUsageDetailItem[]>([]);
+  const [usageDetailLoading, setUsageDetailLoading] = useState(false);
+  const [usageDetailError, setUsageDetailError] = useState('');
+  const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [ledgerSearch, setLedgerSearch] = useState('');
+
+  const loadSelectedUsageDetail = useCallback(async (userId: number) => {
+    setUsageDetailLoading(true);
+    setUsageDetailError('');
+    try {
+      const payload = await apiFetch<{ items: CreditMemberUsageDetailItem[] }>(`/api/credits/member-usage/${userId}`);
+      setUsageDetailItems(payload.items);
+    } catch (err) {
+      setUsageDetailItems([]);
+      setUsageDetailError(err instanceof Error ? err.message : '成员明细加载失败');
+    } finally {
+      setUsageDetailLoading(false);
+    }
+  }, []);
+
+  const loadCredits = useCallback(async () => {
+    setCreditLoading(true);
+    setCreditError('');
+    try {
+      const [overview, ledgerPayload, usagePayload] = await Promise.all([
+        apiFetch<CreditOverview>('/api/credits/overview'),
+        apiFetch<{ items: CreditLedgerItem[] }>('/api/credits/ledger?limit=100'),
+        apiFetch<{ items: CreditMemberUsageItem[] }>('/api/credits/member-usage'),
+      ]);
+      setCreditOverview(overview);
+      setCreditLedger(ledgerPayload.items);
+      setCreditUsage(usagePayload.items);
+
+      if (selectedUsageUser) {
+        const refreshedSelectedUsageUser = usagePayload.items.find((item) => item.user_id === selectedUsageUser.user_id) ?? null;
+        setSelectedUsageUser(refreshedSelectedUsageUser);
+        if (refreshedSelectedUsageUser) {
+          await loadSelectedUsageDetail(refreshedSelectedUsageUser.user_id);
+        } else {
+          setUsageDetailItems([]);
+          setUsageDetailError('');
+        }
+      }
+    } catch (err) {
+      setCreditError(err instanceof Error ? err.message : '积分中心加载失败');
+    } finally {
+      setCreditLoading(false);
+    }
+  }, [loadSelectedUsageDetail, selectedUsageUser]);
+
+  useEffect(() => {
+    void loadCredits();
+  }, [loadCredits]);
+
+  const handleRedeemSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRedeemLoading(true);
+    setRedeemMessage('');
+    setCreditError('');
+    try {
+      const payload = await apiFetch<{ overview: CreditOverview }>('/api/credits/redeem/xhs', {
+        method: 'POST',
+        body: JSON.stringify({
+          platform_order_id: redeemOrderId,
+          phone_suffix: redeemPhoneSuffix,
+        }),
+      });
+      setCreditOverview(payload.overview);
+      setRedeemOrderId('');
+      setRedeemPhoneSuffix('');
+      setRedeemMessage('兑换成功，积分余额已更新。');
+      await loadCredits();
+    } catch (err) {
+      setCreditError(err instanceof Error ? err.message : '订单兑换失败');
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
+
+  const handleSelectUsageUser = (item: CreditMemberUsageItem) => {
+    setSelectedUsageUser(item);
+    void loadSelectedUsageDetail(item.user_id);
+  };
+
+  const filteredLedger = creditLedger.filter((item) => {
+    if (ledgerFilter !== 'all' && item.direction !== ledgerFilter) {
+      return false;
+    }
+    const query = ledgerSearch.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+    return [item.source_type, item.source_id, item.note, String(item.amount), String(item.balance_after)]
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+
+  return (
+    <div className={`${workspacePageClass} mx-auto max-w-6xl space-y-8`}>
+      <section className={`${workspaceCardClass} overflow-hidden p-6`}>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-sky-600">Credit Workspace</p>
+            <h3 className={`${workspaceSectionTitleClass} mt-3`}>积分中心</h3>
+            <p className={`${workspaceSectionTextClass} mt-2`}>
+              管理 {currentUser.organization_name} 的积分余额、订单兑换、成员消耗和 AI 扣费流水。
+            </p>
+          </div>
+          <button onClick={() => void loadCredits()} className={workspaceSecondaryButtonClass} type="button">
+            刷新积分
+          </button>
+        </div>
+      </section>
+
+      {creditError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+          {creditError}
+        </div>
+      )}
+
+      {redeemMessage && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          {redeemMessage}
+        </div>
+      )}
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className={`${workspaceCardClass} p-5`}>
+          <p className="text-sm text-slate-500 dark:text-slate-400">当前余额</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{creditLoading ? '--' : creditOverview?.credit_balance ?? 0}</p>
+        </div>
+        <div className={`${workspaceCardClass} p-5`}>
+          <p className="text-sm text-slate-500 dark:text-slate-400">累计充值</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{creditLoading ? '--' : creditOverview?.total_recharged ?? 0}</p>
+        </div>
+        <div className={`${workspaceCardClass} p-5`}>
+          <p className="text-sm text-slate-500 dark:text-slate-400">累计消耗</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{creditLoading ? '--' : creditOverview?.total_consumed ?? 0}</p>
+        </div>
+      </section>
+
+      <section className={`${workspaceCardClass} space-y-4 p-6`}>
+        <div>
+          <p className="font-medium text-slate-900 dark:text-white">小红书订单兑换</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">输入订单号和手机号后四位，将有效订单兑换到当前机构积分池。</p>
+        </div>
+        <form className="grid gap-3 md:grid-cols-[1fr_180px_auto]" onSubmit={handleRedeemSubmit}>
+          <input
+            value={redeemOrderId}
+            onChange={(event) => setRedeemOrderId(event.target.value)}
+            placeholder="小红书订单号"
+            className={`${workspaceFieldClass} w-full`}
+          />
+          <input
+            value={redeemPhoneSuffix}
+            onChange={(event) => setRedeemPhoneSuffix(event.target.value.replace(/\D/g, '').slice(0, 4))}
+            placeholder="手机号后四位"
+            className={`${workspaceFieldClass} w-full`}
+          />
+          <button type="submit" disabled={redeemLoading} className={workspacePrimaryButtonClass}>
+            {redeemLoading ? '兑换中...' : '兑换积分'}
+          </button>
+        </form>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="space-y-6">
+          <div className={`${workspaceCardClass} space-y-4 p-6`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-slate-900 dark:text-white">成员用量</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按成员汇总 AI 功能的积分消耗，点击可查看成员明细。</p>
+              </div>
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                {creditUsage.length} 人
+              </span>
+            </div>
+            <div className="space-y-3">
+              {creditUsage.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">暂无成员用量记录。</p>
+              ) : (
+                creditUsage.map((item) => {
+                  const selected = selectedUsageUser?.user_id === item.user_id;
+                  return (
+                    <button
+                      key={item.user_id}
+                      type="button"
+                      onClick={() => handleSelectUsageUser(item)}
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-2xl border px-4 py-4 text-left transition-all',
+                        selected
+                          ? 'border-sky-300 bg-sky-50/90 shadow-[0_18px_40px_rgba(47,128,237,0.12)] dark:border-sky-500/30 dark:bg-sky-500/10'
+                          : 'border-slate-200/70 bg-white/70 hover:border-sky-200 hover:bg-sky-50/60 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/15 dark:hover:bg-white/10',
+                      )}
+                    >
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">{item.display_name}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          调用 {item.usage_count} 次 · 最近使用 {item.last_used_at ? new Date(item.last_used_at).toLocaleString('zh-CN') : '暂无'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-slate-900 dark:text-white">-{item.credit_consumed}</p>
+                        <p className="mt-1 text-xs text-sky-600 dark:text-sky-300">查看明细</p>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className={`${workspaceCardClass} space-y-4 p-6`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-slate-900 dark:text-white">成员明细</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看某位成员的 AI 使用与积分扣费细项。</p>
+              </div>
+              {selectedUsageUser && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedUsageUser(null);
+                    setUsageDetailItems([]);
+                    setUsageDetailError('');
+                  }}
+                  className={workspaceSecondaryButtonClass}
+                >
+                  清空选择
+                </button>
+              )}
+            </div>
+
+            {!selectedUsageUser ? (
+              <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
+                先从上方成员列表选择一位成员，再查看成员明细。
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className={`${workspaceSoftCardClass} grid gap-4 p-5 md:grid-cols-3`}>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">成员</p>
+                    <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedUsageUser.display_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">累计消耗</p>
+                    <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">-{selectedUsageUser.credit_consumed}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最近使用</p>
+                    <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {selectedUsageUser.last_used_at ? new Date(selectedUsageUser.last_used_at).toLocaleString('zh-CN') : '暂无'}
+                    </p>
+                  </div>
+                </div>
+
+                {usageDetailError && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                    {usageDetailError}
+                  </div>
+                )}
+
+                {usageDetailLoading ? (
+                  <div className={`${workspaceSoftCardClass} p-5`}>
+                    <XiaojimaoLoading label="正在加载成员明细..." />
+                  </div>
+                ) : usageDetailItems.length === 0 ? (
+                  <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
+                    该成员目前没有可展示的使用明细。
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {usageDetailItems.map((item) => (
+                      <div key={item.id} className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="font-medium text-slate-900 dark:text-white">{item.feature_key}</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {item.provider || 'AI'}{item.model ? ` · ${item.model}` : ''} · 请求 {item.request_id}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-rose-600 dark:text-rose-300">-{item.credit_cost_final}</p>
+                        </div>
+                        <div className="grid gap-3 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-3">
+                          <p>来源：{item.source_record_type || '未知'} #{item.source_record_id ?? '-'}</p>
+                          <p>Tokens：{item.total_tokens ?? 0}（入 {item.input_tokens ?? 0} / 出 {item.output_tokens ?? 0}）</p>
+                          <p>时间：{new Date(item.created_at).toLocaleString('zh-CN')}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={`${workspaceCardClass} space-y-4 p-6`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="font-medium text-slate-900 dark:text-white">最近流水</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">流水筛选支持按类型和关键词筛出最近 100 条积分变动。</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+              <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                流水筛选
+                <select value={ledgerFilter} onChange={(event) => setLedgerFilter(event.target.value as 'all' | 'credit' | 'debit')} className={`${workspaceFieldClass} w-full`}>
+                  <option value="all">全部</option>
+                  <option value="credit">仅充值</option>
+                  <option value="debit">仅消耗</option>
+                </select>
+              </label>
+              <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                关键词
+                <input
+                  value={ledgerSearch}
+                  onChange={(event) => setLedgerSearch(event.target.value)}
+                  placeholder="搜索来源、备注、金额"
+                  className={`${workspaceFieldClass} w-full`}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {filteredLedger.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">当前筛选条件下暂无积分流水。</p>
+            ) : (
+              filteredLedger.map((item) => (
+                <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-4 text-sm dark:border-white/10 dark:bg-white/5">
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">{item.source_type}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {item.note || '无备注'} · 余额 {item.balance_after} · {new Date(item.created_at).toLocaleString('zh-CN')}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">来源 ID：{item.source_id || '-'}</p>
+                  </div>
+                  <p className={item.direction === 'credit' ? 'font-semibold text-emerald-600 dark:text-emerald-300' : 'font-semibold text-rose-600 dark:text-rose-300'}>
+                    {item.direction === 'credit' ? '+' : '-'}{item.amount}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
 const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -6610,6 +7017,9 @@ export default function App() {
         }
         setCurrentUser(user);
         setActivePage((page) => {
+          if (page === 'credit' && !hasOwnerAccess(user.role)) {
+            return 'dashboard';
+          }
           if (page === 'accounts' && !hasOwnerAccess(user.role)) {
             return 'dashboard';
           }
@@ -6733,6 +7143,7 @@ export default function App() {
     smartWrongQuestions: '智能错题',
     classes: '班级管理',
     accounts: '账号审批',
+    credit: '积分中心',
     settings: '系统设置',
   };
 
@@ -6889,6 +7300,7 @@ export default function App() {
                 {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
                   <ClassManagementPage currentUser={currentUser} />
                 )}
+                {activePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
                 {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>

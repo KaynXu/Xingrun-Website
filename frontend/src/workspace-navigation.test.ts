@@ -18,7 +18,7 @@ function requireMatch(pattern: RegExp): string {
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'classes' \| 'accounts' \| 'credit' \| 'settings';/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -120,6 +120,42 @@ test('workspace navigation removes the master data mappings page and keeps accou
   assert.doesNotMatch(sidebarBlock, /老师与班级匹配/);
   assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} \/>/);
   assert.doesNotMatch(appSource, /onStartBinding=\{handleStartMemberBinding\}/);
+});
+
+test('workspace navigation exposes a dedicated owner-only credit center page', () => {
+  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+
+  assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\) \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
+  assert.match(appSource, /credit: '积分中心'/);
+  assert.match(appSource, /if \(page === 'credit' && !hasOwnerAccess\(user\.role\)\) \{\s*return 'dashboard';\s*\}/);
+  assert.match(appSource, /activePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
+});
+
+test('settings page source keeps only account and about sections after credit center extraction', () => {
+  const settingsBlock = requireMatch(/const SettingsPage = \(\{ currentUser, onLogout \}: \{ currentUser: CurrentUser; onLogout: \(\) => void \}\) => \{[\s\S]*?\n};/);
+
+  assert.match(settingsBlock, /<h3 className=\{workspaceSectionTitleClass\}>系统设置<\/h3>/);
+  assert.match(settingsBlock, /当前账号/);
+  assert.match(settingsBlock, /关于/);
+  assert.doesNotMatch(settingsBlock, /积分中心/);
+  assert.doesNotMatch(settingsBlock, /小红书订单兑换/);
+  assert.doesNotMatch(settingsBlock, /成员用量/);
+  assert.doesNotMatch(settingsBlock, /最近流水/);
+});
+
+test('credit center page source supports member drilldown and ledger filtering', () => {
+  const creditBlock = requireMatch(/const CreditCenterPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+
+  assert.match(creditBlock, /apiFetch<CreditOverview>\('\/api\/credits\/overview'\)/);
+  assert.match(creditBlock, /apiFetch<\{ items: CreditLedgerItem\[] \}>\('\/api\/credits\/ledger\?limit=100'\)/);
+  assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageItem\[] \}>\('\/api\/credits\/member-usage'\)/);
+  assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageDetailItem\[] \}>\(`/);
+  assert.match(creditBlock, /const \[selectedUsageUser, setSelectedUsageUser\] = useState<CreditMemberUsageItem \| null>\(null\);/);
+  assert.match(creditBlock, /const \[ledgerFilter, setLedgerFilter\] = useState<'all' \| 'credit' \| 'debit'>\('all'\);/);
+  assert.match(creditBlock, /const \[ledgerSearch, setLedgerSearch\] = useState\(''\);/);
+  assert.match(creditBlock, /const filteredLedger = creditLedger\.filter\(/);
+  assert.match(creditBlock, /成员明细/);
+  assert.match(creditBlock, /流水筛选/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
