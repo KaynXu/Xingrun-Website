@@ -16,6 +16,7 @@ import threading
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Optional, Set
 
 from flask import (Flask, abort, flash, redirect, render_template,
@@ -142,6 +143,11 @@ DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS = {
     template["id"]
     for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
 }
+
+_CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS = 3
+_CREDIT_REDEEM_FAILURE_LOCK_SECONDS = 300.0
+_CREDIT_REDEEM_FAILURE_STATE: dict[tuple[int, str], dict[str, float | int]] = {}
+_CREDIT_REDEEM_FAILURE_LOCK = threading.Lock()
 
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -1255,6 +1261,46 @@ def _get_json_object_payload():
     return data, None
 
 
+def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
+    return (int(user_id), (platform_order_id or "").strip().upper())
+
+
+def _is_credit_redeem_attempt_blocked(user_id: int, platform_order_id: str) -> bool:
+    now = monotonic()
+    key = _credit_redeem_failure_key(user_id, platform_order_id)
+    with _CREDIT_REDEEM_FAILURE_LOCK:
+        entry = _CREDIT_REDEEM_FAILURE_STATE.get(key)
+        if not entry:
+            return False
+        blocked_until = float(entry.get("blocked_until", 0.0))
+        if blocked_until > now:
+            return True
+        if blocked_until:
+            _CREDIT_REDEEM_FAILURE_STATE.pop(key, None)
+        return False
+
+
+def _record_credit_redeem_failure(user_id: int, platform_order_id: str) -> None:
+    now = monotonic()
+    key = _credit_redeem_failure_key(user_id, platform_order_id)
+    with _CREDIT_REDEEM_FAILURE_LOCK:
+        entry = _CREDIT_REDEEM_FAILURE_STATE.get(key) or {"failures": 0, "blocked_until": 0.0}
+        failures = int(entry.get("failures", 0)) + 1
+        blocked_until = float(entry.get("blocked_until", 0.0))
+        if failures >= _CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS:
+            blocked_until = now + _CREDIT_REDEEM_FAILURE_LOCK_SECONDS
+        _CREDIT_REDEEM_FAILURE_STATE[key] = {
+            "failures": failures,
+            "blocked_until": blocked_until,
+        }
+
+
+def _reset_credit_redeem_failure(user_id: int, platform_order_id: str) -> None:
+    key = _credit_redeem_failure_key(user_id, platform_order_id)
+    with _CREDIT_REDEEM_FAILURE_LOCK:
+        _CREDIT_REDEEM_FAILURE_STATE.pop(key, None)
+
+
 @app.route("/api/credits/overview", methods=["GET"])
 def api_credit_overview():
     user, error = _require_owner()
@@ -1306,6 +1352,8 @@ def api_credit_redeem_xhs():
         return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
     if len(phone_suffix) != 4 or not phone_suffix.isdigit():
         return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
+    if _is_credit_redeem_attempt_blocked(user["id"], platform_order_id):
+        return jsonify({"error": "too many failed redemption attempts, please try later"}), 429
 
     try:
         order_payload = fetch_xhs_order_for_redemption(
@@ -1319,8 +1367,12 @@ def api_credit_redeem_xhs():
             phone_suffix=phone_suffix,
             order_payload=order_payload,
         )
+        _reset_credit_redeem_failure(user["id"], platform_order_id)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 409
+        if str(exc) == "order already redeemed":
+            return jsonify({"error": str(exc)}), 409
+        _record_credit_redeem_failure(user["id"], platform_order_id)
+        return jsonify({"error": "unable to verify order for redemption"}), 422
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 502
     return jsonify(result)

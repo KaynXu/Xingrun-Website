@@ -14,6 +14,7 @@ import config_runtime
 import credit_manager
 import lesson_manager
 import app as app_module
+import xhs_open_platform
 
 
 class CreditSystemServiceTestCase(unittest.TestCase):
@@ -296,6 +297,8 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         self.owner_token = payload["token"]
         self.owner_user = payload["user"]
+        if hasattr(app_module, "_CREDIT_REDEEM_FAILURE_STATE"):
+            app_module._CREDIT_REDEEM_FAILURE_STATE.clear()
 
     def tearDown(self):
         gc.collect()
@@ -392,6 +395,39 @@ class CreditSystemApiTestCase(unittest.TestCase):
 
         self.assertEqual(invalid_order.status_code, 400)
         self.assertEqual(invalid_suffix.status_code, 400)
+
+    @patch("app.fetch_xhs_order_for_redemption")
+    def test_redeem_verification_failures_are_normalized_and_throttled_per_owner_and_order(self, mock_fetch):
+        mock_fetch.side_effect = [
+            ValueError("order not found"),
+            ValueError("order verification does not match phone suffix"),
+            ValueError("order is not paid"),
+            ValueError("order not found"),
+        ]
+
+        responses = []
+        for _ in range(4):
+            responses.append(
+                self.client.post(
+                    "/api/credits/redeem/xhs",
+                    headers=self.auth_headers(self.owner_token),
+                    json={"platform_order_id": "XHS-BRUTE-1", "phone_suffix": "9999"},
+                )
+            )
+
+        self.assertEqual(responses[0].status_code, 422)
+        self.assertEqual(responses[1].status_code, 422)
+        self.assertEqual(responses[2].status_code, 422)
+        self.assertEqual(responses[3].status_code, 429)
+        self.assertEqual(responses[0].get_json()["error"], responses[1].get_json()["error"])
+        self.assertEqual(responses[1].get_json()["error"], responses[2].get_json()["error"])
+
+        other_order = self.client.post(
+            "/api/credits/redeem/xhs",
+            headers=self.auth_headers(self.owner_token),
+            json={"platform_order_id": "XHS-BRUTE-2", "phone_suffix": "9999"},
+        )
+        self.assertEqual(other_order.status_code, 422)
 
     def test_credit_routes_require_owner_access(self):
         member_token = self._create_member_token()
@@ -521,3 +557,51 @@ class CreditSystemApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertIsNotNone(payload)
         self.assertEqual(payload["items"], [])
+
+
+class XhsOpenPlatformValidationTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        config_runtime.CFG_PATH = self.base / "config.json"
+
+    def tearDown(self):
+        gc.collect()
+        self.temp_dir.cleanup()
+
+    @patch("xhs_open_platform._fetch_order_detail_from_xhs")
+    def test_fetch_rejects_unsafe_xhs_base_url(self, mock_fetch):
+        config_runtime.write_file_config(
+            {
+                "xhs_app_id": "app-id",
+                "xhs_app_secret": "app-secret",
+                "xhs_base_url": "https://evil.example.net",
+            }
+        )
+        with self.assertRaises(RuntimeError):
+            xhs_open_platform.fetch_xhs_order_for_redemption(
+                platform_order_id="XHS-URL-1",
+                phone_suffix="1234",
+            )
+        mock_fetch.assert_not_called()
+
+    @patch("xhs_open_platform._fetch_order_detail_from_xhs")
+    def test_fetch_allows_known_safe_xhs_domain(self, mock_fetch):
+        config_runtime.write_file_config(
+            {
+                "xhs_app_id": "app-id",
+                "xhs_app_secret": "app-secret",
+                "xhs_base_url": "https://api.xiaohongshu.com",
+            }
+        )
+        mock_fetch.return_value = {
+            "order_status": "paid",
+            "credit_amount": 30,
+            "buyer_masked_phone": "18888881234",
+        }
+
+        payload = xhs_open_platform.fetch_xhs_order_for_redemption(
+            platform_order_id="XHS-URL-2",
+            phone_suffix="1234",
+        )
+        self.assertEqual(payload["order_status"], "paid")

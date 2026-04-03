@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any
 from urllib import error, request
+from urllib.parse import urlparse
 
 from config_runtime import get_runtime_config
 
@@ -19,7 +20,7 @@ def fetch_xhs_order_for_redemption(*, platform_order_id: str, phone_suffix: str)
     cfg = get_runtime_config()
     app_id = str(cfg.get("xhs_app_id") or os.environ.get("XHS_APP_ID", "")).strip()
     app_secret = str(cfg.get("xhs_app_secret") or os.environ.get("XHS_APP_SECRET", "")).strip()
-    base_url = str(cfg.get("xhs_base_url") or DEFAULT_XHS_BASE_URL).strip() or DEFAULT_XHS_BASE_URL
+    base_url = _resolve_safe_xhs_base_url(str(cfg.get("xhs_base_url") or DEFAULT_XHS_BASE_URL).strip())
     if not app_id or not app_secret:
         raise RuntimeError("xiaohongshu credentials are not configured")
 
@@ -63,6 +64,25 @@ def _fetch_order_detail_from_xhs(*, platform_order_id: str, app_id: str, app_sec
     if not isinstance(parsed, dict):
         raise RuntimeError("xiaohongshu order lookup returned invalid payload")
     return parsed
+
+
+def _resolve_safe_xhs_base_url(raw_base_url: str) -> str:
+    candidate = (raw_base_url or "").strip() or DEFAULT_XHS_BASE_URL
+    parsed = urlparse(candidate)
+    host = (parsed.hostname or "").lower()
+
+    if parsed.scheme.lower() != "https" or not host:
+        raise RuntimeError("xiaohongshu base url must be https")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError("xiaohongshu base url is invalid")
+    if parsed.path not in {"", "/"}:
+        raise RuntimeError("xiaohongshu base url path is not allowed")
+    if parsed.port not in {None, 443}:
+        raise RuntimeError("xiaohongshu base url port is not allowed")
+    if host != "xiaohongshu.com" and not host.endswith(".xiaohongshu.com"):
+        raise RuntimeError("xiaohongshu base url host is not allowed")
+
+    return f"https://{host}" if parsed.port is None else f"https://{host}:{parsed.port}"
 
 
 def _normalize_xhs_paid_order(payload: dict, *, fallback_platform_order_id: str) -> dict:

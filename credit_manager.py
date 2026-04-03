@@ -79,7 +79,17 @@ def list_credit_ledger(organization_id: int, *, limit: int = 100) -> list[dict]:
     with lesson_manager.get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT *
+            SELECT
+                id,
+                organization_id,
+                direction,
+                amount,
+                balance_after,
+                source_type,
+                source_id,
+                note,
+                operator_user_id,
+                created_at
             FROM organization_credit_ledger
             WHERE organization_id=?
             ORDER BY id DESC
