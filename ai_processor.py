@@ -379,6 +379,57 @@ def generate_teacher_feedback_draft(*, lesson: dict, students: list[dict], custo
     return (response.choices[0].message.content or "").strip()
 
 
+def generate_class_feedback_bundle(
+    *,
+    class_name: str,
+    teacher_name: str,
+    start_date: str,
+    end_date: str,
+    source_summary: str,
+    stage_notes: dict,
+    students: list[dict],
+) -> dict:
+    client = _get_client()
+    system_prompt = (
+        "你是一位负责教培班级反馈的老师助理。"
+        "请先完整阅读输入资料，再输出 JSON 对象。"
+        '返回格式必须是 {"class_summary":"...","student_entries":[{"student_id":1,"name":"张三","text":"..."}]}。'
+        "不要输出 Markdown，不要输出额外解释。"
+        "学生反馈应只基于提供的阶段课次、课后反馈、阶段备注和历史基线。"
+        "只有在存在明确历史基线时，才允许使用“进步明显”“有点回落”“变化不大”等比较表达；"
+        "如果没有明确历史基线，请改用当前阶段的客观观察。"
+    )
+    user_prompt = json.dumps(
+        {
+            "class_name": class_name,
+            "teacher_name": teacher_name,
+            "start_date": start_date,
+            "end_date": end_date,
+            "source_summary": source_summary,
+            "stage_notes": stage_notes,
+            "students": students,
+        },
+        ensure_ascii=False,
+    )
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    content = (response.choices[0].message.content or "").strip()
+    bundle = json.loads(content or "{}")
+    if not isinstance(bundle, dict):
+        raise ValueError("AI 返回格式不正确")
+    if not isinstance(bundle.get("student_entries"), list):
+        bundle["student_entries"] = []
+    bundle["class_summary"] = str(bundle.get("class_summary") or "").strip()
+    return bundle
+
+
 def generate_monthly_plan(lessons, month_str: str) -> dict:
     """
     给定本月所有 lesson 记录列表，生成月度综合复习计划。

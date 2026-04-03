@@ -51,7 +51,9 @@ from lesson_manager import (
     approve_organization_request,
     approve_registration_request,
     authenticate_user,
+    confirm_class_feedback_task,
     create_organization_request,
+    create_class_feedback_task,
     build_lesson_feedback_editor_state,
     create_student_for_class,
     create_auth_session,
@@ -60,12 +62,15 @@ from lesson_manager import (
     delete_class as db_delete_class,
     delete_consultation,
     delete_lesson as db_delete_lesson,
+    find_previous_confirmed_class_feedback_entry,
     get_class,
+    get_class_feedback_task,
     get_class_teacher_user_id,
     get_class_weeks,
     get_conn,
     get_consultation,
     get_current_user,
+    get_lesson_feedback,
     get_lesson,
     get_lessons_by_week,
     get_or_create_active_organization_invite,
@@ -74,6 +79,7 @@ from lesson_manager import (
     get_user_class_ids,
     init_db,
     list_all_users,
+    list_class_feedback_label_configs,
     list_class_teacher_bindings,
     list_classes,
     list_consultation_teachers,
@@ -88,6 +94,8 @@ from lesson_manager import (
     reject_registration_request,
     reset_organization_invite,
     remove_student_from_class,
+    save_class_feedback_generation_result,
+    save_class_feedback_label_configs,
     save_class,
     save_lesson_feedback,
     save_lesson,
@@ -101,7 +109,7 @@ from lesson_manager import (
 )
 import smart_wrong_questions
 import master_data
-from ai_processor import generate_teacher_feedback_draft
+from ai_processor import generate_class_feedback_bundle, generate_teacher_feedback_draft
 
 init_db()
 
@@ -1244,6 +1252,137 @@ def _get_json_object_payload():
     return data, None
 
 
+def _get_accessible_class_feedback_task_or_error(user: dict, task_id: int):
+    task = get_class_feedback_task(task_id)
+    if not task:
+        return None, (jsonify({"error": "not found"}), 404)
+
+    _, error = _get_accessible_class_or_error(user, task["class_id"])
+    if error:
+        return None, error
+    return task, None
+
+
+def _normalize_class_feedback_student_highlights(items: object) -> dict[int, dict]:
+    if not isinstance(items, list):
+        return {}
+
+    normalized: dict[int, dict] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        student_id = item.get("student_id")
+        if not isinstance(student_id, int):
+            continue
+        labels = [
+            str(label or "").strip()
+            for label in (item.get("labels") or [])
+            if str(label or "").strip()
+        ]
+        normalized[student_id] = {
+            "labels": labels,
+            "note": str(item.get("note") or "").strip(),
+        }
+    return normalized
+
+
+def _build_class_feedback_generation_context(task: dict, data: dict, user: dict) -> dict:
+    cls = get_class(task["class_id"]) or {}
+    all_lessons = list_lessons(class_id=task["class_id"])
+    source_lessons = []
+    lesson_feedbacks = []
+    for lesson in all_lessons:
+        lesson_date = str(lesson.get("date") or "").strip()
+        if not lesson_date or lesson_date < task["start_date"] or lesson_date > task["end_date"]:
+            continue
+
+        source_lessons.append(
+            {
+                "lesson_id": lesson["id"],
+                "date": lesson_date,
+                "topic": lesson.get("topic") or "",
+                "summary": lesson.get("summary") or "",
+                "weak_points": lesson.get("weak_points") or "",
+            }
+        )
+
+        feedback = get_lesson_feedback(lesson["id"]) or {}
+        editor_state = feedback.get("editor_state") if isinstance(feedback.get("editor_state"), dict) else {}
+        feedback_students = editor_state.get("students") if isinstance(editor_state.get("students"), list) else []
+        lesson_feedbacks.append(
+            {
+                "lesson_id": lesson["id"],
+                "date": lesson_date,
+                "merged_text": feedback.get("merged_text", "") or "",
+                "student_remarks": [
+                    {
+                        "student_id": item.get("student_id"),
+                        "remark": str(item.get("remark") or "").strip(),
+                        "selected_template_id": str(item.get("selected_template_id") or "").strip(),
+                    }
+                    for item in feedback_students
+                    if isinstance(item, dict) and isinstance(item.get("student_id"), int)
+                ],
+            }
+        )
+
+    student_highlights_by_id = _normalize_class_feedback_student_highlights(data.get("student_highlights"))
+    students = []
+    for roster_student in list_students_for_class(task["class_id"]):
+        baseline = find_previous_confirmed_class_feedback_entry(
+            class_id=task["class_id"],
+            student_id=roster_student["id"],
+            period_granularity=task["period_granularity"],
+            before_end_date=task["end_date"],
+        )
+        students.append(
+            {
+                "student_id": roster_student["id"],
+                "name": roster_student["name"],
+                "stage_highlight": student_highlights_by_id.get(
+                    roster_student["id"],
+                    {"labels": [], "note": ""},
+                ),
+                "previous_baseline": baseline,
+            }
+        )
+
+    source_summary = json.dumps(
+        {
+            "class_name": cls.get("name") or "",
+            "date_range": {"start_date": task["start_date"], "end_date": task["end_date"]},
+            "lessons": source_lessons,
+            "lesson_feedbacks": lesson_feedbacks,
+        },
+        ensure_ascii=False,
+    )
+
+    return {
+        "class_name": cls.get("name") or "",
+        "teacher_name": task.get("teacher_name_snapshot")
+        or cls.get("teacher_name")
+        or user.get("display_name")
+        or user.get("username")
+        or "",
+        "start_date": task["start_date"],
+        "end_date": task["end_date"],
+        "source_summary": source_summary,
+        "stage_notes": {
+            "class_status_tags": [
+                str(tag or "").strip()
+                for tag in (data.get("class_status_tags") or [])
+                if str(tag or "").strip()
+            ],
+            "lesson_feedbacks": lesson_feedbacks,
+            "student_highlights": [
+                {"student_id": student_id, **highlight}
+                for student_id, highlight in student_highlights_by_id.items()
+            ],
+        },
+        "students": students,
+    }
+
+
 @app.route("/api/me", methods=["GET"])
 def api_me():
     user, error = _require_auth()
@@ -2118,6 +2257,153 @@ def api_lesson_feedback_save(lesson_id):
     except LookupError:
         return jsonify({"error": "not found"}), 404
     return jsonify(feedback)
+
+
+@app.route("/api/class-feedback/labels", methods=["GET"])
+def api_class_feedback_labels_get():
+    user, error = _require_auth()
+    if error:
+        return error
+    return jsonify({"groups": list_class_feedback_label_configs(user["id"])})
+
+
+@app.route("/api/class-feedback/labels", methods=["PUT"])
+def api_class_feedback_labels_put():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    groups = data.get("groups")
+    if not isinstance(groups, list):
+        groups = []
+    try:
+        save_class_feedback_label_configs(user["id"], groups)
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"groups": list_class_feedback_label_configs(user["id"])})
+
+
+@app.route("/api/class-feedback/tasks", methods=["POST"])
+def api_class_feedback_task_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    class_id = data.get("class_id")
+    if isinstance(class_id, bool) or not isinstance(class_id, int):
+        return jsonify({"error": "class_id must be an integer"}), 400
+    cls, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+
+    start_date = str(data.get("start_date") or "").strip()
+    end_date = str(data.get("end_date") or "").strip()
+    teacher_name_snapshot = (
+        str(cls.get("teacher_name") or "").strip()
+        or str(user.get("display_name") or "").strip()
+        or str(user.get("username") or "").strip()
+        or "未命名老师"
+    )
+
+    try:
+        task = create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=cls.get("teacher_user_id"),
+            teacher_name_snapshot=teacher_name_snapshot,
+            start_date=start_date,
+            end_date=end_date,
+            created_by=user["id"],
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(task), 201
+
+
+@app.route("/api/class-feedback/tasks/<int:task_id>", methods=["GET"])
+def api_class_feedback_task_get(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, error = _get_accessible_class_feedback_task_or_error(user, task_id)
+    if error:
+        return error
+    return jsonify(task)
+
+
+@app.route("/api/class-feedback/tasks/<int:task_id>/generate", methods=["POST"])
+def api_class_feedback_generate(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, error = _get_accessible_class_feedback_task_or_error(user, task_id)
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    try:
+        context = _build_class_feedback_generation_context(task, data, user)
+        bundle = generate_class_feedback_bundle(**context)
+        student_entries = []
+        for item in bundle.get("student_entries") or []:
+            if not isinstance(item, dict):
+                continue
+            student_id = item.get("student_id")
+            if not isinstance(student_id, int):
+                continue
+            student_entries.append(
+                {
+                    "student_id": student_id,
+                    "name": str(item.get("name") or "").strip(),
+                    "ai_draft": str(item.get("text") or "").strip(),
+                }
+            )
+        saved_task = save_class_feedback_generation_result(
+            task_id,
+            class_summary_ai_draft=str(bundle.get("class_summary") or "").strip(),
+            student_entries=student_entries,
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(saved_task)
+
+
+@app.route("/api/class-feedback/tasks/<int:task_id>/confirm", methods=["POST"])
+def api_class_feedback_confirm(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_feedback_task_or_error(user, task_id)
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    try:
+        confirmed_task = confirm_class_feedback_task(
+            task_id,
+            class_summary_final_text=str(data.get("class_summary_final_text") or "").strip(),
+            student_entries=data.get("student_entries") or [],
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(confirmed_task)
 
 
 @app.route("/api/quiz", methods=["GET"])
