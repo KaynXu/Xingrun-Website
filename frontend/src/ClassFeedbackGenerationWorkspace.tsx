@@ -11,6 +11,7 @@ interface ClassFeedbackGenerationWorkspaceProps {
   teacherNameLabel: string;
   sourceSummaryItems: string[];
   labelGroups: StageLabelGroup[];
+  classStatusTags: string[];
   students: ClassFeedbackStudentCard[];
   classSummaryText: string;
   statusMessage: string;
@@ -20,12 +21,14 @@ interface ClassFeedbackGenerationWorkspaceProps {
   isConfirming: boolean;
   onClassSummaryChange: (value: string) => void;
   onStageNoteChange: (key: keyof ClassFeedbackStageNotes, value: string) => void;
+  onClassStatusTagToggle: (label: string) => void;
   onHighlightToggle: (studentId: number, label: string) => void;
   onHighlightNoteChange: (studentId: number, value: string) => void;
   onStudentFinalTextChange: (studentId: number, value: string) => void;
   onStudentCheckedChange: (studentId: number, checked: boolean) => void;
   onAddStudent: (name: string) => void | Promise<void>;
   onGenerate: () => void | Promise<void>;
+  onSaveDraft: () => void | Promise<void>;
   onCopyClassSummary: () => void | Promise<void>;
   onCopyAllStudents: () => void | Promise<void>;
   onConfirm: () => void | Promise<void>;
@@ -79,6 +82,28 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
           <div>
             <h4 className="text-lg font-semibold text-slate-900">阶段备注</h4>
             <div className="mt-4 grid gap-3">
+              <div className="rounded-[20px] border border-slate-100 bg-white/85 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">班级状态标签</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {labelLookup.map((item) => {
+                    const selected = props.classStatusTags.includes(item.label);
+                    return (
+                      <button
+                        key={`class-status-${item.group}-${item.label}`}
+                        type="button"
+                        onClick={() => props.onClassStatusTagToggle(item.label)}
+                        className={`rounded-full px-3 py-1.5 text-sm transition ${
+                          selected
+                            ? 'bg-sky-500 text-white'
+                            : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <textarea
                 value={props.stageNotes.classStatusNote}
                 onChange={(event) => props.onStageNoteChange('classStatusNote', event.target.value)}
@@ -162,6 +187,14 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
               className="rounded-2xl bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               复制全部学生反馈
+            </button>
+            <button
+              type="button"
+              onClick={() => void props.onSaveDraft()}
+              disabled={props.isSaving}
+              className="rounded-2xl bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {props.isSaving ? '保存中...' : '保存草稿'}
             </button>
             <button
               type="button"

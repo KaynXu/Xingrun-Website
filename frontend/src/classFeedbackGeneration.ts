@@ -77,7 +77,6 @@ export function buildClassFeedbackConfirmPayload(input: {
     return {
       student_id: student.studentId,
       final_text: finalText,
-      checked_at: 'CHECKED_ON_CONFIRM',
     };
   });
 
@@ -179,4 +178,22 @@ export const confirmClassFeedbackTask = (
   callApiFetch<ClassFeedbackTask>(`/api/class-feedback/tasks/${taskId}/confirm`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+
+export const saveClassFeedbackTaskDraft = (
+  taskId: number,
+  payload: {
+    classSummaryDraftText: string;
+    studentEntries: Array<{ studentId: number; finalText: string }>;
+  },
+) =>
+  callApiFetch<ClassFeedbackTask>(`/api/class-feedback/tasks/${taskId}/draft`, {
+    method: 'POST',
+    body: JSON.stringify({
+      class_summary_draft_text: payload.classSummaryDraftText,
+      student_entries: payload.studentEntries.map((item) => ({
+        student_id: item.studentId,
+        final_text: item.finalText,
+      })),
+    }),
   });
