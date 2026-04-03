@@ -2186,6 +2186,95 @@ def _serialize_class_feedback_task_row(row: sqlite3.Row, student_entries: Option
     return task
 
 
+def _load_class_feedback_task_row(conn: sqlite3.Connection, task_id: int):
+    task_row = conn.execute(
+        "SELECT * FROM class_feedback_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    if not task_row:
+        raise LookupError("class feedback task not found")
+    return task_row
+
+
+def _get_class_feedback_student_roster(conn: sqlite3.Connection, class_id: int) -> dict[int, dict]:
+    rows = conn.execute(
+        """
+        SELECT s.id, s.name
+        FROM class_students cs
+        JOIN students s ON s.id = cs.student_id
+        WHERE cs.class_id=?
+        ORDER BY cs.id
+        """,
+        (class_id,),
+    ).fetchall()
+    return {row["id"]: dict(row) for row in rows}
+
+
+def _validate_class_feedback_teacher_binding(
+    conn: sqlite3.Connection,
+    *,
+    class_id: int,
+    teacher_user_id: Optional[int],
+) -> None:
+    if teacher_user_id is None:
+        return
+    bound_teacher_user_id = get_class_teacher_user_id(class_id)
+    if bound_teacher_user_id != teacher_user_id:
+        raise ValueError("teacher_user_id does not match class binding")
+
+
+def _normalize_class_feedback_student_entries(
+    *,
+    task_row: sqlite3.Row,
+    conn: sqlite3.Connection,
+    student_entries: list[dict] | None,
+    require_final_text: bool = False,
+    require_checked_at: bool = False,
+) -> list[dict]:
+    if student_entries is None:
+        student_entries = []
+    if not isinstance(student_entries, list):
+        raise ValueError("student_entries must be a list")
+
+    roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
+    normalized_entries: list[dict] = []
+    for item in student_entries:
+        if not isinstance(item, dict):
+            raise ValueError("student_entries must contain objects")
+        student_id = item.get("student_id")
+        if isinstance(student_id, bool) or not isinstance(student_id, int):
+            raise ValueError("student_id must be an integer")
+        roster_student = roster_by_id.get(student_id)
+        if not roster_student:
+            raise ValueError("student must belong to class roster")
+
+        name_snapshot = (item.get("name") or roster_student["name"] or "").strip()
+        ai_draft = item.get("ai_draft", "") or ""
+        final_text = item.get("final_text", "") or ""
+        checked_at = item.get("checked_at")
+        if require_final_text:
+            final_text = final_text.strip()
+            if not final_text:
+                raise ValueError("final_text is required")
+        if require_checked_at:
+            if checked_at is None:
+                raise ValueError("checked_at is required")
+            checked_at = str(checked_at).strip()
+            if not checked_at:
+                raise ValueError("checked_at is required")
+
+        normalized_entries.append(
+            {
+                "student_id": student_id,
+                "student_name_snapshot": name_snapshot,
+                "ai_draft": ai_draft,
+                "final_text": final_text,
+                "checked_at": checked_at,
+            }
+        )
+    return normalized_entries
+
+
 def get_class_feedback_task(task_id: int):
     with get_conn() as conn:
         row = conn.execute(
@@ -2231,6 +2320,11 @@ def create_class_feedback_task(
             teacher_row = conn.execute("SELECT id FROM users WHERE id=?", (teacher_user_id,)).fetchone()
             if not teacher_row:
                 raise LookupError("user not found")
+            _validate_class_feedback_teacher_binding(
+                conn,
+                class_id=class_id,
+                teacher_user_id=teacher_user_id,
+            )
         cur = conn.execute(
             """
             INSERT INTO class_feedback_tasks (
@@ -2255,28 +2349,14 @@ def create_class_feedback_task(
 
 
 def save_class_feedback_generation_result(task_id: int, class_summary_ai_draft: str, student_entries: list[dict]):
-    normalized_student_entries = []
-    for item in student_entries or []:
-        if not isinstance(item, dict):
-            continue
-        student_id = item.get("student_id")
-        if isinstance(student_id, bool) or not isinstance(student_id, int):
-            continue
-        normalized_student_entries.append(
-            {
-                "student_id": student_id,
-                "name": (item.get("name") or "").strip(),
-                "ai_draft": item.get("ai_draft", "") or "",
-            }
-        )
-
     with get_conn() as conn:
-        task_row = conn.execute(
-            "SELECT id FROM class_feedback_tasks WHERE id=?",
-            (task_id,),
-        ).fetchone()
-        if not task_row:
-            raise LookupError("class feedback task not found")
+        task_row = _load_class_feedback_task_row(conn, task_id)
+        normalized_student_entries = _normalize_class_feedback_student_entries(
+            task_row=task_row,
+            conn=conn,
+            student_entries=student_entries,
+        )
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute(
             """
             UPDATE class_feedback_tasks
@@ -2296,7 +2376,7 @@ def save_class_feedback_generation_result(task_id: int, class_summary_ai_draft: 
                 (
                     task_id,
                     item["student_id"],
-                    item["name"],
+                    item["student_name_snapshot"],
                     item["ai_draft"],
                 ),
             )
@@ -2304,28 +2384,17 @@ def save_class_feedback_generation_result(task_id: int, class_summary_ai_draft: 
 
 
 def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, student_entries: list[dict]):
-    normalized_student_entries = []
-    for item in student_entries or []:
-        if not isinstance(item, dict):
-            continue
-        student_id = item.get("student_id")
-        if isinstance(student_id, bool) or not isinstance(student_id, int):
-            continue
-        normalized_student_entries.append(
-            {
-                "student_id": student_id,
-                "final_text": item.get("final_text", "") or "",
-                "checked_at": item.get("checked_at"),
-            }
-        )
-
     with get_conn() as conn:
-        task_row = conn.execute(
-            "SELECT id FROM class_feedback_tasks WHERE id=?",
-            (task_id,),
-        ).fetchone()
-        if not task_row:
-            raise LookupError("class feedback task not found")
+        task_row = _load_class_feedback_task_row(conn, task_id)
+        normalized_student_entries = _normalize_class_feedback_student_entries(
+            task_row=task_row,
+            conn=conn,
+            student_entries=student_entries,
+            require_final_text=True,
+            require_checked_at=True,
+        )
+        roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute(
             """
             UPDATE class_feedback_tasks
@@ -2355,11 +2424,12 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
                     """
                     INSERT INTO class_feedback_student_entries (
                         task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
-                    ) VALUES (?, ?, '', '', ?, ?)
+                    ) VALUES (?, ?, ?, '', ?, ?)
                     """,
                     (
                         task_id,
                         item["student_id"],
+                        roster_by_id[item["student_id"]]["name"],
                         item["final_text"],
                         item["checked_at"],
                     ),
@@ -2400,6 +2470,9 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
               AND t.status='confirmed'
               AND t.end_date < ?
               AND t.period_granularity=?
+              AND trim(coalesce(e.final_text, '')) <> ''
+              AND e.checked_at IS NOT NULL
+              AND trim(coalesce(e.checked_at, '')) <> ''
             ORDER BY t.end_date DESC, t.id DESC, e.id DESC
             LIMIT 1
             """,
@@ -2438,6 +2511,9 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
               AND e.student_id=?
               AND t.status='confirmed'
               AND t.end_date < ?
+              AND trim(coalesce(e.final_text, '')) <> ''
+              AND e.checked_at IS NOT NULL
+              AND trim(coalesce(e.checked_at, '')) <> ''
             ORDER BY t.end_date DESC, t.id DESC, e.id DESC
             LIMIT 1
             """,
@@ -2456,7 +2532,7 @@ def list_class_feedback_label_configs(owner_user_id: int) -> list[dict]:
             ORDER BY sort_order ASC, id ASC
             """,
             (owner_user_id,),
-        ).fetchall()
+    ).fetchall()
     if not rows:
         return [
             {"group": item["group"], "labels": list(item["labels"])}
@@ -2505,6 +2581,11 @@ def save_class_feedback_label_configs(owner_user_id: int, groups: list[dict]):
             "DELETE FROM class_feedback_label_configs WHERE owner_user_id=?",
             (owner_user_id,),
         )
+        if not normalized_groups:
+            return [
+                {"group": item["group"], "labels": list(item["labels"])}
+                for item in DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS
+            ]
         for group_index, label_group, labels in normalized_groups:
             for label_index, label_text in labels:
                 conn.execute(
