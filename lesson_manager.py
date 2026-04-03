@@ -867,8 +867,71 @@ def init_db():
                 conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
             if "created_at" not in feedback_cols:
                 conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-            if "updated_at" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        if "updated_at" not in feedback_cols:
+            conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
+            ON class_feedback_student_entries(task_id, student_id)
+            """
+        )
+        conn.executescript(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_insert
+            BEFORE INSERT ON class_feedback_tasks
+            WHEN NEW.teacher_user_id IS NOT NULL
+            BEGIN
+                SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM user_classes uc
+                    WHERE uc.class_id = NEW.class_id
+                      AND uc.user_id = NEW.teacher_user_id
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_update
+            BEFORE UPDATE OF class_id, teacher_user_id ON class_feedback_tasks
+            WHEN NEW.teacher_user_id IS NOT NULL
+            BEGIN
+                SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM user_classes uc
+                    WHERE uc.class_id = NEW.class_id
+                      AND uc.user_id = NEW.teacher_user_id
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_insert
+            BEFORE INSERT ON class_feedback_student_entries
+            BEGIN
+                SELECT RAISE(ABORT, 'student_id must belong to task roster')
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM class_feedback_tasks t
+                    JOIN class_students cs
+                      ON cs.class_id = t.class_id
+                     AND cs.student_id = NEW.student_id
+                    WHERE t.id = NEW.task_id
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_update
+            BEFORE UPDATE OF task_id, student_id ON class_feedback_student_entries
+            BEGIN
+                SELECT RAISE(ABORT, 'student_id must belong to task roster')
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM class_feedback_tasks t
+                    JOIN class_students cs
+                      ON cs.class_id = t.class_id
+                     AND cs.student_id = NEW.student_id
+                    WHERE t.id = NEW.task_id
+                );
+            END;
+            """
+        )
         _bootstrap_account_state(conn)
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -1456,9 +1519,32 @@ def _validate_class_feedback_teacher_binding(
 ) -> None:
     if teacher_user_id is None:
         return
-    bound_teacher_user_id = get_class_teacher_user_id(class_id)
+    row = conn.execute(
+        """
+        SELECT user_id
+        FROM user_classes
+        WHERE class_id=?
+        ORDER BY user_id
+        LIMIT 1
+        """,
+        (class_id,),
+    ).fetchone()
+    bound_teacher_user_id = row["user_id"] if row else None
     if bound_teacher_user_id != teacher_user_id:
         raise ValueError("teacher_user_id does not match class binding")
+
+
+def _get_class_feedback_task_student_ids(conn: sqlite3.Connection, task_id: int) -> list[int]:
+    rows = conn.execute(
+        """
+        SELECT student_id
+        FROM class_feedback_student_entries
+        WHERE task_id=?
+        ORDER BY student_id, id
+        """,
+        (task_id,),
+    ).fetchall()
+    return [row["student_id"] for row in rows]
 
 
 def _normalize_class_feedback_student_entries(
@@ -1632,6 +1718,10 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
             require_checked_at=True,
         )
         roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
+        current_student_ids = _get_class_feedback_task_student_ids(conn, task_id)
+        provided_student_ids = [item["student_id"] for item in normalized_student_entries]
+        if current_student_ids and sorted(current_student_ids) != sorted(provided_student_ids):
+            raise ValueError("student_entries must match current task entries")
         conn.execute("BEGIN IMMEDIATE")
         conn.execute(
             """
