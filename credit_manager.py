@@ -14,6 +14,25 @@ CREDIT_PRICING_RULES = {
 }
 
 
+class CreditBalanceError(ValueError):
+    pass
+
+
+def _pricing_for_feature(feature_key: str) -> dict:
+    pricing = CREDIT_PRICING_RULES.get(feature_key)
+    if not pricing:
+        raise ValueError(f"unknown feature_key: {feature_key}")
+    return pricing
+
+
+def organization_has_credit_activity(organization_id: int) -> bool:
+    overview = get_credit_overview(organization_id)
+    return any(
+        int(overview.get(field) or 0) > 0
+        for field in ("credit_balance", "total_recharged", "total_consumed")
+    )
+
+
 def get_credit_overview(organization_id: int) -> dict:
     account = lesson_manager.ensure_credit_account(organization_id)
     return {
@@ -68,6 +87,53 @@ def record_ai_charge(
         source_record_id=str(source_record_id),
         request_id=request_id,
     )
+
+
+def ensure_feature_credits_available(*, organization_id: int, feature_key: str) -> None:
+    pricing = _pricing_for_feature(feature_key)
+    overview = get_credit_overview(organization_id)
+    minimum = int(pricing["base_credits"] or 0)
+    if int(overview["credit_balance"] or 0) < minimum:
+        raise CreditBalanceError("机构积分不足，请先充值后再使用 AI 功能")
+
+
+def finalize_ai_charge(
+    *,
+    organization_id: int,
+    user_id: int,
+    feature_key: str,
+    usage: dict,
+    source_record_type: str,
+    source_record_id: int | str,
+    request_id: str,
+) -> dict:
+    pricing = _pricing_for_feature(feature_key)
+    normalized_usage = usage if isinstance(usage, dict) else {}
+    input_tokens = max(0, int(normalized_usage.get("input_tokens", 0) or 0))
+    output_tokens = max(0, int(normalized_usage.get("output_tokens", 0) or 0))
+    total_tokens = input_tokens + output_tokens
+    credit_cost_final = int(pricing["base_credits"] or 0)
+    threshold = int(pricing["extra_token_threshold"] or 0)
+    if threshold and total_tokens > threshold:
+        credit_cost_final += int(pricing["extra_credits"] or 0)
+    try:
+        return record_ai_charge(
+            organization_id=organization_id,
+            user_id=user_id,
+            feature_key=feature_key,
+            provider=str(normalized_usage.get("provider", "") or ""),
+            model=str(normalized_usage.get("model", "") or ""),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            credit_cost_final=credit_cost_final,
+            source_record_type=source_record_type,
+            source_record_id=source_record_id,
+            request_id=request_id,
+        )
+    except ValueError as exc:
+        if str(exc) == "insufficient credit balance":
+            raise CreditBalanceError("机构积分不足，请先充值后再使用 AI 功能") from exc
+        raise
 
 
 def list_member_usage_summary(organization_id: int) -> list[dict]:

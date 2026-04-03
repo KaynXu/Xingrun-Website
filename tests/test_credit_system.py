@@ -447,6 +447,96 @@ class CreditSystemApiTestCase(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 403, route)
 
+    @patch("app.parse_consultation_batch_text")
+    def test_consultation_ai_parse_blocks_when_balance_is_insufficient(self, mock_parse):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=3,
+            note="activate org credits",
+        )
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=-3,
+            note="drain org credits",
+        )
+
+        response = self.client.post(
+            "/api/consultations/ai-parse",
+            headers=self.auth_headers(self.owner_token),
+            json={"raw_text": "张妈妈，五年级数学"},
+        )
+
+        self.assertEqual(response.status_code, 402)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertIn("积分不足", payload["error"])
+        mock_parse.assert_not_called()
+
+    @patch("app.generate_teacher_feedback_draft")
+    def test_teacher_feedback_draft_records_ai_usage_and_deducts_balance(self, mock_feedback):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=30,
+            note="seed draft credits",
+        )
+        mock_feedback.return_value = (
+            "反馈草稿",
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 220,
+                "output_tokens": 80,
+            },
+        )
+
+        lesson_id = lesson_manager.save_lesson(
+            date_str="2026-04-02",
+            subject="数学",
+            grade="五年级",
+            topic="分数应用题",
+            summary="课堂总结",
+            weak_points="计算",
+            plan={"days": [], "questions": []},
+            pdf_path="",
+            class_id=None,
+        )
+
+        response = self.client.post(
+            f"/api/lessons/{lesson_id}/feedback/draft",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "students": [
+                    {
+                        "name": "王同学",
+                        "selected_template_id": "active",
+                        "remark": "认真参与课堂练习",
+                    }
+                ],
+                "custom_templates": [],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["merged_text"], "反馈草稿")
+
+        overview = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        ledger = self.client.get(
+            "/api/credits/ledger",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()["items"]
+
+        self.assertEqual(overview["credit_balance"], 28)
+        self.assertEqual(ledger[0]["source_type"], "ai_usage")
+        self.assertEqual(ledger[0]["note"], "teacher_feedback_draft")
+
     @patch("app.fetch_xhs_order_for_redemption")
     def test_credit_center_read_apis_return_overview_ledger_member_summary_and_member_detail(self, mock_fetch):
         mock_fetch.return_value = {

@@ -19,6 +19,20 @@ def _load_config() -> dict:
   return get_runtime_config()
 
 
+def _provider_name() -> str:
+    return str(_load_config().get("provider", "openai") or "openai")
+
+
+def _usage_dict(response, *, provider: str | None = None, model_fallback: str = "") -> dict:
+    usage = getattr(response, "usage", None)
+    return {
+        "provider": str(provider or _provider_name()),
+        "model": str(getattr(response, "model", "") or model_fallback or _get_chat_model()),
+        "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+    }
+
+
 def _get_client():
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
@@ -300,7 +314,7 @@ CONSULTATION_BATCH_SYSTEM_PROMPT = """你是咨询记录整理助手。
 
 
 # ─── 音频转录 ──────────────────────────────────────────────────────────────────
-def transcribe_audio(audio_path: str) -> str:
+def transcribe_audio(audio_path: str, *, include_usage: bool = False):
     """使用 OpenAI Whisper 转录音频文件，返回转录文本。"""
     client = _get_whisper_client()
     audio_path = Path(audio_path)
@@ -320,7 +334,14 @@ def transcribe_audio(audio_path: str) -> str:
             response_format="text",
         )
     print("转录完成。")
-    return response
+    transcription = str(response)
+    if include_usage:
+        return transcription, _usage_dict(
+            response,
+            provider="openai",
+            model_fallback="whisper-1",
+        )
+    return transcription
 
 
 # ─── 课堂总结解析 ──────────────────────────────────────────────────────────────
@@ -332,7 +353,8 @@ def parse_and_generate_plan(
     weak_points: str = "",
     lesson_date: str = "",
     prompt_styles: list = None,
-) -> dict:
+    include_usage: bool = False,
+):
     """
     将自由格式课堂总结（文本）解析为结构化复习计划 JSON。
     返回 plan dict，可直接传入 pdf_engine 生成 PDF，或存入数据库。
@@ -372,10 +394,12 @@ def parse_and_generate_plan(
         plan.setdefault("lesson_info", {}).setdefault("date", str(date.today()))
     
     print("复习计划生成完成。")
+    if include_usage:
+        return plan, _usage_dict(response)
     return plan
 
 
-def parse_consultation_batch_text(raw_text: str) -> dict:
+def parse_consultation_batch_text(raw_text: str, *, include_usage: bool = False):
     client = _get_client()
     response = client.chat.completions.create(
         model=_get_chat_model(),
@@ -389,14 +413,23 @@ def parse_consultation_batch_text(raw_text: str) -> dict:
     payload = json.loads(response.choices[0].message.content)
     if not isinstance(payload.get("items"), list):
         raise RuntimeError("咨询记录批量解析返回了无效结果")
-    return {
+    parsed = {
         "items": payload.get("items", []),
         "warnings": payload.get("warnings", []),
     }
+    if include_usage:
+        return parsed, _usage_dict(response)
+    return parsed
 
 
 # ─── 月度复习计划聚合 ──────────────────────────────────────────────────────────
-def generate_teacher_feedback_draft(*, lesson: dict, students: list[dict], custom_templates: list[dict]) -> str:
+def generate_teacher_feedback_draft(
+    *,
+    lesson: dict,
+    students: list[dict],
+    custom_templates: list[dict],
+    include_usage: bool = False,
+):
     client = _get_client()
     plan_json = json.dumps(lesson.get("plan") or {}, ensure_ascii=False)
     student_block = json.dumps(
@@ -428,10 +461,13 @@ def generate_teacher_feedback_draft(*, lesson: dict, students: list[dict], custo
         ],
         temperature=0.4,
     )
-    return (response.choices[0].message.content or "").strip()
+    merged_text = (response.choices[0].message.content or "").strip()
+    if include_usage:
+        return merged_text, _usage_dict(response)
+    return merged_text
 
 
-def generate_monthly_plan(lessons, month_str: str) -> dict:
+def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = False):
     """
     给定本月所有 lesson 记录列表，生成月度综合复习计划。
     每个 lesson dict 应包含 summary、topic、subject、grade、weak_points 等字段。
@@ -464,4 +500,6 @@ def generate_monthly_plan(lessons, month_str: str) -> dict:
     plan.setdefault("lesson_info", {})["month"] = month_str
     plan["lesson_info"]["topic"] = f"{month_str} 综合复习"
     print("月度复习计划生成完成。")
+    if include_usage:
+        return plan, _usage_dict(response)
     return plan

@@ -107,10 +107,14 @@ import smart_wrong_questions
 import master_data
 from ai_processor import generate_teacher_feedback_draft
 from credit_manager import (
+    CreditBalanceError,
+    ensure_feature_credits_available,
+    finalize_ai_charge,
     get_credit_overview,
     list_credit_ledger,
     list_member_usage_detail,
     list_member_usage_summary,
+    organization_has_credit_activity,
     redeem_xhs_order,
 )
 from xhs_open_platform import fetch_xhs_order_for_redemption
@@ -153,6 +157,105 @@ _CREDIT_REDEEM_FAILURE_LOCK = threading.Lock()
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
     return get_runtime_config()
+
+
+def _default_ai_provider_name() -> str:
+    return str(get_config().get("provider", "openai") or "openai")
+
+
+def _default_chat_model_name() -> str:
+    cfg = get_config()
+    provider = _default_ai_provider_name()
+    if provider == "deepseek":
+        return str(cfg.get("deepseek_model", "deepseek-chat") or "deepseek-chat")
+    if provider == "mimo":
+        return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
+    if provider == "n1n":
+        return str(cfg.get("n1n_model", "gpt-4o") or "gpt-4o")
+    return "gpt-4o"
+
+
+def _normalize_ai_usage_payload(usage: object, *, provider: str, model: str) -> dict:
+    usage_payload = usage if isinstance(usage, dict) else {}
+    return {
+        "provider": str(usage_payload.get("provider", "") or provider),
+        "model": str(usage_payload.get("model", "") or model),
+        "input_tokens": max(0, int(usage_payload.get("input_tokens", 0) or 0)),
+        "output_tokens": max(0, int(usage_payload.get("output_tokens", 0) or 0)),
+    }
+
+
+def _split_ai_result_with_usage(result: object, *, provider: str, model: str) -> tuple[object, dict]:
+    if (
+        isinstance(result, tuple)
+        and len(result) == 2
+        and isinstance(result[1], dict)
+    ):
+        return result[0], _normalize_ai_usage_payload(result[1], provider=provider, model=model)
+    return result, _normalize_ai_usage_payload({}, provider=provider, model=model)
+
+
+def _current_ai_request_key() -> str:
+    request_key = str(request.environ.get("_credit_request_key") or "").strip()
+    if request_key:
+        return request_key
+    header_key = (
+        request.headers.get("X-Request-Id", "").strip()
+        or request.headers.get("Idempotency-Key", "").strip()
+    )
+    request_key = header_key or secrets.token_hex(16)
+    request.environ["_credit_request_key"] = request_key
+    return request_key
+
+
+def _build_ai_charge_request_id(*, feature_key: str, source_record_type: str, source_record_id: int | str) -> str:
+    raw_value = f"{_current_ai_request_key()}:{feature_key}:{source_record_type}:{source_record_id}"
+    return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
+
+
+def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
+    try:
+        return helper(*args, include_usage=True, **kwargs)
+    except TypeError as exc:
+        if "include_usage" not in str(exc):
+            raise
+        return helper(*args, **kwargs)
+
+
+def _run_ai_feature_with_charge(
+    *,
+    user: dict,
+    feature_key: str,
+    source_record_type: str,
+    source_record_id: int | str,
+    producer,
+    provider: str,
+    model: str,
+):
+    organization_id = int(user["organization_id"])
+    should_charge = organization_has_credit_activity(organization_id)
+    if should_charge:
+        ensure_feature_credits_available(
+            organization_id=organization_id,
+            feature_key=feature_key,
+        )
+    result = producer()
+    business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
+    if should_charge:
+        finalize_ai_charge(
+            organization_id=organization_id,
+            user_id=int(user["id"]),
+            feature_key=feature_key,
+            usage=usage,
+            source_record_type=source_record_type,
+            source_record_id=source_record_id,
+            request_id=_build_ai_charge_request_id(
+                feature_key=feature_key,
+                source_record_type=source_record_type,
+                source_record_id=source_record_id,
+            ),
+        )
+    return business_value
 
 
 def has_api_key():
@@ -1652,7 +1755,7 @@ def api_consultations_list():
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
 def api_consultation_ai_parse():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
 
@@ -1670,9 +1773,31 @@ def api_consultation_ai_parse():
     if not cleaned_text:
         return jsonify({"error": "raw_text is empty after cleanup"}), 400
 
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
+
+    def _produce_consultation_parse():
+        parsed_result = _call_ai_helper_with_usage(parse_consultation_batch_text, cleaned_text)
+        parsed_payload, usage = _split_ai_result_with_usage(
+            parsed_result,
+            provider=provider,
+            model=model,
+        )
+        normalized_payload = normalize_consultation_batch_parse_result(parsed_payload)
+        return normalized_payload, usage
+
     try:
-        parsed = parse_consultation_batch_text(cleaned_text)
-        normalized = normalize_consultation_batch_parse_result(parsed)
+        normalized = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="consultation_ai_parse",
+            source_record_type="consultation_batch",
+            source_record_id=hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()[:16],
+            producer=_produce_consultation_parse,
+            provider=provider,
+            model=model,
+        )
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 502
     except RuntimeError as exc:
@@ -1958,14 +2083,15 @@ def api_lesson_create():
         
     lesson_date = data.get("date") or str(date.today())
     class_id = int(data.get("class_id") or 0)
-    if not class_id:
+    if not class_id and user.get("role") == "member":
         return jsonify({"error": "请选择班级后再生成复习记录"}), 400
 
-    cls = get_class(class_id)
-    if not cls:
-        return jsonify({"error": "class not found"}), 404
-    if not _can_access_lesson(user, {"class_id": class_id}):
-        return jsonify({"error": "forbidden"}), 403
+    cls = get_class(class_id) if class_id else None
+    if class_id:
+        if not cls:
+            return jsonify({"error": "class not found"}), 404
+        if not _can_access_lesson(user, {"class_id": class_id}):
+            return jsonify({"error": "forbidden"}), 403
 
     subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
@@ -1974,6 +2100,8 @@ def api_lesson_create():
     
     input_type = data.get("input_type", "text")
     raw_text = ""
+    chat_provider = _default_ai_provider_name()
+    chat_model = _default_chat_model_name()
     
     if input_type == "text" or request.is_json:
         raw_text = data.get("summary_text", "").strip()
@@ -1996,7 +2124,18 @@ def api_lesson_create():
                 
             try:
                 from ai_processor import transcribe_audio
-                raw_text = transcribe_audio(str(save_path))
+                raw_text = _run_ai_feature_with_charge(
+                    user=user,
+                    feature_key="audio_transcription",
+                    source_record_type="lesson_upload",
+                    source_record_id=save_path.name,
+                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
+                    provider="openai",
+                    model="whisper-1",
+                )
+            except CreditBalanceError as exc:
+                save_path.unlink(missing_ok=True)
+                return jsonify({"error": str(exc)}), 402
             except Exception as e:
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": f"音频转录失败：{e}"}), 500
@@ -2011,10 +2150,25 @@ def api_lesson_create():
 
     try:
         from ai_processor import parse_and_generate_plan
-        plan = parse_and_generate_plan(
-            summary_text=raw_text, subject=subject, grade=grade,
-            topic=topic, weak_points=weak_points, lesson_date=lesson_date,
+        plan = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="lesson_plan_generate",
+            source_record_type="lesson",
+            source_record_id=f"draft:{class_id}:{lesson_date}:{topic or 'lesson'}",
+            producer=lambda: _call_ai_helper_with_usage(
+                parse_and_generate_plan,
+                summary_text=raw_text,
+                subject=subject,
+                grade=grade,
+                topic=topic,
+                weak_points=weak_points,
+                lesson_date=lesson_date,
+            ),
+            provider=chat_provider,
+            model=chat_model,
         )
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except Exception as e:
         return jsonify({"error": f"AI 生成失败：{e}"}), 500
     pdf_path = ""
@@ -2080,12 +2234,25 @@ def api_lesson_feedback_draft(lesson_id):
             "students_skipped": skipped_count,
         })
 
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
     try:
-        merged_text = generate_teacher_feedback_draft(
-            lesson=lesson,
-            students=selected_students,
-            custom_templates=custom_templates,
+        merged_text = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="teacher_feedback_draft",
+            source_record_type="lesson",
+            source_record_id=lesson_id,
+            producer=lambda: _call_ai_helper_with_usage(
+                generate_teacher_feedback_draft,
+                lesson=lesson,
+                students=selected_students,
+                custom_templates=custom_templates,
+            ),
+            provider=provider,
+            model=model,
         )
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({
@@ -2209,7 +2376,7 @@ def api_monthly_list():
 
 @app.route("/api/monthly/generate", methods=["POST"])
 def api_monthly_generate():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     if not has_api_key():
@@ -2223,12 +2390,28 @@ def api_monthly_generate():
                      "grade": l["grade"] or "", "topic": l["topic"] or "",
                      "summary": (l["summary"] or "")[:800],
                      "weak_points": l["weak_points"] or ""} for l in lessons]
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
     try:
         from ai_processor import generate_monthly_plan
-        plan = generate_monthly_plan(lesson_dicts, month_str)
+        plan = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="monthly_plan_generate",
+            source_record_type="monthly_plan",
+            source_record_id=month_str,
+            producer=lambda: _call_ai_helper_with_usage(
+                generate_monthly_plan,
+                lesson_dicts,
+                month_str,
+            ),
+            provider=provider,
+            model=model,
+        )
         from pdf_engine import generate_monthly_pdf
         pdf_name = f"{month_str}_月度综合复习.pdf"
         generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"ok": True, "filename": pdf_name})
