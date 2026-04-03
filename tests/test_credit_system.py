@@ -791,6 +791,97 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(audio_usage_count["total"], 1)
         self.assertEqual(total_usage_count["total"], 2)
 
+    @patch("app.datetime")
+    @patch("app.has_api_key", return_value=True)
+    @patch("ai_processor.parse_and_generate_plan")
+    @patch("ai_processor.transcribe_audio")
+    def test_audio_uploads_with_same_metadata_but_different_content_do_not_collide(
+        self,
+        mock_transcribe,
+        mock_generate_plan,
+        _mock_has_api_key,
+        mock_datetime,
+    ):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner_user["organization_id"],
+            actor_user_id=self.owner_user["id"],
+            amount=40,
+            note="seed distinct audio upload credits",
+        )
+        mock_datetime.now.side_effect = [
+            datetime(2026, 4, 3, 11, 0, 0),
+            datetime(2026, 4, 3, 11, 0, 1),
+        ]
+        mock_transcribe.side_effect = [
+            (
+                "课堂录音整理 A",
+                {
+                    "provider": "openai",
+                    "model": "whisper-1",
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                },
+            ),
+            (
+                "课堂录音整理 B",
+                {
+                    "provider": "openai",
+                    "model": "whisper-1",
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                },
+            ),
+        ]
+        mock_generate_plan.return_value = (
+            {"days": [], "questions": []},
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 120,
+                "output_tokens": 40,
+            },
+        )
+
+        def post_audio_upload(audio_bytes: bytes):
+            return self.client.post(
+                "/api/lessons",
+                headers=self.auth_headers(self.owner_token),
+                data={
+                    "date": "2026-04-03",
+                    "subject": "数学",
+                    "grade": "五年级",
+                    "topic": "方程",
+                    "input_type": "audio",
+                    "upload_file": (io.BytesIO(audio_bytes), "lesson.m4a"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        first = post_audio_upload(b"audio-file-aa")
+        second = post_audio_upload(b"audio-file-bb")
+
+        self.assertEqual(len(b"audio-file-aa"), len(b"audio-file-bb"))
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(mock_transcribe.call_count, 2)
+
+        overview = self.client.get(
+            "/api/credits/overview",
+            headers=self.auth_headers(self.owner_token),
+        ).get_json()
+        self.assertEqual(overview["credit_balance"], 16)
+
+        with lesson_manager.get_conn() as conn:
+            audio_usage_count = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM ai_usage_ledger
+                WHERE organization_id=? AND feature_key='audio_transcription'
+                """,
+                (self.owner_user["organization_id"],),
+            ).fetchone()
+        self.assertEqual(audio_usage_count["total"], 2)
+
     @patch("app.has_api_key", return_value=True)
     @patch("pdf_engine.generate_monthly_pdf")
     @patch("ai_processor.generate_monthly_plan")

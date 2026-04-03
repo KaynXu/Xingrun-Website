@@ -239,7 +239,28 @@ def _uploaded_file_size(file_storage) -> int:
         return 0
 
 
-def _request_payload_fingerprint() -> str:
+def _uploaded_file_content_fingerprint(file_storage) -> str:
+    stream = getattr(file_storage, "stream", None)
+    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
+        return ""
+    try:
+        position = stream.tell()
+        stream.seek(0)
+        digest = hashlib.sha256()
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            digest.update(chunk)
+        stream.seek(position)
+        return digest.hexdigest()
+    except (OSError, ValueError):
+        return ""
+
+
+def _request_payload_fingerprint(*, include_file_content: bool = False) -> str:
     payload: dict[str, object] = {
         "method": request.method,
         "path": request.path,
@@ -261,6 +282,11 @@ def _request_payload_fingerprint() -> str:
                         "filename": str(getattr(storage, "filename", "") or ""),
                         "content_type": str(getattr(storage, "content_type", "") or ""),
                         "size": _uploaded_file_size(storage),
+                        "content_sha256": (
+                            _uploaded_file_content_fingerprint(storage)
+                            if include_file_content
+                            else ""
+                        ),
                     }
                 )
         payload["files"] = files_payload
@@ -295,14 +321,20 @@ def _current_ai_request_key() -> str:
 
 
 def _current_audio_upload_request_key() -> str:
+    request_key = str(request.environ.get("_credit_request_key") or "").strip()
+    if request_key:
+        return request_key
     header_key = (
         request.headers.get("X-Request-Id", "").strip()
         or request.headers.get("Idempotency-Key", "").strip()
     )
-    payload_fingerprint = _request_payload_fingerprint()
+    payload_fingerprint = _request_payload_fingerprint(include_file_content=True)
     if header_key:
-        return f"header:{header_key}:{payload_fingerprint}"
-    return f"audio-fallback:{payload_fingerprint}"
+        request_key = f"header:{header_key}:{payload_fingerprint}"
+    else:
+        request_key = f"audio-fallback:{payload_fingerprint}"
+    request.environ["_credit_request_key"] = request_key
+    return request_key
 
 
 def _build_ai_charge_request_id(
