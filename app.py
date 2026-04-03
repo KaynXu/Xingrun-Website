@@ -11,11 +11,11 @@ import io
 import json
 import os
 import re
-import secrets
 import threading
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Optional, Set
 
 from flask import (Flask, abort, flash, redirect, render_template,
@@ -105,6 +105,18 @@ from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
 import master_data
 from ai_processor import generate_teacher_feedback_draft
+from credit_manager import (
+    CreditBalanceError,
+    ensure_feature_credits_available,
+    finalize_ai_charge,
+    get_ai_usage_by_request_id,
+    get_credit_overview,
+    list_credit_ledger,
+    list_member_usage_detail,
+    list_member_usage_summary,
+    redeem_xhs_order,
+)
+from xhs_open_platform import fetch_xhs_order_for_redemption
 
 init_db()
 
@@ -135,10 +147,313 @@ DEFAULT_TEACHER_FEEDBACK_TEMPLATE_IDS = {
     for template in DEFAULT_TEACHER_FEEDBACK_TEMPLATES
 }
 
+_CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS = 3
+_CREDIT_REDEEM_FAILURE_LOCK_SECONDS = 300.0
+_CREDIT_REDEEM_FAILURE_STATE: dict[tuple[int, str], dict[str, float | int]] = {}
+_CREDIT_REDEEM_FAILURE_LOCK = threading.Lock()
+_AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS = 60.0
+_AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
+_AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
+_AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
+_AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
+_AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
+
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
     return get_runtime_config()
+
+
+def _default_ai_provider_name() -> str:
+    return str(get_config().get("provider", "openai") or "openai")
+
+
+def _default_chat_model_name() -> str:
+    cfg = get_config()
+    provider = _default_ai_provider_name()
+    if provider == "deepseek":
+        return str(cfg.get("deepseek_model", "deepseek-chat") or "deepseek-chat")
+    if provider == "mimo":
+        return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
+    if provider == "n1n":
+        return str(cfg.get("n1n_model", "gpt-4o") or "gpt-4o")
+    return "gpt-4o"
+
+
+def _normalize_ai_usage_payload(usage: object, *, provider: str, model: str) -> dict:
+    usage_payload = usage if isinstance(usage, dict) else {}
+    return {
+        "provider": str(usage_payload.get("provider", "") or provider),
+        "model": str(usage_payload.get("model", "") or model),
+        "input_tokens": max(0, int(usage_payload.get("input_tokens", 0) or 0)),
+        "output_tokens": max(0, int(usage_payload.get("output_tokens", 0) or 0)),
+    }
+
+
+def _split_ai_result_with_usage(result: object, *, provider: str, model: str) -> tuple[object, dict]:
+    if (
+        isinstance(result, tuple)
+        and len(result) == 2
+        and isinstance(result[1], dict)
+    ):
+        return result[0], _normalize_ai_usage_payload(result[1], provider=provider, model=model)
+    return result, _normalize_ai_usage_payload({}, provider=provider, model=model)
+
+
+class DuplicateAiRequestError(RuntimeError):
+    pass
+
+
+def _normalize_request_payload_for_fingerprint(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_request_payload_for_fingerprint(value[key])
+            for key in sorted(value)
+        }
+    if isinstance(value, list):
+        return [_normalize_request_payload_for_fingerprint(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_request_payload_for_fingerprint(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _uploaded_file_size(file_storage) -> int:
+    content_length = getattr(file_storage, "content_length", None)
+    if content_length not in (None, ""):
+        try:
+            return max(0, int(content_length))
+        except (TypeError, ValueError):
+            pass
+    stream = getattr(file_storage, "stream", None)
+    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
+        return 0
+    try:
+        position = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        size = max(0, int(stream.tell() or 0))
+        stream.seek(position)
+        return size
+    except (OSError, ValueError):
+        return 0
+
+
+def _uploaded_file_content_fingerprint(file_storage) -> str:
+    stream = getattr(file_storage, "stream", None)
+    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
+        return ""
+    try:
+        position = stream.tell()
+        stream.seek(0)
+        digest = hashlib.sha256()
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            digest.update(chunk)
+        stream.seek(position)
+        return digest.hexdigest()
+    except (OSError, ValueError):
+        return ""
+
+
+def _request_payload_fingerprint(*, include_file_content: bool = False) -> str:
+    payload: dict[str, object] = {
+        "method": request.method,
+        "path": request.path,
+    }
+    if request.is_json:
+        payload["json"] = _normalize_request_payload_for_fingerprint(request.get_json(silent=True))
+    if request.form:
+        payload["form"] = {
+            key: [_normalize_request_payload_for_fingerprint(item) for item in request.form.getlist(key)]
+            for key in sorted(request.form.keys())
+        }
+    if request.files:
+        files_payload = []
+        for field_name in sorted(request.files.keys()):
+            for storage in request.files.getlist(field_name):
+                files_payload.append(
+                    {
+                        "field": field_name,
+                        "filename": str(getattr(storage, "filename", "") or ""),
+                        "content_type": str(getattr(storage, "content_type", "") or ""),
+                        "size": _uploaded_file_size(storage),
+                        "content_sha256": (
+                            _uploaded_file_content_fingerprint(storage)
+                            if include_file_content
+                            else ""
+                        ),
+                    }
+                )
+        payload["files"] = files_payload
+    serialized = json.dumps(
+        _normalize_request_payload_for_fingerprint(payload),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _ai_fallback_request_bucket() -> int:
+    return int(monotonic() // _AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS)
+
+
+def _current_ai_request_key() -> str:
+    request_key = str(request.environ.get("_credit_request_key") or "").strip()
+    if request_key:
+        return request_key
+    header_key = (
+        request.headers.get("X-Request-Id", "").strip()
+        or request.headers.get("Idempotency-Key", "").strip()
+    )
+    payload_fingerprint = _request_payload_fingerprint()
+    if header_key:
+        request_key = f"header:{header_key}:{payload_fingerprint}"
+    else:
+        request_key = f"fallback:{_ai_fallback_request_bucket()}:{payload_fingerprint}"
+    request.environ["_credit_request_key"] = request_key
+    return request_key
+
+
+def _current_audio_upload_request_key() -> str:
+    request_key = str(request.environ.get("_credit_request_key") or "").strip()
+    if request_key:
+        return request_key
+    header_key = (
+        request.headers.get("X-Request-Id", "").strip()
+        or request.headers.get("Idempotency-Key", "").strip()
+    )
+    payload_fingerprint = _request_payload_fingerprint(include_file_content=True)
+    if header_key:
+        request_key = f"header:{header_key}:{payload_fingerprint}"
+    else:
+        request_key = f"audio-fallback:{payload_fingerprint}"
+    request.environ["_credit_request_key"] = request_key
+    return request_key
+
+
+def _build_ai_charge_request_id(
+    *,
+    user_id: int,
+    feature_key: str,
+    source_record_type: str,
+    source_record_id: int | str,
+    request_key: str | None = None,
+) -> str:
+    raw_value = (
+        f"{user_id}:{request_key or _current_ai_request_key()}:"
+        f"{feature_key}:{source_record_type}:{source_record_id}"
+    )
+    return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
+
+
+def _claim_ai_request_identity(*, organization_id: int, request_id: str) -> None:
+    now = monotonic()
+    with _AI_REQUEST_IN_FLIGHT_LOCK:
+        expired = [
+            key
+            for key, started_at in _AI_REQUEST_IN_FLIGHT.items()
+            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+        ]
+        for key in expired:
+            _AI_REQUEST_IN_FLIGHT.pop(key, None)
+        if request_id in _AI_REQUEST_IN_FLIGHT:
+            raise DuplicateAiRequestError("重复请求正在处理中，请勿重复提交")
+        existing_usage = get_ai_usage_by_request_id(
+            organization_id=organization_id,
+            request_id=request_id,
+        )
+        if existing_usage:
+            raise DuplicateAiRequestError("重复请求已处理，请勿重复提交")
+        _AI_REQUEST_IN_FLIGHT[request_id] = now
+
+
+def _release_ai_request_identity(request_id: str) -> None:
+    with _AI_REQUEST_IN_FLIGHT_LOCK:
+        _AI_REQUEST_IN_FLIGHT.pop(request_id, None)
+
+
+def _claim_ai_organization_execution(organization_id: int) -> None:
+    now = monotonic()
+    with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
+        expired = [
+            org_id
+            for org_id, started_at in _AI_ORGANIZATION_IN_FLIGHT.items()
+            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+        ]
+        for org_id in expired:
+            _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
+        if organization_id in _AI_ORGANIZATION_IN_FLIGHT:
+            raise DuplicateAiRequestError("当前机构已有 AI 请求正在处理中，请稍后再试")
+        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = now
+
+
+def _release_ai_organization_execution(organization_id: int) -> None:
+    with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
+        _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
+
+
+def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
+    try:
+        return helper(*args, include_usage=True, **kwargs)
+    except TypeError as exc:
+        if "include_usage" not in str(exc):
+            raise
+        return helper(*args, **kwargs)
+
+
+def _run_ai_feature_with_charge(
+    *,
+    user: dict,
+    feature_key: str,
+    source_record_type: str,
+    source_record_id: int | str,
+    producer,
+    provider: str,
+    model: str,
+    after_success=None,
+    request_key: str | None = None,
+):
+    organization_id = int(user["organization_id"])
+    request_id = _build_ai_charge_request_id(
+        user_id=int(user["id"]),
+        feature_key=feature_key,
+        source_record_type=source_record_type,
+        source_record_id=source_record_id,
+        request_key=request_key,
+    )
+    _claim_ai_request_identity(
+        organization_id=organization_id,
+        request_id=request_id,
+    )
+    try:
+        _claim_ai_organization_execution(organization_id)
+        ensure_feature_credits_available(
+            organization_id=organization_id,
+            feature_key=feature_key,
+        )
+        result = producer()
+        business_value, usage = _split_ai_result_with_usage(result, provider=provider, model=model)
+        if after_success is not None:
+            after_success(business_value)
+        finalize_ai_charge(
+            organization_id=organization_id,
+            user_id=int(user["id"]),
+            feature_key=feature_key,
+            usage=usage,
+            source_record_type=source_record_type,
+            source_record_id=source_record_id,
+            request_id=request_id,
+        )
+        return business_value
+    finally:
+        _release_ai_organization_execution(organization_id)
+        _release_ai_request_identity(request_id)
 
 
 def has_api_key():
@@ -1253,6 +1568,123 @@ def _get_json_object_payload():
     return data, None
 
 
+def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
+    return (int(user_id), (platform_order_id or "").strip().upper())
+
+
+def _is_credit_redeem_attempt_blocked(user_id: int, platform_order_id: str) -> bool:
+    now = monotonic()
+    key = _credit_redeem_failure_key(user_id, platform_order_id)
+    with _CREDIT_REDEEM_FAILURE_LOCK:
+        entry = _CREDIT_REDEEM_FAILURE_STATE.get(key)
+        if not entry:
+            return False
+        blocked_until = float(entry.get("blocked_until", 0.0))
+        if blocked_until > now:
+            return True
+        if blocked_until:
+            _CREDIT_REDEEM_FAILURE_STATE.pop(key, None)
+        return False
+
+
+def _record_credit_redeem_failure(user_id: int, platform_order_id: str) -> None:
+    now = monotonic()
+    key = _credit_redeem_failure_key(user_id, platform_order_id)
+    with _CREDIT_REDEEM_FAILURE_LOCK:
+        entry = _CREDIT_REDEEM_FAILURE_STATE.get(key) or {"failures": 0, "blocked_until": 0.0}
+        failures = int(entry.get("failures", 0)) + 1
+        blocked_until = float(entry.get("blocked_until", 0.0))
+        if failures >= _CREDIT_REDEEM_FAILURE_MAX_ATTEMPTS:
+            blocked_until = now + _CREDIT_REDEEM_FAILURE_LOCK_SECONDS
+        _CREDIT_REDEEM_FAILURE_STATE[key] = {
+            "failures": failures,
+            "blocked_until": blocked_until,
+        }
+
+
+def _reset_credit_redeem_failure(user_id: int, platform_order_id: str) -> None:
+    key = _credit_redeem_failure_key(user_id, platform_order_id)
+    with _CREDIT_REDEEM_FAILURE_LOCK:
+        _CREDIT_REDEEM_FAILURE_STATE.pop(key, None)
+
+
+@app.route("/api/credits/overview", methods=["GET"])
+def api_credit_overview():
+    user, error = _require_owner()
+    if error:
+        return error
+    return jsonify(get_credit_overview(user["organization_id"]))
+
+
+@app.route("/api/credits/ledger", methods=["GET"])
+def api_credit_ledger():
+    user, error = _require_owner()
+    if error:
+        return error
+    limit = request.args.get("limit", "100")
+    try:
+        items = list_credit_ledger(user["organization_id"], limit=int(limit))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be a positive integer"}), 400
+    return jsonify({"items": items})
+
+
+@app.route("/api/credits/member-usage", methods=["GET"])
+def api_credit_member_usage():
+    user, error = _require_owner()
+    if error:
+        return error
+    return jsonify({"items": list_member_usage_summary(user["organization_id"])})
+
+
+@app.route("/api/credits/member-usage/<int:user_id>", methods=["GET"])
+def api_credit_member_usage_detail(user_id: int):
+    user, error = _require_owner()
+    if error:
+        return error
+    return jsonify({"items": list_member_usage_detail(user["organization_id"], user_id)})
+
+
+@app.route("/api/credits/redeem/xhs", methods=["POST"])
+def api_credit_redeem_xhs():
+    user, error = _require_owner()
+    if error:
+        return error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    platform_order_id = str(data.get("platform_order_id", "")).strip()
+    phone_suffix = str(data.get("phone_suffix", "")).strip()
+    if not platform_order_id or not phone_suffix:
+        return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
+    if len(phone_suffix) != 4 or not phone_suffix.isdigit():
+        return jsonify({"error": "platform_order_id and phone_suffix are required"}), 400
+    if _is_credit_redeem_attempt_blocked(user["id"], platform_order_id):
+        return jsonify({"error": "too many failed redemption attempts, please try later"}), 429
+
+    try:
+        order_payload = fetch_xhs_order_for_redemption(
+            platform_order_id=platform_order_id,
+            phone_suffix=phone_suffix,
+        )
+        result = redeem_xhs_order(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+            platform_order_id=platform_order_id,
+            phone_suffix=phone_suffix,
+            order_payload=order_payload,
+        )
+        _reset_credit_redeem_failure(user["id"], platform_order_id)
+    except ValueError as exc:
+        if str(exc) == "order already redeemed":
+            return jsonify({"error": str(exc)}), 409
+        _record_credit_redeem_failure(user["id"], platform_order_id)
+        return jsonify({"error": "unable to verify order for redemption"}), 422
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result)
+
+
 @app.route("/api/me", methods=["GET"])
 def api_me():
     user, error = _require_auth()
@@ -1554,7 +1986,7 @@ def api_consultations_list():
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
 def api_consultation_ai_parse():
-    _, error = _require_staff()
+    user, error = _require_staff()
     if error:
         return error
 
@@ -1572,9 +2004,33 @@ def api_consultation_ai_parse():
     if not cleaned_text:
         return jsonify({"error": "raw_text is empty after cleanup"}), 400
 
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
+
+    def _produce_consultation_parse():
+        parsed_result = _call_ai_helper_with_usage(parse_consultation_batch_text, cleaned_text)
+        parsed_payload, usage = _split_ai_result_with_usage(
+            parsed_result,
+            provider=provider,
+            model=model,
+        )
+        normalized_payload = normalize_consultation_batch_parse_result(parsed_payload)
+        return normalized_payload, usage
+
     try:
-        parsed = parse_consultation_batch_text(cleaned_text)
-        normalized = normalize_consultation_batch_parse_result(parsed)
+        normalized = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="consultation_ai_parse",
+            source_record_type="consultation_batch",
+            source_record_id=hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()[:16],
+            producer=_produce_consultation_parse,
+            provider=provider,
+            model=model,
+        )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 502
     except RuntimeError as exc:
@@ -1860,14 +2316,15 @@ def api_lesson_create():
         
     lesson_date = data.get("date") or str(date.today())
     class_id = int(data.get("class_id") or 0)
-    if not class_id:
+    if not class_id and user.get("role") == "member":
         return jsonify({"error": "请选择班级后再生成复习记录"}), 400
 
-    cls = get_class(class_id)
-    if not cls:
-        return jsonify({"error": "class not found"}), 404
-    if not _can_access_lesson(user, {"class_id": class_id}):
-        return jsonify({"error": "forbidden"}), 403
+    cls = get_class(class_id) if class_id else None
+    if class_id:
+        if not cls:
+            return jsonify({"error": "class not found"}), 404
+        if not _can_access_lesson(user, {"class_id": class_id}):
+            return jsonify({"error": "forbidden"}), 403
 
     subject     = data.get("subject", "").strip() or (cls["subject"] if cls else "")
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
@@ -1876,6 +2333,8 @@ def api_lesson_create():
     
     input_type = data.get("input_type", "text")
     raw_text = ""
+    chat_provider = _default_ai_provider_name()
+    chat_model = _default_chat_model_name()
     
     if input_type == "text" or request.is_json:
         raw_text = data.get("summary_text", "").strip()
@@ -1898,7 +2357,22 @@ def api_lesson_create():
                 
             try:
                 from ai_processor import transcribe_audio
-                raw_text = transcribe_audio(str(save_path))
+                raw_text = _run_ai_feature_with_charge(
+                    user=user,
+                    feature_key="audio_transcription",
+                    source_record_type="lesson_upload",
+                    source_record_id=f"upload:{_request_payload_fingerprint()}",
+                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
+                    provider="openai",
+                    model="whisper-1",
+                    request_key=_current_audio_upload_request_key(),
+                )
+            except DuplicateAiRequestError as exc:
+                save_path.unlink(missing_ok=True)
+                return jsonify({"error": str(exc)}), 409
+            except CreditBalanceError as exc:
+                save_path.unlink(missing_ok=True)
+                return jsonify({"error": str(exc)}), 402
             except Exception as e:
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": f"音频转录失败：{e}"}), 500
@@ -1913,10 +2387,27 @@ def api_lesson_create():
 
     try:
         from ai_processor import parse_and_generate_plan
-        plan = parse_and_generate_plan(
-            summary_text=raw_text, subject=subject, grade=grade,
-            topic=topic, weak_points=weak_points, lesson_date=lesson_date,
+        plan = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="lesson_plan_generate",
+            source_record_type="lesson",
+            source_record_id=f"draft:{class_id}:{lesson_date}:{topic or 'lesson'}",
+            producer=lambda: _call_ai_helper_with_usage(
+                parse_and_generate_plan,
+                summary_text=raw_text,
+                subject=subject,
+                grade=grade,
+                topic=topic,
+                weak_points=weak_points,
+                lesson_date=lesson_date,
+            ),
+            provider=chat_provider,
+            model=chat_model,
         )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except Exception as e:
         return jsonify({"error": f"AI 生成失败：{e}"}), 500
     pdf_path = ""
@@ -1982,12 +2473,27 @@ def api_lesson_feedback_draft(lesson_id):
             "students_skipped": skipped_count,
         })
 
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
     try:
-        merged_text = generate_teacher_feedback_draft(
-            lesson=lesson,
-            students=selected_students,
-            custom_templates=custom_templates,
+        merged_text = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="teacher_feedback_draft",
+            source_record_type="lesson",
+            source_record_id=lesson_id,
+            producer=lambda: _call_ai_helper_with_usage(
+                generate_teacher_feedback_draft,
+                lesson=lesson,
+                students=selected_students,
+                custom_templates=custom_templates,
+            ),
+            provider=provider,
+            model=model,
         )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({
@@ -2111,7 +2617,7 @@ def api_monthly_list():
 
 @app.route("/api/monthly/generate", methods=["POST"])
 def api_monthly_generate():
-    _, error = _require_auth()
+    user, error = _require_auth()
     if error:
         return error
     if not has_api_key():
@@ -2125,12 +2631,33 @@ def api_monthly_generate():
                      "grade": l["grade"] or "", "topic": l["topic"] or "",
                      "summary": (l["summary"] or "")[:800],
                      "weak_points": l["weak_points"] or ""} for l in lessons]
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
+    pdf_name = f"{month_str}_月度综合复习.pdf"
     try:
         from ai_processor import generate_monthly_plan
-        plan = generate_monthly_plan(lesson_dicts, month_str)
         from pdf_engine import generate_monthly_pdf
-        pdf_name = f"{month_str}_月度综合复习.pdf"
-        generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+        _run_ai_feature_with_charge(
+            user=user,
+            feature_key="monthly_plan_generate",
+            source_record_type="monthly_plan",
+            source_record_id=month_str,
+            producer=lambda: _call_ai_helper_with_usage(
+                generate_monthly_plan,
+                lesson_dicts,
+                month_str,
+            ),
+            provider=provider,
+            model=model,
+            after_success=lambda generated_plan: generate_monthly_pdf(
+                generated_plan,
+                str(PDF_DIR / pdf_name),
+            ),
+        )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"ok": True, "filename": pdf_name})

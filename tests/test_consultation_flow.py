@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config_runtime
+import credit_manager
 import lesson_manager
 from app import app
 
@@ -90,6 +91,21 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(promote_response.status_code, 200)
         return member_token
+
+    def seed_owner_credits(self, amount: int = 20) -> None:
+        me_response = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(me_response.status_code, 200)
+        user = me_response.get_json()
+        self.assertIsNotNone(user)
+        credit_manager.apply_manual_adjustment(
+            organization_id=user["organization_id"],
+            actor_user_id=user["id"],
+            amount=amount,
+            note="seed consultation ai credits",
+        )
 
     def write_legacy_csv(self, rows: list[dict[str, str]]) -> None:
         lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -434,6 +450,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
     @patch("app.parse_consultation_batch_text")
     def test_ai_parse_endpoint_returns_create_and_explicit_id_update_drafts(self, mock_parse):
+        self.seed_owner_credits()
         self.write_teacher_aliases({"teacher-1": ["雷文浩"]})
         mock_parse.return_value = {
             "items": [
@@ -484,6 +501,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
     @patch("app.parse_consultation_batch_text")
     def test_ai_parse_endpoint_cleans_wechat_forwarded_text_before_parsing(self, mock_parse):
+        self.seed_owner_credits()
         captured = {}
 
         def fake_parse(cleaned_text):
@@ -534,6 +552,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
     @patch("app.parse_consultation_batch_text")
     def test_ai_parse_endpoint_returns_502_for_malformed_model_items(self, mock_parse):
+        self.seed_owner_credits()
         mock_parse.return_value = {
             "items": [
                 "not-a-dict-item"

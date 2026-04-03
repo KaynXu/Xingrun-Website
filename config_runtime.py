@@ -23,10 +23,13 @@ ENV_VAR_MAP = {
     "admin_password_hash": "XR_ADMIN_PASSWORD_HASH",
     "wrong_question_service_url": "XR_WRONG_QUESTION_SERVICE_URL",
     "wrong_question_service_token": "XR_WRONG_QUESTION_SERVICE_TOKEN",
+    "xhs_app_id": "XHS_APP_ID",
+    "xhs_app_secret": "XHS_APP_SECRET",
 }
 
 DEFAULTS = {
     "provider": "openai",
+    "xhs_base_url": "https://ark.xiaohongshu.com",
     "mimo_model": "MiMo-7B-RL",
     "n1n_base_url": "https://api.n1n.ai/v1",
     "n1n_model": "gpt-4o",
