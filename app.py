@@ -1822,7 +1822,7 @@ def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
         )
 
     if not students:
-        raise ValueError("当前班级还没有学生，请先添加学生")
+        raise ValueError("当前班级还没有学生，无法生成班级反馈")
 
     source_summary = json.dumps(
         {
