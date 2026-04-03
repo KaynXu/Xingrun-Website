@@ -364,6 +364,34 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         generate_class_feedback_bundle.assert_not_called()
 
     @patch("app.generate_class_feedback_bundle")
+    def test_generate_rejects_empty_roster_without_calling_ai(self, generate_class_feedback_bundle):
+        class_id = lesson_manager.save_class("空班", subject="英语", grade="六年级")
+        self._create_lesson(
+            class_id=class_id,
+            date_str="2026-04-05",
+            topic="Week 1",
+            summary="本周围绕阅读表达和句型迁移做训练。",
+        )
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=None,
+            teacher_name_snapshot=self.owner["display_name"],
+            start_date="2026-04-03",
+            end_date="2026-04-09",
+            created_by=self.owner["id"],
+        )
+
+        response = self.client.post(
+            f"/api/class-feedback/tasks/{task['id']}/generate",
+            headers=self.headers,
+            json={},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "当前班级还没有学生，请先添加学生")
+        generate_class_feedback_bundle.assert_not_called()
+
+    @patch("app.generate_class_feedback_bundle")
     def test_generate_round_trips_notes_and_highlights_via_get_task(self, generate_class_feedback_bundle):
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         student = lesson_manager.create_student_for_class(class_id, "张三")
