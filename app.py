@@ -1082,6 +1082,27 @@ def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
     return [item for item in classes if item.get("id") in owned_class_ids]
 
 
+def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
+    if not isinstance(lesson, dict):
+        return None
+    serialized = dict(lesson)
+    pdf_path = serialized.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        serialized["pdf_path"] = ""
+    return serialized
+
+
+def _serialize_lessons_for_response(lessons: object) -> list[dict]:
+    if not isinstance(lessons, list):
+        return []
+    serialized_lessons = []
+    for lesson in lessons:
+        serialized = _serialize_lesson_for_response(lesson)
+        if serialized is not None:
+            serialized_lessons.append(serialized)
+    return serialized_lessons
+
+
 def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
     if user.get("role") == "super_owner":
         return True
@@ -1805,7 +1826,7 @@ def api_class_get(class_id):
     if not _filter_classes_for_user(user, [cls]):
         return jsonify({"error": "forbidden"}), 403
     lessons = list_lessons_for_actor(user, class_id=class_id)
-    return jsonify({**cls, "lessons": lessons})
+    return jsonify({**cls, "lessons": _serialize_lessons_for_response(lessons)})
 
 
 @app.route("/api/classes/<int:class_id>/students", methods=["GET"])
@@ -1935,7 +1956,7 @@ def api_lessons_list():
         month_str=month if month else "",
         class_id=class_id if class_id else 0,
     )
-    return jsonify(_filter_lessons_for_user(user, lessons))
+    return jsonify(_serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)))
 
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
@@ -1947,7 +1968,10 @@ def api_lesson_get(lesson_id):
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
     questions = get_questions(lesson_id=lesson_id)
-    return jsonify({**lesson, "questions": questions})
+    serialized_lesson = _serialize_lesson_for_response(lesson)
+    if serialized_lesson is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({**serialized_lesson, "questions": questions})
 
 
 @app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])

@@ -1516,6 +1516,61 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(forbidden_class_response.status_code, 403)
         self.assertEqual(allowed_class_response.status_code, 201)
 
+    def test_lesson_api_hides_stale_pdf_paths_when_file_is_missing(self):
+        owner_token = self.login_as_kayn()
+
+        missing_pdf_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Math",
+            "Grade 10",
+            "Functions",
+            "summary",
+            "weak",
+            {"questions": []},
+            str(self.base / "missing.pdf"),
+            0,
+        )
+
+        existing_pdf_path = self.base / "existing.pdf"
+        existing_pdf_path.write_bytes(b"%PDF-1.4\n%fake pdf\n")
+        existing_pdf_lesson_id = lesson_manager.save_lesson(
+            "2026-04-02",
+            "Math",
+            "Grade 10",
+            "Sequences",
+            "summary",
+            "weak",
+            {"questions": []},
+            str(existing_pdf_path),
+            0,
+        )
+
+        lessons_response = self.client.get(
+            "/api/lessons",
+            headers=self.auth_headers(owner_token),
+        )
+        missing_detail_response = self.client.get(
+            f"/api/lessons/{missing_pdf_lesson_id}",
+            headers=self.auth_headers(owner_token),
+        )
+        existing_detail_response = self.client.get(
+            f"/api/lessons/{existing_pdf_lesson_id}",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(lessons_response.status_code, 200)
+        self.assertEqual(missing_detail_response.status_code, 200)
+        self.assertEqual(existing_detail_response.status_code, 200)
+
+        lessons_payload = lessons_response.get_json()
+        self.assertIsNotNone(lessons_payload)
+        lessons_by_id = {item["id"]: item for item in lessons_payload}
+
+        self.assertEqual(lessons_by_id[missing_pdf_lesson_id]["pdf_path"], "")
+        self.assertEqual(missing_detail_response.get_json()["pdf_path"], "")
+        self.assertEqual(lessons_by_id[existing_pdf_lesson_id]["pdf_path"], str(existing_pdf_path))
+        self.assertEqual(existing_detail_response.get_json()["pdf_path"], str(existing_pdf_path))
+
     def test_owner_and_admin_still_have_full_lesson_visibility(self):
         owner_token = self.login_as_kayn()
 
