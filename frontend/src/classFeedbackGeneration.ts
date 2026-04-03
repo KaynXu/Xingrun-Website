@@ -118,6 +118,33 @@ export const createClassFeedbackTask = (payload: {
 export const loadClassFeedbackTask = (taskId: number) =>
   callApiFetch<ClassFeedbackTask>(`/api/class-feedback/tasks/${taskId}`);
 
+export const buildClassFeedbackStudentCards = (input: {
+  roster: Array<{ id: number; name: string }>;
+  task: ClassFeedbackTask;
+}): ClassFeedbackStudentCard[] => {
+  const entriesByStudentId = new Map(input.task.student_entries.map((item) => [item.student_id, item]));
+  const highlightsByStudentId = new Map(
+    input.task.student_highlights.map((item) => [item.student_id, item]),
+  );
+
+  return input.roster.map((student) => {
+    const entry = entriesByStudentId.get(student.id);
+    const highlight = highlightsByStudentId.get(student.id);
+    const aiDraft = entry?.ai_draft ?? '';
+    const finalText = entry?.final_text?.trim() ? entry.final_text : aiDraft;
+    return {
+      studentId: student.id,
+      name: student.name,
+      aiDraft,
+      finalText,
+      checked: Boolean(entry?.checked_at),
+      sourceSummary: input.task.student_entries.length > 0 ? '已汇总本阶段素材' : '等待生成本阶段草稿',
+      highlightLabels: highlight?.labels ?? [],
+      highlightNote: highlight?.note ?? '',
+    };
+  });
+};
+
 export const generateClassFeedbackTask = (
   taskId: number,
   payload: {

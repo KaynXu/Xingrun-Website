@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -9,6 +10,8 @@ import {
   type ClassFeedbackStudentCard,
 } from './classFeedbackGeneration';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
+
+const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('defaultStageLabelGroups exposes the built-in grouped labels', () => {
   assert.equal(defaultStageLabelGroups.length, 4);
@@ -91,4 +94,14 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   assert.match(markup, /班级总评/);
   assert.match(markup, /张三/);
   assert.match(markup, /确认本次反馈/);
+});
+
+test('App source wires the standalone class feedback page and existing class student APIs', () => {
+  assert.match(appSource, /const \[activeClassFeedbackTaskId, setActiveClassFeedbackTaskId\] = useState<number \| null>\(null\);/);
+  assert.match(appSource, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(appSource, /await createClassFeedbackTask\(\{/);
+  assert.match(appSource, /await createClassStudent\(selectedClassId, name\);/);
+  assert.match(appSource, /await generateClassFeedbackTask\(activeClassFeedbackTaskId, \{/);
+  assert.match(appSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
+  assert.match(appSource, /<ClassFeedbackGenerationWorkspace/);
 });
