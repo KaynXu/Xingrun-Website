@@ -1588,6 +1588,8 @@ def _ensure_class_feedback_student_entries_cover_current_roster(
     normalized_student_entries: list[dict],
 ) -> None:
     roster_student_ids = sorted(_get_class_feedback_student_roster(conn, task_row["class_id"]).keys())
+    if not roster_student_ids:
+        raise ValueError("class roster must not be empty")
     provided_student_ids = sorted(item["student_id"] for item in normalized_student_entries)
     if provided_student_ids != roster_student_ids:
         raise ValueError("student_entries must match current class roster")
