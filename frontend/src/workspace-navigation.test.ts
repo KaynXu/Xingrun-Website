@@ -18,7 +18,9 @@ function requireMatch(pattern: RegExp): string {
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(appSource, /type Page = 'dashboard' \| 'review-generation' \| 'consultation' \| 'calendar' \| 'smartWrongQuestions' \| 'masterDataMappings' \| 'classes' \| 'accounts' \| 'settings';/);
+  assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'masterDataMappings'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'settings';/);
+  assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '班级反馈生成'/);
+  assert.match(appSource, /'class-feedback-generation': '班级反馈生成'/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
@@ -117,7 +119,7 @@ test('workspace navigation wires master data mappings into the owner shell only'
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
   const classManagementBlock = requireMatch(/const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
 
-  assert.match(appSource, /type Page = [^;]*'classes'[^;]*;/);
+  assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
   assert.match(appSource, /hasStaffAccess\(currentUser\.role\)/);
   assert.match(appSource, /id: 'classes'[\s\S]*label: '班级管理'/);
   assert.match(appSource, /classes: '班级管理'/);

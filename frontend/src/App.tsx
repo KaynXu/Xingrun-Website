@@ -42,6 +42,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { MasterDataMappingsPage } from './MasterDataMappingsPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
+import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
 import {
   buildTeacherFeedbackSavePayload,
@@ -56,11 +57,34 @@ import {
   type TeacherFeedbackStudentDraft,
   type TeacherFeedbackTemplate,
 } from './reviewGenerationTeacherFeedback';
+import {
+  buildClassFeedbackConfirmPayload,
+  buildClassFeedbackStudentCards,
+  confirmClassFeedbackTask,
+  createClassFeedbackTask,
+  defaultStageLabelGroups,
+  generateClassFeedbackTask,
+  loadClassFeedbackLabels,
+  loadClassFeedbackTask,
+  type ClassFeedbackStageNotes,
+  type ClassFeedbackStudentCard,
+  type StageLabelGroup,
+} from './classFeedbackGeneration';
 
 // --- Types ---
 
 type Role = 'super_owner' | 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'masterDataMappings' | 'classes' | 'accounts' | 'settings';
+type Page =
+  | 'dashboard'
+  | 'review-generation'
+  | 'class-feedback-generation'
+  | 'consultation'
+  | 'calendar'
+  | 'smartWrongQuestions'
+  | 'masterDataMappings'
+  | 'classes'
+  | 'accounts'
+  | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
 
@@ -1265,6 +1289,7 @@ const Sidebar = ({
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'review-generation', icon: Library, label: '复习生成' },
+    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈生成' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(canAccessSmartWrongQuestions(currentUser.role)
@@ -2342,6 +2367,467 @@ const ReviewGenerationPage = ({
       )}
 
       <ReviewDocumentHistory refreshToken={historyRefreshToken} onContinueFeedback={handleStartEditingFeedback} />
+    </div>
+  );
+};
+
+function createEmptyClassFeedbackStageNotes(): ClassFeedbackStageNotes {
+  return {
+    classStatusNote: '',
+    parentFeedbackNote: '',
+    teachingFocusNote: '',
+    nextStagePreviewNote: '',
+  };
+}
+
+function createEmptyClassFeedbackStudentCards(roster: Array<{ id: number; name: string }>): ClassFeedbackStudentCard[] {
+  return roster.map((student) => ({
+    studentId: student.id,
+    name: student.name,
+    aiDraft: '',
+    finalText: '',
+    checked: false,
+    sourceSummary: '等待生成本阶段草稿',
+    highlightLabels: [],
+    highlightNote: '',
+  }));
+}
+
+const ClassFeedbackGenerationPage = ({
+  currentUser,
+}: {
+  currentUser: CurrentUser;
+}) => {
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [labelGroups, setLabelGroups] = useState<StageLabelGroup[]>(defaultStageLabelGroups);
+  const [classesLoading, setClassesLoading] = useState(true);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [startDate, setStartDate] = useState(() => shiftIsoDate(getTodayIsoDate(), -6));
+  const [endDate, setEndDate] = useState(() => getTodayIsoDate());
+  const [activeClassFeedbackTaskId, setActiveClassFeedbackTaskId] = useState<number | null>(null);
+  const [classFeedbackStudents, setClassFeedbackStudents] = useState<ClassFeedbackStudentCard[]>([]);
+  const [classFeedbackSummary, setClassFeedbackSummary] = useState('');
+  const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState(
+    '先选择班级和时间范围，再汇总阶段素材。',
+  );
+  const [classFeedbackStageNotes, setClassFeedbackStageNotes] = useState<ClassFeedbackStageNotes>(
+    createEmptyClassFeedbackStageNotes(),
+  );
+  const [classFeedbackStatusTags, setClassFeedbackStatusTags] = useState<string[]>([]);
+  const [teacherNameLabel, setTeacherNameLabel] = useState(currentUser.display_name);
+  const [currentTaskStatus, setCurrentTaskStatus] = useState<string>('draft');
+  const [isRefreshingTask, setIsRefreshingTask] = useState(false);
+  const [isGeneratingClassFeedback, setIsGeneratingClassFeedback] = useState(false);
+  const [isSavingClassFeedback, setIsSavingClassFeedback] = useState(false);
+  const [isConfirmingClassFeedback, setIsConfirmingClassFeedback] = useState(false);
+
+  const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
+
+  const loadRosterOnly = useCallback(async (classId: number) => {
+    const roster = await listClassStudents(classId);
+    setClassFeedbackStudents(createEmptyClassFeedbackStudentCards(roster.students));
+    return roster.students.length;
+  }, []);
+
+  const hydrateClassFeedbackTask = useCallback(
+    async (taskId: number, classId: number) => {
+      setIsRefreshingTask(true);
+      try {
+        const [task, roster] = await Promise.all([
+          loadClassFeedbackTask(taskId),
+          listClassStudents(classId),
+        ]);
+        setActiveClassFeedbackTaskId(task.id);
+        setSelectedClassId(task.class_id);
+        setTeacherNameLabel(task.teacher_name_snapshot || selectedClass?.teacher_name || currentUser.display_name);
+        setClassFeedbackStatusTags(task.class_status_tags ?? []);
+        setClassFeedbackStageNotes({
+          classStatusNote: task.class_status_note ?? '',
+          parentFeedbackNote: task.parent_feedback_note ?? '',
+          teachingFocusNote: task.teaching_focus_note ?? '',
+          nextStagePreviewNote: task.next_stage_preview_note ?? '',
+        });
+        setClassFeedbackStudents(
+          buildClassFeedbackStudentCards({
+            roster: roster.students,
+            task,
+          }),
+        );
+        setClassFeedbackSummary(
+          task.class_summary_final_text?.trim() ? task.class_summary_final_text : task.class_summary_ai_draft ?? '',
+        );
+        setCurrentTaskStatus(task.status);
+        setClassFeedbackStatusMessage(
+          task.status === 'confirmed'
+            ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
+            : `已同步 ${roster.students.length} 名学生，继续补充阶段备注后可生成草稿。`,
+        );
+      } finally {
+        setIsRefreshingTask(false);
+      }
+    },
+    [currentUser.display_name, selectedClass?.teacher_name],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setClassesLoading(true);
+    Promise.all([apiFetch<ClassItem[]>('/api/classes'), loadClassFeedbackLabels()])
+      .then(([classItems, labelResult]) => {
+        if (cancelled) {
+          return;
+        }
+        setClasses(classItems);
+        setLabelGroups(labelResult.groups?.length ? labelResult.groups : defaultStageLabelGroups);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级反馈初始化失败，请刷新重试。');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setClassesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleClassChange = async (nextClassId: number | null) => {
+    setSelectedClassId(nextClassId);
+    setActiveClassFeedbackTaskId(null);
+    setCurrentTaskStatus('draft');
+    setTeacherNameLabel(nextClassId ? classes.find((item) => item.id === nextClassId)?.teacher_name || currentUser.display_name : currentUser.display_name);
+    setClassFeedbackSummary('');
+    setClassFeedbackStatusTags([]);
+    setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
+
+    if (!nextClassId) {
+      setClassFeedbackStudents([]);
+      setClassFeedbackStatusMessage('先选择班级和时间范围，再汇总阶段素材。');
+      return;
+    }
+
+    setIsRefreshingTask(true);
+    try {
+      const studentCount = await loadRosterOnly(nextClassId);
+      setClassFeedbackStatusMessage(
+        studentCount > 0
+          ? `已同步 ${studentCount} 名学生，请选择时间范围后创建反馈任务。`
+          : '当前班级还没有学生，可以先在这里新增学生。',
+      );
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级学生同步失败，请重试。');
+    } finally {
+      setIsRefreshingTask(false);
+    }
+  };
+
+  const handleCreateClassFeedbackTask = useCallback(async () => {
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级。');
+      return;
+    }
+    if (!startDate || !endDate || startDate > endDate) {
+      setClassFeedbackStatusMessage('请填写有效的起止日期。');
+      return;
+    }
+
+    setIsSavingClassFeedback(true);
+    try {
+      const created = await createClassFeedbackTask({
+        classId: selectedClassId,
+        startDate,
+        endDate,
+      });
+      await hydrateClassFeedbackTask(created.id, selectedClassId);
+      setClassFeedbackStatusMessage(`已创建反馈任务，按 ${created.period_granularity} 粒度准备资料。`);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '创建班级反馈任务失败，请重试。');
+    } finally {
+      setIsSavingClassFeedback(false);
+    }
+  }, [endDate, hydrateClassFeedbackTask, selectedClassId, startDate]);
+
+  const handleRefreshClassFeedbackTask = useCallback(async () => {
+    if (!activeClassFeedbackTaskId || !selectedClassId) {
+      return;
+    }
+
+    try {
+      await hydrateClassFeedbackTask(activeClassFeedbackTaskId, selectedClassId);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '刷新反馈任务失败，请重试。');
+    }
+  }, [activeClassFeedbackTaskId, hydrateClassFeedbackTask, selectedClassId]);
+
+  const handleStageNoteChange = (key: keyof ClassFeedbackStageNotes, value: string) => {
+    setClassFeedbackStageNotes((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const handleHighlightToggle = (studentId: number, label: string) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => {
+        if (student.studentId !== studentId) {
+          return student;
+        }
+        const alreadySelected = student.highlightLabels.includes(label);
+        return {
+          ...student,
+          highlightLabels: alreadySelected
+            ? student.highlightLabels.filter((item) => item !== label)
+            : [...student.highlightLabels, label],
+        };
+      }),
+    );
+  };
+
+  const handleHighlightNoteChange = (studentId: number, value: string) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => (student.studentId === studentId ? { ...student, highlightNote: value } : student)),
+    );
+  };
+
+  const handleStudentFinalTextChange = (studentId: number, value: string) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => (student.studentId === studentId ? { ...student, finalText: value } : student)),
+    );
+  };
+
+  const handleStudentCheckedChange = (studentId: number, checked: boolean) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => (student.studentId === studentId ? { ...student, checked } : student)),
+    );
+  };
+
+  const handleAddStudent = async (name: string) => {
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级，再新增学生。');
+      return;
+    }
+
+    setIsSavingClassFeedback(true);
+    try {
+      await createClassStudent(selectedClassId, name);
+      if (activeClassFeedbackTaskId) {
+        await hydrateClassFeedbackTask(activeClassFeedbackTaskId, selectedClassId);
+        setClassFeedbackStatusMessage('已新增学生，并重新同步当前反馈任务。');
+      } else {
+        const rosterCount = await loadRosterOnly(selectedClassId);
+        setClassFeedbackStatusMessage(`已新增学生，当前班级共 ${rosterCount} 名学生。`);
+      }
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '新增学生失败，请重试。');
+    } finally {
+      setIsSavingClassFeedback(false);
+    }
+  };
+
+  const handleGenerateClassFeedback = useCallback(async () => {
+    if (!activeClassFeedbackTaskId) {
+      setClassFeedbackStatusMessage('请先创建反馈任务。');
+      return;
+    }
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级。');
+      return;
+    }
+
+    setIsGeneratingClassFeedback(true);
+    try {
+      const generated = await generateClassFeedbackTask(activeClassFeedbackTaskId, {
+        classStatusTags: classFeedbackStatusTags,
+        classStatusNote: classFeedbackStageNotes.classStatusNote,
+        parentFeedbackNote: classFeedbackStageNotes.parentFeedbackNote,
+        teachingFocusNote: classFeedbackStageNotes.teachingFocusNote,
+        nextStagePreviewNote: classFeedbackStageNotes.nextStagePreviewNote,
+        studentHighlights: classFeedbackStudents.map((student) => ({
+          studentId: student.studentId,
+          labels: student.highlightLabels,
+          note: student.highlightNote,
+        })),
+      });
+      await hydrateClassFeedbackTask(generated.id, selectedClassId);
+      setClassFeedbackStatusMessage(`已生成 ${classFeedbackStudents.length} 名学生反馈草稿。`);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成班级反馈失败，请重试。');
+    } finally {
+      setIsGeneratingClassFeedback(false);
+    }
+  }, [
+    activeClassFeedbackTaskId,
+    classFeedbackStageNotes.classStatusNote,
+    classFeedbackStageNotes.nextStagePreviewNote,
+    classFeedbackStageNotes.parentFeedbackNote,
+    classFeedbackStageNotes.teachingFocusNote,
+    classFeedbackStatusTags,
+    classFeedbackStudents,
+    hydrateClassFeedbackTask,
+    selectedClassId,
+  ]);
+
+  const handleCopyClassFeedbackSummary = async () => {
+    if (!classFeedbackSummary.trim()) {
+      setClassFeedbackStatusMessage('当前还没有可复制的班级总评。');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(classFeedbackSummary.trim());
+      setClassFeedbackStatusMessage('班级总评已复制到剪贴板。');
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '复制班级总评失败，请重试。');
+    }
+  };
+
+  const handleCopyAllClassFeedbackStudents = async () => {
+    const content = classFeedbackStudents
+      .map((student) => `${student.name}：\n${(student.finalText || student.aiDraft).trim()}`)
+      .filter((item) => item.trim())
+      .join('\n\n');
+    if (!content) {
+      setClassFeedbackStatusMessage('当前还没有可复制的学生反馈。');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(content);
+      setClassFeedbackStatusMessage('全部学生反馈已复制到剪贴板。');
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '复制学生反馈失败，请重试。');
+    }
+  };
+
+  const handleConfirmClassFeedback = useCallback(async () => {
+    if (!activeClassFeedbackTaskId) {
+      setClassFeedbackStatusMessage('请先创建反馈任务。');
+      return;
+    }
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级。');
+      return;
+    }
+
+    setIsConfirmingClassFeedback(true);
+    try {
+      const payload = buildClassFeedbackConfirmPayload({
+        classSummaryFinalText: classFeedbackSummary,
+        students: classFeedbackStudents,
+      });
+      const confirmed = await confirmClassFeedbackTask(activeClassFeedbackTaskId, payload);
+      await hydrateClassFeedbackTask(confirmed.id, selectedClassId);
+      setClassFeedbackStatusMessage(`已确认 ${classFeedbackStudents.length} 名学生反馈，并写入后续积累。`);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '确认班级反馈失败，请重试。');
+    } finally {
+      setIsConfirmingClassFeedback(false);
+    }
+  }, [
+    activeClassFeedbackTaskId,
+    classFeedbackStudents,
+    classFeedbackSummary,
+    hydrateClassFeedbackTask,
+    selectedClassId,
+  ]);
+
+  const sourceSummaryItems = [
+    selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
+    `时间范围：${startDate} 至 ${endDate}`,
+    `学生人数：${classFeedbackStudents.length} 名`,
+    `任务状态：${currentTaskStatus === 'confirmed' ? '已确认' : activeClassFeedbackTaskId ? '草稿中' : '待创建'}`,
+  ];
+
+  return (
+    <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
+      <section className={`${workspaceCardClass} p-6`}>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Stage Feedback</p>
+            <h3 className={`${workspaceSectionTitleClass} mt-3`}>班级反馈生成</h3>
+            <p className={`${workspaceSectionTextClass} mt-2`}>
+              选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
+            <select
+              value={selectedClassId ?? ''}
+              onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+              className={workspaceFieldClass}
+              disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+            >
+              <option value="">选择班级</option>
+              {classes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void handleCreateClassFeedbackTask()}
+            disabled={!selectedClassId || isSavingClassFeedback}
+            className={workspacePrimaryButtonClass}
+          >
+            <PlusCircle size={18} />
+            创建反馈任务
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRefreshClassFeedbackTask()}
+            disabled={!activeClassFeedbackTaskId || isRefreshingTask}
+            className={workspaceSecondaryButtonClass}
+          >
+            <RefreshCw size={18} />
+            刷新任务
+          </button>
+        </div>
+      </section>
+
+      <ClassFeedbackGenerationWorkspace
+        classNameLabel={selectedClass?.name ?? '未选择班级'}
+        teacherNameLabel={teacherNameLabel}
+        sourceSummaryItems={sourceSummaryItems}
+        labelGroups={labelGroups}
+        students={classFeedbackStudents}
+        classSummaryText={classFeedbackSummary}
+        statusMessage={classFeedbackStatusMessage}
+        stageNotes={classFeedbackStageNotes}
+        isGenerating={isGeneratingClassFeedback}
+        isSaving={isRefreshingTask || isSavingClassFeedback}
+        isConfirming={isConfirmingClassFeedback}
+        onClassSummaryChange={setClassFeedbackSummary}
+        onStageNoteChange={handleStageNoteChange}
+        onHighlightToggle={handleHighlightToggle}
+        onHighlightNoteChange={handleHighlightNoteChange}
+        onStudentFinalTextChange={handleStudentFinalTextChange}
+        onStudentCheckedChange={handleStudentCheckedChange}
+        onAddStudent={handleAddStudent}
+        onGenerate={handleGenerateClassFeedback}
+        onCopyClassSummary={handleCopyClassFeedbackSummary}
+        onCopyAllStudents={handleCopyAllClassFeedbackStudents}
+        onConfirm={handleConfirmClassFeedback}
+      />
     </div>
   );
 };
@@ -6082,6 +6568,7 @@ export default function App() {
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
     'review-generation': '复习生成',
+    'class-feedback-generation': '班级反馈生成',
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
@@ -6221,6 +6708,7 @@ export default function App() {
                   />
                 )}
                 {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
+                {activePage === 'class-feedback-generation' && <ClassFeedbackGenerationPage currentUser={currentUser} />}
                 {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
                 {activePage === 'calendar' &&
                   (calendarLoading ? (
