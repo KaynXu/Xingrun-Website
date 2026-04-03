@@ -1256,6 +1256,12 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'draft',
             class_summary_ai_draft TEXT NOT NULL DEFAULT '',
             class_summary_final_text TEXT NOT NULL DEFAULT '',
+            class_status_tags_json TEXT NOT NULL DEFAULT '[]',
+            class_status_note TEXT NOT NULL DEFAULT '',
+            parent_feedback_note TEXT NOT NULL DEFAULT '',
+            teaching_focus_note TEXT NOT NULL DEFAULT '',
+            next_stage_preview_note TEXT NOT NULL DEFAULT '',
+            student_highlights_json TEXT NOT NULL DEFAULT '[]',
             created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
@@ -1305,6 +1311,20 @@ def init_db():
                 conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
         if "updated_at" not in feedback_cols:
             conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        class_feedback_task_cols = [r[1] for r in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()]
+        if class_feedback_task_cols:
+            if "class_status_tags_json" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN class_status_tags_json TEXT NOT NULL DEFAULT '[]'")
+            if "class_status_note" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN class_status_note TEXT NOT NULL DEFAULT ''")
+            if "parent_feedback_note" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN parent_feedback_note TEXT NOT NULL DEFAULT ''")
+            if "teaching_focus_note" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN teaching_focus_note TEXT NOT NULL DEFAULT ''")
+            if "next_stage_preview_note" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN next_stage_preview_note TEXT NOT NULL DEFAULT ''")
+            if "student_highlights_json" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
@@ -2256,8 +2276,108 @@ def _derive_class_feedback_period_fields(start_date: str, end_date: str) -> tupl
     return period_length_days, "custom"
 
 
+def _load_json_list(value) -> list:
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _normalize_class_feedback_student_highlights(
+    *,
+    task_row: sqlite3.Row,
+    conn: sqlite3.Connection,
+    student_highlights: list[dict] | None,
+) -> list[dict]:
+    if student_highlights is None:
+        student_highlights = []
+    if not isinstance(student_highlights, list):
+        raise ValueError("student_highlights must be a list")
+
+    roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
+    normalized_highlights: list[dict] = []
+    seen_student_ids: set[int] = set()
+    for item in student_highlights:
+        if not isinstance(item, dict):
+            raise ValueError("student_highlights must contain objects")
+        student_id = item.get("student_id")
+        if isinstance(student_id, bool) or not isinstance(student_id, int):
+            raise ValueError("student_highlights.student_id must be an integer")
+        if student_id in seen_student_ids:
+            continue
+        if student_id not in roster_by_id:
+            raise ValueError("student_highlights must belong to class roster")
+        labels = []
+        for label in item.get("labels") or []:
+            normalized_label = str(label or "").strip()
+            if normalized_label:
+                labels.append(normalized_label)
+        normalized_highlights.append(
+            {
+                "student_id": student_id,
+                "labels": labels,
+                "note": str(item.get("note") or "").strip(),
+            }
+        )
+        seen_student_ids.add(student_id)
+    return normalized_highlights
+
+
+def _normalize_class_feedback_task_notes(
+    *,
+    task_row: sqlite3.Row,
+    conn: sqlite3.Connection,
+    class_status_tags: list[str] | None,
+    class_status_note: str,
+    parent_feedback_note: str,
+    teaching_focus_note: str,
+    next_stage_preview_note: str,
+    student_highlights: list[dict] | None,
+) -> dict:
+    normalized_tags = [
+        str(tag or "").strip()
+        for tag in (class_status_tags or [])
+        if str(tag or "").strip()
+    ]
+    return {
+        "class_status_tags": normalized_tags,
+        "class_status_note": str(class_status_note or "").strip(),
+        "parent_feedback_note": str(parent_feedback_note or "").strip(),
+        "teaching_focus_note": str(teaching_focus_note or "").strip(),
+        "next_stage_preview_note": str(next_stage_preview_note or "").strip(),
+        "student_highlights": _normalize_class_feedback_student_highlights(
+            task_row=task_row,
+            conn=conn,
+            student_highlights=student_highlights,
+        ),
+    }
+
+
+def _ensure_class_feedback_student_entries_cover_current_roster(
+    *,
+    task_row: sqlite3.Row,
+    conn: sqlite3.Connection,
+    normalized_student_entries: list[dict],
+) -> None:
+    roster_student_ids = sorted(_get_class_feedback_student_roster(conn, task_row["class_id"]).keys())
+    provided_student_ids = sorted(item["student_id"] for item in normalized_student_entries)
+    if provided_student_ids != roster_student_ids:
+        raise ValueError("student_entries must match current class roster")
+
+
 def _serialize_class_feedback_task_row(row: sqlite3.Row, student_entries: Optional[list[dict]] = None) -> dict:
     task = dict(row)
+    task["class_status_tags"] = _load_json_list(task.get("class_status_tags_json"))
+    task["student_highlights"] = _load_json_list(task.get("student_highlights_json"))
+    task.pop("class_status_tags_json", None)
+    task.pop("student_highlights_json", None)
+    task["class_status_note"] = task.get("class_status_note") or ""
+    task["parent_feedback_note"] = task.get("parent_feedback_note") or ""
+    task["teaching_focus_note"] = task.get("teaching_focus_note") or ""
+    task["next_stage_preview_note"] = task.get("next_stage_preview_note") or ""
     task["student_entries"] = student_entries or []
     return task
 
@@ -2450,10 +2570,17 @@ def create_class_feedback_task(
 def save_class_feedback_generation_result(task_id: int, class_summary_ai_draft: str, student_entries: list[dict]):
     with get_conn() as conn:
         task_row = _load_class_feedback_task_row(conn, task_id)
+        if task_row["status"] == "confirmed":
+            raise ValueError("confirmed tasks cannot be regenerated")
         normalized_student_entries = _normalize_class_feedback_student_entries(
             task_row=task_row,
             conn=conn,
             student_entries=student_entries,
+        )
+        _ensure_class_feedback_student_entries_cover_current_roster(
+            task_row=task_row,
+            conn=conn,
+            normalized_student_entries=normalized_student_entries,
         )
         conn.execute("BEGIN IMMEDIATE")
         conn.execute(
@@ -2493,11 +2620,20 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
             require_checked_at=True,
         )
         roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
-        current_student_ids = _get_class_feedback_task_student_ids(conn, task_id)
-        provided_student_ids = [item["student_id"] for item in normalized_student_entries]
-        if current_student_ids and sorted(current_student_ids) != sorted(provided_student_ids):
-            raise ValueError("student_entries must match current task entries")
+        _ensure_class_feedback_student_entries_cover_current_roster(
+            task_row=task_row,
+            conn=conn,
+            normalized_student_entries=normalized_student_entries,
+        )
         conn.execute("BEGIN IMMEDIATE")
+        if roster_by_id:
+            placeholders = ",".join("?" for _ in roster_by_id)
+            conn.execute(
+                f"DELETE FROM class_feedback_student_entries WHERE task_id=? AND student_id NOT IN ({placeholders})",
+                (task_id, *roster_by_id.keys()),
+            )
+        else:
+            conn.execute("DELETE FROM class_feedback_student_entries WHERE task_id=?", (task_id,))
         conn.execute(
             """
             UPDATE class_feedback_tasks
@@ -2537,6 +2673,53 @@ def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, stu
                         item["checked_at"],
                     ),
                 )
+    return get_class_feedback_task(task_id)
+
+
+def save_class_feedback_task_notes(
+    task_id: int,
+    *,
+    class_status_tags: list[str] | None,
+    class_status_note: str = "",
+    parent_feedback_note: str = "",
+    teaching_focus_note: str = "",
+    next_stage_preview_note: str = "",
+    student_highlights: list[dict] | None = None,
+):
+    with get_conn() as conn:
+        task_row = _load_class_feedback_task_row(conn, task_id)
+        normalized_notes = _normalize_class_feedback_task_notes(
+            task_row=task_row,
+            conn=conn,
+            class_status_tags=class_status_tags,
+            class_status_note=class_status_note,
+            parent_feedback_note=parent_feedback_note,
+            teaching_focus_note=teaching_focus_note,
+            next_stage_preview_note=next_stage_preview_note,
+            student_highlights=student_highlights,
+        )
+        conn.execute(
+            """
+            UPDATE class_feedback_tasks
+            SET class_status_tags_json=?,
+                class_status_note=?,
+                parent_feedback_note=?,
+                teaching_focus_note=?,
+                next_stage_preview_note=?,
+                student_highlights_json=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                json.dumps(normalized_notes["class_status_tags"], ensure_ascii=False),
+                normalized_notes["class_status_note"],
+                normalized_notes["parent_feedback_note"],
+                normalized_notes["teaching_focus_note"],
+                normalized_notes["next_stage_preview_note"],
+                json.dumps(normalized_notes["student_highlights"], ensure_ascii=False),
+                task_id,
+            ),
+        )
     return get_class_feedback_task(task_id)
 
 
@@ -2623,6 +2806,34 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
             (class_id, student_id, before_end_date),
         ).fetchone()
     return dict(fallback_row) if fallback_row else None
+
+
+def list_recent_confirmed_class_feedback_summaries(*, class_id: int, before_end_date: str, limit: int = 3) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                class_id,
+                teacher_user_id,
+                teacher_name_snapshot,
+                start_date,
+                end_date,
+                period_length_days,
+                period_granularity,
+                class_summary_final_text,
+                confirmed_at
+            FROM class_feedback_tasks
+            WHERE class_id=?
+              AND status='confirmed'
+              AND end_date < ?
+              AND trim(coalesce(class_summary_final_text, '')) <> ''
+            ORDER BY end_date DESC, id DESC
+            LIMIT ?
+            """,
+            (class_id, before_end_date, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def list_class_feedback_label_configs(owner_user_id: int) -> list[dict]:
