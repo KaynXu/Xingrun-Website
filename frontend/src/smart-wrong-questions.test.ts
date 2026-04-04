@@ -117,6 +117,7 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
   const records: WrongQuestionRecord[] = [
     {
       id: 'record-1',
+      roomId: '',
       studentName: 'Alice',
       className: '六年级 1 班',
       classNameSnapshot: '六年级 1 班',
@@ -137,6 +138,7 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     },
     {
       id: 'record-2',
+      roomId: '',
       studentName: 'Bob',
       className: '初一 2 班',
       classNameSnapshot: '初一 2 班',
@@ -158,6 +160,7 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     },
     {
       id: 'record-3',
+      roomId: '',
       studentName: 'Cathy',
       className: '高一 3 班',
       classNameSnapshot: '高一 3 班',
@@ -469,6 +472,7 @@ test('normalizeWrongQuestionRecord preserves canonical and snapshot identities s
 test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and preserves locally edited drafts', () => {
   const listRecord: WrongQuestionRecord = {
     id: 'record-1',
+    roomId: '',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级 1 班',
@@ -518,6 +522,7 @@ test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and pre
 test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty after save and reload', () => {
   const detailRecord: WrongQuestionRecord = {
     id: 'record-1',
+    roomId: '',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级 1 班',
@@ -566,6 +571,7 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
 test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapping identity when save returns a legacy record payload', () => {
   const detailRecord: WrongQuestionRecord = {
     id: 'record-1',
+    roomId: '',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级一班（临时）',
