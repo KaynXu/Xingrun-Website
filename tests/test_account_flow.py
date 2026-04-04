@@ -1578,6 +1578,8 @@ class AccountFlowTestCase(unittest.TestCase):
         lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
 
         with patch("app.has_api_key", return_value=True), \
+             patch("app.ensure_feature_credits_available"), \
+             patch("app.finalize_ai_charge", return_value={}), \
              patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
             missing_class_response = self.client.post(
                 "/api/lessons",
@@ -1642,6 +1644,8 @@ class AccountFlowTestCase(unittest.TestCase):
         class_id = class_payload["id"]
 
         with patch("app.has_api_key", return_value=True), \
+             patch("app.ensure_feature_credits_available"), \
+             patch("app.finalize_ai_charge", return_value={}), \
              patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
             owner_response = self.client.post(
                 "/api/lessons",
