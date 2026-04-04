@@ -496,6 +496,37 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(payload["class_name_snapshot"], "六年级2班")
         self.assertEqual(payload["mapping_status"], "mapped")
 
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_wrong_question_list_accepts_downstream_records_key(self, mock_urlopen):
+        owner_payload = self.login_owner()
+
+        mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "roomId": "XINGRUN",
+                "total": 1,
+                "records": [
+                    {
+                        "id": "record-r1",
+                        "studentName": "阿斯顿",
+                        "teacherName": "曹老师",
+                        "className": "八年级2班",
+                        "analysis": {"questionCategory": "待确认"},
+                    }
+                ],
+            }
+        ).encode("utf-8")
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(len(payload["items"]), 1)
+        self.assertEqual(payload["items"][0]["id"], "record-r1")
+
     @patch("smart_wrong_questions.save_wrong_question_review")
     def test_staff_can_save_wrong_question_review(self, save_wrong_question_review):
         owner_payload = self.login_owner()

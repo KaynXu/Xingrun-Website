@@ -126,13 +126,22 @@ def _require_object_payload(payload: Any) -> dict[str, Any]:
 
 def fetch_wrong_question_records(query: Any) -> dict[str, Any]:
     payload = _require_object_payload(_request_downstream("/wrong-questions", query=query))
-    items = payload.get("items") or []
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        raw_items = payload.get("records")
+    items = raw_items if isinstance(raw_items, list) else []
+
     payload["items"] = [
         master_data.normalize_wrong_question_record(item)
         if isinstance(item, Mapping)
         else item
         for item in items
     ]
+
+    # Keep compatibility with frontend list parsing logic while preserving
+    # the original downstream shape for debugging and incremental migration.
+    if "records" in payload and not isinstance(payload.get("records"), list):
+        payload["records"] = payload["items"]
     return payload
 
 
