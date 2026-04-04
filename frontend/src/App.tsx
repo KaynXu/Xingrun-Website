@@ -4604,7 +4604,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [usageDetailLoading, setUsageDetailLoading] = useState(false);
   const [usageDetailError, setUsageDetailError] = useState('');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
-  const [ledgerSearch, setLedgerSearch] = useState('');
 
   const loadSelectedUsageDetail = useCallback(async (userId: number) => {
     setUsageDetailLoading(true);
@@ -4684,19 +4683,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     void loadSelectedUsageDetail(item.user_id);
   };
 
-  const filteredLedger = creditLedger.filter((item) => {
-    if (ledgerFilter !== 'all' && item.direction !== ledgerFilter) {
-      return false;
-    }
-    const query = ledgerSearch.trim().toLowerCase();
-    if (!query) {
-      return true;
-    }
-    return [item.source_type, item.source_id, item.note, String(item.amount), String(item.balance_after)]
-      .join(' ')
-      .toLowerCase()
-      .includes(query);
-  });
+  const filteredLedger = creditLedger.filter((item) => ledgerFilter === 'all' || item.direction === ledgerFilter);
 
   return (
     <div className={`${workspacePageClass} mx-auto max-w-6xl space-y-8`}>
@@ -4774,7 +4761,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 <p className="font-medium text-slate-900 dark:text-white">成员用量</p>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按成员汇总 AI 功能的积分消耗，点击可查看成员明细。</p>
               </div>
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+              <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                 {creditUsage.length} 人
               </span>
             </div>
@@ -4902,27 +4889,16 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="font-medium text-slate-900 dark:text-white">最近流水</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">流水筛选支持按类型和关键词筛出最近 100 条积分变动。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近 100 条积分变动记录，支持按类型筛选。</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-              <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                流水筛选
-                <select value={ledgerFilter} onChange={(event) => setLedgerFilter(event.target.value as 'all' | 'credit' | 'debit')} className={`${workspaceFieldClass} w-full`}>
-                  <option value="all">全部</option>
-                  <option value="credit">仅充值</option>
-                  <option value="debit">仅消耗</option>
-                </select>
-              </label>
-              <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                关键词
-                <input
-                  value={ledgerSearch}
-                  onChange={(event) => setLedgerSearch(event.target.value)}
-                  placeholder="搜索来源、备注、金额"
-                  className={`${workspaceFieldClass} w-full`}
-                />
-              </label>
-            </div>
+            <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              流水筛选
+              <select value={ledgerFilter} onChange={(event) => setLedgerFilter(event.target.value as 'all' | 'credit' | 'debit')} className={`${workspaceFieldClass} w-full`}>
+                <option value="all">全部</option>
+                <option value="credit">仅充值</option>
+                <option value="debit">仅消耗</option>
+              </select>
+            </label>
           </div>
 
           <div className="space-y-3">
