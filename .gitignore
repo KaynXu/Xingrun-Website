@@ -17,6 +17,7 @@ logs/
 # Local runtime databases (not baseline data)
 data/database.db
 data/local.db
+data/lessons.db
 data/consultations.csv
 
 # Local asset candidates (not wired into the product)
