@@ -15,6 +15,7 @@ interface ClassFeedbackGenerationWorkspaceProps {
   students: ClassFeedbackStudentCard[];
   classSummaryText: string;
   statusMessage: string;
+  draftStatusLabel: string;
   stageNotes: ClassFeedbackStageNotes;
   isGenerating: boolean;
   isSaving: boolean;
@@ -66,6 +67,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
           {props.classNameLabel} · {props.teacherNameLabel}
         </p>
         <p className="mt-2 text-sm text-slate-500">{props.statusMessage}</p>
+        <p className="mt-2 text-xs font-medium text-sky-700">{props.draftStatusLabel}</p>
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -204,6 +206,13 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
             >
               {props.isConfirming ? '确认中...' : '确认本次反馈'}
             </button>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-lg font-semibold text-slate-900">学生反馈</h4>
+              <p className="text-xs font-medium text-slate-500">按未检查优先排序</p>
+            </div>
           </div>
 
           <div className="space-y-4">

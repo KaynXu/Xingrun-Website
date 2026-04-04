@@ -86,6 +86,19 @@ export function buildClassFeedbackConfirmPayload(input: {
   };
 }
 
+export function formatClassFeedbackStudentCopyText(students: ClassFeedbackStudentCard[]): string {
+  return students
+    .map((student) => {
+      const text = (student.finalText || student.aiDraft).trim();
+      if (!text) {
+        return '';
+      }
+      return `【${student.name}】\n${text}`;
+    })
+    .filter((item) => item.trim())
+    .join('\n\n');
+}
+
 async function callApiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const { apiFetch } = await import('./App');
   return apiFetch<T>(path, options);
