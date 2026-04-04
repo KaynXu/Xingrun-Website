@@ -251,6 +251,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
+    const selectedRecordForDetail = records.find((item) => item.id === selectedId);
+    if (!selectedRecordForDetail) {
+      return;
+    }
+
     const requestVersion = detailRequestVersionRef.current + 1;
     detailRequestVersionRef.current = requestVersion;
     setDetailLoading(true);
@@ -258,7 +263,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     void (async () => {
       try {
-        const response = await apiFetch<WrongQuestionRecord>(buildWrongQuestionDetailPath(selectedId));
+        const response = await apiFetch<WrongQuestionRecord>(
+          buildWrongQuestionDetailPath(selectedId, selectedRecordForDetail?.roomId),
+        );
         if (requestVersion !== detailRequestVersionRef.current) {
           return;
         }
@@ -288,7 +295,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         }
       }
     })();
-  }, [selectedId]);
+  }, [records, selectedId]);
 
   const handleFilterChange = <K extends keyof WrongQuestionFilters>(key: K, value: WrongQuestionFilters[K]) => {
     setFilters((current) => ({
@@ -327,7 +334,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     try {
       const payload = buildWrongQuestionReviewPayload(selectedDraft);
-      const response = await apiFetch<unknown>(buildWrongQuestionReviewPath(selectedRecord.id), {
+      const response = await apiFetch<unknown>(buildWrongQuestionReviewPath(selectedRecord.id, selectedRecord.roomId), {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
@@ -615,11 +622,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <div className="flex items-start gap-2">
                         <AlertCircle size={16} className="mt-0.5" />
                         <div>
-                          <p className="font-semibold">主数据映射待处理</p>
+                          <p className="font-semibold">老师与班级归属待确认</p>
                           <p className="mt-1">
                             {hasStaffScope
-                              ? '当前老师或班级仍在沿用原始信息，请先在“主数据映射”里确认对应的正式老师和班级。'
-                              : '当前老师或班级仍在沿用原始信息，请联系机构负责人，在“主数据映射”里确认对应的正式老师和班级。'}
+                              ? '当前老师或班级仍在沿用原始信息，请先在账号审批中完成成员绑定与负责班级确认。'
+                              : '当前老师或班级仍在沿用原始信息，请联系机构负责人，在账号审批中完成成员绑定与负责班级确认。'}
                           </p>
                         </div>
                       </div>

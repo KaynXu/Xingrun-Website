@@ -225,6 +225,18 @@ test('record detail and review paths encode record ids consistently', () => {
   );
 });
 
+test('record detail and review paths keep roomId when the downstream contract requires it', () => {
+  assert.equal(
+    buildWrongQuestionDetailPath('record-1', 'ROOM A/1'),
+    '/api/wrong-questions/record-1?roomId=ROOM%20A%2F1',
+  );
+
+  assert.equal(
+    buildWrongQuestionReviewPath('record-1', 'ROOM A/1'),
+    '/api/wrong-questions/record-1/review?roomId=ROOM%20A%2F1',
+  );
+});
+
 test('downloadWrongQuestionSummary fetches the export with auth header and triggers a blob download', async () => {
   const originalFetch = globalThis.fetch;
   const originalDocument = globalThis.document;
@@ -327,6 +339,7 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
     items: [
       {
         id: 123,
+        room_id: 'ROOM-1',
         studentNickname: 'Alice',
         class_name: '六年级 1 班',
         subject: '数学',
@@ -360,6 +373,7 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
 
   assert.deepEqual(normalized.items[0], {
     id: '123',
+    roomId: 'ROOM-1',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级 1 班',
@@ -382,6 +396,7 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
 
   assert.deepEqual(normalized.items[1], {
     id: 'record-2',
+    roomId: '',
     studentName: 'Bob',
     className: '初一 2 班',
     classNameSnapshot: '初一 2 班',
@@ -411,6 +426,7 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
 test('normalizeWrongQuestionRecord preserves canonical and snapshot identities side by side', () => {
   const normalized = normalizeWrongQuestionRecord({
     id: 'record-identity-1',
+    room_id: 'ROOM-identity-1',
     student_name: 'Alice',
     class_display_name: '六年级 1 班',
     class_name_snapshot: '六年级一班（临时）',
@@ -430,6 +446,7 @@ test('normalizeWrongQuestionRecord preserves canonical and snapshot identities s
 
   assert.deepEqual(normalized, {
     id: 'record-identity-1',
+    roomId: 'ROOM-identity-1',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级一班（临时）',
@@ -640,7 +657,7 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /const \[detailError, setDetailError\] = useState\(''\);/);
   assert.match(pageSource, /const \[reviewDraftByRecordId, setReviewDraftByRecordId\] = useState<Record<string, [^>]+>>\(\{\}\);/);
   assert.match(pageSource, /const \[reviewDraftDirtyByRecordId, setReviewDraftDirtyByRecordId\] = useState<Record<string, boolean>>\(\{\}\);/);
-  assert.match(pageSource, /apiFetch<[^>]+>\(buildWrongQuestionDetailPath\([^)]+\)\)/);
+  assert.match(pageSource, /buildWrongQuestionDetailPath\(selectedId, selectedRecordForDetail\?\.roomId\)/);
   assert.match(pageSource, /setReviewDraftByRecordId\(\(current\) => \{/);
   assert.match(pageSource, /hydrateWrongQuestionReviewDraftFromDetail\(/);
   assert.match(pageSource, /最终错误类型/);
@@ -671,6 +688,7 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
           items: [
             {
               id: 'record-identity-ui',
+              room_id: 'ROOM-identity',
               student_name: 'Alice',
               class_display_name: '六年级 1 班',
               class_name_snapshot: '六年级一班（临时）',
@@ -697,9 +715,10 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
         });
       }
 
-      if (input === '/api/wrong-questions/record-identity-ui' && (!init?.method || init.method === 'GET')) {
+      if (input === '/api/wrong-questions/record-identity-ui?roomId=ROOM-identity' && (!init?.method || init.method === 'GET')) {
         return createJsonResponse({
           id: 'record-identity-ui',
+          room_id: 'ROOM-identity',
           student_name: 'Alice',
           class_display_name: '六年级 1 班',
           class_name_snapshot: '六年级一班（临时）',
@@ -736,7 +755,8 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /主数据映射待处理/);
+        assert.match(pageText, /老师与班级归属待确认/);
+      assert.match(pageText, /请先在账号审批中完成成员绑定与负责班级确认/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /班级：六年级 1 班/);
@@ -1025,7 +1045,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /主数据映射待处理/);
+        assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
@@ -1044,7 +1064,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
     await waitForAssertion(() => {
       assert.equal(fetchCalls.length, 5);
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /主数据映射待处理/);
+      assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /班级：六年级 1 班/);
@@ -1168,7 +1188,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /主数据映射待处理/);
+        assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
     });
@@ -1189,7 +1209,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
       assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
       assert.equal(selectedErrorTypeInput.value, '服务端修正');
-      assert.match(pageText, /主数据映射待处理/);
+      assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /班级：六年级 1 班/);

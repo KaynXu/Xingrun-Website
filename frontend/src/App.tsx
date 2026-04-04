@@ -2000,16 +2000,24 @@ const LessonInput = ({
     if (!classId || !activeLessonId) {
       return;
     }
-    await createClassStudent(classId, name);
-    await loadFeedbackWorkspace(activeLessonId, classId);
+    try {
+      await createClassStudent(classId, name);
+      await loadFeedbackWorkspace(activeLessonId, classId);
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '新增学生失败，请重试。');
+    }
   };
 
   const handleRemoveStudent = async (studentId: number) => {
     if (!classId || !activeLessonId) {
       return;
     }
-    await deleteClassStudent(classId, studentId);
-    await loadFeedbackWorkspace(activeLessonId, classId);
+    try {
+      await deleteClassStudent(classId, studentId);
+      await loadFeedbackWorkspace(activeLessonId, classId);
+    } catch (e) {
+      setFeedbackStatusMessage(e instanceof Error ? e.message : '移出学生失败，请重试。');
+    }
   };
 
   const handleGenerateFeedbackDraft = async () => {

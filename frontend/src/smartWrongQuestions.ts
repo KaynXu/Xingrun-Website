@@ -23,6 +23,7 @@ export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | '
 
 export interface WrongQuestionRecord {
   id: string;
+  roomId: string;
   studentName: string;
   className: string;
   classNameSnapshot: string;
@@ -197,6 +198,7 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
 
   return {
     id: typeof rawId === 'string' || typeof rawId === 'number' ? String(rawId) : `wrong-question-${fallbackIndex}`,
+    roomId: pickStringValue(source, ['roomId', 'room_id']),
     studentName: pickStringValue(source, ['studentName', 'student_name', 'studentNickname', 'student_nickname']),
     className,
     classNameSnapshot,
@@ -418,12 +420,20 @@ export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
 
-export function buildWrongQuestionDetailPath(recordId: string): string {
-  return `/api/wrong-questions/${encodeURIComponent(recordId)}`;
+function buildWrongQuestionRoomQuery(roomId?: string): string {
+  const normalizedRoomId = roomId?.trim();
+  if (!normalizedRoomId) {
+    return '';
+  }
+  return `?roomId=${encodeURIComponent(normalizedRoomId)}`;
 }
 
-export function buildWrongQuestionReviewPath(recordId: string): string {
-  return `${buildWrongQuestionDetailPath(recordId)}/review`;
+export function buildWrongQuestionDetailPath(recordId: string, roomId?: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}${buildWrongQuestionRoomQuery(roomId)}`;
+}
+
+export function buildWrongQuestionReviewPath(recordId: string, roomId?: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}/review${buildWrongQuestionRoomQuery(roomId)}`;
 }
 
 export function buildWrongQuestionSummaryExportPath(filters: WrongQuestionFilters): string {
