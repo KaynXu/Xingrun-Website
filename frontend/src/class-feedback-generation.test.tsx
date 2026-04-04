@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   buildClassFeedbackConfirmPayload,
   defaultStageLabelGroups,
+  formatClassFeedbackStudentCopyText,
   type ClassFeedbackStudentCard,
 } from './classFeedbackGeneration';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
@@ -42,6 +43,33 @@ test('buildClassFeedbackConfirmPayload keeps final class summary and checked stu
   ]);
 });
 
+test('formatClassFeedbackStudentCopyText joins student feedback into a parent-friendly batch format', () => {
+  const content = formatClassFeedbackStudentCopyText([
+    {
+      studentId: 1,
+      name: '张三',
+      aiDraft: '草稿反馈',
+      finalText: '正式反馈',
+      checked: true,
+      sourceSummary: '已汇总本阶段素材',
+      highlightLabels: [],
+      highlightNote: '',
+    },
+    {
+      studentId: 2,
+      name: '李四',
+      aiDraft: '待补充草稿',
+      finalText: '',
+      checked: false,
+      sourceSummary: '已汇总本阶段素材',
+      highlightLabels: [],
+      highlightNote: '',
+    },
+  ]);
+
+  assert.equal(content, '【张三】\n正式反馈\n\n【李四】\n待补充草稿');
+});
+
 test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, class summary, and student cards', () => {
   const students: ClassFeedbackStudentCard[] = [
     {
@@ -66,6 +94,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
       students={students}
       classSummaryText="班级反馈草稿"
       statusMessage="已生成 1 名学生反馈"
+      draftStatusLabel="草稿已保存，可继续编辑。"
       stageNotes={{
         classStatusNote: '',
         parentFeedbackNote: '',
@@ -96,6 +125,8 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   assert.match(markup, /阶段备注/);
   assert.match(markup, /班级状态标签/);
   assert.match(markup, /班级总评/);
+  assert.match(markup, /草稿已保存，可继续编辑/);
+  assert.match(markup, /按未检查优先排序/);
   assert.match(markup, /张三/);
   assert.match(markup, /保存草稿/);
   assert.match(markup, /确认本次反馈/);
@@ -109,6 +140,10 @@ test('App source wires the standalone class feedback page and existing class stu
   assert.match(appSource, /classStatusTags: classFeedbackStatusTags/);
   assert.match(appSource, /await createClassStudent\(selectedClassId, name\);/);
   assert.match(appSource, /await generateClassFeedbackTask\(activeClassFeedbackTaskId, \{/);
+  assert.match(appSource, /formatClassFeedbackStudentCopyText\(sortedClassFeedbackStudents\)/);
+  assert.match(appSource, /const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'/);
+  assert.match(appSource, /const sortedClassFeedbackStudents = useMemo/);
+  assert.match(appSource, /已命中 \$\{matchedLessonCount\} 节课次记录/);
   assert.match(appSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
   assert.match(appSource, /<ClassFeedbackGenerationWorkspace/);
 });

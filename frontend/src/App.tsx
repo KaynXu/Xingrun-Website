@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import {
@@ -63,6 +63,7 @@ import {
   confirmClassFeedbackTask,
   createClassFeedbackTask,
   defaultStageLabelGroups,
+  formatClassFeedbackStudentCopyText,
   generateClassFeedbackTask,
   loadClassFeedbackLabels,
   loadClassFeedbackTask,
@@ -2284,6 +2285,19 @@ function createEmptyClassFeedbackStudentCards(roster: Array<{ id: number; name: 
   }));
 }
 
+function buildClassFeedbackDraftSnapshot(
+  summary: string,
+  students: ClassFeedbackStudentCard[],
+): string {
+  return JSON.stringify({
+    classSummary: summary,
+    students: students.map((student) => ({
+      studentId: student.studentId,
+      finalText: student.finalText,
+    })),
+  });
+}
+
 const ClassFeedbackGenerationPage = ({
   currentUser,
 }: {
@@ -2307,6 +2321,7 @@ const ClassFeedbackGenerationPage = ({
   const [classFeedbackStatusTags, setClassFeedbackStatusTags] = useState<string[]>([]);
   const [teacherNameLabel, setTeacherNameLabel] = useState(currentUser.display_name);
   const [currentTaskStatus, setCurrentTaskStatus] = useState<string>('draft');
+  const [matchedLessonCount, setMatchedLessonCount] = useState(0);
   const [isRefreshingTask, setIsRefreshingTask] = useState(false);
   const [isGeneratingClassFeedback, setIsGeneratingClassFeedback] = useState(false);
   const [isSavingClassFeedback, setIsSavingClassFeedback] = useState(false);
@@ -2348,13 +2363,7 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackStudents(hydratedStudents);
       setClassFeedbackSummary(hydratedSummary);
       setCurrentTaskStatus(task.status);
-      classFeedbackDraftSnapshotRef.current = JSON.stringify({
-        classSummary: hydratedSummary,
-        students: hydratedStudents.map((student) => ({
-          studentId: student.studentId,
-          finalText: student.finalText,
-        })),
-      });
+      classFeedbackDraftSnapshotRef.current = buildClassFeedbackDraftSnapshot(hydratedSummary, hydratedStudents);
       setClassFeedbackStatusMessage(
         task.status === 'confirmed'
           ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
@@ -2394,6 +2403,37 @@ const ClassFeedbackGenerationPage = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedClassId || !startDate || !endDate || startDate > endDate) {
+      setMatchedLessonCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    apiFetch<Lesson[]>('/api/lessons')
+      .then((lessons) => {
+        if (cancelled) {
+          return;
+        }
+        const count = lessons.filter(
+          (lesson) =>
+            lesson.class_id === selectedClassId &&
+            lesson.date >= startDate &&
+            lesson.date <= endDate,
+        ).length;
+        setMatchedLessonCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMatchedLessonCount(0);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [endDate, selectedClassId, startDate]);
+
   const handleClassChange = async (nextClassId: number | null) => {
     setSelectedClassId(nextClassId);
     setActiveClassFeedbackTaskId(null);
@@ -2403,6 +2443,7 @@ const ClassFeedbackGenerationPage = ({
     setClassFeedbackStatusTags([]);
     setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
     classFeedbackDraftSnapshotRef.current = '';
+    setMatchedLessonCount(0);
 
     if (!nextClassId) {
       setClassFeedbackStudents([]);
@@ -2516,13 +2557,7 @@ const ClassFeedbackGenerationPage = ({
       return;
     }
 
-    const nextSnapshot = JSON.stringify({
-      classSummary: classFeedbackSummary,
-      students: classFeedbackStudents.map((student) => ({
-        studentId: student.studentId,
-        finalText: student.finalText,
-      })),
-    });
+    const nextSnapshot = buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents);
     if (nextSnapshot === classFeedbackDraftSnapshotRef.current) {
       return;
     }
@@ -2555,13 +2590,10 @@ const ClassFeedbackGenerationPage = ({
       });
       setClassFeedbackSummary(savedTask.class_summary_ai_draft ?? '');
       setClassFeedbackStudents(savedStudents);
-      classFeedbackDraftSnapshotRef.current = JSON.stringify({
-        classSummary: savedTask.class_summary_ai_draft ?? '',
-        students: savedStudents.map((student) => ({
-          studentId: student.studentId,
-          finalText: student.finalText,
-        })),
-      });
+      classFeedbackDraftSnapshotRef.current = buildClassFeedbackDraftSnapshot(
+        savedTask.class_summary_ai_draft ?? '',
+        savedStudents,
+      );
       setClassFeedbackStatusMessage('班级反馈草稿已保存。');
     } catch (error) {
       setClassFeedbackStatusMessage(error instanceof Error ? error.message : '保存班级反馈草稿失败，请重试。');
@@ -2574,13 +2606,7 @@ const ClassFeedbackGenerationPage = ({
     if (!activeClassFeedbackTaskId || currentTaskStatus === 'confirmed' || isRefreshingTask || isGeneratingClassFeedback || isConfirmingClassFeedback) {
       return;
     }
-    const nextSnapshot = JSON.stringify({
-      classSummary: classFeedbackSummary,
-      students: classFeedbackStudents.map((student) => ({
-        studentId: student.studentId,
-        finalText: student.finalText,
-      })),
-    });
+    const nextSnapshot = buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents);
     if (nextSnapshot === classFeedbackDraftSnapshotRef.current) {
       return;
     }
@@ -2679,10 +2705,7 @@ const ClassFeedbackGenerationPage = ({
   };
 
   const handleCopyAllClassFeedbackStudents = async () => {
-    const content = classFeedbackStudents
-      .map((student) => `${student.name}：\n${(student.finalText || student.aiDraft).trim()}`)
-      .filter((item) => item.trim())
-      .join('\n\n');
+    const content = formatClassFeedbackStudentCopyText(sortedClassFeedbackStudents);
     if (!content) {
       setClassFeedbackStatusMessage('当前还没有可复制的学生反馈。');
       return;
@@ -2727,11 +2750,65 @@ const ClassFeedbackGenerationPage = ({
     selectedClassId,
   ]);
 
+  const checkedStudentCount = useMemo(
+    () => classFeedbackStudents.filter((student) => student.checked).length,
+    [classFeedbackStudents],
+  );
+  const uncheckedStudentCount = classFeedbackStudents.length - checkedStudentCount;
+  const studentsWithHighlightsCount = useMemo(
+    () =>
+      classFeedbackStudents.filter(
+        (student) => student.highlightLabels.length > 0 || student.highlightNote.trim(),
+      ).length,
+    [classFeedbackStudents],
+  );
+  const studentsAwaitingDraftCount = useMemo(
+    () =>
+      classFeedbackStudents.filter(
+        (student) => !(student.finalText || student.aiDraft).trim(),
+      ).length,
+    [classFeedbackStudents],
+  );
+  const sortedClassFeedbackStudents = useMemo(
+    () =>
+      [...classFeedbackStudents].sort((left, right) => {
+        if (left.checked !== right.checked) {
+          return left.checked ? 1 : -1;
+        }
+        return left.name.localeCompare(right.name, 'zh-CN');
+      }),
+    [classFeedbackStudents],
+  );
+  const hasUnsavedDraftChanges =
+    activeClassFeedbackTaskId !== null &&
+    currentTaskStatus !== 'confirmed' &&
+    buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents) !==
+      classFeedbackDraftSnapshotRef.current;
+  const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'
+    ? '本次反馈已确认，会作为后续 AI 的正式积累素材。'
+    : !activeClassFeedbackTaskId
+      ? '创建反馈任务后，系统会开始记录你的草稿编辑。'
+      : isSavingClassFeedback
+        ? '正在保存草稿...'
+        : hasUnsavedDraftChanges
+          ? '有未保存修改，系统会自动保存。'
+          : '草稿已保存，可继续编辑。';
+
   const sourceSummaryItems = [
     selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
     `时间范围：${startDate} 至 ${endDate}`,
+    `已命中 ${matchedLessonCount} 节课次记录`,
     `学生人数：${classFeedbackStudents.length} 名`,
+    `已检查 ${checkedStudentCount} 名，待检查 ${uncheckedStudentCount} 名`,
+    `已标记 ${studentsWithHighlightsCount} 名学生的阶段变化`,
+    `已选择 ${classFeedbackStatusTags.length} 个班级状态标签`,
+    ...(studentsAwaitingDraftCount > 0
+      ? [`仍有 ${studentsAwaitingDraftCount} 名学生等待生成或补充反馈`]
+      : []),
     `任务状态：${currentTaskStatus === 'confirmed' ? '已确认' : activeClassFeedbackTaskId ? '草稿中' : '待创建'}`,
+    ...(selectedClassId && matchedLessonCount <= 1
+      ? ['当前阶段课次较少，建议补充阶段备注帮助生成更稳定。']
+      : []),
   ];
 
   return (
@@ -2803,9 +2880,10 @@ const ClassFeedbackGenerationPage = ({
         sourceSummaryItems={sourceSummaryItems}
         labelGroups={labelGroups}
         classStatusTags={classFeedbackStatusTags}
-        students={classFeedbackStudents}
+        students={sortedClassFeedbackStudents}
         classSummaryText={classFeedbackSummary}
         statusMessage={classFeedbackStatusMessage}
+        draftStatusLabel={classFeedbackDraftStatusLabel}
         stageNotes={classFeedbackStageNotes}
         isGenerating={isGeneratingClassFeedback}
         isSaving={isRefreshingTask || isSavingClassFeedback}
