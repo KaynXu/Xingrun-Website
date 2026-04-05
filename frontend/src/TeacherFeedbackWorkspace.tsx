@@ -47,6 +47,7 @@ export function TeacherFeedbackWorkspace({
   onGenerate,
   onCopyAll,
 }: TeacherFeedbackWorkspaceProps) {
+  const showStudentPanel = false;
   const [templateLabelDraft, setTemplateLabelDraft] = useState('');
   const [templateGuidanceDraft, setTemplateGuidanceDraft] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
@@ -74,8 +75,8 @@ export function TeacherFeedbackWorkspace({
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-      <section className={workspaceShellClass}>
+    <div className={showStudentPanel ? 'grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]' : ''}>
+      {showStudentPanel ? <section className={workspaceShellClass}>
         <header>
           <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学生区</h4>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -225,7 +226,7 @@ export function TeacherFeedbackWorkspace({
             </button>
           </div>
         </div>
-      </section>
+      </section> : null}
 
       <section className={workspaceShellClass}>
         <div className="flex items-center justify-between gap-3">
