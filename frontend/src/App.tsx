@@ -2247,8 +2247,10 @@ const ReviewDocumentHistory = ({
   refreshToken?: number;
   onContinueFeedback?: (lesson: Lesson) => void;
 }) => {
+  const REVIEW_HISTORY_PAGE_SIZE = 12;
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -2261,6 +2263,14 @@ const ReviewDocumentHistory = ({
   useEffect(() => {
     load();
   }, [load, refreshToken]);
+
+  const totalHistoryPages = Math.max(1, Math.ceil(lessons.length / REVIEW_HISTORY_PAGE_SIZE));
+  const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
+  const paginatedLessons = lessons.slice((currentHistoryPage - 1) * REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage * REVIEW_HISTORY_PAGE_SIZE);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [lessons]);
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('确定删除此课程？相关 PDF 也会被删除。')) return;
@@ -2275,97 +2285,121 @@ const ReviewDocumentHistory = ({
       ) : lessons.length === 0 ? (
         <div className="p-8 text-center text-slate-500 dark:text-slate-400">还没有复习文档，点击「新建复习文档」开始生成</div>
       ) : (
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
-              <th className="px-6 py-4 font-semibold">课程名称</th>
-              <th className="px-6 py-4 font-semibold">科目 / 年级</th>
-              <th className="px-6 py-4 font-semibold">日期</th>
-              <th className="px-6 py-4 font-semibold">PDF</th>
-              <th className="px-6 py-4 text-right font-semibold">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
-            {lessons.map((lesson) => (
-              <tr key={lesson.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
-                <td className="px-6 py-4">
+        <div className="space-y-5 p-5 sm:p-6">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {paginatedLessons.map((lesson) => (
+              <article
+                key={lesson.id}
+                className="group flex h-full flex-col rounded-2xl border border-sky-100/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70"
+              >
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
                       <FileText size={16} />
                     </div>
-                    <span className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</span>
+                    <p className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</p>
                   </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex gap-2">
-                    {lesson.subject && (
-                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-                        {lesson.subject}
-                      </span>
-                    )}
-                    {lesson.grade && (
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
-                        {lesson.grade}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{lesson.date}</td>
-                <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
                     <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
-                    <span className="text-sm text-slate-500 dark:text-slate-400">{lesson.pdf_path ? '已生成' : '无'}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{lesson.pdf_path ? '已生成' : '无 PDF'}</span>
                   </div>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {lesson.pdf_path && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onContinueFeedback?.(lesson)}
-                          disabled={!lesson.class_id}
-                          className={cn(
-                            'flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all dark:bg-white/5 dark:text-slate-300',
-                            lesson.class_id
-                              ? 'hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-sky-300'
-                              : 'cursor-not-allowed opacity-40',
-                          )}
-                          title={lesson.class_id ? '继续编辑反馈' : '未关联班级，暂无法编辑反馈'}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <a
-                          href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                          title="查看"
-                        >
-                          <Eye size={16} />
-                        </a>
-                        <a
-                          href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                          title="下载"
-                        >
-                          <Download size={16} />
-                        </a>
-                      </>
-                    )}
-                    <button
-                      onClick={() => handleDelete(lesson.id)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                      title="删除"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {lesson.subject && (
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                      {lesson.subject}
+                    </span>
+                  )}
+                  {lesson.grade && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                      {lesson.grade}
+                    </span>
+                  )}
+                </div>
+
+                <dl className="mt-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-slate-400">日期</dt>
+                    <dd className="font-mono text-slate-700 dark:text-slate-200">{lesson.date}</dd>
                   </div>
-                </td>
-              </tr>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-slate-400">生成时间</dt>
+                    <dd className="text-slate-700 dark:text-slate-200">{new Date(lesson.created_at).toLocaleString('zh-CN')}</dd>
+                  </div>
+                </dl>
+
+                <div className="mt-4 flex flex-wrap justify-end gap-1">
+                  {lesson.pdf_path && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onContinueFeedback?.(lesson)}
+                        disabled={!lesson.class_id}
+                        className={cn(
+                          'flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all dark:bg-white/5 dark:text-slate-300',
+                          lesson.class_id
+                            ? 'hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-sky-300'
+                            : 'cursor-not-allowed opacity-40',
+                        )}
+                        title={lesson.class_id ? '继续编辑反馈' : '未关联班级，暂无法编辑反馈'}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <a
+                        href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                        title="查看"
+                      >
+                        <Eye size={16} />
+                      </a>
+                      <a
+                        href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                        title="下载"
+                      >
+                        <Download size={16} />
+                      </a>
+                    </>
+                  )}
+                  <button
+                    onClick={() => handleDelete(lesson.id)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                    title="删除"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </article>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-sky-100/80 pt-4 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+            <span>
+              第 {currentHistoryPage} / {totalHistoryPages} 页
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHistoryPage((current) => Math.max(1, current - 1))}
+                disabled={currentHistoryPage <= 1}
+                className={workspaceSecondaryButtonClass}
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryPage((current) => Math.min(totalHistoryPages, current + 1))}
+                disabled={currentHistoryPage >= totalHistoryPages}
+                className={workspaceSecondaryButtonClass}
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -3792,6 +3826,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     try {
       const data = await apiFetch<UserItem[]>('/api/admin/users');
       setUsers(data);
+      setCollapsedUserIds(new Set(data.map((item) => item.id)));
     } catch (err) {
       setUsersError(err instanceof Error ? err.message : '成员权限加载失败');
     } finally {
@@ -4695,6 +4730,7 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
 };
 
 const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+  const CREDIT_LEDGER_PAGE_SIZE = 10;
   const [creditOverview, setCreditOverview] = useState<CreditOverview | null>(null);
   const [creditLedger, setCreditLedger] = useState<CreditLedgerItem[]>([]);
   const [creditUsage, setCreditUsage] = useState<CreditMemberUsageItem[]>([]);
@@ -4710,6 +4746,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [usageDetailLoading, setUsageDetailLoading] = useState(false);
   const [usageDetailError, setUsageDetailError] = useState('');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [ledgerPage, setLedgerPage] = useState(1);
   const canSeeSensitiveUsageMeta = currentUser.role === 'super_owner';
   const [n1nPricingByModel, setN1nPricingByModel] = useState<Record<string, N1nModelPricingItem>>({});
   const [n1nPricingCnyPerUsd, setN1nPricingCnyPerUsd] = useState(1);
@@ -4835,6 +4872,13 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   );
 
   const filteredLedger = creditLedger.filter((item) => ledgerFilter === 'all' || item.direction === ledgerFilter);
+  const totalLedgerPages = Math.max(1, Math.ceil(filteredLedger.length / CREDIT_LEDGER_PAGE_SIZE));
+  const currentLedgerPage = Math.min(ledgerPage, totalLedgerPages);
+  const paginatedLedger = filteredLedger.slice((currentLedgerPage - 1) * CREDIT_LEDGER_PAGE_SIZE, currentLedgerPage * CREDIT_LEDGER_PAGE_SIZE);
+
+  useEffect(() => {
+    setLedgerPage(1);
+  }, [ledgerFilter, creditLedger]);
 
   useEffect(() => {
     const modelsInDetail = usageDetailItems
@@ -5089,7 +5133,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             {filteredLedger.length === 0 ? (
               <p className="text-sm text-slate-500 dark:text-slate-400">当前筛选条件下暂无积分流水。</p>
             ) : (
-              filteredLedger.map((item) => {
+              paginatedLedger.map((item) => {
                 const SOURCE_TYPE_LABELS: Record<string, string> = {
                   ai_usage: 'AI 功能消耗',
                   manual_adjustment: '人工充值',
@@ -5131,6 +5175,30 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               })
             )}
           </div>
+
+          {totalLedgerPages > 1 && (
+            <div className="flex items-center justify-between border-t border-sky-100/80 pt-3 text-sm dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setLedgerPage((page) => Math.max(1, page - 1))}
+                disabled={currentLedgerPage === 1}
+                className={workspaceSecondaryButtonClass}
+              >
+                上一页
+              </button>
+              <span className="text-slate-500 dark:text-slate-400">
+                第 {currentLedgerPage} / {totalLedgerPages} 页
+              </span>
+              <button
+                type="button"
+                onClick={() => setLedgerPage((page) => Math.min(totalLedgerPages, page + 1))}
+                disabled={currentLedgerPage === totalLedgerPages}
+                className={workspaceSecondaryButtonClass}
+              >
+                下一页
+              </button>
+            </div>
+          )}
         </div>
       </section>
     </div>
