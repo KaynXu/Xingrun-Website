@@ -108,6 +108,22 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload
 
+    def create_local_wechat_record(self, owner_id: int) -> dict:
+        class_id = lesson_manager.save_class("六年级 9 班", subject="数学", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner_id)
+        student = lesson_manager.create_student_for_class(class_id, "Alice")
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-local-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=class_id,
+            student_id=student["id"],
+        )
+        return lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/local-record.png",
+            parent_note="本地微信错题",
+        )
+
     @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_member_can_access_wrong_question_routes_with_class_scope(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
@@ -166,6 +182,25 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(forwarded_args.get("page"), "1")
         self.assertEqual(forwarded_args.get("pageSize"), "20")
         self.assertEqual(forwarded_args.get("empty"), "")
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_local_wechat_records_are_merged_into_workspace_list(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        record = self.create_local_wechat_record(owner_payload["user"]["id"])
+        fetch_wrong_question_records.return_value = {"items": [], "total": 0}
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()["items"][0]
+        self.assertEqual(item["id"], record["id"])
+        self.assertEqual(item["source"], "wechat_mp")
+        self.assertEqual(item["class_id"], record["class_id"])
+        self.assertEqual(item["student_id"], record["student_id"])
+        self.assertEqual(item["teacher_user_id"], record["teacher_user_id"])
 
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_list_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
@@ -465,6 +500,30 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         forwarded_args = fetch_wrong_question_record.call_args.args[1]
         self.assertEqual(forwarded_args.get("studentName"), "Alice")
         self.assertEqual(forwarded_args.get("subject"), "Math")
+
+    @patch("smart_wrong_questions.fetch_wrong_question_record")
+    @patch("smart_wrong_questions.save_wrong_question_review")
+    def test_local_wechat_records_support_detail_and_review(self, save_wrong_question_review, fetch_wrong_question_record):
+        owner_payload = self.login_owner()
+        record = self.create_local_wechat_record(owner_payload["user"]["id"])
+
+        detail = self.client.get(
+            f"/api/wrong-questions/{record['id']}",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        review = self.client.put(
+            f"/api/wrong-questions/{record['id']}/review",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={"teacher_comment": "下节课复讲", "status": "reviewed"},
+        )
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.get_json()["id"], record["id"])
+        self.assertEqual(review.status_code, 200)
+        self.assertEqual(review.get_json()["record"]["status"], "reviewed")
+        self.assertEqual(review.get_json()["record"]["teacher_comment"], "下节课复讲")
+        fetch_wrong_question_record.assert_not_called()
+        save_wrong_question_review.assert_not_called()
 
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_detail_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):

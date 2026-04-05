@@ -94,6 +94,7 @@ from lesson_manager import (
     list_organizations,
     list_organization_requests,
     list_students_for_class,
+    list_wechat_wrong_question_submissions,
     list_registration_requests_for_actor,
     list_users_for_actor,
     join_organization_by_invite_code,
@@ -108,6 +109,8 @@ from lesson_manager import (
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
+    get_wechat_wrong_question_submission,
+    save_wechat_wrong_question_review,
     update_user_display_name_for_actor,
     update_class,
     update_consultation,
@@ -2008,8 +2011,11 @@ def api_wrong_questions_list():
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
-    scoped_items = _filter_wrong_question_items_for_user(user, payload.get("items"))
+    local_items = list_wechat_wrong_question_submissions()
+    merged_items = [*local_items, *payload.get("items", [])]
+    scoped_items = _filter_wrong_question_items_for_user(user, merged_items)
     payload["items"] = scoped_items
+    payload["total"] = len(scoped_items)
     if user.get("role") == "member":
         payload["summary"] = _summarize_wrong_question_records(scoped_items)
     return jsonify(payload)
@@ -2038,6 +2044,11 @@ def api_wrong_question_detail(record_id):
     user, error = _require_auth()
     if error:
         return error
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if local_record:
+        if not _can_access_wrong_question_record(user, local_record):
+            return jsonify({"error": "not found"}), 404
+        return jsonify(local_record)
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
@@ -2053,6 +2064,14 @@ def api_wrong_question_review_save(record_id):
     user, error = _require_auth()
     if error:
         return error
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if local_record:
+        if not _can_access_wrong_question_record(user, local_record):
+            return jsonify({"error": "not found"}), 404
+        saved_record = save_wechat_wrong_question_review(record_id, request.json or {})
+        if not saved_record:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"ok": True, "record": saved_record})
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
         if not _can_access_wrong_question_record(user, record):

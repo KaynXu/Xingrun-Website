@@ -1219,6 +1219,7 @@ def init_db():
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
             image_url                 TEXT NOT NULL,
             parent_note               TEXT NOT NULL DEFAULT '',
+            teacher_comment           TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
@@ -3010,6 +3011,94 @@ def create_wechat_wrong_question_submission(*, binding_id: int, image_url: str, 
             (record_id,),
         ).fetchone()
     return dict(created) if created else {}
+
+
+def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> Optional[dict]:
+    if not row:
+        return None
+
+    payload = dict(row)
+    payload["class_display_name"] = row["class_display_name"]
+    payload["class_name_snapshot"] = row["class_display_name"]
+    payload["student_name"] = row["student_name"]
+    payload["teacher_display_name"] = row["teacher_display_name"]
+    payload["teacher_name_snapshot"] = row["teacher_display_name"]
+    payload["mapping_status"] = "mapped"
+    payload["analysis"] = {}
+    return payload
+
+
+def _fetch_wechat_wrong_question_submission_row_by_id(
+    conn: sqlite3.Connection,
+    record_id: str,
+) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT
+            wqs.*,
+            c.name AS class_display_name,
+            s.name AS student_name,
+            u.display_name AS teacher_display_name
+        FROM wrong_question_submissions wqs
+        JOIN classes c ON c.id = wqs.class_id
+        JOIN students s ON s.id = wqs.student_id
+        JOIN users u ON u.id = wqs.teacher_user_id
+        WHERE wqs.id=?
+        """,
+        (record_id,),
+    ).fetchone()
+
+
+def list_wechat_wrong_question_submissions() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """
+        ).fetchall()
+    return [
+        item
+        for item in (
+            _serialize_wechat_wrong_question_submission_row(row)
+            for row in rows
+        )
+        if item is not None
+    ]
+
+
+def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(row)
+
+
+def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:
+    teacher_comment = str(payload.get("teacher_comment") or "").strip()
+    status = str(payload.get("status") or "").strip() or "pending"
+
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET teacher_comment=?, status=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (teacher_comment, status, record_id),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
 
 
 def _create_member_from_invite_row(
