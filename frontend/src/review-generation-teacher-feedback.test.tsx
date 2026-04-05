@@ -116,6 +116,6 @@ test('review generation source wires teacher feedback loading, autosave, and cop
   assert.match(appSource, /await loadFeedbackWorkspace\(createdLesson\.id, classId\);/);
   assert.match(appSource, /const timer = window\.setTimeout\(\(\) => \{\s*void saveFeedbackWorkspace\(\);\s*\}, 2500\);/);
   assert.match(appSource, /await saveFeedbackWorkspace\(\);\s*await navigator\.clipboard\.writeText\(feedbackText\);/);
-  assert.match(appSource, /isContinuingFeedback \? \(/);
+  assert.match(appSource, /!\s*isContinuingFeedback && \(/);
   assert.match(appSource, /<TeacherFeedbackWorkspace[\s\S]*onGenerate=\{handleGenerateFeedbackDraft\}[\s\S]*onCopyAll=\{handleCopyAllFeedback\}/);
 });

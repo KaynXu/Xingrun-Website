@@ -47,7 +47,7 @@ export function TeacherFeedbackWorkspace({
   onGenerate,
   onCopyAll,
 }: TeacherFeedbackWorkspaceProps) {
-  const showStudentPanel = false;
+  const showStudentPanel = true;
   const [templateLabelDraft, setTemplateLabelDraft] = useState('');
   const [templateGuidanceDraft, setTemplateGuidanceDraft] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
