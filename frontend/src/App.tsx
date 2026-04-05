@@ -4587,6 +4587,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [usageDetailLoading, setUsageDetailLoading] = useState(false);
   const [usageDetailError, setUsageDetailError] = useState('');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const canSeeSensitiveUsageMeta = currentUser.role === 'super_owner';
 
   const loadSelectedUsageDetail = useCallback(async (userId: number) => {
     setUsageDetailLoading(true);
@@ -4871,22 +4872,34 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         ? (SOURCE_RECORD_TYPE_LABELS[item.source_record_type] ?? item.source_record_type)
                         : '未知';
                       const providerLabel = item.provider || 'AI';
+                      const tokenCostPer1k = (item.total_tokens ?? 0) > 0
+                        ? ((item.credit_cost_final * 1000) / (item.total_tokens ?? 0)).toFixed(2)
+                        : null;
                       return (
                         <div key={item.id} className={`${workspaceSoftCardClass} space-y-3 p-4`}>
                           <div className="flex items-start justify-between gap-4">
                             <div>
                               <p className="font-medium text-slate-900 dark:text-white">{featureLabel}</p>
-                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                {providerLabel}{item.model ? ` · ${item.model}` : ''} · 请求编号 {formatRequestId(item.request_id)}
-                              </p>
+                              {canSeeSensitiveUsageMeta && (
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  {providerLabel}{item.model ? ` · ${item.model}` : ''} · 请求编号 {formatRequestId(item.request_id)}
+                                </p>
+                              )}
                             </div>
                             <p className="text-sm font-semibold text-rose-600 dark:text-rose-300">-{item.credit_cost_final}</p>
                           </div>
                           <div className="grid gap-3 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-3">
-                            <p>来源：{sourceTypeLabel} #{item.source_record_id ?? '-'}</p>
+                            {canSeeSensitiveUsageMeta ? (
+                              <p>来源：{sourceTypeLabel} #{item.source_record_id ?? '-'}</p>
+                            ) : (
+                              <p>来源：{sourceTypeLabel}</p>
+                            )}
                             <p>Tokens：{item.total_tokens ?? 0}（输入 {item.input_tokens ?? 0} / 输出 {item.output_tokens ?? 0}）</p>
                             <p>时间：{new Date(item.created_at).toLocaleString('zh-CN')}</p>
                           </div>
+                          {tokenCostPer1k && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">本次折算：每 1k Tokens 约 {tokenCostPer1k} 积分</p>
+                          )}
                         </div>
                       );
                     })}
