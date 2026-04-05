@@ -1779,6 +1779,47 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(forbidden_class_response.status_code, 403)
         self.assertEqual(allowed_class_response.status_code, 201)
 
+    def test_feedback_endpoints_are_removed(self):
+        owner_token = self.login_as_kayn()
+        lesson_id = lesson_manager.save_lesson(
+            "2026-04-05",
+            "Math",
+            "Grade 8",
+            "Feedback Removal",
+            "summary",
+            "weak",
+            {"questions": []},
+            "",
+            0,
+        )
+
+        get_response = self.client.get(
+            f"/api/lessons/{lesson_id}/feedback",
+            headers=self.auth_headers(owner_token),
+        )
+        put_response = self.client.put(
+            f"/api/lessons/{lesson_id}/feedback",
+            headers=self.auth_headers(owner_token),
+            json={
+                "merged_text": "removed",
+                "student_index": [],
+                "students": [],
+                "custom_templates": [],
+            },
+        )
+        draft_response = self.client.post(
+            f"/api/lessons/{lesson_id}/feedback/draft",
+            headers=self.auth_headers(owner_token),
+            json={
+                "students": [],
+                "custom_templates": [],
+            },
+        )
+
+        self.assertEqual(get_response.status_code, 404)
+        self.assertEqual(put_response.status_code, 404)
+        self.assertEqual(draft_response.status_code, 404)
+
     def test_owner_can_create_lesson_for_org_visible_class(self):
         owner_token, _ = self.create_approved_organization_with_invite(
             organization_name="Lesson Org",

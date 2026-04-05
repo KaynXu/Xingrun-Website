@@ -1173,16 +1173,6 @@ def init_db():
             UNIQUE(class_id, student_id)
         );
 
-        CREATE TABLE IF NOT EXISTS lesson_feedbacks (
-            lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
-            class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
-            merged_text         TEXT DEFAULT '',
-            student_index_json  TEXT DEFAULT '[]',
-            editor_state_json   TEXT DEFAULT '{}',
-            created_at          TEXT DEFAULT (datetime('now','localtime')),
-            updated_at          TEXT DEFAULT (datetime('now','localtime'))
-        );
-
         CREATE TABLE IF NOT EXISTS organization_credit_accounts (
             organization_id INTEGER PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
             credit_balance INTEGER NOT NULL DEFAULT 0,
@@ -1256,20 +1246,7 @@ def init_db():
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
 
-        feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_feedbacks)").fetchall()]
-        if feedback_cols:
-            if "class_id" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
-            if "created_at" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-            if "updated_at" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        conn.execute("DROP TABLE IF EXISTS lesson_feedbacks")
         _migrate_legacy_organization_scope(conn)
         _bootstrap_account_state(conn)
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
@@ -2145,126 +2122,6 @@ def remove_student_from_class(class_id: int, student_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def save_lesson_feedback(
-    lesson_id: int,
-    class_id: int,
-    merged_text: str,
-    student_index: list,
-    editor_state: dict,
-) -> dict:
-    with get_conn() as conn:
-        lesson_row = conn.execute(
-            "SELECT id, class_id FROM lessons WHERE id=?",
-            (lesson_id,),
-        ).fetchone()
-        if not lesson_row:
-            raise LookupError("lesson not found")
-        lesson_class_id = lesson_row["class_id"]
-        conn.execute(
-            """
-            INSERT INTO lesson_feedbacks
-                (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
-            ON CONFLICT(lesson_id) DO UPDATE SET
-                class_id=excluded.class_id,
-                merged_text=excluded.merged_text,
-                student_index_json=excluded.student_index_json,
-                editor_state_json=excluded.editor_state_json,
-                updated_at=datetime('now','localtime')
-            """,
-            (
-                lesson_id,
-                lesson_class_id if lesson_class_id else None,
-                merged_text or "",
-                json.dumps(student_index or [], ensure_ascii=False),
-                json.dumps(editor_state or {}, ensure_ascii=False),
-            ),
-        )
-        row = conn.execute(
-            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
-            (lesson_id,),
-        ).fetchone()
-    feedback = dict(row)
-    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
-    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
-    return feedback
-
-
-def get_lesson_feedback(lesson_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
-            (lesson_id,),
-        ).fetchone()
-    if not row:
-        return None
-    feedback = dict(row)
-    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
-    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
-    return feedback
-
-
-def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
-    lesson = get_lesson(lesson_id)
-    if not lesson:
-        raise LookupError("lesson not found")
-    saved_feedback = get_lesson_feedback(lesson_id) or {}
-    class_id = lesson.get("class_id")
-
-    roster = list_students_for_class(class_id) if class_id else []
-    roster_by_id = {student["id"]: student for student in roster}
-    saved_editor_state = saved_feedback.get("editor_state") or {}
-    saved_students = saved_editor_state.get("students")
-    if not isinstance(saved_students, list):
-        saved_students = []
-    saved_by_student_id = {
-        item.get("student_id"): item
-        for item in saved_students
-        if isinstance(item, dict) and item.get("student_id") is not None
-    }
-
-    hydrated_students = []
-    for student in roster:
-        saved_student_state = saved_by_student_id.get(student["id"], {})
-        hydrated_students.append(
-            {
-                "student_id": student["id"],
-                "name": student["name"],
-                "selected_template_id": saved_student_state.get("selected_template_id", "") or "",
-                "remark": saved_student_state.get("remark", "") or "",
-            }
-        )
-
-    custom_templates = saved_editor_state.get("custom_templates")
-    if not isinstance(custom_templates, list):
-        custom_templates = []
-    saved_student_index = saved_feedback.get("student_index")
-    if not isinstance(saved_student_index, list):
-        saved_student_index = []
-    filtered_student_index = []
-    for item in saved_student_index:
-        if not isinstance(item, dict):
-            continue
-        student_id = item.get("student_id")
-        if student_id in roster_by_id:
-            filtered_student_index.append(
-                {
-                    "student_id": student_id,
-                    "name": roster_by_id[student_id]["name"],
-                }
-            )
-
-    return {
-        "lesson_id": lesson_id,
-        "class_id": class_id,
-        "merged_text": saved_feedback.get("merged_text", "") or "",
-        "student_index": filtered_student_index,
-        "students": hydrated_students,
-        "custom_templates": custom_templates,
-        "updated_at": saved_feedback.get("updated_at"),
-    }
-
-
 def get_class_teacher_user_id(class_id: int) -> Optional[int]:
     with get_conn() as conn:
         row = conn.execute(
@@ -2805,14 +2662,9 @@ def delete_organization(org_id: int) -> None:
             "DELETE FROM questions WHERE lesson_id IN (SELECT id FROM lessons WHERE organization_id=?)",
             (org_id,),
         )
-        # 2. lesson_feedbacks (via lessons) — has ON DELETE CASCADE but delete explicitly for safety
-        conn.execute(
-            "DELETE FROM lesson_feedbacks WHERE lesson_id IN (SELECT id FROM lessons WHERE organization_id=?)",
-            (org_id,),
-        )
-        # 3. lessons
+        # 2. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
-        # 4. user_classes and class_students (via classes)
+        # 3. user_classes and class_students (via classes)
         conn.execute(
             "DELETE FROM user_classes WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
             (org_id,),
@@ -2821,37 +2673,37 @@ def delete_organization(org_id: int) -> None:
             "DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
             (org_id,),
         )
-        # 5. classes
+        # 4. classes
         conn.execute("DELETE FROM classes WHERE organization_id=?", (org_id,))
-        # 6. consultations
+        # 5. consultations
         conn.execute("DELETE FROM consultations WHERE organization_id=?", (org_id,))
-        # 7. registration_requests
+        # 6. registration_requests
         conn.execute("DELETE FROM registration_requests WHERE organization_id=?", (org_id,))
-        # 8. organization_invites
+        # 7. organization_invites
         conn.execute("DELETE FROM organization_invites WHERE organization_id=?", (org_id,))
-        # 9. auth_sessions (via users)
+        # 8. auth_sessions (via users)
         conn.execute(
             "DELETE FROM auth_sessions WHERE user_id IN (SELECT id FROM users WHERE organization_id=?)",
             (org_id,),
         )
-        # 10. user_classes (via users)
+        # 9. user_classes (via users)
         conn.execute(
             "DELETE FROM user_classes WHERE user_id IN (SELECT id FROM users WHERE organization_id=?)",
             (org_id,),
         )
-        # 11. ai_usage_ledger (via users, ON DELETE CASCADE but explicit for safety)
+        # 10. ai_usage_ledger (via users, ON DELETE CASCADE but explicit for safety)
         conn.execute("DELETE FROM ai_usage_ledger WHERE organization_id=?", (org_id,))
-        # 12. credit ledger and accounts (ON DELETE CASCADE but explicit)
+        # 11. credit ledger and accounts (ON DELETE CASCADE but explicit)
         conn.execute("DELETE FROM organization_credit_ledger WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM organization_credit_accounts WHERE organization_id=?", (org_id,))
-        # 13. nullify xhs_order_redemptions references (nullable FK, no cascade)
+        # 12. nullify xhs_order_redemptions references (nullable FK, no cascade)
         conn.execute(
             "UPDATE xhs_order_redemptions SET redeemed_organization_id=NULL WHERE redeemed_organization_id=?",
             (org_id,),
         )
-        # 14. users
+        # 13. users
         conn.execute("DELETE FROM users WHERE organization_id=?", (org_id,))
-        # 15. organization
+        # 14. organization
         conn.execute("DELETE FROM organizations WHERE id=?", (org_id,))
 
 
