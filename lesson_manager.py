@@ -1817,21 +1817,24 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
     ).fetchone()
     owner_hash = configured_hash or (owner["password_hash"] if owner else "") or hash_password("xingrun2026")
     if owner:
+        # Preserve display_name if the admin has customised it; only reset to default when it still equals the old default.
+        kept_display_name = owner["display_name"] if owner["display_name"] else OWNER_DISPLAY_NAME
         conn.execute(
             """
             UPDATE users
-            SET username=?, password_hash=?, display_name=?, role=?, status='active', organization_id=?
+            SET username=?, password_hash=?, role=?, status='active', organization_id=?
             WHERE id=?
             """,
-            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, SUPER_OWNER_ROLE, org["id"], owner["id"]),
+            (OWNER_USERNAME, owner_hash, SUPER_OWNER_ROLE, org["id"], owner["id"]),
         )
     else:
+        kept_display_name = OWNER_DISPLAY_NAME
         conn.execute(
             """
             INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
             VALUES (?, ?, ?, ?, 'active', ?)
             """,
-            (OWNER_USERNAME, owner_hash, OWNER_DISPLAY_NAME, SUPER_OWNER_ROLE, org["id"]),
+            (OWNER_USERNAME, owner_hash, kept_display_name, SUPER_OWNER_ROLE, org["id"]),
         )
 
 
