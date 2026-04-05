@@ -62,6 +62,7 @@ from lesson_manager import (
     create_auth_session,
     create_consultation,
     create_registration_request,
+    delete_user_for_actor,
     delete_class as db_delete_class,
     delete_consultation,
     delete_lesson as db_delete_lesson,
@@ -2124,6 +2125,18 @@ def api_admin_user_profile_update(user_id):
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True, "user": updated_user})
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+def api_admin_user_delete(user_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    try:
+        delete_user_for_actor(user, user_id)
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True})
 
 
 @app.route("/api/wrong-questions", methods=["GET"])

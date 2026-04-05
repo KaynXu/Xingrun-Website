@@ -2568,6 +2568,32 @@ def update_user_display_name_for_actor(actor_user: dict, target_user_id: int, di
     return _public_user_dict(updated)
 
 
+def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
+    with get_conn() as conn:
+        target_row = _fetch_user_row_by_id(conn, target_user_id)
+        if not target_row:
+            raise LookupError("user not found")
+        target_user = _public_user_dict(target_row)
+        if not actor_can_manage_user(actor_user, target_user):
+            raise LookupError("user not found")
+
+        class_rows = conn.execute(
+            "SELECT class_id FROM user_classes WHERE user_id=?",
+            (target_user_id,),
+        ).fetchall()
+        affected_class_ids = [row["class_id"] for row in class_rows]
+
+        conn.execute("UPDATE registration_requests SET reviewed_by=NULL WHERE reviewed_by=?", (target_user_id,))
+        conn.execute("UPDATE organization_requests SET reviewed_by=NULL WHERE reviewed_by=?", (target_user_id,))
+        conn.execute("UPDATE organization_invites SET created_by=NULL WHERE created_by=?", (target_user_id,))
+        conn.execute("UPDATE organization_credit_ledger SET operator_user_id=NULL WHERE operator_user_id=?", (target_user_id,))
+        conn.execute("UPDATE xhs_order_redemptions SET redeemed_by_user_id=NULL WHERE redeemed_by_user_id=?", (target_user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (target_user_id,))
+
+        if affected_class_ids:
+            _sync_class_teacher_metadata(conn, affected_class_ids)
+
+
 def update_user_role(user_id: int, role: str):
     if role not in {OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
         raise ValueError("role must be owner, admin or member")

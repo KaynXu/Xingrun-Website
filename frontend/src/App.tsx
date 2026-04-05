@@ -3759,6 +3759,8 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [editingDisplayNameUserId, setEditingDisplayNameUserId] = useState<number | null>(null);
   const [pendingDisplayName, setPendingDisplayName] = useState('');
   const [displayNameSavingUserId, setDisplayNameSavingUserId] = useState<number | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<number | null>(null);
   const [organizationRequests, setOrganizationRequests] = useState<OrganizationRequestItem[]>([]);
   const [organizationRequestsLoading, setOrganizationRequestsLoading] = useState(currentUser.role === 'super_owner');
   const [organizationRequestsError, setOrganizationRequestsError] = useState('');
@@ -4016,6 +4018,29 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
       setUsersError(err instanceof Error ? err.message : '成员姓名更新失败');
     } finally {
       setDisplayNameSavingUserId(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    setDeletingUserId(userId);
+    setUsersError('');
+    try {
+      await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+      setUsers((current) => current.filter((user) => user.id !== userId));
+      setBindingSummaryByUserId((current) => {
+        const next = { ...current };
+        delete next[userId];
+        return next;
+      });
+      if (editingDisplayNameUserId === userId) {
+        setEditingDisplayNameUserId(null);
+        setPendingDisplayName('');
+      }
+      setConfirmDeleteUserId(null);
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : '成员删除失败');
+    } finally {
+      setDeletingUserId(null);
     }
   };
 
@@ -4402,6 +4427,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                 const busy = roleSavingUserId === user.id;
                 const displayNameBusy = displayNameSavingUserId === user.id;
                 const editingName = editingDisplayNameUserId === user.id;
+                const deleting = deletingUserId === user.id;
                 const bindingSummary = bindingSummaryByUserId[user.id];
                 const responsibleClasses = bindingSummary?.responsible_classes ?? [];
                 const bindingStatus = bindingSummary?.mapping_summary.status ?? 'incomplete';
@@ -4411,6 +4437,9 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                   + (bindingSummary?.mapping_summary.unmapped_count ?? 0)
                   + (bindingSummary?.mapping_summary.ambiguous_count ?? 0);
                 const roleFixed = user.role === 'super_owner' || (user.role === 'owner' && !canManageOwnerRole(currentUser.role));
+                const canDeleteUser = user.role !== 'super_owner'
+                  && user.id !== currentUser.id
+                  && (canManageOwnerRole(currentUser.role) || user.role !== 'owner');
                 const roleActionLabel = user.role === 'owner'
                   ? '降为管理员'
                   : user.role === 'admin'
@@ -4502,6 +4531,37 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                           >
                             编辑姓名
                           </button>
+                        )}
+                        {canDeleteUser && (
+                          confirmDeleteUserId === user.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteUser(user.id)}
+                                disabled={deleting || busy || displayNameBusy}
+                                className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300"
+                              >
+                                {deleting ? '删除中...' : '确认删除'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteUserId(null)}
+                                disabled={deleting}
+                                className={workspaceSecondaryButtonClass}
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteUserId(user.id)}
+                              disabled={busy || displayNameBusy}
+                              className="rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                            >
+                              删除账号
+                            </button>
+                          )
                         )}
                         {roleFixed ? (
                           <span className="text-sm text-slate-500 dark:text-slate-400">

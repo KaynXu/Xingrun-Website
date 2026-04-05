@@ -715,6 +715,76 @@ class AccountFlowTestCase(unittest.TestCase):
         beta_member = next(item for item in beta_users.get_json() if item["id"] == beta_member_id)
         self.assertEqual(beta_member["name"], "Beta Member")
 
+    def test_owner_can_delete_member_in_own_organization(self):
+        owner_token, invite = self.create_approved_organization_with_invite(
+            organization_name="Alpha School",
+            owner_username="alpha_owner",
+            owner_display_name="Alpha Owner",
+            owner_password="ownerpass123",
+        )
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite["invite_code"],
+                "username": "alpha_member",
+                "display_name": "Alpha Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        member_id = join.get_json()["user"]["id"]
+
+        delete_response = self.client.delete(
+            f"/api/admin/users/{member_id}",
+            headers=self.auth_headers(owner_token),
+        )
+        self.assertEqual(delete_response.status_code, 200)
+
+        users = self.client.get("/api/admin/users", headers=self.auth_headers(owner_token))
+        self.assertEqual(users.status_code, 200)
+        self.assertFalse(any(item["id"] == member_id for item in users.get_json()))
+
+        deleted_login = self.client.post(
+            "/api/login",
+            json={"username": "alpha_member", "password": "memberpass123"},
+        )
+        self.assertEqual(deleted_login.status_code, 401)
+
+    def test_owner_cannot_delete_member_in_other_organization(self):
+        alpha_owner_token, _ = self.create_approved_organization_with_invite(
+            organization_name="Alpha School",
+            owner_username="alpha_owner",
+            owner_display_name="Alpha Owner",
+            owner_password="ownerpass123",
+        )
+        beta_owner_token, beta_invite = self.create_approved_organization_with_invite(
+            organization_name="Beta School",
+            owner_username="beta_owner",
+            owner_display_name="Beta Owner",
+            owner_password="ownerpass123",
+        )
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": beta_invite["invite_code"],
+                "username": "beta_member",
+                "display_name": "Beta Member",
+                "password": "memberpass123",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        beta_member_id = join.get_json()["user"]["id"]
+
+        forbidden = self.client.delete(
+            f"/api/admin/users/{beta_member_id}",
+            headers=self.auth_headers(alpha_owner_token),
+        )
+        self.assertEqual(forbidden.status_code, 404)
+
+        beta_users = self.client.get("/api/admin/users", headers=self.auth_headers(beta_owner_token))
+        self.assertEqual(beta_users.status_code, 200)
+        self.assertTrue(any(item["id"] == beta_member_id for item in beta_users.get_json()))
+
     def test_members_can_join_by_invite_code_and_old_invites_fail_after_reset(self):
         owner_login = self.client.post(
             "/api/login",
