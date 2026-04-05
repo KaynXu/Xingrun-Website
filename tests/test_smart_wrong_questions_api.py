@@ -108,7 +108,8 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload
 
-    def test_member_cannot_access_wrong_question_routes(self):
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_member_can_access_wrong_question_routes_with_class_scope(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
         member_payload = self.approve_user(
             owner_token=owner_payload["token"],
@@ -116,13 +117,26 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             display_name="Member Wrong Question",
             password="member123",
         )
+        member_id = member_payload["user"]["id"]
+        class_id = lesson_manager.save_class("六年级 7 班", subject="数学", grade="六年级")
+        lesson_manager.set_user_class_ids(member_id, [class_id])
+        fetch_wrong_question_records.return_value = {
+            "items": [
+                {"id": "record-visible", "class_id": class_id, "student_name": "Alice"},
+                {"id": "record-hidden", "class_id": class_id + 1, "student_name": "Bob"},
+            ],
+            "total": 2,
+        }
 
         response = self.client.get(
             "/api/wrong-questions",
             headers=self.auth_headers(member_payload["token"]),
         )
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()["error"], "无权限")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual([item["id"] for item in payload["items"]], ["record-visible"])
+        self.assertEqual(payload["summary"]["total_count"], 1)
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_staff_can_list_wrong_question_records(self, fetch_wrong_question_records):
@@ -194,7 +208,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         item = response.get_json()["items"][0]
         self.assertEqual(item["teacher_user_id"], owner_id)
-        self.assertEqual(item["teacher_display_name"], "Kayn")
+        self.assertEqual(item["teacher_display_name"], owner_payload["user"]["display_name"])
         self.assertEqual(item["teacher_name_snapshot"], "Kayn 老师")
         self.assertEqual(item["class_id"], class_id)
         self.assertEqual(item["class_display_name"], "六年级 1 班")
@@ -262,7 +276,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         second_item = second_response.get_json()["items"][0]
         self.assertEqual(second_item["mapping_status"], "mapped")
         self.assertEqual(second_item["teacher_user_id"], owner_id)
-        self.assertEqual(second_item["teacher_display_name"], "Kayn")
+        self.assertEqual(second_item["teacher_display_name"], owner_payload["user"]["display_name"])
         self.assertEqual(second_item["class_id"], class_id)
         self.assertEqual(second_item["class_display_name"], "六年级 3 班")
 
@@ -323,7 +337,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         first_item = first_response.get_json()["items"][0]
         self.assertEqual(first_item["mapping_status"], "mapped")
         self.assertEqual(first_item["teacher_user_id"], owner_id)
-        self.assertEqual(first_item["teacher_display_name"], "Kayn")
+        self.assertEqual(first_item["teacher_display_name"], owner_payload["user"]["display_name"])
         self.assertEqual(first_item["class_id"], class_id)
         self.assertEqual(first_item["class_display_name"], "六年级 6 班")
 
@@ -489,7 +503,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["teacher_user_id"], owner_id)
-        self.assertEqual(payload["teacher_display_name"], "Kayn")
+        self.assertEqual(payload["teacher_display_name"], owner_payload["user"]["display_name"])
         self.assertEqual(payload["teacher_name_snapshot"], "Kayn 老师")
         self.assertEqual(payload["class_id"], class_id)
         self.assertEqual(payload["class_display_name"], "六年级 2 班")
@@ -527,9 +541,11 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(len(payload["items"]), 1)
         self.assertEqual(payload["items"][0]["id"], "record-r1")
 
+    @patch("smart_wrong_questions.fetch_wrong_question_record")
     @patch("smart_wrong_questions.save_wrong_question_review")
-    def test_staff_can_save_wrong_question_review(self, save_wrong_question_review):
+    def test_staff_can_save_wrong_question_review(self, save_wrong_question_review, fetch_wrong_question_record):
         owner_payload = self.login_owner()
+        fetch_wrong_question_record.return_value = {"id": "record-42", "teacher_user_id": owner_payload["user"]["id"]}
         save_wrong_question_review.return_value = {
             "ok": True,
             "record": {"id": "record-42", "teacher_comment": "需要重做"},
@@ -569,9 +585,11 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json(), {"error": "智能错题服务尚未配置"})
 
+    @patch("smart_wrong_questions.fetch_wrong_question_record")
     @patch("smart_wrong_questions.save_wrong_question_review")
-    def test_review_route_translates_downstream_proxy_errors(self, save_wrong_question_review):
+    def test_review_route_translates_downstream_proxy_errors(self, save_wrong_question_review, fetch_wrong_question_record):
         owner_payload = self.login_owner()
+        fetch_wrong_question_record.return_value = {"id": "record-42", "teacher_user_id": owner_payload["user"]["id"]}
         save_wrong_question_review.side_effect = smart_wrong_questions.WrongQuestionProxyError(
             "下游服务不可用: timeout",
             502,
