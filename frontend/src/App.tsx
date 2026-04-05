@@ -4463,7 +4463,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                             {getRoleLabel(user.role)}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.org}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.org} · <span className="font-mono">{user.username}</span></p>
                       </div>
                       <ChevronDown
                         size={16}
