@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 import re
 import importlib.util
@@ -680,6 +682,42 @@ PORTABLE_SYMBOL_REPLACEMENTS = (
     ("→", "->"),
 )
 
+LATEX_INLINE_PATTERN = re.compile(r"(?<!\\)\$(.+?)(?<!\\)\$")
+LATEX_PAREN_PATTERN = re.compile(r"\\\((.+?)\\\)")
+LATEX_BRACKET_PATTERN = re.compile(r"\\\[(.+?)\\\]")
+LATEX_COMMAND_REPLACEMENTS = (
+    (r"\geq", "≥"),
+    (r"\ge", "≥"),
+    (r"\leq", "≤"),
+    (r"\le", "≤"),
+    (r"\neq", "≠"),
+    (r"\times", "×"),
+    (r"\cdot", "·"),
+    (r"\pm", "±"),
+    (r"\div", "÷"),
+    (r"\left", ""),
+    (r"\right", ""),
+)
+SUPERSCRIPT_TRANSLATION = str.maketrans({
+    "0": "⁰",
+    "1": "¹",
+    "2": "²",
+    "3": "³",
+    "4": "⁴",
+    "5": "⁵",
+    "6": "⁶",
+    "7": "⁷",
+    "8": "⁸",
+    "9": "⁹",
+    "+": "⁺",
+    "-": "⁻",
+    "=": "⁼",
+    "(": "⁽",
+    ")": "⁾",
+    "n": "ⁿ",
+    "i": "ⁱ",
+})
+
 
 class TrackingCanvas(Canvas):
     def __init__(self, *args, char_space=0, **kwargs):
@@ -691,6 +729,52 @@ class TrackingCanvas(Canvas):
         if self._char_space:
             text_object.setCharSpace(self._char_space)
         return text_object
+
+
+def _format_latex_math_segment(text):
+    normalized = text
+    for source, target in LATEX_COMMAND_REPLACEMENTS:
+        normalized = normalized.replace(source, target)
+
+    normalized = re.sub(
+        r"\\frac\{([^{}]+)\}\{([^{}]+)\}",
+        lambda match: f"{match.group(1)}/{match.group(2)}",
+        normalized,
+    )
+    normalized = re.sub(
+        r"\\sqrt\{([^{}]+)\}",
+        lambda match: f"√({match.group(1)})",
+        normalized,
+    )
+    normalized = re.sub(
+        r"\^\{([^{}]+)\}",
+        lambda match: match.group(1).translate(SUPERSCRIPT_TRANSLATION),
+        normalized,
+    )
+    normalized = re.sub(
+        r"\^([0-9n()+\-=i])",
+        lambda match: match.group(1).translate(SUPERSCRIPT_TRANSLATION),
+        normalized,
+    )
+    normalized = normalized.replace("{", "").replace("}", "")
+    normalized = re.sub(r"\s*([≥≤≠=<>])\s*", r"\1", normalized)
+    return normalized.strip()
+
+
+def _normalize_inline_latex(value):
+    normalized = LATEX_INLINE_PATTERN.sub(
+        lambda match: _format_latex_math_segment(match.group(1)),
+        value,
+    )
+    normalized = LATEX_PAREN_PATTERN.sub(
+        lambda match: _format_latex_math_segment(match.group(1)),
+        normalized,
+    )
+    normalized = LATEX_BRACKET_PATTERN.sub(
+        lambda match: _format_latex_math_segment(match.group(1)),
+        normalized,
+    )
+    return normalized
 
 
 def build_timestamped_output_path(output_dir, filename):
@@ -734,7 +818,7 @@ def normalize_portable_text(value):
     if not isinstance(value, str):
         return value
 
-    normalized = value
+    normalized = _normalize_inline_latex(value)
     normalized = re.sub(r"[👩👨]\u200d?🏫\s*老师追问[:：]?\s*", "老师追问：", normalized)
     normalized = re.sub(r"[👩👨]\u200d?🏫\s*老师问[:：]?\s*", "老师问：", normalized)
     normalized = re.sub(r"[👩👨]\u200d?🏫\s*", "老师", normalized)
