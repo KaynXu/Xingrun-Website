@@ -47,26 +47,26 @@ test('review generation source defaults to history documents and expands the sha
   assert.match(reviewGenerationBlock, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
   assert.match(reviewGenerationBlock, /新建复习文档/);
   assert.match(reviewGenerationBlock, /生成复习文档/);
-  assert.match(reviewGenerationBlock, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} onContinueFeedback=\{handleStartEditingFeedback\} \/>/);
+  assert.match(reviewGenerationBlock, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} \/>/);
 });
 
-test('review generation source keeps the shared composer open after successful generation so feedback editing can continue inline', () => {
+test('review generation source keeps the shared composer open after successful generation and refreshes history', () => {
   const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
 
-  assert.match(reviewGenerationBlock, /const \[selectedLessonForFeedback, setSelectedLessonForFeedback\] = useState<Lesson \| null>\(null\);/);
-  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(\) => \{\s*setSelectedLessonForFeedback\(null\);\s*setComposerOpen\(true\);\s*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
+  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(\) => \{\s*setComposerOpen\(true\);\s*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
   assert.doesNotMatch(reviewGenerationBlock, /setComposerOpen\(false\);\s*onSuccess\(\);/);
   assert.doesNotMatch(reviewGenerationBlock, /setActivePage\('library'\)/);
 });
 
-test('review generation source lets history rows reopen the shared composer for continuing teacher feedback', () => {
+test('review generation source removes continue-edit-feedback entry points from composer and history actions', () => {
   const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
   const historyBlock = requireMatch(/const ReviewDocumentHistory = \(\{[\s\S]*?\n};/);
 
-  assert.match(reviewGenerationBlock, /const handleStartEditingFeedback = \(lesson: Lesson\) => \{\s*setSelectedLessonForFeedback\(lesson\);\s*setComposerOpen\(true\);\s*\};/);
-  assert.match(reviewGenerationBlock, /selectedLessonForFeedback \? '继续编辑课后反馈' : '生成复习文档'/);
-  assert.match(historyBlock, /title=\{lesson\.class_id \? '继续编辑反馈' : '未关联班级，暂无法编辑反馈'\}/);
-  assert.match(historyBlock, /onClick=\{\(\) => onContinueFeedback\?\.\(lesson\)\}/);
+  assert.doesNotMatch(reviewGenerationBlock, /selectedLessonForFeedback/);
+  assert.doesNotMatch(reviewGenerationBlock, /继续编辑课后反馈/);
+  assert.doesNotMatch(historyBlock, /onContinueFeedback/);
+  assert.doesNotMatch(historyBlock, /继续编辑反馈/);
+  assert.doesNotMatch(historyBlock, /<Pencil size=\{16\} \/>/);
 });
 
 test('review generation source renders history as paginated cards with explicit generation time', () => {
@@ -86,7 +86,7 @@ test('review generation source renders history as paginated cards with explicit 
 });
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?initialLesson\?: Lesson \| null;[\s\S]*?\n};/);
+  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
   const subjectComboboxBlock = requireMatch(/const SubjectCombobox = \([\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
@@ -95,17 +95,18 @@ test('lesson input source keeps subject class and date controls in a fluid grid 
   assert.doesNotMatch(subjectComboboxBlock, /sm:w-32/);
 });
 
-test('review generation source requires class selection before generation and carries currentUser plus initialLesson into LessonInput', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?initialLesson\?: Lesson \| null;[\s\S]*?\n};/);
+test('review generation source requires class selection before generation and carries currentUser into LessonInput', () => {
+  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
   const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
-  assert.match(reviewGenerationBlock, /<LessonInput[\s\S]*onSuccess=\{handleFormSuccess\}[\s\S]*currentUser=\{currentUser\}[\s\S]*initialLesson=\{selectedLessonForFeedback\}[\s\S]*\/>/);
+  assert.match(reviewGenerationBlock, /<LessonInput[\s\S]*onSuccess=\{handleFormSuccess\}[\s\S]*currentUser=\{currentUser\}[\s\S]*\/>/);
+  assert.doesNotMatch(reviewGenerationBlock, /initialLesson=\{/);
   assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
 });
 
 test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?initialLesson\?: Lesson \| null;[\s\S]*?\n};/);
+  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(lessonInputBlock, /\}, \[currentUser\.id, currentUser\.role\]\);/);

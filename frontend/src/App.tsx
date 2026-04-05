@@ -42,20 +42,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
-import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
-import {
-  buildTeacherFeedbackSavePayload,
-  createClassStudent,
-  defaultTeacherFeedbackTemplates,
-  deleteClassStudent,
-  generateLessonFeedbackDraft,
-  listClassStudents,
-  loadLessonFeedback,
-  mergeRosterWithFeedbackDraft,
-  saveLessonFeedback,
-  type TeacherFeedbackStudentDraft,
-  type TeacherFeedbackTemplate,
-} from './reviewGenerationTeacherFeedback';
 
 // --- Types ---
 
@@ -1728,11 +1714,9 @@ const SubjectCombobox = ({
 const LessonInput = ({
   onSuccess,
   currentUser,
-  initialLesson = null,
 }: {
   onSuccess: () => void;
   currentUser: CurrentUser;
-  initialLesson?: Lesson | null;
 }) => {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
@@ -1748,23 +1732,6 @@ const LessonInput = ({
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeLessonId, setActiveLessonId] = useState<number | null>(null);
-  const [feedbackStudents, setFeedbackStudents] = useState<TeacherFeedbackStudentDraft[]>([]);
-  const [feedbackTemplates, setFeedbackTemplates] = useState<TeacherFeedbackTemplate[]>(defaultTeacherFeedbackTemplates);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [isLoadingFeedbackStudents, setIsLoadingFeedbackStudents] = useState(false);
-  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
-  const [isSavingFeedback, setIsSavingFeedback] = useState(false);
-  const [feedbackStatusMessage, setFeedbackStatusMessage] = useState('先生成复习文档，再完善课后反馈。');
-  const isContinuingFeedback = initialLesson !== null;
-
-  const resetFeedbackWorkspace = useCallback(() => {
-    setActiveLessonId(null);
-    setFeedbackStudents([]);
-    setFeedbackTemplates(defaultTeacherFeedbackTemplates);
-    setFeedbackText('');
-    setFeedbackStatusMessage('先生成复习文档，再完善课后反馈。');
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1801,98 +1768,14 @@ const LessonInput = ({
       return;
     }
     setClassId(null);
-    resetFeedbackWorkspace();
-  }, [classId, classes, classesLoading, resetFeedbackWorkspace]);
+  }, [classId, classes, classesLoading]);
 
   const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
-
-  const loadFeedbackWorkspace = useCallback(async (lessonId: number, targetClassId: number) => {
-    setIsLoadingFeedbackStudents(true);
-    try {
-      const [rosterResp, feedbackDoc] = await Promise.all([
-        listClassStudents(targetClassId),
-        loadLessonFeedback(lessonId),
-      ]);
-      const mergedStudents = mergeRosterWithFeedbackDraft({
-        roster: rosterResp.students,
-        savedStudents: feedbackDoc.students,
-      });
-      const customTemplates = feedbackDoc.custom_templates.map((template) => ({ ...template, isCustom: true }));
-      setFeedbackStudents(mergedStudents);
-      setFeedbackTemplates([...defaultTeacherFeedbackTemplates, ...customTemplates]);
-      setFeedbackText(feedbackDoc.merged_text ?? '');
-      setFeedbackStatusMessage(`已同步 ${mergedStudents.length} 名学生，课后反馈可继续编辑。`);
-    } catch (e) {
-      setFeedbackStatusMessage(e instanceof Error ? e.message : '课后反馈同步失败，请重试。');
-    } finally {
-      setIsLoadingFeedbackStudents(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!initialLesson) {
-      return;
-    }
-
-    setError('');
-    setInputType('text');
-    setFile(null);
-    setSubject(initialLesson.subject ?? '');
-    setTopic(initialLesson.topic ?? '');
-    setLessonDate(initialLesson.date || new Date().toISOString().split('T')[0]);
-    setWeakPoints(initialLesson.weak_points ?? '');
-    setSummaryText(initialLesson.summary ?? '');
-    setClassId(initialLesson.class_id ?? null);
-    setActiveLessonId(initialLesson.id);
-
-    if (!initialLesson.class_id) {
-      setFeedbackStudents([]);
-      setFeedbackTemplates(defaultTeacherFeedbackTemplates);
-      setFeedbackText('');
-      setFeedbackStatusMessage('这条历史记录还没有关联班级，暂时无法继续编辑课后反馈。');
-      return;
-    }
-
-    setFeedbackStatusMessage('正在同步历史课后反馈...');
-    void loadFeedbackWorkspace(initialLesson.id, initialLesson.class_id);
-  }, [initialLesson, loadFeedbackWorkspace]);
-
-  const saveFeedbackWorkspace = useCallback(async () => {
-    if (!activeLessonId) {
-      return;
-    }
-    setIsSavingFeedback(true);
-    try {
-      const payload = buildTeacherFeedbackSavePayload({
-        mergedText: feedbackText,
-        students: feedbackStudents,
-        customTemplates: feedbackTemplates,
-      });
-      const saved = await saveLessonFeedback(activeLessonId, payload);
-      setFeedbackText(saved.merged_text ?? '');
-      setFeedbackStatusMessage('课后反馈已保存。');
-    } catch (e) {
-      setFeedbackStatusMessage(e instanceof Error ? e.message : '课后反馈保存失败，请重试。');
-    } finally {
-      setIsSavingFeedback(false);
-    }
-  }, [activeLessonId, feedbackText, feedbackStudents, feedbackTemplates]);
-
-  useEffect(() => {
-    if (!activeLessonId) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void saveFeedbackWorkspace();
-    }, 2500);
-    return () => window.clearTimeout(timer);
-  }, [activeLessonId, feedbackText, feedbackStudents, feedbackTemplates, saveFeedbackWorkspace]);
 
   const handleClassChange = (id: number) => {
     setClassId(id);
     const cls = classes.find((c) => c.id === id);
     if (cls?.subject) setSubject(cls.subject);
-    resetFeedbackWorkspace();
   };
 
   const handleAnalyze = async () => {
@@ -1934,9 +1817,8 @@ const LessonInput = ({
 
     setIsLoading(true);
     try {
-      let createdLesson: { id: number };
       if (inputType === 'text') {
-        createdLesson = await apiFetch<{ id: number }>('/api/lessons', {
+        await apiFetch<{ id: number }>('/api/lessons', {
           method: 'POST',
           body: JSON.stringify({
             subject,
@@ -1956,95 +1838,13 @@ const LessonInput = ({
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         if (file) formData.append('upload_file', file);
-        createdLesson = await apiFetch<{ id: number }>('/api/lessons', { method: 'POST', body: formData });
-      }
-      setActiveLessonId(createdLesson.id);
-      if (classId) {
-        await loadFeedbackWorkspace(createdLesson.id, classId);
+        await apiFetch<{ id: number }>('/api/lessons', { method: 'POST', body: formData });
       }
       onSuccess();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '提交失败，请重试');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleSelectTemplate = (studentId: number, templateId: string) => {
-    setFeedbackStudents((prev) =>
-      prev.map((item) => (item.studentId === studentId ? { ...item, selectedTemplateId: templateId } : item)),
-    );
-  };
-
-  const handleRemarkChange = (studentId: number, remark: string) => {
-    setFeedbackStudents((prev) => prev.map((item) => (item.studentId === studentId ? { ...item, remark } : item)));
-  };
-
-  const handleAddTemplate = (draft: { label: string; guidance: string }) => {
-    const label = draft.label.trim();
-    const guidance = draft.guidance.trim();
-    if (!label || !guidance) {
-      return;
-    }
-    const templateId = `custom-${Date.now()}`;
-    setFeedbackTemplates((prev) => [...prev, { id: templateId, label, guidance, isCustom: true }]);
-  };
-
-  const handleAddStudent = async (name: string) => {
-    if (!classId || !activeLessonId) {
-      return;
-    }
-    try {
-      await createClassStudent(classId, name);
-      await loadFeedbackWorkspace(activeLessonId, classId);
-    } catch (e) {
-      setFeedbackStatusMessage(e instanceof Error ? e.message : '新增学生失败，请重试。');
-    }
-  };
-
-  const handleRemoveStudent = async (studentId: number) => {
-    if (!classId || !activeLessonId) {
-      return;
-    }
-    try {
-      await deleteClassStudent(classId, studentId);
-      await loadFeedbackWorkspace(activeLessonId, classId);
-    } catch (e) {
-      setFeedbackStatusMessage(e instanceof Error ? e.message : '移出学生失败，请重试。');
-    }
-  };
-
-  const handleGenerateFeedbackDraft = async () => {
-    if (!activeLessonId) {
-      return;
-    }
-    setIsGeneratingFeedback(true);
-    try {
-      const payload = buildTeacherFeedbackSavePayload({
-        mergedText: feedbackText,
-        students: feedbackStudents,
-        customTemplates: feedbackTemplates,
-      });
-      const draft = await generateLessonFeedbackDraft(activeLessonId, {
-        students: payload.students,
-        custom_templates: payload.custom_templates,
-      });
-      setFeedbackText(draft.merged_text ?? '');
-      setFeedbackStatusMessage(`已生成 ${draft.students_included} 名学生反馈，跳过 ${draft.students_skipped} 名。`);
-    } catch (e) {
-      setFeedbackStatusMessage(e instanceof Error ? e.message : '生成课后反馈失败，请重试。');
-    } finally {
-      setIsGeneratingFeedback(false);
-    }
-  };
-
-  const handleCopyAllFeedback = async () => {
-    try {
-      await saveFeedbackWorkspace();
-      await navigator.clipboard.writeText(feedbackText);
-      setFeedbackStatusMessage('课后反馈已复制到剪贴板。');
-    } catch (e) {
-      setFeedbackStatusMessage(e instanceof Error ? e.message : '复制失败，请重试。');
     }
   };
 
@@ -2204,35 +2004,12 @@ const LessonInput = ({
                     />
                   </div>
                 )}
-                {!isContinuingFeedback && (
-                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
-                    生成复习文档
-                    <ArrowRight size={20} />
-                  </button>
-                )}
+                <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
+                  生成复习文档
+                  <ArrowRight size={20} />
+                </button>
               </div>
             </div>
-
-            {activeLessonId && classId ? (
-              <TeacherFeedbackWorkspace
-                students={feedbackStudents}
-                templates={feedbackTemplates}
-                feedbackText={feedbackText}
-                generateLabel="生成课后反馈草稿"
-                isLoadingStudents={isLoadingFeedbackStudents}
-                isGenerating={isGeneratingFeedback}
-                isSaving={isSavingFeedback}
-                statusMessage={feedbackStatusMessage}
-                onSelectTemplate={handleSelectTemplate}
-                onRemarkChange={handleRemarkChange}
-                onFeedbackTextChange={setFeedbackText}
-                onAddTemplate={handleAddTemplate}
-                onAddStudent={handleAddStudent}
-                onRemoveStudent={handleRemoveStudent}
-                onGenerate={handleGenerateFeedbackDraft}
-                onCopyAll={handleCopyAllFeedback}
-              />
-            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
@@ -2242,10 +2019,8 @@ const LessonInput = ({
 
 const ReviewDocumentHistory = ({
   refreshToken = 0,
-  onContinueFeedback,
 }: {
   refreshToken?: number;
-  onContinueFeedback?: (lesson: Lesson) => void;
 }) => {
   const REVIEW_HISTORY_PAGE_SIZE = 12;
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -2332,20 +2107,6 @@ const ReviewDocumentHistory = ({
                 <div className="mt-4 flex flex-wrap justify-end gap-1">
                   {lesson.pdf_path && (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => onContinueFeedback?.(lesson)}
-                        disabled={!lesson.class_id}
-                        className={cn(
-                          'flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all dark:bg-white/5 dark:text-slate-300',
-                          lesson.class_id
-                            ? 'hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-sky-300'
-                            : 'cursor-not-allowed opacity-40',
-                        )}
-                        title={lesson.class_id ? '继续编辑反馈' : '未关联班级，暂无法编辑反馈'}
-                      >
-                        <Pencil size={16} />
-                      </button>
                       <a
                         href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                         target="_blank"
@@ -2414,27 +2175,18 @@ const ReviewGenerationPage = ({
 }) => {
   const [composerOpen, setComposerOpen] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
-  const [selectedLessonForFeedback, setSelectedLessonForFeedback] = useState<Lesson | null>(null);
 
   const handleFormSuccess = () => {
-    setSelectedLessonForFeedback(null);
     setComposerOpen(true);
     setHistoryRefreshToken((current) => current + 1);
     onSuccess();
   };
 
   const handleToggleComposer = () => {
-    if (composerOpen && !selectedLessonForFeedback) {
+    if (composerOpen) {
       setComposerOpen(false);
       return;
     }
-
-    setSelectedLessonForFeedback(null);
-    setComposerOpen(true);
-  };
-
-  const handleStartEditingFeedback = (lesson: Lesson) => {
-    setSelectedLessonForFeedback(lesson);
     setComposerOpen(true);
   };
 
@@ -2454,26 +2206,17 @@ const ReviewGenerationPage = ({
       {composerOpen && (
         <div className={`${workspaceSoftCardClass} p-4 sm:p-6`}>
           <div className="mb-4">
-            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">
-              {selectedLessonForFeedback ? '继续编辑课后反馈' : '生成复习文档'}
-            </h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {selectedLessonForFeedback
-                ? '已载入历史复习记录，可按当前班级名单继续完善老师反馈。'
-                : '上传课堂内容并生成新的复习文档。'}
-            </p>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">上传课堂内容并生成新的复习文档。</p>
           </div>
-          <React.Fragment key={selectedLessonForFeedback ? `edit-${selectedLessonForFeedback.id}` : 'create'}>
-            <LessonInput
-              onSuccess={handleFormSuccess}
-              currentUser={currentUser}
-              initialLesson={selectedLessonForFeedback}
-            />
-          </React.Fragment>
+          <LessonInput
+            onSuccess={handleFormSuccess}
+            currentUser={currentUser}
+          />
         </div>
       )}
 
-      <ReviewDocumentHistory refreshToken={historyRefreshToken} onContinueFeedback={handleStartEditingFeedback} />
+      <ReviewDocumentHistory refreshToken={historyRefreshToken} />
     </div>
   );
 };
@@ -4856,14 +4599,12 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const FEATURE_KEY_LABELS: Record<string, string> = {
     lesson_plan_generate: '复习计划生成',
     consultation_ai_parse: '咨询记录解析',
-    teacher_feedback_draft: '教师反馈草稿',
     audio_transcription: '音频转录',
     monthly_plan_generate: '月度计划生成',
   };
   const SOURCE_RECORD_TYPE_LABELS: Record<string, string> = {
     lesson: '课程记录',
     consultation: '咨询记录',
-    teacher_feedback: '教师反馈',
     monthly_plan: '月度计划',
     draft: '草稿',
   };
@@ -5139,7 +4880,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   manual_adjustment: '人工充值',
                   xhs_order_redeem: '小红书订单兑换',
                   consultation_ai_parse: '咨询记录 AI 解析',
-                  teacher_feedback_draft: '教师反馈草稿',
                   lesson_plan_generate: '复习计划生成',
                   audio_transcription: '音频转录',
                   monthly_plan_generate: '月度计划生成',
@@ -5147,7 +4887,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 const AI_FEATURE_LABELS: Record<string, string> = {
                   lesson_plan_generate: '复习计划生成',
                   consultation_ai_parse: '咨询记录解析',
-                  teacher_feedback_draft: '教师反馈草稿',
                   audio_transcription: '音频转录',
                   monthly_plan_generate: '月度计划生成',
                 };
