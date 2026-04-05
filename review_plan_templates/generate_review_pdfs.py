@@ -682,9 +682,10 @@ PORTABLE_SYMBOL_REPLACEMENTS = (
     ("→", "->"),
 )
 
-LATEX_INLINE_PATTERN = re.compile(r"(?<!\\)\$(.+?)(?<!\\)\$")
-LATEX_PAREN_PATTERN = re.compile(r"\\\((.+?)\\\)")
-LATEX_BRACKET_PATTERN = re.compile(r"\\\[(.+?)\\\]")
+LATEX_BLOCK_DOLLAR_PATTERN = re.compile(r"(?<!\\)\$\$(.+?)(?<!\\)\$\$", re.DOTALL)
+LATEX_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(.+?)(?<!\\)\$(?!\$)")
+LATEX_PAREN_PATTERN = re.compile(r"\\{1,2}\((.+?)\\{1,2}\)")
+LATEX_BRACKET_PATTERN = re.compile(r"\\{1,2}\[(.+?)\\{1,2}\]", re.DOTALL)
 LATEX_COMMAND_REPLACEMENTS = (
     (r"\geq", "≥"),
     (r"\ge", "≥"),
@@ -732,7 +733,8 @@ class TrackingCanvas(Canvas):
 
 
 def _format_latex_math_segment(text):
-    normalized = text
+    # Some inputs may contain double-escaped latex commands from JSON/text transport.
+    normalized = text.replace("\\\\", "\\")
     for source, target in LATEX_COMMAND_REPLACEMENTS:
         normalized = normalized.replace(source, target)
 
@@ -756,15 +758,22 @@ def _format_latex_math_segment(text):
         lambda match: match.group(1).translate(SUPERSCRIPT_TRANSLATION),
         normalized,
     )
+    normalized = re.sub(r"\\([A-Za-z]+)", lambda match: match.group(1), normalized)
+    normalized = re.sub(r"\\([{}()\[\]])", r"\1", normalized)
+    normalized = normalized.replace("\\", "")
     normalized = normalized.replace("{", "").replace("}", "")
     normalized = re.sub(r"\s*([≥≤≠=<>])\s*", r"\1", normalized)
     return normalized.strip()
 
 
 def _normalize_inline_latex(value):
-    normalized = LATEX_INLINE_PATTERN.sub(
+    normalized = LATEX_BLOCK_DOLLAR_PATTERN.sub(
         lambda match: _format_latex_math_segment(match.group(1)),
         value,
+    )
+    normalized = LATEX_INLINE_PATTERN.sub(
+        lambda match: _format_latex_math_segment(match.group(1)),
+        normalized,
     )
     normalized = LATEX_PAREN_PATTERN.sub(
         lambda match: _format_latex_math_segment(match.group(1)),
