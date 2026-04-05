@@ -4670,6 +4670,24 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     void loadSelectedUsageDetail(item.user_id);
   };
 
+  const FEATURE_KEY_LABELS: Record<string, string> = {
+    lesson_plan_generate: '复习计划生成',
+    consultation_ai_parse: '咨询记录解析',
+    teacher_feedback_draft: '教师反馈草稿',
+    audio_transcription: '音频转录',
+    monthly_plan_generate: '月度计划生成',
+  };
+  const SOURCE_RECORD_TYPE_LABELS: Record<string, string> = {
+    lesson: '课程记录',
+    consultation: '咨询记录',
+    teacher_feedback: '教师反馈',
+    monthly_plan: '月度计划',
+    draft: '草稿',
+  };
+  const formatRequestId = (requestId: string) => (
+    requestId.length > 20 ? `${requestId.slice(0, 10)}...${requestId.slice(-8)}` : requestId
+  );
+
   const filteredLedger = creditLedger.filter((item) => ledgerFilter === 'all' || item.direction === ledgerFilter);
 
   return (
@@ -4847,24 +4865,31 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {usageDetailItems.map((item) => (
-                      <div key={item.id} className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="font-medium text-slate-900 dark:text-white">{item.feature_key}</p>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {item.provider || 'AI'}{item.model ? ` · ${item.model}` : ''} · 请求 {item.request_id}
-                            </p>
+                    {usageDetailItems.map((item) => {
+                      const featureLabel = FEATURE_KEY_LABELS[item.feature_key] ?? item.feature_key;
+                      const sourceTypeLabel = item.source_record_type
+                        ? (SOURCE_RECORD_TYPE_LABELS[item.source_record_type] ?? item.source_record_type)
+                        : '未知';
+                      const providerLabel = item.provider || 'AI';
+                      return (
+                        <div key={item.id} className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="font-medium text-slate-900 dark:text-white">{featureLabel}</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {providerLabel}{item.model ? ` · ${item.model}` : ''} · 请求编号 {formatRequestId(item.request_id)}
+                              </p>
+                            </div>
+                            <p className="text-sm font-semibold text-rose-600 dark:text-rose-300">-{item.credit_cost_final}</p>
                           </div>
-                          <p className="text-sm font-semibold text-rose-600 dark:text-rose-300">-{item.credit_cost_final}</p>
+                          <div className="grid gap-3 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-3">
+                            <p>来源：{sourceTypeLabel} #{item.source_record_id ?? '-'}</p>
+                            <p>Tokens：{item.total_tokens ?? 0}（输入 {item.input_tokens ?? 0} / 输出 {item.output_tokens ?? 0}）</p>
+                            <p>时间：{new Date(item.created_at).toLocaleString('zh-CN')}</p>
+                          </div>
                         </div>
-                        <div className="grid gap-3 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-3">
-                          <p>来源：{item.source_record_type || '未知'} #{item.source_record_id ?? '-'}</p>
-                          <p>Tokens：{item.total_tokens ?? 0}（入 {item.input_tokens ?? 0} / 出 {item.output_tokens ?? 0}）</p>
-                          <p>时间：{new Date(item.created_at).toLocaleString('zh-CN')}</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
