@@ -2595,8 +2595,8 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
 
 
 def update_user_role(user_id: int, role: str):
-    if role not in {OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
-        raise ValueError("role must be owner, admin or member")
+    if role not in {SUPER_OWNER_ROLE, OWNER_ROLE, ADMIN_ROLE, MEMBER_ROLE}:
+        raise ValueError("role must be super_owner, owner, admin or member")
     with get_conn() as conn:
         user_row = _fetch_user_row_by_id(conn, user_id)
         if not user_row:

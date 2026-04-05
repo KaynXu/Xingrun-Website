@@ -1047,6 +1047,91 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(member_after_promote.status_code, 200)
         self.assertEqual(member_after_promote.get_json()["role"], "admin")
 
+    def test_super_owner_can_assign_super_owner_role(self):
+        super_owner_token = self.login_as_kayn()
+        promoted_payload = self.approve_user(
+            owner_token=super_owner_token,
+            username="super_owner_candidate",
+            display_name="Super Owner Candidate",
+            password="ownerpass123",
+        )
+        promoted_user_id = promoted_payload["user"]["id"]
+
+        promote_super_owner = self.client.put(
+            f"/api/admin/users/{promoted_user_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "super_owner"},
+        )
+        self.assertEqual(promote_super_owner.status_code, 200)
+
+        promoted_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(promoted_payload["token"]),
+        )
+        self.assertEqual(promoted_me.status_code, 200)
+        self.assertEqual(promoted_me.get_json()["role"], "super_owner")
+
+    def test_role_downgrade_paths_work_for_owner_and_super_owner(self):
+        super_owner_token = self.login_as_kayn()
+
+        admin_payload = self.approve_user(
+            owner_token=super_owner_token,
+            username="downgrade_admin",
+            display_name="Downgrade Admin",
+            password="memberpass123",
+        )
+        admin_user_id = admin_payload["user"]["id"]
+
+        make_admin = self.client.put(
+            f"/api/admin/users/{admin_user_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(make_admin.status_code, 200)
+
+        owner_downgrade = self.client.put(
+            f"/api/admin/users/{admin_user_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "member"},
+        )
+        self.assertEqual(owner_downgrade.status_code, 200)
+
+        admin_after_downgrade = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(admin_payload["token"]),
+        )
+        self.assertEqual(admin_after_downgrade.status_code, 200)
+        self.assertEqual(admin_after_downgrade.get_json()["role"], "member")
+
+        owner_payload = self.approve_user(
+            owner_token=super_owner_token,
+            username="downgrade_owner",
+            display_name="Downgrade Owner",
+            password="ownerpass123",
+        )
+        owner_user_id = owner_payload["user"]["id"]
+
+        make_owner = self.client.put(
+            f"/api/admin/users/{owner_user_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "owner"},
+        )
+        self.assertEqual(make_owner.status_code, 200)
+
+        downgrade_owner_to_admin = self.client.put(
+            f"/api/admin/users/{owner_user_id}/role",
+            headers=self.auth_headers(super_owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(downgrade_owner_to_admin.status_code, 200)
+
+        owner_after_downgrade = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        self.assertEqual(owner_after_downgrade.status_code, 200)
+        self.assertEqual(owner_after_downgrade.get_json()["role"], "admin")
+
     def test_staff_can_view_member_binding_summary(self):
         owner_login = self.client.post(
             "/api/login",

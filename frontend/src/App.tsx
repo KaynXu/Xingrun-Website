@@ -3945,25 +3945,9 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     }
   };
 
-  const handleRoleToggle = async (userId: number, currentRole: Role) => {
-    if (currentRole === 'super_owner') {
+  const handleRoleUpdate = async (userId: number, currentRole: Role, nextRole: Role) => {
+    if (currentRole === nextRole) {
       return;
-    }
-
-    let nextRole: Exclude<Role, 'super_owner'>;
-    if (canManageOwnerRole(currentUser.role)) {
-      if (currentRole === 'owner') {
-        nextRole = 'admin';
-      } else if (currentRole === 'admin') {
-        nextRole = 'owner';
-      } else {
-        nextRole = 'admin';
-      }
-    } else {
-      if (currentRole === 'owner') {
-        return;
-      }
-      nextRole = currentRole === 'admin' ? 'member' : 'admin';
     }
 
     setRoleSavingUserId(userId);
@@ -3981,6 +3965,25 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     } finally {
       setRoleSavingUserId(null);
     }
+  };
+
+  const getAssignableRoles = (targetUser: UserItem): Role[] => {
+    if (targetUser.id === currentUser.id) {
+      return [];
+    }
+    if (currentUser.role === 'super_owner') {
+      if (targetUser.role === 'super_owner') {
+        return [];
+      }
+      return ['super_owner', 'owner', 'admin', 'member'];
+    }
+    if (currentUser.role === 'owner') {
+      if (targetUser.role === 'admin' || targetUser.role === 'member') {
+        return ['admin', 'member'];
+      }
+      return [];
+    }
+    return [];
   };
 
   const handleStartDisplayNameEdit = (userId: number, currentName: string) => {
@@ -4436,15 +4439,11 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                 const unresolvedCount = (bindingSummary?.mapping_summary.needs_review_count ?? 0)
                   + (bindingSummary?.mapping_summary.unmapped_count ?? 0)
                   + (bindingSummary?.mapping_summary.ambiguous_count ?? 0);
-                const roleFixed = user.role === 'super_owner' || (user.role === 'owner' && !canManageOwnerRole(currentUser.role));
+                const assignableRoles = getAssignableRoles(user);
+                const roleFixed = assignableRoles.length === 0;
                 const canDeleteUser = user.role !== 'super_owner'
                   && user.id !== currentUser.id
                   && (canManageOwnerRole(currentUser.role) || user.role !== 'owner');
-                const roleActionLabel = user.role === 'owner'
-                  ? '降为管理员'
-                  : user.role === 'admin'
-                    ? (canManageOwnerRole(currentUser.role) ? '设为机构负责人' : '降为成员')
-                    : '设为管理员';
                 return (
                   <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -4565,17 +4564,26 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                         )}
                         {roleFixed ? (
                           <span className="text-sm text-slate-500 dark:text-slate-400">
-                            {user.role === 'super_owner' ? '超级管理员权限固定，不可调整' : '机构负责人权限仅可由超级管理员调整'}
+                            {user.id === currentUser.id
+                              ? '当前登录账号不可在此处调整权限'
+                              : user.role === 'super_owner'
+                                ? '超级管理员权限固定，不可调整'
+                                : '该成员权限不可调整'}
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleRoleToggle(user.id, user.role)}
-                            disabled={busy}
-                            className={workspaceSecondaryButtonClass}
-                          >
-                            {busy ? '保存中...' : roleActionLabel}
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {assignableRoles.map((nextRole) => (
+                              <button
+                                key={`${user.id}-${nextRole}`}
+                                type="button"
+                                onClick={() => void handleRoleUpdate(user.id, user.role, nextRole)}
+                                disabled={busy || user.role === nextRole}
+                                className={user.role === nextRole ? workspacePrimaryButtonClass : workspaceSecondaryButtonClass}
+                              >
+                                {busy && user.role !== nextRole ? '保存中...' : `设为${getRoleLabel(nextRole)}`}
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>

@@ -2048,9 +2048,9 @@ def api_admin_user_role_set(user_id):
         return error
     data = request.json or {}
     role = data.get("role")
-    if role not in ("owner", "admin", "member"):
-        return jsonify({"error": "role must be owner, admin or member"}), 400
-    if role == "owner" and user.get("role") != "super_owner":
+    if role not in ("super_owner", "owner", "admin", "member"):
+        return jsonify({"error": "role must be super_owner, owner, admin or member"}), 400
+    if role in ("super_owner", "owner") and user.get("role") != "super_owner":
         return jsonify({"error": "无权限"}), 403
     target_user = get_user_by_id(user_id)
     if not target_user:
