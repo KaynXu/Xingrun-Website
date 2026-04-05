@@ -1173,6 +1173,57 @@ def init_db():
             UNIQUE(class_id, student_id)
         );
 
+        CREATE TABLE IF NOT EXISTS class_invite_codes (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id     INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            class_id            INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            invite_code         TEXT NOT NULL UNIQUE,
+            status              TEXT NOT NULL DEFAULT 'active',
+            created_by_user_id  INTEGER REFERENCES users(id),
+            expires_at          TEXT,
+            revoked_at          TEXT,
+            created_at          TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS parent_wechat_accounts (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            openid                TEXT NOT NULL UNIQUE,
+            nickname_snapshot     TEXT NOT NULL DEFAULT '',
+            avatar_url_snapshot   TEXT NOT NULL DEFAULT '',
+            status                TEXT NOT NULL DEFAULT 'active',
+            created_at            TEXT DEFAULT (datetime('now','localtime')),
+            updated_at            TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS parent_student_bindings (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER NOT NULL REFERENCES students(id),
+            teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
+            status                    TEXT NOT NULL DEFAULT 'active',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(parent_wechat_account_id, class_id, student_id, status)
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_submissions (
+            id                        TEXT PRIMARY KEY,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            source                    TEXT NOT NULL DEFAULT 'wechat_mp',
+            parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            binding_id                INTEGER NOT NULL REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
+            class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER NOT NULL REFERENCES students(id),
+            teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
+            image_url                 TEXT NOT NULL,
+            parent_note               TEXT NOT NULL DEFAULT '',
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS organization_credit_accounts (
             organization_id INTEGER PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
             credit_balance INTEGER NOT NULL DEFAULT 0,
@@ -2731,6 +2782,234 @@ def get_organization_invite_by_token(invite_token: str):
     with get_conn() as conn:
         row = _fetch_active_organization_invite_by_token(conn, invite_token)
     return _public_invite_dict(row)
+
+
+def _get_class_invite_row(conn: sqlite3.Connection, class_id: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT *
+        FROM class_invite_codes
+        WHERE class_id=? AND status='active'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (class_id,),
+    ).fetchone()
+
+
+def get_or_create_active_class_invite(class_id: int, actor_user_id: int) -> dict:
+    with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT id, organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        invite_row = _get_class_invite_row(conn, class_id)
+        if invite_row:
+            return dict(invite_row)
+
+        invite_code = secrets.token_hex(3).upper()
+        conn.execute(
+            """
+            INSERT INTO class_invite_codes (
+                organization_id, class_id, invite_code, status, created_by_user_id
+            ) VALUES (?, ?, ?, 'active', ?)
+            """,
+            (class_row["organization_id"], class_id, invite_code, actor_user_id),
+        )
+        created = _get_class_invite_row(conn, class_id)
+    return dict(created) if created else {}
+
+
+def reset_class_invite(class_id: int, actor_user_id: int) -> dict:
+    with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT id, organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        conn.execute(
+            """
+            UPDATE class_invite_codes
+            SET status='revoked', revoked_at=datetime('now','localtime')
+            WHERE class_id=? AND status='active'
+            """,
+            (class_id,),
+        )
+        invite_code = secrets.token_hex(3).upper()
+        conn.execute(
+            """
+            INSERT INTO class_invite_codes (
+                organization_id, class_id, invite_code, status, created_by_user_id
+            ) VALUES (?, ?, ?, 'active', ?)
+            """,
+            (class_row["organization_id"], class_id, invite_code, actor_user_id),
+        )
+        created = _get_class_invite_row(conn, class_id)
+    return dict(created) if created else {}
+
+
+def upsert_parent_wechat_account(
+    *,
+    openid: str,
+    nickname_snapshot: str = "",
+    avatar_url_snapshot: str = "",
+) -> dict:
+    normalized_openid = (openid or "").strip()
+    if not normalized_openid:
+        raise ValueError("openid is required")
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT * FROM parent_wechat_accounts WHERE openid=?",
+            (normalized_openid,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE parent_wechat_accounts
+                SET nickname_snapshot=?, avatar_url_snapshot=?, updated_at=datetime('now','localtime')
+                WHERE id=?
+                """,
+                (nickname_snapshot.strip(), avatar_url_snapshot.strip(), existing["id"]),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM parent_wechat_accounts WHERE id=?",
+                (existing["id"],),
+            ).fetchone()
+            return dict(refreshed) if refreshed else {}
+
+        conn.execute(
+            """
+            INSERT INTO parent_wechat_accounts (
+                openid, nickname_snapshot, avatar_url_snapshot, status
+            ) VALUES (?, ?, ?, 'active')
+            """,
+            (normalized_openid, nickname_snapshot.strip(), avatar_url_snapshot.strip()),
+        )
+        created = conn.execute(
+            "SELECT * FROM parent_wechat_accounts WHERE openid=?",
+            (normalized_openid,),
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def bind_parent_to_student(*, parent_wechat_account_id: int, class_id: int, student_id: int) -> dict:
+    with get_conn() as conn:
+        account_row = conn.execute(
+            "SELECT id FROM parent_wechat_accounts WHERE id=?",
+            (parent_wechat_account_id,),
+        ).fetchone()
+        if not account_row:
+            raise LookupError("parent wechat account not found")
+
+        class_row = conn.execute(
+            "SELECT id, organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        student_row = conn.execute(
+            """
+            SELECT s.id
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            WHERE cs.class_id=? AND s.id=?
+            """,
+            (class_id, student_id),
+        ).fetchone()
+        if not student_row:
+            raise LookupError("student not found")
+
+        teacher_user_id = get_class_teacher_user_id(class_id)
+        if teacher_user_id is None:
+            raise ValueError("class teacher is required")
+
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE parent_wechat_account_id=? AND class_id=? AND student_id=? AND status='active'
+            LIMIT 1
+            """,
+            (parent_wechat_account_id, class_id, student_id),
+        ).fetchone()
+        if existing:
+            return dict(existing)
+
+        conn.execute(
+            """
+            INSERT INTO parent_student_bindings (
+                organization_id, parent_wechat_account_id, class_id, student_id, teacher_user_id, status
+            ) VALUES (?, ?, ?, ?, ?, 'active')
+            """,
+            (
+                class_row["organization_id"],
+                parent_wechat_account_id,
+                class_id,
+                student_id,
+                teacher_user_id,
+            ),
+        )
+        created = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE parent_wechat_account_id=? AND class_id=? AND student_id=? AND status='active'
+            LIMIT 1
+            """,
+            (parent_wechat_account_id, class_id, student_id),
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def create_wechat_wrong_question_submission(*, binding_id: int, image_url: str, parent_note: str = "") -> dict:
+    normalized_image_url = (image_url or "").strip()
+    if not normalized_image_url:
+        raise ValueError("image_url is required")
+
+    with get_conn() as conn:
+        binding_row = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE id=? AND status='active'
+            """,
+            (binding_id,),
+        ).fetchone()
+        if not binding_row:
+            raise LookupError("binding not found")
+
+        record_id = f"wechat-{secrets.token_hex(8)}"
+        conn.execute(
+            """
+            INSERT INTO wrong_question_submissions (
+                id, organization_id, source, parent_wechat_account_id, binding_id,
+                class_id, student_id, teacher_user_id, image_url, parent_note, status
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, 'pending')
+            """,
+            (
+                record_id,
+                binding_row["organization_id"],
+                binding_row["parent_wechat_account_id"],
+                binding_id,
+                binding_row["class_id"],
+                binding_row["student_id"],
+                binding_row["teacher_user_id"],
+                normalized_image_url,
+                (parent_note or "").strip(),
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_submissions WHERE id=?",
+            (record_id,),
+        ).fetchone()
+    return dict(created) if created else {}
 
 
 def _create_member_from_invite_row(
