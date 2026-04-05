@@ -244,6 +244,8 @@ interface UserItem {
   name: string;
   org: string;
   role: Role;
+  username?: string;
+  last_login?: string | null;
 }
 
 type MemberBindingSummaryStatus = 'healthy' | 'needs_review' | 'incomplete';
@@ -4463,7 +4465,15 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                             {getRoleLabel(user.role)}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.org} · <span className="font-mono">{user.username}</span></p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.org}</p>
+                        {currentUser.role === 'super_owner' && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            <span className="font-mono">{user.username}</span>
+                            {user.last_login
+                              ? <span className="ml-2 text-slate-400">上次登录 {user.last_login}</span>
+                              : <span className="ml-2 text-slate-300 dark:text-slate-600">未登录过</span>}
+                          </p>
+                        )}
                       </div>
                       <ChevronDown
                         size={16}

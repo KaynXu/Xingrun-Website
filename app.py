@@ -2008,7 +2008,14 @@ def api_admin_users():
     if error:
         return error
     users = list_users_for_actor(user)
-    return jsonify([{"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]} for u in users])
+    is_super = user.get("role") == "super_owner"
+    def _user_row(u):
+        row = {"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]}
+        if is_super:
+            row["username"] = u.get("username")
+            row["last_login"] = u.get("last_login")
+        return row
+    return jsonify([_user_row(u) for u in users])
 
 
 @app.route("/api/admin/member-binding-summary", methods=["GET"])

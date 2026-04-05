@@ -1272,6 +1272,9 @@ def init_db():
                 conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
         _migrate_legacy_organization_scope(conn)
         _bootstrap_account_state(conn)
+        user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "last_login" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
     print(f"数据库已初始化：{DB_PATH}")
 
 
@@ -1598,6 +1601,7 @@ def hash_password(password: str) -> str:
 def _public_user_dict(row):
     if not row:
         return None
+    keys = row.keys() if hasattr(row, 'keys') else []
     return {
         "id": row["id"],
         "username": row["username"],
@@ -1607,6 +1611,7 @@ def _public_user_dict(row):
         "organization_id": row["organization_id"],
         "organization_name": row["organization_name"],
         "created_at": row["created_at"],
+        "last_login": row["last_login"] if "last_login" in keys else None,
     }
 
 
@@ -2667,6 +2672,10 @@ def authenticate_user(username: str, password: str):
             return None, "账号未启用"
         if row["password_hash"] != hash_password(password):
             return None, "用户名或密码错误"
+        conn.execute(
+            "UPDATE users SET last_login = datetime('now','localtime') WHERE id = ?",
+            (row["id"],),
+        )
     return _public_user_dict(row), None
 
 
