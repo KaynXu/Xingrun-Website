@@ -1501,28 +1501,10 @@ const Header = ({
   );
 };
 
-const XiaojimaoLoading = ({ label = '小吉猫正在思考中...' }: { label?: string }) => (
+const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) => (
   <div className="flex flex-col items-center justify-center py-12 text-center">
-    <motion.div
-      animate={{
-        y: [0, -4, 0],
-      }}
-      transition={{
-        duration: 2.4,
-        repeat: Infinity,
-        ease: 'easeInOut',
-      }}
-      className="relative mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-sky-100"
-    >
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-500 shadow-[0_18px_36px_rgba(34,199,232,0.22)]">
-        <span className="text-white text-3xl">🐱</span>
-      </div>
-      <div className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[10px] font-bold text-sky-600 shadow-lg">
-        AI
-      </div>
-    </motion.div>
+    <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-sky-200 border-t-sky-500" />
     <p className="font-medium text-slate-700 dark:text-slate-200">{label}</p>
-    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">正在为您生成结构化复习资料</p>
   </div>
 );
 
@@ -2065,7 +2047,7 @@ const LessonInput = ({
             exit={{ opacity: 0 }}
             className={`${workspaceCardClass} flex min-h-[60vh] items-center justify-center p-8`}
           >
-            <XiaojimaoLoading label="小吉猫正在生成复习资料..." />
+            <WorkspaceLoading label="正在生成复习资料..." />
           </motion.div>
         ) : (
           <motion.div
@@ -4600,6 +4582,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [redeemLoading, setRedeemLoading] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState('');
   const [selectedUsageUser, setSelectedUsageUser] = useState<CreditMemberUsageItem | null>(null);
+  const selectedUsageUserIdRef = useRef<number | null>(null);
   const [usageDetailItems, setUsageDetailItems] = useState<CreditMemberUsageDetailItem[]>([]);
   const [usageDetailLoading, setUsageDetailLoading] = useState(false);
   const [usageDetailError, setUsageDetailError] = useState('');
@@ -4619,6 +4602,10 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   }, []);
 
+  useEffect(() => {
+    selectedUsageUserIdRef.current = selectedUsageUser?.user_id ?? null;
+  }, [selectedUsageUser]);
+
   const loadCredits = useCallback(async () => {
     setCreditLoading(true);
     setCreditError('');
@@ -4632,8 +4619,8 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       setCreditLedger(ledgerPayload.items);
       setCreditUsage(usagePayload.items);
 
-      if (selectedUsageUser) {
-        const refreshedSelectedUsageUser = usagePayload.items.find((item) => item.user_id === selectedUsageUser.user_id) ?? null;
+      if (selectedUsageUserIdRef.current !== null) {
+        const refreshedSelectedUsageUser = usagePayload.items.find((item) => item.user_id === selectedUsageUserIdRef.current) ?? null;
         setSelectedUsageUser(refreshedSelectedUsageUser);
         if (refreshedSelectedUsageUser) {
           await loadSelectedUsageDetail(refreshedSelectedUsageUser.user_id);
@@ -4647,7 +4634,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     } finally {
       setCreditLoading(false);
     }
-  }, [loadSelectedUsageDetail, selectedUsageUser]);
+  }, [loadSelectedUsageDetail]);
 
   useEffect(() => {
     void loadCredits();
@@ -4852,7 +4839,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
                 {usageDetailLoading ? (
                   <div className={`${workspaceSoftCardClass} p-5`}>
-                    <XiaojimaoLoading label="正在加载成员明细..." />
+                    <WorkspaceLoading label="正在加载成员明细..." />
                   </div>
                 ) : usageDetailItems.length === 0 ? (
                   <div className={`${workspaceSoftCardClass} p-5 text-sm text-slate-500 dark:text-slate-400`}>
@@ -7337,7 +7324,7 @@ export default function App() {
                   (calendarLoading ? (
                     <div className={`${workspacePageClass}`}>
                       <div className={`${workspaceCardClass} p-8`}>
-                        <XiaojimaoLoading label="正在整理课程日历..." />
+                        <WorkspaceLoading label="正在整理课程日历..." />
                       </div>
                     </div>
                   ) : (
