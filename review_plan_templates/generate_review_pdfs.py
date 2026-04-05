@@ -766,6 +766,12 @@ def _format_latex_math_segment(text):
     return normalized.strip()
 
 
+# Bare LaTeX math commands written outside any delimiter (e.g. \frac{a}{b} without $)
+_BARE_LATEX_PATTERN = re.compile(
+    r"(\\(?:frac|sqrt|vec|overrightarrow|overset|hat|bar)\s*\{[^{}]*\}(?:\s*\{[^{}]*\})?|\\(?:sin|cos|tan|cot|log|lg|ln|lim|max|min|alpha|beta|gamma|delta|theta|lambda|pi|sigma|omega|mu|nu|epsilon|phi|psi|chi|rho|tau|xi|zeta)(?![a-zA-Z]))"
+)
+
+
 def _normalize_inline_latex(value):
     normalized = LATEX_BLOCK_DOLLAR_PATTERN.sub(
         lambda match: _format_latex_math_segment(match.group(1)),
@@ -781,6 +787,14 @@ def _normalize_inline_latex(value):
     )
     normalized = LATEX_BRACKET_PATTERN.sub(
         lambda match: _format_latex_math_segment(match.group(1)),
+        normalized,
+    )
+    # Strip markdown bold/italic wrappers that may surround math or text
+    normalized = re.sub(r"\*\*(.+?)\*\*", r"\1", normalized)
+    normalized = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", normalized)
+    # Handle bare LaTeX commands that were never wrapped in delimiters
+    normalized = _BARE_LATEX_PATTERN.sub(
+        lambda match: _format_latex_math_segment(match.group(0)),
         normalized,
     )
     return normalized
