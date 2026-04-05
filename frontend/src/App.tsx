@@ -4905,20 +4905,46 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             {filteredLedger.length === 0 ? (
               <p className="text-sm text-slate-500 dark:text-slate-400">当前筛选条件下暂无积分流水。</p>
             ) : (
-              filteredLedger.map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-4 text-sm dark:border-white/10 dark:bg-white/5">
-                  <div>
-                    <p className="font-medium text-slate-900 dark:text-white">{item.source_type}</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {item.note || '无备注'} · 余额 {item.balance_after} · {new Date(item.created_at).toLocaleString('zh-CN')}
+              filteredLedger.map((item) => {
+                const SOURCE_TYPE_LABELS: Record<string, string> = {
+                  ai_usage: 'AI 功能消耗',
+                  manual_adjustment: '人工充值',
+                  xhs_order_redeem: '小红书订单兑换',
+                  consultation_ai_parse: '咨询记录 AI 解析',
+                  teacher_feedback_draft: '教师反馈草稿',
+                  lesson_plan_generate: '复习计划生成',
+                  audio_transcription: '音频转录',
+                  monthly_plan_generate: '月度计划生成',
+                };
+                const AI_FEATURE_LABELS: Record<string, string> = {
+                  lesson_plan_generate: '复习计划生成',
+                  consultation_ai_parse: '咨询记录解析',
+                  teacher_feedback_draft: '教师反馈草稿',
+                  audio_transcription: '音频转录',
+                  monthly_plan_generate: '月度计划生成',
+                };
+                const sourceLabel = SOURCE_TYPE_LABELS[item.source_type] ?? item.source_type;
+                const rawNote = item.note || '';
+                const isManualTopup = /^manual_topup/.test(rawNote);
+                const noteLabel = isManualTopup ? '人工充值' : (rawNote || undefined);
+                // For ai_usage entries the note field contains the feature key
+                const featureLabel = item.source_type === 'ai_usage' ? (AI_FEATURE_LABELS[rawNote] ?? rawNote) : undefined;
+                const displayTitle = featureLabel ?? sourceLabel;
+                const displayNote = featureLabel ? undefined : noteLabel;
+                return (
+                  <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-4 text-sm dark:border-white/10 dark:bg-white/5">
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">{displayTitle}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {[displayNote, `余额 ${item.balance_after}`, new Date(item.created_at).toLocaleString('zh-CN')].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                    <p className={item.direction === 'credit' ? 'font-semibold text-emerald-600 dark:text-emerald-300' : 'font-semibold text-rose-600 dark:text-rose-300'}>
+                      {item.direction === 'credit' ? '+' : '-'}{item.amount}
                     </p>
-                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">来源 ID：{item.source_id || '-'}</p>
                   </div>
-                  <p className={item.direction === 'credit' ? 'font-semibold text-emerald-600 dark:text-emerald-300' : 'font-semibold text-rose-600 dark:text-rose-300'}>
-                    {item.direction === 'credit' ? '+' : '-'}{item.amount}
-                  </p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
