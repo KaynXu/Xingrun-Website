@@ -56,6 +56,8 @@ from lesson_manager import (
     approve_organization_request,
     approve_registration_request,
     authenticate_user,
+    bind_parent_to_student,
+    create_wechat_wrong_question_submission,
     create_organization_request,
     create_student_for_class,
     create_auth_session,
@@ -72,6 +74,7 @@ from lesson_manager import (
     get_conn,
     get_consultation,
     get_current_user,
+    get_or_create_active_class_invite,
     get_lesson,
     get_lessons_by_week,
     get_or_create_active_organization_invite,
@@ -98,6 +101,7 @@ from lesson_manager import (
     normalize_consultation_batch_parse_result,
     reject_organization_request,
     reject_registration_request,
+    reset_class_invite,
     reset_organization_invite,
     remove_student_from_class,
     save_class,
@@ -109,6 +113,7 @@ from lesson_manager import (
     update_consultation,
     update_user_profile,
     update_user_role,
+    upsert_parent_wechat_account,
     week_label,
 )
 from ai_processor import parse_consultation_batch_text
@@ -1300,6 +1305,14 @@ def _require_super_owner():
     return user, None
 
 
+def _require_wechat_service():
+    expected = str(get_runtime_config().get("wechat_service_token", "")).strip()
+    provided = request.headers.get("X-Wechat-Service-Token", "").strip()
+    if not expected or provided != expected:
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    return {"service": "wechat"}, None
+
+
 def _organization_invite_response_payload(invite: dict) -> dict:
     join_path = f"/join/{invite['invite_token']}"
     base_url = request.url_root.rstrip("/")
@@ -1507,6 +1520,39 @@ def _get_json_object_payload():
     if not isinstance(data, dict):
         return None, (jsonify({"error": "request body must be a JSON object"}), 400)
     return data, None
+
+
+def _get_parent_wechat_account_by_openid(open_id: str):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM parent_wechat_accounts WHERE openid=?",
+            (open_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _get_active_class_invite_by_code(invite_code: str):
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM class_invite_codes
+            WHERE invite_code=? AND status='active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (invite_code,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _get_parent_student_binding(binding_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM parent_student_bindings WHERE id=? AND status='active'",
+            (binding_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
@@ -2222,6 +2268,30 @@ def api_class_get(class_id):
     return jsonify({**cls, "lessons": _serialize_lessons_for_response(lessons)})
 
 
+@app.route("/api/classes/<int:class_id>/invite", methods=["GET"])
+def api_class_invite_get(class_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    cls, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    invite = get_or_create_active_class_invite(cls["id"], user["id"])
+    return jsonify(invite)
+
+
+@app.route("/api/classes/<int:class_id>/invite/reset", methods=["POST"])
+def api_class_invite_reset(class_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    cls, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    invite = reset_class_invite(cls["id"], user["id"])
+    return jsonify(invite)
+
+
 @app.route("/api/classes/<int:class_id>/students", methods=["GET"])
 def api_class_students_list(class_id):
     user, error = _require_auth()
@@ -2290,6 +2360,137 @@ def api_class_teacher_set(class_id):
         status_code = 404 if message in {"class not found", "user not found"} else 400
         return jsonify({"error": message}), status_code
     return jsonify({"ok": True, "teacher_user_id": get_class_teacher_user_id(class_id)})
+
+
+@app.route("/api/wechat/login", methods=["POST"])
+def api_wechat_login():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = upsert_parent_wechat_account(
+        openid=open_id,
+        nickname_snapshot=(data.get("nickname_snapshot") or "").strip(),
+        avatar_url_snapshot=(data.get("avatar_url_snapshot") or "").strip(),
+    )
+    return jsonify({"account": account})
+
+
+@app.route("/api/wechat/bind-class", methods=["POST"])
+def api_wechat_bind_class():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    invite_code = (data.get("invite_code") or "").strip()
+    if not open_id or not invite_code:
+        return jsonify({"error": "open_id and invite_code are required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    invite = _get_active_class_invite_by_code(invite_code)
+    if not invite:
+        return jsonify({"error": "invite not found"}), 404
+
+    cls = get_class(invite["class_id"])
+    if not cls:
+        return jsonify({"error": "class not found"}), 404
+
+    teacher_user_id = get_class_teacher_user_id(cls["id"])
+    teacher = get_user_by_id(teacher_user_id) if teacher_user_id else None
+    return jsonify(
+        {
+            "account_id": account["id"],
+            "class_id": cls["id"],
+            "class_name": cls["name"],
+            "teacher_user_id": teacher_user_id,
+            "teacher_display_name": teacher.get("display_name") if teacher else "",
+            "students": list_students_for_class(cls["id"]),
+        }
+    )
+
+
+@app.route("/api/wechat/bind-student", methods=["POST"])
+def api_wechat_bind_student():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    class_id = int(data.get("class_id") or 0)
+    student_id = int(data.get("student_id") or 0)
+    if not open_id or not class_id or not student_id:
+        return jsonify({"error": "open_id, class_id and student_id are required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    try:
+        binding = bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=class_id,
+            student_id=student_id,
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"binding": binding})
+
+
+@app.route("/api/wechat/wrong-questions", methods=["POST"])
+def api_wechat_wrong_questions_create():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    binding_id = int(data.get("binding_id") or 0)
+    image_url = (data.get("image_url") or "").strip()
+    if not open_id or not binding_id or not image_url:
+        return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    binding = _get_parent_student_binding(binding_id)
+    if not binding or binding.get("parent_wechat_account_id") != account["id"]:
+        return jsonify({"error": "binding not found"}), 404
+
+    try:
+        record = create_wechat_wrong_question_submission(
+            binding_id=binding_id,
+            image_url=image_url,
+            parent_note=(data.get("parent_note") or "").strip(),
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"record": record}), 201
 
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
