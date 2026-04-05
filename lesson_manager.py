@@ -1881,22 +1881,22 @@ def list_lessons(month_str: str = "", class_id: int = 0) -> list:
     with get_conn() as conn:
         if class_id and month_str:
             rows = conn.execute(
-                "SELECT * FROM lessons WHERE class_id=? AND date LIKE ? ORDER BY date",
+                "SELECT * FROM lessons WHERE class_id=? AND date LIKE ? ORDER BY created_at DESC, id DESC",
                 (class_id, f"{month_str}%")
             ).fetchall()
         elif class_id:
             rows = conn.execute(
-                "SELECT * FROM lessons WHERE class_id=? ORDER BY date DESC",
+                "SELECT * FROM lessons WHERE class_id=? ORDER BY created_at DESC, id DESC",
                 (class_id,)
             ).fetchall()
         elif month_str:
             rows = conn.execute(
-                "SELECT * FROM lessons WHERE date LIKE ? ORDER BY date",
+                "SELECT * FROM lessons WHERE date LIKE ? ORDER BY created_at DESC, id DESC",
                 (f"{month_str}%",)
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM lessons ORDER BY date DESC"
+                "SELECT * FROM lessons ORDER BY created_at DESC, id DESC"
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -2450,7 +2450,7 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
         if month_str:
             query_sql += " AND date LIKE ?"
             params.append(f"{month_str}%")
-        query_sql += " ORDER BY date DESC, id DESC"
+        query_sql += " ORDER BY created_at DESC, id DESC"
         rows = conn.execute(query_sql, params).fetchall()
     return [dict(row) for row in rows]
 

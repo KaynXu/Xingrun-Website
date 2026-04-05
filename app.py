@@ -2678,20 +2678,26 @@ def api_lesson_create():
     except Exception as e:
         return jsonify({"error": f"AI 生成失败：{e}"}), 500
     pdf_path = ""
+    pdf_warning = None
     try:
         from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
         safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
         pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
         pdf_path = str(PDF_DIR / pdf_name)
         generate_single_lesson_pdf(plan, pdf_path)
-    except Exception:
-        pass
+    except Exception as e:
+        app.logger.exception("PDF generation failed for lesson %s/%s: %s", lesson_date, topic, e)
+        pdf_path = ""
+        pdf_warning = f"PDF 生成失败：{e}"
     lesson_id = save_lesson(
         date_str=lesson_date, subject=subject, grade=grade,
         topic=topic, summary=raw_text, weak_points=weak_points,
         plan=plan, pdf_path=pdf_path, class_id=class_id,
     )
-    return jsonify({"id": lesson_id, "success": True}), 201
+    response: dict = {"id": lesson_id, "success": True}
+    if pdf_warning:
+        response["warning"] = pdf_warning
+    return jsonify(response), 201
 
 
 @app.route("/api/lessons/<int:lesson_id>/feedback/draft", methods=["POST"])
