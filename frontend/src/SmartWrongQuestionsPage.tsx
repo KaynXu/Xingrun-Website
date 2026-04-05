@@ -625,8 +625,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           <p className="font-semibold">老师与班级归属待确认</p>
                           <p className="mt-1">
                             {hasStaffScope
-                              ? '当前老师或班级仍在沿用原始信息，请先在账号审批中完成成员绑定与负责班级确认。'
-                              : '当前老师或班级仍在沿用原始信息，请联系机构负责人，在账号审批中完成成员绑定与负责班级确认。'}
+                              ? '当前老师或班级仍在沿用原始信息。请先在班级管理中确认负责班级；如果老师名称与系统成员姓名不一致，需要补充老师别名映射。'
+                              : '当前老师或班级仍在沿用原始信息，请联系机构负责人在班级管理中确认负责班级，并补充老师别名映射。'}
                           </p>
                         </div>
                       </div>

@@ -762,7 +762,7 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
         assert.match(pageText, /老师与班级归属待确认/);
-      assert.match(pageText, /请先在账号审批中完成成员绑定与负责班级确认/);
+      assert.match(pageText, /请先在班级管理中确认负责班级；如果老师名称与系统成员姓名不一致，需要补充老师别名映射/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /班级：六年级 1 班/);
