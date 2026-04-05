@@ -199,9 +199,10 @@ test('class management source adds a specific grade filter and reuses the shared
 
   assert.match(classManagementBlock, /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
   assert.match(appSource, sharedGradeOptionsPattern);
-  assert.match(appSource, /const gradeFilterOptions\s*=\s*\['全部'\s*,\s*\.\.\.gradeOptions\s*\];/);
+  assert.match(appSource, /const gradeFilterOptions\s*=\s*\['全部'\s*,\s*\.\.\.gradeOptions\s*,\s*'未绑定'\s*\];/);
   assert.match(classManagementBlock, /const filteredClasses = classes\.filter\(\(item\) => \{/);
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '全部'\) \{\s*return true;\s*\}/);
+  assert.match(classManagementBlock, /if \(selectedGradeFilter === '未绑定'\) \{\s*return item\.teacher_user_id == null;\s*\}/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'grade', e\.target\.value\)\}/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{formState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(item\.id, 'grade', e\.target\.value\)\}/);
   assert.match(appSource, /gradeOptions\.includes\(\s*[^)]*grade[^)]*\)/);

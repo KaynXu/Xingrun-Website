@@ -37,6 +37,7 @@ import {
   Moon,
   Sun,
   X,
+  ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
@@ -301,7 +302,7 @@ const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
 ];
 
 const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
-const gradeFilterOptions = ['全部', ...gradeOptions];
+const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
 
 function getRoleLabel(role: Role): string {
   if (role === 'super_owner') return '超级管理员';
@@ -3758,6 +3759,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<number | null>(null);
   const [pendingRoleByUserId, setPendingRoleByUserId] = useState<Record<number, Role>>({});
+  const [collapsedUserIds, setCollapsedUserIds] = useState<Set<number>>(new Set());
   const [organizationRequests, setOrganizationRequests] = useState<OrganizationRequestItem[]>([]);
   const [organizationRequestsLoading, setOrganizationRequestsLoading] = useState(currentUser.role === 'super_owner');
   const [organizationRequestsError, setOrganizationRequestsError] = useState('');
@@ -4422,7 +4424,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
               当前暂无可管理成员。
             </div>
           ) : (
-            <div className="mt-5 space-y-4">
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {users.map((user) => {
                 const busy = roleSavingUserId === user.id;
                 const displayNameBusy = displayNameSavingUserId === user.id;
@@ -4441,17 +4443,42 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                 const canDeleteUser = user.role !== 'super_owner'
                   && user.id !== currentUser.id
                   && (canManageOwnerRole(currentUser.role) || user.role !== 'owner');
+                const isCollapsed = collapsedUserIds.has(user.id);
+                const toggleCollapse = () => setCollapsedUserIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(user.id)) next.delete(user.id); else next.add(user.id);
+                  return next;
+                });
                 return (
-                  <div key={user.id} className={`${workspaceSoftCardClass} p-5`}>
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="space-y-2">
+                  <div key={user.id} className={`${workspaceSoftCardClass} overflow-hidden`}>
+                    <button
+                      type="button"
+                      onClick={toggleCollapse}
+                      className="flex w-full items-center justify-between gap-3 p-4 text-left"
+                    >
+                      <div className="flex min-w-0 flex-col gap-1">
                         <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-base font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
+                            {getRoleLabel(user.role)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.org}</p>
+                      </div>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-slate-400 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}`}
+                      />
+                    </button>
+                    {!isCollapsed && (
+                      <div className="border-t border-sky-100/80 p-4 dark:border-white/10">
+                        <div className="space-y-3">
                           {editingName ? (
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 value={pendingDisplayName}
                                 onChange={(event) => setPendingDisplayName(event.target.value)}
-                                className="min-w-[220px] rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:focus:border-sky-400 dark:focus:ring-sky-500/20"
+                                className="min-w-[180px] rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:focus:border-sky-400 dark:focus:ring-sky-500/20"
                                 placeholder="输入成员姓名"
                               />
                               <button
@@ -4471,53 +4498,47 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                                 取消
                               </button>
                             </div>
-                          ) : (
-                            <span className="text-lg font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                          )}
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
-                            {getRoleLabel(user.role)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">所属机构：{user.org}</p>
-                        <div className="mt-4 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                          <div className="flex items-center justify-between gap-3">
-                            <h5 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">教学绑定</h5>
-                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getMemberBindingStatusBadgeClass(bindingStatus)}`}>
-                              {getMemberBindingStatusLabel(bindingStatus)}
-                            </span>
+                          ) : null}
+                          <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                            <div className="flex items-center justify-between gap-3">
+                              <h5 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">教学绑定</h5>
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${getMemberBindingStatusBadgeClass(bindingStatus)}`}>
+                                {getMemberBindingStatusLabel(bindingStatus)}
+                              </span>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-400">小程序老师</span>
+                                <span className="text-slate-700 dark:text-slate-200">
+                                  {bindingSummaryLoading && !bindingSummary ? '加载中...' : bindingSummary?.mini_teacher_bound ? '已绑定' : '未绑定'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-400">负责班级</span>
+                                <span className="text-slate-700 dark:text-slate-200">{responsibleClasses.length} 个班级</span>
+                              </div>
+                              {visibleClassNames.length > 0 && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {visibleClassNames.join('、')}{hiddenClassCount > 0 ? ` +${hiddenClassCount}` : ''}
+                                </p>
+                              )}
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-400">映射状态</span>
+                                <span className="text-slate-700 dark:text-slate-200">
+                                  {bindingSummary
+                                    ? `已映射 ${bindingSummary.mapping_summary.mapped_count} / 未完成 ${unresolvedCount}`
+                                    : bindingSummaryLoading
+                                      ? '加载中...'
+                                      : '—'}
+                                </span>
+                              </div>
+                            </div>
+                            {bindingSummaryError && !bindingSummary && (
+                              <p className="mt-2 text-xs text-rose-500 dark:text-rose-300">教学绑定摘要加载失败</p>
+                            )}
                           </div>
-                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                            <div>
-                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">小程序老师</p>
-                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-                                {bindingSummaryLoading && !bindingSummary ? '加载中...' : bindingSummary?.mini_teacher_bound ? '已绑定' : '未绑定'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责班级</p>
-                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{responsibleClasses.length} 个班级</p>
-                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                {visibleClassNames.length > 0 ? `${visibleClassNames.join('、')}${hiddenClassCount > 0 ? ` +${hiddenClassCount}` : ''}` : '暂无负责班级'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">映射状态</p>
-                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{getMemberBindingStatusLabel(bindingStatus)}</p>
-                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                {bindingSummary
-                                  ? `已映射 ${bindingSummary.mapping_summary.mapped_count} / 未完成 ${unresolvedCount}`
-                                  : bindingSummaryLoading
-                                    ? '教学绑定摘要加载中...'
-                                    : '未加载到教学绑定摘要'}
-                              </p>
-                            </div>
-                          </div>
-                          {bindingSummaryError && !bindingSummary && (
-                            <p className="mt-3 text-xs text-rose-500 dark:text-rose-300">教学绑定摘要加载失败</p>
-                          )}
                         </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
                         {user.role !== 'super_owner' && (
                           <button
                             type="button"
@@ -4599,8 +4620,9 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                             </button>
                           </div>
                         )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}
@@ -5400,6 +5422,9 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     if (selectedGradeFilter === '全部') {
       return true;
     }
+    if (selectedGradeFilter === '未绑定') {
+      return item.teacher_user_id == null;
+    }
     return item.grade === selectedGradeFilter;
   });
 
@@ -5498,16 +5523,8 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
         ) : (
           <div className="grid gap-4">
-            <div className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
-              <button
-                type="button"
-                onClick={() => handleToggleExpandedClass('new')}
-                disabled={classCardInteractionLocked}
-                className={cn(
-                  'flex w-full flex-col gap-4 text-left lg:flex-row lg:items-center lg:justify-between',
-                  classCardInteractionLocked ? 'cursor-not-allowed' : 'cursor-pointer',
-                )}
-              >
+            {newClassExpanded ? (
+              <div className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-lg font-semibold text-slate-900 dark:text-white">新建班级</span>
@@ -5525,9 +5542,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <span>创建时会直接绑定该老师账号</span>
                   </div>
                 </div>
-              </button>
 
-              {newClassExpanded && (
                 <div className="mt-5 space-y-5 border-t border-sky-100/80 pt-5 dark:border-white/10">
                   {formError && (
                     <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
@@ -5651,12 +5666,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : null}
 
             {filteredClasses.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                {classes.length === 0 ? '暂无班级，展开上方新建卡片开始创建。' : `当前筛选“${selectedGradeFilter}”下暂无班级。`}
+                {classes.length === 0 ? '暂无班级，点击右上角“新建班级”开始创建。' : `当前筛选“${selectedGradeFilter}”下暂无班级。`}
               </div>
             ) : null}
 
