@@ -2201,11 +2201,7 @@ const LessonInput = ({
                     />
                   </div>
                 )}
-                {isContinuingFeedback ? (
-                  <div className={`${workspaceSoftCardClass} mt-6 p-4 text-sm text-slate-500 dark:text-slate-400`}>
-                    已载入历史复习记录，可直接继续编辑下方课后反馈；如需新建新的复习记录，请返回点击“新建复习文档”。
-                  </div>
-                ) : (
+                {!isContinuingFeedback && (
                   <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} mt-6 w-full py-4 text-lg font-bold`}>
                     生成复习文档
                     <ArrowRight size={20} />
@@ -3761,6 +3757,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [displayNameSavingUserId, setDisplayNameSavingUserId] = useState<number | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<number | null>(null);
+  const [pendingRoleByUserId, setPendingRoleByUserId] = useState<Record<number, Role>>({});
   const [organizationRequests, setOrganizationRequests] = useState<OrganizationRequestItem[]>([]);
   const [organizationRequestsLoading, setOrganizationRequestsLoading] = useState(currentUser.role === 'super_owner');
   const [organizationRequestsError, setOrganizationRequestsError] = useState('');
@@ -4538,7 +4535,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                                 type="button"
                                 onClick={() => void handleDeleteUser(user.id)}
                                 disabled={deleting || busy || displayNameBusy}
-                                className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300"
+                                className={`${workspaceSecondaryButtonClass} border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
                               >
                                 {deleting ? '删除中...' : '确认删除'}
                               </button>
@@ -4556,7 +4553,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                               type="button"
                               onClick={() => setConfirmDeleteUserId(user.id)}
                               disabled={busy || displayNameBusy}
-                              className="rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                              className={`${workspaceSecondaryButtonClass} border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
                             >
                               删除账号
                             </button>
@@ -4572,17 +4569,34 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                           </span>
                         ) : (
                           <div className="flex flex-wrap items-center gap-2">
-                            {assignableRoles.map((nextRole) => (
-                              <button
-                                key={`${user.id}-${nextRole}`}
-                                type="button"
-                                onClick={() => void handleRoleUpdate(user.id, user.role, nextRole)}
-                                disabled={busy || user.role === nextRole}
-                                className={user.role === nextRole ? workspacePrimaryButtonClass : workspaceSecondaryButtonClass}
-                              >
-                                {busy && user.role !== nextRole ? '保存中...' : `设为${getRoleLabel(nextRole)}`}
-                              </button>
-                            ))}
+                            <select
+                              value={pendingRoleByUserId[user.id] ?? user.role}
+                              onChange={(event) => {
+                                setPendingRoleByUserId((current) => ({
+                                  ...current,
+                                  [user.id]: event.target.value as Role,
+                                }));
+                              }}
+                              disabled={busy}
+                              className={`${workspaceFieldClass} min-w-[190px]`}
+                            >
+                              {assignableRoles.map((roleOption) => (
+                                <option key={`${user.id}-role-${roleOption}`} value={roleOption}>
+                                  {getRoleLabel(roleOption)}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextRole = pendingRoleByUserId[user.id] ?? user.role;
+                                void handleRoleUpdate(user.id, user.role, nextRole);
+                              }}
+                              disabled={busy || (pendingRoleByUserId[user.id] ?? user.role) === user.role}
+                              className={workspacePrimaryButtonClass}
+                            >
+                              {busy ? '保存中...' : '应用权限'}
+                            </button>
                           </div>
                         )}
                       </div>
