@@ -718,6 +718,50 @@ SUPERSCRIPT_TRANSLATION = str.maketrans({
     "n": "ⁿ",
     "i": "ⁱ",
 })
+# Extra superscript letters commonly used in Chinese math (combinations, sequences, etc.)
+SUPERSCRIPT_LETTER_MAP = {
+    "a": "ᵃ", "b": "ᵇ", "c": "ᶜ", "d": "ᵈ", "e": "ᵉ",
+    "f": "ᶠ", "g": "ᵍ", "h": "ʰ", "j": "ʲ", "k": "ᵏ",
+    "l": "ˡ", "m": "ᵐ", "o": "ᵒ", "p": "ᵖ", "r": "ʳ",
+    "s": "ˢ", "t": "ᵗ", "u": "ᵘ", "v": "ᵛ", "w": "ʷ",
+    "x": "ˣ", "y": "ʸ",
+}
+# Unicode subscript letters that are available (limited set)
+SUBSCRIPT_LETTER_MAP = {
+    "a": "ₐ", "e": "ₑ", "o": "ₒ", "x": "ₓ", "h": "ₕ",
+    "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "p": "ₚ",
+    "s": "ₛ", "t": "ₜ",
+}
+SUBSCRIPT_DIGIT_MAP = {
+    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
+    "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+}
+
+
+def _render_superscript(content: str) -> str:
+    result = []
+    for c in content:
+        translated = c.translate(SUPERSCRIPT_TRANSLATION)
+        if translated != c:
+            result.append(translated)
+        elif c.lower() in SUPERSCRIPT_LETTER_MAP:
+            result.append(SUPERSCRIPT_LETTER_MAP[c.lower()])
+        else:
+            result.append(c)
+    return "".join(result)
+
+
+def _render_subscript(content: str) -> str:
+    result = []
+    for c in content:
+        if c in SUBSCRIPT_DIGIT_MAP:
+            result.append(SUBSCRIPT_DIGIT_MAP[c])
+        elif c.lower() in SUBSCRIPT_LETTER_MAP:
+            result.append(SUBSCRIPT_LETTER_MAP[c.lower()])
+        else:
+            # No Unicode subscript available – fall back to _(content) notation
+            return f"_({content})"
+    return "".join(result)
 
 
 class TrackingCanvas(Canvas):
@@ -750,12 +794,29 @@ def _format_latex_math_segment(text):
     )
     normalized = re.sub(
         r"\^\{([^{}]+)\}",
-        lambda match: match.group(1).translate(SUPERSCRIPT_TRANSLATION),
+        lambda match: _render_superscript(match.group(1)),
         normalized,
     )
     normalized = re.sub(
         r"\^([0-9n()+\-=i])",
         lambda match: match.group(1).translate(SUPERSCRIPT_TRANSLATION),
+        normalized,
+    )
+    normalized = re.sub(
+        r"\^([a-zA-Z])",
+        lambda match: _render_superscript(match.group(1)),
+        normalized,
+    )
+    # Subscript _{...}
+    normalized = re.sub(
+        r"_\{([^{}]+)\}",
+        lambda match: _render_subscript(match.group(1)),
+        normalized,
+    )
+    # Bare subscript _x (single char)
+    normalized = re.sub(
+        r"_([a-zA-Z0-9])",
+        lambda match: _render_subscript(match.group(1)),
         normalized,
     )
     normalized = re.sub(r"\\([A-Za-z]+)", lambda match: match.group(1), normalized)
