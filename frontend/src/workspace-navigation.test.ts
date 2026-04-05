@@ -69,6 +69,22 @@ test('review generation source lets history rows reopen the shared composer for 
   assert.match(historyBlock, /onClick=\{\(\) => onContinueFeedback\?\.\(lesson\)\}/);
 });
 
+test('review generation source renders history as paginated cards with explicit generation time', () => {
+  const historyBlock = requireMatch(/const ReviewDocumentHistory = \(\{[\s\S]*?\n};/);
+
+  assert.match(historyBlock, /const REVIEW_HISTORY_PAGE_SIZE = 12;/);
+  assert.match(historyBlock, /const \[historyPage, setHistoryPage\] = useState\(1\);/);
+  assert.match(historyBlock, /const totalHistoryPages = Math\.max\(1, Math\.ceil\(lessons\.length \/ REVIEW_HISTORY_PAGE_SIZE\)\);/);
+  assert.match(historyBlock, /const paginatedLessons = lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage \* REVIEW_HISTORY_PAGE_SIZE\);/);
+  assert.match(historyBlock, /useEffect\(\(\) => \{\s*setHistoryPage\(1\);\s*\}, \[lessons\]\);/);
+  assert.match(historyBlock, /生成时间/);
+  assert.match(historyBlock, /new Date\(lesson\.created_at\)\.toLocaleString\('zh-CN'\)/);
+  assert.match(historyBlock, /className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3"/);
+  assert.match(historyBlock, /上一页/);
+  assert.match(historyBlock, /下一页/);
+  assert.doesNotMatch(historyBlock, /<table className=/);
+});
+
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
   const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?initialLesson\?: Lesson \| null;[\s\S]*?\n};/);
   const subjectComboboxBlock = requireMatch(/const SubjectCombobox = \([\s\S]*?\n};/);
@@ -152,10 +168,19 @@ test('credit center page source supports member drilldown and ledger filtering',
   assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageDetailItem\[] \}>\(`/);
   assert.match(creditBlock, /const \[selectedUsageUser, setSelectedUsageUser\] = useState<CreditMemberUsageItem \| null>\(null\);/);
   assert.match(creditBlock, /const \[ledgerFilter, setLedgerFilter\] = useState<'all' \| 'credit' \| 'debit'>\('all'\);/);
-  assert.match(creditBlock, /const \[ledgerSearch, setLedgerSearch\] = useState\(''\);/);
+  assert.match(creditBlock, /const CREDIT_LEDGER_PAGE_SIZE = 10;/);
+  assert.match(creditBlock, /const \[ledgerPage, setLedgerPage\] = useState\(1\);/);
   assert.match(creditBlock, /const filteredLedger = creditLedger\.filter\(/);
+  assert.match(creditBlock, /const totalLedgerPages = Math\.max\(1, Math\.ceil\(filteredLedger\.length \/ CREDIT_LEDGER_PAGE_SIZE\)\);/);
+  assert.match(creditBlock, /const currentLedgerPage = Math\.min\(ledgerPage, totalLedgerPages\);/);
+  assert.match(creditBlock, /const paginatedLedger = filteredLedger\.slice\(\(currentLedgerPage - 1\) \* CREDIT_LEDGER_PAGE_SIZE, currentLedgerPage \* CREDIT_LEDGER_PAGE_SIZE\);/);
+  assert.match(creditBlock, /useEffect\(\(\) => \{\s*setLedgerPage\(1\);\s*\}, \[ledgerFilter, creditLedger\]\);/);
+  assert.match(creditBlock, /paginatedLedger\.map\(\(item\) => \{/);
   assert.match(creditBlock, /成员明细/);
   assert.match(creditBlock, /流水筛选/);
+  assert.match(creditBlock, /totalLedgerPages > 1/);
+  assert.match(creditBlock, /上一页/);
+  assert.match(creditBlock, /下一页/);
 });
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
@@ -242,6 +267,7 @@ test('class management source adds compact card single-expand state and guards l
   assert.match(classManagementBlock, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
   assert.match(classManagementBlock, /const isExpanded = expandedClassId === item\.id/);
   assert.match(classManagementBlock, /setExpandedClassId\(\(current\) => current === classId \? null : classId\)/);
+  assert.match(classManagementBlock, /<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">/);
   assert.match(classManagementBlock, /className=\{`\$\{workspaceSoftCardClass\} overflow-hidden p-5`\}/);
   assert.match(appSource, /const loadPageRequestVersionRef = useRef\(0\);/);
   assert.match(appSource, /const requestVersion = \+\+loadPageRequestVersionRef\.current;/);

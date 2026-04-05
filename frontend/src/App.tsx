@@ -5600,7 +5600,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             正在加载班级数据...
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {newClassExpanded ? (
               <div className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
                 <div className="space-y-3">
