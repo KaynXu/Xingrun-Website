@@ -215,6 +215,14 @@ interface OrganizationInviteInfo {
   join_path?: string;
 }
 
+interface ClassInviteInfo {
+  id: number;
+  class_id: number;
+  invite_code: string;
+  status: string;
+  created_at: string;
+}
+
 interface OrganizationSummaryItem {
   id: number;
   name: string;
@@ -4948,6 +4956,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
+  const [inviteByClassId, setInviteByClassId] = useState<Record<number, ClassInviteInfo>>({});
   const [expandedClassId, setExpandedClassId] = useState<number | 'new' | null>(null);
   const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
     new: createEmptyClassForm(),
@@ -4959,9 +4968,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [pageError, setPageError] = useState('');
   const [formError, setFormError] = useState('');
   const [assignmentError, setAssignmentError] = useState('');
+  const [inviteErrorByClassId, setInviteErrorByClassId] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [teacherBindingSavingByClassId, setTeacherBindingSavingByClassId] = useState<Record<number, boolean>>({});
+  const [inviteLoadingByClassId, setInviteLoadingByClassId] = useState<Record<number, boolean>>({});
+  const [inviteResettingByClassId, setInviteResettingByClassId] = useState<Record<number, boolean>>({});
   const loadPageRequestVersionRef = useRef(0);
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
@@ -5040,6 +5052,50 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   useEffect(() => {
     loadPage().catch(() => undefined);
   }, [loadPage]);
+
+  const handleLoadClassInvite = useCallback(async (classId: number) => {
+    setInviteLoadingByClassId((current) => ({ ...current, [classId]: true }));
+    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      const payload = await apiFetch<ClassInviteInfo>(`/api/classes/${classId}/invite`);
+      setInviteByClassId((current) => ({ ...current, [classId]: payload }));
+    } catch (err) {
+      setInviteErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '邀请码加载失败',
+      }));
+    } finally {
+      setInviteLoadingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  }, []);
+
+  const handleResetClassInvite = useCallback(async (classId: number) => {
+    setInviteResettingByClassId((current) => ({ ...current, [classId]: true }));
+    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      const payload = await apiFetch<ClassInviteInfo>(`/api/classes/${classId}/invite/reset`, {
+        method: 'POST',
+      });
+      setInviteByClassId((current) => ({ ...current, [classId]: payload }));
+    } catch (err) {
+      setInviteErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '邀请码重置失败',
+      }));
+    } finally {
+      setInviteResettingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof expandedClassId !== 'number' || inviteByClassId[expandedClassId]) {
+      return;
+    }
+
+    void handleLoadClassInvite(expandedClassId);
+  }, [expandedClassId, handleLoadClassInvite, inviteByClassId]);
 
   const handleFieldChange = (classId: number | 'new', field: keyof ClassFormValues, value: string) => {
     const stateKey = getClassStateKey(classId);
@@ -5500,6 +5556,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               const currentTeacher = currentTeacherUserId == null ? undefined : users.find((user) => user.id === currentTeacherUserId);
               const teacherSummary = currentTeacher?.name || item.teacher_name || '未分配老师';
               const teacherBindingSaving = Boolean(teacherBindingSavingByClassId[item.id]);
+              const inviteInfo = inviteByClassId[item.id];
+              const inviteLoading = Boolean(inviteLoadingByClassId[item.id]);
+              const inviteResetting = Boolean(inviteResettingByClassId[item.id]);
+              const inviteError = inviteErrorByClassId[item.id] || '';
               const filteredUsers = users.filter((user) => {
                 const keyword = teacherSearch.trim().toLowerCase();
                 if (!keyword) {
@@ -5684,6 +5744,55 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             })}
                           </div>
                         )}
+                      </div>
+
+                      <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">家长绑定邀请码</h4>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">老师把这个邀请码发给家长后，家长就能在微信小程序里绑定该班级并选择对应学生。</p>
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleLoadClassInvite(item.id)}
+                              disabled={inviteLoading || inviteResetting}
+                              className={workspaceSecondaryButtonClass}
+                            >
+                              {inviteLoading ? '加载中...' : '查看邀请码'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleResetClassInvite(item.id)}
+                              disabled={inviteLoading || inviteResetting}
+                              className={workspacePrimaryButtonClass}
+                            >
+                              {inviteResetting ? '重置中...' : '重置邀请码'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {inviteError ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                            <AlertCircle size={16} />
+                            {inviteError}
+                          </div>
+                        ) : null}
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className={`${workspaceSoftCardClass} p-4`}>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
+                            <p className="mt-3 font-mono text-2xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
+                              {inviteInfo?.invite_code || (inviteLoading ? '加载中' : '未加载')}
+                            </p>
+                          </div>
+                          <div className={`${workspaceSoftCardClass} p-4`}>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">使用说明</p>
+                            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                              家长先输入班级邀请码，再从网站里已有的学生名单中选择自己孩子进行绑定。一位家长可以重复绑定多个孩子。
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

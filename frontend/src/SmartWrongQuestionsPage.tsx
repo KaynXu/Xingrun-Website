@@ -17,7 +17,9 @@ import {
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
   downloadWrongQuestionSummary,
+  getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
+  isWechatMiniProgramWrongQuestionRecord,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
@@ -82,6 +84,12 @@ function isMappedWrongQuestionRecord(status: WrongQuestionMappingStatus): boolea
   return status === 'mapped';
 }
 
+function getWrongQuestionSourceBadgeClass(source: string): string {
+  return source === 'wechat_mp'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+    : 'border-sky-200 bg-white/80 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
+}
+
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -127,7 +135,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const detailRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
 
-  const summary = useMemo(() => serverSummary ?? summarizeWrongQuestionRecords(records), [records, serverSummary]);
+  const summary = useMemo(() => {
+    if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
+      return summarizeWrongQuestionRecords(records);
+    }
+
+    return serverSummary ?? summarizeWrongQuestionRecords(records);
+  }, [records, serverSummary]);
   const selectedRecord = records.find((item) => item.id === selectedId) ?? records[0] ?? null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
 
@@ -554,7 +568,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="text-base font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-base font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getWrongQuestionSourceBadgeClass(item.source)}`}>
+                            {getWrongQuestionSourceLabel(item.source)}
+                          </span>
+                        </div>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.subject || '未标注科目'}</p>
                         {showsClassSnapshot && (
                           <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">原始班级：{item.classNameSnapshot}</p>
@@ -601,6 +620,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-lg font-semibold text-slate-900 dark:text-white">{selectedRecord.studentName}</span>
+                      {selectedRecord?.source === 'wechat_mp' ? (
+                        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                          微信小程序
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getWrongQuestionSourceBadgeClass(selectedRecord.source)}`}>
+                          {getWrongQuestionSourceLabel(selectedRecord.source)}
+                        </span>
+                      )}
                       <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                         {selectedRecord.subject || '未标注科目'}
                       </span>
@@ -616,6 +644,40 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     <p className="text-sm text-slate-500 dark:text-slate-400">映射状态：{formatWrongQuestionMappingStatus(selectedRecord.mappingStatus)}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
                   </div>
+
+                  {selectedRecord.source === 'wechat_mp' && (
+                    <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">家长上传信息</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，家长侧上传后会直接进入这里等待老师处理。</p>
+                      </div>
+                      {selectedRecord.imageUrl ? (
+                        <a
+                          href={selectedRecord.imageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block overflow-hidden rounded-2xl border border-sky-100 bg-white/80 dark:border-white/10 dark:bg-slate-950/70"
+                        >
+                          <img
+                            src={selectedRecord.imageUrl}
+                            alt={`${selectedRecord.studentName} 的错题图片`}
+                            className="max-h-72 w-full object-cover"
+                          />
+                        </a>
+                      ) : null}
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className={`${workspaceCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">家长备注</p>
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.parentNote || '暂无家长备注'}</p>
+                        </div>
+                        <div className={`${workspaceCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">处理状态</p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.reviewStatus === 'reviewed' ? '已处理' : '待处理'}</p>
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{selectedRecord.teacherComment || '老师还没有填写处理备注。'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {!isMappedWrongQuestionRecord(selectedRecord.mappingStatus) && (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
@@ -666,7 +728,49 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     </div>
                   </div>
 
-                  {selectedDraft && (
+                  {selectedDraft && selectedRecord.source === 'wechat_mp' && (
+                    <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">老师处理结果</p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先记录老师是否已处理，再补一句面向内部的处理备注。</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveReview()}
+                          disabled={savingReview}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          保存处理结果
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="space-y-2 text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">处理状态</span>
+                          <select
+                            value={selectedDraft.reviewStatus}
+                            onChange={(event) => handleDraftChange('reviewStatus', event.target.value)}
+                            className={workspaceFieldClass}
+                          >
+                            <option value="pending">待处理</option>
+                            <option value="reviewed">已处理</option>
+                          </select>
+                        </label>
+                        <label className="space-y-2 text-sm sm:col-span-2">
+                          <span className="text-slate-500 dark:text-slate-400">老师处理备注</span>
+                          <textarea
+                            value={selectedDraft.teacherComment}
+                            onChange={(event) => handleDraftChange('teacherComment', event.target.value)}
+                            className={`${workspaceFieldClass} min-h-28 resize-y`}
+                            placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedDraft && selectedRecord.source !== 'wechat_mp' && (
                     <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
