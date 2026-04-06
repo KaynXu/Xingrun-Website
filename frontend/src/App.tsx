@@ -4326,88 +4326,90 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                             )}
                           </div>
                         </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                        {user.role !== 'super_owner' && (
-                          <button
-                            type="button"
-                            onClick={() => handleStartDisplayNameEdit(user.id, user.name)}
-                            disabled={displayNameBusy || busy}
-                            className={workspaceSecondaryButtonClass}
-                          >
-                            编辑姓名
-                          </button>
-                        )}
-                        {canDeleteUser && (
-                          confirmDeleteUserId === user.id ? (
-                            <>
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {user.role !== 'super_owner' && (
                               <button
                                 type="button"
-                                onClick={() => void handleDeleteUser(user.id)}
-                                disabled={deleting || busy || displayNameBusy}
-                                className={`${workspaceSecondaryButtonClass} border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
-                              >
-                                {deleting ? '删除中...' : '确认删除'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteUserId(null)}
-                                disabled={deleting}
+                                onClick={() => handleStartDisplayNameEdit(user.id, user.name)}
+                                disabled={displayNameBusy || busy}
                                 className={workspaceSecondaryButtonClass}
                               >
-                                取消
+                                编辑姓名
                               </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteUserId(user.id)}
-                              disabled={busy || displayNameBusy}
-                              className={`${workspaceSecondaryButtonClass} border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
-                            >
-                              删除账号
-                            </button>
-                          )
-                        )}
-                        {roleFixed ? (
-                          <span className="text-sm text-slate-500 dark:text-slate-400">
-                            {user.id === currentUser.id
-                              ? '当前登录账号不可在此处调整权限'
-                              : user.role === 'super_owner'
-                                ? '超级管理员权限固定，不可调整'
-                                : '该成员权限不可调整'}
-                          </span>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <select
-                              value={pendingRoleByUserId[user.id] ?? user.role}
-                              onChange={(event) => {
-                                setPendingRoleByUserId((current) => ({
-                                  ...current,
-                                  [user.id]: event.target.value as Role,
-                                }));
-                              }}
-                              disabled={busy}
-                              className={`${workspaceFieldClass} min-w-[190px]`}
-                            >
-                              {assignableRoles.map((roleOption) => (
-                                <option key={`${user.id}-role-${roleOption}`} value={roleOption}>
-                                  {getRoleLabel(roleOption)}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextRole = pendingRoleByUserId[user.id] ?? user.role;
-                                void handleRoleUpdate(user.id, user.role, nextRole);
-                              }}
-                              disabled={busy || (pendingRoleByUserId[user.id] ?? user.role) === user.role}
-                              className={workspacePrimaryButtonClass}
-                            >
-                              {busy ? '保存中...' : '应用权限'}
-                            </button>
+                            )}
+                            {canDeleteUser && (
+                              confirmDeleteUserId === user.id ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteUser(user.id)}
+                                    disabled={deleting || busy || displayNameBusy}
+                                    className={`${workspaceSecondaryButtonClass} border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
+                                  >
+                                    {deleting ? '删除中...' : '确认删除'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteUserId(null)}
+                                    disabled={deleting}
+                                    className={workspaceSecondaryButtonClass}
+                                  >
+                                    取消
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteUserId(user.id)}
+                                  disabled={busy || displayNameBusy}
+                                  className={`${workspaceSecondaryButtonClass} border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
+                                >
+                                  删除账号
+                                </button>
+                              )
+                            )}
                           </div>
-                        )}
+                          {roleFixed ? (
+                            <span className="text-sm text-slate-500 dark:text-slate-400">
+                              {user.id === currentUser.id
+                                ? '当前登录账号不可在此处调整权限'
+                                : user.role === 'super_owner'
+                                  ? '超级管理员权限固定，不可调整'
+                                  : '该成员权限不可调整'}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={pendingRoleByUserId[user.id] ?? user.role}
+                                onChange={(event) => {
+                                  setPendingRoleByUserId((current) => ({
+                                    ...current,
+                                    [user.id]: event.target.value as Role,
+                                  }));
+                                }}
+                                disabled={busy}
+                                className={`${workspaceFieldClass} min-w-0 flex-1`}
+                              >
+                                {assignableRoles.map((roleOption) => (
+                                  <option key={`${user.id}-role-${roleOption}`} value={roleOption}>
+                                    {getRoleLabel(roleOption)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextRole = pendingRoleByUserId[user.id] ?? user.role;
+                                  void handleRoleUpdate(user.id, user.role, nextRole);
+                                }}
+                                disabled={busy || (pendingRoleByUserId[user.id] ?? user.role) === user.role}
+                                className={workspacePrimaryButtonClass}
+                              >
+                                {busy ? '保存中...' : '应用权限'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -4473,7 +4475,8 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
 };
 
 const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
-  const CREDIT_LEDGER_PAGE_SIZE = 10;
+  const CREDIT_USAGE_DETAIL_PAGE_SIZE = 5;
+  const CREDIT_LEDGER_PAGE_SIZE = 5;
   const [creditOverview, setCreditOverview] = useState<CreditOverview | null>(null);
   const [creditLedger, setCreditLedger] = useState<CreditLedgerItem[]>([]);
   const [creditUsage, setCreditUsage] = useState<CreditMemberUsageItem[]>([]);
@@ -4488,6 +4491,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [usageDetailItems, setUsageDetailItems] = useState<CreditMemberUsageDetailItem[]>([]);
   const [usageDetailLoading, setUsageDetailLoading] = useState(false);
   const [usageDetailError, setUsageDetailError] = useState('');
+  const [usageDetailPage, setUsageDetailPage] = useState(1);
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
   const [ledgerPage, setLedgerPage] = useState(1);
   const canSeeSensitiveUsageMeta = currentUser.role === 'super_owner';
@@ -4612,10 +4616,20 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     requestId.length > 20 ? `${requestId.slice(0, 10)}...${requestId.slice(-8)}` : requestId
   );
 
+  const totalUsageDetailPages = Math.max(1, Math.ceil(usageDetailItems.length / CREDIT_USAGE_DETAIL_PAGE_SIZE));
+  const currentUsageDetailPage = Math.min(usageDetailPage, totalUsageDetailPages);
+  const paginatedUsageDetailItems = usageDetailItems.slice(
+    (currentUsageDetailPage - 1) * CREDIT_USAGE_DETAIL_PAGE_SIZE,
+    currentUsageDetailPage * CREDIT_USAGE_DETAIL_PAGE_SIZE,
+  );
   const filteredLedger = creditLedger.filter((item) => ledgerFilter === 'all' || item.direction === ledgerFilter);
   const totalLedgerPages = Math.max(1, Math.ceil(filteredLedger.length / CREDIT_LEDGER_PAGE_SIZE));
   const currentLedgerPage = Math.min(ledgerPage, totalLedgerPages);
   const paginatedLedger = filteredLedger.slice((currentLedgerPage - 1) * CREDIT_LEDGER_PAGE_SIZE, currentLedgerPage * CREDIT_LEDGER_PAGE_SIZE);
+
+  useEffect(() => {
+    setUsageDetailPage(1);
+  }, [selectedUsageUser, usageDetailItems]);
 
   useEffect(() => {
     setLedgerPage(1);
@@ -4803,7 +4817,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {usageDetailItems.map((item) => {
+                    {paginatedUsageDetailItems.map((item) => {
                       const featureLabel = FEATURE_KEY_LABELS[item.feature_key] ?? item.feature_key;
                       const sourceTypeLabel = item.source_record_type
                         ? (SOURCE_RECORD_TYPE_LABELS[item.source_record_type] ?? item.source_record_type)
@@ -4847,6 +4861,29 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </div>
                       );
                     })}
+                    {totalUsageDetailPages > 1 && (
+                      <div className="flex items-center justify-between border-t border-sky-100/80 pt-3 text-sm dark:border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => setUsageDetailPage((page) => Math.max(1, page - 1))}
+                          disabled={currentUsageDetailPage === 1}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          上一页
+                        </button>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          第 {currentUsageDetailPage} / {totalUsageDetailPages} 页
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setUsageDetailPage((page) => Math.min(totalUsageDetailPages, page + 1))}
+                          disabled={currentUsageDetailPage === totalUsageDetailPages}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -5250,11 +5287,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const newClassTeacher = newClassTeacherUserId == null ? undefined : users.find((user) => user.id === newClassTeacherUserId);
   const newClassFilteredUsers = users.filter((user) => {
     const keyword = (teacherSearchByClassId.new || '').trim().toLowerCase();
+    if (newClassTeacherUserId === user.id) {
+      return true;
+    }
     if (!keyword) {
       return true;
     }
-    return [user.name, user.org, getRoleLabel(user.role)]
-      .some((value) => value.toLowerCase().includes(keyword));
+    return user.name.toLowerCase().includes(keyword);
   });
 
   return (
@@ -5266,6 +5305,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
             在这里统一管理 {currentUser.organization_name} 的班级信息与负责老师安排。
           </p>
+        </div>
+        <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -5404,11 +5447,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </label>
                   </div>
 
-                  <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
-                  </div>
-
                   <div className={`${workspaceCardClass} space-y-5 p-5`}>
                     <div>
                       <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
@@ -5435,40 +5473,20 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         没有匹配到老师，请调整搜索关键词。
                       </div>
                     ) : (
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {newClassFilteredUsers.map((user) => {
-                          const checked = newClassTeacherUserId === user.id;
-                          return (
-                            <label
-                              key={`new-${user.id}`}
-                              className={cn(
-                                'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
-                                classInteractionLocked && 'opacity-70',
-                                checked && 'border-sky-300 bg-sky-50/80 dark:border-sky-400/40 dark:bg-sky-500/10',
-                              )}
-                            >
-                              <input
-                                type="radio"
-                                name="class-teacher-new"
-                                checked={checked}
-                                disabled={classInteractionLocked}
-                                onChange={() => setNewClassTeacherUserId(user.id)}
-                                className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                              />
-                              <span className="min-w-0">
-                                <span className="flex flex-wrap items-center gap-2">
-                                  <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
-                                    {getRoleLabel(user.role)}
-                                  </span>
-                                </span>
-                                <span className="mt-1 block text-slate-500 dark:text-slate-400">所属机构：{user.org}</span>
-                                <span className="mt-1 block text-slate-500 dark:text-slate-400">{checked ? '将作为创建后的负责老师' : '选择为负责老师'}</span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <select
+                        value={newClassTeacherUserId == null ? '' : String(newClassTeacherUserId)}
+                        onChange={(event) => {
+                          const nextTeacherUserId = Number(event.target.value);
+                          setNewClassTeacherUserId(Number.isFinite(nextTeacherUserId) && nextTeacherUserId > 0 ? nextTeacherUserId : null);
+                        }}
+                        disabled={classInteractionLocked || newClassFilteredUsers.length === 0}
+                        className={workspaceFieldClass}
+                      >
+                        <option value="">请选择负责老师</option>
+                        {newClassFilteredUsers.map((user) => (
+                          <option key={`new-${user.id}`} value={user.id}>{user.name}</option>
+                        ))}
+                      </select>
                     )}
                   </div>
 
@@ -5502,11 +5520,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               const teacherBindingSaving = Boolean(teacherBindingSavingByClassId[item.id]);
               const filteredUsers = users.filter((user) => {
                 const keyword = teacherSearch.trim().toLowerCase();
+                if (currentTeacherUserId === user.id) {
+                  return true;
+                }
                 if (!keyword) {
                   return true;
                 }
-                return [user.name, user.org, getRoleLabel(user.role)]
-                  .some((value) => value.toLowerCase().includes(keyword));
+                return user.name.toLowerCase().includes(keyword);
               });
 
               return (
@@ -5581,11 +5601,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </label>
                       </div>
 
-                      <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
-                      </div>
-
                       <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
                         <button
                           type="button"
@@ -5649,40 +5664,23 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             没有匹配到老师，请调整搜索关键词。
                           </div>
                         ) : (
-                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {filteredUsers.map((user) => {
-                              const checked = currentTeacherUserId === user.id;
-                              return (
-                                <label
-                                  key={`${item.id}-${user.id}`}
-                                  className={cn(
-                                    'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
-                                    (teacherBindingSaving || classInteractionLocked) && 'opacity-70',
-                                    checked && 'border-sky-300 bg-sky-50/80 dark:border-sky-400/40 dark:bg-sky-500/10',
-                                  )}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`class-teacher-${item.id}`}
-                                    checked={checked}
-                                    disabled={teacherBindingSaving || classInteractionLocked}
-                                    onChange={() => handleSelectTeacherForClass(item.id, user.id)}
-                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                                  />
-                                  <span className="min-w-0">
-                                    <span className="flex flex-wrap items-center gap-2">
-                                      <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
-                                        {getRoleLabel(user.role)}
-                                      </span>
-                                    </span>
-                                    <span className="mt-1 block text-slate-500 dark:text-slate-400">所属机构：{user.org}</span>
-                                    <span className="mt-1 block text-slate-500 dark:text-slate-400">{teacherBindingSaving ? '保存中...' : checked ? '当前负责老师' : '设为当前负责老师'}</span>
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
+                          <select
+                            value={currentTeacherUserId == null ? '' : String(currentTeacherUserId)}
+                            onChange={(event) => {
+                              const nextTeacherUserId = Number(event.target.value);
+                              if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === currentTeacherUserId) {
+                                return;
+                              }
+                              void handleSelectTeacherForClass(item.id, nextTeacherUserId);
+                            }}
+                            disabled={teacherBindingSaving || classInteractionLocked || filteredUsers.length === 0}
+                            className={workspaceFieldClass}
+                          >
+                            <option value="">请选择负责老师</option>
+                            {filteredUsers.map((user) => (
+                              <option key={`${item.id}-${user.id}`} value={user.id}>{user.name}</option>
+                            ))}
+                          </select>
                         )}
                       </div>
                     </div>

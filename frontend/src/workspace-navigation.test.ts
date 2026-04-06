@@ -168,17 +168,25 @@ test('credit center page source supports member drilldown and ledger filtering',
   assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageItem\[] \}>\('\/api\/credits\/member-usage'\)/);
   assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageDetailItem\[] \}>\(`/);
   assert.match(creditBlock, /const \[selectedUsageUser, setSelectedUsageUser\] = useState<CreditMemberUsageItem \| null>\(null\);/);
+  assert.match(creditBlock, /const CREDIT_USAGE_DETAIL_PAGE_SIZE = 5;/);
   assert.match(creditBlock, /const \[ledgerFilter, setLedgerFilter\] = useState<'all' \| 'credit' \| 'debit'>\('all'\);/);
-  assert.match(creditBlock, /const CREDIT_LEDGER_PAGE_SIZE = 10;/);
+  assert.match(creditBlock, /const CREDIT_LEDGER_PAGE_SIZE = 5;/);
+  assert.match(creditBlock, /const \[usageDetailPage, setUsageDetailPage\] = useState\(1\);/);
   assert.match(creditBlock, /const \[ledgerPage, setLedgerPage\] = useState\(1\);/);
+  assert.match(creditBlock, /const totalUsageDetailPages = Math\.max\(1, Math\.ceil\(usageDetailItems\.length \/ CREDIT_USAGE_DETAIL_PAGE_SIZE\)\);/);
+  assert.match(creditBlock, /const currentUsageDetailPage = Math\.min\(usageDetailPage, totalUsageDetailPages\);/);
+  assert.match(creditBlock, /const paginatedUsageDetailItems = usageDetailItems\.slice\(\(currentUsageDetailPage - 1\) \* CREDIT_USAGE_DETAIL_PAGE_SIZE, currentUsageDetailPage \* CREDIT_USAGE_DETAIL_PAGE_SIZE\);/);
   assert.match(creditBlock, /const filteredLedger = creditLedger\.filter\(/);
   assert.match(creditBlock, /const totalLedgerPages = Math\.max\(1, Math\.ceil\(filteredLedger\.length \/ CREDIT_LEDGER_PAGE_SIZE\)\);/);
   assert.match(creditBlock, /const currentLedgerPage = Math\.min\(ledgerPage, totalLedgerPages\);/);
   assert.match(creditBlock, /const paginatedLedger = filteredLedger\.slice\(\(currentLedgerPage - 1\) \* CREDIT_LEDGER_PAGE_SIZE, currentLedgerPage \* CREDIT_LEDGER_PAGE_SIZE\);/);
+  assert.match(creditBlock, /useEffect\(\(\) => \{\s*setUsageDetailPage\(1\);\s*\}, \[selectedUsageUser, usageDetailItems\]\);/);
   assert.match(creditBlock, /useEffect\(\(\) => \{\s*setLedgerPage\(1\);\s*\}, \[ledgerFilter, creditLedger\]\);/);
+  assert.match(creditBlock, /paginatedUsageDetailItems\.map\(\(item\) => \{/);
   assert.match(creditBlock, /paginatedLedger\.map\(\(item\) => \{/);
   assert.match(creditBlock, /成员明细/);
   assert.match(creditBlock, /流水筛选/);
+  assert.match(creditBlock, /totalUsageDetailPages > 1/);
   assert.match(creditBlock, /totalLedgerPages > 1/);
   assert.match(creditBlock, /上一页/);
   assert.match(creditBlock, /下一页/);
@@ -244,7 +252,8 @@ test('class management source uses class-centric teacher binding instead of user
   assert.match(classManagementBlock, /const handleSelectTeacherForClass = async \(classId: number, teacherUserId: number\) => \{/);
   assert.match(classManagementBlock, /apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{/);
   assert.doesNotMatch(classManagementBlock, /type="checkbox"/);
-  assert.match(classManagementBlock, /type="radio"/);
+  assert.match(classManagementBlock, /placeholder="搜索老师"/);
+  assert.match(classManagementBlock, /<select/);
 });
 
 test('class management source keeps refresh reconciliation non-destructive after successful mutations', () => {
@@ -311,5 +320,10 @@ test('approval page source keeps member role controls separate from class assign
   assert.match(approvalBlock, /成员权限/);
   assert.match(approvalBlock, /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
   assert.match(approvalBlock, /`\/api\/admin\/users\/\$\{userId\}\/role`/);
+  assert.match(approvalBlock, /<div className="mt-3 space-y-2">/);
+  assert.match(approvalBlock, /<div className="flex flex-wrap items-center gap-2">/);
+  assert.match(approvalBlock, /<div className="flex items-center gap-2">/);
+  assert.match(approvalBlock, /className=\{`\$\{workspaceFieldClass\} min-w-0 flex-1`\}/);
+  assert.match(approvalBlock, /应用权限/);
   assert.doesNotMatch(approvalBlock, /成员班级分配/);
 });

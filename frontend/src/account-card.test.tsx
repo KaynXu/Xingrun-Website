@@ -561,7 +561,8 @@ test('class management source keeps teacher binding selection scoped per class c
   assert.match(classManagementBlock[0], /const currentTeacherUserId = teacherBindingByClassId\[item\.id\] \?\? item\.teacher_user_id \?\? null;/);
   assert.match(classManagementBlock[0], /const currentTeacher = currentTeacherUserId == null \? undefined : users\.find\(\(user\) => user\.id === currentTeacherUserId\);/);
   assert.match(classManagementBlock[0], /const teacherBindingSaving = Boolean\(teacherBindingSavingByClassId\[item\.id\]\);/);
-  assert.match(classManagementBlock[0], /onChange=\{\(\) => handleSelectTeacherForClass\(item\.id, user\.id\)\}/);
+  assert.match(classManagementBlock[0], /onChange=\{\(event\) => \{\s*const nextTeacherUserId = Number\(event\.target\.value\);/);
+  assert.match(classManagementBlock[0], /void handleSelectTeacherForClass\(item\.id, nextTeacherUserId\);/);
   assert.match(classManagementBlock[0], /const previousTeacherName = previousClass\?\.teacher_name \|\| '';/);
   assert.match(source, /export function resolveTeacherBindingRollbackTeacherBindings\(/);
   assert.match(classManagementBlock[0], /loadPageRequestVersionRef\.current \+= 1;/);
@@ -613,7 +614,7 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
-  assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked\}/);
+  assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked \|\| filteredUsers\.length === 0\}/);
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
@@ -638,7 +639,23 @@ test('class management source embeds teacher assignment inside each class card a
   assert.match(source, /const normalizeClassNameInput = \(value: string\): string =>/);
   assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClassTeacherUserId == null \? '' : String\(newClassTeacherUserId\)\}/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{currentTeacherUserId == null \? '' : String\(currentTeacherUserId\)\}/);
+  assert.match(classManagementBlock[0], /<option value="">请选择负责老师<\/option>/);
   assert.match(classManagementBlock[0], /当前负责老师：\{teacherSummary\}/);
+  assert.match(classManagementBlock[0], /newClassFilteredUsers\.map\(\(user\) => \(/);
+  assert.match(classManagementBlock[0], /filteredUsers\.map\(\(user\) => \(/);
   assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*负责老师/);
+  assert.doesNotMatch(classManagementBlock[0], /type="radio"/);
   assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
+});
+
+test('class management source moves naming guidance to the page header and removes per-card guidance blocks', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。[\s\S]*命名统一规则/);
+  assert.match(classManagementBlock[0], /新建或编辑班级时会优先统一成“六年级 2 班 \/ 初一 3 班 \/ 高二 1 班”的格式。/);
+  assert.equal((classManagementBlock[0].match(/命名统一规则/g) || []).length, 1);
 });
