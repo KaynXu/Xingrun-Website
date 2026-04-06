@@ -2911,7 +2911,11 @@ def api_settings_save():
 def _open_browser():
     import time
     time.sleep(1.5)
-    webbrowser.open("http://127.0.0.1:5001")
+    webbrowser.open(_browser_url())
+
+
+def _browser_url() -> str:
+    return os.environ.get("XR_BROWSER_URL", "http://127.0.0.1:3000").strip() or "http://127.0.0.1:3000"
 
 
 def _should_open_browser() -> bool:
@@ -2925,8 +2929,8 @@ if __name__ == "__main__":
         threading.Thread(target=_open_browser, daemon=True).start()
     print("\n" + "=" * 50)
     print("  📚 复习计划管理系统已启动")
-    print("  浏览器即将自动打开")
-    print("  地址：http://127.0.0.1:5001")
+    print(f"  浏览器即将自动打开：{_browser_url()}")
+    print("  后端地址：http://127.0.0.1:5001")
     print("  按 Ctrl+C 关闭程序")
     print("=" * 50 + "\n")
     app.run(host="127.0.0.1", port=5001, debug=False)
