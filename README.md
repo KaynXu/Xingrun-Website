@@ -244,7 +244,6 @@ Xingrun-Summary/
 ├── requirements.txt
 ├── start.command               ← macOS 一键启动
 ├── start.bat                   ← Windows 一键启动
-├── templates/                  ← Jinja2 HTML 模板
 └── data/
     ├── lessons.db              ← SQLite 数据库（课程 + 题库）
     ├── pdfs/                   ← 生成的 PDF 文件
