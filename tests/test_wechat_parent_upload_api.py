@@ -151,6 +151,112 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(payload["bindings"][0]["student_name"], "Alice")
         self.assertEqual(payload["bindings"][0]["teacher_name"], "平台管理员")
 
+    def test_wechat_service_upload_requires_reason_payload(self):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+        binding = bind.get_json()["binding"]
+
+        upload = self.client.post(
+            "/api/wechat/wrong-questions",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "binding_id": binding["id"],
+                "image_url": "https://files.example.com/record.png",
+                "child_raw_reason_text": "我忘记了等式两边同时乘一样的数字",
+                "child_reason_input_mode": "voice",
+                "primary_error_type": "计算问题",
+                "secondary_error_summary": "等式两边没有同时乘相同的数字",
+            },
+        )
+
+        self.assertEqual(upload.status_code, 201)
+        record = upload.get_json()["record"]
+        self.assertEqual(record["child_raw_reason_text"], "我忘记了等式两边同时乘一样的数字")
+        self.assertEqual(record["child_reason_input_mode"], "voice")
+        self.assertEqual(record["primary_error_type"], "计算问题")
+        self.assertEqual(record["secondary_error_summary"], "等式两边没有同时乘相同的数字")
+
+    def test_parent_child_library_lists_only_bound_student_records(self):
+        second_student = lesson_manager.create_student_for_class(self.class_id, "Bob")
+
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        first_binding_response = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(first_binding_response.status_code, 200)
+        first_binding = first_binding_response.get_json()["binding"]
+
+        second_binding_response = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": second_student["id"],
+            },
+        )
+        self.assertEqual(second_binding_response.status_code, 200)
+        second_binding = second_binding_response.get_json()["binding"]
+
+        first_upload = self.client.post(
+            "/api/wechat/wrong-questions",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "binding_id": first_binding["id"],
+                "image_url": "https://files.example.com/record-1.png",
+            },
+        )
+        self.assertEqual(first_upload.status_code, 201)
+
+        second_upload = self.client.post(
+            "/api/wechat/wrong-questions",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "binding_id": second_binding["id"],
+                "image_url": "https://files.example.com/record-2.png",
+            },
+        )
+        self.assertEqual(second_upload.status_code, 201)
+
+        response = self.client.get(
+            f"/api/wechat/children/{self.student['id']}/wrong-questions",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(len(payload["items"]), 1)
+        self.assertEqual(payload["items"][0]["student_id"], self.student["id"])
+        self.assertEqual(payload["items"][0]["id"], first_upload.get_json()["record"]["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

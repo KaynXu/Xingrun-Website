@@ -106,6 +106,7 @@ from lesson_manager import (
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
+    set_wechat_wrong_question_archive_status,
     get_wechat_wrong_question_submission,
     save_wechat_wrong_question_review,
     update_user_display_name_for_actor,
@@ -1027,6 +1028,21 @@ def _get_parent_student_binding(binding_id: int):
     return dict(row) if row else None
 
 
+def _get_parent_student_binding_for_student(parent_wechat_account_id: int, student_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE parent_wechat_account_id=? AND student_id=? AND status='active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (parent_wechat_account_id, student_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
     return (int(user_id), str(platform_order_id or "").strip().lower())
 
@@ -1552,6 +1568,32 @@ def api_wrong_question_review_save(record_id):
         return jsonify({"error": str(exc)}), exc.status_code
 
 
+@app.route("/api/wrong-questions/<record_id>/archive", methods=["PUT"])
+def api_wrong_question_archive_save(record_id):
+    user, error = _require_staff()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if not local_record or not _can_access_wrong_question_record(user, local_record):
+        return jsonify({"error": "not found"}), 404
+
+    try:
+        saved_record = set_wechat_wrong_question_archive_status(
+            record_id,
+            (data.get("archive_status") or "").strip() or "active",
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not saved_record:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True, "record": saved_record})
+
+
 @app.route("/api/consultations", methods=["GET"])
 def api_consultations_list():
     user, error = _require_auth()
@@ -1943,7 +1985,6 @@ def api_wechat_bind_student():
 
     return jsonify({"binding": binding})
 
-
 @app.route("/api/wechat/bindings", methods=["GET"])
 def api_wechat_bindings_list():
     _, error = _require_wechat_service()
@@ -1989,6 +2030,10 @@ def api_wechat_wrong_questions_create():
             binding_id=binding_id,
             image_url=image_url,
             parent_note=(data.get("parent_note") or "").strip(),
+            child_raw_reason_text=(data.get("child_raw_reason_text") or "").strip(),
+            child_reason_input_mode=(data.get("child_reason_input_mode") or "text").strip(),
+            primary_error_type=(data.get("primary_error_type") or "").strip(),
+            secondary_error_summary=(data.get("secondary_error_summary") or "").strip(),
         )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -1996,6 +2041,32 @@ def api_wechat_wrong_questions_create():
         return jsonify({"error": str(exc)}), 400
 
     return jsonify({"record": record}), 201
+
+
+@app.route("/api/wechat/children/<int:student_id>/wrong-questions", methods=["GET"])
+def api_wechat_child_wrong_questions(student_id):
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    binding = _get_parent_student_binding_for_student(account["id"], student_id)
+    if not binding:
+        return jsonify({"error": "binding not found"}), 404
+
+    items = [
+        item
+        for item in list_wechat_wrong_question_submissions()
+        if item.get("parent_wechat_account_id") == account["id"] and item.get("student_id") == student_id
+    ]
+    return jsonify({"items": items, "total": len(items)})
 
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
