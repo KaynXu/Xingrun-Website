@@ -19,8 +19,8 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
-  assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '班级反馈生成'/);
-  assert.match(appSource, /'class-feedback-generation': '班级反馈生成'/);
+  assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '班级反馈'/);
+  assert.match(appSource, /'class-feedback-generation': '班级反馈'/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);

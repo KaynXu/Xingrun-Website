@@ -1363,7 +1363,7 @@ const Sidebar = ({
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'review-generation', icon: Library, label: '复习生成' },
-    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈生成' },
+    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(canAccessSmartWrongQuestions(currentUser.role)
@@ -7873,7 +7873,7 @@ export default function App() {
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
     'review-generation': '复习生成',
-    'class-feedback-generation': '班级反馈生成',
+    'class-feedback-generation': '班级反馈',
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
