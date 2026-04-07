@@ -131,14 +131,13 @@ test('workspace navigation wires smart wrong questions into every authenticated 
   assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
-test('workspace navigation removes the master data mappings page and keeps accounts focused on approval only', () => {
+test('workspace navigation wires master data mappings into the owner shell only', () => {
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
-  assert.doesNotMatch(appSource, /masterDataMappings/);
-  assert.doesNotMatch(sidebarBlock, /老师与班级匹配/);
-  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} \/>/);
-  assert.doesNotMatch(appSource, /onStartBinding=\{handleStartMemberBinding\}/);
+  assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\)[\s\S]*\{ id: 'masterDataMappings', icon: Database, label: '老师与班级匹配' \}/);
+  assert.match(appSource, /masterDataMappings: '老师与班级匹配'/);
+  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*hasOwnerAccess\(currentUser\.role\)[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} focusUserId=\{masterDataFocusUserId\} \/>/);
+  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} onStartBinding=\{handleStartMemberBinding\} \/>/);
 });
 
 test('workspace navigation exposes a dedicated owner-only credit center page', () => {
@@ -177,7 +176,7 @@ test('credit center page source supports member drilldown and ledger filtering',
   assert.match(creditBlock, /const \[ledgerPage, setLedgerPage\] = useState\(1\);/);
   assert.match(creditBlock, /const totalUsageDetailPages = Math\.max\(1, Math\.ceil\(usageDetailItems\.length \/ CREDIT_USAGE_DETAIL_PAGE_SIZE\)\);/);
   assert.match(creditBlock, /const currentUsageDetailPage = Math\.min\(usageDetailPage, totalUsageDetailPages\);/);
-  assert.match(creditBlock, /const paginatedUsageDetailItems = usageDetailItems\.slice\(\(currentUsageDetailPage - 1\) \* CREDIT_USAGE_DETAIL_PAGE_SIZE, currentUsageDetailPage \* CREDIT_USAGE_DETAIL_PAGE_SIZE\);/);
+  assert.match(creditBlock, /const paginatedUsageDetailItems = usageDetailItems\.slice\([\s\S]*\(currentUsageDetailPage - 1\) \* CREDIT_USAGE_DETAIL_PAGE_SIZE,[\s\S]*currentUsageDetailPage \* CREDIT_USAGE_DETAIL_PAGE_SIZE,[\s\S]*\);/);
   assert.match(creditBlock, /const filteredLedger = creditLedger\.filter\(/);
   assert.match(creditBlock, /const totalLedgerPages = Math\.max\(1, Math\.ceil\(filteredLedger\.length \/ CREDIT_LEDGER_PAGE_SIZE\)\);/);
   assert.match(creditBlock, /const currentLedgerPage = Math\.min\(ledgerPage, totalLedgerPages\);/);

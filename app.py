@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 复习计划管理系统 — Web 界面 (Flask)
 启动方式：双击 start.command（macOS）或 start.bat（Windows）
