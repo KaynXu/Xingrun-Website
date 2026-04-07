@@ -1,5 +1,12 @@
 import React, { useMemo, useState } from 'react';
 
+import {
+  workspaceCardClass,
+  workspaceFieldClass,
+  workspacePrimaryButtonClass,
+  workspaceSecondaryButtonClass,
+  workspaceSoftCardClass,
+} from './App';
 import type {
   ClassFeedbackStageNotes,
   ClassFeedbackStudentCard,
@@ -35,11 +42,6 @@ interface ClassFeedbackGenerationWorkspaceProps {
   onConfirm: () => void | Promise<void>;
 }
 
-const cardClass =
-  'rounded-[28px] border border-sky-100/80 bg-white/92 p-5 shadow-[0_18px_70px_rgba(15,23,42,0.06)]';
-const fieldClass =
-  'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300';
-
 export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationWorkspaceProps) {
   const [newStudentName, setNewStudentName] = useState('');
 
@@ -58,23 +60,40 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
       .catch(() => undefined);
   };
 
+  const cardClass = `${workspaceCardClass} p-6`;
+  const softCardClass = `${workspaceSoftCardClass} p-4`;
+  const fieldClass = workspaceFieldClass;
+  const sectionTitleClass = 'text-xl font-semibold tracking-tight text-slate-900 dark:text-white';
+  const sectionBodyClass = 'text-sm leading-relaxed text-slate-600 dark:text-slate-300';
+  const helperLabelClass =
+    'text-xs font-semibold uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500';
+  const toggleButtonClass = (selected: boolean) =>
+    [
+      'rounded-full border px-3.5 py-2 text-sm font-medium transition',
+      selected
+        ? 'border-sky-500 bg-sky-600 text-white shadow-sm shadow-sky-200/70 dark:border-sky-400 dark:bg-sky-500 dark:shadow-sky-500/10'
+        : 'border-sky-200 bg-white/92 text-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:hover:bg-white/10',
+    ].join(' ');
+
   return (
     <section className="space-y-6">
       <header className={cardClass}>
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Class Feedback</p>
-        <h3 className="mt-3 text-2xl font-semibold text-slate-900">班级反馈生成</h3>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600 dark:text-sky-300">Class Feedback</p>
+        <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">班级反馈生成</h3>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           {props.classNameLabel} · {props.teacherNameLabel}
         </p>
-        <p className="mt-2 text-sm text-slate-500">{props.statusMessage}</p>
-        <p className="mt-2 text-xs font-medium text-sky-700">{props.draftStatusLabel}</p>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{props.statusMessage}</p>
+        <p className="mt-3 inline-flex w-fit rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+          {props.draftStatusLabel}
+        </p>
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <section className={`${cardClass} space-y-6`}>
           <div>
-            <h4 className="text-lg font-semibold text-slate-900">资料摘要</h4>
-            <ul className="mt-4 space-y-2 text-sm text-slate-600">
+            <h4 className={sectionTitleClass}>资料摘要</h4>
+            <ul className={`mt-4 space-y-2 ${sectionBodyClass}`}>
               {props.sourceSummaryItems.map((item) => (
                 <li key={item}>{item}</li>
               ))}
@@ -82,10 +101,10 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
           </div>
 
           <div>
-            <h4 className="text-lg font-semibold text-slate-900">阶段备注</h4>
+            <h4 className={sectionTitleClass}>阶段备注</h4>
             <div className="mt-4 grid gap-3">
-              <div className="rounded-[20px] border border-slate-100 bg-white/85 p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">班级状态标签</p>
+              <div className={softCardClass}>
+                <p className={helperLabelClass}>班级状态标签</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {labelLookup.map((item) => {
                     const selected = props.classStatusTags.includes(item.label);
@@ -94,11 +113,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
                         key={`class-status-${item.group}-${item.label}`}
                         type="button"
                         onClick={() => props.onClassStatusTagToggle(item.label)}
-                        className={`rounded-full px-3 py-1.5 text-sm transition ${
-                          selected
-                            ? 'bg-sky-500 text-white'
-                            : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'
-                        }`}
+                        className={toggleButtonClass(selected)}
                       >
                         {item.label}
                       </button>
@@ -134,8 +149,8 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
           </div>
 
           <div>
-            <h4 className="text-lg font-semibold text-slate-900">补充学生</h4>
-            <div className="mt-3 rounded-[22px] border border-dashed border-sky-200 p-4">
+            <h4 className={sectionTitleClass}>补充学生</h4>
+            <div className="mt-3 rounded-[1.5rem] border border-dashed border-sky-200/90 bg-sky-50/30 p-4 dark:border-white/10 dark:bg-white/5">
               <input
                 value={newStudentName}
                 onChange={(event) => setNewStudentName(event.target.value)}
@@ -145,7 +160,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
               <button
                 type="button"
                 onClick={handleAddStudent}
-                className="mt-3 w-full rounded-2xl bg-sky-50 px-4 py-3 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                className={`${workspaceSecondaryButtonClass} mt-3 w-full`}
               >
                 新增学生
               </button>
@@ -156,13 +171,13 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
         <section className={`${cardClass} space-y-6`}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h4 className="text-lg font-semibold text-slate-900">班级总评</h4>
-              <p className="mt-1 text-sm text-slate-500">{props.statusMessage}</p>
+              <h4 className={sectionTitleClass}>班级总评</h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{props.statusMessage}</p>
             </div>
             <button
               type="button"
               onClick={() => void props.onCopyClassSummary()}
-              className="rounded-full bg-sky-500 px-4 py-2 text-sm font-medium text-white"
+              className={`${workspaceSecondaryButtonClass} rounded-full px-4 py-2`}
             >
               复制班级总评
             </button>
@@ -178,7 +193,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
               type="button"
               onClick={() => void props.onGenerate()}
               disabled={props.isGenerating}
-              className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className={workspacePrimaryButtonClass}
             >
               {props.isGenerating ? '生成中...' : '生成阶段反馈草稿'}
             </button>
@@ -186,7 +201,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
               type="button"
               onClick={() => void props.onCopyAllStudents()}
               disabled={props.isSaving}
-              className="rounded-2xl bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className={workspaceSecondaryButtonClass}
             >
               复制全部学生反馈
             </button>
@@ -194,7 +209,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
               type="button"
               onClick={() => void props.onSaveDraft()}
               disabled={props.isSaving}
-              className="rounded-2xl bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className={workspaceSecondaryButtonClass}
             >
               {props.isSaving ? '保存中...' : '保存草稿'}
             </button>
@@ -202,7 +217,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
               type="button"
               onClick={() => void props.onConfirm()}
               disabled={props.isConfirming}
-              className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className={workspacePrimaryButtonClass}
             >
               {props.isConfirming ? '确认中...' : '确认本次反馈'}
             </button>
@@ -210,31 +225,32 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
 
           <div>
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-lg font-semibold text-slate-900">学生反馈</h4>
-              <p className="text-xs font-medium text-slate-500">按未检查优先排序</p>
+              <h4 className={sectionTitleClass}>学生反馈</h4>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">按未检查优先排序</p>
             </div>
           </div>
 
           <div className="space-y-4">
             {props.students.map((student) => (
-              <article key={student.studentId} className="rounded-[22px] border border-slate-100 bg-slate-50/70 p-4">
+              <article key={student.studentId} className={`${workspaceSoftCardClass} p-4`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-semibold text-slate-900">{student.name}</p>
-                    <p className="mt-1 text-xs text-slate-500">{student.sourceSummary}</p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">{student.name}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{student.sourceSummary}</p>
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                     <input
                       type="checkbox"
                       checked={student.checked}
                       onChange={(event) => props.onStudentCheckedChange(student.studentId, event.target.checked)}
+                      className="h-4 w-4 rounded border-sky-300 text-sky-600 focus:ring-sky-500 dark:border-white/20 dark:bg-slate-900/70"
                     />
                     标记已检查
                   </label>
                 </div>
 
-                <div className="mt-4 space-y-3 rounded-[20px] border border-slate-100 bg-white/85 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">阶段变化</p>
+                <div className={`mt-4 space-y-3 ${softCardClass}`}>
+                  <p className={helperLabelClass}>阶段变化</p>
                   <div className="flex flex-wrap gap-2">
                     {labelLookup.map((item) => {
                       const selected = student.highlightLabels.includes(item.label);
@@ -243,11 +259,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
                           key={`${student.studentId}-${item.group}-${item.label}`}
                           type="button"
                           onClick={() => props.onHighlightToggle(student.studentId, item.label)}
-                          className={`rounded-full px-3 py-1.5 text-sm transition ${
-                            selected
-                              ? 'bg-sky-500 text-white'
-                              : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-700'
-                          }`}
+                          className={toggleButtonClass(selected)}
                         >
                           {item.label}
                         </button>

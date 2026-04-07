@@ -13,6 +13,7 @@ import {
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const workspaceSource = readFileSync(new URL('./ClassFeedbackGenerationWorkspace.tsx', import.meta.url), 'utf8');
 
 test('defaultStageLabelGroups exposes the built-in grouped labels', () => {
   assert.equal(defaultStageLabelGroups.length, 4);
@@ -130,6 +131,21 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   assert.match(markup, /张三/);
   assert.match(markup, /保存草稿/);
   assert.match(markup, /确认本次反馈/);
+  assert.match(markup, /dark:text-white/);
+  assert.match(markup, /bg-sky-600/);
+  assert.match(markup, /dark:bg-slate-950\/78/);
+});
+
+test('ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for surfaces, fields, and buttons', () => {
+  assert.match(
+    workspaceSource,
+    /workspaceCardClass,\s*workspaceFieldClass,\s*workspacePrimaryButtonClass,\s*workspaceSecondaryButtonClass,\s*workspaceSoftCardClass/,
+  );
+  assert.match(workspaceSource, /const cardClass = `\$\{workspaceCardClass\} p-6`;/);
+  assert.match(workspaceSource, /const softCardClass = `\$\{workspaceSoftCardClass\} p-4`;/);
+  assert.match(workspaceSource, /const fieldClass = workspaceFieldClass;/);
+  assert.match(workspaceSource, /className=\{workspacePrimaryButtonClass\}/);
+  assert.match(workspaceSource, /className=\{workspaceSecondaryButtonClass\}/);
 });
 
 test('App source wires the standalone class feedback page and existing class student APIs', () => {
