@@ -132,6 +132,35 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.assertEqual(payload["record"]["archive_status"], "archived")
         self.assertTrue(payload["record"]["archived_at"])
 
+    def test_non_staff_cannot_archive_wechat_wrong_question(self):
+        with lesson_manager.get_conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, 'member', 'active', ?)
+                """,
+                ("member_archive", "hash", "Member Archive", self.owner_payload["user"]["organization_id"]),
+            )
+            member_id = cur.lastrowid
+        member_token = lesson_manager.create_auth_session(member_id)
+
+        archive = self.client.put(
+            f"/api/wrong-questions/{self.record_id}/archive",
+            headers=self.auth_headers(member_token),
+            json={"archive_status": "archived"},
+        )
+
+        self.assertEqual(archive.status_code, 403)
+
+    def test_staff_gets_404_when_archiving_missing_local_record(self):
+        archive = self.client.put(
+            "/api/wrong-questions/wechat-missing-record/archive",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"archive_status": "archived"},
+        )
+
+        self.assertEqual(archive.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

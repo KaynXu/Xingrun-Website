@@ -2981,6 +2981,60 @@ def bind_parent_to_student(*, parent_wechat_account_id: int, class_id: int, stud
         ).fetchone()
     return dict(created) if created else {}
 
+
+def get_parent_student_binding(binding_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE id=? AND status='active'
+            """,
+            (binding_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_parent_student_binding_for_student(parent_wechat_account_id: int, student_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE parent_wechat_account_id=? AND student_id=? AND status='active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (parent_wechat_account_id, student_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_parent_student_bindings_for_openid(open_id: str) -> list[dict]:
+    normalized_openid = (open_id or "").strip()
+    if not normalized_openid:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                psb.*,
+                c.name AS class_name,
+                s.name AS student_name,
+                u.display_name AS teacher_name
+            FROM parent_student_bindings psb
+            JOIN parent_wechat_accounts pwa ON pwa.id = psb.parent_wechat_account_id
+            JOIN classes c ON c.id = psb.class_id
+            JOIN students s ON s.id = psb.student_id
+            LEFT JOIN users u ON u.id = psb.teacher_user_id
+            WHERE pwa.openid=? AND psb.status='active'
+            ORDER BY psb.id DESC
+            """,
+            (normalized_openid,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
 def create_wechat_wrong_question_submission(
     *,
     binding_id: int,
@@ -3094,6 +3148,38 @@ def list_wechat_wrong_question_submissions() -> list[dict]:
             JOIN users u ON u.id = wqs.teacher_user_id
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """
+        ).fetchall()
+    return [
+        item
+        for item in (
+            _serialize_wechat_wrong_question_submission_row(row)
+            for row in rows
+        )
+        if item is not None
+    ]
+
+
+def list_wechat_wrong_question_submissions_for_parent_student(
+    *,
+    parent_wechat_account_id: int,
+    student_id: int,
+) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.parent_wechat_account_id=? AND wqs.student_id=?
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            (parent_wechat_account_id, student_id),
         ).fetchall()
     return [
         item

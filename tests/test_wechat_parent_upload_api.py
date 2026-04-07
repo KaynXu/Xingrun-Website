@@ -257,5 +257,61 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(payload["items"][0]["student_id"], self.student["id"])
         self.assertEqual(payload["items"][0]["id"], first_upload.get_json()["record"]["id"])
 
+    def test_parent_child_library_returns_404_for_different_parent_open_id(self):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-2", "nickname_snapshot": "Bob 妈妈"},
+        )
+
+        response = self.client.get(
+            f"/api/wechat/children/{self.student['id']}/wrong-questions",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-2"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_parent_child_library_returns_404_for_unbound_student(self):
+        unbound_student = lesson_manager.create_student_for_class(self.class_id, "Bob")
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+
+        response = self.client.get(
+            f"/api/wechat/children/{unbound_student['id']}/wrong-questions",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+
 if __name__ == "__main__":
     unittest.main()

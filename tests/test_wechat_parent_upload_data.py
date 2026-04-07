@@ -106,6 +106,49 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
 
         self.assertEqual(str(ctx.exception), "child_reason_input_mode must be text or voice")
 
+    def test_list_wechat_wrong_question_submissions_for_parent_student_scopes_records(self):
+        primary_account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        primary_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=primary_account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        target = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=primary_binding["id"],
+            image_url="https://files.example.com/target.png",
+        )
+
+        other_student = lesson_manager.create_student_for_class(self.class_id, "Bob")
+        other_student_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=primary_account["id"],
+            class_id=self.class_id,
+            student_id=other_student["id"],
+        )
+        lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=other_student_binding["id"],
+            image_url="https://files.example.com/other-student.png",
+        )
+
+        other_account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-2")
+        other_account_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=other_account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=other_account_binding["id"],
+            image_url="https://files.example.com/other-parent.png",
+        )
+
+        items = lesson_manager.list_wechat_wrong_question_submissions_for_parent_student(
+            parent_wechat_account_id=primary_account["id"],
+            student_id=self.student["id"],
+        )
+
+        self.assertEqual([item["id"] for item in items], [target["id"]])
+        self.assertEqual(items[0]["parent_wechat_account_id"], primary_account["id"])
+        self.assertEqual(items[0]["student_id"], self.student["id"])
+
     def test_init_db_migrates_legacy_wrong_question_rows_with_default_reason_and_archive_fields(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(

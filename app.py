@@ -71,6 +71,8 @@ from lesson_manager import (
     get_conn,
     get_consultation,
     get_current_user,
+    get_parent_student_binding,
+    get_parent_student_binding_for_student,
     get_or_create_active_class_invite,
     get_lesson,
     get_or_create_active_organization_invite,
@@ -89,7 +91,9 @@ from lesson_manager import (
     list_lessons_for_actor,
     list_organizations,
     list_organization_requests,
+    list_parent_student_bindings_for_openid,
     list_students_for_class,
+    list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
     list_registration_requests_for_actor,
     list_users_for_actor,
@@ -1016,55 +1020,6 @@ def _get_active_class_invite_by_code(invite_code: str):
             (invite_code,),
         ).fetchone()
     return dict(row) if row else None
-
-
-def _get_parent_student_binding(binding_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM parent_student_bindings WHERE id=? AND status='active'",
-            (binding_id,),
-        ).fetchone()
-    return dict(row) if row else None
-
-
-def _get_parent_student_binding_for_student(parent_wechat_account_id: int, student_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM parent_student_bindings
-            WHERE parent_wechat_account_id=? AND student_id=? AND status='active'
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (parent_wechat_account_id, student_id),
-        ).fetchone()
-    return dict(row) if row else None
-
-
-def _list_parent_student_bindings_for_openid(open_id: str) -> list[dict]:
-    account = _get_parent_wechat_account_by_openid(open_id)
-    if not account:
-        return []
-
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                psb.*,
-                c.name AS class_name,
-                s.name AS student_name,
-                u.display_name AS teacher_name
-            FROM parent_student_bindings psb
-            JOIN classes c ON c.id = psb.class_id
-            JOIN students s ON s.id = psb.student_id
-            LEFT JOIN users u ON u.id = psb.teacher_user_id
-            WHERE psb.parent_wechat_account_id=? AND psb.status='active'
-            ORDER BY psb.id DESC
-            """,
-            (account["id"],),
-        ).fetchall()
-    return [dict(row) for row in rows]
 
 
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
@@ -2024,7 +1979,7 @@ def api_wechat_bindings_list():
     if not account:
         return jsonify({"error": "parent wechat account not found"}), 404
 
-    return jsonify({"bindings": _list_parent_student_bindings_for_openid(open_id)})
+    return jsonify({"bindings": list_parent_student_bindings_for_openid(open_id)})
 
 
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
@@ -2046,7 +2001,7 @@ def api_wechat_wrong_questions_create():
     if not account:
         return jsonify({"error": "parent wechat account not found"}), 404
 
-    binding = _get_parent_student_binding(binding_id)
+    binding = get_parent_student_binding(binding_id)
     if not binding or binding.get("parent_wechat_account_id") != account["id"]:
         return jsonify({"error": "binding not found"}), 404
 
@@ -2082,15 +2037,14 @@ def api_wechat_child_wrong_questions(student_id):
     if not account:
         return jsonify({"error": "parent wechat account not found"}), 404
 
-    binding = _get_parent_student_binding_for_student(account["id"], student_id)
+    binding = get_parent_student_binding_for_student(account["id"], student_id)
     if not binding:
         return jsonify({"error": "binding not found"}), 404
 
-    items = [
-        item
-        for item in list_wechat_wrong_question_submissions()
-        if item.get("parent_wechat_account_id") == account["id"] and item.get("student_id") == student_id
-    ]
+    items = list_wechat_wrong_question_submissions_for_parent_student(
+        parent_wechat_account_id=account["id"],
+        student_id=student_id,
+    )
     return jsonify({"items": items, "total": len(items)})
 
 
