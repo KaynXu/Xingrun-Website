@@ -104,6 +104,15 @@ async function callApiFetch<T>(path: string, options?: RequestInit): Promise<T> 
   return apiFetch<T>(path, options);
 }
 
+export const listClassStudents = (classId: number) =>
+  callApiFetch<{ students: Array<{ id: number; name: string }> }>(`/api/classes/${classId}/students`);
+
+export const createClassStudent = (classId: number, name: string) =>
+  callApiFetch<{ student: { id: number; name: string }; deduplicated: boolean }>(`/api/classes/${classId}/students`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+
 export const loadClassFeedbackLabels = () =>
   callApiFetch<{ groups: StageLabelGroup[] }>('/api/class-feedback/labels');
 

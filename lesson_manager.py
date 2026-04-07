@@ -1244,6 +1244,16 @@ def init_db():
         ON ai_usage_ledger (organization_id, request_id)
         WHERE request_id <> '';
 
+        CREATE TABLE IF NOT EXISTS lesson_feedbacks (
+            lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
+            class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+            merged_text         TEXT DEFAULT '',
+            student_index_json  TEXT DEFAULT '[]',
+            editor_state_json   TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now','localtime')),
+            updated_at          TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS class_feedback_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
