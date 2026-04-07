@@ -4288,6 +4288,13 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     }
   }, []);
 
+  const refreshApprovalMembers = useCallback(async () => {
+    await Promise.all([
+      loadUsers(),
+      loadBindingSummaries(),
+    ]);
+  }, [loadBindingSummaries, loadUsers]);
+
   const loadOrganizationRequests = useCallback(async () => {
     if (currentUser.role !== 'super_owner') {
       setOrganizationRequests([]);
@@ -4336,6 +4343,24 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     loadOrganizationInvite().catch(() => undefined);
   }, [loadItems, loadUsers, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
 
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      refreshApprovalMembers().catch(() => undefined);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshApprovalMembers().catch(() => undefined);
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshApprovalMembers]);
+
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
     setError('');
@@ -4344,6 +4369,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
         method: 'POST',
       });
       setItems((current) => current.filter((item) => item.id !== requestId));
+      refreshApprovalMembers().catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : '审批操作失败');
     } finally {
@@ -4359,7 +4385,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
         method: 'POST',
       });
       setOrganizationRequests((current) => current.filter((item) => item.id !== requestId));
-      loadUsers().catch(() => undefined);
+      refreshApprovalMembers().catch(() => undefined);
       loadOrganizations().catch(() => undefined);
     } catch (err) {
       setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批处理失败');
