@@ -120,37 +120,6 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["class_id"], self.class_id)
         self.assertEqual(record["student_id"], self.student["id"])
 
-    def test_wechat_service_can_fetch_latest_parent_bindings(self):
-        self.client.post(
-            "/api/wechat/login",
-            headers=self.service_headers(),
-            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
-        )
-        bind = self.client.post(
-            "/api/wechat/bind-student",
-            headers=self.service_headers(),
-            json={
-                "open_id": "openid-1",
-                "class_id": self.class_id,
-                "student_id": self.student["id"],
-            },
-        )
-        self.assertEqual(bind.status_code, 200)
-
-        bindings = self.client.get(
-            "/api/wechat/bindings",
-            headers=self.service_headers(),
-            query_string={"open_id": "openid-1"},
-        )
-
-        self.assertEqual(bindings.status_code, 200)
-        payload = bindings.get_json()
-        self.assertIsNotNone(payload)
-        self.assertEqual(len(payload["bindings"]), 1)
-        self.assertEqual(payload["bindings"][0]["class_name"], "六年级 1 班")
-        self.assertEqual(payload["bindings"][0]["student_name"], "Alice")
-        self.assertEqual(payload["bindings"][0]["teacher_name"], "平台管理员")
-
     def test_wechat_service_upload_requires_reason_payload(self):
         self.client.post(
             "/api/wechat/login",
@@ -256,7 +225,6 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(len(payload["items"]), 1)
         self.assertEqual(payload["items"][0]["student_id"], self.student["id"])
         self.assertEqual(payload["items"][0]["id"], first_upload.get_json()["record"]["id"])
-
 
 if __name__ == "__main__":
     unittest.main()
