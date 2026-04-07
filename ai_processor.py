@@ -469,7 +469,6 @@ def generate_teacher_feedback_draft(
         return merged_text, _usage_dict(response)
     return merged_text
 
-
 def generate_class_feedback_bundle(
     *,
     class_name: str,
@@ -535,7 +534,6 @@ def generate_class_feedback_bundle(
         bundle["student_entries"] = []
     bundle["class_summary"] = str(bundle.get("class_summary") or "").strip()
     return bundle
-
 def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = False):
     """
     给定本月所有 lesson 记录列表，生成月度综合复习计划。
