@@ -89,28 +89,108 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(submission["child_reason_input_mode"], "voice")
         self.assertEqual(submission["archive_status"], "active")
 
-    def test_list_parent_bindings_for_openid_returns_current_display_fields(self):
-        account = lesson_manager.upsert_parent_wechat_account(
-            openid="openid-parent-1",
-            nickname_snapshot="Alice 妈妈",
-        )
+    def test_wrong_question_submission_rejects_unknown_child_reason_input_mode(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(
             parent_wechat_account_id=account["id"],
             class_id=self.class_id,
             student_id=self.student["id"],
         )
 
-        items = lesson_manager.list_parent_student_bindings_for_openid("openid-parent-1")
+        with self.assertRaises(ValueError) as ctx:
+            lesson_manager.create_wechat_wrong_question_submission(
+                binding_id=binding["id"],
+                image_url="https://files.example.com/wrong-question.png",
+                child_reason_input_mode="typing",
+            )
 
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["id"], binding["id"])
-        self.assertEqual(items[0]["class_id"], self.class_id)
-        self.assertEqual(items[0]["class_name"], "六年级 1 班")
-        self.assertEqual(items[0]["student_id"], self.student["id"])
-        self.assertEqual(items[0]["student_name"], "Alice")
-        self.assertEqual(items[0]["teacher_user_id"], self.owner_id)
-        self.assertEqual(items[0]["teacher_name"], "平台管理员")
+        self.assertEqual(str(ctx.exception), "child_reason_input_mode must be text or voice")
 
+    def test_init_db_migrates_legacy_wrong_question_rows_with_default_reason_and_archive_fields(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute("DROP TABLE wrong_question_submissions")
+            conn.execute(
+                """
+                CREATE TABLE wrong_question_submissions (
+                    id                        TEXT PRIMARY KEY,
+                    organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    source                    TEXT NOT NULL DEFAULT 'wechat_mp',
+                    parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+                    binding_id                INTEGER NOT NULL REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
+                    class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                    student_id                INTEGER NOT NULL REFERENCES students(id),
+                    teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
+                    image_url                 TEXT NOT NULL,
+                    parent_note               TEXT NOT NULL DEFAULT '',
+                    teacher_comment           TEXT NOT NULL DEFAULT '',
+                    status                    TEXT NOT NULL DEFAULT 'pending',
+                    created_at                TEXT DEFAULT (datetime('now','localtime')),
+                    updated_at                TEXT DEFAULT (datetime('now','localtime'))
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO wrong_question_submissions (
+                    id, organization_id, source, parent_wechat_account_id, binding_id,
+                    class_id, student_id, teacher_user_id, image_url, parent_note,
+                    teacher_comment, status
+                ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, '', 'pending')
+                """,
+                (
+                    "legacy-record-1",
+                    binding["organization_id"],
+                    binding["parent_wechat_account_id"],
+                    binding["id"],
+                    binding["class_id"],
+                    binding["student_id"],
+                    binding["teacher_user_id"],
+                    "https://files.example.com/legacy.png",
+                    "旧记录",
+                ),
+            )
+
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            columns = {
+                row["name"]: row["dflt_value"]
+                for row in conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()
+            }
+            row = conn.execute(
+                """
+                SELECT
+                    child_raw_reason_text,
+                    child_reason_input_mode,
+                    primary_error_type,
+                    secondary_error_summary,
+                    archive_status,
+                    archived_at
+                FROM wrong_question_submissions
+                WHERE id=?
+                """,
+                ("legacy-record-1",),
+            ).fetchone()
+
+        self.assertIn("child_raw_reason_text", columns)
+        self.assertIn("child_reason_input_mode", columns)
+        self.assertIn("primary_error_type", columns)
+        self.assertIn("secondary_error_summary", columns)
+        self.assertIn("archive_status", columns)
+        self.assertIn("archived_at", columns)
+        self.assertEqual(row["child_raw_reason_text"], "")
+        self.assertEqual(row["child_reason_input_mode"], "text")
+        self.assertEqual(row["primary_error_type"], "")
+        self.assertEqual(row["secondary_error_summary"], "")
+        self.assertEqual(row["archive_status"], "active")
+        self.assertEqual(row["archived_at"], "")
 
 if __name__ == "__main__":
     unittest.main()

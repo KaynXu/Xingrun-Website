@@ -50,6 +50,7 @@ SUPER_OWNER_ROLE = "super_owner"
 OWNER_ROLE = "owner"
 ADMIN_ROLE = "admin"
 MEMBER_ROLE = "member"
+WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
 ORGANIZATION_REQUEST_PENDING = "pending"
 ORGANIZATION_REQUEST_APPROVED = "approved"
 ORGANIZATION_REQUEST_REJECTED = "rejected"
@@ -2980,34 +2981,6 @@ def bind_parent_to_student(*, parent_wechat_account_id: int, class_id: int, stud
         ).fetchone()
     return dict(created) if created else {}
 
-
-def list_parent_student_bindings_for_openid(openid: str) -> list[dict]:
-    normalized_openid = (openid or "").strip()
-    if not normalized_openid:
-        return []
-
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                psb.*,
-                c.name AS class_name,
-                s.name AS student_name,
-                u.display_name AS teacher_name
-            FROM parent_student_bindings psb
-            JOIN parent_wechat_accounts pwa ON pwa.id = psb.parent_wechat_account_id
-            JOIN classes c ON c.id = psb.class_id
-            JOIN students s ON s.id = psb.student_id
-            JOIN users u ON u.id = psb.teacher_user_id
-            WHERE pwa.openid=? AND psb.status='active'
-            ORDER BY psb.updated_at DESC, psb.id DESC
-            """,
-            (normalized_openid,),
-        ).fetchall()
-
-    return [dict(row) for row in rows]
-
-
 def create_wechat_wrong_question_submission(
     *,
     binding_id: int,
@@ -3021,6 +2994,9 @@ def create_wechat_wrong_question_submission(
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
         raise ValueError("image_url is required")
+    normalized_reason_input_mode = ((child_reason_input_mode or "text").strip() or "text").lower()
+    if normalized_reason_input_mode not in WECHAT_CHILD_REASON_INPUT_MODES:
+        raise ValueError("child_reason_input_mode must be text or voice")
 
     with get_conn() as conn:
         binding_row = conn.execute(
@@ -3055,7 +3031,7 @@ def create_wechat_wrong_question_submission(
                 normalized_image_url,
                 (parent_note or "").strip(),
                 (child_raw_reason_text or "").strip(),
-                (child_reason_input_mode or "text").strip() or "text",
+                normalized_reason_input_mode,
                 (primary_error_type or "").strip(),
                 (secondary_error_summary or "").strip(),
             ),
