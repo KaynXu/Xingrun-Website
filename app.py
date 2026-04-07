@@ -1042,6 +1042,31 @@ def _get_parent_student_binding_for_student(parent_wechat_account_id: int, stude
     return dict(row) if row else None
 
 
+def _list_parent_student_bindings_for_openid(open_id: str) -> list[dict]:
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                psb.*,
+                c.name AS class_name,
+                s.name AS student_name,
+                u.display_name AS teacher_name
+            FROM parent_student_bindings psb
+            JOIN classes c ON c.id = psb.class_id
+            JOIN students s ON s.id = psb.student_id
+            LEFT JOIN users u ON u.id = psb.teacher_user_id
+            WHERE psb.parent_wechat_account_id=? AND psb.status='active'
+            ORDER BY psb.id DESC
+            """,
+            (account["id"],),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
     return (int(user_id), str(platform_order_id or "").strip().lower())
 
@@ -1983,6 +2008,24 @@ def api_wechat_bind_student():
         return jsonify({"error": str(exc)}), 400
 
     return jsonify({"binding": binding})
+
+
+@app.route("/api/wechat/bindings", methods=["GET"])
+def api_wechat_bindings_list():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    return jsonify({"bindings": _list_parent_student_bindings_for_openid(open_id)})
+
 
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
 def api_wechat_wrong_questions_create():
