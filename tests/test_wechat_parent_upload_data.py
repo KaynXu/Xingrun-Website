@@ -65,6 +65,52 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(submission["source"], "wechat_mp")
         self.assertEqual(submission["status"], "pending")
 
+    def test_wrong_question_submission_stores_reason_and_archive_fields(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            parent_note="这题又错了",
+            child_raw_reason_text="我忘了等式两边同时乘一样的数字",
+            child_reason_input_mode="voice",
+            primary_error_type="计算问题",
+            secondary_error_summary="等式两边没有同时乘相同的数字",
+        )
+
+        self.assertEqual(submission["primary_error_type"], "计算问题")
+        self.assertEqual(submission["secondary_error_summary"], "等式两边没有同时乘相同的数字")
+        self.assertEqual(submission["child_raw_reason_text"], "我忘了等式两边同时乘一样的数字")
+        self.assertEqual(submission["child_reason_input_mode"], "voice")
+        self.assertEqual(submission["archive_status"], "active")
+
+    def test_list_parent_bindings_for_openid_returns_current_display_fields(self):
+        account = lesson_manager.upsert_parent_wechat_account(
+            openid="openid-parent-1",
+            nickname_snapshot="Alice 妈妈",
+        )
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        items = lesson_manager.list_parent_student_bindings_for_openid("openid-parent-1")
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], binding["id"])
+        self.assertEqual(items[0]["class_id"], self.class_id)
+        self.assertEqual(items[0]["class_name"], "六年级 1 班")
+        self.assertEqual(items[0]["student_id"], self.student["id"])
+        self.assertEqual(items[0]["student_name"], "Alice")
+        self.assertEqual(items[0]["teacher_user_id"], self.owner_id)
+        self.assertEqual(items[0]["teacher_name"], "平台管理员")
+
 
 if __name__ == "__main__":
     unittest.main()

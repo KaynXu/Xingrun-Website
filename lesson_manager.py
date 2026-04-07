@@ -1219,6 +1219,12 @@ def init_db():
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
             image_url                 TEXT NOT NULL,
             parent_note               TEXT NOT NULL DEFAULT '',
+            child_raw_reason_text     TEXT NOT NULL DEFAULT '',
+            child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
+            primary_error_type        TEXT NOT NULL DEFAULT '',
+            secondary_error_summary   TEXT NOT NULL DEFAULT '',
+            archive_status            TEXT NOT NULL DEFAULT 'active',
+            archived_at               TEXT DEFAULT '',
             teacher_comment           TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
@@ -1304,6 +1310,12 @@ def init_db():
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
+        _ensure_column(conn, "wrong_question_submissions", "child_raw_reason_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
+        _ensure_column(conn, "wrong_question_submissions", "primary_error_type", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
+        _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
     print(f"数据库已初始化：{DB_PATH}")
 
 
@@ -2969,7 +2981,43 @@ def bind_parent_to_student(*, parent_wechat_account_id: int, class_id: int, stud
     return dict(created) if created else {}
 
 
-def create_wechat_wrong_question_submission(*, binding_id: int, image_url: str, parent_note: str = "") -> dict:
+def list_parent_student_bindings_for_openid(openid: str) -> list[dict]:
+    normalized_openid = (openid or "").strip()
+    if not normalized_openid:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                psb.*,
+                c.name AS class_name,
+                s.name AS student_name,
+                u.display_name AS teacher_name
+            FROM parent_student_bindings psb
+            JOIN parent_wechat_accounts pwa ON pwa.id = psb.parent_wechat_account_id
+            JOIN classes c ON c.id = psb.class_id
+            JOIN students s ON s.id = psb.student_id
+            JOIN users u ON u.id = psb.teacher_user_id
+            WHERE pwa.openid=? AND psb.status='active'
+            ORDER BY psb.updated_at DESC, psb.id DESC
+            """,
+            (normalized_openid,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def create_wechat_wrong_question_submission(
+    *,
+    binding_id: int,
+    image_url: str,
+    parent_note: str = "",
+    child_raw_reason_text: str = "",
+    child_reason_input_mode: str = "text",
+    primary_error_type: str = "",
+    secondary_error_summary: str = "",
+) -> dict:
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
         raise ValueError("image_url is required")
@@ -2991,8 +3039,10 @@ def create_wechat_wrong_question_submission(*, binding_id: int, image_url: str, 
             """
             INSERT INTO wrong_question_submissions (
                 id, organization_id, source, parent_wechat_account_id, binding_id,
-                class_id, student_id, teacher_user_id, image_url, parent_note, status
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, 'pending')
+                class_id, student_id, teacher_user_id, image_url, parent_note,
+                child_raw_reason_text, child_reason_input_mode,
+                primary_error_type, secondary_error_summary, archive_status, status
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending')
             """,
             (
                 record_id,
@@ -3004,6 +3054,10 @@ def create_wechat_wrong_question_submission(*, binding_id: int, image_url: str, 
                 binding_row["teacher_user_id"],
                 normalized_image_url,
                 (parent_note or "").strip(),
+                (child_raw_reason_text or "").strip(),
+                (child_reason_input_mode or "text").strip() or "text",
+                (primary_error_type or "").strip(),
+                (secondary_error_summary or "").strip(),
             ),
         )
         created = conn.execute(
@@ -3079,6 +3133,29 @@ def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(row)
+
+
+def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str) -> Optional[dict]:
+    normalized_status = (archive_status or "").strip() or "active"
+    if normalized_status not in {"active", "archived"}:
+        raise ValueError("archive_status must be active or archived")
+
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET archive_status=?,
+                archived_at=CASE WHEN ?='archived' THEN datetime('now','localtime') ELSE '' END,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (normalized_status, normalized_status, record_id),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
 
 
 def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:

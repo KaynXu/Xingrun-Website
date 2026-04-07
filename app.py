@@ -89,6 +89,7 @@ from lesson_manager import (
     list_lessons_for_actor,
     list_organizations,
     list_organization_requests,
+    list_parent_student_bindings_for_openid,
     list_students_for_class,
     list_wechat_wrong_question_submissions,
     list_registration_requests_for_actor,
@@ -1941,6 +1942,23 @@ def api_wechat_bind_student():
         return jsonify({"error": str(exc)}), 400
 
     return jsonify({"binding": binding})
+
+
+@app.route("/api/wechat/bindings", methods=["GET"])
+def api_wechat_bindings_list():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    return jsonify({"bindings": list_parent_student_bindings_for_openid(open_id)})
 
 
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
