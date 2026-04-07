@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import {
@@ -42,11 +42,39 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
+import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
+import {
+  createClassStudent,
+  listClassStudents,
+  buildClassFeedbackConfirmPayload,
+  buildClassFeedbackStudentCards,
+  confirmClassFeedbackTask,
+  createClassFeedbackTask,
+  defaultStageLabelGroups,
+  formatClassFeedbackStudentCopyText,
+  generateClassFeedbackTask,
+  loadClassFeedbackLabels,
+  loadClassFeedbackTask,
+  saveClassFeedbackTaskDraft,
+  type ClassFeedbackStageNotes,
+  type ClassFeedbackStudentCard,
+  type StageLabelGroup,
+} from './classFeedbackGeneration';
 
 // --- Types ---
 
 type Role = 'super_owner' | 'owner' | 'admin' | 'member';
-type Page = 'dashboard' | 'review-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
+type Page =
+  | 'dashboard'
+  | 'review-generation'
+  | 'class-feedback-generation'
+  | 'consultation'
+  | 'calendar'
+  | 'smartWrongQuestions'
+  | 'classes'
+  | 'accounts'
+  | 'credit'
+  | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
 
@@ -1343,6 +1371,7 @@ const Sidebar = ({
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'review-generation', icon: Library, label: '复习生成' },
+    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(canAccessSmartWrongQuestions(currentUser.role)
@@ -2225,6 +2254,649 @@ const ReviewGenerationPage = ({
       )}
 
       <ReviewDocumentHistory refreshToken={historyRefreshToken} />
+    </div>
+  );
+};
+
+function createEmptyClassFeedbackStageNotes(): ClassFeedbackStageNotes {
+  return {
+    classStatusNote: '',
+    parentFeedbackNote: '',
+    teachingFocusNote: '',
+    nextStagePreviewNote: '',
+  };
+}
+
+function createEmptyClassFeedbackStudentCards(roster: Array<{ id: number; name: string }>): ClassFeedbackStudentCard[] {
+  return roster.map((student) => ({
+    studentId: student.id,
+    name: student.name,
+    aiDraft: '',
+    finalText: '',
+    checked: false,
+    sourceSummary: '等待生成本阶段草稿',
+    highlightLabels: [],
+    highlightNote: '',
+  }));
+}
+
+function buildClassFeedbackDraftSnapshot(
+  summary: string,
+  students: ClassFeedbackStudentCard[],
+): string {
+  return JSON.stringify({
+    classSummary: summary,
+    students: students.map((student) => ({
+      studentId: student.studentId,
+      finalText: student.finalText,
+    })),
+  });
+}
+
+const ClassFeedbackGenerationPage = ({
+  currentUser,
+}: {
+  currentUser: CurrentUser;
+}) => {
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [labelGroups, setLabelGroups] = useState<StageLabelGroup[]>(defaultStageLabelGroups);
+  const [classesLoading, setClassesLoading] = useState(true);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [startDate, setStartDate] = useState(() => shiftIsoDate(getTodayIsoDate(), -6));
+  const [endDate, setEndDate] = useState(() => getTodayIsoDate());
+  const [activeClassFeedbackTaskId, setActiveClassFeedbackTaskId] = useState<number | null>(null);
+  const [classFeedbackStudents, setClassFeedbackStudents] = useState<ClassFeedbackStudentCard[]>([]);
+  const [classFeedbackSummary, setClassFeedbackSummary] = useState('');
+  const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState(
+    '先选择班级和时间范围，再汇总阶段素材。',
+  );
+  const [classFeedbackStageNotes, setClassFeedbackStageNotes] = useState<ClassFeedbackStageNotes>(
+    createEmptyClassFeedbackStageNotes(),
+  );
+  const [classFeedbackStatusTags, setClassFeedbackStatusTags] = useState<string[]>([]);
+  const [teacherNameLabel, setTeacherNameLabel] = useState(currentUser.display_name);
+  const [currentTaskStatus, setCurrentTaskStatus] = useState<string>('draft');
+  const [matchedLessonCount, setMatchedLessonCount] = useState(0);
+  const [isRefreshingTask, setIsRefreshingTask] = useState(false);
+  const [isGeneratingClassFeedback, setIsGeneratingClassFeedback] = useState(false);
+  const [isSavingClassFeedback, setIsSavingClassFeedback] = useState(false);
+  const [isConfirmingClassFeedback, setIsConfirmingClassFeedback] = useState(false);
+  const classFeedbackDraftSnapshotRef = useRef('');
+
+  const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
+
+  const loadRosterOnly = useCallback(async (classId: number) => {
+    const roster = await listClassStudents(classId);
+    setClassFeedbackStudents(createEmptyClassFeedbackStudentCards(roster.students));
+    return roster.students.length;
+  }, []);
+
+  const hydrateClassFeedbackTask = useCallback(
+    async (taskId: number, classId: number) => {
+    setIsRefreshingTask(true);
+    try {
+      const [task, roster] = await Promise.all([
+        loadClassFeedbackTask(taskId),
+        listClassStudents(classId),
+      ]);
+      const hydratedStudents = buildClassFeedbackStudentCards({
+        roster: roster.students,
+        task,
+      });
+      const hydratedSummary =
+        task.class_summary_final_text?.trim() ? task.class_summary_final_text : task.class_summary_ai_draft ?? '';
+      setActiveClassFeedbackTaskId(task.id);
+      setSelectedClassId(task.class_id);
+      setTeacherNameLabel(task.teacher_name_snapshot || selectedClass?.teacher_name || currentUser.display_name);
+      setClassFeedbackStatusTags(task.class_status_tags ?? []);
+      setClassFeedbackStageNotes({
+        classStatusNote: task.class_status_note ?? '',
+        parentFeedbackNote: task.parent_feedback_note ?? '',
+        teachingFocusNote: task.teaching_focus_note ?? '',
+        nextStagePreviewNote: task.next_stage_preview_note ?? '',
+      });
+      setClassFeedbackStudents(hydratedStudents);
+      setClassFeedbackSummary(hydratedSummary);
+      setCurrentTaskStatus(task.status);
+      classFeedbackDraftSnapshotRef.current = buildClassFeedbackDraftSnapshot(hydratedSummary, hydratedStudents);
+      setClassFeedbackStatusMessage(
+        task.status === 'confirmed'
+          ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
+            : `已同步 ${roster.students.length} 名学生，继续补充阶段备注后可生成草稿。`,
+        );
+      } finally {
+        setIsRefreshingTask(false);
+      }
+    },
+    [currentUser.display_name, selectedClass?.teacher_name],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setClassesLoading(true);
+    Promise.all([apiFetch<ClassItem[]>('/api/classes'), loadClassFeedbackLabels()])
+      .then(([classItems, labelResult]) => {
+        if (cancelled) {
+          return;
+        }
+        setClasses(classItems);
+        setLabelGroups(labelResult.groups?.length ? labelResult.groups : defaultStageLabelGroups);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级反馈初始化失败，请刷新重试。');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setClassesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedClassId || !startDate || !endDate || startDate > endDate) {
+      setMatchedLessonCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    apiFetch<Lesson[]>('/api/lessons')
+      .then((lessons) => {
+        if (cancelled) {
+          return;
+        }
+        const count = lessons.filter(
+          (lesson) =>
+            lesson.class_id === selectedClassId &&
+            lesson.date >= startDate &&
+            lesson.date <= endDate,
+        ).length;
+        setMatchedLessonCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMatchedLessonCount(0);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [endDate, selectedClassId, startDate]);
+
+  const handleClassChange = async (nextClassId: number | null) => {
+    setSelectedClassId(nextClassId);
+    setActiveClassFeedbackTaskId(null);
+    setCurrentTaskStatus('draft');
+    setTeacherNameLabel(nextClassId ? classes.find((item) => item.id === nextClassId)?.teacher_name || currentUser.display_name : currentUser.display_name);
+    setClassFeedbackSummary('');
+    setClassFeedbackStatusTags([]);
+    setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
+    classFeedbackDraftSnapshotRef.current = '';
+    setMatchedLessonCount(0);
+
+    if (!nextClassId) {
+      setClassFeedbackStudents([]);
+      setClassFeedbackStatusMessage('先选择班级和时间范围，再汇总阶段素材。');
+      return;
+    }
+
+    setIsRefreshingTask(true);
+    try {
+      const studentCount = await loadRosterOnly(nextClassId);
+      setClassFeedbackStatusMessage(
+        studentCount > 0
+          ? `已同步 ${studentCount} 名学生，请选择时间范围后创建反馈任务。`
+          : '当前班级还没有学生，可以先在这里新增学生。',
+      );
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级学生同步失败，请重试。');
+    } finally {
+      setIsRefreshingTask(false);
+    }
+  };
+
+  const handleCreateClassFeedbackTask = useCallback(async () => {
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级。');
+      return;
+    }
+    if (!startDate || !endDate || startDate > endDate) {
+      setClassFeedbackStatusMessage('请填写有效的起止日期。');
+      return;
+    }
+
+    setIsSavingClassFeedback(true);
+    try {
+      const created = await createClassFeedbackTask({
+        classId: selectedClassId,
+        startDate,
+        endDate,
+      });
+      await hydrateClassFeedbackTask(created.id, selectedClassId);
+      setClassFeedbackStatusMessage(`已创建反馈任务，按 ${created.period_granularity} 粒度准备资料。`);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '创建班级反馈任务失败，请重试。');
+    } finally {
+      setIsSavingClassFeedback(false);
+    }
+  }, [endDate, hydrateClassFeedbackTask, selectedClassId, startDate]);
+
+  const handleRefreshClassFeedbackTask = useCallback(async () => {
+    if (!activeClassFeedbackTaskId || !selectedClassId) {
+      return;
+    }
+
+    try {
+      await hydrateClassFeedbackTask(activeClassFeedbackTaskId, selectedClassId);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '刷新反馈任务失败，请重试。');
+    }
+  }, [activeClassFeedbackTaskId, hydrateClassFeedbackTask, selectedClassId]);
+
+  const handleStageNoteChange = (key: keyof ClassFeedbackStageNotes, value: string) => {
+    setClassFeedbackStageNotes((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const handleClassStatusTagToggle = (label: string) => {
+    setClassFeedbackStatusTags((current) =>
+      current.includes(label) ? current.filter((item) => item !== label) : [...current, label],
+    );
+  };
+
+  const handleHighlightToggle = (studentId: number, label: string) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => {
+        if (student.studentId !== studentId) {
+          return student;
+        }
+        const alreadySelected = student.highlightLabels.includes(label);
+        return {
+          ...student,
+          highlightLabels: alreadySelected
+            ? student.highlightLabels.filter((item) => item !== label)
+            : [...student.highlightLabels, label],
+        };
+      }),
+    );
+  };
+
+  const handleHighlightNoteChange = (studentId: number, value: string) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => (student.studentId === studentId ? { ...student, highlightNote: value } : student)),
+    );
+  };
+
+  const handleStudentFinalTextChange = (studentId: number, value: string) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => (student.studentId === studentId ? { ...student, finalText: value } : student)),
+    );
+  };
+
+  const handleStudentCheckedChange = (studentId: number, checked: boolean) => {
+    setClassFeedbackStudents((current) =>
+      current.map((student) => (student.studentId === studentId ? { ...student, checked } : student)),
+    );
+  };
+
+  const saveCurrentClassFeedbackDraft = useCallback(async () => {
+    if (!activeClassFeedbackTaskId || currentTaskStatus === 'confirmed') {
+      return;
+    }
+
+    const nextSnapshot = buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents);
+    if (nextSnapshot === classFeedbackDraftSnapshotRef.current) {
+      return;
+    }
+
+    setIsSavingClassFeedback(true);
+    try {
+      const savedTask = await saveClassFeedbackTaskDraft(activeClassFeedbackTaskId, {
+        classSummaryDraftText: classFeedbackSummary,
+        studentEntries: classFeedbackStudents.map((student) => ({
+          studentId: student.studentId,
+          finalText: student.finalText,
+        })),
+      });
+      const savedStudents = buildClassFeedbackStudentCards({
+        roster: classFeedbackStudents.map((student) => ({
+          id: student.studentId,
+          name: student.name,
+        })),
+        task: savedTask,
+      }).map((student) => {
+        const currentCard = classFeedbackStudents.find((item) => item.studentId === student.studentId);
+        return currentCard
+          ? {
+              ...student,
+              checked: currentCard.checked,
+              highlightLabels: currentCard.highlightLabels,
+              highlightNote: currentCard.highlightNote,
+            }
+          : student;
+      });
+      setClassFeedbackSummary(savedTask.class_summary_ai_draft ?? '');
+      setClassFeedbackStudents(savedStudents);
+      classFeedbackDraftSnapshotRef.current = buildClassFeedbackDraftSnapshot(
+        savedTask.class_summary_ai_draft ?? '',
+        savedStudents,
+      );
+      setClassFeedbackStatusMessage('班级反馈草稿已保存。');
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '保存班级反馈草稿失败，请重试。');
+    } finally {
+      setIsSavingClassFeedback(false);
+    }
+  }, [activeClassFeedbackTaskId, classFeedbackStudents, classFeedbackSummary, currentTaskStatus]);
+
+  useEffect(() => {
+    if (!activeClassFeedbackTaskId || currentTaskStatus === 'confirmed' || isRefreshingTask || isGeneratingClassFeedback || isConfirmingClassFeedback) {
+      return;
+    }
+    const nextSnapshot = buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents);
+    if (nextSnapshot === classFeedbackDraftSnapshotRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveCurrentClassFeedbackDraft();
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeClassFeedbackTaskId,
+    classFeedbackStudents,
+    classFeedbackSummary,
+    currentTaskStatus,
+    isConfirmingClassFeedback,
+    isGeneratingClassFeedback,
+    isRefreshingTask,
+    saveCurrentClassFeedbackDraft,
+  ]);
+
+  const handleAddStudent = async (name: string) => {
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级，再新增学生。');
+      return;
+    }
+
+    setIsSavingClassFeedback(true);
+    try {
+      await createClassStudent(selectedClassId, name);
+      if (activeClassFeedbackTaskId) {
+        await hydrateClassFeedbackTask(activeClassFeedbackTaskId, selectedClassId);
+        setClassFeedbackStatusMessage('已新增学生，并重新同步当前反馈任务。');
+      } else {
+        const rosterCount = await loadRosterOnly(selectedClassId);
+        setClassFeedbackStatusMessage(`已新增学生，当前班级共 ${rosterCount} 名学生。`);
+      }
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '新增学生失败，请重试。');
+    } finally {
+      setIsSavingClassFeedback(false);
+    }
+  };
+
+  const handleGenerateClassFeedback = useCallback(async () => {
+    if (!activeClassFeedbackTaskId) {
+      setClassFeedbackStatusMessage('请先创建反馈任务。');
+      return;
+    }
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级。');
+      return;
+    }
+
+    setIsGeneratingClassFeedback(true);
+    try {
+      const generated = await generateClassFeedbackTask(activeClassFeedbackTaskId, {
+        classStatusTags: classFeedbackStatusTags,
+        classStatusNote: classFeedbackStageNotes.classStatusNote,
+        parentFeedbackNote: classFeedbackStageNotes.parentFeedbackNote,
+        teachingFocusNote: classFeedbackStageNotes.teachingFocusNote,
+        nextStagePreviewNote: classFeedbackStageNotes.nextStagePreviewNote,
+        studentHighlights: classFeedbackStudents.map((student) => ({
+          studentId: student.studentId,
+          labels: student.highlightLabels,
+          note: student.highlightNote,
+        })),
+      });
+      await hydrateClassFeedbackTask(generated.id, selectedClassId);
+      setClassFeedbackStatusMessage(`已生成班级总评和 ${classFeedbackStudents.length} 名学生反馈草稿。`);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成班级反馈失败，请重试。');
+    } finally {
+      setIsGeneratingClassFeedback(false);
+    }
+  }, [
+    activeClassFeedbackTaskId,
+    classFeedbackStageNotes.classStatusNote,
+    classFeedbackStageNotes.nextStagePreviewNote,
+    classFeedbackStageNotes.parentFeedbackNote,
+    classFeedbackStageNotes.teachingFocusNote,
+    classFeedbackStatusTags,
+    classFeedbackStudents,
+    hydrateClassFeedbackTask,
+    selectedClassId,
+  ]);
+
+  const handleCopyClassFeedbackSummary = async () => {
+    if (!classFeedbackSummary.trim()) {
+      setClassFeedbackStatusMessage('当前还没有可复制的班级总评。');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(classFeedbackSummary.trim());
+      setClassFeedbackStatusMessage('班级总评已复制到剪贴板。');
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '复制班级总评失败，请重试。');
+    }
+  };
+
+  const handleCopyAllClassFeedbackStudents = async () => {
+    const content = formatClassFeedbackStudentCopyText(sortedClassFeedbackStudents);
+    if (!content) {
+      setClassFeedbackStatusMessage('当前还没有可复制的学生反馈。');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(content);
+      setClassFeedbackStatusMessage('全部学生反馈已复制到剪贴板。');
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '复制学生反馈失败，请重试。');
+    }
+  };
+
+  const handleConfirmClassFeedback = useCallback(async () => {
+    if (!activeClassFeedbackTaskId) {
+      setClassFeedbackStatusMessage('请先创建反馈任务。');
+      return;
+    }
+    if (!selectedClassId) {
+      setClassFeedbackStatusMessage('请先选择班级。');
+      return;
+    }
+
+    setIsConfirmingClassFeedback(true);
+    try {
+      const payload = buildClassFeedbackConfirmPayload({
+        classSummaryFinalText: classFeedbackSummary,
+        students: classFeedbackStudents,
+      });
+      const confirmed = await confirmClassFeedbackTask(activeClassFeedbackTaskId, payload);
+      await hydrateClassFeedbackTask(confirmed.id, selectedClassId);
+      setClassFeedbackStatusMessage(`已确认 ${classFeedbackStudents.length} 名学生反馈，并写入后续积累。`);
+    } catch (error) {
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '确认班级反馈失败，请重试。');
+    } finally {
+      setIsConfirmingClassFeedback(false);
+    }
+  }, [
+    activeClassFeedbackTaskId,
+    classFeedbackStudents,
+    classFeedbackSummary,
+    hydrateClassFeedbackTask,
+    selectedClassId,
+  ]);
+
+  const checkedStudentCount = useMemo(
+    () => classFeedbackStudents.filter((student) => student.checked).length,
+    [classFeedbackStudents],
+  );
+  const uncheckedStudentCount = classFeedbackStudents.length - checkedStudentCount;
+  const studentsWithHighlightsCount = useMemo(
+    () =>
+      classFeedbackStudents.filter(
+        (student) => student.highlightLabels.length > 0 || student.highlightNote.trim(),
+      ).length,
+    [classFeedbackStudents],
+  );
+  const studentsAwaitingDraftCount = useMemo(
+    () =>
+      classFeedbackStudents.filter(
+        (student) => !(student.finalText || student.aiDraft).trim(),
+      ).length,
+    [classFeedbackStudents],
+  );
+  const sortedClassFeedbackStudents = useMemo(
+    () =>
+      [...classFeedbackStudents].sort((left, right) => {
+        if (left.checked !== right.checked) {
+          return left.checked ? 1 : -1;
+        }
+        return left.name.localeCompare(right.name, 'zh-CN');
+      }),
+    [classFeedbackStudents],
+  );
+  const hasUnsavedDraftChanges =
+    activeClassFeedbackTaskId !== null &&
+    currentTaskStatus !== 'confirmed' &&
+    buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents) !==
+      classFeedbackDraftSnapshotRef.current;
+  const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'
+    ? '本次反馈已确认，会作为后续 AI 的正式积累素材。'
+    : !activeClassFeedbackTaskId
+      ? '创建反馈任务后，系统会开始记录你的草稿编辑。'
+      : isSavingClassFeedback
+        ? '正在保存草稿...'
+        : hasUnsavedDraftChanges
+          ? '有未保存修改，系统会自动保存。'
+          : '草稿已保存，可继续编辑。';
+
+  const sourceSummaryItems = [
+    selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
+    `时间范围：${startDate} 至 ${endDate}`,
+    `已命中 ${matchedLessonCount} 节课次记录`,
+    `学生人数：${classFeedbackStudents.length} 名`,
+    `已检查 ${checkedStudentCount} 名，待检查 ${uncheckedStudentCount} 名`,
+    `已标记 ${studentsWithHighlightsCount} 名学生的阶段变化`,
+    `已选择 ${classFeedbackStatusTags.length} 个班级状态标签`,
+    ...(studentsAwaitingDraftCount > 0
+      ? [`仍有 ${studentsAwaitingDraftCount} 名学生等待生成或补充反馈`]
+      : []),
+    `任务状态：${currentTaskStatus === 'confirmed' ? '已确认' : activeClassFeedbackTaskId ? '草稿中' : '待创建'}`,
+    ...(selectedClassId && matchedLessonCount <= 1
+      ? ['当前阶段课次较少，建议补充阶段备注帮助生成更稳定。']
+      : []),
+  ];
+
+  return (
+    <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
+      <section className={`${workspaceCardClass} p-6`}>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Stage Feedback</p>
+            <h3 className={`${workspaceSectionTitleClass} mt-3`}>班级反馈生成</h3>
+            <p className={`${workspaceSectionTextClass} mt-2`}>
+              选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
+            <select
+              value={selectedClassId ?? ''}
+              onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+              className={workspaceFieldClass}
+              disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+            >
+              <option value="">选择班级</option>
+              {classes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void handleCreateClassFeedbackTask()}
+            disabled={!selectedClassId || isSavingClassFeedback}
+            className={workspacePrimaryButtonClass}
+          >
+            <PlusCircle size={18} />
+            创建反馈任务
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRefreshClassFeedbackTask()}
+            disabled={!activeClassFeedbackTaskId || isRefreshingTask}
+            className={workspaceSecondaryButtonClass}
+          >
+            <RefreshCw size={18} />
+            刷新任务
+          </button>
+        </div>
+      </section>
+
+      <ClassFeedbackGenerationWorkspace
+        classNameLabel={selectedClass?.name ?? '未选择班级'}
+        teacherNameLabel={teacherNameLabel}
+        sourceSummaryItems={sourceSummaryItems}
+        labelGroups={labelGroups}
+        classStatusTags={classFeedbackStatusTags}
+        students={sortedClassFeedbackStudents}
+        classSummaryText={classFeedbackSummary}
+        statusMessage={classFeedbackStatusMessage}
+        draftStatusLabel={classFeedbackDraftStatusLabel}
+        stageNotes={classFeedbackStageNotes}
+        isGenerating={isGeneratingClassFeedback}
+        isSaving={isRefreshingTask || isSavingClassFeedback}
+        isConfirming={isConfirmingClassFeedback}
+        onClassSummaryChange={setClassFeedbackSummary}
+        onStageNoteChange={handleStageNoteChange}
+        onClassStatusTagToggle={handleClassStatusTagToggle}
+        onHighlightToggle={handleHighlightToggle}
+        onHighlightNoteChange={handleHighlightNoteChange}
+        onStudentFinalTextChange={handleStudentFinalTextChange}
+        onStudentCheckedChange={handleStudentCheckedChange}
+        onAddStudent={handleAddStudent}
+        onGenerate={handleGenerateClassFeedback}
+        onSaveDraft={saveCurrentClassFeedbackDraft}
+        onCopyClassSummary={handleCopyClassFeedbackSummary}
+        onCopyAllStudents={handleCopyAllClassFeedbackStudents}
+        onConfirm={handleConfirmClassFeedback}
+      />
     </div>
   );
 };
@@ -3624,6 +4296,13 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     }
   }, []);
 
+  const refreshApprovalMembers = useCallback(async () => {
+    await Promise.all([
+      loadUsers(),
+      loadBindingSummaries(),
+    ]);
+  }, [loadBindingSummaries, loadUsers]);
+
   const loadOrganizationRequests = useCallback(async () => {
     if (currentUser.role !== 'super_owner') {
       setOrganizationRequests([]);
@@ -3672,6 +4351,24 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     loadOrganizationInvite().catch(() => undefined);
   }, [loadItems, loadUsers, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
 
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      refreshApprovalMembers().catch(() => undefined);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshApprovalMembers().catch(() => undefined);
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshApprovalMembers]);
+
   const handleDecision = async (requestId: number, action: 'approve' | 'reject') => {
     setActingId(requestId);
     setError('');
@@ -3680,6 +4377,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
         method: 'POST',
       });
       setItems((current) => current.filter((item) => item.id !== requestId));
+      refreshApprovalMembers().catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : '审批操作失败');
     } finally {
@@ -3695,7 +4393,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
         method: 'POST',
       });
       setOrganizationRequests((current) => current.filter((item) => item.id !== requestId));
-      loadUsers().catch(() => undefined);
+      refreshApprovalMembers().catch(() => undefined);
       loadOrganizations().catch(() => undefined);
     } catch (err) {
       setOrganizationRequestsError(err instanceof Error ? err.message : '机构开通审批处理失败');
@@ -4334,88 +5032,90 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                             )}
                           </div>
                         </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                        {user.role !== 'super_owner' && (
-                          <button
-                            type="button"
-                            onClick={() => handleStartDisplayNameEdit(user.id, user.name)}
-                            disabled={displayNameBusy || busy}
-                            className={workspaceSecondaryButtonClass}
-                          >
-                            编辑姓名
-                          </button>
-                        )}
-                        {canDeleteUser && (
-                          confirmDeleteUserId === user.id ? (
-                            <>
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {user.role !== 'super_owner' && (
                               <button
                                 type="button"
-                                onClick={() => void handleDeleteUser(user.id)}
-                                disabled={deleting || busy || displayNameBusy}
-                                className={`${workspaceSecondaryButtonClass} border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
-                              >
-                                {deleting ? '删除中...' : '确认删除'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteUserId(null)}
-                                disabled={deleting}
+                                onClick={() => handleStartDisplayNameEdit(user.id, user.name)}
+                                disabled={displayNameBusy || busy}
                                 className={workspaceSecondaryButtonClass}
                               >
-                                取消
+                                编辑姓名
                               </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteUserId(user.id)}
-                              disabled={busy || displayNameBusy}
-                              className={`${workspaceSecondaryButtonClass} border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
-                            >
-                              删除账号
-                            </button>
-                          )
-                        )}
-                        {roleFixed ? (
-                          <span className="text-sm text-slate-500 dark:text-slate-400">
-                            {user.id === currentUser.id
-                              ? '当前登录账号不可在此处调整权限'
-                              : user.role === 'super_owner'
-                                ? '超级管理员权限固定，不可调整'
-                                : '该成员权限不可调整'}
-                          </span>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <select
-                              value={pendingRoleByUserId[user.id] ?? user.role}
-                              onChange={(event) => {
-                                setPendingRoleByUserId((current) => ({
-                                  ...current,
-                                  [user.id]: event.target.value as Role,
-                                }));
-                              }}
-                              disabled={busy}
-                              className={`${workspaceFieldClass} min-w-[190px]`}
-                            >
-                              {assignableRoles.map((roleOption) => (
-                                <option key={`${user.id}-role-${roleOption}`} value={roleOption}>
-                                  {getRoleLabel(roleOption)}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextRole = pendingRoleByUserId[user.id] ?? user.role;
-                                void handleRoleUpdate(user.id, user.role, nextRole);
-                              }}
-                              disabled={busy || (pendingRoleByUserId[user.id] ?? user.role) === user.role}
-                              className={workspacePrimaryButtonClass}
-                            >
-                              {busy ? '保存中...' : '应用权限'}
-                            </button>
+                            )}
+                            {canDeleteUser && (
+                              confirmDeleteUserId === user.id ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteUser(user.id)}
+                                    disabled={deleting || busy || displayNameBusy}
+                                    className={`${workspaceSecondaryButtonClass} border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
+                                  >
+                                    {deleting ? '删除中...' : '确认删除'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteUserId(null)}
+                                    disabled={deleting}
+                                    className={workspaceSecondaryButtonClass}
+                                  >
+                                    取消
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteUserId(user.id)}
+                                  disabled={busy || displayNameBusy}
+                                  className={`${workspaceSecondaryButtonClass} border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30`}
+                                >
+                                  删除账号
+                                </button>
+                              )
+                            )}
                           </div>
-                        )}
+                          {roleFixed ? (
+                            <span className="text-sm text-slate-500 dark:text-slate-400">
+                              {user.id === currentUser.id
+                                ? '当前登录账号不可在此处调整权限'
+                                : user.role === 'super_owner'
+                                  ? '超级管理员权限固定，不可调整'
+                                  : '该成员权限不可调整'}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={pendingRoleByUserId[user.id] ?? user.role}
+                                onChange={(event) => {
+                                  setPendingRoleByUserId((current) => ({
+                                    ...current,
+                                    [user.id]: event.target.value as Role,
+                                  }));
+                                }}
+                                disabled={busy}
+                                className={`${workspaceFieldClass} min-w-0 flex-1`}
+                              >
+                                {assignableRoles.map((roleOption) => (
+                                  <option key={`${user.id}-role-${roleOption}`} value={roleOption}>
+                                    {getRoleLabel(roleOption)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextRole = pendingRoleByUserId[user.id] ?? user.role;
+                                  void handleRoleUpdate(user.id, user.role, nextRole);
+                                }}
+                                disabled={busy || (pendingRoleByUserId[user.id] ?? user.role) === user.role}
+                                className={workspacePrimaryButtonClass}
+                              >
+                                {busy ? '保存中...' : '应用权限'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -4481,7 +5181,8 @@ const SettingsPage = ({ currentUser, onLogout }: { currentUser: CurrentUser; onL
 };
 
 const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
-  const CREDIT_LEDGER_PAGE_SIZE = 10;
+  const CREDIT_USAGE_DETAIL_PAGE_SIZE = 5;
+  const CREDIT_LEDGER_PAGE_SIZE = 5;
   const [creditOverview, setCreditOverview] = useState<CreditOverview | null>(null);
   const [creditLedger, setCreditLedger] = useState<CreditLedgerItem[]>([]);
   const [creditUsage, setCreditUsage] = useState<CreditMemberUsageItem[]>([]);
@@ -4496,6 +5197,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [usageDetailItems, setUsageDetailItems] = useState<CreditMemberUsageDetailItem[]>([]);
   const [usageDetailLoading, setUsageDetailLoading] = useState(false);
   const [usageDetailError, setUsageDetailError] = useState('');
+  const [usageDetailPage, setUsageDetailPage] = useState(1);
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
   const [ledgerPage, setLedgerPage] = useState(1);
   const canSeeSensitiveUsageMeta = currentUser.role === 'super_owner';
@@ -4620,10 +5322,20 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     requestId.length > 20 ? `${requestId.slice(0, 10)}...${requestId.slice(-8)}` : requestId
   );
 
+  const totalUsageDetailPages = Math.max(1, Math.ceil(usageDetailItems.length / CREDIT_USAGE_DETAIL_PAGE_SIZE));
+  const currentUsageDetailPage = Math.min(usageDetailPage, totalUsageDetailPages);
+  const paginatedUsageDetailItems = usageDetailItems.slice(
+    (currentUsageDetailPage - 1) * CREDIT_USAGE_DETAIL_PAGE_SIZE,
+    currentUsageDetailPage * CREDIT_USAGE_DETAIL_PAGE_SIZE,
+  );
   const filteredLedger = creditLedger.filter((item) => ledgerFilter === 'all' || item.direction === ledgerFilter);
   const totalLedgerPages = Math.max(1, Math.ceil(filteredLedger.length / CREDIT_LEDGER_PAGE_SIZE));
   const currentLedgerPage = Math.min(ledgerPage, totalLedgerPages);
   const paginatedLedger = filteredLedger.slice((currentLedgerPage - 1) * CREDIT_LEDGER_PAGE_SIZE, currentLedgerPage * CREDIT_LEDGER_PAGE_SIZE);
+
+  useEffect(() => {
+    setUsageDetailPage(1);
+  }, [selectedUsageUser, usageDetailItems]);
 
   useEffect(() => {
     setLedgerPage(1);
@@ -4811,7 +5523,7 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {usageDetailItems.map((item) => {
+                    {paginatedUsageDetailItems.map((item) => {
                       const featureLabel = FEATURE_KEY_LABELS[item.feature_key] ?? item.feature_key;
                       const sourceTypeLabel = item.source_record_type
                         ? (SOURCE_RECORD_TYPE_LABELS[item.source_record_type] ?? item.source_record_type)
@@ -4855,6 +5567,29 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </div>
                       );
                     })}
+                    {totalUsageDetailPages > 1 && (
+                      <div className="flex items-center justify-between border-t border-sky-100/80 pt-3 text-sm dark:border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => setUsageDetailPage((page) => Math.max(1, page - 1))}
+                          disabled={currentUsageDetailPage === 1}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          上一页
+                        </button>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          第 {currentUsageDetailPage} / {totalUsageDetailPages} 页
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setUsageDetailPage((page) => Math.min(totalUsageDetailPages, page + 1))}
+                          disabled={currentUsageDetailPage === totalUsageDetailPages}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -5306,11 +6041,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const newClassTeacher = newClassTeacherUserId == null ? undefined : users.find((user) => user.id === newClassTeacherUserId);
   const newClassFilteredUsers = users.filter((user) => {
     const keyword = (teacherSearchByClassId.new || '').trim().toLowerCase();
+    if (newClassTeacherUserId === user.id) {
+      return true;
+    }
     if (!keyword) {
       return true;
     }
-    return [user.name, user.org, getRoleLabel(user.role)]
-      .some((value) => value.toLowerCase().includes(keyword));
+    return user.name.toLowerCase().includes(keyword);
   });
 
   return (
@@ -5322,6 +6059,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
             在这里统一管理 {currentUser.organization_name} 的班级信息与负责老师安排。
           </p>
+        </div>
+        <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -5460,11 +6201,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </label>
                   </div>
 
-                  <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
-                  </div>
-
                   <div className={`${workspaceCardClass} space-y-5 p-5`}>
                     <div>
                       <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
@@ -5491,40 +6227,20 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         没有匹配到老师，请调整搜索关键词。
                       </div>
                     ) : (
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {newClassFilteredUsers.map((user) => {
-                          const checked = newClassTeacherUserId === user.id;
-                          return (
-                            <label
-                              key={`new-${user.id}`}
-                              className={cn(
-                                'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
-                                classInteractionLocked && 'opacity-70',
-                                checked && 'border-sky-300 bg-sky-50/80 dark:border-sky-400/40 dark:bg-sky-500/10',
-                              )}
-                            >
-                              <input
-                                type="radio"
-                                name="class-teacher-new"
-                                checked={checked}
-                                disabled={classInteractionLocked}
-                                onChange={() => setNewClassTeacherUserId(user.id)}
-                                className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                              />
-                              <span className="min-w-0">
-                                <span className="flex flex-wrap items-center gap-2">
-                                  <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
-                                    {getRoleLabel(user.role)}
-                                  </span>
-                                </span>
-                                <span className="mt-1 block text-slate-500 dark:text-slate-400">所属机构：{user.org}</span>
-                                <span className="mt-1 block text-slate-500 dark:text-slate-400">{checked ? '将作为创建后的负责老师' : '选择为负责老师'}</span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <select
+                        value={newClassTeacherUserId == null ? '' : String(newClassTeacherUserId)}
+                        onChange={(event) => {
+                          const nextTeacherUserId = Number(event.target.value);
+                          setNewClassTeacherUserId(Number.isFinite(nextTeacherUserId) && nextTeacherUserId > 0 ? nextTeacherUserId : null);
+                        }}
+                        disabled={classInteractionLocked || newClassFilteredUsers.length === 0}
+                        className={workspaceFieldClass}
+                      >
+                        <option value="">请选择负责老师</option>
+                        {newClassFilteredUsers.map((user) => (
+                          <option key={`new-${user.id}`} value={user.id}>{user.name}</option>
+                        ))}
+                      </select>
                     )}
                   </div>
 
@@ -5562,11 +6278,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               const inviteError = inviteErrorByClassId[item.id] || '';
               const filteredUsers = users.filter((user) => {
                 const keyword = teacherSearch.trim().toLowerCase();
+                if (currentTeacherUserId === user.id) {
+                  return true;
+                }
                 if (!keyword) {
                   return true;
                 }
-                return [user.name, user.org, getRoleLabel(user.role)]
-                  .some((value) => value.toLowerCase().includes(keyword));
+                return user.name.toLowerCase().includes(keyword);
               });
 
               return (
@@ -5641,11 +6359,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </label>
                       </div>
 
-                      <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
-                      </div>
-
                       <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
                         <button
                           type="button"
@@ -5709,40 +6422,23 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             没有匹配到老师，请调整搜索关键词。
                           </div>
                         ) : (
-                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {filteredUsers.map((user) => {
-                              const checked = currentTeacherUserId === user.id;
-                              return (
-                                <label
-                                  key={`${item.id}-${user.id}`}
-                                  className={cn(
-                                    'flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/75 p-4 text-sm transition-colors dark:border-white/10 dark:bg-slate-950/55',
-                                    (teacherBindingSaving || classInteractionLocked) && 'opacity-70',
-                                    checked && 'border-sky-300 bg-sky-50/80 dark:border-sky-400/40 dark:bg-sky-500/10',
-                                  )}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`class-teacher-${item.id}`}
-                                    checked={checked}
-                                    disabled={teacherBindingSaving || classInteractionLocked}
-                                    onChange={() => handleSelectTeacherForClass(item.id, user.id)}
-                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                                  />
-                                  <span className="min-w-0">
-                                    <span className="flex flex-wrap items-center gap-2">
-                                      <span className="font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
-                                        {getRoleLabel(user.role)}
-                                      </span>
-                                    </span>
-                                    <span className="mt-1 block text-slate-500 dark:text-slate-400">所属机构：{user.org}</span>
-                                    <span className="mt-1 block text-slate-500 dark:text-slate-400">{teacherBindingSaving ? '保存中...' : checked ? '当前负责老师' : '设为当前负责老师'}</span>
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
+                          <select
+                            value={currentTeacherUserId == null ? '' : String(currentTeacherUserId)}
+                            onChange={(event) => {
+                              const nextTeacherUserId = Number(event.target.value);
+                              if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === currentTeacherUserId) {
+                                return;
+                              }
+                              void handleSelectTeacherForClass(item.id, nextTeacherUserId);
+                            }}
+                            disabled={teacherBindingSaving || classInteractionLocked || filteredUsers.length === 0}
+                            className={workspaceFieldClass}
+                          >
+                            <option value="">请选择负责老师</option>
+                            {filteredUsers.map((user) => (
+                              <option key={`${item.id}-${user.id}`} value={user.id}>{user.name}</option>
+                            ))}
+                          </select>
                         )}
                       </div>
 
@@ -7286,6 +7982,7 @@ export default function App() {
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
     'review-generation': '复习生成',
+    'class-feedback-generation': '班级反馈',
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
@@ -7425,6 +8122,7 @@ export default function App() {
                   />
                 )}
                 {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
+                {activePage === 'class-feedback-generation' && <ClassFeedbackGenerationPage currentUser={currentUser} />}
                 {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
                 {activePage === 'calendar' &&
                   (calendarLoading ? (

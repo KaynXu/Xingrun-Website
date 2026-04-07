@@ -33,6 +33,19 @@ test('approval page source includes organization review and invite management se
   assert.match(approvalBlock[0], /已注册机构/);
 });
 
+test('approval page source refreshes member login info after decisions and when the tab regains focus', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /const refreshApprovalMembers = useCallback\(async \(\) => \{/);
+  assert.match(approvalBlock[0], /await Promise\.all\(\[\s*loadUsers\(\),\s*loadBindingSummaries\(\),\s*\]\);/);
+  assert.match(approvalBlock[0], /refreshApprovalMembers\(\)\.catch\(\(\) => undefined\);/);
+  assert.match(approvalBlock[0], /window\.addEventListener\('focus', handleWindowFocus\)/);
+  assert.match(approvalBlock[0], /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/);
+  assert.match(approvalBlock[0], /if \(document\.visibilityState === 'visible'\) \{\s*refreshApprovalMembers\(\)\.catch\(\(\) => undefined\);/);
+});
+
 test('organization application success copy stays neutral and does not mention a specific reviewer name', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
