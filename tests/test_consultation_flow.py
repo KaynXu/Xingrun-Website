@@ -287,8 +287,18 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(delete_response.status_code, 403)
 
     @patch("app.parse_consultation_batch_text")
-    def test_members_cannot_access_ai_parse_endpoint(self, mock_parse):
+    def test_members_can_access_ai_parse_endpoint(self, mock_parse):
         member_token = self.create_member_token()
+        self.seed_owner_credits()
+        mock_parse.return_value = (
+            {"items": [], "warnings": []},
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 120,
+                "output_tokens": 40,
+            },
+        )
 
         response = self.client.post(
             "/api/consultations/ai-parse",
@@ -296,9 +306,9 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={"raw_text": "新增：张妈妈，五年级数学。"},
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()["error"], "无权限")
-        mock_parse.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"items": [], "warnings": []})
+        mock_parse.assert_called_once()
 
     def test_list_exposes_teacher_display_name_from_user_directory(self):
         self.write_legacy_csv([
@@ -618,6 +628,110 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(draft["action"], "update")
         self.assertEqual(draft["target_id"], 182)
         self.assertEqual(draft["fields"], {"follow_up_status": "跟进中"})
+
+    def test_member_sees_only_assigned_consultations(self):
+        """Member should only see consultations assigned to them via assigned_user_id"""
+        # Create organization and two members
+        org_id = lesson_manager.create_organization({"name": "Test Org"})["id"]
+        member1_row = lesson_manager.create_user({
+            "username": "member1",
+            "password": "test",
+            "organization_id": org_id,
+            "role": "member",
+            "display_name": "Member 1"
+        })
+        member2_row = lesson_manager.create_user({
+            "username": "member2",
+            "password": "test",
+            "organization_id": org_id,
+            "role": "member",
+            "display_name": "Member 2"
+        })
+        
+        # Get tokens
+        member1_token = self.login("member1", "test")
+        member2_token = self.login("member2", "test")
+        owner_token = self.owner_token
+        
+        # Owner creates 3 consultations: one for member1, one for member2, one unassigned
+        c1_response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "家长1",
+                "孩子姓名": "学生1",
+                "年级": "一年级",
+                "咨询科目": "数学",
+                "具体需求": "基础",
+                "assigned_user_id": member1_row["id"],
+            },
+        )
+        self.assertEqual(c1_response.status_code, 201)
+        c1_id = c1_response.get_json()["id"]
+        
+        c2_response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "家长2",
+                "孩子姓名": "学生2",
+                "年级": "二年级",
+                "咨询科目": "语文",
+                "具体需求": "阅读",
+                "assigned_user_id": member2_row["id"],
+            },
+        )
+        self.assertEqual(c2_response.status_code, 201)
+        c2_id = c2_response.get_json()["id"]
+        
+        # Unassigned consultation
+        c3_response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "家长3",
+                "孩子姓名": "学生3",
+                "年级": "三年级",
+                "咨询科目": "英语",
+                "具体需求": "口语",
+                "assigned_user_id": None,
+            },
+        )
+        self.assertEqual(c3_response.status_code, 201)
+        c3_id = c3_response.get_json()["id"]
+        
+        # Member1 lists consultations - should only see c1
+        member1_list = self.client.get(
+            "/api/consultations",
+            headers=self.auth_headers(member1_token)
+        ).get_json()
+        member1_ids = [c["id"] for c in member1_list]
+        self.assertIn(c1_id, member1_ids, "Member1 should see their assigned consultation")
+        self.assertNotIn(c2_id, member1_ids, "Member1 should not see consultation assigned to member2")
+        self.assertNotIn(c3_id, member1_ids, "Member1 should not see unassigned consultation")
+        
+        # Member2 lists consultations - should only see c2
+        member2_list = self.client.get(
+            "/api/consultations",
+            headers=self.auth_headers(member2_token)
+        ).get_json()
+        member2_ids = [c["id"] for c in member2_list]
+        self.assertIn(c2_id, member2_ids, "Member2 should see their assigned consultation")
+        self.assertNotIn(c1_id, member2_ids, "Member2 should not see consultation assigned to member1")
+        self.assertNotIn(c3_id, member2_ids, "Member2 should not see unassigned consultation")
+        
+        # Owner lists consultations - should see all three
+        owner_list = self.client.get(
+            "/api/consultations",
+            headers=self.auth_headers(owner_token)
+        ).get_json()
+        owner_ids = [c["id"] for c in owner_list]
+        self.assertIn(c1_id, owner_ids)
+        self.assertIn(c2_id, owner_ids)
+        self.assertIn(c3_id, owner_ids)
 
 
 if __name__ == "__main__":
