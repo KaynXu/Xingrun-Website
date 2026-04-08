@@ -149,6 +149,26 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(items[0]["parent_wechat_account_id"], primary_account["id"])
         self.assertEqual(items[0]["student_id"], self.student["id"])
 
+    def test_remove_student_from_class_hides_active_parent_binding_from_mini_program(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        removed = lesson_manager.remove_student_from_class(self.class_id, self.student["id"])
+        bindings = lesson_manager.list_parent_student_bindings_for_openid("openid-parent-1")
+
+        self.assertTrue(removed)
+        self.assertEqual(bindings, [])
+        with lesson_manager.get_conn() as conn:
+            row = conn.execute(
+                "SELECT status FROM parent_student_bindings WHERE id=?",
+                (binding["id"],),
+            ).fetchone()
+        self.assertEqual(row["status"], "inactive")
+
     def test_init_db_migrates_legacy_wrong_question_rows_with_default_reason_and_archive_fields(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(

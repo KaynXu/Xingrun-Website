@@ -2337,6 +2337,14 @@ def create_student_for_class(class_id: int, raw_name: str):
 
 def remove_student_from_class(class_id: int, student_id: int) -> bool:
     with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE parent_student_bindings
+            SET status='inactive', updated_at=datetime('now','localtime')
+            WHERE class_id=? AND student_id=? AND status='active'
+            """,
+            (class_id, student_id),
+        )
         cur = conn.execute(
             "DELETE FROM class_students WHERE class_id=? AND student_id=?",
             (class_id, student_id),

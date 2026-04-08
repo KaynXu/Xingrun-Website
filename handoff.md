@@ -1,3 +1,38 @@
+## 班级删学生时同步停用家长绑定（2026-04-09）
+
+### 已完成
+- 已修复网页“从班级删除学生”后，小程序家长绑定仍残留的问题。
+- 根因确认：
+  - `app.py` 的 `DELETE /api/classes/<class_id>/students/<student_id>` 调用 `lesson_manager.remove_student_from_class(class_id, student_id)`
+  - 旧实现只删除 `class_students`
+  - 小程序 bindings 查询走的是 `parent_student_bindings`，因此不会自动消失
+- 已改动：
+  - `lesson_manager.remove_student_from_class()` 现在会先将同 `class_id + student_id` 的 `active` 家长绑定统一置为 `inactive`
+  - 然后再删除 `class_students`
+  - 新增回归测试 `tests/test_wechat_parent_upload_data.py`
+    - 删除班级学生后，小程序 bindings 列表不再返回该绑定
+
+### proof
+- red：
+  - `/tmp/website-delete-sync-red-XXXXXX.sh`
+  - `python3 -m unittest tests.test_wechat_parent_upload_data.WeChatParentUploadDataTestCase.test_remove_student_from_class_hides_active_parent_binding_from_mini_program`
+    - `FAILED (failures=1)`
+- green：
+  - `/tmp/website-delete-sync-green-XXXXXX.sh`
+  - `python3 -m unittest tests.test_wechat_parent_upload_data.WeChatParentUploadDataTestCase.test_remove_student_from_class_hides_active_parent_binding_from_mini_program`
+    - `Ran 1 test ... OK`
+  - `python3 -m unittest tests.test_wechat_parent_upload_data`
+    - `Ran 7 tests ... OK`
+  - `python3 -m unittest tests.test_teacher_feedback_store.TeacherFeedbackStoreTestCase.test_remove_student_from_class_unbinds_mapping_without_deleting_student_row`
+    - `Ran 1 test ... OK`
+
+### 剩余问题
+- 线上还未部署本次修复时，旧数据仍可能保留；部署后新发生的“删班级学生”会正确同步停用家长绑定。
+
+### 下一步方向
+- 部署到正式服务器 `49.234.185.86`
+- 部署后可用一个测试学生做网页删除 -> 小程序 bindings 消失的线上 smoke
+
 ## master 发布与生产部署：班级管理按钮收口（2026-04-09）
 
 ### 已完成
