@@ -122,10 +122,10 @@ export const deleteClassStudent = (classId: number, studentId: number) =>
   });
 
 export const loadLessonFeedback = (lessonId: number) =>
-  callApiFetch<LessonFeedbackDocument>(`/api/lessons/${lessonId}/feedback`);
+  callApiFetch<LessonFeedbackDocument>(`/api/review-plans/${lessonId}/feedback`);
 
 export const saveLessonFeedback = (lessonId: number, payload: TeacherFeedbackSavePayload) =>
-  callApiFetch<LessonFeedbackDocument>(`/api/lessons/${lessonId}/feedback`, {
+  callApiFetch<LessonFeedbackDocument>(`/api/review-plans/${lessonId}/feedback`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
@@ -134,7 +134,7 @@ export const generateLessonFeedbackDraft = (
   lessonId: number,
   payload: Omit<TeacherFeedbackSavePayload, 'merged_text' | 'student_index'>,
 ) =>
-  callApiFetch<LessonFeedbackDraftResponse>(`/api/lessons/${lessonId}/feedback/draft`, {
+  callApiFetch<LessonFeedbackDraftResponse>(`/api/review-plans/${lessonId}/feedback/draft`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

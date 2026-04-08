@@ -78,9 +78,9 @@ Any remaining imports, types, labels, or helper calls tied to teacher feedback s
 
 Delete the feedback endpoints entirely:
 
-- `POST /api/lessons/<lesson_id>/feedback/draft`
-- `GET /api/lessons/<lesson_id>/feedback`
-- `PUT /api/lessons/<lesson_id>/feedback`
+- `POST /api/review-plans/<lesson_id>/feedback/draft`
+- `GET /api/review-plans/<lesson_id>/feedback`
+- `PUT /api/review-plans/<lesson_id>/feedback`
 
 Also remove any local helper functions in `app.py` that only exist to normalize, validate, or assemble teacher feedback payloads.
 

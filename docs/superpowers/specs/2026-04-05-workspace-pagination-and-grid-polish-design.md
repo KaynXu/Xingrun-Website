@@ -32,7 +32,7 @@ The goal is to shorten tall pages without changing the underlying business flows
 ## Current Context
 
 - The main implementation surface is [`frontend/src/App.tsx`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/App.tsx), which currently contains the credit center, class management page, and review history components.
-- Review history already receives lessons from `/api/lessons`.
+- Review history already receives lessons from `/api/review-plans`.
 - Backend lesson list queries in [`lesson_manager.py`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/lesson_manager.py) and [`app.py`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/app.py) already sort by `created_at DESC, id DESC`.
 - The current mismatch is mostly presentational: the history UI emphasizes lesson date instead of generation time and uses a tall table layout.
 
@@ -99,7 +99,7 @@ This directly addresses the long-page problem while preserving the existing acti
 
 ### Review History
 
-1. Fetch lessons from `/api/lessons`.
+1. Fetch lessons from `/api/review-plans`.
 2. Trust backend ordering contract of newest-first by `created_at DESC`.
 3. Slice the lessons array into the current page window.
 4. Render cards with both lesson date and generation timestamp.

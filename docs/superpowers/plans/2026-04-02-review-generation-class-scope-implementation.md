@@ -99,7 +99,7 @@ Add these tests near the other auth and scope tests in `tests/test_account_flow.
             0,
         )
 
-        response = self.client.get("/api/lessons", headers=self.auth_headers(member_token))
+        response = self.client.get("/api/review-plans", headers=self.auth_headers(member_token))
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -147,10 +147,10 @@ Add these tests near the other auth and scope tests in `tests/test_account_flow.
             other_class_id,
         )
 
-        detail = self.client.get(f"/api/lessons/{lesson_id}", headers=self.auth_headers(member_token))
+        detail = self.client.get(f"/api/review-plans/{lesson_id}", headers=self.auth_headers(member_token))
         preview = self.client.get(f"/api/pdf/{lesson_id}", headers=self.auth_headers(member_token))
         download = self.client.get(f"/api/pdf/download/{lesson_id}", headers=self.auth_headers(member_token))
-        delete = self.client.delete(f"/api/lessons/{lesson_id}", headers=self.auth_headers(member_token))
+        delete = self.client.delete(f"/api/review-plans/{lesson_id}", headers=self.auth_headers(member_token))
 
         self.assertEqual(detail.status_code, 404)
         self.assertEqual(preview.status_code, 404)
@@ -185,7 +185,7 @@ Add these tests near the other auth and scope tests in `tests/test_account_flow.
         lesson_manager.set_class_teacher_user_id(other_class_id, owner_id)
 
         missing_class = self.client.post(
-            "/api/lessons",
+            "/api/review-plans",
             headers=self.auth_headers(member_token),
             json={
                 "subject": "物理",
@@ -196,7 +196,7 @@ Add these tests near the other auth and scope tests in `tests/test_account_flow.
             },
         )
         forbidden_class = self.client.post(
-            "/api/lessons",
+            "/api/review-plans",
             headers=self.auth_headers(member_token),
             json={
                 "subject": "物理",
@@ -246,8 +246,8 @@ Add these tests near the other auth and scope tests in `tests/test_account_flow.
         lesson_manager.save_lesson("2026-04-02", "化学", "九年级", "酸碱盐", "summary", "weak", {"questions": []}, "", class_a)
         lesson_manager.save_lesson("2026-04-02", "化学", "九年级", "溶液", "summary", "weak", {"questions": []}, "", class_b)
 
-        owner_payload = self.client.get("/api/lessons", headers=self.auth_headers(owner_token)).get_json()
-        admin_payload = self.client.get("/api/lessons", headers=self.auth_headers(admin_token)).get_json()
+        owner_payload = self.client.get("/api/review-plans", headers=self.auth_headers(owner_token)).get_json()
+        admin_payload = self.client.get("/api/review-plans", headers=self.auth_headers(admin_token)).get_json()
 
         self.assertEqual(len(owner_payload), 2)
         self.assertEqual(len(admin_payload), 2)
@@ -261,7 +261,7 @@ Run:
 python -m unittest tests.test_account_flow.AccountFlowTestCase.test_member_lessons_list_only_returns_owned_class_records tests.test_account_flow.AccountFlowTestCase.test_member_cannot_access_unowned_lesson_detail_delete_or_pdf tests.test_account_flow.AccountFlowTestCase.test_member_lesson_creation_requires_owned_class tests.test_account_flow.AccountFlowTestCase.test_owner_and_admin_still_have_full_lesson_visibility -v
 ```
 
-Expected: FAIL because `/api/lessons` still returns all records, lesson create still accepts missing/unowned class IDs, and lesson detail/PDF/delete routes do not yet enforce lesson scope.
+Expected: FAIL because `/api/review-plans` still returns all records, lesson create still accepts missing/unowned class IDs, and lesson detail/PDF/delete routes do not yet enforce lesson scope.
 
 - [ ] **Step 3: Commit the red tests**
 
@@ -317,7 +317,7 @@ def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
 Update the route bodies in `app.py` like this:
 
 ```python
-@app.route("/api/lessons", methods=["GET"])
+@app.route("/api/review-plans", methods=["GET"])
 def api_lessons_list():
     user, error = _require_auth()
     if error:
@@ -331,7 +331,7 @@ def api_lessons_list():
     return jsonify(_filter_lessons_for_user(user, lessons))
 
 
-@app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
+@app.route("/api/review-plans/<int:lesson_id>", methods=["GET"])
 def api_lesson_get(lesson_id):
     user, error = _require_auth()
     if error:
@@ -343,7 +343,7 @@ def api_lesson_get(lesson_id):
     return jsonify({**lesson, "questions": questions})
 
 
-@app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
+@app.route("/api/review-plans/<int:lesson_id>", methods=["DELETE"])
 def api_lesson_delete(lesson_id):
     user, error = _require_auth()
     if error:
@@ -381,7 +381,7 @@ def download_pdf(lesson_id):
 Update `api_lesson_create` in `app.py`:
 
 ```python
-@app.route("/api/lessons", methods=["POST"])
+@app.route("/api/review-plans", methods=["POST"])
 def api_lesson_create():
     user, error = _require_auth()
     if error:

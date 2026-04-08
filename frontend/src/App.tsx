@@ -1595,7 +1595,7 @@ const Dashboard = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/lessons')])
+    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/review-plans')])
       .then(([s, lessons]) => {
         setStats(s);
         setRecentLessons(lessons.slice(0, 5));
@@ -1891,7 +1891,7 @@ const LessonInput = ({
     setIsLoading(true);
     try {
       if (inputType === 'text') {
-        await apiFetch<{ id: number }>('/api/lessons', {
+        await apiFetch<{ id: number }>('/api/review-plans', {
           method: 'POST',
           body: JSON.stringify({
             subject,
@@ -1911,7 +1911,7 @@ const LessonInput = ({
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         if (file) formData.append('upload_file', file);
-        await apiFetch<{ id: number }>('/api/lessons', { method: 'POST', body: formData });
+        await apiFetch<{ id: number }>('/api/review-plans', { method: 'POST', body: formData });
       }
       onSuccess();
     } catch (e: unknown) {
@@ -2102,7 +2102,7 @@ const ReviewDocumentHistory = ({
 
   const load = useCallback(() => {
     setLoading(true);
-    apiFetch<Lesson[]>('/api/lessons')
+    apiFetch<Lesson[]>('/api/review-plans')
       .then(setLessons)
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -2122,7 +2122,7 @@ const ReviewDocumentHistory = ({
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('确定删除此课程？相关 PDF 也会被删除。')) return;
-    await apiFetch(`/api/lessons/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/review-plans/${id}`, { method: 'DELETE' });
     load();
   };
 
@@ -2441,7 +2441,7 @@ const ClassFeedbackGenerationPage = ({
     }
 
     let cancelled = false;
-    apiFetch<Lesson[]>('/api/lessons')
+    apiFetch<Lesson[]>('/api/review-plans')
       .then((lessons) => {
         if (cancelled) {
           return;
@@ -8027,7 +8027,7 @@ export default function App() {
     let cancelled = false;
     setCalendarLoading(true);
 
-    Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/lessons')])
+    Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/review-plans')])
       .then(([classes, lessons]) => {
         if (cancelled) {
           return;

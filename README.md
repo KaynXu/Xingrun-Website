@@ -220,8 +220,8 @@ python lesson_manager.py open --id 3    # 重新打开某节课 PDF
 | `/api/stats` | GET |
 | `/api/classes` | GET, POST |
 | `/api/classes/<id>` | GET, PUT, DELETE |
-| `/api/lessons` | GET, POST |
-| `/api/lessons/<id>` | GET, DELETE |
+| `/api/review-plans` | GET, POST |
+| `/api/review-plans/<id>` | GET, DELETE |
 | `/api/quiz` | GET |
 | `/api/monthly` | GET |
 | `/api/monthly/generate` | POST |

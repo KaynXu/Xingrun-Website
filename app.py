@@ -85,7 +85,6 @@ from lesson_manager import (
     get_lesson,
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
-    get_questions,
     get_registration_request,
     get_user_by_id,
     get_user_class_ids,
@@ -1904,24 +1903,10 @@ def api_stats():
     month_now = datetime.now().strftime("%Y-%m")
     all_lessons = list_lessons_for_actor(user)
     total_pdfs = sum(1 for l in all_lessons if l.get("pdf_path") and Path(l["pdf_path"]).exists())
-    with get_conn() as conn:
-        if user.get("role") == "super_owner":
-            total_questions = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
-        else:
-            total_questions = conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM questions q
-                JOIN lessons l ON l.id = q.lesson_id
-                WHERE l.organization_id=?
-                """,
-                (user["organization_id"],),
-            ).fetchone()[0]
     return jsonify({
         "total_lessons": len(all_lessons),
         "month_lessons": len(list_lessons_for_actor(user, month_str=month_now)),
         "total_pdfs": total_pdfs,
-        "total_questions": total_questions,
     })
 
 
@@ -2291,7 +2276,7 @@ def api_class_delete(class_id):
     return jsonify({"ok": True})
 
 
-@app.route("/api/lessons", methods=["GET"])
+@app.route("/api/review-plans", methods=["GET"])
 def api_lessons_list():
     user, error = _require_auth()
     if error:
@@ -2306,7 +2291,7 @@ def api_lessons_list():
     return jsonify(_serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)))
 
 
-@app.route("/api/lessons/<int:lesson_id>", methods=["GET"])
+@app.route("/api/review-plans/<int:lesson_id>", methods=["GET"])
 def api_lesson_get(lesson_id):
     user, error = _require_auth()
     if error:
@@ -2314,14 +2299,13 @@ def api_lesson_get(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
-    questions = get_questions(lesson_id=lesson_id)
     serialized_lesson = _serialize_lesson_for_response(lesson)
     if serialized_lesson is None:
         return jsonify({"error": "not found"}), 404
-    return jsonify({**serialized_lesson, "questions": questions})
+    return jsonify(serialized_lesson)
 
 
-@app.route("/api/lessons/<int:lesson_id>", methods=["DELETE"])
+@app.route("/api/review-plans/<int:lesson_id>", methods=["DELETE"])
 def api_lesson_delete(lesson_id):
     user, error = _require_auth()
     if error:
@@ -2336,7 +2320,7 @@ def api_lesson_delete(lesson_id):
     return jsonify({"ok": True})
 
 
-@app.route("/api/lessons", methods=["POST"])
+@app.route("/api/review-plans", methods=["POST"])
 def api_lesson_create():
     user, error = _require_auth()
     if error:
@@ -2649,21 +2633,6 @@ def api_class_feedback_confirm(task_id: int):
         logger.exception("Class feedback confirm failed for task %s", task_id)
         return jsonify({"error": "确认课堂反馈时发生错误，请稍后重试"}), 500
     return jsonify(confirmed_task)
-
-
-@app.route("/api/quiz", methods=["GET"])
-def api_quiz():
-    _, error = _require_auth()
-    if error:
-        return error
-    month     = request.args.get("month", "")
-    lesson_id = request.args.get("lesson_id", 0, type=int)
-    questions = get_questions(lesson_id=lesson_id if lesson_id else None,
-                              month_str=month if month else None)
-    cats = {}
-    for q in questions:
-        cats.setdefault(q.get("category") or "综合", []).append(q)
-    return jsonify({"total": len(questions), "categories": cats})
 
 
 @app.route("/api/monthly", methods=["GET"])

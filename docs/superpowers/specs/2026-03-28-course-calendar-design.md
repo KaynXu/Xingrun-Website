@@ -61,7 +61,7 @@ The first version should reuse existing authenticated APIs:
 1. `GET /api/classes`
    - Source of class name, subject, grade, teacher name, and lesson count
 
-2. `GET /api/lessons`
+2. `GET /api/review-plans`
    - Source of lesson date, topic, subject, grade, and `class_id`
 
 The frontend should join lesson records with class records in memory.

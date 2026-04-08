@@ -63,9 +63,9 @@ def test_feedback_endpoints_are_removed(self):
     lesson_id = self._create_lesson_for_owner(owner)
 
     for method, path in [
-        ("get", f"/api/lessons/{lesson_id}/feedback"),
-        ("put", f"/api/lessons/{lesson_id}/feedback"),
-        ("post", f"/api/lessons/{lesson_id}/feedback/draft"),
+        ("get", f"/api/review-plans/{lesson_id}/feedback"),
+        ("put", f"/api/review-plans/{lesson_id}/feedback"),
+        ("post", f"/api/review-plans/{lesson_id}/feedback/draft"),
     ]:
         response = getattr(self.client, method)(path, json={})
         self.assertEqual(response.status_code, 404)
@@ -219,9 +219,9 @@ def _normalize_feedback_students_for_draft(...):
 def _normalize_feedback_editor_students(...):
 def _build_feedback_student_index(...):
 
-@app.route("/api/lessons/<int:lesson_id>/feedback/draft", methods=["POST"])
-@app.route("/api/lessons/<int:lesson_id>/feedback", methods=["GET"])
-@app.route("/api/lessons/<int:lesson_id>/feedback", methods=["PUT"])
+@app.route("/api/review-plans/<int:lesson_id>/feedback/draft", methods=["POST"])
+@app.route("/api/review-plans/<int:lesson_id>/feedback", methods=["GET"])
+@app.route("/api/review-plans/<int:lesson_id>/feedback", methods=["PUT"])
 ```
 
 Do not leave dead helper code behind.

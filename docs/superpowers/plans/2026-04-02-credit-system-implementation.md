@@ -593,7 +593,7 @@ from unittest.mock import patch
         )
 
         response = self.client.post(
-            f"/api/lessons/{lesson_id}/feedback/draft",
+            f"/api/review-plans/{lesson_id}/feedback/draft",
             headers=self.auth_headers(self.owner_token),
             json={"students": [{"student_name": "王同学", "performance": "认真"}], "custom_templates": []},
         )

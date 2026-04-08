@@ -132,7 +132,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
             generate_pdf.return_value = str(self.base / "api-review-plan.pdf")
 
             response = self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(token),
                 json={
                     "date": "2026-03-29",
