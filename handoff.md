@@ -1,3 +1,55 @@
+## master 发布与生产部署：班级管理按钮收口（2026-04-09）
+
+### 已完成
+- 已将本地 `develop` 提交 `7e0bcbe` 推送到 `origin/develop`
+- 已将本地 `master` fast-forward 合到 `7e0bcbe`，并推送到 `origin/master`
+- 已完成生产部署到服务器 `49.234.185.86`
+  - 远端仓库：`/home/ubuntu/Xingrun-Website`
+  - PM2 服务：`xingrun`
+  - 本轮继续采用本地 bundle 发版：
+    - 本地生成 `/tmp/xingrun-master-7e0bcbe-20260409-d.bundle`
+    - 上传到服务器同路径
+    - 服务器执行 `git fetch <bundle> master` + `git merge --ff-only FETCH_HEAD`
+- 已在服务器上完成：
+  - `.venv` 依赖安装
+  - `init_db()` 初始化
+  - `npm --prefix frontend run build`
+  - `pm2 restart xingrun`
+- 本轮远端未发现需要保护的 tracked 改动，也未触发 untracked 冲突 stash：
+  - `TRACKED_STASH=NONE`
+  - `UNTRACKED_STASH=NONE`
+
+### proof
+- 本地发布前验证：
+  - `/tmp/proof_class_modal_followup_verify_20260409_release.sh`
+  - `npx tsx --test src/account-card.test.tsx`
+    - `tests 44`
+    - `pass 44`
+    - `fail 0`
+  - `npm run lint`
+    - `tsc --noEmit` 通过
+  - `npm run build`
+    - `vite build` 成功
+    - 保留既有 chunk size warning，本轮未处理
+- 生产机部署结果：
+  - `/tmp/deploy_master_bundle_20260409_d.sh`
+    - `REMOTE_HEAD_AFTER=7e0bcbe2`
+    - `pm2 restart xingrun` 返回：
+      - `[PM2] [xingrun](6) ✓`
+    - `HEALTH_STATUS=302`
+    - `pm2 status xingrun`
+      - `status online`
+      - `↺ 142`
+
+### 剩余问题
+- 前端 build 仍有既有 chunk size warning，本轮未处理。
+- 远端仓库的 `master...origin/master [ahead 54]` 历史状态原因仍未清理，但不影响本轮 bundle 发版结果。
+
+### 下一步方向
+- 如果继续收口班级管理，下一步可以考虑：
+  - 学生列表支持直接重命名
+  - 移动端下负责老师卡片按钮进一步压缩排版
+
 ## 班级管理弹窗补改：移除点击提示并收口操作按钮（2026-04-09）
 
 ### 已完成
