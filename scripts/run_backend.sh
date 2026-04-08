@@ -6,4 +6,5 @@ if [ -f .env.runtime ]; then
   . ./.env.runtime
   set +a
 fi
+export XR_OPEN_BROWSER="${XR_OPEN_BROWSER:-0}"
 exec .venv/bin/python app.py

@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title 复习计划管理系统
+title 复习计划管理系统后端快捷启动
 
 cd /d "%~dp0"
 
@@ -47,13 +47,14 @@ echo 依赖检查完成
 .venv\Scripts\python -c "import sys; sys.path.insert(0,'.'); from lesson_manager import init_db; init_db()" 2>nul
 
 echo.
-echo 系统启动中，浏览器即将打开...
+echo 系统启动中...
+echo 此脚本仅启动后端 API：http://127.0.0.1:5001
+echo 前端需要单独启动：http://127.0.0.1:3000
+echo 3000 才是开发态页面入口；如前端未启动，请不要直接打开 5001
 echo 关闭此窗口可停止服务
 echo ==============================
 echo.
 
-:: 延迟打开浏览器
-start "" /b cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:5001"
-
-:: 启动 Flask
+:: 启动后端（默认不自动打开浏览器，避免把用户带到错误入口）
+set XR_OPEN_BROWSER=0
 .venv\Scripts\python app.py
