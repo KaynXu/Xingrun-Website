@@ -4020,6 +4020,8 @@ def delete_organization(org_id: int) -> None:
             "DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
             (org_id,),
         )
+        conn.execute("DELETE FROM wrong_question_submissions WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM parent_student_bindings WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM class_feedback_tasks WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM students WHERE organization_id=?", (org_id,))
         # 3. classes

@@ -215,19 +215,35 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                 )
                 self.assertEqual(columns, expected_columns)
 
-    def test_delete_organization_removes_direct_owned_students_and_feedback_tasks(self):
+    def test_delete_organization_removes_org_data_with_parent_binding_and_wrong_question_dependencies(self):
         with lesson_manager.get_conn() as conn:
             conn.executescript(
                 """
                 INSERT INTO organizations (id, name) VALUES (41, 'Delete Org');
-                INSERT INTO organizations (id, name) VALUES (42, 'Other Org');
+                INSERT INTO classes (id, organization_id, name, subject, grade)
+                VALUES (501, 41, 'Delete Class', '数学', '六年级');
                 INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
                 VALUES (401, 'delete-owner', 'hash', 'Delete Owner', 'owner', 'active', 41);
-                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
-                VALUES (402, 'other-owner', 'hash', 'Other Owner', 'owner', 'active', 42);
-                INSERT INTO classes (id, organization_id, name, subject, grade)
-                VALUES (501, 42, 'Other Class', '数学', '六年级');
                 INSERT INTO students (id, organization_id, name) VALUES (601, 41, 'Org Student');
+                INSERT INTO class_students (class_id, student_id) VALUES (501, 601);
+                INSERT INTO user_classes (user_id, class_id) VALUES (401, 501);
+                INSERT INTO parent_wechat_accounts (
+                    id, openid, nickname_snapshot, avatar_url_snapshot, status
+                ) VALUES (
+                    801, 'parent-openid-41', 'Parent', '', 'active'
+                );
+                INSERT INTO parent_student_bindings (
+                    id, organization_id, parent_wechat_account_id, class_id, student_id, teacher_user_id, status
+                ) VALUES (
+                    901, 41, 801, 501, 601, 401, 'active'
+                );
+                INSERT INTO wrong_question_submissions (
+                    id, organization_id, source, parent_wechat_account_id, binding_id,
+                    class_id, student_id, teacher_user_id, image_url, status
+                ) VALUES (
+                    'wqs-41', 41, 'wechat_mp', 801, 901,
+                    501, 601, 401, 'https://example.com/q.png', 'pending'
+                );
                 INSERT INTO class_feedback_tasks (
                     id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
                     start_date, end_date, period_length_days, period_granularity, status,
@@ -235,35 +251,41 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                     class_status_note, parent_feedback_note, teaching_focus_note,
                     next_stage_preview_note, student_highlights_json, created_by
                 ) VALUES (
-                    701, 41, 501, NULL, '', '2026-04-01', '2026-04-01', 1, 'daily', 'draft',
-                    '', '', '[]', '', '', '', '', '[]', 402
+                    701, 41, 501, 401, 'Delete Owner', '2026-04-01', '2026-04-01', 1, 'daily', 'draft',
+                    '', '', '[]', '', '', '', '', '[]', 401
                 );
                 """
             )
-
-        original_get_conn = lesson_manager.get_conn
-
-        def get_conn_without_foreign_keys():
-            conn = sqlite3.connect(lesson_manager.DB_PATH)
-            conn.execute("PRAGMA foreign_keys = OFF")
-            conn.row_factory = sqlite3.Row
-            return conn
-
-        lesson_manager.get_conn = get_conn_without_foreign_keys
         try:
             lesson_manager.delete_organization(41)
-        finally:
-            lesson_manager.get_conn = original_get_conn
+        except sqlite3.IntegrityError as exc:
+            self.fail(f"delete_organization raised IntegrityError: {exc}")
 
         with lesson_manager.get_conn() as conn:
+            organization_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM organizations WHERE id=41"
+            ).fetchone()["c"]
+            class_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM classes WHERE organization_id=41"
+            ).fetchone()["c"]
             student_count = conn.execute(
                 "SELECT COUNT(*) AS c FROM students WHERE organization_id=41"
+            ).fetchone()["c"]
+            binding_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM parent_student_bindings WHERE organization_id=41"
+            ).fetchone()["c"]
+            wrong_question_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM wrong_question_submissions WHERE organization_id=41"
             ).fetchone()["c"]
             task_count = conn.execute(
                 "SELECT COUNT(*) AS c FROM class_feedback_tasks WHERE organization_id=41"
             ).fetchone()["c"]
 
+        self.assertEqual(organization_count, 0)
+        self.assertEqual(class_count, 0)
         self.assertEqual(student_count, 0)
+        self.assertEqual(binding_count, 0)
+        self.assertEqual(wrong_question_count, 0)
         self.assertEqual(task_count, 0)
 
     def test_student_backfill_rejects_cross_organization_class_links(self):
