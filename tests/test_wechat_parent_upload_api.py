@@ -313,5 +313,23 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_invalid_invite_code_returns_404_with_error_message(self):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+
+        response = self.client.post(
+            "/api/wechat/bind-class",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "invite_code": "INVALID0"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertIn("error", payload)
+
 if __name__ == "__main__":
     unittest.main()
