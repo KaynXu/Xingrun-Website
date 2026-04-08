@@ -176,6 +176,79 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
         self.assertEqual(student_fk["organization_id"]["on_delete"], "CASCADE")
         self.assertEqual(task_fk["organization_id"]["on_delete"], "CASCADE")
 
+    def test_student_backfill_rejects_cross_organization_class_links(self):
+        conn = sqlite3.connect(lesson_manager.DB_PATH)
+        try:
+            conn.executescript(
+                """
+                DROP TABLE IF EXISTS class_students;
+                DROP TABLE IF EXISTS students;
+                DROP TABLE IF EXISTS classes;
+                DROP TABLE IF EXISTS users;
+                DROP TABLE IF EXISTS organizations;
+
+                CREATE TABLE organizations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'member',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    organization_id INTEGER NOT NULL REFERENCES organizations(id),
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE classes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    organization_id INTEGER REFERENCES organizations(id),
+                    name TEXT NOT NULL,
+                    subject TEXT DEFAULT '',
+                    grade TEXT DEFAULT '',
+                    teacher_name TEXT DEFAULT '',
+                    teacher_email TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE students (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE class_students (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                    student_id INTEGER NOT NULL REFERENCES students(id),
+                    created_at TEXT DEFAULT (datetime('now','localtime')),
+                    UNIQUE(class_id, student_id)
+                );
+
+                INSERT INTO organizations (id, name) VALUES (1, 'Org A');
+                INSERT INTO organizations (id, name) VALUES (2, 'Org B');
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (1, 'owner-a', 'hash', 'Owner A', 'owner', 'active', 1);
+                INSERT INTO classes (id, organization_id, name, subject, grade)
+                VALUES (1, 1, 'A 班', '数学', '六年级');
+                INSERT INTO classes (id, organization_id, name, subject, grade)
+                VALUES (2, 2, 'B 班', '数学', '六年级');
+                INSERT INTO students (id, name) VALUES (1, '跨机构学生');
+                INSERT INTO class_students (class_id, student_id) VALUES (1, 1);
+                INSERT INTO class_students (class_id, student_id) VALUES (2, 1);
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with self.assertRaisesRegex(ValueError, "multiple organizations"):
+            lesson_manager.init_db()
+
 
 if __name__ == "__main__":
     unittest.main()

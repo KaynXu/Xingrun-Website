@@ -1164,17 +1164,31 @@ def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:
 
 def _backfill_student_organization_scope(conn: sqlite3.Connection, fallback_organization_id: int) -> None:
     _ensure_column(conn, "students", "organization_id", "INTEGER REFERENCES organizations(id)")
+    conflicting_row = conn.execute(
+        """
+        SELECT cs.student_id
+        FROM class_students cs
+        JOIN classes c ON c.id = cs.class_id
+        WHERE c.organization_id IS NOT NULL
+        GROUP BY cs.student_id
+        HAVING COUNT(DISTINCT c.organization_id) > 1
+        LIMIT 1
+        """
+    ).fetchone()
+    if conflicting_row:
+        raise ValueError(
+            f"student {conflicting_row['student_id']} links to multiple organizations via classes"
+        )
     conn.execute(
         """
         UPDATE students
         SET organization_id=COALESCE(
             (
-                SELECT c.organization_id
+                SELECT MIN(c.organization_id)
                 FROM class_students cs
                 JOIN classes c ON c.id = cs.class_id
                 WHERE cs.student_id = students.id
-                ORDER BY cs.id
-                LIMIT 1
+                  AND c.organization_id IS NOT NULL
             ),
             ?
         )
@@ -2544,12 +2558,20 @@ def _dedupe_student_name_in_class(
 def create_student_for_class(class_id: int, raw_name: str):
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
+        class_row = conn.execute(
+            "SELECT id, organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
         if not class_row:
             raise LookupError("class not found")
+        if class_row["organization_id"] is None:
+            raise ValueError("class organization is required")
 
         student_name = _dedupe_student_name_in_class(class_id, raw_name, conn=conn)
-        cur = conn.execute("INSERT INTO students (name) VALUES (?)", (student_name,))
+        cur = conn.execute(
+            "INSERT INTO students (organization_id, name) VALUES (?, ?)",
+            (class_row["organization_id"], student_name),
+        )
         student_id = cur.lastrowid
         conn.execute(
             "INSERT INTO class_students (class_id, student_id) VALUES (?, ?)",

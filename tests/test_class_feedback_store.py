@@ -161,6 +161,22 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(refreshed_task["student_entries"][0]["student_id"], class_one_student["id"])
         self.assertEqual(refreshed_task["student_entries"][0]["ai_draft"], "张三草稿")
 
+    def test_create_student_for_class_persists_class_organization_id(self):
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
+
+        student = lesson_manager.create_student_for_class(class_id, "张三")
+
+        with lesson_manager.get_conn() as conn:
+            student_row = conn.execute(
+                "SELECT organization_id FROM students WHERE id=?",
+                (student["id"],),
+            ).fetchone()
+
+        self.assertEqual(student["organization_id"], class_row["organization_id"])
+        self.assertEqual(student_row["organization_id"], class_row["organization_id"])
+
     def test_confirm_rejects_missing_student_and_keeps_task_in_draft(self):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
