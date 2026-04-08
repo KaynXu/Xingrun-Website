@@ -578,11 +578,11 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
 
 // --- API helper ---
 
-function readLocalStorageItem(key: string): string | null {
+function readLocalStorageItem(key: string): string {
   try {
-    return globalThis.localStorage?.getItem?.(key) ?? null;
+    return globalThis.localStorage?.getItem?.(key) || '';
   } catch {
-    return null;
+    return '';
   }
 }
 
@@ -603,7 +603,7 @@ function removeLocalStorageItem(key: string): void {
 }
 
 function getToken(): string {
-  return readLocalStorageItem('xr_token') ?? '';
+  return readLocalStorageItem('xr_token');
 }
 
 function buildAuthedPath(path: string): string {
@@ -7721,7 +7721,11 @@ export default function App() {
     }
 
     document.documentElement.classList.toggle('dark', isDark);
-    writeLocalStorageItem('xr_dark', String(isDark));
+    try {
+      writeLocalStorageItem('xr_dark', String(isDark));
+    } catch {
+      // Ignore storage access issues and keep the UI functional.
+    }
   }, [isDark]);
 
   useEffect(() => {
