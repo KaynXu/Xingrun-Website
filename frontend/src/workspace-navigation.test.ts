@@ -18,7 +18,7 @@ function requireMatch(pattern: RegExp): string {
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'masterDataMappings'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
+  assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '班级反馈生成'/);
   assert.match(appSource, /'class-feedback-generation': '班级反馈生成'/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
@@ -27,9 +27,6 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   assert.match(sidebarBlock, /id: 'calendar'[\s\S]*label: '课程日历'/);
   assert.match(appSource, /calendar: '课程日历'/);
   assert.match(appSource, /activePage === 'calendar'[\s\S]*<CourseCalendarPage/);
-  assert.match(sidebarBlock, /id: 'masterDataMappings'[\s\S]*label: '老师与班级匹配'/);
-  assert.match(appSource, /masterDataMappings: '老师与班级匹配'/);
-  assert.match(appSource, /activePage === 'masterDataMappings'[\s\S]*<MasterDataMappingsPage currentUser=\{currentUser\} focusUserId=\{masterDataFocusUserId\} \/>/);
   assert.doesNotMatch(appSource, /QuestionBank/);
 });
 
@@ -180,7 +177,10 @@ test('credit center page source supports member drilldown and ledger filtering',
   assert.match(creditBlock, /const \[ledgerPage, setLedgerPage\] = useState\(1\);/);
   assert.match(creditBlock, /const totalUsageDetailPages = Math\.max\(1, Math\.ceil\(usageDetailItems\.length \/ CREDIT_USAGE_DETAIL_PAGE_SIZE\)\);/);
   assert.match(creditBlock, /const currentUsageDetailPage = Math\.min\(usageDetailPage, totalUsageDetailPages\);/);
-  assert.match(creditBlock, /const paginatedUsageDetailItems = usageDetailItems\.slice\(\(currentUsageDetailPage - 1\) \* CREDIT_USAGE_DETAIL_PAGE_SIZE, currentUsageDetailPage \* CREDIT_USAGE_DETAIL_PAGE_SIZE\);/);
+  assert.match(
+    creditBlock,
+    /const paginatedUsageDetailItems = usageDetailItems\.slice\(\s*\(currentUsageDetailPage - 1\) \* CREDIT_USAGE_DETAIL_PAGE_SIZE,\s*currentUsageDetailPage \* CREDIT_USAGE_DETAIL_PAGE_SIZE,\s*\);/,
+  );
   assert.match(creditBlock, /const filteredLedger = creditLedger\.filter\(/);
   assert.match(creditBlock, /const totalLedgerPages = Math\.max\(1, Math\.ceil\(filteredLedger\.length \/ CREDIT_LEDGER_PAGE_SIZE\)\);/);
   assert.match(creditBlock, /const currentLedgerPage = Math\.min\(ledgerPage, totalLedgerPages\);/);
