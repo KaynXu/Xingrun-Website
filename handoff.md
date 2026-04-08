@@ -1,3 +1,67 @@
+## 机构成员权限收窄 & 班级管理开放（2026-04-09）
+
+### 已完成
+
+**设计和规划：**
+- 已完成设计文档：[docs/superpowers/specs/2026-04-09-member-scoped-access-design.md](docs/superpowers/specs/2026-04-09-member-scoped-access-design.md)
+- 已完成实现计划：[docs/superpowers/plans/2026-04-09-member-scoped-access.md](docs/superpowers/plans/2026-04-09-member-scoped-access.md)
+
+**后端改动（lesson_manager.py）：**
+- ✅ consultations 表重构：
+  - 删除 `receiving_teacher`、`teacher_id` 字符串列
+  - 新增 `assigned_user_id INTEGER FK → users(id)`
+  - 旧表自动检测并 DROP 重建（无数据迁移）
+- ✅ 查询和 CRUD 改造：
+  - `list_consultations()` 添加 LEFT JOIN users，支持 `assigned_user_id` 过滤
+  - `list_consultations_for_actor()` member 角色自动按 `assigned_user_id=自己的 id` 过滤
+  - `create_consultation()` 接收 `assigned_user_id` 参数
+  - `update_consultation()` 支持更新 `assigned_user_id`
+  - 无主咨询（NULL）对 member 隐藏，对 admin/owner 可见
+
+**后端改动（app.py）：**
+- ✅ 权限守卫调整：
+  - `/api/consultations/ai-parse` 从 `_require_staff()` → `_require_auth()`，member 可用
+  - `/api/classes/:id/invite` GET 从 `_require_owner()` → `_require_auth()`，member 可读自己班级邀请码
+  - `/api/classes/:id/invite/reset` POST 从 `_require_owner()` → `_require_auth()`，member 可重置
+
+**前端改动（App.tsx）：**
+- ✅ 侧边栏菜单：
+  - `classes`（班级管理）tab 去掉权限门槛，所有角色都可见
+- ✅ 班级管理页面条件渲染：
+  - 新建班级按钮：`hasStaffAccess` 才可见
+  - 编辑/删除班级按钮：`hasStaffAccess` 才可见
+  - 邀请码管理：所有角色都可见（利用后端 `_get_accessible_class_or_error` 保证 member 只看自己的班级）
+
+**测试：**
+- ✅ 新增 `test_member_sees_only_assigned_consultations()`：
+  - 验证 member1 只看分配给自己的咨询，对 member2 的咨询和无主咨询不可见
+  - 验证 owner 仍看所有咨询（分配 + 无主）
+
+**Commits:**
+- `docs: add member-scoped access design spec and implementation plan`
+- `refactor: rebuild consultations table with assigned_user_id FK and update CRUD operations`
+- `feat: open ai-parse and invite endpoints to all authenticated users`
+- `feat: show classes tab to all roles, hide management ops from member`
+- `test: add member-scoped consultation filtering test`
+
+### 验收标准
+- ✅ Member 登录后，咨询记录列表只显示分配给自己的（assigned_user_id = 自己 id）
+- ✅ 无主咨询（assigned_user_id = NULL）对 member 隐藏
+- ✅ Member 可进入班级管理 tab（侧边栏可见）
+- ✅ Member 在班级管理页只看自己负责的班级，无增删改和分配老师权限
+- ✅ Member 可查看和重置自己班级的邀请码
+- ✅ Member 可使用 AI 解析咨询（不再返回 403 权限错误）
+- ✅ Admin/owner/super_owner 行为不变
+
+### 剩余问题
+- 无
+
+### 下一步方向
+- 合并到 master 并部署至生产环境
+- 对其他 tab（课堂反馈、复习生成、课程日历、智能错题）的 member 过滤已由后端通过 `user_classes` 实现，本轮无额外改动需要
+
+---
+
 ## 咨询记录按钮响应式修复（2026-04-09）
 
 ### 已完成
