@@ -135,6 +135,3 @@ cd /Users/ark.mini/Desktop/Xingrun-Website
 
 这样可以在保留稳定发布节奏的前提下，减少微任务的分支成本。
 
----
-
-如果你希望，我可以再给你补一份「最简团队协作 SOP（含命令模板）」到 `docs/operations/`，作为新成员上手标准。
