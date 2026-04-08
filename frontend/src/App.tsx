@@ -6422,60 +6422,90 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   </div>
                 ) : editingClass && editingFormState ? (
                   <div className="space-y-5">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">班级名称</span>
-                        <input
-                          type="text"
-                          value={editingFormState.name}
-                          onChange={(e) => handleFieldChange(editingClass.id, 'name', e.target.value)}
-                          className={workspaceFieldClass}
-                          placeholder="如：六年级数学冲刺班"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">科目</span>
-                        <input
-                          type="text"
-                          value={editingFormState.subject}
-                          onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
-                          className={workspaceFieldClass}
-                          placeholder="如：数学"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm md:col-span-2">
-                        <span className="text-slate-500 dark:text-slate-400">年级</span>
-                        <select
-                          value={editingFormState.grade}
-                          onChange={(e) => handleFieldChange(editingClass.id, 'grade', e.target.value)}
-                          className={workspaceFieldClass}
-                        >
-                          <option value="">请选择年级</option>
-                          {gradeOptions.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
+                    <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.92fr)_minmax(0,1.08fr)] lg:items-start">
+                      <div className={`${workspaceCardClass} space-y-4 p-4 sm:p-5`}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-lg font-semibold text-slate-900 dark:text-white">家长绑定邀请码</h4>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">把邀请码发给家长后，家长就能在微信小程序里绑定该班级。</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleLoadClassInvite(editingClass.id)}
+                              disabled={editingInviteLoading || editingInviteResetting}
+                              className={workspaceSecondaryButtonClass}
+                            >
+                              {editingInviteLoading ? '加载中...' : '查看邀请码'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleResetClassInvite(editingClass.id)}
+                              disabled={editingInviteLoading || editingInviteResetting}
+                              className={workspacePrimaryButtonClass}
+                            >
+                              {editingInviteResetting ? '重置中...' : '重置邀请码'}
+                            </button>
+                          </div>
+                        </div>
 
-                    <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteClass(editingClass.id)}
-                        disabled={classCardInteractionLocked}
-                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                      >
-                        <Trash2 size={18} />
-                        {deleting ? '删除中...' : '删除当前班级'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveClass(editingClass.id)}
-                        disabled={classCardInteractionLocked}
-                        className={workspacePrimaryButtonClass}
-                      >
-                        {saving ? '保存中...' : '保存班级'}
-                      </button>
+                        {editingInviteError ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                            <AlertCircle size={16} />
+                            {editingInviteError}
+                          </div>
+                        ) : null}
+
+                        <div className={`${workspaceSoftCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
+                          <p className="mt-3 font-mono text-2xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
+                            {editingInviteInfo?.invite_code || (editingInviteLoading ? '加载中' : '未加载')}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className={`${workspaceCardClass} space-y-4 p-5`}>
+                        <div>
+                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">基础信息</h4>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这里维护班级名称、科目和年级。</p>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="space-y-2 text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">班级名称</span>
+                            <input
+                              type="text"
+                              value={editingFormState.name}
+                              onChange={(e) => handleFieldChange(editingClass.id, 'name', e.target.value)}
+                              className={workspaceFieldClass}
+                              placeholder="如：六年级数学冲刺班"
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">科目</span>
+                            <input
+                              type="text"
+                              value={editingFormState.subject}
+                              onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
+                              className={workspaceFieldClass}
+                              placeholder="如：数学"
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm md:col-span-2">
+                            <span className="text-slate-500 dark:text-slate-400">年级</span>
+                            <select
+                              value={editingFormState.grade}
+                              onChange={(e) => handleFieldChange(editingClass.id, 'grade', e.target.value)}
+                              className={workspaceFieldClass}
+                            >
+                              <option value="">请选择年级</option>
+                              {gradeOptions.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
                     </div>
 
                     <div className={`${workspaceCardClass} space-y-5 p-5`}>
@@ -6541,53 +6571,24 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       )}
                     </div>
 
-                    <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">家长绑定邀请码</h4>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">老师把这个邀请码发给家长后，家长就能在微信小程序里绑定该班级并选择对应学生。</p>
-                        </div>
-                        <div className="flex flex-wrap gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleLoadClassInvite(editingClass.id)}
-                            disabled={editingInviteLoading || editingInviteResetting}
-                            className={workspaceSecondaryButtonClass}
-                          >
-                            {editingInviteLoading ? '加载中...' : '查看邀请码'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleResetClassInvite(editingClass.id)}
-                            disabled={editingInviteLoading || editingInviteResetting}
-                            className={workspacePrimaryButtonClass}
-                          >
-                            {editingInviteResetting ? '重置中...' : '重置邀请码'}
-                          </button>
-                        </div>
-                      </div>
-
-                      {editingInviteError ? (
-                        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                          <AlertCircle size={16} />
-                          {editingInviteError}
-                        </div>
-                      ) : null}
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className={`${workspaceSoftCardClass} p-4`}>
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
-                          <p className="mt-3 font-mono text-2xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
-                            {editingInviteInfo?.invite_code || (editingInviteLoading ? '加载中' : '未加载')}
-                          </p>
-                        </div>
-                        <div className={`${workspaceSoftCardClass} p-4`}>
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">使用说明</p>
-                          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                            家长先输入班级邀请码，再从网站里已有的学生名单中选择自己孩子进行绑定。一位家长可以重复绑定多个孩子。
-                          </p>
-                        </div>
-                      </div>
+                    <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClass(editingClass.id)}
+                        disabled={classCardInteractionLocked}
+                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                      >
+                        <Trash2 size={18} />
+                        {deleting ? '删除中...' : '删除当前班级'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveClass(editingClass.id)}
+                        disabled={classCardInteractionLocked}
+                        className={workspacePrimaryButtonClass}
+                      >
+                        {saving ? '保存中...' : '保存班级'}
+                      </button>
                     </div>
                   </div>
                 ) : null}

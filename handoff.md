@@ -5239,3 +5239,37 @@ Landing Refresh 相关提交（按时间顺序）
     - 地址栏收起后连续上下滑动，是否还会回弹到刚才位置
     - 左侧 tab 切换后，内容区是否还会因为回弹看起来像“没反应”
   - 若仍能复现，再抓 Safari/WebKit 远程调试，继续排查是否还有某个固定区域在抢 touch/overscroll。
+
+补充记录（2026-04-09，班级编辑弹窗邀请码卡片前置）
+- 本轮目标：
+  - 把“家长绑定邀请码”移动到编辑班级弹窗最上方，并与“基础信息”并排显示。
+  - 邀请码卡片做得更紧凑，删除“使用说明”文案，保持现有逻辑不变。
+- 本轮已完成：
+  - `frontend/src/App.tsx`
+    - 编辑班级弹窗顶部改为双列布局：
+      - 左侧为更小的“家长绑定邀请码”卡片
+      - 右侧为“基础信息”卡片
+    - 保留“查看邀请码 / 重置邀请码 / 当前邀请码 / 错误提示”逻辑不变
+    - 删除原邀请码区域中的“使用说明”卡片
+    - “负责老师”区域与“保存/删除”按钮保留在下方
+- proof（临时脚本执行）：
+  - 临时脚本：`/Users/ark.mini/Desktop/Xingrun-Website/tmp_proof_class_modal_layout_20260409.py`
+  - 首次 red：
+    - `CHECK1_INVITE_BEFORE_BASIC_INFO=FAIL`
+    - `CHECK2_USAGE_NOTE_REMOVED=OK`
+    - `CHECK3_PARALLEL_LAYOUT_PRESENT=FAIL`
+  - 绿灯复验：
+    - `CHECK1_INVITE_BEFORE_BASIC_INFO=OK`
+    - `CHECK2_USAGE_NOTE_REMOVED=OK`
+    - `CHECK3_PARALLEL_LAYOUT_PRESENT=OK`
+    - `npm --prefix frontend run build`
+    - `vite v6.4.1 building for production...`
+    - `✓ built in 1.49s`
+    - `CHECK4_FRONTEND_BUILD_EXIT_CODE=0`
+- 当前剩余：
+  - `vite build` 仍有既有 warning：
+    - `App.tsx` 同时被静态和动态引入
+    - chunk size 超过 500 kB
+  - 这些不是本轮新问题，本轮未处理。
+- 下一步方向：
+  - 如果你还想继续收拾班级弹窗，可以下一轮再决定是否把“负责老师”也做成与顶部一致的卡片密度，进一步压缩弹窗高度。
