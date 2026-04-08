@@ -1822,7 +1822,7 @@ def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
         )
 
     if not students:
-        raise ValueError("当前班级还没有学生，无法生成班级反馈")
+        raise ValueError("当前班级还没有学生，无法生成课堂反馈")
 
     source_summary = json.dumps(
         {
@@ -2836,7 +2836,7 @@ def api_class_feedback_generate(task_id: int):
         return jsonify({"error": str(exc)}), 400
     except Exception:
         logger.exception("Class feedback generation failed for task %s", task_id)
-        return jsonify({"error": "生成班级反馈时发生错误，请稍后重试"}), 500
+        return jsonify({"error": "生成课堂反馈时发生错误，请稍后重试"}), 500
     return jsonify(saved_task)
 
 
@@ -2864,7 +2864,7 @@ def api_class_feedback_save_draft(task_id: int):
         return jsonify({"error": str(exc)}), 400
     except Exception:
         logger.exception("Class feedback draft save failed for task %s", task_id)
-        return jsonify({"error": "保存班级反馈草稿时发生错误，请稍后重试"}), 500
+        return jsonify({"error": "保存课堂反馈草稿时发生错误，请稍后重试"}), 500
     return jsonify(draft_task)
 
 
@@ -2892,7 +2892,7 @@ def api_class_feedback_confirm(task_id: int):
         return jsonify({"error": str(exc)}), 400
     except Exception:
         logger.exception("Class feedback confirm failed for task %s", task_id)
-        return jsonify({"error": "确认班级反馈时发生错误，请稍后重试"}), 500
+        return jsonify({"error": "确认课堂反馈时发生错误，请稍后重试"}), 500
     return jsonify(confirmed_task)
 
 

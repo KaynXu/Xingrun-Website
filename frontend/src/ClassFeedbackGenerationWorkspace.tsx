@@ -79,7 +79,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
     <section className="space-y-6">
       <header className={cardClass}>
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600 dark:text-sky-300">Class Feedback</p>
-        <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">班级反馈生成</h3>
+        <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">课堂反馈</h3>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           {props.classNameLabel} · {props.teacherNameLabel}
         </p>

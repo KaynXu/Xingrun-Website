@@ -121,7 +121,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
     />,
   );
 
-  assert.match(markup, /班级反馈生成/);
+  assert.match(markup, /课堂反馈/);
   assert.match(markup, /资料摘要/);
   assert.match(markup, /阶段备注/);
   assert.match(markup, /班级状态标签/);

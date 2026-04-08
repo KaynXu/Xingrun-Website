@@ -293,7 +293,7 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             created_by=owner["id"],
         )
 
-        with self.assertRaisesRegex(ValueError, "当前班级还没有学生，无法生成班级反馈"):
+        with self.assertRaisesRegex(ValueError, "当前班级还没有学生，无法生成课堂反馈"):
             lesson_manager.save_class_feedback_generation_result(
                 task["id"],
                 class_summary_ai_draft="初始草稿",
@@ -313,7 +313,7 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             created_by=owner["id"],
         )
 
-        with self.assertRaisesRegex(ValueError, "当前班级还没有学生，无法生成班级反馈"):
+        with self.assertRaisesRegex(ValueError, "当前班级还没有学生，无法生成课堂反馈"):
             lesson_manager.confirm_class_feedback_task(
                 task["id"],
                 class_summary_final_text="正式班级反馈",

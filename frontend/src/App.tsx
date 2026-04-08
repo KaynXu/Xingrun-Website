@@ -1395,7 +1395,7 @@ const Sidebar = ({
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'review-generation', icon: Library, label: '复习生成' },
-    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈生成' },
+    { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(canAccessSmartWrongQuestions(currentUser.role)
@@ -2412,7 +2412,7 @@ const ClassFeedbackGenerationPage = ({
       })
       .catch((error) => {
         if (!cancelled) {
-          setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级反馈初始化失败，请刷新重试。');
+          setClassFeedbackStatusMessage(error instanceof Error ? error.message : '课堂反馈初始化失败，请刷新重试。');
         }
       })
       .finally(() => {
@@ -2509,7 +2509,7 @@ const ClassFeedbackGenerationPage = ({
       await hydrateClassFeedbackTask(created.id, selectedClassId);
       setClassFeedbackStatusMessage(`已创建反馈任务，按 ${created.period_granularity} 粒度准备资料。`);
     } catch (error) {
-      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '创建班级反馈任务失败，请重试。');
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '创建课堂反馈任务失败，请重试。');
     } finally {
       setIsSavingClassFeedback(false);
     }
@@ -2617,9 +2617,9 @@ const ClassFeedbackGenerationPage = ({
         savedTask.class_summary_ai_draft ?? '',
         savedStudents,
       );
-      setClassFeedbackStatusMessage('班级反馈草稿已保存。');
+      setClassFeedbackStatusMessage('课堂反馈草稿已保存。');
     } catch (error) {
-      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '保存班级反馈草稿失败，请重试。');
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '保存课堂反馈草稿失败，请重试。');
     } finally {
       setIsSavingClassFeedback(false);
     }
@@ -2698,7 +2698,7 @@ const ClassFeedbackGenerationPage = ({
       await hydrateClassFeedbackTask(generated.id, selectedClassId);
       setClassFeedbackStatusMessage(`已生成班级总评和 ${classFeedbackStudents.length} 名学生反馈草稿。`);
     } catch (error) {
-      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成班级反馈失败，请重试。');
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成课堂反馈失败，请重试。');
     } finally {
       setIsGeneratingClassFeedback(false);
     }
@@ -2761,7 +2761,7 @@ const ClassFeedbackGenerationPage = ({
       await hydrateClassFeedbackTask(confirmed.id, selectedClassId);
       setClassFeedbackStatusMessage(`已确认 ${classFeedbackStudents.length} 名学生反馈，并写入后续积累。`);
     } catch (error) {
-      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '确认班级反馈失败，请重试。');
+      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '确认课堂反馈失败，请重试。');
     } finally {
       setIsConfirmingClassFeedback(false);
     }
@@ -2840,7 +2840,7 @@ const ClassFeedbackGenerationPage = ({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Stage Feedback</p>
-            <h3 className={`${workspaceSectionTitleClass} mt-3`}>班级反馈生成</h3>
+            <h3 className={`${workspaceSectionTitleClass} mt-3`}>课堂反馈</h3>
             <p className={`${workspaceSectionTextClass} mt-2`}>
               选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。
             </p>
@@ -7930,7 +7930,7 @@ export default function App() {
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
     'review-generation': '复习生成',
-    'class-feedback-generation': '班级反馈生成',
+    'class-feedback-generation': '课堂反馈',
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
