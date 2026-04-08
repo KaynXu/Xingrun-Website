@@ -3954,11 +3954,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               className={`${workspaceFieldClass} w-full rounded-full py-2.5 pl-11 pr-4`}
             />
           </label>
-          <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
+          <div className="grid w-full gap-3 self-start sm:grid-cols-2 lg:w-[22rem] lg:self-auto xl:w-[24rem] xl:grid-cols-3">
             <button
               type="button"
               onClick={() => load(search).catch(() => undefined)}
-              className={`${workspaceSecondaryButtonClass} w-full sm:w-auto sm:min-w-[126px]`}
+              className={`${workspaceSecondaryButtonClass} w-full`}
             >
               <RefreshCw size={18} />
               刷新
@@ -3967,7 +3967,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               <button
                 type="button"
                 onClick={openBatchModal}
-                className={`${workspaceSecondaryButtonClass} w-full sm:w-auto sm:min-w-[126px]`}
+                className={`${workspaceSecondaryButtonClass} w-full`}
               >
                 <Cpu size={18} />
                 AI 批量整理
@@ -3976,7 +3976,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <button
               type="button"
               onClick={openCreateModal}
-              className={`${workspacePrimaryButtonClass} w-full sm:w-auto sm:min-w-[126px]`}
+              className={`${workspacePrimaryButtonClass} w-full`}
             >
               <PlusCircle size={18} />
               新增记录

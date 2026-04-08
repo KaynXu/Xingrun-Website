@@ -290,12 +290,18 @@ test('class management source adds compact card single-expand state and guards l
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
+  const consultationBlock = requireMatch(/const ConsultationPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+
   assert.match(appSource, /mobileNavOpen/);
   assert.match(appSource, /aria-label="打开导航"/);
   assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
   assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden"/);
   assert.match(appSource, /className="hidden 2xl:block"/);
+  assert.match(consultationBlock, /className="grid w-full gap-3 self-start sm:grid-cols-2 lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] xl:grid-cols-3"/);
+  assert.match(consultationBlock, /className=\{`\$\{workspaceSecondaryButtonClass\} w-full`\}/);
+  assert.match(consultationBlock, /className=\{`\$\{workspacePrimaryButtonClass\} w-full`\}/);
   assert.match(appSource, /whitespace-nowrap/);
+  assert.doesNotMatch(consultationBlock, /sm:min-w-\[126px\]/);
   assert.doesNotMatch(appSource, /overflow-x-auto/);
 });
 

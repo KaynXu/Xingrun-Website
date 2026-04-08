@@ -1,3 +1,29 @@
+## 咨询记录按钮响应式修复（2026-04-09）
+
+### 已完成
+- 已修复咨询记录页右侧工具栏在部分桌面/平板宽度下按钮被挤乱的问题：
+  - 将按钮容器从 `flex-wrap` 改为响应式 `grid`
+  - 小屏 1 列、较宽时 2 列、超宽时 3 列
+  - 去掉按钮上的 `sm:min-w-[126px]` 硬最小宽度，避免和搜索框固定宽度互相挤压
+- 已补充前端回归测试，锁定这组布局约束，避免后续回退：
+  - `frontend/src/workspace-navigation.test.ts`
+
+### proof
+- 临时脚本：`/tmp/proof_consultation_toolbar_layout_20260409.sh`
+- 执行结果：
+  - 定向测试 `consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks` 通过
+  - `npm --prefix frontend run lint` 通过
+  - `npm --prefix frontend run build` 通过
+
+### 剩余问题
+- `frontend/src/workspace-navigation.test.ts` 全量跑时仍有 1 个与本轮无关的既有失败：
+  - `class management source adds a specific grade filter and reuses the shared fixed grade options`
+
+### 下一步方向
+- 如果还要继续收口前端中间断点体验，可以顺着检查：
+  - 班级管理编辑区
+  - 咨询记录卡片区的中等宽度排版
+
 ## 文档同步（2026-04-09）
 
 ### 已完成
@@ -5239,6 +5265,47 @@ Landing Refresh 相关提交（按时间顺序）
     - 地址栏收起后连续上下滑动，是否还会回弹到刚才位置
     - 左侧 tab 切换后，内容区是否还会因为回弹看起来像“没反应”
   - 若仍能复现，再抓 Safari/WebKit 远程调试，继续排查是否还有某个固定区域在抢 touch/overscroll。
+
+## 第 2 批 teacher feedback 残留切断（2026-04-09）
+
+### 已完成
+- 已在隔离 worktree 分支 `batch2-teacher-feedback-cleanup` 上完成第 2 批最小清理：
+  - 删除 `app.py` 中未使用的 `generate_teacher_feedback_draft` 导入
+  - 停止 `class-feedback` 生成上下文读取并暴露 `lesson_feedbacks`
+  - 删除 `credit_manager.py` 中 `teacher_feedback_draft` 计费规则
+  - 给 `record_ai_charge()` 补上 feature key 有效性校验，避免已退役 feature 继续写入 AI 使用流水
+- 已收敛测试真相源：
+  - `tests/test_class_feedback_api.py` 改为断言 class feedback 仍可生成，但上下文里不再出现 `lesson_feedbacks`
+  - `tests/test_credit_system.py` 改为断言旧教师反馈草稿接口继续 `404` 且不会扣费
+  - 原本只是在验证积分流水通用行为的用例，已改用仍在役的 `lesson_plan_generate`
+  - 新增守卫测试，确认 `teacher_feedback_draft` 已不再是可接受的计费 feature key
+
+### proof
+- 临时脚本：`/tmp/batch2_full_proof.sh`
+- 完整输出结论：
+  - `branch` -> `batch2-teacher-feedback-cleanup`
+  - `APP_IMPORT_CHECK=OK`
+  - `CREDIT_RULE_CHECK=OK`
+  - `/opt/homebrew/bin/python3 -m unittest tests.test_class_feedback_api tests.test_class_feedback_store tests.test_account_flow tests.test_credit_system -v`
+  - 结果：`Ran 99 tests in 2.779s` / `OK`
+- 定点 red/green：
+  - `/tmp/batch2_red_check.py`
+    - 初始失败 2 个：
+      - class feedback 上下文仍含 `lesson_feedbacks`
+      - `teacher_feedback_draft` 仍被接受为合法 feature key
+  - `/tmp/batch2_green_check.py`
+    - 修复后 `3 tests` 全过
+
+### 剩余问题
+- 本批按要求没有删除 `lesson_feedbacks` 表定义与存储层，只切断了 class feedback 对它的运行时读取链。
+- 全量 proof 输出里仍有既有 `sqlite3 ResourceWarning: unclosed database` 噪音，但不影响本批 4 组必测用例通过；本轮未扩 scope 处理。
+- 本轮验证中，`tests.test_account_flow.AccountFlowTestCase.test_stats_and_lesson_detail_no_longer_expose_question_legacy_fields` 在当前分支和当前基线上是通过的，不属于本批引入失败，也不是本次 proof 的阻塞项。
+
+### 下一步方向
+- 若继续做后续批次，可按原计划进入：
+  - 第 3 批：统一数据库真相源（`xingrun.db` / `lessons.db`）
+  - 第 4 批：退役 `consultations.csv`
+  - 第 5 批：收敛启动入口认知
 
 补充记录（2026-04-09，班级编辑弹窗邀请码卡片前置）
 - 本轮目标：
