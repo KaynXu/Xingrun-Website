@@ -1162,6 +1162,43 @@ def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:
         )
 
 
+def _backfill_student_organization_scope(conn: sqlite3.Connection, fallback_organization_id: int) -> None:
+    _ensure_column(conn, "students", "organization_id", "INTEGER REFERENCES organizations(id)")
+    conn.execute(
+        """
+        UPDATE students
+        SET organization_id=COALESCE(
+            organization_id,
+            (
+                SELECT c.organization_id
+                FROM class_students cs
+                JOIN classes c ON c.id = cs.class_id
+                WHERE cs.student_id = students.id
+                ORDER BY cs.id
+                LIMIT 1
+            ),
+            ?
+        )
+        WHERE organization_id IS NULL
+        """,
+        (fallback_organization_id,),
+    )
+
+
+def _backfill_class_feedback_task_organization_scope(conn: sqlite3.Connection) -> None:
+    _ensure_column(conn, "class_feedback_tasks", "organization_id", "INTEGER REFERENCES organizations(id)")
+    conn.execute(
+        """
+        UPDATE class_feedback_tasks
+        SET organization_id=COALESCE(
+            organization_id,
+            (SELECT c.organization_id FROM classes c WHERE c.id = class_feedback_tasks.class_id)
+        )
+        WHERE organization_id IS NULL
+        """
+    )
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript("""
@@ -1256,9 +1293,10 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS students (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL,
-            created_at  TEXT DEFAULT (datetime('now','localtime'))
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            name            TEXT NOT NULL,
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS class_students (
@@ -1404,6 +1442,7 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS class_feedback_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             teacher_name_snapshot TEXT NOT NULL DEFAULT '',
@@ -1548,6 +1587,9 @@ def init_db():
         )
         _migrate_legacy_organization_scope(conn)
         _bootstrap_account_state(conn)
+        default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
+        _backfill_student_organization_scope(conn, default_org["id"])
+        _backfill_class_feedback_task_organization_scope(conn)
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
