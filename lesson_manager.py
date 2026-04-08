@@ -778,15 +778,31 @@ def _write_consultation_rows(rows: list[dict]) -> None:
             writer.writerow(_normalize_consultation_row(row))
 
 
-def list_consultations(query: str = "", organization_id: Optional[int] = None) -> list[dict]:
+def list_consultations(
+    query: str = "",
+    organization_id: Optional[int] = None,
+    assigned_user_id: Optional[int] = None
+) -> list[dict]:
     teacher_directory = _get_consultation_teacher_directory()
     with get_conn() as conn:
-        query_sql = "SELECT * FROM consultations"
+        query_sql = """
+            SELECT c.*, u.display_name, u.username
+            FROM consultations c
+            LEFT JOIN users u ON c.assigned_user_id = u.id
+        """
         params: list[object] = []
+        conditions = []
         if organization_id is not None:
-            query_sql += " WHERE organization_id=?"
+            conditions.append("c.organization_id=?")
             params.append(organization_id)
-        query_sql += " ORDER BY updated_at DESC, created_at DESC, id DESC"
+        if assigned_user_id is not None:
+            conditions.append("c.assigned_user_id=?")
+            params.append(assigned_user_id)
+        
+        if conditions:
+            query_sql += " WHERE " + " AND ".join(conditions)
+        
+        query_sql += " ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC"
         rows = conn.execute(query_sql, params).fetchall()
 
     serialized_rows = [
@@ -805,16 +821,21 @@ def list_consultations(query: str = "", organization_id: Optional[int] = None) -
 def get_consultation(consultation_id: int, organization_id: Optional[int] = None):
     teacher_directory = _get_consultation_teacher_directory()
     with get_conn() as conn:
-        query_sql = "SELECT * FROM consultations WHERE id=?"
+        query_sql = """
+            SELECT c.*, u.display_name, u.username
+            FROM consultations c
+            LEFT JOIN users u ON c.assigned_user_id = u.id
+            WHERE c.id=?
+        """
         params: list[object] = [consultation_id]
         if organization_id is not None:
-            query_sql += " AND organization_id=?"
+            query_sql += " AND c.organization_id=?"
             params.append(organization_id)
         row = conn.execute(query_sql, params).fetchone()
     return _consultation_storage_row_to_public_dict(row, teacher_directory) if row else None
 
 
-def create_consultation(data: dict, organization_id: int) -> dict:
+def create_consultation(data: dict, organization_id: int, assigned_user_id: Optional[int] = None) -> dict:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_row = {field: "" for field in CONSULTATION_FIELDNAMES}
     new_row["录入时间"] = now
@@ -828,21 +849,20 @@ def create_consultation(data: dict, organization_id: int) -> dict:
         cur = conn.execute(
             """
             INSERT INTO consultations (
-                organization_id, date, parent_wechat_name, child_name, grade,
-                receiving_teacher, teacher_id, consultation_subject, need_detail,
+                organization_id, assigned_user_id, date, parent_wechat_name, child_name, grade,
+                consultation_subject, need_detail,
                 source_channel, source_channel_note, screenshot, reminder_at,
                 reminder_status, reminder_task_id, follow_up_status, follow_up_note,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
+                assigned_user_id,
                 stored["date"] or str(date.today()),
                 stored["parent_wechat_name"],
                 stored["child_name"],
                 stored["grade"],
-                stored["receiving_teacher"],
-                stored["teacher_id"],
                 stored["consultation_subject"],
                 stored["need_detail"],
                 stored["source_channel"],
@@ -857,7 +877,15 @@ def create_consultation(data: dict, organization_id: int) -> dict:
                 now,
             ),
         )
-        row = conn.execute("SELECT * FROM consultations WHERE id=?", (cur.lastrowid,)).fetchone()
+        row = conn.execute(
+            """
+            SELECT c.*, u.display_name, u.username
+            FROM consultations c
+            LEFT JOIN users u ON c.assigned_user_id = u.id
+            WHERE c.id=?
+            """,
+            (cur.lastrowid,)
+        ).fetchone()
     return _consultation_storage_row_to_public_dict(row, _get_consultation_teacher_directory())
 
 
@@ -865,10 +893,15 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     teacher_directory = _get_consultation_teacher_directory()
     with get_conn() as conn:
-        query_sql = "SELECT * FROM consultations WHERE id=?"
+        query_sql = """
+            SELECT c.*, u.display_name, u.username
+            FROM consultations c
+            LEFT JOIN users u ON c.assigned_user_id = u.id
+            WHERE c.id=?
+        """
         params: list[object] = [consultation_id]
         if organization_id is not None:
-            query_sql += " AND organization_id=?"
+            query_sql += " AND c.organization_id=?"
             params.append(organization_id)
         current = conn.execute(query_sql, params).fetchone()
         if not current:
@@ -878,6 +911,10 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
         for field, value in _extract_consultation_updates(data).items():
             public_row[field] = value
         stored = _consultation_row_to_storage(public_row, current["organization_id"])
+        
+        # Get assigned_user_id from data if provided, otherwise keep existing
+        assigned_user_id = data.get("assigned_user_id") if isinstance(data, dict) else None
+        
         conn.execute(
             """
             UPDATE consultations
@@ -885,8 +922,6 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 parent_wechat_name=?,
                 child_name=?,
                 grade=?,
-                receiving_teacher=?,
-                teacher_id=?,
                 consultation_subject=?,
                 need_detail=?,
                 source_channel=?,
@@ -894,6 +929,7 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 screenshot=?,
                 follow_up_status=?,
                 follow_up_note=?,
+                assigned_user_id=?,
                 updated_at=?
             WHERE id=?
             """,
@@ -902,8 +938,6 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 stored["parent_wechat_name"],
                 stored["child_name"],
                 stored["grade"],
-                stored["receiving_teacher"],
-                stored["teacher_id"],
                 stored["consultation_subject"],
                 stored["need_detail"],
                 stored["source_channel"],
@@ -911,11 +945,20 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 stored["screenshot"],
                 stored["follow_up_status"],
                 stored["follow_up_note"],
+                assigned_user_id if assigned_user_id is not None else current["assigned_user_id"],
                 now,
                 consultation_id,
             ),
         )
-        updated = conn.execute("SELECT * FROM consultations WHERE id=?", (consultation_id,)).fetchone()
+        updated = conn.execute(
+            """
+            SELECT c.*, u.display_name, u.username
+            FROM consultations c
+            LEFT JOIN users u ON c.assigned_user_id = u.id
+            WHERE c.id=?
+            """,
+            (consultation_id,)
+        ).fetchone()
     return _consultation_storage_row_to_public_dict(updated, teacher_directory)
 
 
@@ -991,8 +1034,10 @@ def _consultation_storage_row_to_public_dict(
     legacy_row["家长微信名"] = payload.get("parent_wechat_name", "") or ""
     legacy_row["孩子姓名"] = payload.get("child_name", "") or ""
     legacy_row["年级"] = payload.get("grade", "") or ""
-    legacy_row["接待老师"] = payload.get("receiving_teacher", "") or ""
-    legacy_row["老师ID"] = payload.get("teacher_id", "") or ""
+    # Get receiving_teacher from JOIN result (users.display_name) or use empty string if unassigned
+    legacy_row["接待老师"] = payload.get("display_name", "") or ""
+    # Get teacher_id from JOIN result (users.username) or use empty string if unassigned
+    legacy_row["老师ID"] = payload.get("username", "") or ""
     legacy_row["咨询科目"] = payload.get("consultation_subject", "") or ""
     legacy_row["具体需求"] = payload.get("need_detail", "") or ""
     legacy_row["来源渠道"] = payload.get("source_channel", "") or ""
@@ -1007,21 +1052,31 @@ def _consultation_storage_row_to_public_dict(
     legacy_row["最后更新"] = payload.get("updated_at", "") or ""
     serialized = _serialize_consultation_row(legacy_row, teacher_directory)
     serialized["organization_id"] = payload.get("organization_id")
+    serialized["assigned_user_id"] = payload.get("assigned_user_id")
     return serialized
 
 
 def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
+    # Check if old schema exists (without assigned_user_id column)
+    try:
+        cursor = conn.execute("PRAGMA table_info(consultations)")
+        cols = {row[1] for row in cursor.fetchall()}
+        if cols and 'assigned_user_id' not in cols:
+            # Old schema, drop and rebuild
+            conn.execute("DROP TABLE consultations")
+    except Exception:
+        pass  # Table doesn't exist, will create new one
+    
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS consultations (
             id                   INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id      INTEGER NOT NULL REFERENCES organizations(id),
+            assigned_user_id     INTEGER REFERENCES users(id),
             date                 TEXT DEFAULT '',
             parent_wechat_name   TEXT DEFAULT '',
             child_name           TEXT DEFAULT '',
             grade                TEXT DEFAULT '',
-            receiving_teacher    TEXT DEFAULT '',
-            teacher_id           TEXT DEFAULT '',
             consultation_subject TEXT DEFAULT '',
             need_detail          TEXT DEFAULT '',
             source_channel       TEXT DEFAULT '',
@@ -3410,7 +3465,17 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
 
 def list_consultations_for_actor(actor_user: dict, query: str = "") -> list[dict]:
     organization_id = None if (actor_user or {}).get("role") == SUPER_OWNER_ROLE else actor_user["organization_id"]
-    return list_consultations(query=query, organization_id=organization_id)
+    assigned_user_id = None
+    
+    # member 角色只看分配给自己的咨询
+    if actor_user.get("role") == MEMBER_ROLE:
+        assigned_user_id = actor_user["id"]
+    
+    return list_consultations(
+        query=query,
+        organization_id=organization_id,
+        assigned_user_id=assigned_user_id
+    )
 
 
 def get_user_class_ids(user_id: int) -> list:
