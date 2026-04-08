@@ -1,5 +1,7 @@
 # Remove Teacher Feedback Design
 
+> Historical note: `frontend/src/reviewGenerationTeacherFeedback.ts` was removed in the 2026-04-09 batch-1 orphan cleanup. The references below are retained for traceability.
+
 ## Summary
 
 The review-generation workspace currently contains an unfinished teacher feedback workflow that was never actually adopted in production. This design removes the feature completely across frontend, backend, tests, API surface, AI usage hooks, and persisted database schema.
@@ -34,7 +36,7 @@ Teacher feedback is currently wired through the following layers:
 
 - Frontend workspace state and UI in [`frontend/src/App.tsx`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/App.tsx)
 - Dedicated workspace component in [`frontend/src/TeacherFeedbackWorkspace.tsx`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/TeacherFeedbackWorkspace.tsx)
-- Frontend helper/api wrapper module in [`frontend/src/reviewGenerationTeacherFeedback.ts`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts)
+- Frontend helper/api wrapper module in [`frontend/src/reviewGenerationTeacherFeedback.ts`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts), later removed in the 2026-04-09 batch-1 orphan cleanup
 - Frontend regression coverage in [`frontend/src/review-generation-teacher-feedback.test.tsx`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/review-generation-teacher-feedback.test.tsx) and portions of [`frontend/src/workspace-navigation.test.ts`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/workspace-navigation.test.ts)
 - Backend feedback routes and helper functions in [`app.py`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/app.py)
 - Feedback persistence and editor-state assembly in [`lesson_manager.py`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/lesson_manager.py)
@@ -69,7 +71,7 @@ Result: history accurately reflects the features users can still perform.
 Delete these feature-specific files completely:
 
 - [`frontend/src/TeacherFeedbackWorkspace.tsx`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/TeacherFeedbackWorkspace.tsx)
-- [`frontend/src/reviewGenerationTeacherFeedback.ts`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts)
+- [`frontend/src/reviewGenerationTeacherFeedback.ts`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts), removed in the 2026-04-09 batch-1 orphan cleanup
 - [`frontend/src/review-generation-teacher-feedback.test.tsx`](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/review-generation-teacher-feedback.test.tsx)
 
 Any remaining imports, types, labels, or helper calls tied to teacher feedback should be removed rather than stubbed.

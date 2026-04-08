@@ -1,5 +1,7 @@
 # Remove Teacher Feedback Implementation Plan
 
+> Historical note: `frontend/src/reviewGenerationTeacherFeedback.ts` was removed in the 2026-04-09 batch-1 orphan cleanup. References below are kept as part of the original implementation plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Completely remove the abandoned teacher feedback workflow from the review-generation product surface, backend API, data layer, tests, and runtime schema.
@@ -16,7 +18,7 @@
   - Remove teacher feedback imports, state, branches, actions, labels, and history-entry UI.
 - Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/TeacherFeedbackWorkspace.tsx`
   - Dedicated abandoned feedback editor UI.
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts`
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts` (removed in the 2026-04-09 batch-1 orphan cleanup pass)
   - Feedback-specific frontend helpers and API wrappers.
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/workspace-navigation.test.ts`
   - Replace feedback-presence assertions with feedback-removal assertions.

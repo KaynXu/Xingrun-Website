@@ -36,7 +36,7 @@
 - Optional verify-only reads:
   - `frontend/package.json`
   - `frontend/src/TeacherFeedbackWorkspace.tsx`
-  - `frontend/src/reviewGenerationTeacherFeedback.ts`
+  - `frontend/src/reviewGenerationTeacherFeedback.ts` (later removed in the 2026-04-09 batch-1 orphan cleanup)
 
 ### Task 1: Add Class Feedback Persistence With Baseline Lookup
 
@@ -1042,7 +1042,7 @@ Expected: commit created with the new frontend model, UI shell, and tests.
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/src/workspace-navigation.test.ts`
 - Modify: `frontend/src/class-feedback-generation.test.tsx`
-- Verify context: `frontend/src/reviewGenerationTeacherFeedback.ts`
+- Verify context: `frontend/src/reviewGenerationTeacherFeedback.ts` (later removed in the 2026-04-09 batch-1 orphan cleanup)
 
 - [ ] **Step 1: Write the failing navigation and source-wiring assertions**
 
