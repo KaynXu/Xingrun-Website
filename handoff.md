@@ -1,3 +1,68 @@
+## master 发布与生产部署（2026-04-09）
+
+### 已完成
+- 已将本地 `develop` 推送到 `origin/develop`
+- 已将本地 `master` fast-forward 合到提交 `f7cf96b`，并推送到 `origin/master`
+- 已完成生产部署到服务器 `49.234.185.86`：
+  - 远端仓库：`/home/ubuntu/Xingrun-Website`
+  - PM2 服务：`xingrun`
+  - 由于服务器直连 GitHub 时出现 `GnuTLS recv error (-110)`，本轮改用本地 bundle 发版：
+    - 本地生成 `/tmp/xingrun-master-f7cf96b-20260409.bundle`
+    - 上传到服务器 `/tmp/xingrun-master-f7cf96b-20260409.bundle`
+    - 服务器执行 `git fetch <bundle> master` + `git merge --ff-only FETCH_HEAD`
+- 已在服务器上完成：
+  - `.venv` 依赖安装
+  - `init_db()` 初始化
+  - `npm --prefix frontend run build`
+  - `pm2 restart xingrun`
+- 为避免覆盖线上未提交改动，部署前已先把服务器上的 tracked 改动与会阻塞 checkout 的冲突 untracked 文件分别 stash：
+  - `predeploy-20260409-031807-tracked`
+  - `predeploy-20260409-031807-conflicting-untracked`
+
+### proof
+- 本地发布前验证：
+  - `/tmp/proof_release_preflight_20260409.sh`
+  - `BRANCH=develop`
+  - `HEAD=f7cf96b`
+  - `Ran 122 tests in 3.706s`
+  - `OK`
+  - `npm --prefix frontend run lint` 通过
+  - `npm --prefix frontend run build` 通过
+- 本地 `master` 合并后验证：
+  - `/tmp/proof_master_release_20260409.sh`
+  - `BRANCH=master`
+  - `HEAD=f7cf96b`
+  - `Ran 122 tests in 3.781s`
+  - `OK`
+  - `npm --prefix frontend run lint` 通过
+  - `npm --prefix frontend run build` 通过
+- 生产机部署结果：
+  - `REMOTE_HEAD_AFTER_BUNDLE=f7cf96b5`
+  - `pm2 restart xingrun` 返回：
+    - `[PM2] [xingrun](6) ✓`
+  - `pm2 status xingrun`：
+    - `status online`
+    - `↺ 140`
+  - `HEALTH_STATUS=302`
+
+### 剩余问题
+- 生产机仓库当前仍保留若干未跟踪运行文件：
+  - `data/app.db`
+  - `data/xingrun.db`
+  - 若干数据库快照 / 备份
+  - `frontend/dist.prev/`
+- 生产机 `git status` 当前显示 `master...origin/master [ahead 52]`，原因不是代码没部署，而是这次服务器通过 bundle 更新到了 `f7cf96b`，但服务器没有成功直连 GitHub 更新它本地的 `origin/master` 指针。
+- 生产机 stash 列表里现在新增了两条本轮保护性 stash，后续如果确认不再需要，可再单独清理。
+
+### 下一步方向
+- 如需继续推进 DB 收口，仍只看：
+  - `batch3-db-truth-source`
+  - `feature/org-rooted-db-structure`
+- 如果之后要把生产机仓库状态也清爽化，建议单开一轮，只处理：
+  - 远端 stash 清理
+  - `frontend/dist.prev/`
+  - 数据库快照 / 备份归档
+
 ## develop 分支收口：batch4/batch5 已合回，仅保留 DB 进行中分支（2026-04-09）
 
 ### 已完成
