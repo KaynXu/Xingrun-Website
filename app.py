@@ -1780,7 +1780,7 @@ def api_consultations_list():
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
 def api_consultation_ai_parse():
-    user, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
 
@@ -1862,7 +1862,10 @@ def api_consultation_create():
     user, error = _require_auth()
     if error:
         return error
-    item = create_consultation(request.json or {}, user["organization_id"])
+    assigned_user_id = None
+    if request.json and isinstance(request.json, dict):
+        assigned_user_id = request.json.get("assigned_user_id")
+    item = create_consultation(request.json or {}, user["organization_id"], assigned_user_id=assigned_user_id)
     return jsonify(item), 201
 
 
@@ -1962,7 +1965,7 @@ def api_class_get(class_id):
 
 @app.route("/api/classes/<int:class_id>/invite", methods=["GET"])
 def api_class_invite_get(class_id):
-    user, error = _require_owner()
+    user, error = _require_auth()
     if error:
         return error
     cls, error = _get_accessible_class_or_error(user, class_id)
@@ -1974,7 +1977,7 @@ def api_class_invite_get(class_id):
 
 @app.route("/api/classes/<int:class_id>/invite/reset", methods=["POST"])
 def api_class_invite_reset(class_id):
-    user, error = _require_owner()
+    user, error = _require_auth()
     if error:
         return error
     cls, error = _get_accessible_class_or_error(user, class_id)
