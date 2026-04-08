@@ -13,8 +13,6 @@ from __future__ import annotations
   python lesson_manager.py list                        # 列出所有课程
   python lesson_manager.py show --id 3                 # 查看某节课详情
   python lesson_manager.py monthly --month 2026-03     # 生成月度复习 PDF
-  python lesson_manager.py quiz                        # 输出全部题库（终端）
-  python lesson_manager.py quiz --month 2026-03        # 某月题库
   python lesson_manager.py open --id 3                 # 用系统 PDF 查看器打开
 """
 
@@ -1129,16 +1127,6 @@ def init_db():
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
-        CREATE TABLE IF NOT EXISTS questions (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            lesson_id  INTEGER NOT NULL,
-            question   TEXT,
-            answer     TEXT,
-            category   TEXT,
-            day_num    INTEGER,
-            FOREIGN KEY (lesson_id) REFERENCES lessons(id)
-        );
-
         CREATE TABLE IF NOT EXISTS organizations (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL UNIQUE,
@@ -2091,16 +2079,6 @@ def save_lesson(date_str: str, subject: str, grade: str, topic: str,
              class_id if class_id else None, organization_id)
         )
         lesson_id = cur.lastrowid
-
-        # 保存题库
-        questions = plan.get("questions", [])
-        for q in questions:
-            conn.execute(
-                "INSERT INTO questions (lesson_id, question, answer, category, day_num) "
-                "VALUES (?,?,?,?,?)",
-                (lesson_id, q.get("question"), q.get("answer"),
-                 q.get("category"), q.get("day", 0))
-            )
     return lesson_id
 
 
@@ -2140,9 +2118,8 @@ def list_lessons(month_str: str = "", class_id: int = 0) -> list:
 
 
 def delete_lesson(lesson_id: int):
-    """Delete a lesson and its associated questions from the database."""
+    """Delete a lesson from the database."""
     with get_conn() as conn:
-        conn.execute("DELETE FROM questions WHERE lesson_id=?", (lesson_id,))
         conn.execute("DELETE FROM lessons WHERE id=?", (lesson_id,))
 
 
@@ -3758,14 +3735,9 @@ def delete_organization(org_id: int) -> None:
             raise LookupError("organization not found")
         if org_row["name"] == DEFAULT_ORGANIZATION_NAME:
             raise ValueError("不能删除默认机构")
-        # 1. questions (via lessons)
-        conn.execute(
-            "DELETE FROM questions WHERE lesson_id IN (SELECT id FROM lessons WHERE organization_id=?)",
-            (org_id,),
-        )
-        # 2. lessons
+        # 1. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
-        # 3. user_classes and class_students (via classes)
+        # 2. user_classes and class_students (via classes)
         conn.execute(
             "DELETE FROM user_classes WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
             (org_id,),
@@ -3774,37 +3746,37 @@ def delete_organization(org_id: int) -> None:
             "DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
             (org_id,),
         )
-        # 4. classes
+        # 3. classes
         conn.execute("DELETE FROM classes WHERE organization_id=?", (org_id,))
-        # 5. consultations
+        # 4. consultations
         conn.execute("DELETE FROM consultations WHERE organization_id=?", (org_id,))
-        # 6. registration_requests
+        # 5. registration_requests
         conn.execute("DELETE FROM registration_requests WHERE organization_id=?", (org_id,))
-        # 7. organization_invites
+        # 6. organization_invites
         conn.execute("DELETE FROM organization_invites WHERE organization_id=?", (org_id,))
-        # 8. auth_sessions (via users)
+        # 7. auth_sessions (via users)
         conn.execute(
             "DELETE FROM auth_sessions WHERE user_id IN (SELECT id FROM users WHERE organization_id=?)",
             (org_id,),
         )
-        # 9. user_classes (via users)
+        # 8. user_classes (via users)
         conn.execute(
             "DELETE FROM user_classes WHERE user_id IN (SELECT id FROM users WHERE organization_id=?)",
             (org_id,),
         )
-        # 10. ai_usage_ledger (via users, ON DELETE CASCADE but explicit for safety)
+        # 9. ai_usage_ledger (via users, ON DELETE CASCADE but explicit for safety)
         conn.execute("DELETE FROM ai_usage_ledger WHERE organization_id=?", (org_id,))
-        # 11. credit ledger and accounts (ON DELETE CASCADE but explicit)
+        # 10. credit ledger and accounts (ON DELETE CASCADE but explicit)
         conn.execute("DELETE FROM organization_credit_ledger WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM organization_credit_accounts WHERE organization_id=?", (org_id,))
-        # 12. nullify xhs_order_redemptions references (nullable FK, no cascade)
+        # 11. nullify xhs_order_redemptions references (nullable FK, no cascade)
         conn.execute(
             "UPDATE xhs_order_redemptions SET redeemed_organization_id=NULL WHERE redeemed_organization_id=?",
             (org_id,),
         )
-        # 13. users
+        # 12. users
         conn.execute("DELETE FROM users WHERE organization_id=?", (org_id,))
-        # 14. organization
+        # 13. organization
         conn.execute("DELETE FROM organizations WHERE id=?", (org_id,))
 
 
@@ -4476,29 +4448,6 @@ def week_label(week_str: str) -> str:
     sunday = monday + timedelta(days=6)
     return f"{year}年第{wk}周（{monday.strftime('%m月%d日')}—{sunday.strftime('%m月%d日')}）"
 
-
-def get_questions(lesson_id: int = 0, month_str: str = "") -> list[dict]:
-    with get_conn() as conn:
-        if lesson_id:
-            rows = conn.execute(
-                "SELECT * FROM questions WHERE lesson_id=? ORDER BY category, id",
-                (lesson_id,)
-            ).fetchall()
-        elif month_str:
-            rows = conn.execute(
-                """SELECT q.* FROM questions q
-                   JOIN lessons l ON q.lesson_id = l.id
-                   WHERE l.date LIKE ?
-                   ORDER BY q.category, q.id""",
-                (f"{month_str}%",)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM questions ORDER BY lesson_id, category, id"
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-
 # ─── 命令：setup ───────────────────────────────────────────────────────────────
 def cmd_setup(_args):
     init_db()
@@ -4630,13 +4579,6 @@ def cmd_show(args):
     print(f"薄弱点：{lesson['weak_points'] or '无'}")
     print(f"PDF：{lesson['pdf_path'] or '无'}")
 
-    qs = get_questions(lesson_id=args.id)
-    if qs:
-        print(f"\n题库（共 {len(qs)} 题）：")
-        for q in qs:
-            print(f"  [{q['category']}] Q: {q['question']}")
-            print(f"           A: {q['answer']}")
-
 
 # ─── 命令：monthly ────────────────────────────────────────────────────────────
 def cmd_monthly(args):
@@ -4673,34 +4615,6 @@ def cmd_monthly(args):
 
     if not args.no_open:
         _open_pdf(pdf_path)
-
-
-# ─── 命令：quiz ───────────────────────────────────────────────────────────────
-def cmd_quiz(args):
-    lesson_id = getattr(args, "id", 0) or 0
-    month     = args.month or ""
-    questions = get_questions(lesson_id=lesson_id, month_str=month)
-
-    if not questions:
-        print("题库为空。")
-        return
-
-    # 按 category 分组输出
-    cats: dict[str, list] = {}
-    for q in questions:
-        cats.setdefault(q["category"] or "综合", []).append(q)
-
-    label = f"月份 {month}" if month else (f"课程 ID={lesson_id}" if lesson_id else "全部")
-    print(f"\n📚 题库（{label}，共 {len(questions)} 题）\n")
-    for cat, qs in cats.items():
-        print(f"▶ {cat}（{len(qs)} 题）")
-        for q in qs:
-            print(f"  Q: {q['question']}")
-            if args.show_answers:
-                print(f"  A: {q['answer']}")
-            else:
-                print(f"  A: （隐藏，用 --show-answers 查看）")
-        print()
 
 
 # ─── 命令：open ───────────────────────────────────────────────────────────────
@@ -4742,7 +4656,6 @@ def main():
   python lesson_manager.py list
   python lesson_manager.py show --id 1
   python lesson_manager.py monthly --month 2026-03
-  python lesson_manager.py quiz --month 2026-03 --show-answers
   python lesson_manager.py open --id 1
         """,
     )
@@ -4772,7 +4685,7 @@ def main():
     p_list.set_defaults(func=cmd_list)
 
     # show
-    p_show = sub.add_parser("show", help="查看某节课详情及题库")
+    p_show = sub.add_parser("show", help="查看某节课详情")
     p_show.add_argument("--id", type=int, required=True, help="课程 ID")
     p_show.set_defaults(func=cmd_show)
 
@@ -4781,13 +4694,6 @@ def main():
     p_month.add_argument("--month", help="月份 YYYY-MM（默认当月）")
     p_month.add_argument("--no-open", action="store_true", help="生成后不自动打开 PDF")
     p_month.set_defaults(func=cmd_monthly)
-
-    # quiz
-    p_quiz = sub.add_parser("quiz", help="查看题库")
-    p_quiz.add_argument("--id",    type=int, default=0, help="按课程 ID 筛选")
-    p_quiz.add_argument("--month", help="按月筛选 YYYY-MM")
-    p_quiz.add_argument("--show-answers", action="store_true", help="显示答案")
-    p_quiz.set_defaults(func=cmd_quiz)
 
     # open
     p_open = sub.add_parser("open", help="用 PDF 查看器打开某节课的复习讲义")
