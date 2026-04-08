@@ -6343,7 +6343,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                         <span>{item.grade || '未填写年级'}</span>
                         <span>当前负责老师：{teacherSummary}</span>
-                        <span>点击后弹窗编辑</span>
                       </div>
                     </div>
                     <ChevronDown
@@ -6658,6 +6657,28 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             ))}
                           </select>
                         )}
+
+                        {hasStaffAccess(currentUser.role) && (
+                          <div className="grid gap-3 border-t border-sky-100/80 pt-5 sm:grid-cols-2 dark:border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClass(editingClass.id)}
+                              disabled={classCardInteractionLocked}
+                              className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                            >
+                              <Trash2 size={18} />
+                              {deleting ? '删除中...' : '删除当前班级'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveClass(editingClass.id)}
+                              disabled={classCardInteractionLocked}
+                              className={`${workspacePrimaryButtonClass} w-full`}
+                            >
+                              {saving ? '保存中...' : '保存班级'}
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className={`${workspaceCardClass} space-y-4 p-5`}>
@@ -6720,30 +6741,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           </div>
                         )}
                       </div>
-                    </div>
-
-                    <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
-                      {hasStaffAccess(currentUser.role) && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteClass(editingClass.id)}
-                          disabled={classCardInteractionLocked}
-                          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                        >
-                          <Trash2 size={18} />
-                          {deleting ? '删除中...' : '删除当前班级'}
-                        </button>
-                      )}
-                      {hasStaffAccess(currentUser.role) && (
-                        <button
-                          type="button"
-                          onClick={() => handleSaveClass(editingClass.id)}
-                          disabled={classCardInteractionLocked}
-                          className={workspacePrimaryButtonClass}
-                        >
-                          {saving ? '保存中...' : '保存班级'}
-                        </button>
-                      )}
                     </div>
                   </div>
                 ) : null}

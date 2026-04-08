@@ -693,3 +693,20 @@ test('class management source adds a side-by-side student editor card next to th
   assert.match(classManagementBlock[0], /placeholder="输入学生姓名"/);
   assert.match(classManagementBlock[0], /删除学生/);
 });
+
+test('class management source removes click-to-edit helper copy from class cards', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.doesNotMatch(classManagementBlock[0], /点击后弹窗编辑/);
+});
+
+test('class management source keeps delete and save buttons inside the teacher card footer', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /<div className=\{`\$\{workspaceCardClass\} space-y-5 p-5`\}>[\s\S]*删除当前班级[\s\S]*保存班级/);
+  assert.doesNotMatch(classManagementBlock[0], /<div className="flex flex-col gap-3 border-t border-sky-100\/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white\/10">[\s\S]*删除当前班级[\s\S]*保存班级/);
+});
