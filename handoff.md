@@ -1,3 +1,78 @@
+## master 发布与生产部署：班级管理弹窗学生编辑卡片（2026-04-09）
+
+### 已完成
+- 已将本地 `develop` 提交 `ea8d463` 推送到 `origin/develop`
+- 已将本地 `master` fast-forward 合到 `ea8d463`，并推送到 `origin/master`
+- 已完成生产部署到服务器 `49.234.185.86`
+  - 远端仓库：`/home/ubuntu/Xingrun-Website`
+  - PM2 服务：`xingrun`
+  - 本轮继续采用本地 bundle 发版：
+    - 本地生成 `/tmp/xingrun-master-ea8d463-20260409.bundle`
+    - 上传到服务器同路径
+    - 服务器执行 `git fetch <bundle> master` + `git merge --ff-only FETCH_HEAD`
+- 已在服务器上完成：
+  - `.venv` 依赖安装
+  - `init_db()` 初始化
+  - `npm --prefix frontend run build`
+  - `pm2 restart xingrun`
+- 本轮远端未发现需要保护的 tracked 改动，也未触发 untracked 冲突 stash：
+  - `TRACKED_STASH=NONE`
+  - `UNTRACKED_STASH=NONE`
+
+### proof
+- 本地变更定向 proof：
+  - `/tmp/proof_class_modal_verify_20260409.sh`
+  - `npx tsx --test src/account-card.test.tsx`
+    - `tests 42`
+    - `pass 42`
+    - `fail 0`
+  - `npm run lint` 通过
+  - `npm run build` 通过
+- 本地完整回归对比：
+  - `/tmp/proof_release_preflight_20260409_c.sh`
+    - `BRANCH=develop`
+    - `HEAD=ea8d463`
+    - `Ran 195 tests in 4.732s`
+    - `FAILED (failures=4)`
+  - `/tmp/proof_master_compare_20260409.sh`
+    - `BRANCH=master`
+    - `HEAD=97f9117`
+    - `Ran 195 tests in 4.138s`
+    - `FAILED (failures=4)`
+  - 两边一致的既有失败：
+    - `tests/test_master_data_store.py`
+      - `test_alias_round_trip_and_wrong_question_mapping_suggestion`
+      - `test_normalize_wrong_question_record_does_not_fall_back_to_name_only_class_match_when_subject_conflicts`
+      - `test_upsert_wrong_question_mapping_persists_mapping_and_audit_log`
+    - `tests/test_single_lesson_pdf_unification.py`
+      - `test_api_lessons_uses_review_template_generator`
+- 生产机部署结果：
+  - `/tmp/deploy_master_bundle_20260409.sh`
+    - `REMOTE_HEAD_AFTER=ea8d4638`
+    - `pm2 restart xingrun` 返回：
+      - `[PM2] [xingrun](6) ✓`
+  - `/tmp/check_remote_health_20260409.sh`
+    - `PORT_5001=LISTEN ... 127.0.0.1:5001`
+    - `HEALTH_STATUS=302`
+    - `Location: http://127.0.0.1:3000`
+    - `pm2 status xingrun`
+      - `status online`
+      - `↺ 141`
+
+### 剩余问题
+- 本地完整回归仍有 4 个既有失败，本轮确认它们在发布前的 `master` 上也同样存在，未在本轮修复。
+- 远端仓库仍显示 `master...origin/master [ahead 52]` 的历史状态原因未处理；本轮 bundle 发版不受影响。
+- 生产机前端 build 仍会提示既有 chunk size warning，本轮未处理。
+
+### 下一步方向
+- 如果下一轮继续做发布质量收口，优先处理：
+  - `tests/test_master_data_store.py` 里 3 个教师展示名断言失败
+  - `tests/test_single_lesson_pdf_unification.py` 里 1 个 `402 != 201` 失败
+- 如果要继续发布，建议沿用当前这套：
+  - 本地定向 proof
+  - 本地 bundle 发版
+  - 远端 `pm2 + healthcheck` 复核
+
 ## 班级管理弹窗文案与学生编辑卡片调整（2026-04-09）
 
 ### 已完成
