@@ -106,6 +106,32 @@
   - `server deploy.md`
   - `docs/operations/*` 中部署相关 runbook
 
+## AGENTS 分支策略补充（2026-04-09）
+
+### 已完成
+- 按用户确认的“选项 1”更新 `AGENTS.md`：
+  - 保持 `master` 作为默认分支（发布与贡献可见性）
+  - `develop` 作为集成分支
+  - 小改动可直接提交到 `develop`
+  - 为减少贡献统计延迟，建议高频把 `develop` 合并回 `master`
+  - 中大改动继续走 `feature/* -> develop -> master`
+
+### proof
+- 临时脚本：`/tmp/proof_agents_branch_strategy_20260409.sh`
+- 执行结果：
+  - `CHECK1_SECTION_EXISTS=OK`
+  - `CHECK2_MASTER_DEFAULT_RULE=OK`
+  - `CHECK3_FREQUENT_MERGE_RULE=OK`
+  - `CHECK4_SMALL_TASKS_RULE=OK`
+  - `git status --short AGENTS.md`
+    - `M AGENTS.md`
+
+### 剩余问题
+- 无代码逻辑变化；仅协作规则文档更新。
+
+### 下一步方向
+- 若要进一步降低分支心智负担，可把常用命令模板同步到 `docs/git-collaboration.md`。
+
 ---
 ## 第 1 批孤儿清理（2026-04-09）
 

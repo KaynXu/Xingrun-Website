@@ -65,3 +65,11 @@ Xingrun-Website/
 - Before editing project code, `cd /Users/ark.mini/Desktop/Xingrun-Website`.
 - Keep commits focused. Do not mix local runtime files like `config.json` or `data/*.db` into normal code commits unless explicitly intended.
 - After meaningful changes, verify first, then commit.
+
+## Branch And Contribution Strategy
+
+- Keep `master` as the default branch for release and contribution visibility.
+- Use `develop` as the integration branch.
+- For very small tasks (docs, tiny low-risk changes), committing directly on `develop` is allowed.
+- To avoid delayed GitHub contribution visibility, merge `develop` back into `master` frequently (for example daily or after a small batch of completed tasks).
+- For medium/large or risky changes, branch from `develop` (`feature/*`), then merge back to `develop`, and finally merge `develop` to `master`.
