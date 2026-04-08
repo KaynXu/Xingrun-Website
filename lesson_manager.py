@@ -945,6 +945,15 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) 
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
+def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    if row:
+        conn.execute(f"DROP TABLE {table}")
+
+
 def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, str | int]:
     teacher_directory = _get_consultation_teacher_directory()
     serialized = _serialize_consultation_row(row, teacher_directory)
@@ -1493,6 +1502,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
         _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
+        _drop_legacy_table_if_exists(conn, "questions")
     print(f"数据库已初始化：{DB_PATH}")
 
 

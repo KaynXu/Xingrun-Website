@@ -1958,6 +1958,36 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertNotIn("questions", detail_response.get_json())
         self.assertEqual(persisted_question_count, 0)
 
+    def test_init_db_drops_legacy_questions_table(self):
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE questions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lesson_id INTEGER NOT NULL,
+                    question TEXT,
+                    answer TEXT,
+                    category TEXT,
+                    day_num INTEGER
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO questions (lesson_id, question, answer, category, day_num)
+                VALUES (1, 'legacy', 'a', 'old', 1)
+                """
+            )
+
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            question_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='questions'"
+            ).fetchone()
+
+        self.assertIsNone(question_table)
+
     def test_owner_and_admin_still_have_full_lesson_visibility(self):
         owner_token = self.login_as_kayn()
 
