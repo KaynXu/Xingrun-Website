@@ -60,6 +60,9 @@ XR_N1N_MODEL=gpt-4o
 # 可选：admin 登录覆盖
 XR_ADMIN_USERNAME=admin
 XR_ADMIN_PASSWORD_HASH=<sha256_hex>
+
+# 微信小程序家长上传 bridge
+XR_WECHAT_SERVICE_TOKEN=replace_with_shared_bridge_token
 ```
 
 优先级规则：环境变量 > `config.json`。
@@ -85,6 +88,44 @@ XR_ADMIN_PASSWORD_HASH=<sha256_hex>
 - 对 `http://127.0.0.1:5001/` 做健康检查
 
 部署脚本会自动设置 `XR_OPEN_BROWSER=0`，避免服务器重启时尝试打开本地浏览器。
+
+---
+
+## 微信小程序家长上传 MVP
+
+网站侧在这条链路中承担两件事：
+
+- 作为老师、班级、学生的主数据源
+- 作为老师处理 `wechat_mp` 记录的工作台承接层
+
+当前网站已提供：
+
+- 班级邀请码读取/重置
+  - `GET /api/classes/<class_id>/invite`
+  - `POST /api/classes/<class_id>/invite/reset`
+- 微信小程序 bridge 接口
+  - `POST /api/wechat/login`
+  - `POST /api/wechat/bind-class`
+  - `POST /api/wechat/bind-student`
+  - `GET /api/wechat/bindings`
+  - `POST /api/wechat/wrong-questions`
+
+约束规则：
+
+- 网站里的 `classes / students / users` 是唯一 canonical identity
+- 小程序绑定流程必须使用网站返回的学生名单，不允许手填学生名
+- 所有 `/api/wechat/*` 请求都必须携带 `X-Wechat-Service-Token`
+- 该 token 由网站运行时配置 `XR_WECHAT_SERVICE_TOKEN` 提供，并与 mini backend 的 `WEBSITE_API_TOKEN` 保持一致
+
+### Parent Upload Smoke Test
+
+```text
+1. 在网站运行环境配置 XR_WECHAT_SERVICE_TOKEN，并启动 Flask 服务
+2. 以 owner/admin 身份登录网站，确认可读取并重置某个班级的邀请码
+3. 在 mini backend 配置 WEBSITE_API_BASE_URL 与 WEBSITE_API_TOKEN
+4. 在微信开发者工具打开小程序，执行：登录 -> 输入邀请码 -> 选择学生 -> 上传 1 张错题图
+5. 回到网站“智能错题”页面，确认出现 source=wechat_mp 的新记录，且班级/学生/老师归属正确
+```
 
 ---
 
