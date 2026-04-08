@@ -15,7 +15,9 @@ import {
   buildWrongQuestionReviewPath,
   buildWrongQuestionSummaryExportPath,
   downloadWrongQuestionSummary,
+  getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
+  isWechatMiniProgramWrongQuestionRecord,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
@@ -118,6 +120,7 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     {
       id: 'record-1',
       roomId: '',
+      source: 'downstream',
       studentName: 'Alice',
       className: '六年级 1 班',
       classNameSnapshot: '六年级 1 班',
@@ -128,6 +131,9 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
       teacherUserId: null,
       mappingStatus: 'mapped',
       createdAt: '2026-03-29T08:00:00Z',
+      parentNote: '',
+      teacherComment: '',
+      reviewStatus: '',
       analysis: {
         questionCategory: '计算',
         errorType: '计算错误',
@@ -139,6 +145,7 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     {
       id: 'record-2',
       roomId: '',
+      source: 'downstream',
       studentName: 'Bob',
       className: '初一 2 班',
       classNameSnapshot: '初一 2 班',
@@ -149,6 +156,9 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
       teacherUserId: null,
       mappingStatus: 'mapped',
       createdAt: '2026-03-29T09:00:00Z',
+      parentNote: '',
+      teacherComment: '',
+      reviewStatus: '',
       analysis: {
         questionCategory: '阅读',
         errorType: '定位错误',
@@ -161,6 +171,7 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     {
       id: 'record-3',
       roomId: '',
+      source: 'downstream',
       studentName: 'Cathy',
       className: '高一 3 班',
       classNameSnapshot: '高一 3 班',
@@ -171,6 +182,9 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
       teacherUserId: null,
       mappingStatus: 'mapped',
       createdAt: '2026-03-29T10:00:00Z',
+      parentNote: '',
+      teacherComment: '',
+      reviewStatus: '',
       analysis: {
         questionCategory: '受力',
         errorType: '模型错误',
@@ -377,6 +391,7 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
   assert.deepEqual(normalized.items[0], {
     id: '123',
     roomId: 'ROOM-1',
+    source: 'downstream',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级 1 班',
@@ -388,6 +403,9 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
     mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
     imageUrl: 'https://cdn.example.com/question-1.png',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
     analysis: {
       questionCategory: '计算',
       errorType: '计算错误',
@@ -400,6 +418,7 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
   assert.deepEqual(normalized.items[1], {
     id: 'record-2',
     roomId: '',
+    source: 'downstream',
     studentName: 'Bob',
     className: '初一 2 班',
     classNameSnapshot: '初一 2 班',
@@ -411,6 +430,9 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
     mappingStatus: 'mapped',
     createdAt: '2026-03-29T09:00:00Z',
     imageUrl: '',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
     analysis: {
       questionCategory: '',
       errorType: '',
@@ -450,6 +472,7 @@ test('normalizeWrongQuestionRecord preserves canonical and snapshot identities s
   assert.deepEqual(normalized, {
     id: 'record-identity-1',
     roomId: 'ROOM-identity-1',
+    source: 'downstream',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级一班（临时）',
@@ -461,6 +484,9 @@ test('normalizeWrongQuestionRecord preserves canonical and snapshot identities s
     mappingStatus: 'needs_review',
     createdAt: '2026-03-29T08:00:00Z',
     imageUrl: '',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
     analysis: {
       questionCategory: '计算',
       errorType: '计算错误',
@@ -473,6 +499,7 @@ test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and pre
   const listRecord: WrongQuestionRecord = {
     id: 'record-1',
     roomId: '',
+    source: 'downstream',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级 1 班',
@@ -483,6 +510,9 @@ test('hydrateWrongQuestionReviewDraftFromDetail replaces pristine drafts and pre
     teacherUserId: null,
     mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
     analysis: {
       questionCategory: '计算',
       errorType: '计算错误',
@@ -523,6 +553,7 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
   const detailRecord: WrongQuestionRecord = {
     id: 'record-1',
     roomId: '',
+    source: 'downstream',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级 1 班',
@@ -533,6 +564,9 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
     teacherUserId: null,
     mappingStatus: 'mapped',
     createdAt: '2026-03-29T08:00:00Z',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
     analysis: {
       questionCategory: '计算',
       errorType: '计算错误',
@@ -551,6 +585,8 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
     selectedActions: ['重做同类题'],
     selectedReasons: ['单位遗漏'],
     studentNote: '需要复盘单位检查',
+    teacherComment: '',
+    reviewStatus: '',
   });
 
   const rebuiltDraft = buildWrongQuestionReviewDraft(clearedRecord);
@@ -565,6 +601,8 @@ test('buildWrongQuestionReviewDraft keeps cleared teacher review fields empty af
     selectedActions: ['重做同类题'],
     selectedReasons: ['单位遗漏'],
     studentNote: '需要复盘单位检查',
+    teacherComment: '',
+    reviewStatus: '',
   });
 });
 
@@ -572,6 +610,7 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapp
   const detailRecord: WrongQuestionRecord = {
     id: 'record-1',
     roomId: '',
+    source: 'downstream',
     studentName: 'Alice',
     className: '六年级 1 班',
     classNameSnapshot: '六年级一班（临时）',
@@ -582,6 +621,9 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapp
     teacherUserId: 7,
     mappingStatus: 'needs_review',
     createdAt: '2026-03-29T08:00:00Z',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
     analysis: {
       questionCategory: '计算',
       errorType: '计算错误',
@@ -599,6 +641,8 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapp
     selectedActions: ['重做同类题'],
     selectedReasons: ['单位遗漏'],
     studentNote: '需要复盘单位检查',
+    teacherComment: '',
+    reviewStatus: '',
   };
 
   const optimisticRecord = resolveSavedWrongQuestionRecord(detailRecord, clearedDraft);
@@ -629,6 +673,8 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapp
     selectedActions: ['重做同类题'],
     selectedReasons: ['单位遗漏'],
     studentNote: '需要复盘单位检查',
+    teacherComment: '',
+    reviewStatus: '',
   });
   assert.deepEqual(buildWrongQuestionReviewDraft(serverRecord), {
     selectedErrorType: '',
@@ -636,6 +682,8 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapp
     selectedActions: ['重做同类题'],
     selectedReasons: ['单位遗漏'],
     studentNote: '需要复盘单位检查',
+    teacherComment: '',
+    reviewStatus: '',
   });
   assert.equal(serverRecord.className, '六年级 1 班');
   assert.equal(serverRecord.classNameSnapshot, '六年级一班（临时）');
@@ -646,6 +694,30 @@ test('resolveSavedWrongQuestionRecord preserves explicit clears and current mapp
   assert.equal(serverRecord.mappingStatus, 'needs_review');
 });
 
+test('normalizeWrongQuestionRecord keeps wechat mini-program review fields for local uploads', () => {
+  const normalized = normalizeWrongQuestionRecord({
+    id: 'wechat-record-1',
+    source: 'wechat_mp',
+    student_name: 'Alice',
+    class_display_name: '六年级 1 班',
+    subject: '数学',
+    teacher_display_name: 'Kayn',
+    created_at: '2026-03-29T08:00:00Z',
+    image_url: 'https://cdn.example.com/local-question.png',
+    parent_note: '孩子订正后还是不会',
+    teacher_comment: '下节课单独复讲',
+    status: 'reviewed',
+    analysis: {},
+  });
+
+  assert.equal(normalized.source, 'wechat_mp');
+  assert.equal(normalized.parentNote, '孩子订正后还是不会');
+  assert.equal(normalized.teacherComment, '下节课单独复讲');
+  assert.equal(normalized.reviewStatus, 'reviewed');
+  assert.equal(getWrongQuestionSourceLabel(normalized.source), '微信小程序');
+  assert.equal(isWechatMiniProgramWrongQuestionRecord(normalized), true);
+});
+
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
@@ -654,6 +726,15 @@ test('SmartWrongQuestionsPage guards against stale list responses with a request
   assert.match(pageSource, /const requestVersion = requestVersionRef\.current \+ 1;\s*requestVersionRef\.current = requestVersion;/);
   assert.match(pageSource, /if \(requestVersion !== requestVersionRef\.current\) \{\s*return;\s*\}/);
   assert.match(pageSource, /if \(requestVersion === requestVersionRef\.current\) \{\s*setLoading\(false\);\s*\}/);
+});
+
+test('smart wrong question page shows wechat mini-program source badge and local review copy', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /selectedRecord\?\.source === 'wechat_mp'/);
+  assert.match(pageSource, /微信小程序/);
+  assert.match(pageSource, /家长上传信息/);
+  assert.match(pageSource, /老师处理结果/);
 });
 
 test('SmartWrongQuestionsPage loads selected record detail into a review draft state', () => {

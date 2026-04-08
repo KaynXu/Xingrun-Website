@@ -17,6 +17,8 @@ export interface WrongQuestionReviewDraft {
   selectedActions: string[];
   selectedReasons: string[];
   studentNote: string;
+  teacherComment: string;
+  reviewStatus: string;
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
@@ -24,6 +26,7 @@ export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | '
 export interface WrongQuestionRecord {
   id: string;
   roomId: string;
+  source: string;
   studentName: string;
   className: string;
   classNameSnapshot: string;
@@ -35,6 +38,9 @@ export interface WrongQuestionRecord {
   mappingStatus: WrongQuestionMappingStatus;
   createdAt: string;
   imageUrl?: string;
+  parentNote: string;
+  teacherComment: string;
+  reviewStatus: string;
   analysis: WrongQuestionAnalysis;
 }
 
@@ -63,6 +69,14 @@ export interface WrongQuestionListApiResponse {
 export interface NormalizedWrongQuestionListResponse {
   items: WrongQuestionRecord[];
   summary: WrongQuestionSummary;
+}
+
+export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionRecord): boolean {
+  return record.source === 'wechat_mp';
+}
+
+export function getWrongQuestionSourceLabel(source: string): string {
+  return source === 'wechat_mp' ? '微信小程序' : '智能错题服务';
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -195,10 +209,13 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const classNameSnapshot = pickStringValue(source, ['classNameSnapshot', 'class_name_snapshot', 'className', 'class_name']) || className;
   const teacherName = pickStringValue(source, ['teacherDisplayName', 'teacher_display_name', 'teacherName', 'teacher_name']);
   const teacherNameSnapshot = pickStringValue(source, ['teacherNameSnapshot', 'teacher_name_snapshot', 'teacherName', 'teacher_name']) || teacherName;
+  const normalizedSource = pickStringValue(source, ['source']) || 'downstream';
+  const normalizedReviewStatus = pickStringValue(source, ['status']) || (normalizedSource === 'wechat_mp' ? 'pending' : '');
 
   return {
     id: typeof rawId === 'string' || typeof rawId === 'number' ? String(rawId) : `wrong-question-${fallbackIndex}`,
     roomId: pickStringValue(source, ['roomId', 'room_id']),
+    source: normalizedSource,
     studentName: pickStringValue(source, ['studentName', 'student_name', 'studentNickname', 'student_nickname']),
     className,
     classNameSnapshot,
@@ -210,6 +227,9 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     mappingStatus: pickWrongQuestionMappingStatusValue(source, ['mappingStatus', 'mapping_status']),
     createdAt: pickStringValue(source, ['createdAt', 'created_at']),
     imageUrl: pickStringValue(source, ['imageUrl', 'image_url']),
+    parentNote: pickStringValue(source, ['parentNote', 'parent_note']),
+    teacherComment: pickStringValue(source, ['teacherComment', 'teacher_comment']),
+    reviewStatus: normalizedReviewStatus,
     analysis: normalizeWrongQuestionAnalysis(source.analysis),
   };
 }
@@ -227,6 +247,8 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     selectedActions: normalizeDraftList(record.analysis.selectedActions ?? []),
     selectedReasons: normalizeDraftList(record.analysis.selectedReasons ?? []),
     studentNote: record.analysis.studentNote?.trim() ?? '',
+    teacherComment: record.teacherComment.trim(),
+    reviewStatus: record.reviewStatus.trim() || (isWechatMiniProgramWrongQuestionRecord(record) ? 'pending' : ''),
   };
 }
 
@@ -237,6 +259,8 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
     selectedActions: normalizeDraftList(draft.selectedActions),
     selectedReasons: normalizeDraftList(draft.selectedReasons),
     studentNote: draft.studentNote.trim(),
+    teacherComment: draft.teacherComment.trim(),
+    reviewStatus: draft.reviewStatus.trim(),
   };
 }
 
@@ -290,6 +314,8 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
 
   return {
     ...record,
+    teacherComment: payload.teacherComment,
+    reviewStatus: payload.reviewStatus || record.reviewStatus,
     analysis: nextAnalysis,
   };
 }
@@ -309,9 +335,14 @@ export function resolveSavedWrongQuestionRecord(
     const hasClassSnapshot = hasOwnKey(responseSource, ['classNameSnapshot', 'class_name_snapshot']);
     const hasClassId = hasOwnKey(responseSource, ['classId', 'class_id']);
     const hasMappingStatus = hasOwnKey(responseSource, ['mappingStatus', 'mapping_status']);
+    const hasSource = hasOwnKey(responseSource, ['source']);
+    const hasParentNote = hasOwnKey(responseSource, ['parentNote', 'parent_note']);
+    const hasTeacherComment = hasOwnKey(responseSource, ['teacherComment', 'teacher_comment']);
+    const hasReviewStatus = hasOwnKey(responseSource, ['status']);
 
     return {
       ...normalizedResponse,
+      source: hasSource ? normalizedResponse.source : currentRecord.source,
       teacherName: hasCanonicalTeacherName
         ? normalizedResponse.teacherName || currentRecord.teacherName
         : currentRecord.teacherName || normalizedResponse.teacherName,
@@ -327,6 +358,9 @@ export function resolveSavedWrongQuestionRecord(
         : currentRecord.classNameSnapshot || normalizedResponse.classNameSnapshot,
       classId: hasClassId ? normalizedResponse.classId : currentRecord.classId,
       mappingStatus: hasMappingStatus ? normalizedResponse.mappingStatus : currentRecord.mappingStatus,
+      parentNote: hasParentNote ? normalizedResponse.parentNote : currentRecord.parentNote,
+      teacherComment: hasTeacherComment ? normalizedResponse.teacherComment : currentRecord.teacherComment,
+      reviewStatus: hasReviewStatus ? normalizedResponse.reviewStatus : currentRecord.reviewStatus,
     };
   }
 
@@ -356,15 +390,22 @@ export function normalizeWrongQuestionListResponse(payload: WrongQuestionListApi
   const rawItems = Array.isArray(source.items) ? source.items : [];
   const items = rawItems.map((item, index) => normalizeWrongQuestionRecord(item, index));
   const fallbackSummary = summarizeWrongQuestionRecords(items);
+  const hasWechatMiniProgramItems = items.some((item) => isWechatMiniProgramWrongQuestionRecord(item));
 
   return {
     items,
-    summary: normalizeWrongQuestionSummary(source.summary, fallbackSummary, source.total),
+    summary: hasWechatMiniProgramItems
+      ? fallbackSummary
+      : normalizeWrongQuestionSummary(source.summary, fallbackSummary, source.total),
   };
 }
 
-function hasTeacherReview(analysis: WrongQuestionAnalysis): boolean {
-  return Boolean(analysis.selectedErrorType?.trim());
+function hasTeacherReview(record: WrongQuestionRecord): boolean {
+  if (isWechatMiniProgramWrongQuestionRecord(record)) {
+    return record.reviewStatus.trim() === 'reviewed' || Boolean(record.teacherComment.trim());
+  }
+
+  return Boolean(record.analysis.selectedErrorType?.trim());
 }
 
 function isRepeatedMistake(value?: string): boolean {
@@ -387,7 +428,7 @@ export function summarizeWrongQuestionRecords(records: WrongQuestionRecord[]): W
       nextSummary.highPriorityCount += 1;
     }
 
-    if (!hasTeacherReview(record.analysis)) {
+    if (!hasTeacherReview(record)) {
       nextSummary.pendingReviewCount += 1;
     }
 

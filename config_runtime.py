@@ -24,6 +24,7 @@ ENV_VAR_MAP = {
     "admin_password_hash": "XR_ADMIN_PASSWORD_HASH",
     "wrong_question_service_url": "XR_WRONG_QUESTION_SERVICE_URL",
     "wrong_question_service_token": "XR_WRONG_QUESTION_SERVICE_TOKEN",
+    "wechat_service_token": "XR_WECHAT_SERVICE_TOKEN",
     "xhs_app_id": "XHS_APP_ID",
     "xhs_app_secret": "XHS_APP_SECRET",
 }
@@ -37,6 +38,7 @@ DEFAULTS = {
     "deepseek_model": "deepseek-chat",
     "wrong_question_service_url": "",
     "wrong_question_service_token": "",
+    "wechat_service_token": "",
 }
 
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-复习计划管理系统 — Web 界面 (Flask)
+复习计划管理系统 — 后端 / API 服务 (Flask)
 启动方式：双击 start.command（macOS）或 start.bat（Windows）
-访问地址：http://127.0.0.1:5001
+前端地址：http://127.0.0.1:3000
+后端地址：http://127.0.0.1:5001
 """
 
 import hashlib
@@ -22,12 +23,9 @@ from pathlib import Path
 from time import monotonic
 from typing import Optional, Set
 
-from flask import (Flask, abort, flash, redirect, render_template,
-                   request, send_file, url_for, jsonify)
+from flask import Flask, abort, redirect, request, send_file, jsonify
 from flask_cors import CORS
-from config_runtime import (env_controlled_keys, env_var_for_key,
-                            get_runtime_config, load_file_config,
-                            write_file_config)
+from config_runtime import env_controlled_keys, get_runtime_config, load_file_config, write_file_config
 
 # ─── 路径 ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -58,30 +56,33 @@ from lesson_manager import (
     approve_organization_request,
     approve_registration_request,
     authenticate_user,
+    bind_parent_to_student,
     build_lesson_feedback_editor_state,
     confirm_class_feedback_task,
     create_class_feedback_task,
+    create_wechat_wrong_question_submission,
     create_organization_request,
     create_student_for_class,
     create_auth_session,
     create_consultation,
     create_registration_request,
     delete_user_for_actor,
-    delete_class as db_delete_class,
     delete_consultation,
+    delete_class as db_delete_class,
     delete_lesson as db_delete_lesson,
     delete_organization,
     find_previous_confirmed_class_feedback_entry,
     get_class,
     get_class_feedback_task,
     get_class_teacher_user_id,
-    get_class_weeks,
     get_conn,
     get_consultation,
     get_current_user,
     get_lesson_feedback,
+    get_parent_student_binding,
+    get_parent_student_binding_for_student,
+    get_or_create_active_class_invite,
     get_lesson,
-    get_lessons_by_week,
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
     get_questions,
@@ -101,7 +102,10 @@ from lesson_manager import (
     list_lessons_for_actor,
     list_organizations,
     list_organization_requests,
+    list_parent_student_bindings_for_openid,
     list_students_for_class,
+    list_wechat_wrong_question_submissions_for_parent_student,
+    list_wechat_wrong_question_submissions,
     list_registration_requests_for_actor,
     list_users_for_actor,
     join_organization_by_invite_code,
@@ -109,6 +113,7 @@ from lesson_manager import (
     normalize_consultation_batch_parse_result,
     reject_organization_request,
     reject_registration_request,
+    reset_class_invite,
     reset_organization_invite,
     remove_student_from_class,
     save_class_feedback_generation_result,
@@ -119,12 +124,15 @@ from lesson_manager import (
     save_lesson,
     set_class_teacher_user_id,
     set_user_class_ids,
+    set_wechat_wrong_question_archive_status,
+    get_wechat_wrong_question_submission,
+    save_wechat_wrong_question_review,
     update_user_display_name_for_actor,
     update_class,
     update_consultation,
     update_user_profile,
     update_user_role,
-    week_label,
+    upsert_parent_wechat_account,
 )
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
@@ -550,363 +558,9 @@ def _get_monthly_pdfs():
     return result
 
 
-@app.context_processor
-def inject_globals():
-    return dict(
-        has_key=has_api_key(),
-        current_endpoint=request.endpoint,
-        all_classes=list_classes(),
-    )
-
-
-# ─── 首页 ──────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    lessons = list_lessons()[:8]
-    month_now = datetime.now().strftime("%Y-%m")
-    month_count = len(list_lessons(month_now))
-    total_count = len(list_lessons())
-    classes = list_classes()
-    return render_template(
-        "index.html",
-        lessons=lessons,
-        month_now=month_now,
-        month_count=month_count,
-        total_count=total_count,
-        classes=classes,
-    )
-
-
-# ─── 添加课程 ──────────────────────────────────────────────────────────────────
-@app.route("/add", methods=["GET", "POST"])
-def add_lesson():
-    class_id = int(request.args.get("class_id", 0) or request.form.get("class_id", 0) or 0)
-    cls = get_class(class_id) if class_id else None
-
-    if request.method == "GET":
-        return render_template("add.html", today=str(date.today()),
-                               cls=cls, class_id=class_id, classes=list_classes())
-
-    if not has_api_key():
-        flash("请先在设置页面填入 API Key", "error")
-        return redirect(url_for("settings"))
-
-    class_id    = int(request.form.get("class_id", 0) or 0)
-    cls         = get_class(class_id) if class_id else None
-    subject     = request.form.get("subject", "").strip() or (cls["subject"] if cls else "")
-    grade       = request.form.get("grade",   "").strip() or (cls["grade"]   if cls else "")
-    topic       = request.form.get("topic",   "").strip()
-    lesson_date = request.form.get("date", "") or str(date.today())
-    weak_points = request.form.get("weak_points", "").strip()
-    input_type  = request.form.get("input_type", "text")
-
-    raw_text = ""
-
-    if input_type == "text":
-        raw_text = request.form.get("summary_text", "").strip()
-        if not raw_text:
-            flash("请填写课堂总结内容", "error")
-            return render_template("add.html", today=str(date.today()),
-                                   form=request.form, cls=cls,
-                                   class_id=class_id, classes=list_classes())
-
-    elif input_type == "file":
-        file = request.files.get("upload_file")
-        if not file or not file.filename:
-            flash("请选择上传文件", "error")
-            return render_template("add.html", today=str(date.today()),
-                                   form=request.form, cls=cls,
-                                   class_id=class_id, classes=list_classes())
-
-        ext = Path(file.filename).suffix.lower()
-        audio_exts = {".mp3", ".m4a", ".mp4", ".wav", ".ogg", ".webm", ".flac"}
-
-        if ext in audio_exts:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = UPLOAD_DIR / f"audio_{ts}{ext}"
-            file.save(str(save_path))
-
-            # Whisper 限制 25MB
-            if save_path.stat().st_size > 25 * 1024 * 1024:
-                save_path.unlink(missing_ok=True)
-                flash("音频文件过大（最大 25MB，Whisper API 限制）。请压缩后重试。", "error")
-                return render_template("add.html", today=str(date.today()),
-                                       form=request.form, cls=cls,
-                                       class_id=class_id, classes=list_classes())
-            try:
-                from ai_processor import transcribe_audio
-                raw_text = transcribe_audio(str(save_path))
-            except Exception as e:
-                flash(f"音频转录失败：{e}", "error")
-                return render_template("add.html", today=str(date.today()),
-                                       form=request.form, cls=cls,
-                                       class_id=class_id, classes=list_classes())
-            finally:
-                save_path.unlink(missing_ok=True)
-
-        elif ext in {".txt", ".md", ".text"}:
-            raw_text = file.read().decode("utf-8", errors="replace")
-
-        else:
-            flash(f"不支持的文件格式 {ext}，请上传 txt/md 或音频文件", "error")
-            return render_template("add.html", today=str(date.today()),
-                                   form=request.form, cls=cls,
-                                   class_id=class_id, classes=list_classes())
-    # AI 生成计划
-    try:
-        from ai_processor import parse_and_generate_plan
-        prompt_styles = request.form.getlist("prompt_styles")
-        plan = parse_and_generate_plan(
-            summary_text=raw_text,
-            subject=subject, grade=grade, topic=topic,
-            weak_points=weak_points, lesson_date=lesson_date,
-            prompt_styles=prompt_styles,
-        )
-    except Exception as e:
-        flash(f"AI 生成失败：{e}", "error")
-        return render_template("add.html", today=str(date.today()),
-                               form=request.form, cls=cls,
-                               class_id=class_id, classes=list_classes())
-
-    # 生成学生版 PDF
-    pdf_path = ""
-    try:
-        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
-        safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
-        pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
-        pdf_path = str(PDF_DIR / pdf_name)
-        generate_single_lesson_pdf(plan, pdf_path)
-    except Exception as e:
-        flash(f"PDF 生成失败：{e}", "error")
-
-    # 生成答案版 PDF
-    if pdf_path:
-        try:
-            from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
-            answer_pdf_path = pdf_path.replace(".pdf", "_答案版.pdf")
-            generate_single_lesson_pdf(plan, answer_pdf_path)
-        except Exception as e:
-            flash(f"答案 PDF 生成失败：{e}", "warning")
-
-    lesson_id = save_lesson(
-        date_str=lesson_date, subject=subject, grade=grade,
-        topic=topic, summary=raw_text, weak_points=weak_points,
-        plan=plan, pdf_path=pdf_path, class_id=class_id,
-    )
-
-    flash("复习计划已生成并保存！", "success")
-    if class_id:
-        return redirect(url_for("class_detail", class_id=class_id))
-    return redirect(url_for("lesson_detail", lesson_id=lesson_id))
-
-
-# ─── 课程列表 ──────────────────────────────────────────────────────────────────
-@app.route("/lessons")
-def lessons_list():
-    month = request.args.get("month", "")
-    lessons = list_lessons(month)
-    months = _get_all_months()
-    return render_template("lessons.html", lessons=lessons,
-                           month=month, months=months)
-
-
-# ─── 班级管理 ──────────────────────────────────────────────────────────────────
-@app.route("/classes")
-def classes_list():
-    classes = list_classes()
-    return render_template("classes.html", classes=classes)
-
-
-@app.route("/classes/new", methods=["GET", "POST"])
-def class_new():
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        if not name:
-            flash("班级名称不能为空", "error")
-            return render_template("class_form.html", cls=None, action="new")
-        save_class(
-            name=name,
-            subject=request.form.get("subject", "").strip(),
-            grade=request.form.get("grade", "").strip(),
-            teacher_name=request.form.get("teacher_name", "").strip(),
-            teacher_email=request.form.get("teacher_email", "").strip(),
-        )
-        flash(f"班级「{name}」已创建！", "success")
-        return redirect(url_for("classes_list"))
-    return render_template("class_form.html", cls=None, action="new")
-
-
-@app.route("/classes/<int:class_id>")
-def class_detail(class_id):
-    cls = get_class(class_id)
-    if not cls:
-        abort(404)
-    lessons = list_lessons(class_id=class_id)
-    weeks = get_class_weeks(class_id)
-    weekly_pdfs = _get_weekly_pdfs(class_id)
-    # group lessons by week for display
-    from datetime import datetime as dt
-    def _wk(date_str):
-        try:
-            d = dt.strptime(date_str, "%Y-%m-%d")
-            y, w, _ = d.isocalendar()
-            return f"{y}-W{w:02d}"
-        except Exception:
-            return ""
-    lessons_by_week = {}
-    for l in lessons:
-        wk = _wk(l.get("date", ""))
-        lessons_by_week.setdefault(wk, []).append(l)
-    return render_template(
-        "class_detail.html",
-        cls=cls,
-        lessons=lessons,
-        weeks=weeks,
-        lessons_by_week=lessons_by_week,
-        weekly_pdfs=weekly_pdfs,
-        week_label=week_label,
-    )
-
-
-@app.route("/classes/<int:class_id>/edit", methods=["GET", "POST"])
-def class_edit(class_id):
-    cls = get_class(class_id)
-    if not cls:
-        abort(404)
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        if not name:
-            flash("班级名称不能为空", "error")
-            return render_template("class_form.html", cls=cls, action="edit")
-        update_class(
-            class_id=class_id,
-            name=name,
-            subject=request.form.get("subject", "").strip(),
-            grade=request.form.get("grade", "").strip(),
-            teacher_name=request.form.get("teacher_name", "").strip(),
-            teacher_email=request.form.get("teacher_email", "").strip(),
-        )
-        flash("班级信息已更新", "success")
-        return redirect(url_for("class_detail", class_id=class_id))
-    return render_template("class_form.html", cls=cls, action="edit")
-
-
-@app.route("/classes/<int:class_id>/delete", methods=["POST"])
-def class_delete(class_id):
-    cls = get_class(class_id)
-    if not cls:
-        abort(404)
-    db_delete_class(class_id)
-    flash(f"班级「{cls['name']}」已删除（课程记录已保留）", "success")
-    return redirect(url_for("classes_list"))
-
-
-# ─── 周报 PDF ──────────────────────────────────────────────────────────────────
-def _get_weekly_pdfs(class_id: int) -> dict:
-    """Return {week_str: filename} for existing weekly PDFs of a class."""
-    result = {}
-    for p in PDF_DIR.glob(f"class{class_id}_????-W??_周报.pdf"):
-        m = re.match(rf"class{class_id}_(\d{{4}}-W\d{{2}})_周报\.pdf", p.name)
-        if m:
-            result[m.group(1)] = p.name
-    return result
-
-
-@app.route("/classes/<int:class_id>/weekly/<week_str>", methods=["POST"])
-def generate_weekly(class_id, week_str):
-    if not re.match(r"^\d{4}-W\d{2}$", week_str):
-        abort(400)
-    cls = get_class(class_id)
-    if not cls:
-        abort(404)
-
-    lessons = get_lessons_by_week(class_id, week_str)
-    if not lessons:
-        flash("该周暂无课程记录", "error")
-        return redirect(url_for("class_detail", class_id=class_id))
-
-    try:
-        from pdf_engine import generate_weekly_pdf
-        pdf_name = f"class{class_id}_{week_str}_周报.pdf"
-        pdf_path = str(PDF_DIR / pdf_name)
-        generate_weekly_pdf(lessons, cls, week_str, pdf_path)
-    except Exception as e:
-        flash(f"周报 PDF 生成失败：{e}", "error")
-        return redirect(url_for("class_detail", class_id=class_id))
-
-    flash(f"周报已生成：{week_label(week_str)}", "success")
-    return redirect(url_for("class_detail", class_id=class_id))
-
-
-@app.route("/classes/<int:class_id>/weekly/<week_str>/download")
-def download_weekly(class_id, week_str):
-    if not re.match(r"^\d{4}-W\d{2}$", week_str):
-        abort(400)
-    pdf_name = f"class{class_id}_{week_str}_周报.pdf"
-    pdf_path = PDF_DIR / pdf_name
-    if not pdf_path.exists():
-        abort(404)
-    return send_file(str(pdf_path), as_attachment=True, download_name=pdf_name)
-
-
-@app.route("/classes/<int:class_id>/weekly/<week_str>/view")
-def view_weekly(class_id, week_str):
-    if not re.match(r"^\d{4}-W\d{2}$", week_str):
-        abort(400)
-    pdf_name = f"class{class_id}_{week_str}_周报.pdf"
-    pdf_path = PDF_DIR / pdf_name
-    if not pdf_path.exists():
-        abort(404)
-    return send_file(str(pdf_path), mimetype="application/pdf",
-                     download_name=pdf_name)
-
-
-# ─── 课程详情 ──────────────────────────────────────────────────────────────────
-@app.route("/lessons/<int:lesson_id>")
-def lesson_detail(lesson_id):
-    lesson = get_lesson(lesson_id)
-    if not lesson:
-        abort(404)
-    questions = get_questions(lesson_id=lesson_id)
-    cats = {}
-    for q in questions:
-        cats.setdefault(q.get("category") or "综合", []).append(q)
-
-    # plan days summary for display
-    plan = lesson.get("plan") or {}
-    days = plan.get("days", [])
-
-    # 检查答案版 PDF 是否存在
-    has_answer_pdf = False
-    if lesson.get("pdf_path"):
-        answer_path = lesson["pdf_path"].replace(".pdf", "_答案版.pdf")
-        has_answer_pdf = Path(answer_path).exists()
-
-    return render_template(
-        "lesson_detail.html",
-        lesson=lesson,
-        question_cats=cats,
-        total_q=len(questions),
-        days=days,
-        has_answer_pdf=has_answer_pdf,
-    )
-
-
-# ─── 删除课程 ──────────────────────────────────────────────────────────────────
-@app.route("/lessons/<int:lesson_id>/delete", methods=["POST"])
-def delete_lesson(lesson_id):
-    lesson = get_lesson(lesson_id)
-    if not lesson:
-        abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if pdf_path and Path(pdf_path).exists():
-        Path(pdf_path).unlink(missing_ok=True)
-    answer_pdf = pdf_path.replace(".pdf", "_答案版.pdf") if pdf_path else ""
-    if answer_pdf and Path(answer_pdf).exists():
-        Path(answer_pdf).unlink(missing_ok=True)
-    db_delete_lesson(lesson_id)
-    flash("课程已删除", "success")
-    return redirect(url_for("lessons_list"))
+    return redirect(_browser_url(), code=302)
 
 
 # ─── PDF 查看 / 下载 ────────────────────────────────────────────────────────────
@@ -982,179 +636,6 @@ def download_answer_pdf(lesson_id):
         abort(404)
     return send_file(answer_path, as_attachment=True,
                      download_name=Path(answer_path).name)
-
-
-# ─── 月度复习 ──────────────────────────────────────────────────────────────────
-@app.route("/monthly", methods=["GET", "POST"])
-def monthly():
-    months = _get_all_months()
-    month_now = datetime.now().strftime("%Y-%m")
-    monthly_pdfs = _get_monthly_pdfs()
-
-    if request.method == "GET":
-        lessons_by_month = {m: len(list_lessons(m)) for m in months}
-        return render_template("monthly.html", months=months,
-                               month_now=month_now, monthly_pdfs=monthly_pdfs,
-                               lessons_by_month=lessons_by_month)
-
-    if not has_api_key():
-        flash("请先在设置页面填入 OpenAI API Key", "error")
-        return redirect(url_for("settings"))
-
-    month_str = request.form.get("month", month_now)
-    lessons = list_lessons(month_str)
-    if not lessons:
-        flash(f"{month_str} 没有课程记录，请先添加课程。", "error")
-        return render_template("monthly.html", months=months,
-                               month_now=month_now, monthly_pdfs=monthly_pdfs)
-
-    lesson_dicts = [{
-        "date":        l["date"],
-        "subject":     l["subject"] or "",
-        "grade":       l["grade"] or "",
-        "topic":       l["topic"] or "",
-        "summary":     (l["summary"] or "")[:800],
-        "weak_points": l["weak_points"] or "",
-    } for l in lessons]
-
-    try:
-        from ai_processor import generate_monthly_plan
-        plan = generate_monthly_plan(lesson_dicts, month_str)
-    except Exception as e:
-        flash(f"AI 生成失败：{e}", "error")
-        return render_template("monthly.html", months=months,
-                               month_now=month_now, monthly_pdfs=monthly_pdfs)
-
-    try:
-        from pdf_engine import generate_monthly_pdf
-        pdf_name = f"{month_str}_月度综合复习.pdf"
-        pdf_path = str(PDF_DIR / pdf_name)
-        generate_monthly_pdf(plan, pdf_path)
-    except Exception as e:
-        flash(f"PDF 生成失败：{e}", "error")
-        return render_template("monthly.html", months=months,
-                               month_now=month_now, monthly_pdfs=monthly_pdfs)
-
-    flash(f"{month_str} 月度复习 PDF 已生成！", "success")
-    monthly_pdfs = _get_monthly_pdfs()
-    lessons_by_month = {m: len(list_lessons(m)) for m in months}
-    return render_template("monthly.html", months=months,
-                           month_now=month_now, monthly_pdfs=monthly_pdfs,
-                           lessons_by_month=lessons_by_month)
-
-
-@app.route("/monthly/download/<month_str>")
-def download_monthly_pdf(month_str):
-    if not re.match(r"^\d{4}-\d{2}$", month_str):
-        abort(400)
-    pdf_name = f"{month_str}_月度综合复习.pdf"
-    pdf_path = PDF_DIR / pdf_name
-    if not pdf_path.exists():
-        abort(404)
-    return send_file(str(pdf_path), as_attachment=True,
-                     download_name=pdf_name)
-
-
-@app.route("/monthly/view/<month_str>")
-def view_monthly_pdf(month_str):
-    if not re.match(r"^\d{4}-\d{2}$", month_str):
-        abort(400)
-    pdf_name = f"{month_str}_月度综合复习.pdf"
-    pdf_path = PDF_DIR / pdf_name
-    if not pdf_path.exists():
-        abort(404)
-    return send_file(str(pdf_path), mimetype="application/pdf",
-                     download_name=pdf_name)
-
-
-# ─── 题库 ──────────────────────────────────────────────────────────────────────
-@app.route("/quiz")
-def quiz():
-    month     = request.args.get("month", "")
-    lesson_id = int(request.args.get("lesson_id", 0))
-    questions = get_questions(lesson_id=lesson_id, month_str=month)
-    cats = {}
-    for q in questions:
-        cats.setdefault(q.get("category") or "综合", []).append(q)
-    return render_template(
-        "quiz.html",
-        question_cats=cats,
-        total_q=len(questions),
-        months=_get_all_months(),
-        all_lessons=list_lessons(),
-        month=month,
-        lesson_id=lesson_id,
-    )
-
-
-# ─── 设置 ──────────────────────────────────────────────────────────────────────
-@app.route("/settings", methods=["GET", "POST"])
-def settings():
-    cfg = get_config()
-    controlled_keys = env_controlled_keys()
-
-    def _mask(key):
-        if len(key) > 12:
-            return key[:8] + "..." + key[-4:]
-        return "*" * len(key) if key else ""
-
-    if request.method == "POST":
-        file_cfg = load_file_config()
-
-        if "provider" not in controlled_keys:
-            file_cfg["provider"] = request.form.get("provider", "openai").strip()
-
-        openai_key = request.form.get("openai_api_key", "").strip()
-        if openai_key and "openai_api_key" not in controlled_keys:
-            file_cfg["openai_api_key"] = openai_key
-
-        deepseek_key = request.form.get("deepseek_api_key", "").strip()
-        if deepseek_key and "deepseek_api_key" not in controlled_keys:
-            file_cfg["deepseek_api_key"] = deepseek_key
-
-        mimo_key = request.form.get("mimo_api_key", "").strip()
-        if mimo_key and "mimo_api_key" not in controlled_keys:
-            file_cfg["mimo_api_key"] = mimo_key
-
-        mimo_base_url = request.form.get("mimo_base_url", "").strip()
-        if mimo_base_url and "mimo_base_url" not in controlled_keys:
-            file_cfg["mimo_base_url"] = mimo_base_url
-
-        n1n_key = request.form.get("n1n_api_key", "").strip()
-        if n1n_key and "n1n_api_key" not in controlled_keys:
-            file_cfg["n1n_api_key"] = n1n_key
-
-        n1n_base_url = request.form.get("n1n_base_url", "").strip()
-        if n1n_base_url and "n1n_base_url" not in controlled_keys:
-            file_cfg["n1n_base_url"] = n1n_base_url
-
-        write_file_config(file_cfg)
-        if controlled_keys:
-            flash("部分设置由环境变量控制，页面保存不会覆盖这些字段。", "info")
-        flash("设置已保存！", "success")
-        return redirect(url_for("settings"))
-
-    controlled_env = {
-        key: env_var_for_key(key)
-        for key in controlled_keys
-        if env_var_for_key(key)
-    }
-
-    return render_template(
-        "settings.html",
-        provider=cfg.get("provider", "openai"),
-        openai_key_set=bool(cfg.get("openai_api_key", "")),
-        openai_masked=_mask(cfg.get("openai_api_key", "")),
-        deepseek_key_set=bool(cfg.get("deepseek_api_key", "")),
-        deepseek_masked=_mask(cfg.get("deepseek_api_key", "")),
-        mimo_key_set=bool(cfg.get("mimo_api_key", "")),
-        mimo_masked=_mask(cfg.get("mimo_api_key", "")),
-        mimo_base_url=cfg.get("mimo_base_url", ""),
-        n1n_key_set=bool(cfg.get("n1n_api_key", "")),
-        n1n_masked=_mask(cfg.get("n1n_api_key", "")),
-        n1n_base_url=cfg.get("n1n_base_url", "https://api.n1n.ai/v1"),
-        controlled_env=controlled_env,
-    )
 
 
 # ─── JSON API ──────────────────────────────────────────────────────────────────
@@ -1314,6 +795,14 @@ def _require_super_owner():
     if user.get("role") != "super_owner":
         return None, (jsonify({"error": "无权限"}), 403)
     return user, None
+
+
+def _require_wechat_service():
+    expected = str(get_runtime_config().get("wechat_service_token", "")).strip()
+    provided = request.headers.get("X-Wechat-Service-Token", "").strip()
+    if not expected or provided != expected:
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    return {"service": "wechat"}, None
 
 
 def _organization_invite_response_payload(invite: dict) -> dict:
@@ -1523,6 +1012,29 @@ def _get_json_object_payload():
     if not isinstance(data, dict):
         return None, (jsonify({"error": "request body must be a JSON object"}), 400)
     return data, None
+
+def _get_parent_wechat_account_by_openid(open_id: str):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM parent_wechat_accounts WHERE openid=?",
+            (open_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _get_active_class_invite_by_code(invite_code: str):
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM class_invite_codes
+            WHERE invite_code=? AND status='active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (invite_code,),
+        ).fetchone()
+    return dict(row) if row else None
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
     return (int(user_id), str(platform_order_id or "").strip().lower())
 
@@ -2161,8 +1673,11 @@ def api_wrong_questions_list():
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
-    scoped_items = _filter_wrong_question_items_for_user(user, payload.get("items"))
+    local_items = list_wechat_wrong_question_submissions()
+    merged_items = [*local_items, *payload.get("items", [])]
+    scoped_items = _filter_wrong_question_items_for_user(user, merged_items)
     payload["items"] = scoped_items
+    payload["total"] = len(scoped_items)
     if user.get("role") == "member":
         payload["summary"] = _summarize_wrong_question_records(scoped_items)
     return jsonify(payload)
@@ -2191,6 +1706,11 @@ def api_wrong_question_detail(record_id):
     user, error = _require_auth()
     if error:
         return error
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if local_record:
+        if not _can_access_wrong_question_record(user, local_record):
+            return jsonify({"error": "not found"}), 404
+        return jsonify(local_record)
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
@@ -2206,6 +1726,14 @@ def api_wrong_question_review_save(record_id):
     user, error = _require_auth()
     if error:
         return error
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if local_record:
+        if not _can_access_wrong_question_record(user, local_record):
+            return jsonify({"error": "not found"}), 404
+        saved_record = save_wechat_wrong_question_review(record_id, request.json or {})
+        if not saved_record:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"ok": True, "record": saved_record})
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
         if not _can_access_wrong_question_record(user, record):
@@ -2215,6 +1743,32 @@ def api_wrong_question_review_save(record_id):
         )
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+
+
+@app.route("/api/wrong-questions/<record_id>/archive", methods=["PUT"])
+def api_wrong_question_archive_save(record_id):
+    user, error = _require_staff()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if not local_record or not _can_access_wrong_question_record(user, local_record):
+        return jsonify({"error": "not found"}), 404
+
+    try:
+        saved_record = set_wechat_wrong_question_archive_status(
+            record_id,
+            (data.get("archive_status") or "").strip() or "active",
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not saved_record:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True, "record": saved_record})
 
 
 @app.route("/api/consultations", methods=["GET"])
@@ -2421,6 +1975,30 @@ def api_class_get(class_id):
     return jsonify({**cls, "lessons": _serialize_lessons_for_response(lessons)})
 
 
+@app.route("/api/classes/<int:class_id>/invite", methods=["GET"])
+def api_class_invite_get(class_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    cls, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    invite = get_or_create_active_class_invite(cls["id"], user["id"])
+    return jsonify(invite)
+
+
+@app.route("/api/classes/<int:class_id>/invite/reset", methods=["POST"])
+def api_class_invite_reset(class_id):
+    user, error = _require_owner()
+    if error:
+        return error
+    cls, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    invite = reset_class_invite(cls["id"], user["id"])
+    return jsonify(invite)
+
+
 @app.route("/api/classes/<int:class_id>/students", methods=["GET"])
 def api_class_students_list(class_id):
     user, error = _require_auth()
@@ -2489,6 +2067,183 @@ def api_class_teacher_set(class_id):
         status_code = 404 if message in {"class not found", "user not found"} else 400
         return jsonify({"error": message}), status_code
     return jsonify({"ok": True, "teacher_user_id": get_class_teacher_user_id(class_id)})
+
+
+@app.route("/api/wechat/login", methods=["POST"])
+def api_wechat_login():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = upsert_parent_wechat_account(
+        openid=open_id,
+        nickname_snapshot=(data.get("nickname_snapshot") or "").strip(),
+        avatar_url_snapshot=(data.get("avatar_url_snapshot") or "").strip(),
+    )
+    return jsonify({"account": account})
+
+
+@app.route("/api/wechat/bind-class", methods=["POST"])
+def api_wechat_bind_class():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    invite_code = (data.get("invite_code") or "").strip()
+    if not open_id or not invite_code:
+        return jsonify({"error": "open_id and invite_code are required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    invite = _get_active_class_invite_by_code(invite_code)
+    if not invite:
+        return jsonify({"error": "invite not found"}), 404
+
+    cls = get_class(invite["class_id"])
+    if not cls:
+        return jsonify({"error": "class not found"}), 404
+
+    teacher_user_id = get_class_teacher_user_id(cls["id"])
+    teacher = get_user_by_id(teacher_user_id) if teacher_user_id else None
+    return jsonify(
+        {
+            "account_id": account["id"],
+            "class_id": cls["id"],
+            "class_name": cls["name"],
+            "teacher_user_id": teacher_user_id,
+            "teacher_display_name": teacher.get("display_name") if teacher else "",
+            "students": list_students_for_class(cls["id"]),
+        }
+    )
+
+
+@app.route("/api/wechat/bind-student", methods=["POST"])
+def api_wechat_bind_student():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    class_id = int(data.get("class_id") or 0)
+    student_id = int(data.get("student_id") or 0)
+    if not open_id or not class_id or not student_id:
+        return jsonify({"error": "open_id, class_id and student_id are required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    try:
+        binding = bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=class_id,
+            student_id=student_id,
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"binding": binding})
+
+
+@app.route("/api/wechat/bindings", methods=["GET"])
+def api_wechat_bindings_list():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    return jsonify({"bindings": list_parent_student_bindings_for_openid(open_id)})
+
+
+@app.route("/api/wechat/wrong-questions", methods=["POST"])
+def api_wechat_wrong_questions_create():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    binding_id = int(data.get("binding_id") or 0)
+    image_url = (data.get("image_url") or "").strip()
+    if not open_id or not binding_id or not image_url:
+        return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    binding = get_parent_student_binding(binding_id)
+    if not binding or binding.get("parent_wechat_account_id") != account["id"]:
+        return jsonify({"error": "binding not found"}), 404
+
+    try:
+        record = create_wechat_wrong_question_submission(
+            binding_id=binding_id,
+            image_url=image_url,
+            parent_note=(data.get("parent_note") or "").strip(),
+            child_raw_reason_text=(data.get("child_raw_reason_text") or "").strip(),
+            child_reason_input_mode=(data.get("child_reason_input_mode") or "text").strip(),
+            primary_error_type=(data.get("primary_error_type") or "").strip(),
+            secondary_error_summary=(data.get("secondary_error_summary") or "").strip(),
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"record": record}), 201
+
+
+@app.route("/api/wechat/children/<int:student_id>/wrong-questions", methods=["GET"])
+def api_wechat_child_wrong_questions(student_id):
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    binding = get_parent_student_binding_for_student(account["id"], student_id)
+    if not binding:
+        return jsonify({"error": "binding not found"}), 404
+
+    items = list_wechat_wrong_question_submissions_for_parent_student(
+        parent_wechat_account_id=account["id"],
+        student_id=student_id,
+    )
+    return jsonify({"items": items, "total": len(items)})
 
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
@@ -3074,7 +2829,11 @@ def api_settings_save():
 def _open_browser():
     import time
     time.sleep(1.5)
-    webbrowser.open("http://127.0.0.1:5001")
+    webbrowser.open(_browser_url())
+
+
+def _browser_url() -> str:
+    return os.environ.get("XR_BROWSER_URL", "http://127.0.0.1:3000").strip() or "http://127.0.0.1:3000"
 
 
 def _should_open_browser() -> bool:
@@ -3088,8 +2847,8 @@ if __name__ == "__main__":
         threading.Thread(target=_open_browser, daemon=True).start()
     print("\n" + "=" * 50)
     print("  📚 复习计划管理系统已启动")
-    print("  浏览器即将自动打开")
-    print("  地址：http://127.0.0.1:5001")
+    print(f"  浏览器即将自动打开：{_browser_url()}")
+    print("  后端地址：http://127.0.0.1:5001")
     print("  按 Ctrl+C 关闭程序")
     print("=" * 50 + "\n")
     app.run(host="127.0.0.1", port=5001, debug=False)
