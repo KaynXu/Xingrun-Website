@@ -5491,3 +5491,31 @@ Landing Refresh 相关提交（按时间顺序）
   - `students.organization_id`
   - `class_feedback_tasks.organization_id`
   - 相关迁移与索引
+
+## organizations 作为数据库主心骨 implementation plan（2026-04-09）
+
+### 已完成
+- 用户已确认设计 spec，可继续进入 implementation plan 阶段。
+- 已写出实现计划：
+  - `docs/superpowers/plans/2026-04-09-organization-rooted-db-structure.md`
+- 计划拆分为 4 个 task：
+  - schema + migration red/green
+  - `students.organization_id` 写入与冲突检测
+  - `class_feedback_tasks.organization_id` 写入与跨机构保护
+  - 组织维度索引与最终回归
+
+### proof
+- 本轮 proof 目标：
+  - plan 文件存在
+  - handoff 已记录本轮计划
+  - plan 中没有 `TBD/TODO`
+  - worktree 干净后可提交
+
+### 剩余问题
+- 具体代码改动还没开始执行。
+
+### 下一步方向
+- 已在 `feature/org-rooted-db-structure` 提交本轮 plan + handoff，可直接按计划开始执行。
+- 然后按计划选择执行方式：
+  - subagent-driven-development
+  - inline execution
