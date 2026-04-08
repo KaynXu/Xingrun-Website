@@ -2,7 +2,7 @@
 
 每次上课后提交课堂总结（文字/文件/音频），AI 自动生成 **8 天填空题复习讲义 PDF** 并记入题库。月底一键生成 **14 天月度综合复习计划 PDF**。
 
-提供 **Web UI**（Flask）和 **命令行**（CLI）两种使用方式。
+提供 **Web UI**（React + Flask API）和 **命令行**（CLI）两种使用方式。
 
 ---
 
@@ -20,12 +20,22 @@
 **macOS** — 双击 `start.command`  
 **Windows** — 双击 `start.bat`
 
-脚本自动创建虚拟环境、安装依赖、初始化数据库，并在浏览器打开 `http://127.0.0.1:5001`。
+启动脚本会自动创建虚拟环境、安装依赖、初始化数据库，并启动后端 `http://127.0.0.1:5001`。
+
+前端默认开发地址为 `http://127.0.0.1:3000`（Vite）。
+后端根路径 `/` 会重定向到该前端地址。
 
 **手动启动：**
 ```bash
-pip install -r requirements.txt
-python app.py
+# 终端 1：后端
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python app.py
+
+# 终端 2：前端
+cd frontend
+npm install
+npm run dev
 ```
 
 启动后进入**设置页面**配置 API Key 和服务商（见下方「AI 服务商」）。
@@ -254,7 +264,7 @@ python lesson_manager.py open --id 3    # 重新打开某节课 PDF
 
 ## REST API
 
-后端提供 REST API（CORS 已放行 `localhost:3000`、`localhost:5173`、`localhost:8080`），供前端项目 `Xingrun-Summary-Web` 调用：
+后端提供 REST API（CORS 已放行 `localhost:3000`、`localhost:5173`、`localhost:8080`），供当前仓库内 `frontend/` 调用：
 
 | 端点 | 方法 |
 |------|------|
@@ -273,15 +283,18 @@ python lesson_manager.py open --id 3    # 重新打开某节课 PDF
 ## 文件结构
 
 ```
-Xingrun-Summary/
+Xingrun-Website/
 ├── app.py                      ← Flask 主应用，所有路由
 ├── lesson_manager.py           ← 数据库层 + CLI 入口
 ├── ai_processor.py             ← AI 调用（计划生成、语音转写）
 ├── pdf_engine.py               ← PDF 生成（课时单、月度、周报）
+├── frontend/                   ← Vite + React 前端
 ├── review_plan_templates/      ← 新版课后复习计划模板、课包与工作流文档
 ├── config.json                 ← 本地配置与登录 token（生产环境建议使用环境变量覆盖）
 ├── .env.runtime.example        ← 生产环境变量示例
 ├── config_runtime.py           ← 运行时配置加载（环境变量优先）
+├── scripts/                    ← 部署与后端运行脚本
+├── tests/                      ← 后端回归测试
 ├── requirements.txt
 ├── start.command               ← macOS 一键启动
 ├── start.bat                   ← Windows 一键启动
