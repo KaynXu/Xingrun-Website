@@ -50,3 +50,17 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /班级状态/);
   assert.doesNotMatch(markup, /新增班级/);
 });
+
+test('course calendar page avoids a nested min-h-screen container inside the workspace shell', () => {
+  const markup = renderToStaticMarkup(
+    <CourseCalendarPage
+      anchorDate="2026-04-01"
+      classes={[]}
+      lessons={[]}
+      onPreviousWeek={() => undefined}
+      onNextWeek={() => undefined}
+    />,
+  );
+
+  assert.doesNotMatch(markup, /min-h-screen/);
+});

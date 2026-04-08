@@ -578,8 +578,32 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
 
 // --- API helper ---
 
+function readLocalStorageItem(key: string): string | null {
+  try {
+    return globalThis.localStorage?.getItem?.(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalStorageItem(key: string, value: string): void {
+  try {
+    globalThis.localStorage?.setItem?.(key, value);
+  } catch {
+    // Ignore storage access issues and keep the UI functional.
+  }
+}
+
+function removeLocalStorageItem(key: string): void {
+  try {
+    globalThis.localStorage?.removeItem?.(key);
+  } catch {
+    // Ignore storage access issues and keep the UI functional.
+  }
+}
+
 function getToken(): string {
-  return localStorage.getItem('xr_token') || '';
+  return readLocalStorageItem('xr_token') ?? '';
 }
 
 function buildAuthedPath(path: string): string {
@@ -603,7 +627,7 @@ export async function apiFetch<T = unknown>(path: string, options?: RequestInit)
     ...options,
   });
   if (res.status === 401) {
-    localStorage.removeItem('xr_token');
+    removeLocalStorageItem('xr_token');
     window.location.reload();
   }
   if (!res.ok) {
@@ -623,7 +647,7 @@ function getInitialDarkModePreference(): boolean {
   }
 
   try {
-    const saved = window.localStorage?.getItem?.('xr_dark');
+    const saved = readLocalStorageItem('xr_dark');
     if (saved !== null && saved !== undefined) {
       return saved === 'true';
     }
@@ -632,6 +656,14 @@ function getInitialDarkModePreference(): boolean {
   }
 
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+}
+
+function getInitialMobileViewport(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.matchMedia?.('(max-width: 1023px)').matches ?? false;
 }
 
 function getJoinInviteTokenFromPath(pathname: string): string | null {
@@ -1400,12 +1432,13 @@ const Sidebar = ({
         {menuItems.map((item) => (
           <button
             key={item.id}
+            type="button"
             onClick={() => {
               setActivePage(item.id as Page);
               onNavigate?.();
             }}
             className={cn(
-              'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
+              'flex w-full touch-manipulation items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
               activePage === item.id
                 ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)] dark:border-sky-500/30 dark:bg-white/10 dark:text-sky-300 dark:shadow-[0_16px_36px_rgba(2,6,23,0.35)]'
                 : 'border border-transparent text-slate-500 hover:border-sky-100 hover:bg-white/75 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/10 dark:hover:bg-white/5 dark:hover:text-slate-100',
@@ -1476,7 +1509,7 @@ const Header = ({
   onOpenSidebar?: () => void;
 }) => {
   return (
-    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/78 px-4 backdrop-blur-xl sm:px-6 md:px-8 dark:border-white/10 dark:bg-[#0f172a]/88">
+    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/92 px-4 sm:bg-white/78 sm:backdrop-blur-xl sm:px-6 md:px-8 dark:border-white/10 dark:bg-[#0f172a]/92 dark:sm:bg-[#0f172a]/88">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Workspace</p>
         <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{title}</h2>
@@ -1484,16 +1517,18 @@ const Header = ({
       <div className="flex items-center gap-2 sm:gap-4">
         {onOpenSidebar && (
           <button
+            type="button"
             onClick={onOpenSidebar}
             title="打开导航"
             aria-label="打开导航"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 lg:hidden dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 lg:hidden dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <Menu size={20} />
           </button>
         )}
         {onToggleDarkMode && (
           <button
+            type="button"
             onClick={onToggleDarkMode}
             title="切换夜间模式"
             aria-label="切换夜间模式"
@@ -1504,6 +1539,7 @@ const Header = ({
         )}
         {onGoHome && (
           <button
+            type="button"
             onClick={onGoHome}
             title="返回首页"
             className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
@@ -7648,15 +7684,16 @@ export const LandingPage = ({
 // --- Main App ---
 
 export default function App() {
-  const [token, setToken] = useState<string>(() => localStorage.getItem('xr_token') || '');
+  const [token, setToken] = useState<string>(() => getToken());
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(localStorage.getItem('xr_token')));
+  const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(getToken()));
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
+  const [isMobileViewport, setIsMobileViewport] = useState(getInitialMobileViewport);
   const [publicAuthModal, setPublicAuthModal] = useState<PublicAuthModal | null>(() => {
     if (typeof window === 'undefined') {
       return null;
     }
-    if (window.localStorage?.getItem?.('xr_token')) {
+    if (getToken()) {
       return null;
     }
     return getJoinInviteTokenFromPath(window.location.pathname) ? 'join-organization' : null;
@@ -7684,13 +7721,29 @@ export default function App() {
     }
 
     document.documentElement.classList.toggle('dark', isDark);
-
-    try {
-      window.localStorage?.setItem?.('xr_dark', String(isDark));
-    } catch {
-      // Ignore storage access issues and keep the UI functional.
-    }
+    writeLocalStorageItem('xr_dark', String(isDark));
   }, [isDark]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const syncViewport = () => {
+      setIsMobileViewport(mediaQuery.matches);
+    };
+
+    syncViewport();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncViewport);
+      return () => mediaQuery.removeEventListener('change', syncViewport);
+    }
+
+    mediaQuery.addListener(syncViewport);
+    return () => mediaQuery.removeListener(syncViewport);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -7768,7 +7821,7 @@ export default function App() {
         if (cancelled) {
           return;
         }
-        localStorage.removeItem('xr_token');
+        removeLocalStorageItem('xr_token');
         setToken('');
         setCurrentUser(null);
       })
@@ -7822,7 +7875,7 @@ export default function App() {
 
   const handleLogin = (t: string) => {
     clearJoinInvitePathIfNeeded();
-    localStorage.setItem('xr_token', t);
+    writeLocalStorageItem('xr_token', t);
     setToken(t);
     setPublicAuthModal(null);
     setJoinInviteToken(null);
@@ -7831,7 +7884,7 @@ export default function App() {
 
   const handleLogout = () => {
     clearJoinInvitePathIfNeeded();
-    localStorage.removeItem('xr_token');
+    removeLocalStorageItem('xr_token');
     setToken('');
     setCurrentUser(null);
     setPublicAuthModal(null);
@@ -7885,7 +7938,7 @@ export default function App() {
 
   if (token && !authReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)]">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)]">
         <p className="text-sm text-slate-400 dark:text-slate-500">正在验证账号权限...</p>
       </div>
     );
@@ -7935,13 +7988,13 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
         <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
         <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
       </div>
-      <div className="relative flex min-h-screen">
+      <div className="relative flex min-h-[100dvh] sm:min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
           <Sidebar
             activePage={activePage}
@@ -7959,7 +8012,7 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-40 lg:hidden"
             >
-              <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+              <div className="absolute inset-0 bg-slate-950/45 sm:backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
               <motion.div
                 initial={{ x: -24, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
@@ -7970,7 +8023,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setMobileNavOpen(false)}
-                  className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="absolute right-3 top-3 z-10 flex h-10 w-10 touch-manipulation items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   aria-label="关闭导航"
                 >
                   <X size={18} />
@@ -7997,13 +8050,13 @@ export default function App() {
             onOpenSidebar={() => setMobileNavOpen(true)}
           />
           <div className="flex-1">
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
               <motion.div
                 key={activePage}
-                initial={{ opacity: 0, y: 8 }}
+                initial={isMobileViewport ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
+                exit={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 0, y: -6 }}
+                transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
               >
                 {activePage === 'dashboard' && (
                   <Dashboard
