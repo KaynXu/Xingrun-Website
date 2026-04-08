@@ -1,3 +1,49 @@
+## xingrun.db 机构主心骨结构调整（2026-04-09）
+
+### 已完成
+- 已完成设计与计划：
+  - `docs/superpowers/specs/2026-04-09-organization-rooted-db-structure-design.md`
+  - `docs/superpowers/plans/2026-04-09-organization-rooted-db-structure.md`
+- 已完成 `lesson_manager.py` 的机构主线化结构调整：
+  - `students.organization_id` 改为严格归属机构，`NOT NULL` 且 `REFERENCES organizations(id) ON DELETE CASCADE`
+  - `class_feedback_tasks.organization_id` 改为严格归属机构，创建与迁移时都校验机构一致性
+  - 旧库迁移改为先回填、再重建表，避免只加列不收紧约束
+  - `create_student_for_class()` 改为从 `classes.organization_id` 落学生机构归属
+  - 学生历史回填若发现跨机构班级绑定，直接拒绝并报错，不再静默猜测归属
+- 已补齐机构主导查询索引，避免可视化和后续查询继续只靠“单条链路”：
+  - `idx_students_organization_name`
+  - `idx_classes_organization_grade_subject_name`
+  - `idx_lessons_organization_class_date`
+  - `idx_consultations_organization_assigned_updated`
+  - `idx_class_feedback_tasks_organization_status_updated`
+  - `idx_wrong_question_submissions_organization_class_teacher_status`
+- 已修复 `delete_organization()` 清理顺序：
+  - 先删 `wrong_question_submissions` / `parent_student_bindings`
+  - 再删 `students`
+  - 避免 `student_id` 外键仍引用时触发 `sqlite3.IntegrityError`
+- 已补充回归测试覆盖：
+  - 机构归属字段迁移与回填
+  - 跨机构学生回填冲突拒绝
+  - 反馈任务创建人/老师跨机构拒绝
+  - 机构主导索引存在
+  - 删除机构时连带清理学生、绑定、错题提交、反馈任务
+
+### proof
+- 临时脚本：`/tmp/proof_org_rooted_db_structure_20260409.sh`
+- 完整输出：
+  - `./.venv/bin/python -m unittest tests.test_organization_rooted_db_structure tests.test_class_feedback_store tests.test_db_path_resolution tests.test_account_flow -v`
+  - `Ran 77 tests in 2.529s`
+  - `OK`
+
+### 剩余问题
+- 与本轮无关的既有基线问题仍在：
+  - `tests.test_master_data_store` 仍有 3 个 display name 相关失败（`Kayn` / `平台管理员`），本轮未触碰
+
+### 下一步方向
+- 等本分支最终 review 通过后，按用户选择决定：
+  - 合回 `develop`
+  - 或保留 `feature/org-rooted-db-structure` 继续观察
+
 ## 机构成员权限收窄 & 班级管理开放（2026-04-09）
 
 ### 已完成
