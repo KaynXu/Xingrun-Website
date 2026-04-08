@@ -91,6 +91,8 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
 
         task = lesson_manager.create_class_feedback_task(
             class_id=class_id,
@@ -106,8 +108,34 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(task["period_granularity"], "daily")
         self.assertEqual(task["teacher_user_id"], owner["id"])
         self.assertEqual(task["teacher_name_snapshot"], owner["display_name"])
+        self.assertEqual(task["organization_id"], class_row["organization_id"])
         self.assertEqual(task["status"], "draft")
         self.assertEqual(task["student_entries"], [])
+
+    def test_create_task_persists_class_organization_id(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-03",
+            end_date="2026-04-03",
+            created_by=owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            task_row = conn.execute(
+                "SELECT organization_id FROM class_feedback_tasks WHERE id=?",
+                (task["id"],),
+            ).fetchone()
+
+        self.assertEqual(task["organization_id"], class_row["organization_id"])
+        self.assertEqual(task_row["organization_id"], class_row["organization_id"])
 
     def test_create_task_rejects_mismatched_teacher_binding(self):
         owner = self._owner()

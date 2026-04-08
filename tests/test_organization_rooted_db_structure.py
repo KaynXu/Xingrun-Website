@@ -249,6 +249,32 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "multiple organizations"):
             lesson_manager.init_db()
 
+    def test_create_task_rejects_creator_from_other_organization(self):
+        with lesson_manager.get_conn() as conn:
+            conn.executescript(
+                """
+                INSERT INTO organizations (id, name) VALUES (11, 'Org A');
+                INSERT INTO organizations (id, name) VALUES (12, 'Org B');
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (101, 'owner-a', 'hash', 'Owner A', 'owner', 'active', 11);
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (102, 'owner-b', 'hash', 'Owner B', 'owner', 'active', 12);
+                INSERT INTO classes (id, organization_id, name, subject, grade)
+                VALUES (201, 11, 'A 班', '数学', '六年级');
+                INSERT INTO user_classes (user_id, class_id) VALUES (101, 201);
+                """
+            )
+
+        with self.assertRaisesRegex(ValueError, "created_by must belong to class organization"):
+            lesson_manager.create_class_feedback_task(
+                class_id=201,
+                teacher_user_id=101,
+                teacher_name_snapshot="Owner A",
+                start_date="2026-04-01",
+                end_date="2026-04-01",
+                created_by=102,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

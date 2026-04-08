@@ -2858,16 +2858,20 @@ def create_class_feedback_task(
         raise ValueError("teacher_name_snapshot is required")
     period_length_days, period_granularity = _derive_class_feedback_period_fields(start_date, end_date)
     with get_conn() as conn:
-        class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
+        class_row = conn.execute("SELECT id, organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
         if not class_row:
             raise LookupError("class not found")
-        creator_row = conn.execute("SELECT id FROM users WHERE id=?", (created_by,)).fetchone()
+        creator_row = _fetch_user_row_by_id(conn, created_by)
         if not creator_row:
             raise LookupError("user not found")
+        if creator_row["organization_id"] != class_row["organization_id"]:
+            raise ValueError("created_by must belong to class organization")
         if teacher_user_id is not None:
-            teacher_row = conn.execute("SELECT id FROM users WHERE id=?", (teacher_user_id,)).fetchone()
+            teacher_row = _fetch_user_row_by_id(conn, teacher_user_id)
             if not teacher_row:
                 raise LookupError("user not found")
+            if teacher_row["organization_id"] != class_row["organization_id"]:
+                raise ValueError("teacher_user_id must belong to class organization")
             _validate_class_feedback_teacher_binding(
                 conn,
                 class_id=class_id,
@@ -2876,12 +2880,13 @@ def create_class_feedback_task(
         cur = conn.execute(
             """
             INSERT INTO class_feedback_tasks (
-                class_id, teacher_user_id, teacher_name_snapshot,
+                organization_id, class_id, teacher_user_id, teacher_name_snapshot,
                 start_date, end_date, period_length_days, period_granularity,
                 status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
             """,
             (
+                class_row["organization_id"],
                 class_id,
                 teacher_user_id,
                 teacher_name_snapshot,
