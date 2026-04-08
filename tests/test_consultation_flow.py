@@ -1,4 +1,3 @@
-import csv
 import json
 import sys
 import tempfile
@@ -22,8 +21,6 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.base = Path(self.temp_dir.name)
 
         lesson_manager.DB_PATH = self.base / "lessons.db"
-        lesson_manager.CONSULTATIONS_CSV_PATH = self.base / "data" / "consultations.csv"
-        lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH = self.base / "legacy" / "consultations.csv"
         lesson_manager.CONSULTATION_TEACHERS_JSON_CANDIDATES = [self.base / "teachers.json"]
 
         config_runtime.CFG_PATH = self.base / "config.json"
@@ -47,13 +44,18 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload["token"]
 
-    def create_member_token(self) -> str:
+    def create_member_token(
+        self,
+        username: str = "teacher_a",
+        display_name: str = "Teacher A",
+        password: str = "secret123",
+    ) -> str:
         submit = self.client.post(
             "/api/register-request",
             json={
-                "username": "teacher_a",
-                "display_name": "Teacher A",
-                "password": "secret123",
+                "username": username,
+                "display_name": display_name,
+                "password": password,
                 "organization_name": "星润Starain",
             },
         )
@@ -71,7 +73,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
             headers=self.auth_headers(self.owner_token),
         )
         self.assertEqual(approve.status_code, 200)
-        return self.login("teacher_a", "secret123")
+        return self.login(username, password)
 
     def create_admin_token(self) -> str:
         member_token = self.create_member_token()
@@ -93,13 +95,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         return member_token
 
     def seed_owner_credits(self, amount: int = 20) -> None:
-        me_response = self.client.get(
-            "/api/me",
-            headers=self.auth_headers(self.owner_token),
-        )
-        self.assertEqual(me_response.status_code, 200)
-        user = me_response.get_json()
-        self.assertIsNotNone(user)
+        user = self.owner_user()
         credit_manager.apply_manual_adjustment(
             organization_id=user["organization_id"],
             actor_user_id=user["id"],
@@ -107,17 +103,83 @@ class ConsultationFlowTestCase(unittest.TestCase):
             note="seed consultation ai credits",
         )
 
-    def write_legacy_csv(self, rows: list[dict[str, str]]) -> None:
-        lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH.open("w", newline="", encoding="utf-8-sig") as fh:
-            writer = csv.DictWriter(fh, fieldnames=lesson_manager.CONSULTATION_FIELDNAMES)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(row)
+    def owner_user(self) -> dict:
+        me_response = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(me_response.status_code, 200)
+        user = me_response.get_json()
+        self.assertIsNotNone(user)
+        return user
 
-    def read_project_csv_rows(self) -> list[dict[str, str]]:
-        with lesson_manager.CONSULTATIONS_CSV_PATH.open("r", newline="", encoding="utf-8-sig") as fh:
-            return list(csv.DictReader(fh))
+    def user_for_token(self, token: str) -> dict:
+        me_response = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(token),
+        )
+        self.assertEqual(me_response.status_code, 200)
+        user = me_response.get_json()
+        self.assertIsNotNone(user)
+        return user
+
+    def create_consultation_record(self, assigned_user_id: int | None = None, **overrides: str) -> dict:
+        owner = self.owner_user()
+        payload = self.sample_row(**overrides)
+        stored = lesson_manager._consultation_row_to_storage(payload, owner["organization_id"])
+        with lesson_manager.get_conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO consultations (
+                    organization_id, assigned_user_id, date, parent_wechat_name, child_name, grade,
+                    consultation_subject, need_detail,
+                    source_channel, source_channel_note, screenshot, reminder_at,
+                    reminder_status, reminder_task_id, follow_up_status, follow_up_note,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    owner["organization_id"],
+                    assigned_user_id,
+                    stored["date"],
+                    stored["parent_wechat_name"],
+                    stored["child_name"],
+                    stored["grade"],
+                    stored["consultation_subject"],
+                    stored["need_detail"],
+                    stored["source_channel"],
+                    stored["source_channel_note"],
+                    stored["screenshot"],
+                    stored["reminder_at"],
+                    stored["reminder_status"],
+                    stored["reminder_task_id"],
+                    stored["follow_up_status"],
+                    stored["follow_up_note"],
+                    stored["created_at"],
+                    stored["updated_at"],
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT c.*, u.display_name, u.username
+                FROM consultations c
+                LEFT JOIN users u ON c.assigned_user_id = u.id
+                WHERE c.id=?
+                """,
+                (cur.lastrowid,),
+            ).fetchone()
+        return lesson_manager._consultation_storage_row_to_public_dict(row)
+
+    def read_consultation_storage_rows(self) -> list[dict]:
+        with lesson_manager.get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM consultations
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def sample_row(self, **overrides: str) -> dict[str, str]:
         row = {field: "" for field in lesson_manager.CONSULTATION_FIELDNAMES}
@@ -153,8 +215,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_list_migrates_legacy_csv_into_project_storage(self):
-        self.write_legacy_csv([self.sample_row()])
+    def test_list_uses_sqlite_without_consultations_csv(self):
+        self.create_consultation_record()
 
         response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
 
@@ -162,11 +224,11 @@ class ConsultationFlowTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]["家长微信名"], "张妈妈")
-        self.assertTrue(lesson_manager.CONSULTATIONS_CSV_PATH.exists())
-        self.assertFalse(lesson_manager.LEGACY_CONSULTATIONS_CSV_PATH.exists())
+        self.assertFalse((self.base / "data" / "consultations.csv").exists())
+        self.assertFalse((self.base / "legacy" / "consultations.csv").exists())
 
     def test_owner_can_create_update_and_delete_while_preserving_hidden_columns(self):
-        self.write_legacy_csv([self.sample_row()])
+        self.create_consultation_record()
 
         update_response = self.client.put(
             "/api/consultations/1",
@@ -175,12 +237,12 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(update_response.status_code, 200)
 
-        rows_after_update = self.read_project_csv_rows()
-        self.assertEqual(rows_after_update[0]["提醒时间"], "2026-03-12 18:00")
-        self.assertEqual(rows_after_update[0]["提醒状态"], "已设置")
-        self.assertEqual(rows_after_update[0]["提醒任务ID"], "task-1")
-        self.assertEqual(rows_after_update[0]["跟进状态"], "跟进中")
-        self.assertEqual(rows_after_update[0]["跟进备注"], "已经回访")
+        rows_after_update = self.read_consultation_storage_rows()
+        self.assertEqual(rows_after_update[0]["reminder_at"], "2026-03-12 18:00")
+        self.assertEqual(rows_after_update[0]["reminder_status"], "已设置")
+        self.assertEqual(rows_after_update[0]["reminder_task_id"], "task-1")
+        self.assertEqual(rows_after_update[0]["follow_up_status"], "跟进中")
+        self.assertEqual(rows_after_update[0]["follow_up_note"], "已经回访")
 
         create_response = self.client.post(
             "/api/consultations",
@@ -210,13 +272,13 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(delete_response.status_code, 200)
 
-        remaining_rows = self.read_project_csv_rows()
+        remaining_rows = self.read_consultation_storage_rows()
         self.assertEqual(len(remaining_rows), 1)
-        self.assertEqual(remaining_rows[0]["id"], "2")
-        self.assertEqual(remaining_rows[0]["家长微信名"], "李妈妈")
+        self.assertEqual(remaining_rows[0]["id"], 2)
+        self.assertEqual(remaining_rows[0]["parent_wechat_name"], "李妈妈")
 
     def test_admin_can_edit_and_delete(self):
-        self.write_legacy_csv([self.sample_row()])
+        self.create_consultation_record()
         admin_token = self.create_admin_token()
 
         list_response = self.client.get("/api/consultations", headers=self.auth_headers(admin_token))
@@ -233,8 +295,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(updated["follow_up_status"], "已报班")
         self.assertEqual(updated["follow_up_note"], "管理员已确认报班")
 
-        rows_after_update = self.read_project_csv_rows()
-        self.assertEqual(rows_after_update[0]["跟进状态"], "已报班")
+        rows_after_update = self.read_consultation_storage_rows()
+        self.assertEqual(rows_after_update[0]["follow_up_status"], "已报班")
 
         delete_response = self.client.delete(
             "/api/consultations/1",
@@ -242,12 +304,13 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(delete_response.status_code, 200)
 
-        remaining_rows = self.read_project_csv_rows()
+        remaining_rows = self.read_consultation_storage_rows()
         self.assertEqual(remaining_rows, [])
 
     def test_members_can_view_and_create_but_not_edit_or_delete(self):
-        self.write_legacy_csv([self.sample_row()])
         member_token = self.create_member_token()
+        member_user = self.user_for_token(member_token)
+        self.create_consultation_record(assigned_user_id=member_user["id"])
 
         list_response = self.client.get("/api/consultations", headers=self.auth_headers(member_token))
         self.assertEqual(list_response.status_code, 200)
@@ -311,46 +374,37 @@ class ConsultationFlowTestCase(unittest.TestCase):
         mock_parse.assert_called_once()
 
     def test_list_exposes_teacher_display_name_from_user_directory(self):
-        self.write_legacy_csv([
-            self.sample_row(
-                接待老师="teacher_a",
-                老师ID="teacher_a",
-            )
-        ])
-        self.create_member_token()
+        member_token = self.create_member_token()
+        member_user = self.user_for_token(member_token)
+        self.create_consultation_record(assigned_user_id=member_user["id"])
 
         response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload[0]["receiving_teacher"], "teacher_a")
+        self.assertEqual(payload[0]["receiving_teacher"], "Teacher A")
         self.assertEqual(payload[0]["teacher_id"], "teacher_a")
         self.assertEqual(payload[0]["teacher_display_name"], "Teacher A")
 
     def test_list_exposes_teacher_display_name_from_teacher_alias_file(self):
-        self.write_teacher_aliases({"KeChongDianDeAShiPiLing": ["雷老师", "雷文浩"]})
-        self.write_legacy_csv([
-            self.sample_row(
-                接待老师="KeChongDianDeAShiPiLing",
-                老师ID="KeChongDianDeAShiPiLing",
-            )
-        ])
+        self.write_teacher_aliases({"teacher_a": ["雷老师", "雷文浩"]})
+        member_token = self.create_member_token()
+        member_user = self.user_for_token(member_token)
+        self.create_consultation_record(assigned_user_id=member_user["id"])
 
         response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload[0]["teacher_display_name"], "雷老师")
+        self.assertEqual(payload[0]["teacher_display_name"], "Teacher A")
 
     def test_list_normalizes_grade_and_source_channel(self):
-        self.write_legacy_csv([
-            self.sample_row(
-                年级="5年级",
-                来源渠道="朋友介绍",
-                家长微信名="秋秋",
-                孩子姓名="秋秋",
-            )
-        ])
+        self.create_consultation_record(
+            年级="5年级",
+            来源渠道="朋友介绍",
+            家长微信名="秋秋",
+            孩子姓名="秋秋",
+        )
 
         response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
 
@@ -361,14 +415,12 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload[0]["source_channel_note"], "")
 
     def test_list_normalizes_mixed_name_and_source_channel_phrase(self):
-        self.write_legacy_csv([
-            self.sample_row(
-                年级="5年级",
-                来源渠道="张裕空转介绍",
-                家长微信名="张裕空妈妈",
-                孩子姓名="张裕空",
-            )
-        ])
+        self.create_consultation_record(
+            年级="5年级",
+            来源渠道="张裕空转介绍",
+            家长微信名="张裕空妈妈",
+            孩子姓名="张裕空",
+        )
 
         response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
 
@@ -631,29 +683,12 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
     def test_member_sees_only_assigned_consultations(self):
         """Member should only see consultations assigned to them via assigned_user_id"""
-        # Create organization and two members
-        org_id = lesson_manager.create_organization({"name": "Test Org"})["id"]
-        member1_row = lesson_manager.create_user({
-            "username": "member1",
-            "password": "test",
-            "organization_id": org_id,
-            "role": "member",
-            "display_name": "Member 1"
-        })
-        member2_row = lesson_manager.create_user({
-            "username": "member2",
-            "password": "test",
-            "organization_id": org_id,
-            "role": "member",
-            "display_name": "Member 2"
-        })
-        
-        # Get tokens
-        member1_token = self.login("member1", "test")
-        member2_token = self.login("member2", "test")
+        member1_token = self.create_member_token("member1", "Member 1", "test123")
+        member2_token = self.create_member_token("member2", "Member 2", "test123")
+        member1_row = self.user_for_token(member1_token)
+        member2_row = self.user_for_token(member2_token)
         owner_token = self.owner_token
-        
-        # Owner creates 3 consultations: one for member1, one for member2, one unassigned
+
         c1_response = self.client.post(
             "/api/consultations",
             headers=self.auth_headers(owner_token),

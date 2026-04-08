@@ -17,7 +17,6 @@ from __future__ import annotations
 """
 
 import argparse
-import csv
 import hashlib
 import json
 import os
@@ -28,7 +27,6 @@ import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
-import shutil
 from typing import Optional
 
 from config_runtime import get_runtime_config
@@ -40,8 +38,6 @@ PDF_DIR    = DATA_DIR / "pdfs"
 DEFAULT_DB_PATH = DATA_DIR / "xingrun.db"
 LEGACY_DB_PATH = DATA_DIR / "lessons.db"
 CFG_PATH   = BASE_DIR / "config.json"
-CONSULTATIONS_CSV_PATH = DATA_DIR / "consultations.csv"
-LEGACY_CONSULTATIONS_CSV_PATH = Path.home() / "咨询记录" / "consultations.csv"
 DEFAULT_ORGANIZATION_NAME = "星润Starain"
 OWNER_USERNAME = "kayn"
 OWNER_DISPLAY_NAME = "平台管理员"
@@ -354,19 +350,6 @@ def _get_active_organization_invite_row_by_token(conn: sqlite3.Connection, invit
         """,
         ((invite_token or "").strip(),),
     ).fetchone()
-def _ensure_consultations_csv() -> Path:
-    if not CONSULTATIONS_CSV_PATH.exists() and LEGACY_CONSULTATIONS_CSV_PATH.exists():
-        CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(LEGACY_CONSULTATIONS_CSV_PATH), str(CONSULTATIONS_CSV_PATH))
-
-    if not CONSULTATIONS_CSV_PATH.exists():
-        CONSULTATIONS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with CONSULTATIONS_CSV_PATH.open("w", newline="", encoding="utf-8-sig") as fh:
-            writer = csv.DictWriter(fh, fieldnames=CONSULTATION_FIELDNAMES)
-            writer.writeheader()
-    return CONSULTATIONS_CSV_PATH
-
-
 def _normalize_consultation_row(row: Optional[dict]) -> Optional[dict]:
     if row is None:
         return None
@@ -762,22 +745,6 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
         "warnings": warnings,
     }
 
-
-def _read_consultation_rows() -> list[dict]:
-    path = _ensure_consultations_csv()
-    with path.open("r", newline="", encoding="utf-8-sig") as fh:
-        return [_normalize_consultation_row(row) for row in csv.DictReader(fh)]
-
-
-def _write_consultation_rows(rows: list[dict]) -> None:
-    path = _ensure_consultations_csv()
-    with path.open("w", newline="", encoding="utf-8-sig") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CONSULTATION_FIELDNAMES)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(_normalize_consultation_row(row))
-
-
 def list_consultations(
     query: str = "",
     organization_id: Optional[int] = None,
@@ -1120,46 +1087,6 @@ def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:
     consultation_count = conn.execute("SELECT COUNT(*) AS c FROM consultations").fetchone()["c"]
     if consultation_count:
         return
-
-    legacy_rows = _read_consultation_rows()
-    if not legacy_rows:
-        return
-
-    for row in legacy_rows:
-        stored = _consultation_row_to_storage(row, starain["id"])
-        conn.execute(
-            """
-            INSERT INTO consultations (
-                id, organization_id, date, parent_wechat_name, child_name, grade,
-                receiving_teacher, teacher_id, consultation_subject, need_detail,
-                source_channel, source_channel_note, screenshot, reminder_at,
-                reminder_status, reminder_task_id, follow_up_status, follow_up_note,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(row["id"]) if row.get("id") else None,
-                stored["organization_id"],
-                stored["date"],
-                stored["parent_wechat_name"],
-                stored["child_name"],
-                stored["grade"],
-                stored["receiving_teacher"],
-                stored["teacher_id"],
-                stored["consultation_subject"],
-                stored["need_detail"],
-                stored["source_channel"],
-                stored["source_channel_note"],
-                stored["screenshot"],
-                stored["reminder_at"],
-                stored["reminder_status"],
-                stored["reminder_task_id"],
-                stored["follow_up_status"],
-                stored["follow_up_note"],
-                stored["created_at"] or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                stored["updated_at"] or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ),
-        )
 
 
 def init_db():

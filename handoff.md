@@ -1,3 +1,76 @@
+## develop 分支收口：batch4/batch5 已合回，仅保留 DB 进行中分支（2026-04-09）
+
+### 已完成
+- 已确认并清理非 DB 完成分支：
+  - `batch5-startup-entry-clarify` 已合回 `develop`
+  - `merge-batch5-into-develop` 作为临时辅助分支已删除
+  - `batch4-consultations-csv-retire` 未直接整支 merge，而是把唯一有效提交安全移植到当前 `develop`
+- 已在当前 `develop` 上完成第 4 批咨询记录 CSV 兼容层退役：
+  - 删除 `lesson_manager.py` 中 `consultations.csv` 兼容常量与读写函数
+  - 删除 `_migrate_legacy_organization_scope()` 中从 CSV 回灌咨询表的残留链
+  - 更新 `tests/test_consultation_flow.py`，改为以当前 SQLite + `assigned_user_id` 语义为准
+- 已删除旧 worktree / 分支：
+  - `batch4-consultations-csv-retire`
+  - `batch5-startup-entry-clarify`
+  - `merge-batch5-into-develop`
+- 当前刻意保留的仅剩 DB 相关进行中分支：
+  - `batch3-db-truth-source`
+  - `feature/org-rooted-db-structure`
+
+### proof
+- 临时脚本：`/tmp/proof_batch4_merge_into_develop_20260409.sh`
+- 执行结果：
+  - `BRANCH=develop`
+  - `PYTHON=Python 3.14.3`
+  - `CSV_COMPAT_REMOVED=YES`
+  - `/opt/homebrew/bin/python3 -W ignore::ResourceWarning -m unittest tests.test_consultation_flow -v`
+    - `Ran 19 tests in 0.371s`
+    - `OK`
+
+### 剩余问题
+- 当前仓库还保留用户本地未跟踪运行文件，例如 `data/xingrun.db`、`data/pdfs/*`、若干 `__pycache__/`；本轮未动。
+- DB 主库收口相关分支仍在进行中，本轮按你的要求保留，不参与合并。
+
+### 下一步方向
+- 如果下一步继续收口，可优先只看：
+  - `batch3-db-truth-source`
+  - `feature/org-rooted-db-structure`
+- 两个 DB 分支完成后，再决定是先合回 `develop`，还是直接进入 `develop -> master` 与部署。
+
+## 第 4 批 consultations.csv 兼容层退役（2026-04-09）
+
+### 已完成
+- 已按 batch-4 范围切断 `consultations.csv` 运行时依赖：
+  - 删除 `lesson_manager.py` 中 `CONSULTATIONS_CSV_PATH` / `LEGACY_CONSULTATIONS_CSV_PATH`
+  - 删除 `_ensure_consultations_csv()` / `_read_consultation_rows()` / `_write_consultation_rows()`
+  - 删除 `_migrate_legacy_organization_scope()` 里从 CSV 导入 `consultations` 表的残留链
+- 保留现有 SQLite `consultations` CRUD 不扩 scope，不改 teacher feedback / DB 主库切换 / 启动链。
+- 已把 `tests/test_consultation_flow.py` 从“依赖 legacy CSV 迁移”改为“直接以 SQLite 为真相源”：
+  - 验证列表、创建、更新、删除、教师列表、AI parse 权限与草稿逻辑仍正常
+  - 验证 `consultations.csv` 不存在时，咨询记录接口仍可工作
+  - 继续保留“隐藏提醒字段更新时不丢失”的原测试意图，但改为直接检查 SQLite 存储层
+- 已在隔离 worktree 中删除本地忽略的空遗留文件 `data/consultations.csv`，proof 也已确认缺失状态下通过。
+
+### proof
+- 临时脚本：`/tmp/proof_batch4_consultations_csv_retire_20260409.sh`
+- 执行结果：
+  - `PROJECT_DATA_CSV_EXISTS=NO`
+  - `FIXTURE_CSV_ROW_COUNT=2`
+  - `SQLITE_ROW_COUNT=2`
+  - `FIXTURE_CSV_IDS=1,2`
+  - `SQLITE_IDS=1,2`
+  - `FIXTURE_MATCHES_SQLITE=YES`
+  - `python -W ignore::ResourceWarning -m unittest tests.test_consultation_flow -v`
+    - `Ran 18 tests in 0.363s`
+    - `OK`
+
+### 剩余问题
+- 本批目标验证面内无既有失败。
+- proof 过程中仍会看到 `ai_processor.py:144` 的既有 `SyntaxWarning: invalid escape sequence '\\s'`；本批未处理，且不影响本批通过结论。
+
+### 下一步方向
+- 若继续按原拆批推进，下一批应进入第 5 批，仅收口启动脚本与 README 的入口认知，不继续改咨询记录数据层。
+
 ## 第 5 批启动入口认知收口（2026-04-09）
 
 ### 已完成
@@ -166,7 +239,6 @@
   - 老分支优先移植有效提交，而不是整支合并
 
 ---
-
 ## 咨询记录按钮响应式修复（2026-04-09）
 
 ### 已完成
