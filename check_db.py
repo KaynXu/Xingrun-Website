@@ -1,5 +1,7 @@
 import sqlite3
-conn = sqlite3.connect('data/lessons.db')
+from lesson_manager import DB_PATH
+
+conn = sqlite3.connect(DB_PATH)
 conn.row_factory = sqlite3.Row
 cur = conn.cursor()
 cur.execute('SELECT id, date, subject, grade, topic, created_at FROM lessons ORDER BY id DESC LIMIT 5')

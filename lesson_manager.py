@@ -39,7 +39,8 @@ from config_runtime import get_runtime_config
 BASE_DIR   = Path(__file__).parent.resolve()
 DATA_DIR   = BASE_DIR / "data"
 PDF_DIR    = DATA_DIR / "pdfs"
-DB_PATH    = DATA_DIR / "lessons.db"
+DEFAULT_DB_PATH = DATA_DIR / "xingrun.db"
+LEGACY_DB_PATH = DATA_DIR / "lessons.db"
 CFG_PATH   = BASE_DIR / "config.json"
 CONSULTATIONS_CSV_PATH = DATA_DIR / "consultations.csv"
 LEGACY_CONSULTATIONS_CSV_PATH = Path.home() / "咨询记录" / "consultations.csv"
@@ -149,6 +150,42 @@ CONSULTATION_API_FIELD_MAP = {
 
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
+
+
+def _resolve_configured_db_path(raw_path: str | None, *, base_dir: Path) -> Optional[Path]:
+    normalized_path = (raw_path or "").strip()
+    if not normalized_path:
+        return None
+    configured_path = Path(normalized_path).expanduser()
+    if not configured_path.is_absolute():
+        configured_path = base_dir / configured_path
+    return configured_path
+
+
+def resolve_db_path(
+    runtime_config: Optional[dict] = None,
+    *,
+    base_dir: Path = BASE_DIR,
+    data_dir: Path = DATA_DIR,
+) -> Path:
+    resolved_runtime_config = runtime_config if runtime_config is not None else get_runtime_config()
+    configured_path = _resolve_configured_db_path(
+        resolved_runtime_config.get("db_path"),
+        base_dir=base_dir,
+    )
+    if configured_path is not None:
+        return configured_path
+
+    preferred_path = data_dir / DEFAULT_DB_PATH.name
+    legacy_path = data_dir / LEGACY_DB_PATH.name
+    if preferred_path.exists():
+        return preferred_path
+    if legacy_path.exists():
+        return legacy_path
+    return preferred_path
+
+
+DB_PATH = resolve_db_path()
 
 
 def _normalize_username(username: str) -> str:

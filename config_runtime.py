@@ -10,6 +10,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 CFG_PATH = BASE_DIR / "config.json"
 
 ENV_VAR_MAP = {
+    "db_path": "XR_DB_PATH",
     "provider": "XR_PROVIDER",
     "openai_api_key": "OPENAI_API_KEY",
     "deepseek_api_key": "DEEPSEEK_API_KEY",
