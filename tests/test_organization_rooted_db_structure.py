@@ -275,6 +275,31 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                 created_by=102,
             )
 
+    def test_create_task_rejects_teacher_from_other_organization(self):
+        with lesson_manager.get_conn() as conn:
+            conn.executescript(
+                """
+                INSERT INTO organizations (id, name) VALUES (21, 'Org A');
+                INSERT INTO organizations (id, name) VALUES (22, 'Org B');
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (201, 'owner-a', 'hash', 'Owner A', 'owner', 'active', 21);
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (202, 'teacher-b', 'hash', 'Teacher B', 'member', 'active', 22);
+                INSERT INTO classes (id, organization_id, name, subject, grade)
+                VALUES (301, 21, 'A 班', '数学', '六年级');
+                """
+            )
+
+        with self.assertRaisesRegex(ValueError, "teacher_user_id must belong to class organization"):
+            lesson_manager.create_class_feedback_task(
+                class_id=301,
+                teacher_user_id=202,
+                teacher_name_snapshot="Teacher B",
+                start_date="2026-04-01",
+                end_date="2026-04-01",
+                created_by=201,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
