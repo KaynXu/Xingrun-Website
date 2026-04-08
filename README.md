@@ -45,7 +45,10 @@ pip install -r requirements.txt
 
 说明：
 - `scripts/run_backend.sh` 会读取 `.env.runtime`（如果存在）
+- 这个脚本只启动后端 API，不启动前端
 - 服务启动后默认监听 `127.0.0.1:5001`
+- `5001` 是后端/API 地址；本地开发时不要把它当成页面入口
+- 为避免“后端起了但前端没起”的假启动，脚本默认不会自动打开浏览器
 
 ### 3.2 前端
 
@@ -57,14 +60,31 @@ npm run dev
 
 说明：
 - 前端默认 `3000` 端口
-- 后端根路由 `/` 会重定向到 `XR_BROWSER_URL`（默认 `http://127.0.0.1:3000`）
+- 前端需要单独启动
+- 3000 才是开发态页面入口
+- 后端根路由 `/` 会重定向到 `XR_BROWSER_URL`（默认 `http://127.0.0.1:3000`），所以只有前端已启动时打开 `5001` 才有意义
 
-### 3.3 一键本地启动（macOS）
+### 3.3 后端快捷启动（macOS）
 
 ```bash
 cd /Users/ark.mini/Desktop/Xingrun-Website
 ./start.command
 ```
+
+说明：
+- `start.command` 仅启动后端，并会打印前端启动提示
+- 它不会帮你启动前端，也不会自动打开浏览器到错误入口
+
+### 3.4 后端快捷启动（Windows）
+
+```bat
+cd /d C:\path\to\Xingrun-Website
+start.bat
+```
+
+说明：
+- `start.bat` 与 `start.command` 一样，仅启动后端
+- 本地开发时请另开终端运行前端，再访问 `http://127.0.0.1:3000`
 
 ## 4. 运行配置
 
@@ -134,4 +154,3 @@ cd /Users/ark.mini/Desktop/Xingrun-Website
 - 发布时再把 `develop` 合并到 `master`
 
 这样可以在保留稳定发布节奏的前提下，减少微任务的分支成本。
-

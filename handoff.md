@@ -1,3 +1,56 @@
+## 第 5 批启动入口认知收口（2026-04-09）
+
+### 已完成
+- 已按 batch-5 范围收口本地启动认知，只改启动脚本 / README / 启动提示，不改架构：
+  - `README.md`
+  - `start.command`
+  - `start.bat`
+  - `scripts/run_backend.sh`
+  - `app.py`
+- 已统一本地开发入口语义：
+  - `5001` 是后端/API 地址
+  - `3000` 才是本地开发页面入口
+  - `scripts/run_backend.sh` / `start.command` / `start.bat` 默认只启动后端，不再自动把用户带去错误入口
+- 已把后端启动默认浏览器行为收口为“默认不自动打开”：
+  - `scripts/run_backend.sh` 默认注入 `XR_OPEN_BROWSER=0`
+  - `start.command` / `start.bat` 删除直接打开 `5001` 的行为
+  - `app.py` 启动日志在 `XR_OPEN_BROWSER=0` 时改为明确提示“前端页面入口”，不再误报“浏览器即将自动打开”
+- 已补充定向测试 `tests/test_startup_entrypoints.py`，锁定：
+  - 后端脚本默认禁用自动开浏览器
+  - 启动器不再硬开 `5001`
+  - README 明确“前端需要单独启动”与“3000 才是开发态页面入口”
+  - `app.py` 启动提示与 `XR_OPEN_BROWSER` 开关一致
+
+### proof
+- 临时脚本：`/tmp/proof_batch5_startup_entry_20260409.sh`
+- 执行结果：
+  - `python -W ignore::SyntaxWarning -m unittest tests.test_startup_entrypoints -v`
+    - `Ran 4 tests in 0.001s`
+    - `OK`
+  - README / 脚本文案核对：
+    - `README_FRONTEND_SEPARATE=OK`
+    - `README_3000_ENTRY=OK`
+    - `README_BACKEND_ONLY_SHORTCUT=OK`
+    - `START_COMMAND_NO_5001_OPEN=OK`
+    - `START_BAT_NO_5001_OPEN=OK`
+  - 真实烟测：
+    - `BACKEND_START_CMD=bash ./scripts/run_backend.sh`
+    - `FRONTEND_START_CMD=npm --prefix frontend run dev`
+    - `BACKEND_ROOT_STATUS=302`
+    - `BACKEND_ROOT_LOCATION=http://127.0.0.1:3000`
+    - `FRONTEND_ROOT_DIV=YES`
+    - 后端日志显示：
+      - `未自动打开浏览器；前端页面入口：http://127.0.0.1:3000`
+      - `后端地址：http://127.0.0.1:5001`
+
+### 剩余问题
+- 本批验证面内无既有失败。
+- `start.bat` 由于当前验证环境是 macOS，未做实际进程级运行，只做了文本断言与 README/脚本一致性校验。
+- proof 中仍会出现 `ai_processor.py:144` 的既有 `SyntaxWarning: invalid escape sequence '\\s'`；本批未处理，且不影响本批结论。
+
+### 下一步方向
+- 如果继续推进，应先决定 batch2/3/4/5 哪些分支需要合回 `develop`，再考虑合并与部署，不要在同一轮混入新的技术债批次。
+
 ## 机构成员权限收窄 & 班级管理开放（2026-04-09）
 
 ### 已完成

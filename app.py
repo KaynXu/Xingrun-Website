@@ -2789,13 +2789,19 @@ def _should_open_browser() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _startup_browser_message() -> str:
+    if _should_open_browser():
+        return f"  浏览器即将自动打开：{_browser_url()}"
+    return f"  未自动打开浏览器；前端页面入口：{_browser_url()}"
+
+
 if __name__ == "__main__":
     init_db()
     if _should_open_browser():
         threading.Thread(target=_open_browser, daemon=True).start()
     print("\n" + "=" * 50)
     print("  📚 复习计划管理系统已启动")
-    print(f"  浏览器即将自动打开：{_browser_url()}")
+    print(_startup_browser_message())
     print("  后端地址：http://127.0.0.1:5001")
     print("  按 Ctrl+C 关闭程序")
     print("=" * 50 + "\n")
