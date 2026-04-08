@@ -73,3 +73,12 @@ Xingrun-Website/
 - For very small tasks (docs, tiny low-risk changes), committing directly on `develop` is allowed.
 - To avoid delayed GitHub contribution visibility, merge `develop` back into `master` frequently (for example daily or after a small batch of completed tasks).
 - For medium/large or risky changes, branch from `develop` (`feature/*`), then merge back to `develop`, and finally merge `develop` to `master`.
+
+## Multi-AI Branch Workflow
+
+- One AI conversation can use one branch, but that branch should stay short-lived and focused on one scoped task.
+- If a branch is still in progress, treat it as a draft branch and do not merge it directly just because the conversation is finished.
+- Do not let multiple AI branches edit the same file set or the same business chain in parallel unless one of them is explicitly rebased or refreshed first.
+- Before merging any non-trivial branch back to `develop`, first check branch freshness with `git rev-list --left-right --count develop...<branch>`.
+- If the branch has fallen behind `develop` enough that a direct merge would replay old behavior or revert newer work, do not merge it directly; rebase it onto latest `develop`, or cherry-pick / manually transplant the intended commits into a fresh branch.
+- After a branch is successfully integrated into `develop`, delete the merged branch and remove its worktree promptly unless the user explicitly wants to keep it.
