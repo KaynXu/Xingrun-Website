@@ -26,18 +26,27 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
 
     def test_init_db_adds_direct_organization_columns_to_students_and_feedback_tasks(self):
         with lesson_manager.get_conn() as conn:
-            student_columns = {row["name"] for row in conn.execute("PRAGMA table_info(students)").fetchall()}
-            task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()}
-            student_fk = {row["from"]: row["table"] for row in conn.execute("PRAGMA foreign_key_list(students)").fetchall()}
+            student_columns = {
+                row["name"]: row for row in conn.execute("PRAGMA table_info(students)").fetchall()
+            }
+            task_columns = {
+                row["name"]: row for row in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()
+            }
+            student_fk = {
+                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(students)").fetchall()
+            }
             task_fk = {
-                row["from"]: row["table"]
-                for row in conn.execute("PRAGMA foreign_key_list(class_feedback_tasks)").fetchall()
+                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(class_feedback_tasks)").fetchall()
             }
 
         self.assertIn("organization_id", student_columns)
         self.assertIn("organization_id", task_columns)
-        self.assertEqual(student_fk["organization_id"], "organizations")
-        self.assertEqual(task_fk["organization_id"], "organizations")
+        self.assertEqual(student_columns["organization_id"]["notnull"], 1)
+        self.assertEqual(task_columns["organization_id"]["notnull"], 1)
+        self.assertEqual(student_fk["organization_id"]["table"], "organizations")
+        self.assertEqual(task_fk["organization_id"]["table"], "organizations")
+        self.assertEqual(student_fk["organization_id"]["on_delete"], "CASCADE")
+        self.assertEqual(task_fk["organization_id"]["on_delete"], "CASCADE")
 
     def test_init_db_backfills_student_and_feedback_task_organization_scope(self):
         conn = sqlite3.connect(lesson_manager.DB_PATH)
@@ -145,9 +154,27 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
         with lesson_manager.get_conn() as conn:
             student_row = conn.execute("SELECT organization_id FROM students WHERE id=1").fetchone()
             task_row = conn.execute("SELECT organization_id FROM class_feedback_tasks WHERE id=1").fetchone()
+            student_columns = {
+                row["name"]: row for row in conn.execute("PRAGMA table_info(students)").fetchall()
+            }
+            task_columns = {
+                row["name"]: row for row in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()
+            }
+            student_fk = {
+                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(students)").fetchall()
+            }
+            task_fk = {
+                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(class_feedback_tasks)").fetchall()
+            }
 
         self.assertEqual(student_row["organization_id"], 1)
         self.assertEqual(task_row["organization_id"], 1)
+        self.assertEqual(student_columns["organization_id"]["notnull"], 1)
+        self.assertEqual(task_columns["organization_id"]["notnull"], 1)
+        self.assertEqual(student_fk["organization_id"]["table"], "organizations")
+        self.assertEqual(task_fk["organization_id"]["table"], "organizations")
+        self.assertEqual(student_fk["organization_id"]["on_delete"], "CASCADE")
+        self.assertEqual(task_fk["organization_id"]["on_delete"], "CASCADE")
 
 
 if __name__ == "__main__":

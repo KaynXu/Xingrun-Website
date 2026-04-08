@@ -1168,7 +1168,6 @@ def _backfill_student_organization_scope(conn: sqlite3.Connection, fallback_orga
         """
         UPDATE students
         SET organization_id=COALESCE(
-            organization_id,
             (
                 SELECT c.organization_id
                 FROM class_students cs
@@ -1183,18 +1182,189 @@ def _backfill_student_organization_scope(conn: sqlite3.Connection, fallback_orga
         """,
         (fallback_organization_id,),
     )
+    _enforce_students_organization_contract(conn)
 
 
-def _backfill_class_feedback_task_organization_scope(conn: sqlite3.Connection) -> None:
+def _backfill_class_feedback_task_organization_scope(conn: sqlite3.Connection, fallback_organization_id: int) -> None:
     _ensure_column(conn, "class_feedback_tasks", "organization_id", "INTEGER REFERENCES organizations(id)")
     conn.execute(
         """
         UPDATE class_feedback_tasks
         SET organization_id=COALESCE(
-            organization_id,
-            (SELECT c.organization_id FROM classes c WHERE c.id = class_feedback_tasks.class_id)
+            (SELECT c.organization_id FROM classes c WHERE c.id = class_feedback_tasks.class_id),
+            ?
         )
         WHERE organization_id IS NULL
+        """,
+        (fallback_organization_id,),
+    )
+    _enforce_class_feedback_task_organization_contract(conn)
+
+
+def _has_strict_organization_fk(conn: sqlite3.Connection, table: str) -> bool:
+    columns = {row["name"]: row for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    org_col = columns.get("organization_id")
+    if not org_col or int(org_col["notnull"]) != 1:
+        return False
+    for row in conn.execute(f"PRAGMA foreign_key_list({table})").fetchall():
+        if row["from"] == "organization_id":
+            return row["table"] == "organizations" and (row["on_delete"] or "").upper() == "CASCADE"
+    return False
+
+
+def _enforce_students_organization_contract(conn: sqlite3.Connection) -> None:
+    if _has_strict_organization_fk(conn, "students"):
+        return
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("DROP TABLE IF EXISTS students__org_scope_legacy")
+        conn.execute("ALTER TABLE students RENAME TO students__org_scope_legacy")
+        conn.execute(
+            """
+            CREATE TABLE students (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                name            TEXT NOT NULL,
+                created_at      TEXT DEFAULT (datetime('now','localtime'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO students (id, organization_id, name, created_at)
+            SELECT id, organization_id, name, created_at
+            FROM students__org_scope_legacy
+            """
+        )
+        conn.execute("DROP TABLE students__org_scope_legacy")
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection) -> None:
+    if _has_strict_organization_fk(conn, "class_feedback_tasks"):
+        return
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("DROP TABLE IF EXISTS class_feedback_tasks__org_scope_legacy")
+        conn.execute("ALTER TABLE class_feedback_tasks RENAME TO class_feedback_tasks__org_scope_legacy")
+        conn.execute(
+            """
+            CREATE TABLE class_feedback_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                teacher_name_snapshot TEXT NOT NULL DEFAULT '',
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                period_length_days INTEGER NOT NULL DEFAULT 1,
+                period_granularity TEXT NOT NULL DEFAULT 'daily',
+                status TEXT NOT NULL DEFAULT 'draft',
+                class_summary_ai_draft TEXT NOT NULL DEFAULT '',
+                class_summary_final_text TEXT NOT NULL DEFAULT '',
+                class_status_tags_json TEXT NOT NULL DEFAULT '[]',
+                class_status_note TEXT NOT NULL DEFAULT '',
+                parent_feedback_note TEXT NOT NULL DEFAULT '',
+                teaching_focus_note TEXT NOT NULL DEFAULT '',
+                next_stage_preview_note TEXT NOT NULL DEFAULT '',
+                student_highlights_json TEXT NOT NULL DEFAULT '[]',
+                created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                updated_at TEXT DEFAULT (datetime('now','localtime')),
+                confirmed_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO class_feedback_tasks (
+                id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
+                start_date, end_date, period_length_days, period_granularity, status,
+                class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
+                class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
+                student_highlights_json, created_by, created_at, updated_at, confirmed_at
+            )
+            SELECT
+                id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
+                start_date, end_date, period_length_days, period_granularity, status,
+                class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
+                class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
+                student_highlights_json, created_by, created_at, updated_at, confirmed_at
+            FROM class_feedback_tasks__org_scope_legacy
+            """
+        )
+        conn.execute("DROP TABLE class_feedback_tasks__org_scope_legacy")
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _ensure_class_feedback_task_integrity_guards(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
+        ON class_feedback_student_entries(task_id, student_id)
+        """
+    )
+    conn.executescript(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_insert
+        BEFORE INSERT ON class_feedback_tasks
+        WHEN NEW.teacher_user_id IS NOT NULL
+        BEGIN
+            SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM user_classes uc
+                WHERE uc.class_id = NEW.class_id
+                  AND uc.user_id = NEW.teacher_user_id
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_update
+        BEFORE UPDATE OF class_id, teacher_user_id ON class_feedback_tasks
+        WHEN NEW.teacher_user_id IS NOT NULL
+        BEGIN
+            SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM user_classes uc
+                WHERE uc.class_id = NEW.class_id
+                  AND uc.user_id = NEW.teacher_user_id
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_insert
+        BEFORE INSERT ON class_feedback_student_entries
+        BEGIN
+            SELECT RAISE(ABORT, 'student_id must belong to task roster')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM class_feedback_tasks t
+                JOIN class_students cs
+                  ON cs.class_id = t.class_id
+                 AND cs.student_id = NEW.student_id
+                WHERE t.id = NEW.task_id
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_update
+        BEFORE UPDATE OF task_id, student_id ON class_feedback_student_entries
+        BEGIN
+            SELECT RAISE(ABORT, 'student_id must belong to task roster')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM class_feedback_tasks t
+                JOIN class_students cs
+                  ON cs.class_id = t.class_id
+                 AND cs.student_id = NEW.student_id
+                WHERE t.id = NEW.task_id
+            );
+        END;
         """
     )
 
@@ -1522,74 +1692,13 @@ def init_db():
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN next_stage_preview_note TEXT NOT NULL DEFAULT ''")
             if "student_highlights_json" not in class_feedback_task_cols:
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
-            ON class_feedback_student_entries(task_id, student_id)
-            """
-        )
-        conn.executescript(
-            """
-            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_insert
-            BEFORE INSERT ON class_feedback_tasks
-            WHEN NEW.teacher_user_id IS NOT NULL
-            BEGIN
-                SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM user_classes uc
-                    WHERE uc.class_id = NEW.class_id
-                      AND uc.user_id = NEW.teacher_user_id
-                );
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_update
-            BEFORE UPDATE OF class_id, teacher_user_id ON class_feedback_tasks
-            WHEN NEW.teacher_user_id IS NOT NULL
-            BEGIN
-                SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM user_classes uc
-                    WHERE uc.class_id = NEW.class_id
-                      AND uc.user_id = NEW.teacher_user_id
-                );
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_insert
-            BEFORE INSERT ON class_feedback_student_entries
-            BEGIN
-                SELECT RAISE(ABORT, 'student_id must belong to task roster')
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM class_feedback_tasks t
-                    JOIN class_students cs
-                      ON cs.class_id = t.class_id
-                     AND cs.student_id = NEW.student_id
-                    WHERE t.id = NEW.task_id
-                );
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_update
-            BEFORE UPDATE OF task_id, student_id ON class_feedback_student_entries
-            BEGIN
-                SELECT RAISE(ABORT, 'student_id must belong to task roster')
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM class_feedback_tasks t
-                    JOIN class_students cs
-                      ON cs.class_id = t.class_id
-                     AND cs.student_id = NEW.student_id
-                    WHERE t.id = NEW.task_id
-                );
-            END;
-            """
-        )
+        _ensure_class_feedback_task_integrity_guards(conn)
         _migrate_legacy_organization_scope(conn)
         _bootstrap_account_state(conn)
         default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
         _backfill_student_organization_scope(conn, default_org["id"])
-        _backfill_class_feedback_task_organization_scope(conn)
+        _backfill_class_feedback_task_organization_scope(conn, default_org["id"])
+        _ensure_class_feedback_task_integrity_guards(conn)
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
