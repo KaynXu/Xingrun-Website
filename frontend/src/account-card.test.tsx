@@ -662,6 +662,7 @@ test('class management source opens both existing and new class editors in a mod
   assert.match(classManagementBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !classCardInteractionLocked && setExpandedClassId\(null\)\}/);
   assert.match(classManagementBlock[0], /编辑班级：/);
   assert.match(classManagementBlock[0], /关闭班级编辑窗口/);
+  assert.doesNotMatch(classManagementBlock[0], /在弹窗里维护班级基础信息、负责老师和家长绑定邀请码。/);
   assert.doesNotMatch(classManagementBlock[0], /\{isExpanded && \(/);
 });
 
@@ -673,4 +674,22 @@ test('class management source moves naming guidance to the page header and remov
   assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。[\s\S]*命名统一规则/);
   assert.match(classManagementBlock[0], /新建或编辑班级时会优先统一成“六年级 2 班 \/ 初一 3 班 \/ 高二 1 班”的格式。/);
   assert.equal((classManagementBlock[0].match(/命名统一规则/g) || []).length, 1);
+});
+
+test('class management source adds a side-by-side student editor card next to the teacher card', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(source, /deleteClassStudent,/);
+  assert.match(classManagementBlock[0], /const \[studentsByClassId, setStudentsByClassId\] = useState<Record<number, Array<\{ id: number; name: string \}>>>\(\{\}\);/);
+  assert.match(classManagementBlock[0], /const editingStudents = editingClass \? \(studentsByClassId\[editingClass\.id\] \|\| \[\]\) : \[\];/);
+  assert.match(classManagementBlock[0], /const editingStudentsLoading = editingClass \? Boolean\(studentsLoadingByClassId\[editingClass\.id\]\) : false;/);
+  assert.match(classManagementBlock[0], /const editingStudentDraftName = editingClass \? \(studentDraftNameByClassId\[editingClass\.id\] \|\| ''\) : '';/);
+  assert.match(classManagementBlock[0], /className="grid gap-4 lg:grid-cols-2 lg:items-start"/);
+  assert.match(classManagementBlock[0], /<h4 className="text-lg font-semibold text-slate-900 dark:text-white">家长绑定邀请码<\/h4>/);
+  assert.match(classManagementBlock[0], /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师<\/h4>/);
+  assert.match(classManagementBlock[0], /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">编辑学生<\/h4>/);
+  assert.match(classManagementBlock[0], /placeholder="输入学生姓名"/);
+  assert.match(classManagementBlock[0], /删除学生/);
 });

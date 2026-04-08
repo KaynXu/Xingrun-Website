@@ -45,6 +45,7 @@ import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import {
   createClassStudent,
+  deleteClassStudent,
   listClassStudents,
   buildClassFeedbackConfirmPayload,
   buildClassFeedbackStudentCards,
@@ -5726,6 +5727,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
   const [inviteByClassId, setInviteByClassId] = useState<Record<number, ClassInviteInfo>>({});
+  const [studentsByClassId, setStudentsByClassId] = useState<Record<number, Array<{ id: number; name: string }>>>({});
   const [expandedClassId, setExpandedClassId] = useState<number | 'new' | null>(null);
   const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
     new: createEmptyClassForm(),
@@ -5733,14 +5735,18 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
   const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
   const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
+  const [studentDraftNameByClassId, setStudentDraftNameByClassId] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState('');
   const [formError, setFormError] = useState('');
   const [assignmentError, setAssignmentError] = useState('');
+  const [studentErrorByClassId, setStudentErrorByClassId] = useState<Record<number, string>>({});
   const [inviteErrorByClassId, setInviteErrorByClassId] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [teacherBindingSavingByClassId, setTeacherBindingSavingByClassId] = useState<Record<number, boolean>>({});
+  const [studentsLoadingByClassId, setStudentsLoadingByClassId] = useState<Record<number, boolean>>({});
+  const [studentSavingByClassId, setStudentSavingByClassId] = useState<Record<number, boolean>>({});
   const [inviteLoadingByClassId, setInviteLoadingByClassId] = useState<Record<number, boolean>>({});
   const [inviteResettingByClassId, setInviteResettingByClassId] = useState<Record<number, boolean>>({});
   const loadPageRequestVersionRef = useRef(0);
@@ -5858,6 +5864,23 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   }, []);
 
+  const loadStudentsForClass = useCallback(async (classId: number) => {
+    setStudentsLoadingByClassId((current) => ({ ...current, [classId]: true }));
+    setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      const payload = await listClassStudents(classId);
+      setStudentsByClassId((current) => ({ ...current, [classId]: payload.students }));
+    } catch (err) {
+      setStudentErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '学生列表加载失败',
+      }));
+    } finally {
+      setStudentsLoadingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof expandedClassId !== 'number' || inviteByClassId[expandedClassId]) {
       return;
@@ -5865,6 +5888,17 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
     void handleLoadClassInvite(expandedClassId);
   }, [expandedClassId, handleLoadClassInvite, inviteByClassId]);
+
+  useEffect(() => {
+    if (typeof expandedClassId !== 'number') {
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(studentsByClassId, expandedClassId)) {
+      return;
+    }
+
+    void loadStudentsForClass(expandedClassId);
+  }, [expandedClassId, loadStudentsForClass, studentsByClassId]);
 
   const handleFieldChange = (classId: number | 'new', field: keyof ClassFormValues, value: string) => {
     const stateKey = getClassStateKey(classId);
@@ -5881,6 +5915,13 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setTeacherSearchByClassId((current) => ({
       ...current,
       [getClassStateKey(classId)]: value,
+    }));
+  };
+
+  const handleStudentDraftNameChange = (classId: number, value: string) => {
+    setStudentDraftNameByClassId((current) => ({
+      ...current,
+      [classId]: value,
     }));
   };
 
@@ -6060,6 +6101,53 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
+  const handleAddStudentToClass = async (classId: number) => {
+    const draftName = (studentDraftNameByClassId[classId] || '').trim();
+    if (!draftName) {
+      setStudentErrorByClassId((current) => ({ ...current, [classId]: '请输入学生姓名' }));
+      return;
+    }
+
+    setStudentSavingByClassId((current) => ({ ...current, [classId]: true }));
+    setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      const payload = await createClassStudent(classId, draftName);
+      setStudentsByClassId((current) => ({
+        ...current,
+        [classId]: [...(current[classId] || []), payload.student],
+      }));
+      setStudentDraftNameByClassId((current) => ({ ...current, [classId]: '' }));
+    } catch (err) {
+      setStudentErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '新增学生失败，请重试。',
+      }));
+    } finally {
+      setStudentSavingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  };
+
+  const handleDeleteStudentFromClass = async (classId: number, studentId: number) => {
+    setStudentSavingByClassId((current) => ({ ...current, [classId]: true }));
+    setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      await deleteClassStudent(classId, studentId);
+      setStudentsByClassId((current) => ({
+        ...current,
+        [classId]: (current[classId] || []).filter((student) => student.id !== studentId),
+      }));
+    } catch (err) {
+      setStudentErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '删除学生失败，请重试。',
+      }));
+    } finally {
+      setStudentSavingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  };
+
   const filteredClasses = classes.filter((item) => {
     if (selectedGradeFilter === '全部') {
       return true;
@@ -6096,6 +6184,11 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const editingInviteLoading = editingClass ? Boolean(inviteLoadingByClassId[editingClass.id]) : false;
   const editingInviteResetting = editingClass ? Boolean(inviteResettingByClassId[editingClass.id]) : false;
   const editingInviteError = editingClass ? (inviteErrorByClassId[editingClass.id] || '') : '';
+  const editingStudents = editingClass ? (studentsByClassId[editingClass.id] || []) : [];
+  const editingStudentsLoading = editingClass ? Boolean(studentsLoadingByClassId[editingClass.id]) : false;
+  const editingStudentSaving = editingClass ? Boolean(studentSavingByClassId[editingClass.id]) : false;
+  const editingStudentError = editingClass ? (studentErrorByClassId[editingClass.id] || '') : '';
+  const editingStudentDraftName = editingClass ? (studentDraftNameByClassId[editingClass.id] || '') : '';
   const editingFilteredUsers = editingClass
     ? users.filter((user) => {
         const keyword = editingTeacherSearch.trim().toLowerCase();
@@ -6288,11 +6381,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
                     {newClassExpanded ? '新建班级' : `编辑班级：${editingClass?.name || ''}`}
                   </h3>
-                  <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                    {newClassExpanded
-                      ? '在弹窗里完成班级基础信息、负责老师绑定和创建。'
-                      : '在弹窗里维护班级基础信息、负责老师和家长绑定邀请码。'}
-                  </p>
                 </div>
                 <button
                   type="button"
@@ -6508,67 +6596,130 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                     </div>
 
-                    <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前负责老师：{editingTeacherSummary}，可直接更换。</p>
+                    <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                      <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前负责老师：{editingTeacherSummary}，可直接更换。</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => loadPage(editingClass.id).catch(() => undefined)}
+                            disabled={assignmentRefreshLocked}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            刷新分配
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => loadPage(editingClass.id).catch(() => undefined)}
-                          disabled={assignmentRefreshLocked}
-                          className={workspaceSecondaryButtonClass}
-                        >
-                          刷新分配
-                        </button>
+
+                        {assignmentError && (
+                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                            <AlertCircle size={16} />
+                            {assignmentError}
+                          </div>
+                        )}
+
+                        <label className="relative block">
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                          <input
+                            type="text"
+                            value={editingTeacherSearch}
+                            onChange={(e) => handleTeacherSearchChange(editingClass.id, e.target.value)}
+                            placeholder="搜索老师"
+                            className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                          />
+                        </label>
+
+                        {users.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            当前暂无成员，成员通过审批后会出现在这里。
+                          </div>
+                        ) : editingFilteredUsers.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            没有匹配到老师，请调整搜索关键词。
+                          </div>
+                        ) : (
+                          <select
+                            value={editingCurrentTeacherUserId == null ? '' : String(editingCurrentTeacherUserId)}
+                            onChange={(event) => {
+                              const nextTeacherUserId = Number(event.target.value);
+                              if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === editingCurrentTeacherUserId) {
+                                return;
+                              }
+                              void handleSelectTeacherForClass(editingClass.id, nextTeacherUserId);
+                            }}
+                            disabled={editingTeacherBindingSaving || classInteractionLocked || editingFilteredUsers.length === 0}
+                            className={workspaceFieldClass}
+                          >
+                            <option value="">请选择负责老师</option>
+                            {editingFilteredUsers.map((user) => (
+                              <option key={`${editingClass.id}-${user.id}`} value={user.id}>{user.name}</option>
+                            ))}
+                          </select>
+                        )}
                       </div>
 
-                      {assignmentError && (
-                        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                          <AlertCircle size={16} />
-                          {assignmentError}
+                      <div className={`${workspaceCardClass} space-y-4 p-5`}>
+                        <div>
+                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">编辑学生</h4>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">在这里维护当前班级学生名单。</p>
                         </div>
-                      )}
 
-                      <label className="relative block">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-                        <input
-                          type="text"
-                          value={editingTeacherSearch}
-                          onChange={(e) => handleTeacherSearchChange(editingClass.id, e.target.value)}
-                          placeholder="搜索老师"
-                          className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
-                        />
-                      </label>
+                        {editingStudentError ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                            <AlertCircle size={16} />
+                            {editingStudentError}
+                          </div>
+                        ) : null}
 
-                      {users.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                          当前暂无成员，成员通过审批后会出现在这里。
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <input
+                            type="text"
+                            value={editingStudentDraftName}
+                            onChange={(e) => handleStudentDraftNameChange(editingClass.id, e.target.value)}
+                            placeholder="输入学生姓名"
+                            className={workspaceFieldClass}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleAddStudentToClass(editingClass.id)}
+                            disabled={editingStudentSaving}
+                            className={workspacePrimaryButtonClass}
+                          >
+                            {editingStudentSaving ? '处理中...' : '新增学生'}
+                          </button>
                         </div>
-                      ) : editingFilteredUsers.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                          没有匹配到老师，请调整搜索关键词。
-                        </div>
-                      ) : (
-                        <select
-                          value={editingCurrentTeacherUserId == null ? '' : String(editingCurrentTeacherUserId)}
-                          onChange={(event) => {
-                            const nextTeacherUserId = Number(event.target.value);
-                            if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === editingCurrentTeacherUserId) {
-                              return;
-                            }
-                            void handleSelectTeacherForClass(editingClass.id, nextTeacherUserId);
-                          }}
-                          disabled={editingTeacherBindingSaving || classInteractionLocked || editingFilteredUsers.length === 0}
-                          className={workspaceFieldClass}
-                        >
-                          <option value="">请选择负责老师</option>
-                          {editingFilteredUsers.map((user) => (
-                            <option key={`${editingClass.id}-${user.id}`} value={user.id}>{user.name}</option>
-                          ))}
-                        </select>
-                      )}
+
+                        {editingStudentsLoading ? (
+                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            正在加载学生...
+                          </div>
+                        ) : editingStudents.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            当前班级还没有学生。
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {editingStudents.map((student) => (
+                              <div
+                                key={student.id}
+                                className="flex items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 dark:border-white/10 dark:bg-white/5"
+                              >
+                                <span className="font-medium text-slate-900 dark:text-white">{student.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteStudentFromClass(editingClass.id, student.id)}
+                                  disabled={editingStudentSaving}
+                                  className="inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                                >
+                                  删除学生
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">

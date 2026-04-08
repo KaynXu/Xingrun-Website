@@ -113,6 +113,11 @@ export const createClassStudent = (classId: number, name: string) =>
     body: JSON.stringify({ name }),
   });
 
+export const deleteClassStudent = (classId: number, studentId: number) =>
+  callApiFetch<{ ok: boolean; removed: boolean }>(`/api/classes/${classId}/students/${studentId}`, {
+    method: 'DELETE',
+  });
+
 export const loadClassFeedbackLabels = () =>
   callApiFetch<{ groups: StageLabelGroup[] }>('/api/class-feedback/labels');
 
