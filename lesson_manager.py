@@ -1713,6 +1713,27 @@ def init_db():
         _backfill_student_organization_scope(conn, default_org["id"])
         _backfill_class_feedback_task_organization_scope(conn, default_org["id"])
         _ensure_class_feedback_task_integrity_guards(conn)
+        conn.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_students_organization_name
+            ON students (organization_id, name);
+
+            CREATE INDEX IF NOT EXISTS idx_classes_organization_grade_subject_name
+            ON classes (organization_id, grade, subject, name);
+
+            CREATE INDEX IF NOT EXISTS idx_lessons_organization_class_date
+            ON lessons (organization_id, class_id, date);
+
+            CREATE INDEX IF NOT EXISTS idx_consultations_organization_assigned_updated
+            ON consultations (organization_id, assigned_user_id, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_class_feedback_tasks_organization_status_updated
+            ON class_feedback_tasks (organization_id, status, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_organization_class_teacher_status
+            ON wrong_question_submissions (organization_id, class_id, teacher_user_id, status);
+            """
+        )
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
@@ -3999,6 +4020,8 @@ def delete_organization(org_id: int) -> None:
             "DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE organization_id=?)",
             (org_id,),
         )
+        conn.execute("DELETE FROM class_feedback_tasks WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM students WHERE organization_id=?", (org_id,))
         # 3. classes
         conn.execute("DELETE FROM classes WHERE organization_id=?", (org_id,))
         # 4. consultations

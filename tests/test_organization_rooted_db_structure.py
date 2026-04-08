@@ -176,6 +176,96 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
         self.assertEqual(student_fk["organization_id"]["on_delete"], "CASCADE")
         self.assertEqual(task_fk["organization_id"]["on_delete"], "CASCADE")
 
+    def test_init_db_creates_organization_leading_indexes(self):
+        expected_indexes = {
+            "idx_students_organization_name": ("organization_id", "name"),
+            "idx_classes_organization_grade_subject_name": (
+                "organization_id",
+                "grade",
+                "subject",
+                "name",
+            ),
+            "idx_lessons_organization_class_date": ("organization_id", "class_id", "date"),
+            "idx_consultations_organization_assigned_updated": (
+                "organization_id",
+                "assigned_user_id",
+                "updated_at",
+            ),
+            "idx_class_feedback_tasks_organization_status_updated": (
+                "organization_id",
+                "status",
+                "updated_at",
+            ),
+            "idx_wrong_question_submissions_organization_class_teacher_status": (
+                "organization_id",
+                "class_id",
+                "teacher_user_id",
+                "status",
+            ),
+        }
+        with lesson_manager.get_conn() as conn:
+            index_names = {
+                row["name"]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
+            }
+            self.assertTrue(expected_indexes.keys() <= index_names)
+            for index_name, expected_columns in expected_indexes.items():
+                columns = tuple(
+                    row["name"] for row in conn.execute(f"PRAGMA index_info({index_name})").fetchall()
+                )
+                self.assertEqual(columns, expected_columns)
+
+    def test_delete_organization_removes_direct_owned_students_and_feedback_tasks(self):
+        with lesson_manager.get_conn() as conn:
+            conn.executescript(
+                """
+                INSERT INTO organizations (id, name) VALUES (41, 'Delete Org');
+                INSERT INTO organizations (id, name) VALUES (42, 'Other Org');
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (401, 'delete-owner', 'hash', 'Delete Owner', 'owner', 'active', 41);
+                INSERT INTO users (id, username, password_hash, display_name, role, status, organization_id)
+                VALUES (402, 'other-owner', 'hash', 'Other Owner', 'owner', 'active', 42);
+                INSERT INTO classes (id, organization_id, name, subject, grade)
+                VALUES (501, 42, 'Other Class', '数学', '六年级');
+                INSERT INTO students (id, organization_id, name) VALUES (601, 41, 'Org Student');
+                INSERT INTO class_feedback_tasks (
+                    id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
+                    start_date, end_date, period_length_days, period_granularity, status,
+                    class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
+                    class_status_note, parent_feedback_note, teaching_focus_note,
+                    next_stage_preview_note, student_highlights_json, created_by
+                ) VALUES (
+                    701, 41, 501, NULL, '', '2026-04-01', '2026-04-01', 1, 'daily', 'draft',
+                    '', '', '[]', '', '', '', '', '[]', 402
+                );
+                """
+            )
+
+        original_get_conn = lesson_manager.get_conn
+
+        def get_conn_without_foreign_keys():
+            conn = sqlite3.connect(lesson_manager.DB_PATH)
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        lesson_manager.get_conn = get_conn_without_foreign_keys
+        try:
+            lesson_manager.delete_organization(41)
+        finally:
+            lesson_manager.get_conn = original_get_conn
+
+        with lesson_manager.get_conn() as conn:
+            student_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM students WHERE organization_id=41"
+            ).fetchone()["c"]
+            task_count = conn.execute(
+                "SELECT COUNT(*) AS c FROM class_feedback_tasks WHERE organization_id=41"
+            ).fetchone()["c"]
+
+        self.assertEqual(student_count, 0)
+        self.assertEqual(task_count, 0)
+
     def test_student_backfill_rejects_cross_organization_class_links(self):
         conn = sqlite3.connect(lesson_manager.DB_PATH)
         try:
