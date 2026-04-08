@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
+import { MasterDataMappingsPage } from './MasterDataMappingsPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import {
@@ -71,6 +72,7 @@ type Page =
   | 'consultation'
   | 'calendar'
   | 'smartWrongQuestions'
+  | 'masterDataMappings'
   | 'classes'
   | 'accounts'
   | 'credit'
@@ -1363,11 +1365,14 @@ const Sidebar = ({
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
     { id: 'review-generation', icon: Library, label: '复习生成' },
-    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈' },
+    { id: 'class-feedback-generation', icon: FileText, label: '班级反馈生成' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
     { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(canAccessSmartWrongQuestions(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
+      : []),
+    ...(hasOwnerAccess(currentUser.role)
+      ? [{ id: 'masterDataMappings', icon: Database, label: '老师与班级匹配' }]
       : []),
     ...(hasStaffAccess(currentUser.role)
       ? [{ id: 'classes', icon: Home, label: '班级管理' }]
@@ -7669,6 +7674,7 @@ export default function App() {
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [masterDataFocusUserId, setMasterDataFocusUserId] = useState<number | null>(null);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
@@ -7862,6 +7868,11 @@ export default function App() {
     setActivePage('review-generation');
   };
 
+  const handleStartMemberBinding = (userId: number) => {
+    setMasterDataFocusUserId(userId);
+    setActivePage('masterDataMappings');
+  };
+
   const handlePreviousCalendarWeek = () => {
     setCalendarAnchorDate((current) => shiftIsoDate(current, -7));
   };
@@ -7873,11 +7884,12 @@ export default function App() {
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
     'review-generation': '复习生成',
-    'class-feedback-generation': '班级反馈',
+    'class-feedback-generation': '班级反馈生成',
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
     classes: '班级管理',
+    masterDataMappings: '老师与班级匹配',
     accounts: '账号审批',
     credit: '积分中心',
     settings: '系统设置',
@@ -8031,14 +8043,17 @@ export default function App() {
                       onNextWeek={handleNextCalendarWeek}
                     />
                   ))}
-                {activePage === 'smartWrongQuestions' &&
-                  canAccessSmartWrongQuestions(currentUser.role) &&
-                  <SmartWrongQuestionsPage currentUser={currentUser} />}
-                {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
-                  <ClassManagementPage currentUser={currentUser} />
-                )}
+                    {activePage === 'smartWrongQuestions' &&
+                      canAccessSmartWrongQuestions(currentUser.role) &&
+                      <SmartWrongQuestionsPage currentUser={currentUser} />}
+                    {activePage === 'masterDataMappings' &&
+                      hasOwnerAccess(currentUser.role) &&
+                      <MasterDataMappingsPage currentUser={currentUser} focusUserId={masterDataFocusUserId} />}
+                    {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
+                      <ClassManagementPage currentUser={currentUser} />
+                    )}
                 {activePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
-                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
+                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onStartBinding={handleStartMemberBinding} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>
