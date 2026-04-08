@@ -83,6 +83,44 @@
   - 学生列表支持重命名
   - 负责老师卡片里的按钮做移动端更紧凑排版
 
+## org-rooted DB 结构生产就绪审查（2026-04-09）
+
+### 已完成
+- 已审查 worktree `/Users/ark.mini/Desktop/Xingrun-Website/.worktrees/org-rooted-db-structure` 的完整提交范围 `1029c10..b6cdce7`
+- 已逐项核对本轮实现与计划：
+  - `students` / `class_feedback_tasks` 直连 `organization_id`
+  - legacy migration 回填
+  - `create_student_for_class()` / `create_class_feedback_task()` 写入路径
+  - organization-leading indexes
+  - `delete_organization()` 清理链
+  - 回归测试 bundle
+- 已确认计划要求的回归 bundle 绿色：
+  - 临时脚本：`/tmp/review_org_rooted_regression_bundle.sh`
+  - 执行结果：`Ran 77 tests in 3.624s`
+  - 结果：`OK`
+- 已用最小复现确认一个真实生产阻塞问题：
+  - 临时脚本：`/tmp/review_org_delete_fk_failure.py`
+  - 结果：`IntegrityError FOREIGN KEY constraint failed`
+  - 触发条件：机构下存在 `parent_student_bindings` 引用学生时，`delete_organization()` 会因先删 `students` 而失败
+
+### 剩余问题
+- `lesson_manager.py` 中 `delete_organization()` 当前删除顺序不安全：
+  - 先删 `students`，但 `parent_student_bindings.student_id` / `wrong_question_submissions.student_id` 仍是 `NO ACTION` 外键
+  - 真实生产数据只要有家长绑定或错题记录，就可能删机构失败
+- 当前新增删除回归测试刻意关闭了 foreign keys，且构造了跨机构不一致数据，没覆盖真实生产删除路径，因此没有拦住上面的失败场景
+
+### 下一步方向
+- 先修 `delete_organization()` 删除顺序：
+  - 先删/级联清掉 `classes` 相关链路上的 `parent_student_bindings`、`wrong_question_submissions`
+  - 再删 `students`
+  - 或直接依赖机构级联并补足必要显式清理
+- 补一条真实约束开启状态下的删除机构回归：
+  - 机构内含 `class -> student -> parent_student_bindings`
+  - 可再补 `wrong_question_submissions` 覆盖
+- 修完后重跑：
+  - `/tmp/review_org_rooted_regression_bundle.sh`
+  - 删除机构最小复现脚本
+
 ## master 发布与生产部署：班级管理弹窗学生编辑卡片（2026-04-09）
 
 ### 已完成
