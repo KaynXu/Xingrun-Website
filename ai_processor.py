@@ -146,8 +146,6 @@ PLAN_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师，擅长�
 - 每天必须有 self_test_phrase。
 - 第1/2/7天使用 type="day1" + steps；每个节点 3 个步骤，步骤3至少 6 道题。
 - 第14/30天使用 type="daily" + items，但仍必须覆盖全课全部核心知识点。
-- questions 至少 15 道，覆盖全部 key_categories，且每题有明确 answer。
-
 【JSON 结构】
 {
   "lesson_info": {
@@ -192,9 +190,6 @@ PLAN_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师，擅长�
       "items": [{"type": "body", "text": "..."}, {"type": "fill", "text": "...", "answer": "..."}],
       "self_test_phrase": "出发口令：..."
     }
-  ],
-  "questions": [
-    {"question": "...", "answer": "...", "category": "...", "day": 1}
   ],
   "weekly_review_prompts": ["...", "...", "...", "..."]
 }
@@ -272,13 +267,11 @@ MONTHLY_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师。
 - 聚焦本月所有课程的核心知识点
 - 优先处理多节课中反复出现的薄弱点
 - 生成 14 天的每日复习安排（前2天总复盘，后面分知识板块）
-- 题库要覆盖全月所有知识点
 
 【输出格式】与单节课相同，但：
 - lesson_info.topic = "X月综合复习"
 - key_categories 来自所有课程知识点的合并与提炼
 - days 安排 14 天（day 1-2 为month_day1 类型，day 3-14 为daily类型）
-- questions 至少 20 道，覆盖全月
 
 只返回合法 JSON，不要额外说明。
 """

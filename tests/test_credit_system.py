@@ -557,7 +557,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         )
 
         response = self.client.post(
-            f"/api/lessons/{lesson_id}/feedback/draft",
+            f"/api/review-plans/{lesson_id}/feedback/draft",
             headers=self.auth_headers(self.owner_token),
             json={
                 "students": [
@@ -744,7 +744,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
 
         def post_audio_retry():
             return self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(self.owner_token),
                 data={
                     "date": "2026-04-03",
@@ -844,7 +844,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
 
         def post_audio_upload(audio_bytes: bytes):
             return self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(self.owner_token),
                 data={
                     "date": "2026-04-03",
@@ -1053,7 +1053,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         )
 
         response = self.client.post(
-            "/api/lessons",
+            "/api/review-plans",
             headers=self.auth_headers(self.owner_token),
             json={
                 "date": "2026-04-02",

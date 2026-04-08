@@ -243,6 +243,14 @@ interface OrganizationInviteInfo {
   join_path?: string;
 }
 
+interface ClassInviteInfo {
+  id: number;
+  class_id: number;
+  invite_code: string;
+  status: string;
+  created_at: string;
+}
+
 interface OrganizationSummaryItem {
   id: number;
   name: string;
@@ -1587,7 +1595,7 @@ const Dashboard = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/lessons')])
+    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/review-plans')])
       .then(([s, lessons]) => {
         setStats(s);
         setRecentLessons(lessons.slice(0, 5));
@@ -1883,7 +1891,7 @@ const LessonInput = ({
     setIsLoading(true);
     try {
       if (inputType === 'text') {
-        await apiFetch<{ id: number }>('/api/lessons', {
+        await apiFetch<{ id: number }>('/api/review-plans', {
           method: 'POST',
           body: JSON.stringify({
             subject,
@@ -1903,7 +1911,7 @@ const LessonInput = ({
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         if (file) formData.append('upload_file', file);
-        await apiFetch<{ id: number }>('/api/lessons', { method: 'POST', body: formData });
+        await apiFetch<{ id: number }>('/api/review-plans', { method: 'POST', body: formData });
       }
       onSuccess();
     } catch (e: unknown) {
@@ -2094,7 +2102,7 @@ const ReviewDocumentHistory = ({
 
   const load = useCallback(() => {
     setLoading(true);
-    apiFetch<Lesson[]>('/api/lessons')
+    apiFetch<Lesson[]>('/api/review-plans')
       .then(setLessons)
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -2114,7 +2122,7 @@ const ReviewDocumentHistory = ({
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('确定删除此课程？相关 PDF 也会被删除。')) return;
-    await apiFetch(`/api/lessons/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/review-plans/${id}`, { method: 'DELETE' });
     load();
   };
 
@@ -2433,7 +2441,7 @@ const ClassFeedbackGenerationPage = ({
     }
 
     let cancelled = false;
-    apiFetch<Lesson[]>('/api/lessons')
+    apiFetch<Lesson[]>('/api/review-plans')
       .then((lessons) => {
         if (cancelled) {
           return;
@@ -5719,6 +5727,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
+  const [inviteByClassId, setInviteByClassId] = useState<Record<number, ClassInviteInfo>>({});
   const [expandedClassId, setExpandedClassId] = useState<number | 'new' | null>(null);
   const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
     new: createEmptyClassForm(),
@@ -5730,9 +5739,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [pageError, setPageError] = useState('');
   const [formError, setFormError] = useState('');
   const [assignmentError, setAssignmentError] = useState('');
+  const [inviteErrorByClassId, setInviteErrorByClassId] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [teacherBindingSavingByClassId, setTeacherBindingSavingByClassId] = useState<Record<number, boolean>>({});
+  const [inviteLoadingByClassId, setInviteLoadingByClassId] = useState<Record<number, boolean>>({});
+  const [inviteResettingByClassId, setInviteResettingByClassId] = useState<Record<number, boolean>>({});
   const loadPageRequestVersionRef = useRef(0);
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
@@ -5811,6 +5823,50 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   useEffect(() => {
     loadPage().catch(() => undefined);
   }, [loadPage]);
+
+  const handleLoadClassInvite = useCallback(async (classId: number) => {
+    setInviteLoadingByClassId((current) => ({ ...current, [classId]: true }));
+    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      const payload = await apiFetch<ClassInviteInfo>(`/api/classes/${classId}/invite`);
+      setInviteByClassId((current) => ({ ...current, [classId]: payload }));
+    } catch (err) {
+      setInviteErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '邀请码加载失败',
+      }));
+    } finally {
+      setInviteLoadingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  }, []);
+
+  const handleResetClassInvite = useCallback(async (classId: number) => {
+    setInviteResettingByClassId((current) => ({ ...current, [classId]: true }));
+    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
+
+    try {
+      const payload = await apiFetch<ClassInviteInfo>(`/api/classes/${classId}/invite/reset`, {
+        method: 'POST',
+      });
+      setInviteByClassId((current) => ({ ...current, [classId]: payload }));
+    } catch (err) {
+      setInviteErrorByClassId((current) => ({
+        ...current,
+        [classId]: err instanceof Error ? err.message : '邀请码重置失败',
+      }));
+    } finally {
+      setInviteResettingByClassId((current) => ({ ...current, [classId]: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof expandedClassId !== 'number' || inviteByClassId[expandedClassId]) {
+      return;
+    }
+
+    void handleLoadClassInvite(expandedClassId);
+  }, [expandedClassId, handleLoadClassInvite, inviteByClassId]);
 
   const handleFieldChange = (classId: number | 'new', field: keyof ClassFormValues, value: string) => {
     const stateKey = getClassStateKey(classId);
@@ -6029,6 +6085,31 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
     return user.name.toLowerCase().includes(keyword);
   });
+  const editingClass = typeof expandedClassId === 'number' ? classes.find((item) => item.id === expandedClassId) ?? null : null;
+  const editingFormState = editingClass ? (formByClassId[getClassStateKey(editingClass.id)] || toClassFormValues(editingClass)) : null;
+  const editingTeacherSearch = editingClass ? (teacherSearchByClassId[getClassStateKey(editingClass.id)] || '') : '';
+  const editingCurrentTeacherUserId = editingClass
+    ? (teacherBindingByClassId[editingClass.id] ?? editingClass.teacher_user_id ?? null)
+    : null;
+  const editingCurrentTeacher = editingCurrentTeacherUserId == null ? undefined : users.find((user) => user.id === editingCurrentTeacherUserId);
+  const editingTeacherSummary = editingCurrentTeacher?.name || editingClass?.teacher_name || '未分配老师';
+  const editingTeacherBindingSaving = editingClass ? Boolean(teacherBindingSavingByClassId[editingClass.id]) : false;
+  const editingInviteInfo = editingClass ? inviteByClassId[editingClass.id] : undefined;
+  const editingInviteLoading = editingClass ? Boolean(inviteLoadingByClassId[editingClass.id]) : false;
+  const editingInviteResetting = editingClass ? Boolean(inviteResettingByClassId[editingClass.id]) : false;
+  const editingInviteError = editingClass ? (inviteErrorByClassId[editingClass.id] || '') : '';
+  const editingFilteredUsers = editingClass
+    ? users.filter((user) => {
+        const keyword = editingTeacherSearch.trim().toLowerCase();
+        if (editingCurrentTeacherUserId === user.id) {
+          return true;
+        }
+        if (!keyword) {
+          return true;
+        }
+        return user.name.toLowerCase().includes(keyword);
+      })
+    : [];
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
@@ -6117,127 +6198,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {newClassExpanded ? (
-              <div className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-lg font-semibold text-slate-900 dark:text-white">新建班级</span>
-                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                      NEW
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                    {newClassForm.subject.trim() ? (
-                      <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                        {newClassForm.subject.trim()}
-                      </span>
-                    ) : null}
-                    <span>当前负责老师：{newClassTeacher?.name || '待选择负责老师'}</span>
-                    <span>创建时会直接绑定该老师账号</span>
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-5 border-t border-sky-100/80 pt-5 dark:border-white/10">
-                  {formError && (
-                    <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                      <AlertCircle size={16} />
-                      {formError}
-                    </div>
-                  )}
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">班级名称</span>
-                      <input
-                        type="text"
-                        value={newClassForm.name}
-                        onChange={(e) => handleFieldChange('new', 'name', e.target.value)}
-                        className={workspaceFieldClass}
-                        placeholder="如：六年级数学冲刺班"
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">科目</span>
-                      <input
-                        type="text"
-                        value={newClassForm.subject}
-                        onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
-                        className={workspaceFieldClass}
-                        placeholder="如：数学"
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">年级</span>
-                      <select
-                        value={newClassForm.grade}
-                        onChange={(e) => handleFieldChange('new', 'grade', e.target.value)}
-                        className={workspaceFieldClass}
-                      >
-                        <option value="">请选择年级</option>
-                        {gradeOptions.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                    <div>
-                      <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新建班级时必须选择一个负责老师账号，系统会同步老师姓名。</p>
-                    </div>
-
-                    <label className="relative block">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-                      <input
-                        type="text"
-                        value={teacherSearchByClassId.new || ''}
-                        onChange={(e) => handleTeacherSearchChange('new', e.target.value)}
-                        placeholder="搜索老师"
-                        className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
-                      />
-                    </label>
-
-                    {users.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                        当前暂无成员，成员通过审批后会出现在这里。
-                      </div>
-                    ) : newClassFilteredUsers.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                        没有匹配到老师，请调整搜索关键词。
-                      </div>
-                    ) : (
-                      <select
-                        value={newClassTeacherUserId == null ? '' : String(newClassTeacherUserId)}
-                        onChange={(event) => {
-                          const nextTeacherUserId = Number(event.target.value);
-                          setNewClassTeacherUserId(Number.isFinite(nextTeacherUserId) && nextTeacherUserId > 0 ? nextTeacherUserId : null);
-                        }}
-                        disabled={classInteractionLocked || newClassFilteredUsers.length === 0}
-                        className={workspaceFieldClass}
-                      >
-                        <option value="">请选择负责老师</option>
-                        {newClassFilteredUsers.map((user) => (
-                          <option key={`new-${user.id}`} value={user.id}>{user.name}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => handleSaveClass('new')}
-                      disabled={classCardInteractionLocked}
-                      className={workspacePrimaryButtonClass}
-                    >
-                      {saving ? '保存中...' : '创建班级'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
             {filteredClasses.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
                 {classes.length === 0 ? '暂无班级，点击右上角“新建班级”开始创建。' : `当前筛选“${selectedGradeFilter}”下暂无班级。`}
@@ -6252,6 +6212,10 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               const currentTeacher = currentTeacherUserId == null ? undefined : users.find((user) => user.id === currentTeacherUserId);
               const teacherSummary = currentTeacher?.name || item.teacher_name || '未分配老师';
               const teacherBindingSaving = Boolean(teacherBindingSavingByClassId[item.id]);
+              const inviteInfo = inviteByClassId[item.id];
+              const inviteLoading = Boolean(inviteLoadingByClassId[item.id]);
+              const inviteResetting = Boolean(inviteResettingByClassId[item.id]);
+              const inviteError = inviteErrorByClassId[item.id] || '';
               const filteredUsers = users.filter((user) => {
                 const keyword = teacherSearch.trim().toLowerCase();
                 if (currentTeacherUserId === user.id) {
@@ -6270,7 +6234,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     onClick={() => handleToggleExpandedClass(item.id)}
                     disabled={classCardInteractionLocked}
                     className={cn(
-                      'flex w-full flex-col gap-4 text-left lg:flex-row lg:items-center lg:justify-between',
+                      'group flex w-full flex-col gap-4 text-left lg:flex-row lg:items-center lg:justify-between',
                       classCardInteractionLocked ? 'cursor-not-allowed' : 'cursor-pointer',
                     )}
                   >
@@ -6286,145 +6250,352 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                         <span>{item.grade || '未填写年级'}</span>
                         <span>当前负责老师：{teacherSummary}</span>
+                        <span>点击后弹窗编辑</span>
                       </div>
                     </div>
+                    <ChevronDown
+                      size={18}
+                      className="text-slate-400 transition-transform duration-200 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300"
+                    />
                   </button>
-
-                  {isExpanded && (
-                    <div className="mt-5 space-y-5 border-t border-sky-100/80 pt-5 dark:border-white/10">
-                      {formError && (
-                        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                          <AlertCircle size={16} />
-                          {formError}
-                        </div>
-                      )}
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">班级名称</span>
-                          <input
-                            type="text"
-                            value={formState.name}
-                            onChange={(e) => handleFieldChange(item.id, 'name', e.target.value)}
-                            className={workspaceFieldClass}
-                            placeholder="如：六年级数学冲刺班"
-                          />
-                        </label>
-                        <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">科目</span>
-                          <input
-                            type="text"
-                            value={formState.subject}
-                            onChange={(e) => handleFieldChange(item.id, 'subject', e.target.value)}
-                            className={workspaceFieldClass}
-                            placeholder="如：数学"
-                          />
-                        </label>
-                        <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">年级</span>
-                          <select
-                            value={formState.grade}
-                            onChange={(e) => handleFieldChange(item.id, 'grade', e.target.value)}
-                            className={workspaceFieldClass}
-                          >
-                            <option value="">请选择年级</option>
-                            {gradeOptions.map((option) => (
-                              <option key={option} value={option}>{option}</option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteClass(item.id)}
-                          disabled={classCardInteractionLocked}
-                          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                        >
-                          <Trash2 size={18} />
-                          {deleting ? '删除中...' : '删除当前班级'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSaveClass(item.id)}
-                          disabled={classCardInteractionLocked}
-                          className={workspacePrimaryButtonClass}
-                        >
-                          {saving ? '保存中...' : '保存班级'}
-                        </button>
-                      </div>
-
-                      <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前负责老师：{teacherSummary}，可直接更换。</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => loadPage(item.id).catch(() => undefined)}
-                            disabled={assignmentRefreshLocked}
-                            className={workspaceSecondaryButtonClass}
-                          >
-                            刷新分配
-                          </button>
-                        </div>
-
-                        {assignmentError && (
-                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                            <AlertCircle size={16} />
-                            {assignmentError}
-                          </div>
-                        )}
-
-                        <label className="relative block">
-                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-                          <input
-                            type="text"
-                            value={teacherSearch}
-                            onChange={(e) => handleTeacherSearchChange(item.id, e.target.value)}
-                            placeholder="搜索老师"
-                            className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
-                          />
-                        </label>
-
-                        {users.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            当前暂无成员，成员通过审批后会出现在这里。
-                          </div>
-                        ) : filteredUsers.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            没有匹配到老师，请调整搜索关键词。
-                          </div>
-                        ) : (
-                          <select
-                            value={currentTeacherUserId == null ? '' : String(currentTeacherUserId)}
-                            onChange={(event) => {
-                              const nextTeacherUserId = Number(event.target.value);
-                              if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === currentTeacherUserId) {
-                                return;
-                              }
-                              void handleSelectTeacherForClass(item.id, nextTeacherUserId);
-                            }}
-                            disabled={teacherBindingSaving || classInteractionLocked || filteredUsers.length === 0}
-                            className={workspaceFieldClass}
-                          >
-                            <option value="">请选择负责老师</option>
-                            {filteredUsers.map((user) => (
-                              <option key={`${item.id}-${user.id}`} value={user.id}>{user.name}</option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
         )}
       </section>
+
+      <AnimatePresence>
+        {(newClassExpanded || editingClass) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
+            onClick={(e) => e.target === e.currentTarget && !classCardInteractionLocked && setExpandedClassId(null)}
+          >
+            <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 18 }}
+              transition={{ duration: 0.2 }}
+              className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Class Management</p>
+                  <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
+                    {newClassExpanded ? '新建班级' : `编辑班级：${editingClass?.name || ''}`}
+                  </h3>
+                  <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                    {newClassExpanded
+                      ? '在弹窗里完成班级基础信息、负责老师绑定和创建。'
+                      : '在弹窗里维护班级基础信息、负责老师和家长绑定邀请码。'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (classCardInteractionLocked) {
+                      return;
+                    }
+                    setExpandedClassId(null);
+                  }}
+                  disabled={classCardInteractionLocked}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                  aria-label="关闭班级编辑窗口"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+                {formError && (
+                  <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                    <AlertCircle size={16} />
+                    {formError}
+                  </div>
+                )}
+
+                {newClassExpanded ? (
+                  <div className="space-y-5">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                      {newClassForm.subject.trim() ? (
+                        <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                          {newClassForm.subject.trim()}
+                        </span>
+                      ) : null}
+                      <span>当前负责老师：{newClassTeacher?.name || '待选择负责老师'}</span>
+                      <span>创建时会直接绑定该老师账号</span>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">班级名称</span>
+                        <input
+                          type="text"
+                          value={newClassForm.name}
+                          onChange={(e) => handleFieldChange('new', 'name', e.target.value)}
+                          className={workspaceFieldClass}
+                          placeholder="如：六年级数学冲刺班"
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">科目</span>
+                        <input
+                          type="text"
+                          value={newClassForm.subject}
+                          onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
+                          className={workspaceFieldClass}
+                          placeholder="如：数学"
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm md:col-span-2">
+                        <span className="text-slate-500 dark:text-slate-400">年级</span>
+                        <select
+                          value={newClassForm.grade}
+                          onChange={(e) => handleFieldChange('new', 'grade', e.target.value)}
+                          className={workspaceFieldClass}
+                        >
+                          <option value="">请选择年级</option>
+                          {gradeOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                      <div>
+                        <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新建班级时必须选择一个负责老师账号，系统会同步老师姓名。</p>
+                      </div>
+
+                      <label className="relative block">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                        <input
+                          type="text"
+                          value={teacherSearchByClassId.new || ''}
+                          onChange={(e) => handleTeacherSearchChange('new', e.target.value)}
+                          placeholder="搜索老师"
+                          className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                        />
+                      </label>
+
+                      {users.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                          当前暂无成员，成员通过审批后会出现在这里。
+                        </div>
+                      ) : newClassFilteredUsers.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                          没有匹配到老师，请调整搜索关键词。
+                        </div>
+                      ) : (
+                        <select
+                          value={newClassTeacherUserId == null ? '' : String(newClassTeacherUserId)}
+                          onChange={(event) => {
+                            const nextTeacherUserId = Number(event.target.value);
+                            setNewClassTeacherUserId(Number.isFinite(nextTeacherUserId) && nextTeacherUserId > 0 ? nextTeacherUserId : null);
+                          }}
+                          disabled={classInteractionLocked || newClassFilteredUsers.length === 0}
+                          className={workspaceFieldClass}
+                        >
+                          <option value="">请选择负责老师</option>
+                          {newClassFilteredUsers.map((user) => (
+                            <option key={`new-${user.id}`} value={user.id}>{user.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveClass('new')}
+                        disabled={classCardInteractionLocked}
+                        className={workspacePrimaryButtonClass}
+                      >
+                        {saving ? '保存中...' : '创建班级'}
+                      </button>
+                    </div>
+                  </div>
+                ) : editingClass && editingFormState ? (
+                  <div className="space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">班级名称</span>
+                        <input
+                          type="text"
+                          value={editingFormState.name}
+                          onChange={(e) => handleFieldChange(editingClass.id, 'name', e.target.value)}
+                          className={workspaceFieldClass}
+                          placeholder="如：六年级数学冲刺班"
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">科目</span>
+                        <input
+                          type="text"
+                          value={editingFormState.subject}
+                          onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
+                          className={workspaceFieldClass}
+                          placeholder="如：数学"
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm md:col-span-2">
+                        <span className="text-slate-500 dark:text-slate-400">年级</span>
+                        <select
+                          value={editingFormState.grade}
+                          onChange={(e) => handleFieldChange(editingClass.id, 'grade', e.target.value)}
+                          className={workspaceFieldClass}
+                        >
+                          <option value="">请选择年级</option>
+                          {gradeOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClass(editingClass.id)}
+                        disabled={classCardInteractionLocked}
+                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                      >
+                        <Trash2 size={18} />
+                        {deleting ? '删除中...' : '删除当前班级'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveClass(editingClass.id)}
+                        disabled={classCardInteractionLocked}
+                        className={workspacePrimaryButtonClass}
+                      >
+                        {saving ? '保存中...' : '保存班级'}
+                      </button>
+                    </div>
+
+                    <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前负责老师：{editingTeacherSummary}，可直接更换。</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => loadPage(editingClass.id).catch(() => undefined)}
+                          disabled={assignmentRefreshLocked}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          刷新分配
+                        </button>
+                      </div>
+
+                      {assignmentError && (
+                        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                          <AlertCircle size={16} />
+                          {assignmentError}
+                        </div>
+                      )}
+
+                      <label className="relative block">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                        <input
+                          type="text"
+                          value={editingTeacherSearch}
+                          onChange={(e) => handleTeacherSearchChange(editingClass.id, e.target.value)}
+                          placeholder="搜索老师"
+                          className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                        />
+                      </label>
+
+                      {users.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                          当前暂无成员，成员通过审批后会出现在这里。
+                        </div>
+                      ) : editingFilteredUsers.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                          没有匹配到老师，请调整搜索关键词。
+                        </div>
+                      ) : (
+                        <select
+                          value={editingCurrentTeacherUserId == null ? '' : String(editingCurrentTeacherUserId)}
+                          onChange={(event) => {
+                            const nextTeacherUserId = Number(event.target.value);
+                            if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === editingCurrentTeacherUserId) {
+                              return;
+                            }
+                            void handleSelectTeacherForClass(editingClass.id, nextTeacherUserId);
+                          }}
+                          disabled={editingTeacherBindingSaving || classInteractionLocked || editingFilteredUsers.length === 0}
+                          className={workspaceFieldClass}
+                        >
+                          <option value="">请选择负责老师</option>
+                          {editingFilteredUsers.map((user) => (
+                            <option key={`${editingClass.id}-${user.id}`} value={user.id}>{user.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">家长绑定邀请码</h4>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">老师把这个邀请码发给家长后，家长就能在微信小程序里绑定该班级并选择对应学生。</p>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleLoadClassInvite(editingClass.id)}
+                            disabled={editingInviteLoading || editingInviteResetting}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            {editingInviteLoading ? '加载中...' : '查看邀请码'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleResetClassInvite(editingClass.id)}
+                            disabled={editingInviteLoading || editingInviteResetting}
+                            className={workspacePrimaryButtonClass}
+                          >
+                            {editingInviteResetting ? '重置中...' : '重置邀请码'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {editingInviteError ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                          <AlertCircle size={16} />
+                          {editingInviteError}
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className={`${workspaceSoftCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
+                          <p className="mt-3 font-mono text-2xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
+                            {editingInviteInfo?.invite_code || (editingInviteLoading ? '加载中' : '未加载')}
+                          </p>
+                        </div>
+                        <div className={`${workspaceSoftCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">使用说明</p>
+                          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                            家长先输入班级邀请码，再从网站里已有的学生名单中选择自己孩子进行绑定。一位家长可以重复绑定多个孩子。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -7856,7 +8027,7 @@ export default function App() {
     let cancelled = false;
     setCalendarLoading(true);
 
-    Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/lessons')])
+    Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/review-plans')])
       .then(([classes, lessons]) => {
         if (cancelled) {
           return;

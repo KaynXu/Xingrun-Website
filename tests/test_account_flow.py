@@ -1628,7 +1628,7 @@ class AccountFlowTestCase(unittest.TestCase):
         )
 
         response = self.client.get(
-            "/api/lessons",
+            "/api/review-plans",
             headers=self.auth_headers(target_member["token"]),
         )
 
@@ -1688,7 +1688,7 @@ class AccountFlowTestCase(unittest.TestCase):
         )
 
         detail_response = self.client.get(
-            f"/api/lessons/{detail_delete_lesson_id}",
+            f"/api/review-plans/{detail_delete_lesson_id}",
             headers=self.auth_headers(target_member["token"]),
         )
         preview_response = self.client.get(
@@ -1700,7 +1700,7 @@ class AccountFlowTestCase(unittest.TestCase):
             headers=self.auth_headers(target_member["token"]),
         )
         delete_response = self.client.delete(
-            f"/api/lessons/{detail_delete_lesson_id}",
+            f"/api/review-plans/{detail_delete_lesson_id}",
             headers=self.auth_headers(target_member["token"]),
         )
 
@@ -1737,7 +1737,7 @@ class AccountFlowTestCase(unittest.TestCase):
              patch("app.finalize_ai_charge", return_value={}), \
              patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
             missing_class_response = self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(target_member["token"]),
                 json={
                     "subject": "Chemistry",
@@ -1749,7 +1749,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 },
             )
             forbidden_class_response = self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(target_member["token"]),
                 json={
                     "subject": "Chemistry",
@@ -1762,7 +1762,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 },
             )
             allowed_class_response = self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(target_member["token"]),
                 json={
                     "subject": "Chemistry",
@@ -1794,11 +1794,11 @@ class AccountFlowTestCase(unittest.TestCase):
         )
 
         get_response = self.client.get(
-            f"/api/lessons/{lesson_id}/feedback",
+            f"/api/review-plans/{lesson_id}/feedback",
             headers=self.auth_headers(owner_token),
         )
         put_response = self.client.put(
-            f"/api/lessons/{lesson_id}/feedback",
+            f"/api/review-plans/{lesson_id}/feedback",
             headers=self.auth_headers(owner_token),
             json={
                 "merged_text": "removed",
@@ -1808,7 +1808,7 @@ class AccountFlowTestCase(unittest.TestCase):
             },
         )
         draft_response = self.client.post(
-            f"/api/lessons/{lesson_id}/feedback/draft",
+            f"/api/review-plans/{lesson_id}/feedback/draft",
             headers=self.auth_headers(owner_token),
             json={
                 "students": [],
@@ -1844,7 +1844,7 @@ class AccountFlowTestCase(unittest.TestCase):
              patch("app.finalize_ai_charge", return_value={}), \
              patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
             owner_response = self.client.post(
-                "/api/lessons",
+                "/api/review-plans",
                 headers=self.auth_headers(owner_token),
                 json={
                     "subject": "Math",
@@ -1889,15 +1889,15 @@ class AccountFlowTestCase(unittest.TestCase):
         )
 
         lessons_response = self.client.get(
-            "/api/lessons",
+            "/api/review-plans",
             headers=self.auth_headers(owner_token),
         )
         missing_detail_response = self.client.get(
-            f"/api/lessons/{missing_pdf_lesson_id}",
+            f"/api/review-plans/{missing_pdf_lesson_id}",
             headers=self.auth_headers(owner_token),
         )
         existing_detail_response = self.client.get(
-            f"/api/lessons/{existing_pdf_lesson_id}",
+            f"/api/review-plans/{existing_pdf_lesson_id}",
             headers=self.auth_headers(owner_token),
         )
 
@@ -1913,6 +1913,80 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(missing_detail_response.get_json()["pdf_path"], "")
         self.assertEqual(lessons_by_id[existing_pdf_lesson_id]["pdf_path"], str(existing_pdf_path))
         self.assertEqual(existing_detail_response.get_json()["pdf_path"], str(existing_pdf_path))
+
+    def test_stats_and_lesson_detail_no_longer_expose_question_legacy_fields(self):
+        owner_token = self.login_as_kayn()
+        class_id = self.create_class(
+            owner_token,
+            name="Question Cleanup Class",
+            subject="Math",
+            grade="初二",
+        )
+        self.assertEqual(class_id.status_code, 201)
+        class_payload = class_id.get_json()
+        self.assertIsNotNone(class_payload)
+        lesson_id = lesson_manager.save_lesson(
+            "2026-04-06",
+            "Math",
+            "Grade 8",
+            "Question Cleanup",
+            "summary",
+            "weak",
+            {"questions": [{"question": "old", "answer": "a", "category": "legacy", "day": 1}]},
+            "",
+            class_payload["id"],
+        )
+
+        stats_response = self.client.get("/api/stats", headers=self.auth_headers(owner_token))
+        detail_response = self.client.get(
+            f"/api/review-plans/{lesson_id}",
+            headers=self.auth_headers(owner_token),
+        )
+        with lesson_manager.get_conn() as conn:
+            questions_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='questions'"
+            ).fetchone()
+            persisted_question_count = (
+                conn.execute("SELECT COUNT(*) FROM questions WHERE lesson_id=?", (lesson_id,)).fetchone()[0]
+                if questions_table
+                else 0
+            )
+
+        self.assertEqual(stats_response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertNotIn("total_questions", stats_response.get_json())
+        self.assertNotIn("questions", detail_response.get_json())
+        self.assertEqual(persisted_question_count, 0)
+
+    def test_init_db_drops_legacy_questions_table(self):
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE questions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lesson_id INTEGER NOT NULL,
+                    question TEXT,
+                    answer TEXT,
+                    category TEXT,
+                    day_num INTEGER
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO questions (lesson_id, question, answer, category, day_num)
+                VALUES (1, 'legacy', 'a', 'old', 1)
+                """
+            )
+
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            question_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='questions'"
+            ).fetchone()
+
+        self.assertIsNone(question_table)
 
     def test_owner_and_admin_still_have_full_lesson_visibility(self):
         owner_token = self.login_as_kayn()
@@ -1971,8 +2045,8 @@ class AccountFlowTestCase(unittest.TestCase):
             class_b,
         )
 
-        owner_response = self.client.get("/api/lessons", headers=self.auth_headers(owner_token))
-        admin_response = self.client.get("/api/lessons", headers=self.auth_headers(admin_member["token"]))
+        owner_response = self.client.get("/api/review-plans", headers=self.auth_headers(owner_token))
+        admin_response = self.client.get("/api/review-plans", headers=self.auth_headers(admin_member["token"]))
 
         self.assertEqual(owner_response.status_code, 200)
         self.assertEqual(admin_response.status_code, 200)

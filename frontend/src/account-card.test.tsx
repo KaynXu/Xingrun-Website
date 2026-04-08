@@ -558,11 +558,11 @@ test('class management source keeps teacher binding selection scoped per class c
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /const currentTeacherUserId = teacherBindingByClassId\[item\.id\] \?\? item\.teacher_user_id \?\? null;/);
-  assert.match(classManagementBlock[0], /const currentTeacher = currentTeacherUserId == null \? undefined : users\.find\(\(user\) => user\.id === currentTeacherUserId\);/);
-  assert.match(classManagementBlock[0], /const teacherBindingSaving = Boolean\(teacherBindingSavingByClassId\[item\.id\]\);/);
+  assert.match(classManagementBlock[0], /const editingCurrentTeacherUserId = editingClass[\s\S]*teacherBindingByClassId\[editingClass\.id\] \?\? editingClass\.teacher_user_id \?\? null/);
+  assert.match(classManagementBlock[0], /const editingCurrentTeacher = editingCurrentTeacherUserId == null \? undefined : users\.find\(\(user\) => user\.id === editingCurrentTeacherUserId\);/);
+  assert.match(classManagementBlock[0], /const editingTeacherBindingSaving = editingClass \? Boolean\(teacherBindingSavingByClassId\[editingClass\.id\]\) : false;/);
   assert.match(classManagementBlock[0], /onChange=\{\(event\) => \{\s*const nextTeacherUserId = Number\(event\.target\.value\);/);
-  assert.match(classManagementBlock[0], /void handleSelectTeacherForClass\(item\.id, nextTeacherUserId\);/);
+  assert.match(classManagementBlock[0], /void handleSelectTeacherForClass\(editingClass\.id, nextTeacherUserId\);/);
   assert.match(classManagementBlock[0], /const previousTeacherName = previousClass\?\.teacher_name \|\| '';/);
   assert.match(source, /export function resolveTeacherBindingRollbackTeacherBindings\(/);
   assert.match(classManagementBlock[0], /loadPageRequestVersionRef\.current \+= 1;/);
@@ -614,7 +614,7 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
-  assert.match(classManagementBlock[0], /disabled=\{teacherBindingSaving \|\| classInteractionLocked \|\| filteredUsers\.length === 0\}/);
+  assert.match(classManagementBlock[0], /disabled=\{editingTeacherBindingSaving \|\| classInteractionLocked \|\| editingFilteredUsers\.length === 0\}/);
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
@@ -640,14 +640,29 @@ test('class management source embeds teacher assignment inside each class card a
   assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClassTeacherUserId == null \? '' : String\(newClassTeacherUserId\)\}/);
-  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{currentTeacherUserId == null \? '' : String\(currentTeacherUserId\)\}/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{editingCurrentTeacherUserId == null \? '' : String\(editingCurrentTeacherUserId\)\}/);
   assert.match(classManagementBlock[0], /<option value="">请选择负责老师<\/option>/);
-  assert.match(classManagementBlock[0], /当前负责老师：\{teacherSummary\}/);
+  assert.match(classManagementBlock[0], /当前负责老师：\{editingTeacherSummary\}/);
   assert.match(classManagementBlock[0], /newClassFilteredUsers\.map\(\(user\) => \(/);
-  assert.match(classManagementBlock[0], /filteredUsers\.map\(\(user\) => \(/);
+  assert.match(classManagementBlock[0], /editingFilteredUsers\.map\(\(user\) => \(/);
   assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*负责老师/);
   assert.doesNotMatch(classManagementBlock[0], /type="radio"/);
   assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
+});
+
+test('class management source opens both existing and new class editors in a modal instead of inline cards', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const newClassExpanded = expandedClassId === 'new';/);
+  assert.match(classManagementBlock[0], /const editingClass = typeof expandedClassId === 'number' \? classes\.find\(\(item\) => item\.id === expandedClassId\) \?\? null : null;/);
+  assert.match(classManagementBlock[0], /<AnimatePresence>/);
+  assert.match(classManagementBlock[0], /className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"/);
+  assert.match(classManagementBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !classCardInteractionLocked && setExpandedClassId\(null\)\}/);
+  assert.match(classManagementBlock[0], /编辑班级：/);
+  assert.match(classManagementBlock[0], /关闭班级编辑窗口/);
+  assert.doesNotMatch(classManagementBlock[0], /\{isExpanded && \(/);
 });
 
 test('class management source moves naming guidance to the page header and removes per-card guidance blocks', () => {

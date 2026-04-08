@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current `题库浏览` workspace tab with a bright Starain-style `课程日历` weekly calendar page, while keeping the first version demo-grade and ready for later linkage to `添加课程`.
 
-**Architecture:** Execute this plan in a fresh worktree created from the current `feat/workspace-shell-starain` branch, because the existing checkout is already dirty with unrelated runtime files and in-progress workspace shell changes. Keep the backend untouched and derive the calendar page entirely from the existing `GET /api/classes` and `GET /api/lessons` responses. Split pure calendar shaping logic into a focused helper module so the new view can be tested with `node:test` without forcing more logic into the already large `frontend/src/App.tsx`.
+**Architecture:** Execute this plan in a fresh worktree created from the current `feat/workspace-shell-starain` branch, because the existing checkout is already dirty with unrelated runtime files and in-progress workspace shell changes. Keep the backend untouched and derive the calendar page entirely from the existing `GET /api/classes` and `GET /api/review-plans` responses. Split pure calendar shaping logic into a focused helper module so the new view can be tested with `node:test` without forcing more logic into the already large `frontend/src/App.tsx`.
 
 **Tech Stack:** React 19, TypeScript, Vite, Tailwind v4 utility classes, `motion/react`, Node `node:test`, `tsx`.
 
@@ -696,7 +696,7 @@ useEffect(() => {
     return;
   }
 
-  Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/lessons')])
+  Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/review-plans')])
     .then(([nextClasses, nextLessons]) => {
       setClasses(nextClasses);
       setLessons(nextLessons);

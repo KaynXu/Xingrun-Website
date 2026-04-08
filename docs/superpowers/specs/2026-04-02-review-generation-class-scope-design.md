@@ -16,7 +16,7 @@
 
 - 前端复习生成页由 `frontend/src/App.tsx` 中的 `LessonInput`、`ReviewDocumentHistory`、`ReviewGenerationPage` 组成。
 - 班级列表接口 `/api/classes` 已经按用户角色过滤，`member` 只能拿到自己负责的班级。
-- 复习记录列表接口 `/api/lessons` 当前仍返回全量数据，详情、删除、PDF 访问也缺少相同的班级权限兜底。
+- 复习记录列表接口 `/api/review-plans` 当前仍返回全量数据，详情、删除、PDF 访问也缺少相同的班级权限兜底。
 - 课程/复习记录与班级的关联已经通过 `lessons.class_id` 存在；老师与班级的归属通过 `user_classes` 存在。
 
 ## Recommended Approach
@@ -57,7 +57,7 @@
 
 ### Review History
 
-- `ReviewDocumentHistory` 继续调用 `/api/lessons`，不在前端做额外权限过滤。
+- `ReviewDocumentHistory` 继续调用 `/api/review-plans`，不在前端做额外权限过滤。
 - 前端只负责展示接口返回的结果，权限以服务端为准。
 
 ## Backend Design
@@ -70,25 +70,25 @@
 - `member` 必须命中 `lesson.class_id in get_user_class_ids(user.id)`。
 - `lesson.class_id` 为空时，`member` 一律不可访问。
 
-### `GET /api/lessons`
+### `GET /api/review-plans`
 
 - `owner`/`admin`/`super_owner` 维持现有全量返回。
 - `member` 只返回自己负责班级对应的复习记录。
 - 保留现有 `month`、`class_id` 查询参数行为，但最终结果仍要叠加用户权限过滤。
 
-### `POST /api/lessons`
+### `POST /api/review-plans`
 
 - 班级改为必传业务字段；缺失时返回 400。
 - `member` 提交的 `class_id` 若不在自己负责班级内，返回 403。
 - `class_id` 不存在时返回 404 或等价明确错误。
 - 生成成功后仍按原流程写入 `lessons.class_id`。
 
-### `GET /api/lessons/<id>`
+### `GET /api/review-plans/<id>`
 
 - 加入基于 `class_id` 的访问控制。
 - 无权限时返回 404，避免暴露记录存在性。
 
-### `DELETE /api/lessons/<id>`
+### `DELETE /api/review-plans/<id>`
 
 - 加入与详情一致的访问控制。
 - `member` 只能删除自己负责班级的记录。
@@ -98,7 +98,7 @@
 - `/api/pdf/<lesson_id>`
 - `/api/pdf/download/<lesson_id>`
 
-这两个路由也需要与 `GET /api/lessons/<id>` 一致的权限判断，避免通过直接访问文件链接绕过复习记录列表限制。
+这两个路由也需要与 `GET /api/review-plans/<id>` 一致的权限判断，避免通过直接访问文件链接绕过复习记录列表限制。
 
 ## Data Flow
 
