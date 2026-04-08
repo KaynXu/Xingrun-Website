@@ -74,6 +74,38 @@
 - 如果要重新拉干净仓库，直接重新 clone 即可；新的默认可信基线应以远端 `master` 为准。
 - 如果还想保留当前目录中的零散本地文件，需要在删目录前另行备份。
 
+## README 重建（2026-04-09）
+
+### 已完成
+- 新建仓库根目录 `README.md`，内容已覆盖：
+  - 项目功能总览
+  - 前后端本地启动流程（含 `scripts/run_backend.sh` / `start.command`）
+  - 运行时配置来源与常用环境变量
+  - 后端测试、前端 lint/test/build 命令
+  - 部署脚本入口 `scripts/deploy_backend.sh`
+  - 结合当前 `master + develop + feature` 习惯的 Git 协作建议
+
+### proof
+- 临时脚本：`/tmp/proof_readme_20260409.sh`
+- 执行结果：
+  - `CHECK1_README_EXISTS=OK`
+  - `CHECK2_TITLE=OK`
+  - `CHECK3_QUICKSTART=OK`
+  - `CHECK4_BACKEND_SCRIPT=OK`
+  - `CHECK5_FRONTEND_TEST_CMD=OK`
+  - `CHECK6_GIT_SECTION=OK`
+  - `git status --short README.md handoff.md`
+    - `M README.md`
+    - `M handoff.md`
+
+### 剩余问题
+- `server deploy.md` 仍有历史命令示例（`deploy.sh`）与当前脚本现实存在偏差，本轮未改。
+
+### 下一步方向
+- 如需统一部署说明，建议下一轮同步收敛：
+  - `server deploy.md`
+  - `docs/operations/*` 中部署相关 runbook
+
 ---
 ## 第 1 批孤儿清理（2026-04-09）
 

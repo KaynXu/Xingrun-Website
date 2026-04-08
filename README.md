@@ -1,315 +1,140 @@
-# 星润课后复习系统
+# Xingrun-Website
 
-每次上课后提交课堂总结（文字/文件/音频），AI 自动生成 **8 天填空题复习讲义 PDF** 并记入题库。月底一键生成 **14 天月度综合复习计划 PDF**。
+星润教学管理系统（前后端同仓）：
+- 后端：Flask API（默认 `127.0.0.1:5001`）
+- 前端：React + Vite（默认 `127.0.0.1:3000`）
+- 数据：SQLite（默认 `data/xingrun.db`）
 
-提供 **Web UI**（React + Flask API）和 **命令行**（CLI）两种使用方式。
+## 1. 功能概览
 
----
+- 账号与组织体系：注册申请、机构审批、角色权限（super_owner / owner / admin / teacher）
+- 复习计划：创建、查询、下载 PDF、统计
+- 班级管理：班级/学生维护、邀请码、教师绑定
+- 班级反馈：任务创建、标签配置、草稿与确认流
+- 智能错题：错题提交流与映射管理（含微信家长侧上传链路）
+- 积分系统：机构余额、AI 调用记账、账本与成员用量查询
 
-## 快速开始
+## 2. 项目结构
 
-## Git 协作
+```text
+Xingrun-Website/
+├── app.py                         # Flask API 入口
+├── lesson_manager.py              # SQLite 数据层
+├── ai_processor.py                # AI 处理
+├── credit_manager.py              # 积分账本
+├── config_runtime.py              # 运行时配置加载（config + env）
+├── requirements.txt               # 后端依赖
+├── frontend/                      # React + Vite 前端
+├── tests/                         # 后端测试
+├── scripts/                       # 启动/部署脚本
+├── docs/                          # 规范、runbook、计划
+└── data/                          # 运行时数据（db/pdf/upload）
+```
 
-当前项目建议长期只保留一个主分支 `master`，功能开发使用临时分支，合并后及时删除。
+## 3. 本地启动（推荐）
 
-协作说明见：
-[`docs/git-collaboration.md`](docs/git-collaboration.md)
+### 3.1 后端
 
-### 方式一：Web UI（推荐）
-
-**macOS** — 双击 `start.command`  
-**Windows** — 双击 `start.bat`
-
-启动脚本会自动创建虚拟环境、安装依赖、初始化数据库，并启动后端 `http://127.0.0.1:5001`。
-
-前端默认开发地址为 `http://127.0.0.1:3000`（Vite）。
-后端根路径 `/` 会重定向到该前端地址。
-
-**手动启动：**
 ```bash
-# 终端 1：后端
+cd /Users/ark.mini/Desktop/Xingrun-Website
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python app.py
+. .venv/bin/activate
+pip install -r requirements.txt
+./scripts/run_backend.sh
+```
 
-# 终端 2：前端
-cd frontend
+说明：
+- `scripts/run_backend.sh` 会读取 `.env.runtime`（如果存在）
+- 服务启动后默认监听 `127.0.0.1:5001`
+
+### 3.2 前端
+
+```bash
+cd /Users/ark.mini/Desktop/Xingrun-Website/frontend
 npm install
 npm run dev
 ```
 
-启动后进入**设置页面**配置 API Key 和服务商（见下方「AI 服务商」）。
+说明：
+- 前端默认 `3000` 端口
+- 后端根路由 `/` 会重定向到 `XR_BROWSER_URL`（默认 `http://127.0.0.1:3000`）
 
-生产部署推荐使用环境变量，而不是把敏感配置直接写进 `config.json`。
-
----
-
-### 方式二：命令行（CLI）
-
-### 1. 初始化（只需做一次）
+### 3.3 一键本地启动（macOS）
 
 ```bash
-python lesson_manager.py setup
+cd /Users/ark.mini/Desktop/Xingrun-Website
+./start.command
 ```
-按提示输入 OpenAI API Key（用于音频转录 + 复习计划生成）。  
-API Key 保存在 `config.json`，也可以设置环境变量 `OPENAI_API_KEY`。
 
-### 环境变量部署
+## 4. 运行配置
 
-推荐在服务器上创建 `.env.runtime`，并通过 `scripts/run_backend.sh` 启动后端。
-可参考 `.env.runtime.example`。
+配置来源按覆盖优先级：
+1. 代码默认值（`config_runtime.py`）
+2. `config.json`
+3. 环境变量（优先级最高）
 
-常用变量：
+常用环境变量：
+- `XR_DB_PATH`
+- `XR_PROVIDER`
+- `OPENAI_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `MIMO_API_KEY`
+- `N1N_API_KEY`
+- `XR_BROWSER_URL`
+- `XR_OPEN_BROWSER`
+- `XR_WRONG_QUESTION_SERVICE_URL`
+- `XR_WRONG_QUESTION_SERVICE_TOKEN`
+
+## 5. 测试与构建
+
+### 5.1 后端测试
 
 ```bash
-XR_PROVIDER=n1n
-N1N_API_KEY=your_n1n_api_key
-XR_N1N_BASE_URL=https://api.n1n.ai/v1
-XR_N1N_MODEL=gpt-4o
-
-# 可选：admin 登录覆盖
-XR_ADMIN_USERNAME=admin
-XR_ADMIN_PASSWORD_HASH=<sha256_hex>
-
-# 微信小程序家长上传 bridge
-XR_WECHAT_SERVICE_TOKEN=replace_with_shared_bridge_token
+cd /Users/ark.mini/Desktop/Xingrun-Website
+.venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-优先级规则：环境变量 > `config.json`。
-`config.json` 仍可用于本地开发和保存登录 token，但生产环境推荐把敏感配置放进环境变量。
-
-服务器发布可直接执行：
+### 5.2 前端检查与测试
 
 ```bash
-./scripts/deploy_backend.sh
+cd /Users/ark.mini/Desktop/Xingrun-Website
+npm --prefix frontend run lint
+npm --prefix frontend run test
+npm --prefix frontend run build
 ```
 
-如需指定分支：
+## 6. 部署（当前约定）
+
+生产服务器信息见：`AGENTS.md`。
+
+常用脚本：
 
 ```bash
-./scripts/deploy_backend.sh master-sync
+cd /Users/ark.mini/Desktop/Xingrun-Website
+./scripts/deploy_backend.sh master
 ```
 
-这个脚本会自动：
-- `git fetch` + `git pull --ff-only`
-- 检查并更新 `.venv` 依赖
-- 执行 `init_db()`
-- 停掉旧的 `app.py` 进程并后台重启
-- 对 `http://127.0.0.1:5001/` 做健康检查
-
-部署脚本会自动设置 `XR_OPEN_BROWSER=0`，避免服务器重启时尝试打开本地浏览器。
-
----
-
-## 微信小程序家长上传 MVP
-
-网站侧在这条链路中承担两件事：
-
-- 作为老师、班级、学生的主数据源
-- 作为老师处理 `wechat_mp` 记录的工作台承接层
-
-当前网站已提供：
-
-- 班级邀请码读取/重置
-  - `GET /api/classes/<class_id>/invite`
-  - `POST /api/classes/<class_id>/invite/reset`
-- 微信小程序 bridge 接口
-  - `POST /api/wechat/login`
-  - `POST /api/wechat/bind-class`
-  - `POST /api/wechat/bind-student`
-  - `GET /api/wechat/bindings`
-  - `POST /api/wechat/wrong-questions`
-
-约束规则：
-
-- 网站里的 `classes / students / users` 是唯一 canonical identity
-- 小程序绑定流程必须使用网站返回的学生名单，不允许手填学生名
-- 所有 `/api/wechat/*` 请求都必须携带 `X-Wechat-Service-Token`
-- 该 token 由网站运行时配置 `XR_WECHAT_SERVICE_TOKEN` 提供，并与 mini backend 的 `WEBSITE_API_TOKEN` 保持一致
-
-### Parent Upload Smoke Test
-
-```text
-1. 在网站运行环境配置 XR_WECHAT_SERVICE_TOKEN，并启动 Flask 服务
-2. 以 owner/admin 身份登录网站，确认可读取并重置某个班级的邀请码
-3. 在 mini backend 配置 WEBSITE_API_BASE_URL 与 WEBSITE_API_TOKEN
-4. 在微信开发者工具打开小程序，执行：登录 -> 输入邀请码 -> 选择学生 -> 上传 1 张错题图
-5. 回到网站“智能错题”页面，确认出现 source=wechat_mp 的新记录，且班级/学生/老师归属正确
-```
-
----
-
-### 2. 添加一节课
-
-**方式 A：文本文件（推荐）**
-```bash
-python lesson_manager.py add --file 今天总结.txt --subject 数学 --grade 初二
-```
-
-**方式 B：直接粘贴文本**
-```bash
-python lesson_manager.py add --text "科目：数学\n年级：初二\n本节课主题：..."
-```
-
-**方式 C：上传录音文件（自动转录）**
-```bash
-python lesson_manager.py add --audio 录音.m4a --subject 数学 --grade 初二
-```
-支持格式：mp3 / m4a / wav / mp4 / ogg / webm / flac
-
-执行后自动：
-- 调用 AI 生成 8 天填空题复习讲义
-- 存入题库（SQLite 数据库）
-- 输出 PDF 到 `data/pdfs/` 并自动打开
-
----
-
-### 3. 课堂总结推荐格式
-
-系统可以识别结构化格式（也支持自由格式，AI 会自动解析）：
-
-```
-科目：数学
-年级：初二
-本节课主题：二次函数图像与性质
-课堂总结：
-  本节讲了二次函数 y=ax²+bx+c 的开口方向、对称轴、顶点……
-学生薄弱点（如果有）：
-  顶点坐标公式记错，忘记讨论 a 的正负
-```
-
----
-
-### 4. 查看课程列表
+可选指定分支：
 
 ```bash
-python lesson_manager.py list              # 全部
-python lesson_manager.py list --month 2026-03  # 某月
-```
-
----
-
-### 5. 生成月度综合复习 PDF
-
-```bash
-python lesson_manager.py monthly --month 2026-03
-```
-系统会把当月全部课程聚合，AI 生成 14 天月度复习计划 PDF。
-
----
-
-### 5.1 使用新版课后复习计划模板
-
-项目内已同步新版模板工作区到 `review_plan_templates/`，用于生成“第 1 / 2 / 7 / 14 / 30 天”的课后复习计划 PDF。
-
-常用命令：
-
-```bash
-python review_plan_templates/generate_review_pdfs.py
-```
-
-指定某个课程包生成：
-
-```bash
-python review_plan_templates/generate_review_pdfs.py default review_plan_templates/lesson_pack_vector_workflow.py
-```
-
-如需旧双语版：
-
-```bash
-python review_plan_templates/generate_review_pdfs.py hybrid review_plan_templates/lesson_pack_vector_workflow.py
+./scripts/deploy_backend.sh develop
 ```
 
 说明：
-- 网页和 CLI 的单课 PDF 现在统一走 `review_plan_templates/single_lesson_pdf.py`
-- 模板脚本、课程包和工作流文档位于 `review_plan_templates/`
-- `review_plan_templates/generate_review_pdfs.py` 仍可独立生成同款版式 PDF
-- 生成的 PDF 默认输出到 `review_plan_templates/pdf_output/`
-- 输出目录已加入 `.gitignore`，不会把新生成的 PDF 自动纳入版本管理
-- `pdf_engine.py` 仅保留月度 / 非单课 PDF 逻辑
+- 脚本会执行：拉取分支 -> 安装依赖 -> 初始化数据库 -> 重启后端 -> 健康检查
+- 默认健康检查地址：`http://127.0.0.1:5001/`
+
+## 7. Git 协作建议（适配你当前 master + develop）
+
+你目前是：`master` 主线 + `develop` 集成线 + feature 分支。
+
+建议用一条简单阈值规则，避免频繁“合并来合并去”：
+- 小改动（文档、1~2 文件、低风险）：直接在 `develop` 提交
+- 中大改动（功能、接口、数据库、多人并行）：从 `develop` 切 feature 分支
+- 发布时再把 `develop` 合并到 `master`
+
+这样可以在保留稳定发布节奏的前提下，减少微任务的分支成本。
 
 ---
 
-### 6. 题库操作
-
-```bash
-python lesson_manager.py quiz                      # 全部题库（隐藏答案）
-python lesson_manager.py quiz --month 2026-03      # 某月题库
-python lesson_manager.py quiz --id 3               # 某节课题库
-python lesson_manager.py quiz --show-answers       # 显示答案
-```
-
----
-
-### 7. 其他命令
-
-```bash
-python lesson_manager.py show --id 3    # 查看某节课详情
-python lesson_manager.py open --id 3    # 重新打开某节课 PDF
-```
-
----
-
-## AI 服务商
-
-支持三种服务商，在 Web UI 设置页、`config.json` 或环境变量中切换：
-
-| 服务商 | 说明 |
-|--------|------|
-| OpenAI | 默认，使用 GPT-4o 生成计划 + Whisper 语音转文字 |
-| DeepSeek | 兼容 OpenAI SDK |
-| MiMo | 自定义端点 |
-
----
-
-## REST API
-
-后端提供 REST API（CORS 已放行 `localhost:3000`、`localhost:5173`、`localhost:8080`），供当前仓库内 `frontend/` 调用：
-
-| 端点 | 方法 |
-|------|------|
-| `/api/stats` | GET |
-| `/api/classes` | GET, POST |
-| `/api/classes/<id>` | GET, PUT, DELETE |
-| `/api/review-plans` | GET, POST |
-| `/api/review-plans/<id>` | GET, DELETE |
-| `/api/quiz` | GET |
-| `/api/monthly` | GET |
-| `/api/monthly/generate` | POST |
-| `/api/settings` | GET, POST |
-
----
-
-## 文件结构
-
-```
-Xingrun-Website/
-├── app.py                      ← Flask 主应用，所有路由
-├── lesson_manager.py           ← 数据库层 + CLI 入口
-├── ai_processor.py             ← AI 调用（计划生成、语音转写）
-├── pdf_engine.py               ← PDF 生成（课时单、月度、周报）
-├── frontend/                   ← Vite + React 前端
-├── review_plan_templates/      ← 新版课后复习计划模板、课包与工作流文档
-├── config.json                 ← 本地配置与登录 token（生产环境建议使用环境变量覆盖）
-├── .env.runtime.example        ← 生产环境变量示例
-├── config_runtime.py           ← 运行时配置加载（环境变量优先）
-├── scripts/                    ← 部署与后端运行脚本
-├── tests/                      ← 后端回归测试
-├── requirements.txt
-├── start.command               ← macOS 一键启动
-├── start.bat                   ← Windows 一键启动
-└── data/
-    ├── lessons.db              ← SQLite 数据库（课程 + 题库）
-    ├── pdfs/                   ← 生成的 PDF 文件
-    └── uploads/                ← 音频临时文件（处理后自动删除）
-```
-
----
-
-## 注意事项
-
-- 需要有效的 **OpenAI API Key** 才能使用 AI 功能（音频转录 + 计划生成）
-- 单次添加课程约消耗 GPT-4o 3000~5000 tokens（约 $0.01～$0.02）
-- 月度复习约消耗 5000~10000 tokens（多课程聚合）
-- 数据全部本地存储，不上传到任何服务器
-- 生产部署建议不要把真实 API Key 提交进 git；优先使用 `.env.runtime`
+如果你希望，我可以再给你补一份「最简团队协作 SOP（含命令模板）」到 `docs/operations/`，作为新成员上手标准。
