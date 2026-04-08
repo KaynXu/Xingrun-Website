@@ -5340,3 +5340,51 @@ Landing Refresh 相关提交（按时间顺序）
   - 这些不是本轮新问题，本轮未处理。
 - 下一步方向：
   - 如果你还想继续收拾班级弹窗，可以下一轮再决定是否把“负责老师”也做成与顶部一致的卡片密度，进一步压缩弹窗高度。
+
+## 生产数据导入：学生名册灌库（2026-04-09）
+
+### 已完成
+- 已从本地 Excel `星润课时打卡表2026春.xlsx` 提取 50 个班的学生名单，并导入生产服务器 `49.234.185.86` 的 `/home/ubuntu/Xingrun-Website/data/xingrun.db`。
+- 已补齐生产库里原本缺失的 4 个班级：
+  - `小升初衔接`
+  - `九年级4班`
+  - `九年级巴蜀`
+  - `徐老师小课`
+- 已写入学生与班级关联数据：
+  - `classes`：46 -> 50
+  - `students`：0 -> 275
+  - `class_students`：0 -> 275
+- 已在导入前生成数据库备份：
+  - `data/xingrun.db.student-import-20260409-014419.sqlite3`
+
+### proof
+- 导入脚本：
+  - `/tmp/proof_import_students_20260409.sh`
+- 导入脚本完整输出关键结果：
+  - `LOCAL_CLASS_COUNT=50`
+  - `LOCAL_TOTAL_STUDENTS=275`
+  - `CREATED_CLASSES=小升初衔接|九年级4班|九年级巴蜀|徐老师小课`
+  - `INSERTED_STUDENTS=275`
+  - `SKIPPED_EXISTING=0`
+  - `FINAL_CLASSES=50`
+  - `FINAL_STUDENTS=275`
+  - `FINAL_CLASS_STUDENTS=275`
+  - `VERIFY_RESULT=OK`
+- 只读复验脚本：
+  - `/tmp/verify_student_import_20260409_v2.sh`
+- 复验脚本完整输出关键结果：
+  - `VERIFY_EXPECTED_CLASS_COUNT=50`
+  - `VERIFY_EXPECTED_TOTAL_STUDENTS=275`
+  - `REMOTE_TOTAL_CLASSES=50`
+  - `REMOTE_TOTAL_STUDENTS=275`
+  - `REMOTE_TOTAL_CLASS_STUDENTS=275`
+  - `REMOTE_CLASS_COUNTS_BEGIN ... REMOTE_CLASS_COUNTS_END`
+  - `VERIFY_RESULT=OK`
+
+### 剩余问题
+- `何老师小课` 在源 Excel 中就是空班，本轮保留为空，没有补学生。
+- 本轮只处理学生名册灌库，没有调整班级负责人映射、`user_classes` 归属或家长绑定数据。
+
+### 下一步方向
+- 如果接下来要让老师端按负责人过滤班级，下一轮需要继续核对新补 4 个班以及现有班级的老师归属配置。
+- 如果还要录入家长绑定或错题上传关联，应基于本次已导入的 `students/class_students` 继续补 `parent_student_bindings` 链路。
