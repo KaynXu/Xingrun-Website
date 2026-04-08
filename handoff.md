@@ -460,6 +460,49 @@
 
 ### 下一步方向
 - 如果继续推进，应先决定 batch2/3/4/5 哪些分支需要合回 `develop`，再考虑合并与部署，不要在同一轮混入新的技术债批次。
+## xingrun.db 机构主心骨结构调整（2026-04-09）
+
+### 已完成
+- 已完成设计与计划：
+  - `docs/superpowers/specs/2026-04-09-organization-rooted-db-structure-design.md`
+  - `docs/superpowers/plans/2026-04-09-organization-rooted-db-structure.md`
+- 已完成 `lesson_manager.py` 的机构主线化结构调整：
+  - `students.organization_id` 改为严格归属机构，`NOT NULL` 且 `REFERENCES organizations(id) ON DELETE CASCADE`
+  - `class_feedback_tasks.organization_id` 改为严格归属机构，创建与迁移时都校验机构一致性
+  - 旧库迁移改为先回填、再重建表，避免只加列不收紧约束
+  - `create_student_for_class()` 改为从 `classes.organization_id` 落学生机构归属
+  - 学生历史回填若发现跨机构班级绑定，直接拒绝并报错，不再静默猜测归属
+- 已补齐机构主导查询索引，避免可视化和后续查询继续只靠“单条链路”：
+  - `idx_students_organization_name`
+  - `idx_classes_organization_grade_subject_name`
+  - `idx_lessons_organization_class_date`
+  - `idx_consultations_organization_assigned_updated`
+  - `idx_class_feedback_tasks_organization_status_updated`
+  - `idx_wrong_question_submissions_organization_class_teacher_status`
+- 已修复 `delete_organization()` 清理顺序：
+  - 先删 `wrong_question_submissions` / `parent_student_bindings`
+  - 再删 `students`
+  - 避免 `student_id` 外键仍引用时触发 `sqlite3.IntegrityError`
+- 已补充回归测试覆盖：
+  - 机构归属字段迁移与回填
+  - 跨机构学生回填冲突拒绝
+  - 反馈任务创建人/老师跨机构拒绝
+  - 机构主导索引存在
+  - 删除机构时连带清理学生、绑定、错题提交、反馈任务
+
+### proof
+- 临时脚本：`/tmp/proof_org_rooted_db_structure_20260409.sh`
+- 完整输出：
+  - `./.venv/bin/python -m unittest tests.test_organization_rooted_db_structure tests.test_class_feedback_store tests.test_db_path_resolution tests.test_account_flow -v`
+  - `Ran 77 tests in 2.529s`
+  - `OK`
+
+### 剩余问题
+- 与本轮无关的既有基线问题仍在：
+  - `tests.test_master_data_store` 仍有 3 个 display name 相关失败（`Kayn` / `平台管理员`），本轮未触碰
+
+### 下一步方向
+- 已按用户选择进入本地合并 `develop` 流程。
 
 ## 机构成员权限收窄 & 班级管理开放（2026-04-09）
 
@@ -5966,3 +6009,70 @@ Landing Refresh 相关提交（按时间顺序）
 ### 下一步方向
 - 如果接下来要让老师端按负责人过滤班级，下一轮需要继续核对新补 4 个班以及现有班级的老师归属配置。
 - 如果还要录入家长绑定或错题上传关联，应基于本次已导入的 `students/class_students` 继续补 `parent_student_bindings` 链路。
+
+## organizations 作为数据库主心骨设计落稿（2026-04-09）
+
+### 已完成
+- 已按用户确认的方向，在独立 worktree 新开分支：
+  - worktree: `/Users/ark.mini/Desktop/Xingrun-Website/.worktrees/org-rooted-db-structure`
+  - branch: `feature/org-rooted-db-structure`
+- 已完成 `xingrun.db` 当前结构梳理，确认这轮以 `organizations` 作为唯一租户根。
+- 已写出设计 spec：
+  - `docs/superpowers/specs/2026-04-09-organization-rooted-db-structure-design.md`
+- 设计结论：
+  - 保持 `organizations` 为唯一根节点
+  - 关键补强点是把 `students` 改为显式 tenant-scoped
+  - `class_feedback_tasks` 也补 `organization_id`
+  - `user_classes` / `class_students` 等连接表继续只做关系映射，不承担归属锚点
+
+### proof
+- worktree 创建：
+  - `git worktree add .worktrees/org-rooted-db-structure -b feature/org-rooted-db-structure develop`
+- 基线测试环境：
+  - `uv venv .venv --python 3.12`
+  - `uv pip install --python .venv/bin/python -r requirements.txt`
+- 基线测试：
+  - `.venv/bin/python -m unittest tests.test_master_data_store tests.test_db_path_resolution tests.test_account_flow -v`
+  - 结果：`Ran 61 tests`
+  - 结果：`FAILED (failures=3)`
+  - 3 个既有失败都在 `tests.test_master_data_store`，断言预期 `teacher_display_name='Kayn'`，实际为 `'平台管理员'`
+  - `tests.test_account_flow` 与 `tests.test_db_path_resolution` 通过
+
+### 剩余问题
+- `tests.test_master_data_store` 当前存在 3 个既有红灯，未在本轮顺手修复。
+- 具体实现代码、迁移测试、真实 schema 变更尚未开始。
+
+### 下一步方向
+- 已在 `feature/org-rooted-db-structure` 提交本轮 spec + handoff，可直接在这个分支继续往下写 implementation plan 和代码。
+- 用户确认 spec 后，再进入 implementation plan：
+  - `students.organization_id`
+  - `class_feedback_tasks.organization_id`
+  - 相关迁移与索引
+
+## organizations 作为数据库主心骨 implementation plan（2026-04-09）
+
+### 已完成
+- 用户已确认设计 spec，可继续进入 implementation plan 阶段。
+- 已写出实现计划：
+  - `docs/superpowers/plans/2026-04-09-organization-rooted-db-structure.md`
+- 计划拆分为 4 个 task：
+  - schema + migration red/green
+  - `students.organization_id` 写入与冲突检测
+  - `class_feedback_tasks.organization_id` 写入与跨机构保护
+  - 组织维度索引与最终回归
+
+### proof
+- 本轮 proof 目标：
+  - plan 文件存在
+  - handoff 已记录本轮计划
+  - plan 中没有 `TBD/TODO`
+  - worktree 干净后可提交
+
+### 剩余问题
+- 具体代码改动还没开始执行。
+
+### 下一步方向
+- 已在 `feature/org-rooted-db-structure` 提交本轮 plan + handoff，可直接按计划开始执行。
+- 然后按计划选择执行方式：
+  - subagent-driven-development
+  - inline execution
