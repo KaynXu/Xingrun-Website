@@ -92,7 +92,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         credit_manager.record_ai_charge(
             organization_id=self.owner["organization_id"],
             user_id=approved["id"],
-            feature_key="teacher_feedback_draft",
+            feature_key="lesson_plan_generate",
             provider="openai",
             model="gpt-4o",
             input_tokens=80,
@@ -184,7 +184,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         first = credit_manager.record_ai_charge(
             organization_id=self.owner["organization_id"],
             user_id=self.owner["id"],
-            feature_key="teacher_feedback_draft",
+            feature_key="lesson_plan_generate",
             provider="openai",
             model="gpt-4o",
             input_tokens=70,
@@ -197,7 +197,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         second = credit_manager.record_ai_charge(
             organization_id=self.owner["organization_id"],
             user_id=self.owner["id"],
-            feature_key="teacher_feedback_draft",
+            feature_key="lesson_plan_generate",
             provider="openai",
             model="gpt-4o",
             input_tokens=70,
@@ -245,7 +245,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
                 amount=5,
                 source_type="ai_usage",
                 source_id=str(row["id"]),
-                note="teacher_feedback_draft",
+                note="lesson_plan_generate",
                 operator_user_id=self.owner["id"],
             )
             raise sqlite3.IntegrityError(
@@ -256,7 +256,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
             result = credit_manager.record_ai_charge(
                 organization_id=self.owner["organization_id"],
                 user_id=self.owner["id"],
-                feature_key="teacher_feedback_draft",
+                feature_key="lesson_plan_generate",
                 provider="openai",
                 model="gpt-4o",
                 input_tokens=60,
@@ -284,10 +284,33 @@ class CreditSystemServiceTestCase(unittest.TestCase):
                 FROM organization_credit_ledger
                 WHERE organization_id=? AND source_type='ai_usage' AND note=?
                 """,
-                (self.owner["organization_id"], "teacher_feedback_draft"),
+                (self.owner["organization_id"], "lesson_plan_generate"),
             ).fetchone()
         self.assertEqual(usage_count["total"], 1)
         self.assertEqual(debit_count["total"], 1)
+
+    def test_removed_teacher_feedback_feature_key_is_rejected(self):
+        credit_manager.apply_manual_adjustment(
+            organization_id=self.owner["organization_id"],
+            actor_user_id=self.owner["id"],
+            amount=30,
+            note="seed removed feature guard",
+        )
+
+        with self.assertRaises(ValueError):
+            credit_manager.record_ai_charge(
+                organization_id=self.owner["organization_id"],
+                user_id=self.owner["id"],
+                feature_key="teacher_feedback_draft",
+                provider="openai",
+                model="gpt-4o",
+                input_tokens=60,
+                output_tokens=20,
+                credit_cost_final=5,
+                source_record_type="lesson",
+                source_record_id=78,
+                request_id="req-removed-feature",
+            )
 
     def test_claim_ai_request_identity_blocks_inflight_and_completed_duplicates(self):
         credit_manager.apply_manual_adjustment(
@@ -315,7 +338,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
             credit_manager.record_ai_charge(
                 organization_id=self.owner["organization_id"],
                 user_id=self.owner["id"],
-                feature_key="teacher_feedback_draft",
+                feature_key="lesson_plan_generate",
                 provider="openai",
                 model="gpt-4o",
                 input_tokens=70,
@@ -526,22 +549,12 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertIn("积分不足", payload["error"])
         mock_parse.assert_not_called()
 
-    @patch("app.generate_teacher_feedback_draft")
-    def test_teacher_feedback_draft_records_ai_usage_and_deducts_balance(self, mock_feedback):
+    def test_teacher_feedback_draft_endpoint_is_removed_without_charging(self):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
             actor_user_id=self.owner_user["id"],
             amount=30,
             note="seed draft credits",
-        )
-        mock_feedback.return_value = (
-            "反馈草稿",
-            {
-                "provider": "openai",
-                "model": "gpt-4o",
-                "input_tokens": 220,
-                "output_tokens": 80,
-            },
         )
 
         lesson_id = lesson_manager.save_lesson(
@@ -571,10 +584,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertIsNotNone(payload)
-        self.assertEqual(payload["merged_text"], "反馈草稿")
+        self.assertEqual(response.status_code, 404)
 
         overview = self.client.get(
             "/api/credits/overview",
@@ -585,9 +595,8 @@ class CreditSystemApiTestCase(unittest.TestCase):
             headers=self.auth_headers(self.owner_token),
         ).get_json()["items"]
 
-        self.assertEqual(overview["credit_balance"], 28)
-        self.assertEqual(ledger[0]["source_type"], "ai_usage")
-        self.assertEqual(ledger[0]["note"], "teacher_feedback_draft")
+        self.assertEqual(overview["credit_balance"], 30)
+        self.assertEqual(ledger[0]["source_type"], "manual_adjustment")
 
     @patch("app.parse_consultation_batch_text")
     def test_consultation_ai_parse_duplicate_idempotency_header_skips_second_ai_call_and_charge(self, mock_parse):
@@ -1102,7 +1111,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         credit_manager.record_ai_charge(
             organization_id=self.owner_user["organization_id"],
             user_id=member_user["id"],
-            feature_key="teacher_feedback_draft",
+            feature_key="lesson_plan_generate",
             provider="openai",
             model="gpt-4o",
             input_tokens=90,
@@ -1142,7 +1151,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
 
         details_payload = member_details.get_json()
         self.assertIsNotNone(details_payload)
-        self.assertEqual(details_payload["items"][0]["feature_key"], "teacher_feedback_draft")
+        self.assertEqual(details_payload["items"][0]["feature_key"], "lesson_plan_generate")
         self.assertEqual(details_payload["items"][0]["credit_cost_final"], 5)
 
     def test_member_usage_detail_is_scoped_to_owner_organization(self):
@@ -1162,7 +1171,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         credit_manager.record_ai_charge(
             organization_id=other_owner["organization_id"],
             user_id=other_owner["id"],
-            feature_key="teacher_feedback_draft",
+            feature_key="lesson_plan_generate",
             provider="openai",
             model="gpt-4o",
             input_tokens=60,

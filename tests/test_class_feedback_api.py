@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 import importlib
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -121,28 +122,11 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
             ],
         )
 
-        lesson_id = self._create_lesson(
+        self._create_lesson(
             class_id=class_id,
             date_str="2026-04-05",
             topic="Week 1",
             summary="本周围绕阅读表达和句型迁移做训练。",
-        )
-        lesson_manager.save_lesson_feedback(
-            lesson_id=lesson_id,
-            class_id=class_id,
-            merged_text="张三课堂开口次数增加。",
-            student_index=[{"student_id": student["id"], "name": "张三"}],
-            editor_state={
-                "students": [
-                    {
-                        "student_id": student["id"],
-                        "name": "张三",
-                        "selected_template_id": "active",
-                        "remark": "主动表达增加",
-                    }
-                ],
-                "custom_templates": [],
-            },
         )
 
         task = lesson_manager.create_class_feedback_task(
@@ -191,7 +175,9 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(context["end_date"], "2026-04-09")
         self.assertEqual(context["stage_notes"]["class_status_tags"], ["进入状态快"])
         self.assertEqual(context["stage_notes"]["class_status_note"], "班级进入状态快，互动稳定。")
-        self.assertEqual(context["stage_notes"]["lesson_feedbacks"][0]["merged_text"], "张三课堂开口次数增加。")
+        self.assertNotIn("lesson_feedbacks", context["stage_notes"])
+        source_summary = json.loads(context["source_summary"])
+        self.assertNotIn("lesson_feedbacks", source_summary)
         self.assertEqual(
             [item["class_summary_final_text"] for item in context["stage_notes"]["recent_confirmed_class_summaries"]],
             ["上阶段正式班级反馈", "更早阶段正式班级反馈"],

@@ -78,7 +78,6 @@ from lesson_manager import (
     get_conn,
     get_consultation,
     get_current_user,
-    get_lesson_feedback,
     get_parent_student_binding,
     get_parent_student_binding_for_student,
     get_or_create_active_class_invite,
@@ -148,7 +147,7 @@ from credit_manager import (
     redeem_xhs_order,
 )
 from xhs_open_platform import fetch_xhs_order_for_redemption
-from ai_processor import generate_class_feedback_bundle, generate_teacher_feedback_draft
+from ai_processor import generate_class_feedback_bundle
 
 init_db()
 
@@ -1267,7 +1266,6 @@ def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
     cls = get_class(task["class_id"]) or {}
     all_lessons = list_lessons(class_id=task["class_id"])
     source_lessons = []
-    lesson_feedbacks = []
     for lesson in all_lessons:
         lesson_date = str(lesson.get("date") or "").strip()
         if not lesson_date or lesson_date < task["start_date"] or lesson_date > task["end_date"]:
@@ -1280,26 +1278,6 @@ def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
                 "topic": lesson.get("topic") or "",
                 "summary": lesson.get("summary") or "",
                 "weak_points": lesson.get("weak_points") or "",
-            }
-        )
-
-        feedback = get_lesson_feedback(lesson["id"]) or {}
-        editor_state = feedback.get("editor_state") if isinstance(feedback.get("editor_state"), dict) else {}
-        feedback_students = editor_state.get("students") if isinstance(editor_state.get("students"), list) else []
-        lesson_feedbacks.append(
-            {
-                "lesson_id": lesson["id"],
-                "date": lesson_date,
-                "merged_text": feedback.get("merged_text", "") or "",
-                "student_remarks": [
-                    {
-                        "student_id": item.get("student_id"),
-                        "remark": str(item.get("remark") or "").strip(),
-                        "selected_template_id": str(item.get("selected_template_id") or "").strip(),
-                    }
-                    for item in feedback_students
-                    if isinstance(item, dict) and isinstance(item.get("student_id"), int)
-                ],
             }
         )
 
@@ -1340,7 +1318,6 @@ def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
             "class_name": cls.get("name") or "",
             "date_range": {"start_date": task["start_date"], "end_date": task["end_date"]},
             "lessons": source_lessons,
-            "lesson_feedbacks": lesson_feedbacks,
         },
         ensure_ascii=False,
     )
@@ -1361,7 +1338,6 @@ def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
             "parent_feedback_note": str(task.get("parent_feedback_note") or ""),
             "teaching_focus_note": str(task.get("teaching_focus_note") or ""),
             "next_stage_preview_note": str(task.get("next_stage_preview_note") or ""),
-            "lesson_feedbacks": lesson_feedbacks,
             "student_highlights": list(task.get("student_highlights") or []),
             "recent_confirmed_class_summaries": recent_confirmed_summaries,
         },

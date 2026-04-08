@@ -62,6 +62,58 @@
 
 ---
 
+## AGENTS 多 AI 分支规则补充 & batch2 合入 develop（2026-04-09）
+
+### 已完成
+- 已更新 `AGENTS.md`，补充多 AI 并行协作时的分支规则：
+  - 一个 AI 对话可对应一个短命分支，但必须保持单任务、短生命周期
+  - 在建分支视为 draft，不因对话结束而直接 merge
+  - merge 前先用 `git rev-list --left-right --count develop...<branch>` 检查新鲜度
+  - 发现老分支会回放旧行为或回退新改动时，不直接 merge，改用 rebase / cherry-pick / 手工移植
+- 已完成 `batch2-teacher-feedback-cleanup` 的安全合入，但不是直接 merge 老分支，而是把有效改动移植到当前 `develop`：
+  - 删除 `app.py` 中对 `lesson_feedbacks` 的运行时读取与注入
+  - 删除 `generate_teacher_feedback_draft` / `get_lesson_feedback` 残留导入
+  - 删除 `credit_manager.py` 中 `teacher_feedback_draft` 定价规则
+  - 给 `record_ai_charge()` 补上 feature key 有效性校验
+  - 更新 `tests/test_class_feedback_api.py` 与 `tests/test_credit_system.py`，锁定退役后的真实行为
+- 已确认老 `batch2` 分支之所以不能直接 merge，是因为它相对当前 `develop` 落后较多，直接 merge 会回退 member 权限和班级管理相关新行为。
+
+### proof
+- `AGENTS.md` proof 脚本：
+  - `/tmp/proof_agents_multi_ai_branch_workflow_20260409.sh`
+  - 结果：
+    - `CHECK1_SECTION_EXISTS=OK`
+    - `CHECK2_SHORT_LIVED_RULE=OK`
+    - `CHECK3_FRESHNESS_CHECK_RULE=OK`
+    - `CHECK4_NO_DIRECT_MERGE_STALE_RULE=OK`
+- batch2 red/green：
+  - `/tmp/batch2_red_check_on_current_develop_20260409.sh`
+    - 初始失败 2 个：
+      - `lesson_feedbacks` 仍出现在 class feedback 生成上下文
+      - `teacher_feedback_draft` 仍被接受为合法计费 feature key
+  - `/tmp/batch2_green_check_on_current_develop_20260409.sh`
+    - 修复后 3 个定向测试全过
+- batch2 完整验证：
+  - `/tmp/proof_batch2_teacher_feedback_cleanup_20260409.sh`
+  - 结果：
+    - `APP_IMPORT_CHECK=OK`
+    - `CREDIT_RULE_CHECK=OK`
+    - `python -m unittest tests.test_class_feedback_api tests.test_class_feedback_store tests.test_account_flow tests.test_credit_system -v`
+    - `Ran 99 tests in 6.411s`
+    - `OK`
+
+### 剩余问题
+- `batch3-db-truth-source` 与 `batch4-consultations-csv-retire` 仍是进行中分支，本轮未动。
+- proof 输出里仍有既有 `sqlite3 ResourceWarning: unclosed database` 噪音；本轮未扩 scope 处理。
+
+### 下一步方向
+- 继续保持：
+  - 在建分支不要直接 merge
+  - 合并前先做新鲜度检查
+  - 老分支优先移植有效提交，而不是整支合并
+
+---
+
 ## 咨询记录按钮响应式修复（2026-04-09）
 
 ### 已完成
