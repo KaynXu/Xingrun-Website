@@ -5452,3 +5452,42 @@ Landing Refresh 相关提交（按时间顺序）
 ### 下一步方向
 - 如果接下来要让老师端按负责人过滤班级，下一轮需要继续核对新补 4 个班以及现有班级的老师归属配置。
 - 如果还要录入家长绑定或错题上传关联，应基于本次已导入的 `students/class_students` 继续补 `parent_student_bindings` 链路。
+
+## organizations 作为数据库主心骨设计落稿（2026-04-09）
+
+### 已完成
+- 已按用户确认的方向，在独立 worktree 新开分支：
+  - worktree: `/Users/ark.mini/Desktop/Xingrun-Website/.worktrees/org-rooted-db-structure`
+  - branch: `feature/org-rooted-db-structure`
+- 已完成 `xingrun.db` 当前结构梳理，确认这轮以 `organizations` 作为唯一租户根。
+- 已写出设计 spec：
+  - `docs/superpowers/specs/2026-04-09-organization-rooted-db-structure-design.md`
+- 设计结论：
+  - 保持 `organizations` 为唯一根节点
+  - 关键补强点是把 `students` 改为显式 tenant-scoped
+  - `class_feedback_tasks` 也补 `organization_id`
+  - `user_classes` / `class_students` 等连接表继续只做关系映射，不承担归属锚点
+
+### proof
+- worktree 创建：
+  - `git worktree add .worktrees/org-rooted-db-structure -b feature/org-rooted-db-structure develop`
+- 基线测试环境：
+  - `uv venv .venv --python 3.12`
+  - `uv pip install --python .venv/bin/python -r requirements.txt`
+- 基线测试：
+  - `.venv/bin/python -m unittest tests.test_master_data_store tests.test_db_path_resolution tests.test_account_flow -v`
+  - 结果：`Ran 61 tests`
+  - 结果：`FAILED (failures=3)`
+  - 3 个既有失败都在 `tests.test_master_data_store`，断言预期 `teacher_display_name='Kayn'`，实际为 `'平台管理员'`
+  - `tests.test_account_flow` 与 `tests.test_db_path_resolution` 通过
+
+### 剩余问题
+- `tests.test_master_data_store` 当前存在 3 个既有红灯，未在本轮顺手修复。
+- 具体实现代码、迁移测试、真实 schema 变更尚未开始。
+
+### 下一步方向
+- 已在 `feature/org-rooted-db-structure` 提交本轮 spec + handoff，可直接在这个分支继续往下写 implementation plan 和代码。
+- 用户确认 spec 后，再进入 implementation plan：
+  - `students.organization_id`
+  - `class_feedback_tasks.organization_id`
+  - 相关迁移与索引
