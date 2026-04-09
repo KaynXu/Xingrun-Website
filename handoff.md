@@ -6426,3 +6426,13 @@ Landing Refresh 相关提交（按时间顺序）
 - 若继续按原计划推进，下一批建议进入第 4 批：
   - 退役 `consultations.csv` 兼容层
   - 届时可顺手把这次诊断出的 `consultation_flow` 既有失败一起收口
+
+### Task 1 Review Plan Async Storage (2026-04-09)
+- 已完成：
+  - `lesson_manager.py` 引入 `record_status`/`generation_error` 字段，并确保 schema/migration 支持
+  - 新增 `monthly_plan_jobs` 表以及 `create_pending_lesson`、存储/更新 helper，`tests/test_review_plan_async_store.py` 覆盖新语义
+- Tests：
+  - `/tmp/xingrun-proof-venv/bin/python -m unittest tests.test_review_plan_async_store -v`（Fail -> 验证初始 red）
+  - `/tmp/xingrun-proof-venv/bin/python -m unittest tests.test_review_plan_async_store -v`（Pass -> 绿灯）
+- 剩余问题：API/worker 层还未接入异步流程，后续 Task 2 会继续
+- 下一步方向：继续 Task 2 设计/实现（app.py + new async worker tests）

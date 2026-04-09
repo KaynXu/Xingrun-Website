@@ -1329,6 +1329,8 @@ def init_db():
             plan_json   TEXT,
             pdf_path    TEXT,
             class_id    INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+            record_status TEXT NOT NULL DEFAULT 'ready',
+            generation_error TEXT NOT NULL DEFAULT '',
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
@@ -1347,6 +1349,18 @@ def init_db():
             status          TEXT NOT NULL DEFAULT 'active',
             organization_id INTEGER NOT NULL REFERENCES organizations(id),
             created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS monthly_plan_jobs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            user_id         INTEGER NOT NULL REFERENCES users(id),
+            month_str       TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            pdf_filename    TEXT NOT NULL DEFAULT '',
+            generation_error TEXT NOT NULL DEFAULT '',
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            updated_at      TEXT DEFAULT (datetime('now','localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS registration_requests (
@@ -1628,6 +1642,8 @@ def init_db():
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
         _ensure_class_feedback_task_integrity_guards(conn)
         _migrate_legacy_organization_scope(conn)
+        _ensure_column(conn, "lessons", "record_status", "TEXT NOT NULL DEFAULT 'ready'")
+        _ensure_column(conn, "lessons", "generation_error", "TEXT NOT NULL DEFAULT ''")
         _bootstrap_account_state(conn)
         default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
         _backfill_student_organization_scope(conn, default_org["id"])
@@ -2253,6 +2269,78 @@ def save_lesson(date_str: str, subject: str, grade: str, topic: str,
     return lesson_id
 
 
+def create_pending_lesson(
+    date_str: str,
+    subject: str,
+    grade: str,
+    topic: str,
+    summary: str,
+    weak_points: str,
+    class_id: int = 0,
+    *,
+    plan: Optional[dict] = None,
+    pdf_path: str = "",
+) -> int:
+    """Create a lesson record in pending state before AI generation completes."""
+    plan_content = json.dumps(plan or {}, ensure_ascii=False)
+    with get_conn() as conn:
+        organization_id = None
+        if class_id:
+            class_row = conn.execute(
+                "SELECT organization_id FROM classes WHERE id=?",
+                (class_id,),
+            ).fetchone()
+            organization_id = class_row["organization_id"] if class_row else None
+        if organization_id is None:
+            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
+        cur = conn.execute(
+            """INSERT INTO lessons
+               (date, subject, grade, topic, summary, weak_points,
+                plan_json, pdf_path, class_id, organization_id, record_status, generation_error)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                date_str,
+                subject,
+                grade,
+                topic,
+                summary,
+                weak_points,
+                plan_content,
+                pdf_path or "",
+                class_id if class_id else None,
+                organization_id,
+                "pending",
+                "",
+            ),
+        )
+        return cur.lastrowid
+
+
+def mark_lesson_generation_succeeded(lesson_id: int, *, plan: dict, pdf_path: str) -> None:
+    plan_json = json.dumps(plan, ensure_ascii=False)
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE lessons
+            SET plan_json=?, pdf_path=?, record_status='ready', generation_error=''
+            WHERE id=?
+            """,
+            (plan_json, pdf_path, lesson_id),
+        )
+
+
+def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE lessons
+            SET record_status='failed', generation_error=?
+            WHERE id=?
+            """,
+            (error_message, lesson_id),
+        )
+
+
 def get_lesson(lesson_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM lessons WHERE id=?", (lesson_id,)).fetchone()
@@ -2292,6 +2380,56 @@ def delete_lesson(lesson_id: int):
     """Delete a lesson from the database."""
     with get_conn() as conn:
         conn.execute("DELETE FROM lessons WHERE id=?", (lesson_id,))
+
+
+def create_monthly_plan_job(organization_id: int, user_id: int, month_str: str) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO monthly_plan_jobs
+                (organization_id, user_id, month_str, status, pdf_filename, generation_error)
+            VALUES (?, ?, ?, 'pending', '', '')
+            """,
+            (organization_id, user_id, month_str),
+        )
+        job_id = cur.lastrowid
+    return get_monthly_plan_job(job_id)
+
+
+def get_monthly_plan_job(job_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM monthly_plan_jobs WHERE id=?", (job_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def mark_monthly_plan_job_succeeded(job_id: int, *, pdf_filename: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE monthly_plan_jobs
+            SET status='ready',
+                pdf_filename=?,
+                generation_error='',
+                updated_at=(datetime('now','localtime'))
+            WHERE id=?
+            """,
+            (pdf_filename, job_id),
+        )
+
+
+def mark_monthly_plan_job_failed(job_id: int, error_message: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE monthly_plan_jobs
+            SET status='failed',
+                generation_error=?,
+                pdf_filename='',
+                updated_at=(datetime('now','localtime'))
+            WHERE id=?
+            """,
+            (error_message, job_id),
+        )
 
 
 # ─── 班级 CRUD ─────────────────────────────────────────────────────────────────
