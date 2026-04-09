@@ -138,6 +138,9 @@ from lesson_manager import (
     update_user_profile,
     update_user_role,
     upsert_parent_wechat_account,
+    get_teacher_alias_entries,
+    upsert_teacher_alias,
+    delete_teacher_alias,
 )
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
@@ -2030,6 +2033,62 @@ def api_consultation_teachers():
     if error:
         return error
     return jsonify(list_consultation_teachers())
+
+
+# ---------- Teacher Alias Mapping (teachers.json CRUD) ----------
+
+
+@app.route("/api/teacher-aliases", methods=["GET"])
+def api_teacher_aliases_list():
+    _, error = _require_owner()
+    if error:
+        return error
+    return jsonify(get_teacher_alias_entries())
+
+
+@app.route("/api/teacher-aliases", methods=["POST"])
+def api_teacher_aliases_create():
+    _, error = _require_owner()
+    if error:
+        return error
+    body = request.json or {}
+    wecom_userid = (body.get("wecom_userid") or "").strip()
+    display_name = (body.get("display_name") or "").strip()
+    aliases = body.get("aliases") or []
+    if not wecom_userid or not display_name:
+        return jsonify({"error": "企微ID和中文名为必填项"}), 400
+    try:
+        entry = upsert_teacher_alias(wecom_userid, display_name, aliases)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(entry), 201
+
+
+@app.route("/api/teacher-aliases/<path:wecom_userid>", methods=["PUT"])
+def api_teacher_aliases_update(wecom_userid):
+    _, error = _require_owner()
+    if error:
+        return error
+    body = request.json or {}
+    display_name = (body.get("display_name") or "").strip()
+    aliases = body.get("aliases") or []
+    if not display_name:
+        return jsonify({"error": "中文名为必填项"}), 400
+    try:
+        entry = upsert_teacher_alias(wecom_userid, display_name, aliases)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(entry)
+
+
+@app.route("/api/teacher-aliases/<path:wecom_userid>", methods=["DELETE"])
+def api_teacher_aliases_delete(wecom_userid):
+    _, error = _require_owner()
+    if error:
+        return error
+    if not delete_teacher_alias(wecom_userid):
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True})
 
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["GET"])

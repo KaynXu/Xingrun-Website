@@ -52,6 +52,7 @@ ORGANIZATION_INVITE_ACTIVE = "active"
 ORGANIZATION_INVITE_REVOKED = "revoked"
 CONSULTATION_TEACHERS_JSON_CANDIDATES = [
     DATA_DIR / "teachers.json",
+    Path.home() / ".openclaw" / "workspace" / "teachers.json",
     Path.home() / ".openclaw" / "workspace-wecom" / "teachers.json",
 ]
 GRADE_NUMERAL_MAP = {
@@ -489,6 +490,63 @@ def _load_consultation_teacher_aliases() -> dict[str, list[str]]:
                 if alias not in existing:
                     existing.append(alias)
     return alias_map
+
+
+def _get_teachers_json_path() -> Path:
+    """Return the first existing teachers.json path, or fall back to data/teachers.json."""
+    for candidate in CONSULTATION_TEACHERS_JSON_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return CONSULTATION_TEACHERS_JSON_CANDIDATES[0]
+
+
+def _save_teacher_aliases(alias_map: dict[str, list[str]]) -> None:
+    path = _get_teachers_json_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(alias_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def get_teacher_alias_entries() -> list[dict]:
+    """Return raw alias entries from teachers.json as a list of dicts."""
+    alias_map = _load_consultation_teacher_aliases()
+    entries = []
+    for teacher_id, aliases in sorted(alias_map.items(), key=lambda x: x[0].lower()):
+        entries.append({
+            "wecom_userid": teacher_id,
+            "display_name": aliases[0] if aliases else teacher_id,
+            "aliases": aliases,
+        })
+    return entries
+
+
+def upsert_teacher_alias(wecom_userid: str, display_name: str, aliases: list[str] | None = None) -> dict:
+    """Create or update a teacher alias mapping. Returns the updated entry."""
+    wecom_userid = wecom_userid.strip()
+    display_name = display_name.strip()
+    if not wecom_userid:
+        raise ValueError("企微ID不能为空")
+    if not display_name:
+        raise ValueError("中文名不能为空")
+    alias_map = _load_consultation_teacher_aliases()
+    merged = [display_name]
+    for a in (aliases or []):
+        a = a.strip()
+        if a and a not in merged:
+            merged.append(a)
+    alias_map[wecom_userid] = merged
+    _save_teacher_aliases(alias_map)
+    return {"wecom_userid": wecom_userid, "display_name": display_name, "aliases": merged}
+
+
+def delete_teacher_alias(wecom_userid: str) -> bool:
+    """Delete a teacher alias mapping. Returns True if deleted, False if not found."""
+    wecom_userid = wecom_userid.strip()
+    alias_map = _load_consultation_teacher_aliases()
+    if wecom_userid not in alias_map:
+        return False
+    del alias_map[wecom_userid]
+    _save_teacher_aliases(alias_map)
+    return True
 
 
 def _get_consultation_teacher_directory() -> dict[str, str]:
