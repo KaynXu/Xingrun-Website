@@ -262,6 +262,44 @@
 - 当前建议优先压缩的不是 JSON 结构约束，而是：
   - 冗余解释句
   - 重复出现的“必须覆盖全课”表达
+
+## 智能错题切换为错因归类流（2026-04-10）
+
+### 已完成
+- 已在网站仓库与小程序仓库的同名分支 `feature/wrong-question-error-cause` 上完成本轮改动。
+- 小程序上传侧已改成“每道题都必须填写孩子自己为什么错”：
+  - 题框级别保存 `childReasonText`
+  - 提交前会拦截未填写错因的题框
+  - 上传桥接与网站 API 都改为传 `child_raw_reason_text`
+- 网站后端已移除旧主流程里的人工传入 `primary_error_type` / `secondary_error_summary`：
+  - 改为根据孩子自述错因调用 AI 自动归类到固定错因
+  - 自动生成备注写入备注栏
+- 网站端微信错题记录已收口为新语义：
+  - 不再展示“家长备注”
+  - 不再以“题型分类 / 重复错题 / 知识点”作为微信错题主信息
+  - 改为展示“孩子自述错因 / AI 归类错因 / 备注栏”
+- 老师跟进逻辑已改为只保留“是否掌握”勾选：
+  - 保存时写 `is_mastered`
+  - 已掌握的微信错题会归档，后续练习可据此排除
+  - 旧的 `teacher_comment` / `status reviewed` 不再作为新流程主入口
+
+### proof
+- 网站前端：`cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
+  - 输出结论：`tests 32` / `pass 32` / `fail 0`
+- 网站后端：`cd /Users/ark.mini/Desktop/Xingrun-Website && /opt/homebrew/bin/python3 -m unittest discover -s tests -p 'test_wechat_parent_upload*.py'`
+  - 输出结论：`Ran 23 tests` / `OK`
+- 小程序与桥接：`cd /Users/ark.mini/Desktop/Xingrun-MiniProgram && node --test miniprogram/utils/parentApi.test.js && node --test miniprogram/pages/parent-upload/model.test.js && npx tsx --test backend/src/parent-wechat-bridge.test.ts`
+  - 输出结论：
+    - `parentApi.test.js`: `tests 9` / `pass 9` / `fail 0`
+    - `model.test.js`: `tests 6` / `pass 6` / `fail 0`
+    - `parent-wechat-bridge.test.ts`: `tests 5` / `pass 5` / `fail 0`
+
+### 剩余问题
+- 本轮为了兼容历史数据，没有删除数据库中的旧字段，只是不再把它们作为新流程主入口。
+- 网站前端里非微信来源的旧智能错题流仍保留原有教师复盘结构，没有在本轮扩 scope 重做。
+
+### 下一步方向
+- 如需继续收口，可以补一次真实小程序人工点击，重点确认“多题框逐题填写错因 -> 成功上传 -> 网站端老师勾选掌握”的完整链路体验。
   - 例子型说明
   - 可由字段名自解释的描述文字
 - 当前推荐方向是：

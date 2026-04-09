@@ -484,8 +484,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       {selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">家长上传信息</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，家长侧上传后会直接进入这里等待老师处理。</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传信息</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，孩子上传时会先写清自己为什么错，系统再归类固定错因并生成备注。</p>
           </div>
           {selectedRecord.imageUrl ? (
             <a
@@ -501,15 +501,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               />
             </a>
           ) : null}
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className={`${workspaceCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">家长备注</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.parentNote || '暂无家长备注'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">孩子自述错因</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.childReasonText || '孩子还没有填写错因描述。'}</p>
             </div>
             <div className={`${workspaceCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">处理状态</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.reviewStatus === 'reviewed' ? '已处理' : '待处理'}</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{selectedRecord.teacherComment || '老师还没有填写处理备注。'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 归类错因</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.primaryErrorType || selectedRecord.analysis.errorType || '待归类'}</p>
+            </div>
+            <div className={`${workspaceCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">备注栏</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{selectedRecord.causeNote || selectedRecord.analysis.studentNote || '暂无备注'}</p>
             </div>
           </div>
         </div>
@@ -537,39 +540,43 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className={`${workspaceSoftCardClass} p-4`}>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">题型分类</p>
-          <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedRecord.analysis.questionCategory || '待识别'}</p>
-        </div>
-        <div className={`${workspaceSoftCardClass} p-4`}>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">重复错题</p>
-          <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedRecord.analysis.isRepeatedMistake || '待确认'}</p>
-        </div>
-      </div>
+      {selectedRecord.source !== 'wechat_mp' && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">题型分类</p>
+              <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedRecord.analysis.questionCategory || '待识别'}</p>
+            </div>
+            <div className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">重复错题</p>
+              <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedRecord.analysis.isRepeatedMistake || '待确认'}</p>
+            </div>
+          </div>
 
-      <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-        <p className="text-sm font-semibold text-slate-900 dark:text-white">知识点</p>
-        <div className="flex flex-wrap gap-2">
-          {selectedRecord.analysis.knowledgePoints.length > 0 ? selectedRecord.analysis.knowledgePoints.map((point) => (
-            <span
-              key={point}
-              className="rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300"
-            >
-              {point}
-            </span>
-          )) : (
-            <span className="text-sm text-slate-500 dark:text-slate-400">暂无知识点标签</span>
-          )}
-        </div>
-      </div>
+          <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">知识点</p>
+            <div className="flex flex-wrap gap-2">
+              {selectedRecord.analysis.knowledgePoints.length > 0 ? selectedRecord.analysis.knowledgePoints.map((point) => (
+                <span
+                  key={point}
+                  className="rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300"
+                >
+                  {point}
+                </span>
+              )) : (
+                <span className="text-sm text-slate-500 dark:text-slate-400">暂无知识点标签</span>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {selectedDraft && selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">老师处理结果</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先记录老师是否已处理，再补一句面向内部的处理备注。</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">掌握情况</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">老师这里只保留是否掌握的勾选。掌握后，后续错题练习会自动排除这题。</p>
             </div>
             <button
               type="button"
@@ -577,7 +584,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               disabled={savingReview}
               className={workspacePrimaryButtonClass}
             >
-              {isMemberScope ? '保存跟进' : '保存处理结果'}
+              保存掌握情况
             </button>
           </div>
 
@@ -594,29 +601,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </label>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">处理状态</span>
-              <select
-                value={selectedDraft.reviewStatus}
-                onChange={(event) => handleDraftChange('reviewStatus', event.target.value)}
-                className={workspaceFieldClass}
-              >
-                <option value="pending">待处理</option>
-                <option value="reviewed">已处理</option>
-              </select>
-            </label>
-            <label className="space-y-2 text-sm sm:col-span-2">
-              <span className="text-slate-500 dark:text-slate-400">老师处理备注</span>
-              <textarea
-                value={selectedDraft.teacherComment}
-                onChange={(event) => handleDraftChange('teacherComment', event.target.value)}
-                onInput={(event) => handleDraftChange('teacherComment', (event.target as HTMLTextAreaElement).value)}
-                className={`${workspaceFieldClass} min-h-28 resize-y`}
-                placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"
-              />
-            </label>
-          </div>
+          <label className="flex items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={Boolean(selectedDraft.isMastered)}
+              onChange={(event) => handleDraftChange('isMastered', (event.target as HTMLInputElement).checked)}
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            />
+            <span>是否掌握</span>
+          </label>
         </div>
       )}
 
@@ -804,7 +797,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         </div>
                         {item.hasTeacherFollowUp ? (
                           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                            已跟进
+                            已掌握
                           </span>
                         ) : null}
                       </div>
@@ -1070,14 +1063,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-slate-900 dark:text-white">第 {index + 1} 题</p>
-                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.analysis.questionCategory || '未分类错题'}</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.primaryErrorType || item.analysis.errorType || '未分类错题'}</p>
                           </div>
                           <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
-                            {item.reviewStatus === 'reviewed' ? '已处理' : '待处理'}
+                            {item.isMastered ? '已掌握' : '待跟进'}
                           </span>
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
-                          <span className="truncate">{item.analysis.errorType || '待分析'}</span>
+                          <span className="truncate">{item.causeNote || item.childReasonText || item.questionText || '待分析'}</span>
                           <span className="shrink-0">{item.createdAt}</span>
                         </div>
                       </button>

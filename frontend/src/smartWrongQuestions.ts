@@ -19,6 +19,7 @@ export interface WrongQuestionReviewDraft {
   studentNote: string;
   teacherComment: string;
   reviewStatus: string;
+  isMastered?: boolean;
   questionText?: string;
 }
 
@@ -30,6 +31,7 @@ export interface WrongQuestionReviewPayload {
   studentNote: string;
   teacherComment: string;
   reviewStatus: string;
+  is_mastered?: boolean;
   question_text?: string;
 }
 
@@ -56,6 +58,11 @@ export interface WrongQuestionRecord {
   createdAt: string;
   imageUrl?: string;
   parentNote: string;
+  childReasonText?: string;
+  childReasonInputMode?: string;
+  primaryErrorType?: string;
+  causeNote?: string;
+  isMastered?: boolean;
   teacherComment: string;
   reviewStatus: string;
   analysis: WrongQuestionAnalysis;
@@ -244,6 +251,11 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const questionText = pickStringValue(source, ['questionText', 'question_text']);
   const questionTextSource = pickStringValue(source, ['questionTextSource', 'question_text_source']);
   const studentLibraryPdfPath = pickStringValue(source, ['studentLibraryPdfPath', 'student_library_pdf_path']);
+  const childReasonText = pickStringValue(source, ['childReasonText', 'child_reason_text', 'childRawReasonText', 'child_raw_reason_text']);
+  const childReasonInputMode = pickStringValue(source, ['childReasonInputMode', 'child_reason_input_mode']);
+  const primaryErrorType = pickStringValue(source, ['primaryErrorType', 'primary_error_type']);
+  const causeNote = pickStringValue(source, ['causeNote', 'cause_note', 'secondaryErrorSummary', 'secondary_error_summary']);
+  const archiveStatus = pickStringValue(source, ['archiveStatus', 'archive_status']);
   const rawIsGeometry = source.isGeometry ?? source.is_geometry;
   const isGeometry = typeof rawIsGeometry === 'boolean'
     ? rawIsGeometry
@@ -276,6 +288,36 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
 
   if (recognitionStatus) {
     record.recognitionStatus = recognitionStatus;
+  }
+
+  if (normalizedSource === 'wechat_mp') {
+    if (childReasonText) {
+      record.childReasonText = childReasonText;
+    }
+
+    if (childReasonInputMode) {
+      record.childReasonInputMode = childReasonInputMode;
+    }
+
+    if (primaryErrorType) {
+      record.primaryErrorType = primaryErrorType;
+    } else if (record.analysis.errorType.trim()) {
+      record.primaryErrorType = record.analysis.errorType.trim();
+    }
+
+    if (causeNote) {
+      record.causeNote = causeNote;
+    } else if (record.analysis.studentNote?.trim()) {
+      record.causeNote = record.analysis.studentNote.trim();
+    }
+
+    if (archiveStatus) {
+      record.isMastered = archiveStatus === 'archived';
+    }
+
+    if (typeof source.is_mastered === 'boolean') {
+      record.isMastered = source.is_mastered;
+    }
   }
 
   if (typeof isGeometry === 'boolean') {
@@ -314,6 +356,10 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     reviewStatus: record.reviewStatus.trim() || (isWechatMiniProgramWrongQuestionRecord(record) ? 'pending' : ''),
   };
 
+  if (isWechatMiniProgramWrongQuestionRecord(record)) {
+    draft.isMastered = Boolean(record.isMastered);
+  }
+
   if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
     draft.questionText = record.questionText?.trim() ?? '';
   }
@@ -331,6 +377,10 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
     teacherComment: draft.teacherComment.trim(),
     reviewStatus: draft.reviewStatus.trim(),
   };
+
+  if (typeof draft.isMastered === 'boolean') {
+    payload.is_mastered = draft.isMastered;
+  }
 
   if (typeof draft.questionText === 'string') {
     payload.question_text = draft.questionText.trim();
@@ -391,6 +441,7 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     ...record,
     teacherComment: payload.teacherComment,
     reviewStatus: payload.reviewStatus || record.reviewStatus,
+    isMastered: typeof payload.is_mastered === 'boolean' ? payload.is_mastered : record.isMastered,
     questionText: typeof payload.question_text === 'string' ? payload.question_text : record.questionText,
     analysis: nextAnalysis,
   };
@@ -415,6 +466,7 @@ export function resolveSavedWrongQuestionRecord(
     const hasParentNote = hasOwnKey(responseSource, ['parentNote', 'parent_note']);
     const hasTeacherComment = hasOwnKey(responseSource, ['teacherComment', 'teacher_comment']);
     const hasReviewStatus = hasOwnKey(responseSource, ['status']);
+    const hasMastered = hasOwnKey(responseSource, ['is_mastered', 'archive_status', 'archiveStatus']);
 
     return {
       ...normalizedResponse,
@@ -437,6 +489,7 @@ export function resolveSavedWrongQuestionRecord(
       parentNote: hasParentNote ? normalizedResponse.parentNote : currentRecord.parentNote,
       teacherComment: hasTeacherComment ? normalizedResponse.teacherComment : currentRecord.teacherComment,
       reviewStatus: hasReviewStatus ? normalizedResponse.reviewStatus : currentRecord.reviewStatus,
+      isMastered: hasMastered ? normalizedResponse.isMastered : currentRecord.isMastered,
     };
   }
 
@@ -480,7 +533,7 @@ export function normalizeWrongQuestionListResponse(payload: WrongQuestionListApi
 
 function hasTeacherReview(record: WrongQuestionRecord): boolean {
   if (isWechatMiniProgramWrongQuestionRecord(record)) {
-    return record.reviewStatus.trim() === 'reviewed' || Boolean(record.teacherComment.trim());
+    return Boolean(record.isMastered);
   }
 
   return Boolean(record.analysis.selectedErrorType?.trim());
@@ -549,8 +602,12 @@ export function buildMemberStudentNotebookSummaries(
     const normalizedClassName = record.className.trim();
     const normalizedClassId = record.classId ?? 0;
     const bucketKey = `${normalizedClassId}::${normalizedStudentName}`;
-    const pendingReviewCount = record.reviewStatus.trim() === 'pending' ? 1 : 0;
-    const hasTeacherFollowUp = hasTeacherReview(record) || Boolean(record.teacherComment.trim());
+    const pendingReviewCount = isWechatMiniProgramWrongQuestionRecord(record)
+      ? (record.isMastered ? 0 : 1)
+      : (record.reviewStatus.trim() === 'pending' ? 1 : 0);
+    const hasTeacherFollowUp = isWechatMiniProgramWrongQuestionRecord(record)
+      ? Boolean(record.isMastered)
+      : (hasTeacherReview(record) || Boolean(record.teacherComment.trim()));
     const current = buckets.get(bucketKey);
 
     if (!current) {

@@ -97,6 +97,35 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(submission["child_reason_input_mode"], "voice")
         self.assertEqual(submission["archive_status"], "active")
 
+    def test_save_wechat_wrong_question_review_only_updates_mastery_state(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            child_raw_reason_text="我把减号看成了加号",
+            primary_error_type="审题不清",
+            secondary_error_summary="把运算符号看错了。",
+        )
+
+        saved = lesson_manager.save_wechat_wrong_question_review(
+            submission["id"],
+            {
+                "is_mastered": True,
+                "teacher_comment": "旧字段不该再生效",
+                "status": "reviewed",
+            },
+        )
+
+        self.assertEqual(saved["archive_status"], "archived")
+        self.assertNotEqual(saved["archived_at"], "")
+        self.assertEqual(saved["teacher_comment"], "")
+        self.assertEqual(saved["status"], "pending")
+
     def test_wrong_question_submission_rejects_unknown_child_reason_input_mode(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(

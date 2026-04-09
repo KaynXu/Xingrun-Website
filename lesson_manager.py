@@ -4798,7 +4798,12 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     payload["teacher_display_name"] = row["teacher_display_name"]
     payload["teacher_name_snapshot"] = row["teacher_display_name"]
     payload["mapping_status"] = "mapped"
-    payload["analysis"] = {}
+    payload["is_mastered"] = row["archive_status"] == "archived"
+    payload["analysis"] = {
+        "error_type": str(row["primary_error_type"] or ""),
+        "selected_error_type": str(row["primary_error_type"] or ""),
+        "student_note": str(row["secondary_error_summary"] or ""),
+    }
     return payload
 
 
@@ -4953,8 +4958,10 @@ def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str
 
 
 def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:
-    teacher_comment = str(payload.get("teacher_comment") or "").strip()
-    status = str(payload.get("status") or "").strip() or "pending"
+    raw_is_mastered = payload.get("is_mastered")
+    normalized_is_mastered = bool(raw_is_mastered)
+    if isinstance(raw_is_mastered, str):
+        normalized_is_mastered = raw_is_mastered.strip().lower() in {"1", "true", "yes", "on"}
 
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
@@ -4963,10 +4970,12 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
         conn.execute(
             """
             UPDATE wrong_question_submissions
-            SET teacher_comment=?, status=?, updated_at=datetime('now','localtime')
+            SET archive_status=?,
+                archived_at=CASE WHEN ?='archived' THEN datetime('now','localtime') ELSE '' END,
+                updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (teacher_comment, status, record_id),
+            ("archived" if normalized_is_mastered else "active", "archived" if normalized_is_mastered else "active", record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(refreshed)
