@@ -2311,7 +2311,7 @@ const ClassFeedbackGenerationPage = ({
   const [classFeedbackStudents, setClassFeedbackStudents] = useState<ClassFeedbackStudentCard[]>([]);
   const [classFeedbackSummary, setClassFeedbackSummary] = useState('');
   const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState(
-    '先选择班级和反馈周期，再汇总阶段素材。',
+    '先选择班级和反馈阶段，再汇总阶段素材。',
   );
   const [classFeedbackStageNotes, setClassFeedbackStageNotes] = useState<ClassFeedbackStageNotes>(
     createEmptyClassFeedbackStageNotes(),
@@ -2508,7 +2508,7 @@ const ClassFeedbackGenerationPage = ({
 
     if (!nextClassId) {
       setClassFeedbackStudents([]);
-      setClassFeedbackStatusMessage('先选择班级和反馈周期，再汇总阶段素材。');
+      setClassFeedbackStatusMessage('先选择班级和反馈阶段，再汇总阶段素材。');
       return;
     }
 
@@ -2517,7 +2517,7 @@ const ClassFeedbackGenerationPage = ({
       const studentCount = await loadRosterOnly(nextClassId);
       setClassFeedbackStatusMessage(
         studentCount > 0
-          ? `已同步 ${studentCount} 名学生，请选择时间范围后创建反馈任务。`
+          ? `已同步 ${studentCount} 名学生，请选择反馈阶段后创建反馈任务。`
             : '当前班级还没有学生，请先到学生管理页面添加学生。',
       );
     } catch (error) {
@@ -2831,8 +2831,8 @@ const ClassFeedbackGenerationPage = ({
 
   const sourceSummaryItems = [
     selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
-    `反馈周期：${classFeedbackPeriodPreview.label}`,
-    `时间范围：${classFeedbackPeriodPreview.startDate} 至 ${classFeedbackPeriodPreview.endDate}`,
+    `反馈阶段：${classFeedbackPeriodPreview.label}`,
+    `覆盖范围：${classFeedbackPeriodPreview.startDate} 至 ${classFeedbackPeriodPreview.endDate}`,
     `已命中 ${matchedLessonCount} 节课次记录`,
     `学生人数：${classFeedbackStudents.length} 名`,
     `已检查 ${checkedStudentCount} 名，待检查 ${uncheckedStudentCount} 名`,

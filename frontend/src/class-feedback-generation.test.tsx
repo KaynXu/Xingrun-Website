@@ -290,10 +290,15 @@ test('App source wires the standalone class feedback page and existing class stu
   assert.match(appSource, /const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'/);
   assert.match(appSource, /const sortedClassFeedbackStudents = useMemo/);
   assert.match(appSource, /已命中 \$\{matchedLessonCount\} 节课次记录/);
+  assert.match(appSource, /反馈阶段：\$\{classFeedbackPeriodPreview\.label\}/);
+  assert.match(appSource, /覆盖范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
   assert.match(appSource, /lesson\.date >= classFeedbackPeriodPreview\.startDate/);
   assert.match(appSource, /lesson\.date <= classFeedbackPeriodPreview\.endDate/);
   assert.match(appSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
   assert.match(appSource, /<ClassFeedbackGenerationWorkspace/);
+  assert.doesNotMatch(appSource, /反馈周期：\$\{classFeedbackPeriodPreview\.label\}/);
+  assert.doesNotMatch(appSource, /时间范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
+  assert.doesNotMatch(appSource, /请选择时间范围后创建反馈任务/);
 });
 
 test('App source no longer renders the class feedback intro hero section', () => {

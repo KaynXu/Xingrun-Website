@@ -1,4 +1,27 @@
-<<<<<<< HEAD
+## Task 4 课堂反馈阶段摘要文案已收口（2026-04-09）
+
+### 已完成
+- 已把课堂反馈工作台摘要从 `反馈周期 / 时间范围` 改为 `反馈阶段 / 覆盖范围`，直接展示规范化 period label 和对应日期覆盖区间。
+- 已清理课堂反馈页残留的旧提示文案，不再提示“选择时间范围”，统一改为“选择反馈阶段”。
+- 已补前端回归断言，防止 `App.tsx` 回退到旧的 `反馈周期 / 时间范围` 文案。
+
+### proof
+- 临时脚本：`/tmp/xingrun_class_feedback_frontend_proof.sh`
+- 完整输出结论：
+  - `tests 10`
+  - `pass 10`
+  - `fail 0`
+- 临时脚本：`/tmp/xingrun_class_feedback_period_proof.sh`
+- 完整输出结论：
+  - Backend: `Ran 40 tests in 1.388s` → `OK`
+  - 说明：输出里仍有既有 `ResourceWarning: unclosed database` 与 `ai_processor.py` 的既有 `SyntaxWarning` 噪声，本轮未扩 scope 处理。
+
+### 剩余问题
+- 无新增问题。
+
+### 下一步方向
+- 当前 feature 分支上的 Task 1-4 已全部完成；如需进入集成阶段，可继续做分支收尾、评审或合并准备。
+
 ## Task 5 已完成 super_owner 平台总览（2026-04-09）
 
 ### 已完成
@@ -3040,19 +3063,6 @@
   - `class-feedback-release` 通过 `git range-diff bf47a10..origin/class-feedback-release bf47a10..master` 对比，前 12 个 class feedback 功能提交均已被当前 `master` 上的等价提交覆盖，仅剩旧的 `feat: prepare class feedback release` 收尾提交未保留，因此按“已被后续整合线取代”处理并删除远端旧分支。
 - 保留项：
   - `feature/wechat-parent-upload` 仍未并入 `master`，且绑定独立 worktree，未清理。
-- proof：
-  - `git push origin --delete integrate/class-feedback-safe class-feedback-release`
-  - `git fetch --prune origin`
-  - 结果：远端仅剩 `origin/master`
-
-补充记录（2026-04-07，按用户要求将本地 master 推送到云端）
-- 已完成：
-  - 复核推送前状态：`master` 相对 `origin/master` 为 `ahead 17 / behind 0`。
-  - 执行 `git push origin master`，远端已从 `bf47a10` 更新到 `7c136b9`。
-- 结果：
-  - 代码仓库 `Xingrun-Summary` 的本地 `master` 与 `origin/master` 已对齐。
-  - 仓库未跟踪脏文件仍存在，仅为本地生成文件，未随 push 上传。
-- 下一步方向：
   - 如需继续发布到服务器，可在此基础上执行部署流程。
   - 如需继续清理本地工作区，可删除 `__pycache__` 与 `data/pdfs` 下新生成的 PDF。
 
