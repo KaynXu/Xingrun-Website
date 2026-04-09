@@ -31,19 +31,20 @@
 - 已推送：
   - `origin/develop` → `01f7240`
   - `origin/master` → `0f846d3`
-- 生产部署未完成：本地到生产机 `ubuntu@49.234.185.86` 的 SSH 认证失败，当前密码与无密钥登录都不可用。
+- 生产部署已完成：
+  - 服务器：`ubuntu@49.234.185.86`
+  - 线上仓库已更新到：`0f846d3`
+  - `pm2 restart xingrun` 已执行完成
+  - 根路由连通性已确认：`GET /` 返回 `302`（按预期跳转到前端地址）
+- 部署过程中 GitHub HTTPS 拉取持续失败：`GnuTLS recv error (-110)`
+- 已使用 git bundle 兜底完成发布：本地打包 `master`，上传到服务器后在远端 `git fetch <bundle> master` + `git merge --ff-only FETCH_HEAD`
 
 ### 剩余问题
 - 后端测试输出仍有既有 `ResourceWarning: unclosed database` 噪音，但本轮目标测试已全部通过；当前未扩 scope 处理这类测试基础设施问题。
-- 如需真正完成上线，还需要可用的生产机 SSH 登录方式，然后执行：
-  - `cd /home/ubuntu/Xingrun-Website`
-  - `git pull origin master`
-  - `npm --prefix frontend run build`
-  - `pm2 restart xingrun`
-  - 健康检查 `http://127.0.0.1:5001/`
+- 线上服务器访问 GitHub 的 HTTPS 链路不稳定；下次部署如果再次出现同样问题，优先复用 git bundle 兜底流程，避免卡在 `git pull origin master`。
 
 ### 下一步方向
-- 提供可用 SSH 凭证或在已登录终端上执行上述 4 条命令，即可完成生产发布。
+- 如需继续优化发布链路，可把生产机远端仓库改成稳定的 SSH 拉取，或明确保留 git bundle 兜底脚本。
 
 ## 生产排查：复习计划长时间“生成中”实际为 n1n 524 超时（2026-04-09）
 
