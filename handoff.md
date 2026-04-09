@@ -8,9 +8,11 @@
 - `ClassFeedbackGenerationWorkspace` 已删除新增学生表单与 `onAddStudent` 接口。
 - `App.tsx` 已删除课堂反馈页内对应的 `handleAddStudent` 接线。
 - 当班级暂无学生时，提示文案已改为引导去学生管理页面添加学生。
+- 课堂反馈页顶部控制栏已改为通过 `controlBar` 插槽注入到工作台 header 内，不再在工作台上方单独渲染。
 - 已补前端回归断言，覆盖：
   - 工作台不再渲染“补充学生 / 新增学生”
   - App 不再向课堂反馈工作台传 `onAddStudent`
+  - App 将课堂反馈控制栏注入到工作台 header，而不是单独渲染在工作台外
 
 ### proof
 - 临时脚本：`/tmp/xingrun-class-feedback-proof-20260409.sh`
@@ -18,7 +20,7 @@
   - Frontend: `tests 6` / `pass 6` / `fail 0`
 - 提交前复验脚本：`/tmp/xingrun-class-feedback-proof-20260409-commit.sh`
 - 提交前复验输出结论：
-  - Frontend: `tests 7` / `pass 7` / `fail 0`
+  - Frontend: `tests 8` / `pass 8` / `fail 0`
 
 ### 剩余问题
 - 无。

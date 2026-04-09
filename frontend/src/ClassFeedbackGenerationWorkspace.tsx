@@ -9,6 +9,7 @@ import {
 } from './App';
 import type {
   ClassFeedbackStageNotes,
+  ClassFeedbackStudentCard,
   StageLabelGroup,
 } from './classFeedbackGeneration';
 
@@ -75,7 +76,6 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
         <p className="mt-3 inline-flex w-fit rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
           {props.draftStatusLabel}
         </p>
-        {props.controlBar ? <div className="mt-4">{props.controlBar}</div> : null}
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
