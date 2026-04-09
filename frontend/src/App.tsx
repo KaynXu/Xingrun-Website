@@ -43,6 +43,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
+import { WorkspaceDashboard } from './WorkspaceDashboard';
 import {
   createClassStudent,
   deleteClassStudent,
@@ -92,13 +93,6 @@ interface Lesson {
   created_at: string;
   record_status?: string;
   generation_error?: string;
-}
-
-interface Stats {
-  total_lessons: number;
-  month_lessons: number;
-  total_pdfs: number;
-  total_questions: number;
 }
 
 interface ApiSettings {
@@ -1600,160 +1594,6 @@ const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) 
     <p className="font-medium text-slate-700 dark:text-slate-200">{label}</p>
   </div>
 );
-
-// --- Pages ---
-
-const Dashboard = ({
-  currentUser,
-  setActivePage,
-  activeClassCount,
-}: {
-  currentUser: CurrentUser;
-  setActivePage: (p: Page) => void;
-  activeClassCount: number;
-}) => {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [recentLessons, setRecentLessons] = useState<Lesson[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/review-plans')])
-      .then(([s, lessons]) => {
-        setStats(s);
-        setRecentLessons(lessons.slice(0, 5));
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const statCards = [
-    { label: '本月课程', value: stats?.month_lessons ?? '—', icon: FileText, color: 'text-blue-500' },
-    { label: '累计课程', value: stats?.total_lessons ?? '—', icon: Library, color: 'text-green-500' },
-    { label: '已生成 PDF', value: stats?.total_pdfs ?? '—', icon: Download, color: 'text-purple-500' },
-    { label: '活跃班级', value: activeClassCount, icon: CalendarDays, color: 'text-cyan-500' },
-  ];
-
-  return (
-    <div className={`${workspacePageClass} space-y-8`}>
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
-        <div className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-8 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)]">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">Today at Starain</p>
-            <h3 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">欢迎回来，{currentUser.display_name}</h3>
-            <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-300">
-              {loading
-                ? '正在加载你的课堂数据与教学资产。'
-                : `本月已记录 ${stats?.month_lessons ?? 0} 节课，累计生成 ${stats?.total_pdfs ?? 0} 份 PDF 复习资料。`}
-            </p>
-          </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button onClick={() => setActivePage('review-generation')} className={workspacePrimaryButtonClass}>
-              <PlusCircle size={20} />
-              新建复习文档
-            </button>
-            <button onClick={() => setActivePage('review-generation')} className={workspaceSecondaryButtonClass}>
-              <Library size={20} />
-              查看历史文档
-            </button>
-          </div>
-        </div>
-
-        <div className={`${workspaceSoftCardClass} p-6`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Account</p>
-          <div className="mt-5 flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-xl font-bold text-white shadow-[0_16px_32px_rgba(34,199,232,0.25)]">
-              {currentUser.display_name.slice(0, 1).toUpperCase()}
-            </div>
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{getRoleLabel(currentUser.role)}</p>
-            </div>
-          </div>
-          <div className="mt-6 space-y-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500 dark:text-slate-400">机构</span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">{currentUser.organization_name}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500 dark:text-slate-400">账号状态</span>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                {currentUser.status === 'active' ? '正常' : currentUser.status}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-        {statCards.map((stat, i) => (
-          <div key={i} className={`${workspaceCardClass} group p-6`}>
-            <div className="mb-4 flex items-center justify-between">
-              <div className={`rounded-2xl bg-sky-50 p-3 dark:bg-white/5 ${stat.color}`}>
-                <stat.icon size={20} />
-              </div>
-              <ArrowRight size={16} className="text-slate-300 transition-colors group-hover:text-sky-500 dark:text-slate-600 dark:group-hover:text-sky-400" />
-            </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{stat.label}</p>
-            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{stat.value}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className={`${workspaceCardClass} overflow-hidden`}>
-        <div className="flex items-center justify-between border-b border-sky-100/80 p-6 dark:border-white/10">
-          <div>
-            <h4 className="font-semibold text-slate-900 dark:text-white">最近课程</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近录入的课堂内容会优先出现在这里。</p>
-          </div>
-          <button onClick={() => setActivePage('review-generation')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300">
-            查看全部
-          </button>
-        </div>
-        {loading ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
-        ) : recentLessons.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无课程记录</div>
-        ) : (
-          <div className="divide-y divide-sky-100/80 dark:divide-white/10">
-            {recentLessons.map((lesson) => (
-              <div key={lesson.id} className="flex items-center gap-4 p-4 transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
-                  <FileText size={22} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-900 dark:text-slate-100">{lesson.topic || `${lesson.subject} 课程`}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {lesson.date} • {lesson.subject} • {lesson.grade}
-                  </p>
-                </div>
-                {lesson.pdf_path && (
-                  <div className="flex gap-2">
-                    <a
-                      href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                      title="下载"
-                    >
-                      <Download size={18} />
-                    </a>
-                    <a
-                      href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                      title="查看"
-                    >
-                      <Eye size={18} />
-                    </a>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const SubjectCombobox = ({
   value,
@@ -8460,10 +8300,15 @@ export default function App() {
                 transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
               >
                 {activePage === 'dashboard' && (
-                  <Dashboard
+                  <WorkspaceDashboard
                     currentUser={currentUser}
                     setActivePage={setActivePage}
-                    activeClassCount={calendarClasses.length}
+                    styles={{
+                      pageClass: workspacePageClass,
+                      cardClass: workspaceCardClass,
+                      primaryButtonClass: workspacePrimaryButtonClass,
+                      secondaryButtonClass: workspaceSecondaryButtonClass,
+                    }}
                   />
                 )}
                 {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}

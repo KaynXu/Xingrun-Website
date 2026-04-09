@@ -1,3 +1,98 @@
+## Task 5 已完成 super_owner 平台总览（2026-04-09）
+
+### 已完成
+- `frontend/src/WorkspaceDashboard.tsx` 已为 `super_owner` 切换到独立的平台总览首页，不再复用机构工作流占位页。
+- 平台首页已落最小但真实的卡片与入口：`平台总览`、`机构观察`、`账号审批`、`系统设置`。
+- `机构观察` 卡片现在会跳转到现有的机构管理视图，避免首页只剩静态文案壳层。
+- `super_owner` 首页已移除 `新建复习文档` 作为中心入口，避免继续表现成机构内教学工作流。
+- `member` 工作台与 `owner/admin` 机构运营概览行为保持不变。
+- `frontend/src/workspace-dashboard.test.tsx` 已补 red-green 断言与点击测试，覆盖平台卡片、真实跳转、去除机构概览文案与移除复习文档 CTA。
+
+### proof
+- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+  - 结果：`tests 7` / `pass 6` / `fail 1`，失败点为 `super_owner` 仍缺少 `机构观察`，且仍渲染 `新建复习文档`。
+- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+  - 结果：`tests 7` / `pass 7` / `fail 0`
+- Task 5 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/course-calendar.test.tsx src/class-feedback-generation.test.tsx src/review-generation-async.test.tsx src/app-storage-guard.test.tsx`
+  - 结果：`tests 67` / `pass 67` / `fail 0`
+- Task 5 收口复验：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/course-calendar.test.tsx src/class-feedback-generation.test.tsx src/review-generation-async.test.tsx src/app-storage-guard.test.tsx`
+  - 结果：`tests 68` / `pass 68` / `fail 0`
+
+### 剩余问题
+- 当前 `机构观察` 已有真实入口，但下层观察面板仍是 truthful shell，尚未接独立的跨机构观察页面；这符合 Task 5 只落平台卡片与真实入口的 scope。
+
+### 下一步方向
+- 如果后续 plan 继续细化 `super_owner`，优先决定是否新增独立的跨机构观察页，再把首页壳层接到真实数据或页面。
+
+## Task 4 已完成 owner/admin 机构概览（2026-04-09）
+
+### 已完成
+- `frontend/src/WorkspaceDashboard.tsx` 已为 `owner/admin` 切换到机构运营概览首页，不再把“新建复习文档”放在页面中心。
+- 首页已落真实管理入口卡片：
+  - `owner`：`班级管理`、`账号审批`、`课堂反馈`、`智能错题`
+  - `admin`：`班级管理`、`咨询记录`、`课堂反馈`、`智能错题`
+- 保留 `member` 快速开工工作台与 `super_owner` 平台总览行为不变。
+- `frontend/src/workspace-dashboard.test.tsx` 已补 red-green 断言，覆盖 owner/admin 首页必备入口、移除复习文档中心态，以及 owner/admin 真实可达入口映射。
+
+### proof
+- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+  - 结果：`tests 6` / `pass 4` / `fail 2`，失败点为 owner/admin 仍缺少 `班级管理` 等入口，且仍渲染 `新建复习文档`。
+- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+  - 结果：`tests 6` / `pass 6` / `fail 0`
+- Task 4 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/course-calendar.test.tsx`
+  - 结果：`tests 53` / `pass 53` / `fail 0`
+
+### 剩余问题
+- 无新增阻塞；后续可继续细化 `super_owner` 首页和下层平台观察页。
+
+### 下一步方向
+- 继续执行工作台重写后续任务，优先收 `super_owner` 平台首页与剩余首页细节。
+
+## Task 3 member 工作台 workbench 已落地（2026-04-09）
+
+### 已完成
+- `frontend/src/WorkspaceDashboard.tsx` 的 `member` 分支已从占位文案扩展为真实教学工作台。
+- 首页现已渲染：`快速开始`、`复习生成`、`课堂反馈`、`课程日历`、`智能错题`、`我的教学概览`、`最近工作`。
+- 首页不再渲染或提及 `今日待办`、`通知中心` 这类未落地模块。
+- `admin` / `owner` / `super_owner` 的 Task 2 分支保持不变。
+- `frontend/src/workspace-dashboard.test.tsx` 已补强 member 工作台断言，覆盖必需入口与禁止文案。
+
+### proof
+- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+  - 结果：`tests 6` / `pass 5` / `fail 1`，初始失败点为缺少 `课程日历`。
+- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/review-generation-async.test.tsx`
+  - 结果：`tests 10` / `pass 10` / `fail 0`
+- Task 3 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/review-generation-async.test.tsx`
+  - 结果：`tests 10` / `pass 10` / `fail 0`
+
+### 剩余问题
+- `我的教学概览` 和 `最近工作` 当前仍是 truthful shell，尚未接真实数据，这符合 Task 3 当前 scope。
+
+### 下一步方向
+- Task 4 可继续在 `WorkspaceDashboard` 内补 owner/admin 的机构运营入口卡与真实概览结构。
+
+## Task 2 工作台角色分发组件已落地（2026-04-09）
+
+### 已完成
+- 已新增 `frontend/src/WorkspaceDashboard.tsx` 作为角色分发入口。
+- `member` 当前看到 `快速开始` 首页。
+- `owner` / `admin` 当前看到 `机构运营概览`。
+- `super_owner` 当前看到 `平台总览`。
+- `frontend/src/App.tsx` 的 `activePage === 'dashboard'` 分支已切换为渲染 `WorkspaceDashboard`，其余工作台 shell 未改。
+
+### proof
+- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
+  - 结果：`tests 4` / `pass 4` / `fail 0`
+- Task 2 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/app-storage-guard.test.tsx`
+  - 结果：`tests 52` / `pass 52` / `fail 0`
+
+### 剩余问题
+- 当前仍是 Task 2 的最小占位实现，真实角色首页内容会在 Task 3-5 继续展开。
+
+### 下一步方向
+- Task 3 可在当前 `WorkspaceDashboard` 基础上继续把具体角色首页内容从占位文案扩展成真实卡片与动作入口。
+
 ## 智能错题学生级错题库实现完成（2026-04-09）
 
 ### 已完成

@@ -98,13 +98,14 @@ test('sidebar account sheet includes dark theme surface classes', () => {
 
 test('workspace shell source applies dark classes to sidebar header and dashboard panels', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
 
   assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-950\/78/);
   assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
   assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
   assert.match(source, /:\s*'h-screen w-72 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
-  assert.match(source, /<div className="rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
+  assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
   assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
   assert.match(source, /<main className="flex min-w-0 flex-1 flex-col lg:pl-72">/);
 });
@@ -448,6 +449,7 @@ test('teacher binding rollback helper preserves fresher teacher state after late
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
+  const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
   const indexCssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 
   assert.match(appSource, /border border-rose-200 bg-rose-50 p-4 text-rose-600[^\n]*dark:border-rose-400\/20[^\n]*dark:bg-rose-500\/10[^\n]*dark:text-rose-300/);
@@ -455,7 +457,7 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /min-h-\[320px\][^\n]*border border-sky-100[^\n]*text-slate-700[^\n]*dark:border-white\/10[^\n]*dark:bg-slate-900\/70[^\n]*dark:text-slate-100/);
   assert.match(appSource, /<tr className="border-b border-sky-100\/80 text-xs uppercase tracking-wider text-slate-400[^\"]*dark:border-white\/10[^\"]*dark:text-slate-500"/);
   assert.match(appSource, /hover:bg-sky-50\/70[^\"]*dark:hover:bg-white\/5/);
-  assert.match(appSource, /机构负责人[\s\S]*账号审批与权限[\s\S]*dark:text-white/);
+  assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^"]*dark:border-white\/10[^"]*dark:bg-\[radial-gradient/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);
   assert.match(appSource, /负责老师<\/h4>[\s\S]*dark:text-white/);
