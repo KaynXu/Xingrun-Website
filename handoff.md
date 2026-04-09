@@ -1,3 +1,116 @@
+## 错题工作区统计与权限范围已调整（2026-04-09）
+
+### 已完成
+- 错题工作区顶部四个统计卡已调整为：
+  - `错题总数`
+  - `待跟进`
+  - `负责班级`
+  - `负责学生`
+- 前端统计已新增：
+  - `uniqueClassCount`
+  - `uniqueStudentCount`
+- 错题工作区权限范围已对齐：
+  - `member` 只看自己负责的班级 / 学生错题
+  - `admin` / `owner` 看本机构全局错题
+  - `super_owner` 看跨机构全局错题
+- 后端 `/api/wrong-questions` 的 staff 过滤已改为按 `organization_id` 做机构级隔离；对可解析的字符串 ID 也会正确比较，避免跨机构本地微信错题串入。
+- 已补回归测试，覆盖：
+  - member 仅看自己范围
+  - admin 看到本机构全局但不会看到其他机构本地错题
+  - 统计字段新增后的前端汇总行为
+
+### proof
+- 临时脚本：`/tmp/xingrun-smart-wq-proof.m0yEfs`
+- 完整输出结论：
+  - Backend: `Ran 22 tests in 0.478s` → `OK`
+  - Frontend: `tests 22` / `pass 22` / `fail 0`
+
+### 剩余问题
+- 后端测试输出仍有既有 `ResourceWarning: unclosed database` 噪音，但本轮目标测试已全部通过；当前未扩 scope 处理这类测试基础设施问题。
+
+### 下一步方向
+- 如需正式发生产，可把本次变更按发布流程合入发布分支并部署到生产机。
+
+## 生产排查：复习计划长时间“生成中”实际为 n1n 524 超时（2026-04-09）
+
+### 已完成
+- 已登录生产机 `49.234.185.86` 排查 `pm2`、日志与数据库状态。
+- 确认本次请求发生在 `2026-04-09 16:31:32`：
+  - `POST /api/review-plans` 返回 `202`
+  - lesson 记录 `id=37`
+- 确认这条记录最终不是一直 `pending`，而是已落库为：
+  - `record_status='failed'`
+  - `generation_error='AI 生成失败，请稍后重试'`
+- 确认根因来自上游 AI 提供方超时：
+  - `xingrun-error.log` 中 `Review plan AI generation failed for lesson 37`
+  - traceback 末尾为 `openai.InternalServerError`
+  - 上游返回 `n1n.ai | 524: A timeout occurred`
+- 确认当前进程没有仍在执行的后台生成线程：
+  - `pm2 pid xingrun` 对应 Python 进程当前 `NLWP=1`
+  - 没有挂起中的 review-plan worker
+- 本次失败未看到新的 `ai_usage_ledger` 成功记账记录，当前证据表明未完成成功扣费。
+- 已补充量化对比，确认这不是纯随机故障：
+  - 当前失败样本 `lesson 37` 是线上 `summary` 最长的一条，`summary_len=8620`
+  - 历史成功的 `gpt-5.4` 样本 `lesson 35/36` 都是 `summary_len=5536`
+  - 失败样本用户消息体量 `user_msg_chars=8755`
+  - 成功样本用户消息体量约 `5672/5679`
+  - `PLAN_SYSTEM_PROMPT` 固定还有 `2632` 个字符
+  - 也就是本次总提示词体量显著高于历史成功样本
+- 已确认当前结构化生成调用本身没有任何额外收敛参数：
+  - `ai_processor.py` 的 `parse_and_generate_plan()` 只传了 `model`、`messages`、`temperature=0.3`、`response_format={\"type\":\"json_object\"}`
+  - 没有显式 `max_tokens`
+  - 没有显式请求级 `timeout`
+  - 这条链路要求模型一次性返回完整 JSON，且提示词要求 5 个复习日都覆盖整节课全部核心知识点，天然输出偏大
+
+### proof
+- 生产机 `pm2`：
+  - `status=online`
+  - `created at=2026-04-09T08:30:37.360Z`
+  - `restarts=145`
+- 生产库 `lessons`：
+  - `id=37`
+  - `created_at=2026-04-09 16:31:32`
+  - `record_status=failed`
+  - `generation_error=AI 生成失败，请稍后重试`
+- 生产日志关键行：
+  - `Review plan AI generation failed for lesson 37`
+  - `openai.InternalServerError`
+  - `n1n.ai | 524: A timeout occurred`
+- 线程状态：
+  - `ps -Lf -p <pid>` 显示 `NLWP 1`
+
+### 剩余问题
+- 前端如果仍长期显示“生成中”，需要确认用户页面是否停留在旧状态，或继续核对 `/api/review-plans` 轮询刷新链路。
+- 当前用户可见错误文案仍是泛化的 `AI 生成失败，请稍后重试`，没有把 `524 timeout` 暴露给前端。
+- 用户后续页面已刷新为失败态，说明前端最终拿到了后端失败状态；当前“为何失败”的直接原因仍是上游 `n1n.ai` 在这次生成中返回 `524 timeout`。
+- 如果坚持保留 `gpt-5.4`，更可行的方向不是简单降级，而是收敛这条结构化请求的输入/输出规模，或改成分阶段生成，避免单次请求超过 `n1n` 上游可承受时长。
+
+### 下一步方向
+- 如需继续处理，可选两条线：
+  - 产品/运维线：先在前端把失败态刷新与重试体验核对清楚。
+  - 技术线：针对 `n1n/gpt-5.4` 的 `524 timeout` 做更稳的降级或重试策略。
+
+## 提示词压缩草稿已给出（2026-04-09）
+
+### 已完成
+- 已基于当前 `PLAN_SYSTEM_PROMPT` 做“压缩但尽量不改行为目标”的草稿设计。
+- 当前建议优先压缩的不是 JSON 结构约束，而是：
+  - 冗余解释句
+  - 重复出现的“必须覆盖全课”表达
+  - 例子型说明
+  - 可由字段名自解释的描述文字
+- 当前推荐方向是：
+  - 保留 5 个复习日、日期规则、day1/daily 结构、fill/answer 约束、公式 `$...$` 约束
+  - 压缩长段解释和示例
+  - 先做单段 system prompt 压缩，不先改成多段链式生成
+
+### 剩余问题
+- 新提示词还未落代码，也还未做线上/本地回归。
+- 用户准备先人工改一版，再决定是否替换现有提示词。
+
+### 下一步方向
+- 如果用户确认草稿方向，再把压缩版替换到 `ai_processor.py`，并做最小回归验证。
+
 ## Task 5 移除 gpt-4o fallback 并最终回归验证（2026-04-09）
 
 ### 已完成

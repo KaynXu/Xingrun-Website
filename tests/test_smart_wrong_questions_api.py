@@ -108,11 +108,16 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload
 
-    def create_local_wechat_record(self, owner_id: int) -> dict:
-        class_id = lesson_manager.save_class("六年级 9 班", subject="数学", grade="六年级")
+    def create_local_wechat_record(self, owner_id: int, organization_id: int | None = None, openid: str = "openid-local-1") -> dict:
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=organization_id,
+        )
         lesson_manager.set_class_teacher_user_id(class_id, owner_id)
         student = lesson_manager.create_student_for_class(class_id, "Alice")
-        account = lesson_manager.upsert_parent_wechat_account(openid="openid-local-1")
+        account = lesson_manager.upsert_parent_wechat_account(openid=openid)
         binding = lesson_manager.bind_parent_to_student(
             parent_wechat_account_id=account["id"],
             class_id=class_id,
@@ -184,6 +189,33 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(forwarded_args.get("empty"), "")
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_staff_can_see_unmapped_org_records_in_global_workspace(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        fetch_wrong_question_records.return_value = {
+            "items": [
+                {
+                    "id": "record-unmapped",
+                    "student_name": "Alice",
+                    "teacher_user_id": None,
+                    "class_id": None,
+                    "mapping_status": "unmapped",
+                }
+            ],
+            "total": 1,
+        }
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["items"][0]["id"], "record-unmapped")
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_local_wechat_records_are_merged_into_workspace_list(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
         record = self.create_local_wechat_record(owner_payload["user"]["id"])
@@ -201,6 +233,71 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(item["class_id"], record["class_id"])
         self.assertEqual(item["student_id"], record["student_id"])
         self.assertEqual(item["teacher_user_id"], record["teacher_user_id"])
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_staff_global_workspace_excludes_other_organization_local_records(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        with lesson_manager.get_conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, ?, 'active', ?)
+                """,
+                (
+                    "org_admin",
+                    lesson_manager.hash_password("org-admin-123"),
+                    "Org Admin",
+                    "admin",
+                    owner_payload["user"]["organization_id"],
+                ),
+            )
+            admin_user_id = cur.lastrowid
+        admin_token = lesson_manager.create_auth_session(admin_user_id)
+
+        self.create_local_wechat_record(
+            owner_payload["user"]["id"],
+            owner_payload["user"]["organization_id"],
+            "openid-local-owner-1",
+        )
+
+        with lesson_manager.get_conn() as conn:
+            other_org = lesson_manager._ensure_organization(conn, "第二机构")
+            cur = conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, ?, 'active', ?)
+                """,
+                (
+                    "other_owner",
+                    lesson_manager.hash_password("other-owner-123"),
+                    "Other Owner",
+                    "owner",
+                    other_org["id"],
+                ),
+            )
+            other_owner_id = cur.lastrowid
+        other_owner_payload = {
+            "user": {"id": other_owner_id, "organization_id": other_org["id"]},
+            "token": lesson_manager.create_auth_session(other_owner_id),
+        }
+        self.create_local_wechat_record(
+            other_owner_payload["user"]["id"],
+            other_owner_payload["user"]["organization_id"],
+            "openid-local-owner-2",
+        )
+
+        fetch_wrong_question_records.return_value = {"items": [], "total": 0}
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(admin_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(len(payload["items"]), 1)
+        self.assertEqual(payload["items"][0]["organization_id"], owner_payload["user"]["organization_id"])
 
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_list_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):

@@ -58,6 +58,8 @@ export interface WrongQuestionSummary {
   repeatedMistakeCount: number;
   highPriorityCount: number;
   pendingReviewCount: number;
+  uniqueClassCount: number;
+  uniqueStudentCount: number;
 }
 
 export interface WrongQuestionListApiResponse {
@@ -382,6 +384,8 @@ function normalizeWrongQuestionSummary(rawSummary: unknown, fallback: WrongQuest
     repeatedMistakeCount: pickNumberValue(source, ['repeatedMistakeCount', 'repeated_mistake_count']) ?? fallback.repeatedMistakeCount,
     highPriorityCount: pickNumberValue(source, ['highPriorityCount', 'high_priority_count']) ?? fallback.highPriorityCount,
     pendingReviewCount: pickNumberValue(source, ['pendingReviewCount', 'pending_review_count']) ?? fallback.pendingReviewCount,
+    uniqueClassCount: pickNumberValue(source, ['uniqueClassCount', 'unique_class_count']) ?? fallback.uniqueClassCount,
+    uniqueStudentCount: pickNumberValue(source, ['uniqueStudentCount', 'unique_student_count']) ?? fallback.uniqueStudentCount,
   };
 }
 
@@ -414,7 +418,10 @@ function isRepeatedMistake(value?: string): boolean {
 }
 
 export function summarizeWrongQuestionRecords(records: WrongQuestionRecord[]): WrongQuestionSummary {
-  return records.reduce<WrongQuestionSummary>((summary, record) => {
+  const classes = new Set<string>();
+  const students = new Set<string>();
+
+  const base = records.reduce<Omit<WrongQuestionSummary, 'uniqueClassCount' | 'uniqueStudentCount'>>((summary, record) => {
     const nextSummary = {
       ...summary,
       totalCount: summary.totalCount + 1,
@@ -432,6 +439,9 @@ export function summarizeWrongQuestionRecords(records: WrongQuestionRecord[]): W
       nextSummary.pendingReviewCount += 1;
     }
 
+    if (record.className.trim()) classes.add(record.className.trim());
+    if (record.studentName.trim()) students.add(record.studentName.trim());
+
     return nextSummary;
   }, {
     totalCount: 0,
@@ -439,6 +449,8 @@ export function summarizeWrongQuestionRecords(records: WrongQuestionRecord[]): W
     highPriorityCount: 0,
     pendingReviewCount: 0,
   });
+
+  return { ...base, uniqueClassCount: classes.size, uniqueStudentCount: students.size };
 }
 
 export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {

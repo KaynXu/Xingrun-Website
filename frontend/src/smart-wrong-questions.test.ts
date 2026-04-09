@@ -200,6 +200,8 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     repeatedMistakeCount: 2,
     highPriorityCount: 2,
     pendingReviewCount: 2,
+    uniqueClassCount: 3,
+    uniqueStudentCount: 3,
   });
 });
 
@@ -445,6 +447,8 @@ test('normalizeWrongQuestionListResponse converts backend object payloads into p
     repeatedMistakeCount: 4,
     highPriorityCount: 2,
     pendingReviewCount: 5,
+    uniqueClassCount: 2,
+    uniqueStudentCount: 2,
   });
 });
 
