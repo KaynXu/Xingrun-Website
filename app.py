@@ -158,6 +158,7 @@ _CREDIT_REDEEM_FAILURE_LOCK_SECONDS = 300.0
 _CREDIT_REDEEM_FAILURE_STATE: dict[tuple[int, str], dict[str, float | int]] = {}
 _CREDIT_REDEEM_FAILURE_LOCK = threading.Lock()
 _AI_REQUEST_IDEMPOTENCY_WINDOW_SECONDS = 60.0
+_AI_REQUEST_IDENTITY_TTL_SECONDS = 7200.0
 _AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
 _AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
 _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
@@ -434,7 +435,7 @@ def _claim_ai_request_identity(*, organization_id: int, request_id: str) -> None
         expired = [
             key
             for key, started_at in _AI_REQUEST_IN_FLIGHT.items()
-            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+            if (now - started_at) > _AI_REQUEST_IDENTITY_TTL_SECONDS
         ]
         for key in expired:
             _AI_REQUEST_IN_FLIGHT.pop(key, None)

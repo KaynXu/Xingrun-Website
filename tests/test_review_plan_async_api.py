@@ -138,6 +138,48 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         mock_start_thread.assert_called_once()
 
     @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app._current_ai_request_key", return_value="header:long-running-review-plan")
+    @patch("app.has_api_key", return_value=True)
+    def test_post_review_plan_duplicate_stays_blocked_after_execution_ttl_window(
+        self,
+        _mock_has_api_key,
+        _mock_request_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        original_execution_ttl = app_module._AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+        app_module._AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 0.0
+        try:
+            payload = {
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "weak_points": "斜率判断",
+                "summary_text": "课堂总结文本",
+                "input_type": "text",
+            }
+
+            first = self.client.post(
+                "/api/review-plans",
+                headers=self._auth_headers(self.owner_token),
+                json=payload,
+            )
+            second = self.client.post(
+                "/api/review-plans",
+                headers=self._auth_headers(self.owner_token),
+                json=payload,
+            )
+        finally:
+            app_module._AI_REQUEST_IN_FLIGHT_TTL_SECONDS = original_execution_ttl
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(len(lesson_manager.list_lessons()), 1)
+        mock_start_thread.assert_called_once()
+
+    @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
     @patch("app.has_api_key", return_value=True)
     def test_post_review_plan_returns_402_when_credits_are_insufficient(
