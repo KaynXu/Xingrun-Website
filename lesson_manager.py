@@ -2384,6 +2384,11 @@ def delete_lesson(lesson_id: int):
 
 def create_monthly_plan_job(organization_id: int, user_id: int, month_str: str) -> dict:
     with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if user_row["organization_id"] != organization_id:
+            raise ValueError("user does not belong to organization")
         cur = conn.execute(
             """
             INSERT INTO monthly_plan_jobs
@@ -3871,6 +3876,7 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("UPDATE organization_invites SET created_by=NULL WHERE created_by=?", (target_user_id,))
         conn.execute("UPDATE organization_credit_ledger SET operator_user_id=NULL WHERE operator_user_id=?", (target_user_id,))
         conn.execute("UPDATE xhs_order_redemptions SET redeemed_by_user_id=NULL WHERE redeemed_by_user_id=?", (target_user_id,))
+        conn.execute("DELETE FROM monthly_plan_jobs WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM users WHERE id=?", (target_user_id,))
 
         if affected_class_ids:
@@ -4075,6 +4081,7 @@ def delete_organization(org_id: int) -> None:
             raise LookupError("organization not found")
         if org_row["name"] == DEFAULT_ORGANIZATION_NAME:
             raise ValueError("不能删除默认机构")
+        conn.execute("DELETE FROM monthly_plan_jobs WHERE organization_id=?", (org_id,))
         # 1. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
         # 2. user_classes and class_students (via classes)
