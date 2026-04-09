@@ -136,6 +136,7 @@ from lesson_manager import (
     update_class,
     update_consultation,
     update_user_profile,
+    resolve_teacher_username_to_user_id,
     update_user_role,
     upsert_parent_wechat_account,
     get_teacher_alias_entries,
@@ -2113,6 +2114,8 @@ def api_consultation_create():
     assigned_user_id = None
     if request.json and isinstance(request.json, dict):
         assigned_user_id = request.json.get("assigned_user_id")
+        if assigned_user_id is None and request.json.get("teacher_id"):
+            assigned_user_id = resolve_teacher_username_to_user_id(request.json["teacher_id"])
     item = create_consultation(request.json or {}, user["organization_id"], assigned_user_id=assigned_user_id)
     return jsonify(item), 201
 
@@ -2122,9 +2125,16 @@ def api_consultation_update(consultation_id):
     user, error = _require_staff()
     if error:
         return error
+    data = request.json or {}
+    if isinstance(data, dict) and "teacher_id" in data:
+        resolved = resolve_teacher_username_to_user_id(data["teacher_id"])
+        if resolved is not None:
+            data["assigned_user_id"] = resolved
+        elif not data["teacher_id"]:
+            data["assigned_user_id"] = None
     item = update_consultation(
         consultation_id,
-        request.json or {},
+        data,
         None if user.get("role") == "super_owner" else user.get("organization_id"),
     )
     if not item:

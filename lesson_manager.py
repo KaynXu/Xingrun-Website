@@ -581,6 +581,18 @@ def _get_consultation_teacher_directory() -> dict[str, str]:
     return directory
 
 
+def resolve_teacher_username_to_user_id(username: str) -> Optional[int]:
+    """Resolve a teacher username to the corresponding users.id."""
+    if not username:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM users WHERE username=? AND status='active'",
+            (username,),
+        ).fetchone()
+    return row["id"] if row else None
+
+
 def list_consultation_teachers() -> list[dict]:
     alias_map = _load_consultation_teacher_aliases()
     teacher_entries: dict[str, dict] = {}
@@ -595,12 +607,25 @@ def list_consultation_teachers() -> list[dict]:
             """
         ).fetchall()
 
+    # Build a case-insensitive lookup: lowercase(username) -> canonical teacher_id
+    username_lower_map: dict[str, str] = {}
+    # Build a display_name -> canonical teacher_id lookup for alias dedup
+    display_name_lower_map: dict[str, str] = {}
+
     for row in rows:
         teacher_id = (row["username"] or "").strip()
         display_name = (row["display_name"] or "").strip()
         if not teacher_id:
             continue
-        aliases = alias_map.get(teacher_id, [])
+        username_lower_map[teacher_id.lower()] = teacher_id
+        if display_name:
+            display_name_lower_map[display_name.lower()] = teacher_id
+        # Also try to pick up aliases from alias_map using case-insensitive key
+        aliases: list[str] = []
+        for alias_key, alias_list in alias_map.items():
+            if alias_key.lower() == teacher_id.lower():
+                aliases = alias_list
+                break
         merged_aliases: list[str] = []
         for alias in [display_name, *aliases]:
             normalized = alias.strip()
@@ -613,14 +638,29 @@ def list_consultation_teachers() -> list[dict]:
         }
 
     for teacher_id, aliases in alias_map.items():
-        if teacher_id in teacher_entries:
-            entry = teacher_entries[teacher_id]
+        # Case-insensitive match against DB usernames
+        canonical = username_lower_map.get(teacher_id.lower())
+        if canonical:
+            entry = teacher_entries[canonical]
             for alias in aliases:
                 if alias not in entry["aliases"]:
                     entry["aliases"].append(alias)
             if not entry["display_name"] and entry["aliases"]:
                 entry["display_name"] = entry["aliases"][0]
             continue
+        # Check if any alias matches an existing DB user's display_name
+        matched_canonical = None
+        for alias in aliases:
+            matched_canonical = display_name_lower_map.get(alias.lower())
+            if matched_canonical:
+                break
+        if matched_canonical:
+            entry = teacher_entries[matched_canonical]
+            for alias in aliases:
+                if alias not in entry["aliases"]:
+                    entry["aliases"].append(alias)
+            continue
+        # Truly new teacher only from JSON
         teacher_entries[teacher_id] = {
             "teacher_id": teacher_id,
             "display_name": aliases[0],
@@ -931,7 +971,10 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
         stored = _consultation_row_to_storage(public_row, current["organization_id"])
         
         # Get assigned_user_id from data if provided, otherwise keep existing
-        assigned_user_id = data.get("assigned_user_id") if isinstance(data, dict) else None
+        if isinstance(data, dict) and "assigned_user_id" in data:
+            assigned_user_id = data["assigned_user_id"]
+        else:
+            assigned_user_id = current["assigned_user_id"]
         
         conn.execute(
             """
@@ -963,7 +1006,7 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 stored["screenshot"],
                 stored["follow_up_status"],
                 stored["follow_up_note"],
-                assigned_user_id if assigned_user_id is not None else current["assigned_user_id"],
+                assigned_user_id,
                 now,
                 consultation_id,
             ),
