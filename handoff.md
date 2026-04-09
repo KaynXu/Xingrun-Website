@@ -48,6 +48,66 @@
 - 部署当前 `develop` 到正式服务器 `49.234.185.86`
 - 部署后在线上实际再点一次“生成复习计划”，确认不再出现长时间转圈 + `409/500`
 
+## 智能错题下游服务溯源：确认旧服务已被家长 bridge 替换（2026-04-09）
+
+### 已完成
+- 已按“继续追下游服务”要求完成本机仓库、生产服务器配置、PM2 进程、历史备份与旧日志溯源。
+- 已确认小程序仓库 `/Users/ark.mini/Desktop/Xingrun-MiniProgram` 不是当前阻塞点：
+  - 小程序前端 `miniprogram/app.js` 已指向 `https://xingrun.online`
+  - bridge 后端依赖的是 `WEBSITE_API_BASE_URL` / `WEBSITE_API_TOKEN`
+  - 线上 bridge `.env` 中 `WEBSITE_API_TOKEN` 与网站 `.env.runtime` 中 `XR_WECHAT_SERVICE_TOKEN` 为同一份 secret，说明“家长上传错题 -> 网站入库”链路配置是通的
+- 已确认网站当前缺的不是小程序配置，而是智能错题工作区自己的下游配置：
+  - 线上 `config_runtime.get_runtime_config()` 读到：
+    - `wrong_question_service_url=''`
+    - `wrong_question_service_token=''`
+  - 所以网站 `smart_wrong_questions.py` 无法继续代理外部错题服务
+- 已确认历史上这套下游确实存在，并且曾经在生产可用：
+  - `handoff.md` 旧记录写明 `2026-04-04` 生产机直连下游 `/wrong-questions` 返回 `total=2`，包含学生“阿斯顿”
+  - 远端旧备份 `/home/ubuntu/deploy-backups/repo-realign-20260401-013708/config.json` 中保存过：
+    - `wrong_question_service_url=http://127.0.0.1:3001`
+    - `wrong_question_service_token=xingrun2024`
+- 已确认这份旧配置现在已失效：
+  - 当前线上 `127.0.0.1:3001` 由 PM2 进程 `xingrun-bridge` 占用
+  - 实测：
+    - `GET http://127.0.0.1:3001/healthz` -> `200`
+    - `GET http://127.0.0.1:3001/wrong-questions` -> `404 Cannot GET /wrong-questions`
+  - 因此，不能直接把旧配置补回网站环境
+- 已溯源到被替换掉的旧服务内容：
+  - 生产机备份 `/home/ubuntu/deploy-backups/parent-only-cleanup-20260409-031404/backend-src/index.ts` 仍保留旧老师端接口：
+    - `GET /api/teacher/records`
+    - `PUT /api/teacher/records/:recordId/selections`
+    - `GET /api/teacher/pdf`
+  - 对应回归测试 `/home/ubuntu/deploy-backups/parent-only-cleanup-20260409-031404/backend-src/teacher-records.test.ts` 仍使用 `TEACHER_TOKEN='xingrun2024'`
+  - 说明历史上网站智能错题页依赖的是旧老师端 backend / teacher-records 数据链，而不是当前仅保留家长上传的 bridge
+- 根因结论：
+  - 当前不是“她们接口没给”这么简单
+  - 更准确地说，是原来承载智能错题下游的旧 Node backend 内容，在 `parent-only cleanup` 之后被替换成了只保留家长链路的 `xingrun-bridge`
+  - 网站侧 `smart_wrong_questions.py` 仍保留对旧下游的依赖，但线上已经没有对应服务可以接
+
+### proof
+- 临时脚本：`/tmp/proof_trace_wrong_question_downstream_20260409.sh`
+- 关键输出应包含：
+  - `WEBSITE_RUNTIME_WRONG_QUESTION_SERVICE_URL=`（空）
+  - `WEBSITE_RUNTIME_WRONG_QUESTION_SERVICE_TOKEN=`（空）
+  - `OLD_BACKUP_WRONG_QUESTION_SERVICE_URL=http://127.0.0.1:3001`
+  - `PORT_3001_HEALTH=200`
+  - `PORT_3001_WRONG_QUESTIONS=404`
+  - `PM2_NAMES=openclaw,xingrun,xingrun-bridge`
+  - `OLD_BACKEND_HAS_TEACHER_RECORDS_ROUTE=YES`
+  - `OLD_BACKEND_HAS_SELECTIONS_ROUTE=YES`
+
+### 剩余问题
+- 当前线上没有可直接复用的“智能错题下游 HTTP 服务”在运行：
+  - 旧配置指向的 `127.0.0.1:3001` 已被家长 bridge 复用
+  - 当前 `xingrun-bridge` 不提供 `/wrong-questions`
+- 旧老师端 backend 的代码虽然还在备份目录里，但当前未作为独立 PM2 服务运行，也未暴露给网站 `smart_wrong_questions.py`
+
+### 下一步方向
+- 恢复方案优先级建议：
+  - 1. 从备份 `parent-only-cleanup-20260409-031404/backend-src` 恢复一个独立“老师错题服务”进程，不与 `xingrun-bridge` 复用 3001
+  - 2. 网站 `XR_WRONG_QUESTION_SERVICE_URL` 改指向这个独立服务，新 token 与旧 `xingrun2024` 是否沿用再确认
+  - 3. 或者彻底重写 `smart_wrong_questions.py`，直接适配当前仍存在的旧 teacher-records 数据文件/接口，而不再依赖历史 `/wrong-questions` 下游
+
 ## 智能错题未配置时保留本地微信错题列表（2026-04-09）
 
 ### 已完成
