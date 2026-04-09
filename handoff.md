@@ -1,3 +1,46 @@
+## AGENTS 协作规则已更新（2026-04-09）
+
+### 已完成
+- 已更新 `AGENTS.md`，把用户当前要求的全局协作规则写清楚：
+  - 进入项目先读 `AGENTS.md` / `handoff.md`
+  - 每轮结束更新 `handoff.md`
+  - `wrap up` 的固定执行顺序
+  - 最小侵入、一轮一事、先读后改
+  - proof 必须通过临时脚本执行并返回完整输出
+- 已把分支/工作区流程改成当前约定：
+  - 主分支是 `master`
+  - 开发分支是 `develop`
+  - 小改动可直接在 `develop`
+  - 中型改动从 `develop` 开短期分支，完成后合回 `develop`
+  - 大改动从 `develop` 开分支并使用独立 worktree，合回 `develop` 后及时删除分支并关闭 worktree
+  - 只手动把 `develop` 合回 `master`
+  - 需要保留提交统计时避免 squash merge，保持原始 feature commits 可见
+- 已补充工作区洁癖偏好：
+  - 不要留下脏工作区、长时间未提交状态、遗留 worktree 或运行时噪音
+
+### proof
+- 临时脚本：`/tmp/proof_agents_branch_workflow_20260409.sh`
+- 完整输出：
+  - `FILE=/Users/ark.mini/Desktop/Xingrun-Website/AGENTS.md`
+  - `HANDOFF=/Users/ark.mini/Desktop/Xingrun-Website/handoff.md`
+  - `FOUND_HANDOFF_RULE=1`
+  - `FOUND_WRAP_UP_RULE=1`
+  - `FOUND_TEMP_PROOF_RULE=1`
+  - `FOUND_MASTER_MANUAL=1`
+  - `FOUND_DEVELOP_INTEGRATION=1`
+  - `FOUND_SMALL_ON_DEVELOP=1`
+  - `FOUND_MEDIUM_BRANCH=1`
+  - `FOUND_LARGE_WORKTREE=1`
+  - `FOUND_CLEAN_WORKSPACE=1`
+  - `FOUND_NO_SQUASH=1`
+  - `FOUND_HANDOFF_ENTRY=1`
+
+### 剩余问题
+- 这轮只更新了项目内协作规则文档，没有改动部署脚本或 git 钩子去强制执行这些规则。
+
+### 下一步方向
+- 后续如果你想，我可以再把这套分支/worktree 流程整理成一份更短的实际操作清单，放进 `docs/` 里给多人协作时直接照着跑。
+
 ## 通用方法已收录到 ~/.ai-config/skill.md（2026-04-09）
 
 ### 已完成
