@@ -1,3 +1,41 @@
+## 文档归档与运行产物清理已完成（2026-04-09）
+
+### 已完成
+- 已确认本轮应入库的 8 份正式 spec / implementation plan，并准备随 `develop` 一起归档。
+- 已确认 `docs/superpowers/plans/2026-04-02-review-generation-teacher-feedback-progress.md` 属于旧分支过程性进度总结，不再保留到仓库。
+- 已确认 `data/pdfs/` 下 3 个 PDF 为运行产物，不应继续留在主工作区。
+
+### proof
+- 将通过临时脚本核对：
+  - 8 份正式文档已被纳入 git 跟踪
+  - 旧 progress 文档与 3 个 PDF 已从工作区清理
+  - 清理后 `git status --short` 不再残留本轮这批未跟踪文件
+
+### 剩余问题
+- 无。
+
+### 下一步方向
+- 如需继续收口，可把 `data/pdfs/` 和类似过程性文档加入忽略规则，避免后续再次污染主工作区。
+
+## 本轮部署尝试受阻（2026-04-09）
+
+### 已完成
+- 已确认当前本地发布目标提交为 `90d52b2`（`feat: show normalized class feedback period summaries`）。
+- 已将当前 `develop` 推送到远端：`origin/develop = 90d52b2`。
+- 已核对本地工作区仍有未提交的运行产物与文档草稿，但它们不影响已提交版本推送。
+
+### proof
+- 推送命令：`git push origin develop`
+- 完整输出结论：`5e5a425..90d52b2  develop -> develop`
+- SSH 探针：`sshpass -e ssh ... ubuntu@49.234.185.86 ...`
+- 完整输出结论：`Permission denied (publickey,password)`
+
+### 剩余问题
+- 生产服务器 `49.234.185.86` 当前无法通过文档中的密码或本机 SSH key 登录，无法继续执行远端拉取、前端构建与 PM2 重启。
+
+### 下一步方向
+- 更新可用的生产机 SSH 凭据后，登录服务器执行：`cd /home/ubuntu/Xingrun-Website && git pull origin develop && npm --prefix frontend run build && pm2 restart xingrun && pm2 status`。
+
 ## Task 4 课堂反馈阶段摘要文案已收口（2026-04-09）
 
 ### 已完成
