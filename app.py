@@ -526,28 +526,36 @@ def _run_review_plan_generation_job(
     *,
     lesson_id: int,
     user: dict,
-    lesson_date: str,
-    class_id: int,
-    subject: str,
-    grade: str,
-    topic: str,
-    weak_points: str,
-    raw_text: str,
     chat_provider: str,
     chat_model: str,
     request_key: str | None = None,
 ) -> None:
-    source_record_id = (
-        f"draft:{class_id}:{lesson_date}:{topic or 'untitled'}:"
-        f"{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}"
-    )
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        logger.warning("Review plan generation skipped: lesson %s not found", lesson_id)
+        return
+    if lesson.get("record_status") != "pending":
+        logger.info(
+            "Review plan generation skipped for lesson %s with status %s",
+            lesson_id,
+            lesson.get("record_status"),
+        )
+        return
+
+    lesson_date = str(lesson.get("date") or "")
+    subject = str(lesson.get("subject") or "")
+    grade = str(lesson.get("grade") or "")
+    topic = str(lesson.get("topic") or "")
+    weak_points = str(lesson.get("weak_points") or "")
+    raw_text = str(lesson.get("summary") or "")
+
     try:
         from ai_processor import parse_and_generate_plan
         plan = _run_ai_feature_with_charge(
             user=user,
             feature_key="lesson_plan_generate",
             source_record_type="lesson",
-            source_record_id=source_record_id,
+            source_record_id=lesson_id,
             producer=lambda: _call_ai_helper_with_usage(
                 parse_and_generate_plan,
                 summary_text=raw_text,
@@ -561,25 +569,36 @@ def _run_review_plan_generation_job(
             model=chat_model,
             request_key=request_key,
         )
+    except Exception:
+        logger.exception("Review plan AI generation failed for lesson %s", lesson_id)
+        try:
+            mark_lesson_generation_failed(lesson_id, "AI 生成失败，请稍后重试")
+        except LookupError:
+            logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
+        return
+
+    try:
         from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
         safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
         pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
         pdf_path = str(PDF_DIR / pdf_name)
         generate_single_lesson_pdf(plan, pdf_path)
+    except Exception:
+        logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
+        try:
+            mark_lesson_generation_failed(lesson_id, "PDF 生成失败，请稍后重试")
+        except LookupError:
+            logger.exception("Failed to mark lesson %s as failed after PDF error", lesson_id)
+        return
+
+    try:
         mark_lesson_generation_succeeded(
             lesson_id,
             plan=plan,
             pdf_path=pdf_path,
         )
-    except Exception as exc:
-        logger.exception("Review plan generation failed for lesson %s", lesson_id)
-        error_message = str(exc).strip() or "未知错误"
-        if not error_message.startswith("AI 生成失败："):
-            error_message = f"AI 生成失败：{error_message}"
-        try:
-            mark_lesson_generation_failed(lesson_id, error_message)
-        except LookupError:
-            logger.exception("Failed to mark lesson %s as failed", lesson_id)
+    except LookupError:
+        logger.exception("Failed to mark lesson %s as ready", lesson_id)
 
 
 def _start_review_plan_generation_thread(**job_kwargs) -> None:
@@ -2470,13 +2489,6 @@ def api_lesson_create():
             "id": int(user["id"]),
             "organization_id": int(user["organization_id"]),
         },
-        lesson_date=lesson_date,
-        class_id=class_id,
-        subject=subject,
-        grade=grade,
-        topic=topic,
-        weak_points=weak_points,
-        raw_text=raw_text,
         chat_provider=chat_provider,
         chat_model=chat_model,
         request_key=_current_ai_request_key(),

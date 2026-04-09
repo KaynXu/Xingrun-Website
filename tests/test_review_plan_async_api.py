@@ -79,16 +79,107 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(lesson["summary"], "课堂总结文本")
 
         mock_start_thread.assert_called_once()
-        self.assertEqual(mock_start_thread.call_args.kwargs["lesson_id"], lesson_id)
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
+        self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
+        self.assertEqual(thread_kwargs["chat_provider"], "openai")
+        self.assertEqual(thread_kwargs["chat_model"], "gpt-4o")
+        self.assertIn("request_key", thread_kwargs)
+        self.assertNotIn("lesson_date", thread_kwargs)
+        self.assertNotIn("class_id", thread_kwargs)
+        self.assertNotIn("subject", thread_kwargs)
+        self.assertNotIn("grade", thread_kwargs)
+        self.assertNotIn("topic", thread_kwargs)
+        self.assertNotIn("weak_points", thread_kwargs)
+        self.assertNotIn("raw_text", thread_kwargs)
 
-    @patch("app.finalize_ai_charge", return_value={})
-    @patch("app.ensure_feature_credits_available")
-    @patch("ai_processor.parse_and_generate_plan", side_effect=RuntimeError("boom"))
-    def test_worker_marks_pending_lesson_failed_when_ai_generation_raises(
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("ai_processor.parse_and_generate_plan")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_uses_lesson_data_source_of_truth(
         self,
-        _mock_generate,
-        _mock_ensure_credits,
-        _mock_finalize,
+        mock_run_with_charge,
+        mock_parse_and_generate_plan,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            class_id=0,
+        )
+
+        expected_plan = {"lesson_info": {"topic": "一次函数"}, "days": []}
+        mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
+        mock_parse_and_generate_plan.return_value = expected_plan
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-4o",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "ready")
+        self.assertEqual(saved["plan"], expected_plan)
+        self.assertEqual(mock_run_with_charge.call_args.kwargs["source_record_id"], lesson_id)
+        mock_parse_and_generate_plan.assert_called_once_with(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-04-09",
+            include_usage=True,
+        )
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("ai_processor.parse_and_generate_plan")
+    def test_worker_only_processes_pending_lessons(
+        self,
+        mock_parse_and_generate_plan,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            class_id=0,
+        )
+        lesson_manager.mark_lesson_generation_succeeded(
+            lesson_id,
+            plan={"lesson_info": {"topic": "旧计划"}, "days": []},
+            pdf_path="/tmp/existing.pdf",
+        )
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-4o",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "ready")
+        self.assertEqual(saved["generation_error"], "")
+        self.assertEqual(saved["pdf_path"], "/tmp/existing.pdf")
+        mock_parse_and_generate_plan.assert_not_called()
+        mock_generate_pdf.assert_not_called()
+
+    @patch("app._run_ai_feature_with_charge", side_effect=RuntimeError("boom"))
+    def test_worker_writes_sanitized_ai_error_message(
+        self,
+        _mock_run_with_charge,
     ):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
@@ -103,13 +194,6 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         app_module._run_review_plan_generation_job(
             lesson_id=lesson_id,
             user={"id": 1, "organization_id": 1},
-            lesson_date="2026-04-09",
-            class_id=0,
-            subject="数学",
-            grade="初二",
-            topic="一次函数",
-            weak_points="斜率判断",
-            raw_text="课堂总结文本",
             chat_provider="openai",
             chat_model="gpt-4o",
             request_key="test-request-key",
@@ -117,8 +201,36 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
         saved = lesson_manager.get_lesson(lesson_id)
         self.assertEqual(saved["record_status"], "failed")
-        self.assertIn("AI 生成失败", saved["generation_error"])
-        self.assertIn("boom", saved["generation_error"])
+        self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf", side_effect=RuntimeError("pdf boom"))
+    @patch("app._run_ai_feature_with_charge", return_value={"lesson_info": {"topic": "一次函数"}, "days": []})
+    def test_worker_writes_sanitized_pdf_error_message(
+        self,
+        _mock_run_with_charge,
+        _mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            class_id=0,
+        )
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-4o",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "failed")
+        self.assertEqual(saved["generation_error"], "PDF 生成失败，请稍后重试")
 
 
 if __name__ == "__main__":
