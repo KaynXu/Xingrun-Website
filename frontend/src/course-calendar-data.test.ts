@@ -61,6 +61,21 @@ test('course calendar data helpers build a weekly demo view from classes and les
       session: '晚间',
       record_status: 'pending',
     },
+    {
+      id: 103,
+      class_id: 1,
+      date: '2026-04-01',
+      subject: '数学',
+      grade: '高一',
+      topic: '错题复盘',
+      summary: '整理失败重试',
+      weak_points: '',
+      pdf_path: '',
+      created_at: '2026-04-01 20:00:00',
+      session: '晚间',
+      record_status: 'failed',
+      generation_error: 'AI 生成失败，请稍后重试',
+    },
   ];
 
   const weekDates = getWeekDates('2026-04-01');
@@ -72,18 +87,22 @@ test('course calendar data helpers build a weekly demo view from classes and les
   const joined = joinClassesAndLessons(classes, lessons);
   const firstDayCards = joined.filter((card) => card.date === weekDates[0]);
   const secondDayCards = joined.filter((card) => card.date === weekDates[1]);
+  const failedCard = joined.find((card) => card.id === 103);
 
   const firstDayPeriods = assignLessonCardsToPeriods(firstDayCards);
   const secondDayPeriods = assignLessonCardsToPeriods(secondDayCards);
 
   assert.equal(firstDayPeriods.上午.length, 1);
   assert.equal(secondDayPeriods.晚间.length, 1);
+  assert.equal(failedCard?.failed, true);
+  assert.equal(failedCard?.pending, false);
 
   const teacherLoad = summarizeTeacherLoad(joined);
-  assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.count, 1);
+  assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.count, 2);
 
   const pendingRecords = summarizePendingRecords(lessons);
   assert.match(pendingRecords[0]?.label ?? '', /待补录/);
+  assert.equal(pendingRecords[0]?.count, 1);
 
   const classStatus = buildClassStatusRailData(classes, lessons);
   assert.equal(classStatus.length, 2);

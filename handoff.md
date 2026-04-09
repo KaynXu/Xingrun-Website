@@ -1,5 +1,68 @@
 ## AGENTS 协作规则已更新（2026-04-09）
 
+## Task 3 前端异步状态已完成（2026-04-09）
+
+### 已完成
+- 已完成复习计划前端异步状态接线：
+  - `frontend/src/App.tsx`
+  - `frontend/src/courseCalendarData.ts`
+  - `frontend/src/course-calendar-data.test.ts`
+  - `frontend/src/review-generation-async.test.tsx`
+- 当前行为已对齐 Task 3 目标：
+  - `Lesson` 增加 `record_status` / `generation_error`
+  - 历史列表在存在 `pending` lesson 时每 3 秒轮询一次 `/api/review-plans`
+  - 轮询走 quiet reload，不再反复打全页 `loading`
+  - 历史卡片可展示 `生成中` / `生成失败` 状态
+  - `failed` 记录会展示后端返回的 `generation_error`
+  - `pending` 记录会展示“可离开页面，完成后会出现在列表中”
+  - 提交成功后会关闭 composer，并刷新历史列表
+- `courseCalendarData` 也已补上 `failed` 派生字段，供周历视图识别失败记录。
+
+### proof
+- 临时脚本：`/tmp/proof_task3_frontend_green_20260409.sh`
+- 完整输出：
+  - `✔ course calendar data helpers build a weekly demo view from classes and lessons`
+  - `✔ teacher load summarizes scheduled lessons instead of teacher-owned classes`
+  - `✔ review generation source tracks async lesson status fields`
+  - `✔ review history source polls review plans while pending lessons exist`
+  - `✔ review history source renders pending and failed status copy`
+  - `✔ review generation page closes composer after async creation succeeds`
+  - `ℹ pass 6`
+  - `ℹ fail 0`
+
+### 剩余问题
+- 前端测试全集里仍有一个既有失败：`class management fetches and resets class invite codes`，不属于本轮 Task 3 范围，本轮未扩 scope 处理。
+
+### 下一步方向
+- Task 4：继续做月度计划异步 job / API / retry。
+- Task 5：移除 `ai_processor.py` 里的临时 `gpt-4o` 回退逻辑，并做最终回归验证。
+
+## Task 2 规格审查：当前 HEAD 满足单节异步后端要求（2026-04-09）
+
+### 已完成
+- 已按要求审查当前 `HEAD`（即目标 commit `8daabe3`）对 Task 2 的净效果。
+- 已核对：
+  - `docs/superpowers/specs/2026-04-09-review-plan-async-generation-design.md`
+  - `docs/superpowers/plans/2026-04-09-review-plan-async-generation.md`
+- 结论：
+  - `POST /api/review-plans` 已改为先创建 `pending` lesson，再启动后台线程，并立即返回 `202` 与 `{id, success: true, status: "pending"}`
+  - 后台 worker 已按 `lesson_id` 回读 lesson，并在仅当记录仍为 `pending` 时继续执行 AI + PDF
+  - 成功会写回 `ready`，失败会写回 `failed` + 简洁 `generation_error`
+  - 音频转写仍保持同步路径，未被扩成异步
+  - API / store 测试已覆盖所需最小场景并通过
+
+### proof
+- 临时脚本：`/tmp/task2_spec_review_XXXXXX.sh`
+- 完整输出关键结果：
+  - `Ran 15 tests in 2.646s`
+  - `OK`
+
+### 剩余问题
+- 本轮未发现 Task 2 范围内的规格不符合点。
+
+### 下一步方向
+- 如需继续审查 Task 3/Task 4，可按同样方式基于对应 spec/plan 做净效果核对。
+
 ### 已完成
 - 已更新 `AGENTS.md`，把用户当前要求的全局协作规则写清楚：
   - 进入项目先读 `AGENTS.md` / `handoff.md`

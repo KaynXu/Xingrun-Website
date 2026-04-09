@@ -23,6 +23,7 @@ export interface CourseCalendarLessonRecord {
   created_at?: string;
   session?: CourseCalendarPeriod | string;
   record_status?: string;
+  generation_error?: string;
 }
 
 export interface JoinedCourseCalendarLesson {
@@ -41,6 +42,7 @@ export interface JoinedCourseCalendarLesson {
   pdfPath: string;
   period: CourseCalendarPeriod;
   pending: boolean;
+  failed: boolean;
 }
 
 export interface CourseCalendarPeriodBuckets {
@@ -201,6 +203,7 @@ export function joinClassesAndLessons(
         weakPoints: lesson.weak_points ?? '',
         pdfPath: lesson.pdf_path ?? '',
         period: resolvePeriod(lesson),
+        failed: lesson.record_status === 'failed',
         pending: lesson.record_status === 'pending' || (!lesson.pdf_path && !lesson.summary && !lesson.topic),
       };
     })
