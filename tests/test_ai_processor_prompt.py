@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -46,6 +48,22 @@ class _FakeClient:
 
 
 class AiProcessorPromptTestCase(unittest.TestCase):
+    def test_ai_processor_imports_without_syntaxwarning(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-W",
+                "error::SyntaxWarning",
+                "-c",
+                "import ai_processor",
+            ],
+            capture_output=True,
+            text=True,
+            cwd="/Users/ark.mini/Desktop/Xingrun-Website",
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+
     def test_plan_system_prompt_limits_formula_only_fill_ratio(self):
         self.assertIn("纯公式型填空题", ai_processor.PLAN_SYSTEM_PROMPT)
         self.assertIn("不得超过 30%", ai_processor.PLAN_SYSTEM_PROMPT)
