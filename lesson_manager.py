@@ -2445,6 +2445,23 @@ def mark_monthly_plan_job_failed(job_id: int, error_message: str) -> None:
             raise LookupError("monthly plan job not found")
 
 
+def requeue_monthly_plan_job(job_id: int) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE monthly_plan_jobs
+            SET status='pending',
+                generation_error='',
+                updated_at=(datetime('now','localtime'))
+            WHERE id=? AND status='failed'
+            """,
+            (job_id,),
+        )
+        if cur.rowcount == 0:
+            raise LookupError("monthly plan job not found or not in failed state")
+    return get_monthly_plan_job(job_id)
+
+
 # ─── 班级 CRUD ─────────────────────────────────────────────────────────────────
 def save_class(name: str, subject: str = "", grade: str = "",
                teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None) -> int:

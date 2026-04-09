@@ -122,6 +122,11 @@ from lesson_manager import (
     save_class,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
+    create_monthly_plan_job,
+    get_monthly_plan_job,
+    mark_monthly_plan_job_failed,
+    mark_monthly_plan_job_succeeded,
+    requeue_monthly_plan_job,
     set_class_teacher_user_id,
     set_user_class_ids,
     set_wechat_wrong_question_archive_status,
@@ -640,6 +645,86 @@ def _run_review_plan_generation_job(
 def _start_review_plan_generation_thread(**job_kwargs) -> None:
     threading.Thread(
         target=_run_review_plan_generation_job,
+        kwargs=job_kwargs,
+        daemon=True,
+    ).start()
+
+
+def _run_monthly_plan_generation_job(
+    *,
+    job_id: int,
+    user: dict,
+    month_str: str,
+    lesson_dicts: list[dict],
+    chat_provider: str,
+    chat_model: str,
+) -> None:
+    try:
+        job = get_monthly_plan_job(job_id)
+        if not job or job.get("status") != "pending":
+            logger.info("Monthly plan generation skipped for job %s", job_id)
+            return
+
+        from ai_processor import generate_monthly_plan
+
+        try:
+            plan = _run_ai_feature_with_charge(
+                user=user,
+                feature_key="monthly_plan_generate",
+                source_record_type="monthly_plan",
+                source_record_id=month_str,
+                producer=lambda: _call_ai_helper_with_usage(
+                    generate_monthly_plan, lesson_dicts, month_str,
+                ),
+                provider=chat_provider,
+                model=chat_model,
+            )
+        except DuplicateAiRequestError as exc:
+            logger.exception("Monthly plan AI request rejected for job %s", job_id)
+            try:
+                mark_monthly_plan_job_failed(job_id, str(exc))
+            except LookupError:
+                logger.exception("Failed to mark monthly job %s as failed", job_id)
+            return
+        except CreditBalanceError as exc:
+            logger.exception("Monthly plan credit preflight failed for job %s", job_id)
+            try:
+                mark_monthly_plan_job_failed(job_id, str(exc))
+            except LookupError:
+                logger.exception("Failed to mark monthly job %s as failed", job_id)
+            return
+        except Exception:
+            logger.exception("Monthly plan AI generation failed for job %s", job_id)
+            try:
+                mark_monthly_plan_job_failed(job_id, "AI 生成失败，请稍后重试")
+            except LookupError:
+                logger.exception("Failed to mark monthly job %s as failed", job_id)
+            return
+
+        from pdf_engine import generate_monthly_pdf
+
+        try:
+            pdf_name = f"{month_str}_月度综合复习.pdf"
+            generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+        except Exception:
+            logger.exception("Monthly plan PDF generation failed for job %s", job_id)
+            try:
+                mark_monthly_plan_job_failed(job_id, "PDF 生成失败，请稍后重试")
+            except LookupError:
+                logger.exception("Failed to mark monthly job %s as failed", job_id)
+            return
+
+        try:
+            mark_monthly_plan_job_succeeded(job_id, pdf_filename=pdf_name)
+        except LookupError:
+            logger.exception("Failed to mark monthly job %s as ready", job_id)
+    except Exception:
+        logger.exception("Unexpected error in monthly plan generation job %s", job_id)
+
+
+def _start_monthly_plan_generation_thread(**job_kwargs) -> None:
+    threading.Thread(
+        target=_run_monthly_plan_generation_job,
         kwargs=job_kwargs,
         daemon=True,
     ).start()
@@ -2783,51 +2868,64 @@ def api_monthly_generate():
                      "weak_points": l["weak_points"] or ""} for l in lessons]
     provider = _default_ai_provider_name()
     model = _default_chat_model_name()
-    request_id = _build_ai_charge_request_id(
+
+    job = create_monthly_plan_job(
+        organization_id=int(user["organization_id"]),
         user_id=int(user["id"]),
-        feature_key="monthly_plan_generate",
-        source_record_type="monthly_plan",
-        source_record_id=month_str,
+        month_str=month_str,
     )
-    try:
-        _claim_ai_request_identity(
-            organization_id=int(user["organization_id"]),
-            request_id=request_id,
-        )
-        _claim_ai_organization_execution(int(user["organization_id"]))
-        ensure_feature_credits_available(
-            organization_id=int(user["organization_id"]),
-            feature_key="monthly_plan_generate",
-        )
-        from ai_processor import generate_monthly_plan
-        plan_result = _call_ai_helper_with_usage(generate_monthly_plan, lesson_dicts, month_str)
-        plan, usage = _split_ai_result_with_usage(
-            plan_result,
-            provider=provider,
-            model=model,
-        )
-        from pdf_engine import generate_monthly_pdf
-        pdf_name = f"{month_str}_月度综合复习.pdf"
-        generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
-        finalize_ai_charge(
-            organization_id=int(user["organization_id"]),
-            user_id=int(user["id"]),
-            feature_key="monthly_plan_generate",
-            usage=usage,
-            source_record_type="monthly_plan",
-            source_record_id=month_str,
-            request_id=request_id,
-        )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        _release_ai_organization_execution(int(user["organization_id"]))
-        _release_ai_request_identity(request_id)
-    return jsonify({"ok": True, "filename": pdf_name})
+    _start_monthly_plan_generation_thread(
+        job_id=job["id"],
+        user={"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+        month_str=month_str,
+        lesson_dicts=lesson_dicts,
+        chat_provider=provider,
+        chat_model=model,
+    )
+    return jsonify({"id": job["id"], "status": "pending"}), 202
+
+
+@app.route("/api/monthly/jobs/<int:job_id>", methods=["GET"])
+def api_monthly_job_get(job_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    job = get_monthly_plan_job(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/monthly/jobs/<int:job_id>/retry", methods=["POST"])
+def api_monthly_job_retry(job_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    if not has_api_key():
+        return jsonify({"error": "请先在设置页面填入 API Key"}), 400
+    job = get_monthly_plan_job(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    if job["status"] != "failed":
+        return jsonify({"error": "只有失败的任务才能重试"}), 400
+    requeued = requeue_monthly_plan_job(job_id)
+    month_str = requeued["month_str"]
+    lessons = list_lessons(month_str)
+    lesson_dicts = [{"date": l["date"], "subject": l["subject"] or "",
+                     "grade": l["grade"] or "", "topic": l["topic"] or "",
+                     "summary": (l["summary"] or "")[:800],
+                     "weak_points": l["weak_points"] or ""} for l in lessons]
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
+    _start_monthly_plan_generation_thread(
+        job_id=requeued["id"],
+        user={"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+        month_str=month_str,
+        lesson_dicts=lesson_dicts,
+        chat_provider=provider,
+        chat_model=model,
+    )
+    return jsonify({"id": requeued["id"], "status": "pending"}), 202
 
 
 @app.route("/api/analyze", methods=["POST"])

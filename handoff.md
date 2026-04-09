@@ -24,6 +24,34 @@
 - Task 4（月度计划异步 job / API / retry）待完成后，可追加 `test_monthly_plan_async_api`。
 - 后续可考虑把 `_get_structured_generation_model` 简化为直接复用 `_get_chat_model`（已等价）。
 
+## Task 4 月度计划异步 job 已完成（2026-04-09）
+
+### 已完成
+- `POST /api/monthly/generate` 改为异步，返回 `202` + `{id, status: "pending"}`
+- 创建 `monthly_plan_jobs` 记录，后台线程执行 AI + PDF 生成
+- 新增 `GET /api/monthly/jobs/<id>` 查询 job 状态
+- 新增 `POST /api/monthly/jobs/<id>/retry` 重试失败 job（仅 `failed` 状态可重试）
+- retry 后 status 重置为 `pending`，`generation_error` 清空
+- 新增 `requeue_monthly_plan_job` helper 到 `lesson_manager.py`
+- 后台 worker `_run_monthly_plan_generation_job` 复用 `_run_ai_feature_with_charge` 模式
+- 不破坏已完成的单节 async 流程（20 个已有测试全部通过）
+
+### proof
+- 红测：5 tests, 2 errors + 2 failures（`_start_monthly_plan_generation_thread` 不存在，路由不存在）
+- 绿测：`Ran 5 tests in 0.122s — OK`
+- 回归：`Ran 20 tests in 0.506s — OK`（单节 async API + store 测试全绿）
+
+### 改动文件
+- `app.py`：异步 monthly endpoint + worker + detail + retry 路由
+- `lesson_manager.py`：新增 `requeue_monthly_plan_job`
+- `tests/test_monthly_plan_async_api.py`：5 个测试用例
+
+### 剩余问题
+- 无
+
+### 下一步方向
+- Task 5：移除 `ai_processor.py` 里的临时 `gpt-4o` 回退逻辑，并做最终回归验证。
+
 ## AGENTS 协作规则已更新（2026-04-09）
 
 ## Task 3 前端异步状态已完成（2026-04-09）
