@@ -18,7 +18,7 @@ class WeChatParentReasonFlowTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
-        lesson_manager.DB_PATH = self.base / "lessons.db"
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
         lesson_manager.init_db()
         self.organization_id = 1
@@ -72,7 +72,7 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
-        lesson_manager.DB_PATH = self.base / "lessons.db"
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
         lesson_manager.init_db()
         self.client = app.test_client()

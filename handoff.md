@@ -1,3 +1,460 @@
+## Task 5 移除 gpt-4o fallback 并最终回归验证（2026-04-09）
+
+### 已完成
+- 移除 `ai_processor.py` 中 `_get_structured_generation_model()` 对 n1n/gpt-5 系列模型的临时 gpt-4o 回退逻辑。
+- `parse_and_generate_plan` 和 `generate_monthly_plan` 在 provider=n1n、n1n_model=gpt-5.4 时，实际调用 gpt-5.4。
+- `tests/test_ai_processor_prompt.py` 两个测试已改为断言使用配置模型，不再断言回退到 gpt-4o。
+
+### proof
+- 临时脚本：`/tmp/proof_task5_final_20260409.sh`
+- 完整输出：
+  - Backend: `Ran 23 tests in 0.841s` → `OK`
+    - `tests.test_review_plan_async_store` (10 tests)
+    - `tests.test_review_plan_async_api` (10 tests)
+    - `tests.test_ai_processor_prompt` (3 tests)
+  - Frontend: `pass 6, fail 0`
+    - `review-generation-async.test.tsx` (4 tests)
+    - `course-calendar-data.test.ts` (2 tests)
+
+### 剩余问题
+- `tests.test_monthly_plan_async_api` 不存在（Task 4 月度异步 API 尚未实现），本轮未涉及。
+- 前端测试全集中既有失败 `class management fetches and resets class invite codes` 仍未处理，不属于本轮范围。
+
+### 下一步方向
+- Task 4（月度计划异步 job / API / retry）待完成后，可追加 `test_monthly_plan_async_api`。
+- 后续可考虑把 `_get_structured_generation_model` 简化为直接复用 `_get_chat_model`（已等价）。
+
+## Task 4 月度计划异步 job 已完成（2026-04-09）
+
+### 已完成
+- `POST /api/monthly/generate` 改为异步，返回 `202` + `{id, status: "pending"}`
+- 创建 `monthly_plan_jobs` 记录，后台线程执行 AI + PDF 生成
+- 新增 `GET /api/monthly/jobs/<id>` 查询 job 状态
+- 新增 `POST /api/monthly/jobs/<id>/retry` 重试失败 job（仅 `failed` 状态可重试）
+- retry 后 status 重置为 `pending`，`generation_error` 清空
+- 新增 `requeue_monthly_plan_job` helper 到 `lesson_manager.py`
+- 后台 worker `_run_monthly_plan_generation_job` 复用 `_run_ai_feature_with_charge` 模式
+- 不破坏已完成的单节 async 流程（20 个已有测试全部通过）
+
+### proof
+- 红测：5 tests, 2 errors + 2 failures（`_start_monthly_plan_generation_thread` 不存在，路由不存在）
+- 绿测：`Ran 5 tests in 0.122s — OK`
+- 回归：`Ran 20 tests in 0.506s — OK`（单节 async API + store 测试全绿）
+
+### 改动文件
+- `app.py`：异步 monthly endpoint + worker + detail + retry 路由
+- `lesson_manager.py`：新增 `requeue_monthly_plan_job`
+- `tests/test_monthly_plan_async_api.py`：5 个测试用例
+
+### 剩余问题
+- 无
+
+### 下一步方向
+- Task 5：移除 `ai_processor.py` 里的临时 `gpt-4o` 回退逻辑，并做最终回归验证。
+
+## AGENTS 协作规则已更新（2026-04-09）
+
+## Task 3 前端异步状态已完成（2026-04-09）
+
+### 已完成
+- 已完成复习计划前端异步状态接线：
+  - `frontend/src/App.tsx`
+  - `frontend/src/courseCalendarData.ts`
+  - `frontend/src/course-calendar-data.test.ts`
+  - `frontend/src/review-generation-async.test.tsx`
+- 当前行为已对齐 Task 3 目标：
+  - `Lesson` 增加 `record_status` / `generation_error`
+  - 历史列表在存在 `pending` lesson 时每 3 秒轮询一次 `/api/review-plans`
+  - 轮询走 quiet reload，不再反复打全页 `loading`
+  - 历史卡片可展示 `生成中` / `生成失败` 状态
+  - `failed` 记录会展示后端返回的 `generation_error`
+  - `pending` 记录会展示“可离开页面，完成后会出现在列表中”
+  - 提交成功后会关闭 composer，并刷新历史列表
+- `courseCalendarData` 也已补上 `failed` 派生字段，供周历视图识别失败记录。
+
+### proof
+- 临时脚本：`/tmp/proof_task3_frontend_green_20260409.sh`
+- 完整输出：
+  - `✔ course calendar data helpers build a weekly demo view from classes and lessons`
+  - `✔ teacher load summarizes scheduled lessons instead of teacher-owned classes`
+  - `✔ review generation source tracks async lesson status fields`
+  - `✔ review history source polls review plans while pending lessons exist`
+  - `✔ review history source renders pending and failed status copy`
+  - `✔ review generation page closes composer after async creation succeeds`
+  - `ℹ pass 6`
+  - `ℹ fail 0`
+
+### 剩余问题
+- 前端测试全集里仍有一个既有失败：`class management fetches and resets class invite codes`，不属于本轮 Task 3 范围，本轮未扩 scope 处理。
+
+### 下一步方向
+- Task 4：继续做月度计划异步 job / API / retry。
+- Task 5：移除 `ai_processor.py` 里的临时 `gpt-4o` 回退逻辑，并做最终回归验证。
+
+## Task 2 规格审查：当前 HEAD 满足单节异步后端要求（2026-04-09）
+
+### 已完成
+- 已按要求审查当前 `HEAD`（即目标 commit `8daabe3`）对 Task 2 的净效果。
+- 已核对：
+  - `docs/superpowers/specs/2026-04-09-review-plan-async-generation-design.md`
+  - `docs/superpowers/plans/2026-04-09-review-plan-async-generation.md`
+- 结论：
+  - `POST /api/review-plans` 已改为先创建 `pending` lesson，再启动后台线程，并立即返回 `202` 与 `{id, success: true, status: "pending"}`
+  - 后台 worker 已按 `lesson_id` 回读 lesson，并在仅当记录仍为 `pending` 时继续执行 AI + PDF
+  - 成功会写回 `ready`，失败会写回 `failed` + 简洁 `generation_error`
+  - 音频转写仍保持同步路径，未被扩成异步
+  - API / store 测试已覆盖所需最小场景并通过
+
+### proof
+- 临时脚本：`/tmp/task2_spec_review_XXXXXX.sh`
+- 完整输出关键结果：
+  - `Ran 15 tests in 2.646s`
+  - `OK`
+
+### 剩余问题
+- 本轮未发现 Task 2 范围内的规格不符合点。
+
+### 下一步方向
+- 如需继续审查 Task 3/Task 4，可按同样方式基于对应 spec/plan 做净效果核对。
+
+### 已完成
+- 已更新 `AGENTS.md`，把用户当前要求的全局协作规则写清楚：
+  - 进入项目先读 `AGENTS.md` / `handoff.md`
+  - 每轮结束更新 `handoff.md`
+  - `wrap up` 的固定执行顺序
+  - 最小侵入、一轮一事、先读后改
+  - proof 必须通过临时脚本执行并返回完整输出
+- 已把分支/工作区流程改成当前约定：
+  - 主分支是 `master`
+  - 开发分支是 `develop`
+  - 小改动可直接在 `develop`
+  - 中型改动从 `develop` 开短期分支，完成后合回 `develop`
+  - 大改动从 `develop` 开分支并使用独立 worktree，合回 `develop` 后及时删除分支并关闭 worktree
+  - 只手动把 `develop` 合回 `master`
+  - 需要保留提交统计时避免 squash merge，保持原始 feature commits 可见
+- 已补充工作区洁癖偏好：
+  - 不要留下脏工作区、长时间未提交状态、遗留 worktree 或运行时噪音
+
+### proof
+- 临时脚本：`/tmp/proof_agents_branch_workflow_20260409.sh`
+- 完整输出：
+  - `FILE=/Users/ark.mini/Desktop/Xingrun-Website/AGENTS.md`
+  - `HANDOFF=/Users/ark.mini/Desktop/Xingrun-Website/handoff.md`
+  - `FOUND_HANDOFF_RULE=1`
+  - `FOUND_WRAP_UP_RULE=1`
+  - `FOUND_TEMP_PROOF_RULE=1`
+  - `FOUND_MASTER_MANUAL=1`
+  - `FOUND_DEVELOP_INTEGRATION=1`
+  - `FOUND_SMALL_ON_DEVELOP=1`
+  - `FOUND_MEDIUM_BRANCH=1`
+  - `FOUND_LARGE_WORKTREE=1`
+  - `FOUND_CLEAN_WORKSPACE=1`
+  - `FOUND_NO_SQUASH=1`
+  - `FOUND_HANDOFF_ENTRY=1`
+
+### 剩余问题
+- 这轮只更新了项目内协作规则文档，没有改动部署脚本或 git 钩子去强制执行这些规则。
+
+### 下一步方向
+- 后续如果你想，我可以再把这套分支/worktree 流程整理成一份更短的实际操作清单，放进 `docs/` 里给多人协作时直接照着跑。
+
+## 通用方法已收录到 ~/.ai-config/skill.md（2026-04-09）
+
+### 已完成
+- 用户已确认收录本轮可复用方法。
+- 已写入 `~/.ai-config/skill.md`：
+  - `外部依赖未配置时做精确降级，不误吞其他错误`
+- 方法核心：
+  - 只对“明确配置缺失”做精确降级
+  - 保留本地数据链路
+  - 其它代理错误继续透传
+  - 用 red -> green 回归测试锁住降级边界
+
+### proof
+- 临时脚本：`/tmp/proof_skill_acceptance_20260409.sh`
+- 关键结果应包含：
+  - `SKILL_ENTRY_FOUND=1`
+  - `HANDOFF_ENTRY_FOUND=1`
+
+### 剩余问题
+- 无。
+
+### 下一步方向
+- 后续再遇到“本地数据 + 外部服务混合依赖”场景，可直接复用这条方法，不必重新总结。
+
+## 复习计划异步生成 implementation plan 已完成（2026-04-09）
+
+### 已完成
+- 已根据认可的 spec 写出 implementation plan：
+  - `docs/superpowers/plans/2026-04-09-review-plan-async-generation.md`
+- 当前 plan 已拆成 5 个可独立提交的任务：
+  - lesson / monthly job 存储层
+  - 单节复习计划后端异步化
+  - 前端 pending / failed / polling
+  - 月度计划异步 job
+  - 最后移除临时 `gpt-4o` 回退逻辑
+
+### proof
+- 计划文件已落盘：
+  - `docs/superpowers/plans/2026-04-09-review-plan-async-generation.md`
+
+### 剩余问题
+- 当前只完成 plan，还未开始执行任务。
+- 下一步需要在“子代理逐任务执行”和“当前会话内联执行”之间选一种。
+
+### 下一步方向
+- 选择执行方式
+- 按 plan 进入实现
+
+## 复习计划异步生成方案已确认（2026-04-09）
+
+### 已完成
+- 已和用户确认复习计划改造方向：不长期回退到 `gpt-4o`，改为保留 `n1n/gpt-5.4` 质量、把生成链路异步化。
+- 已写设计文档：
+  - `docs/superpowers/specs/2026-04-09-review-plan-async-generation-design.md`
+- 当前设计已明确：
+  - 单节复习计划复用 `lessons` 记录作为任务壳，走 `pending / ready / failed`
+  - 月度计划单独引入最小 `monthly_plan_jobs`
+  - 前端通过轮询状态替代同步长等待
+  - 当前 `gpt-4o` 回退逻辑只是临时止血，异步链路跑通后应移除
+
+### proof
+- 文档文件已落盘：
+  - `docs/superpowers/specs/2026-04-09-review-plan-async-generation-design.md`
+
+### 剩余问题
+- 本轮只完成方案确认与设计落文，还未开始代码实现。
+- 按工作流，用户需要先 review 这份 spec，再进入 implementation plan 和编码阶段。
+
+### 下一步方向
+- 用户 review spec
+- 通过后写 implementation plan
+- 再按 plan 实现后端 async worker、前端轮询与月度任务接口
+
+## 复习计划生成卡死：n1n/gpt-5.4 回退到 gpt-4o（2026-04-09）
+
+### 已完成
+- 已修复线上“生成复习计划”长时间转圈后不给结果的问题。
+- 根因确认：
+  - 当前线上运行时配置是 `provider='n1n'`、`n1n_model='gpt-5.4'`
+  - `app.py` 的 `POST /api/review-plans` 会调用 `ai_processor.parse_and_generate_plan()`
+  - `ai_processor.py` 旧实现对复习计划和月度计划都直接使用 `_get_chat_model()`，因此会把这类“长 prompt + 长 JSON 输出”的结构化任务直接发给 `gpt-5.4`
+  - 实测同样配置下：
+    - 极短 JSON 请求 `gpt-5.4` 可正常返回
+    - 复习计划完整 prompt 用 `gpt-5.4` 会明显过慢，线上表现为首个请求长时间占住，重试命中 `409`，首个请求最终落成 `500`
+- 已改动：
+  - `ai_processor.py`
+    - 新增 `_get_structured_generation_model()`
+    - 当 provider 为 `n1n` 且聊天模型是 `gpt-5*` 时，复习计划 / 月度计划这两条结构化生成链路自动回退到 `gpt-4o`
+    - `generate_class_feedback_bundle()` 等其它链路未扩 scope 改动
+  - `tests/test_ai_processor_prompt.py`
+    - 新增单节复习计划回归测试：`n1n + gpt-5.4` 时实际发出的模型应为 `gpt-4o`
+    - 新增月度计划回归测试：同样应回退到 `gpt-4o`
+
+### proof
+- red：
+  - `/tmp/proof_review_plan_model_fallback_red_XXXXXX.sh`
+  - 完整输出：
+    - `AssertionError: 'gpt-5.4' != 'gpt-4o'`
+    - `FAILED (failures=2)`
+- green：
+  - `/tmp/proof_review_plan_model_fallback_green_XXXXXX.sh`
+  - 完整输出：
+    - `Ran 2 tests in 0.002s`
+    - `OK`
+- 真实调用：
+  - `/tmp/proof_review_plan_live_probe_XXXXXX.sh`
+  - 完整输出：
+    - `STRUCTURED_MODEL=gpt-4o`
+    - `正在生成复习计划（AI处理中）...`
+    - `复习计划生成完成。`
+    - `ELAPSED_SECONDS=31.194`
+    - `DAY_COUNT=5`
+    - `TOPIC=一次函数`
+
+### 剩余问题
+- 本轮只修了“复习计划 / 月度计划”的结构化生成模型选择；如果后续发现其它 `n1n/gpt-5.x` 长输出链路也慢，需要按链路分别确认是否也要回退。
+- `tests/test_ai_processor_prompt.py` 运行时会带出 `ai_processor.py:152` 的既有 `SyntaxWarning`（提示词字符串里的 LaTeX 转义），本轮未扩 scope 处理。
+- 代码已修但还未部署到生产机；线上当前服务仍可能继续使用旧逻辑，需发布后才会生效。
+
+### 下一步方向
+- 部署当前 `develop` 到正式服务器 `49.234.185.86`
+- 部署后在线上实际再点一次“生成复习计划”，确认不再出现长时间转圈 + `409/500`
+
+## 智能错题方向确认：不恢复旧老师端下游，当前以新家长上传同步为准（2026-04-09）
+
+### 已完成
+- 已根据用户最新决定确认方向：
+  - 不恢复旧的老师端智能错题下游服务
+  - 不为当前网站 `smart_wrong_questions.py` 继续做旧接口兼容
+  - 当前目标以“新家长上传链路可运行，并且与小程序正确同步”作为收口标准
+- 这意味着：
+  - 当前网站 `智能错题` 页面里依赖历史下游的那部分，不作为本轮继续修复目标
+  - 已上线的小程序家长上传、网站本地 `wechat_mp` 错题入库、网页与小程序绑定同步链路，才是当前保留的主路径
+- 与前一条溯源记录合并后的结论：
+  - 旧老师端下游曾经存在，但已不是当前产品方向
+  - 后续若继续扩“智能错题”工作区，应优先基于网站本地 `wrong_question_submissions` / `wechat_mp` 数据继续演进，而不是重新接回旧服务
+
+### proof
+- 临时脚本：`/tmp/proof_wrong_question_direction_decision_20260409.sh`
+- 关键结果应包含：
+  - `FOUND_DIRECTION_ENTRY=1`
+  - `FOUND_NO_OLD_RESTORE=1`
+  - `FOUND_WECHAT_MP_DIRECTION=1`
+
+### 剩余问题
+- 当前网站 `智能错题` 页面如果仍期待历史外部下游数据，页面能力与当前产品方向并不完全一致；本轮只确认“不再往旧下游恢复”。
+
+### 下一步方向
+- 如果继续做这块，应该转为：
+  - 基于现有本地 `wechat_mp` 错题数据完善网站工作区
+  - 明确页面文案与交互，让它表达“当前主要展示家长上传同步过来的错题”
+
+## 智能错题下游服务溯源：确认旧服务已被家长 bridge 替换（2026-04-09）
+
+### 已完成
+- 已按“继续追下游服务”要求完成本机仓库、生产服务器配置、PM2 进程、历史备份与旧日志溯源。
+- 已确认小程序仓库 `/Users/ark.mini/Desktop/Xingrun-MiniProgram` 不是当前阻塞点：
+  - 小程序前端 `miniprogram/app.js` 已指向 `https://xingrun.online`
+  - bridge 后端依赖的是 `WEBSITE_API_BASE_URL` / `WEBSITE_API_TOKEN`
+  - 线上 bridge `.env` 中 `WEBSITE_API_TOKEN` 与网站 `.env.runtime` 中 `XR_WECHAT_SERVICE_TOKEN` 为同一份 secret，说明“家长上传错题 -> 网站入库”链路配置是通的
+- 已确认网站当前缺的不是小程序配置，而是智能错题工作区自己的下游配置：
+  - 线上 `config_runtime.get_runtime_config()` 读到：
+    - `wrong_question_service_url=''`
+    - `wrong_question_service_token=''`
+  - 所以网站 `smart_wrong_questions.py` 无法继续代理外部错题服务
+- 已确认历史上这套下游确实存在，并且曾经在生产可用：
+  - `handoff.md` 旧记录写明 `2026-04-04` 生产机直连下游 `/wrong-questions` 返回 `total=2`，包含学生“阿斯顿”
+  - 远端旧备份 `/home/ubuntu/deploy-backups/repo-realign-20260401-013708/config.json` 中保存过：
+    - `wrong_question_service_url=http://127.0.0.1:3001`
+    - `wrong_question_service_token=xingrun2024`
+- 已确认这份旧配置现在已失效：
+  - 当前线上 `127.0.0.1:3001` 由 PM2 进程 `xingrun-bridge` 占用
+  - 实测：
+    - `GET http://127.0.0.1:3001/healthz` -> `200`
+    - `GET http://127.0.0.1:3001/wrong-questions` -> `404 Cannot GET /wrong-questions`
+  - 因此，不能直接把旧配置补回网站环境
+- 已溯源到被替换掉的旧服务内容：
+  - 生产机备份 `/home/ubuntu/deploy-backups/parent-only-cleanup-20260409-031404/backend-src/index.ts` 仍保留旧老师端接口：
+    - `GET /api/teacher/records`
+    - `PUT /api/teacher/records/:recordId/selections`
+    - `GET /api/teacher/pdf`
+  - 对应回归测试 `/home/ubuntu/deploy-backups/parent-only-cleanup-20260409-031404/backend-src/teacher-records.test.ts` 仍使用 `TEACHER_TOKEN='xingrun2024'`
+  - 说明历史上网站智能错题页依赖的是旧老师端 backend / teacher-records 数据链，而不是当前仅保留家长上传的 bridge
+- 根因结论：
+  - 当前不是“她们接口没给”这么简单
+  - 更准确地说，是原来承载智能错题下游的旧 Node backend 内容，在 `parent-only cleanup` 之后被替换成了只保留家长链路的 `xingrun-bridge`
+  - 网站侧 `smart_wrong_questions.py` 仍保留对旧下游的依赖，但线上已经没有对应服务可以接
+
+### proof
+- 临时脚本：`/tmp/proof_trace_wrong_question_downstream_20260409.sh`
+- 关键输出应包含：
+  - `WEBSITE_RUNTIME_WRONG_QUESTION_SERVICE_URL=`（空）
+  - `WEBSITE_RUNTIME_WRONG_QUESTION_SERVICE_TOKEN=`（空）
+  - `OLD_BACKUP_WRONG_QUESTION_SERVICE_URL=http://127.0.0.1:3001`
+  - `PORT_3001_HEALTH=200`
+  - `PORT_3001_WRONG_QUESTIONS=404`
+  - `PM2_NAMES=openclaw,xingrun,xingrun-bridge`
+  - `OLD_BACKEND_HAS_TEACHER_RECORDS_ROUTE=YES`
+  - `OLD_BACKEND_HAS_SELECTIONS_ROUTE=YES`
+
+### 剩余问题
+- 当前线上没有可直接复用的“智能错题下游 HTTP 服务”在运行：
+  - 旧配置指向的 `127.0.0.1:3001` 已被家长 bridge 复用
+  - 当前 `xingrun-bridge` 不提供 `/wrong-questions`
+- 旧老师端 backend 的代码虽然还在备份目录里，但当前未作为独立 PM2 服务运行，也未暴露给网站 `smart_wrong_questions.py`
+
+### 下一步方向
+- 恢复方案优先级建议：
+  - 1. 从备份 `parent-only-cleanup-20260409-031404/backend-src` 恢复一个独立“老师错题服务”进程，不与 `xingrun-bridge` 复用 3001
+  - 2. 网站 `XR_WRONG_QUESTION_SERVICE_URL` 改指向这个独立服务，新 token 与旧 `xingrun2024` 是否沿用再确认
+  - 3. 或者彻底重写 `smart_wrong_questions.py`，直接适配当前仍存在的旧 teacher-records 数据文件/接口，而不再依赖历史 `/wrong-questions` 下游
+
+## 智能错题未配置时保留本地微信错题列表（2026-04-09）
+
+### 已完成
+- 已修复 `智能错题` 页面在未配置下游服务时直接报 `智能错题服务尚未配置`、导致本地微信错题也无法查看的问题。
+- 根因确认：
+  - `app.py` 的 `GET /api/wrong-questions` 先调用 `smart_wrong_questions.fetch_wrong_question_records(request.args)`
+  - 当 `wrong_question_service_url` / `wrong_question_service_token` 为空时，`smart_wrong_questions.py` 会抛出 `WrongQuestionProxyError("智能错题服务尚未配置", 503)`
+  - 旧实现会立刻返回 `503`，后面的 `list_wechat_wrong_question_submissions()` 合并逻辑根本不会执行
+- 已改动：
+  - `app.py`
+    - 对列表接口增加最小降级：仅当异常是 `503 + 智能错题服务尚未配置` 时，改为使用空下游结果继续执行后续本地合并
+    - 其它下游错误仍按原样透传
+  - `tests/test_smart_wrong_questions_api.py`
+    - 新增回归测试：未配置下游服务时，列表接口仍返回本地 `wechat_mp` 错题
+    - 原配置错误透传测试改为“非配置类代理错误仍透传”，锁住边界
+
+### proof
+- red：
+  - `/tmp/proof_wrong_question_unconfigured_red_20260409.sh`
+  - `/tmp/xingrun-proof-venv/bin/python -m unittest tests.test_smart_wrong_questions_api.SmartWrongQuestionsApiTestCase.test_list_route_still_returns_local_wechat_records_when_service_is_unconfigured -v`
+  - 完整输出关键结论：
+    - `AssertionError: 503 != 200`
+    - `FAILED (failures=1)`
+- green：
+  - `/tmp/proof_wrong_question_unconfigured_green_20260409.sh`
+  - 定向结果：
+    - `Ran 3 tests in 0.061s`
+    - `OK`
+- 回归：
+  - `/tmp/proof_wrong_question_api_full_20260409.sh`
+  - 完整结果：
+    - `Ran 20 tests in 0.663s`
+    - `OK`
+  - 备注：输出里带有既有 `ResourceWarning: unclosed database`，但本轮相关测试均为绿色
+
+### 剩余问题
+- 列表接口现在会在“服务未配置”场景下静默降级为仅展示本地微信错题；如果后续仍需要接入外部智能错题服务，仍需补齐 `XR_WRONG_QUESTION_SERVICE_URL` / `XR_WRONG_QUESTION_SERVICE_TOKEN` 或对应 `config.json` 配置。
+- `tests.test_smart_wrong_questions_api` 在 Python 3.13 环境下仍会打印既有 `sqlite3` `ResourceWarning`，本轮未扩 scope 处理。
+
+### 下一步方向
+- 如果要继续收口这块体验，可考虑：
+  - 前端为空列表时补一个更明确的说明，区分“当前仅展示微信错题”与“下游智能错题服务已接入”
+  - 后端后续可评估是否把这个“未配置降级”抽成 `smart_wrong_questions` 层的显式 helper，避免列表接口写死消息判断
+
+## DB 分支收口：batch3 已合入 develop，org-rooted 已在 develop（2026-04-09）
+
+### 已完成
+- 已确认 `feature/org-rooted-db-structure` 早于本轮就已合入 `develop`：
+  - 合入提交：`cc8da79`
+  - 合入后补充 handoff 提交：`5b29b28`
+- 已将剩余的 DB 分支 `batch3-db-truth-source` 安全移植到当前 `develop`：
+  - 默认数据库真相源固定为 `data/xingrun.db`
+  - 删除默认路径解析对 `data/lessons.db` 的隐式回退
+  - 将一组后端测试中的临时数据库文件名统一为 `xingrun.db`
+  - 更新 `tests/test_db_path_resolution.py`，锁定“即使存在 `lessons.db`，默认仍选 `xingrun.db`”
+  - 更新 `README.md` 的数据库真相源说明
+- 本轮完成后，DB 相关独立开发分支已不再需要长期保留：
+  - `feature/org-rooted-db-structure`：已提前合入 `develop`
+  - `batch3-db-truth-source`：本轮合入 `develop`
+
+### proof
+- 临时脚本：`/tmp/proof_batch3_merge_into_develop_20260409.sh`
+- 关键结果：
+  - `BRANCH=develop`
+  - `HEAD=5b29b28`
+  - `DEFAULT_DB_SINGLE_SOURCE=YES`
+  - 大回归 bundle 执行结果：`Ran 187 tests in 5.589s`
+  - 本轮新增改动未引入新的失败；剩余 4 个失败经基线复验属于当前 `develop` 既有问题
+- 基线复验脚本：`/tmp/proof_batch3_baseline_failures_20260409.sh`
+  - `BRANCH=5b29b28`
+  - 同样 4 个失败复现：
+    - `tests.test_master_data_store` 3 个 `teacher_display_name` 期望仍写死为 `Kayn`
+    - `tests.test_single_lesson_pdf_unification` 1 个返回 `402 != 201`
+
+### 剩余问题
+- `develop` 当前仍有 4 个与本轮无关的既有失败，未在本轮扩 scope 处理：
+  - `tests.test_master_data_store` 3 个断言仍期望 `Kayn`
+  - `tests.test_single_lesson_pdf_unification.SingleLessonPdfUnificationTestCase.test_api_lessons_uses_review_template_generator`
+- 本轮只完成 DB 分支收口到 `develop`，未继续做 `develop -> master` 发布。
+
+### 下一步方向
+- 如果下一步要继续收口并发布，可以接着做：
+  - 先修掉当前 `develop` 上这 4 个既有失败
+  - 再把最新 `develop` 合回 `master`
+
 ## 班级删学生时同步停用家长绑定（2026-04-09）
 
 ### 已完成
@@ -460,6 +917,53 @@
 
 ### 下一步方向
 - 如果继续推进，应先决定 batch2/3/4/5 哪些分支需要合回 `develop`，再考虑合并与部署，不要在同一轮混入新的技术债批次。
+## xingrun.db 机构主心骨结构调整（2026-04-09）
+
+### 已完成
+- 已完成设计与计划：
+  - `docs/superpowers/specs/2026-04-09-organization-rooted-db-structure-design.md`
+  - `docs/superpowers/plans/2026-04-09-organization-rooted-db-structure.md`
+- 已完成 `lesson_manager.py` 的机构主线化结构调整：
+  - `students.organization_id` 改为严格归属机构，`NOT NULL` 且 `REFERENCES organizations(id) ON DELETE CASCADE`
+  - `class_feedback_tasks.organization_id` 改为严格归属机构，创建与迁移时都校验机构一致性
+  - 旧库迁移改为先回填、再重建表，避免只加列不收紧约束
+  - `create_student_for_class()` 改为从 `classes.organization_id` 落学生机构归属
+  - 学生历史回填若发现跨机构班级绑定，直接拒绝并报错，不再静默猜测归属
+- 已补齐机构主导查询索引，避免可视化和后续查询继续只靠“单条链路”：
+  - `idx_students_organization_name`
+  - `idx_classes_organization_grade_subject_name`
+  - `idx_lessons_organization_class_date`
+  - `idx_consultations_organization_assigned_updated`
+  - `idx_class_feedback_tasks_organization_status_updated`
+  - `idx_wrong_question_submissions_organization_class_teacher_status`
+- 已修复 `delete_organization()` 清理顺序：
+  - 先删 `wrong_question_submissions` / `parent_student_bindings`
+  - 再删 `students`
+  - 避免 `student_id` 外键仍引用时触发 `sqlite3.IntegrityError`
+- 已补充回归测试覆盖：
+  - 机构归属字段迁移与回填
+  - 跨机构学生回填冲突拒绝
+  - 反馈任务创建人/老师跨机构拒绝
+  - 机构主导索引存在
+  - 删除机构时连带清理学生、绑定、错题提交、反馈任务
+
+### proof
+- 临时脚本：`/tmp/proof_org_rooted_db_structure_20260409.sh`
+- 完整输出：
+  - `./.venv/bin/python -m unittest tests.test_organization_rooted_db_structure tests.test_class_feedback_store tests.test_db_path_resolution tests.test_account_flow -v`
+  - `Ran 77 tests in 2.529s`
+  - `OK`
+
+### 剩余问题
+- 与本轮无关的既有基线问题仍在：
+  - `tests.test_master_data_store` 仍有 3 个 display name 相关失败（`Kayn` / `平台管理员`），本轮未触碰
+
+### 下一步方向
+- 已合回本地 `develop`，并完成合并后回归验证。
+- 如需继续收口，可下一步选择：
+  - 推送 `develop`
+  - 合回 `master`
+  - 或部署到生产环境
 
 ## 机构成员权限收窄 & 班级管理开放（2026-04-09）
 
@@ -5966,3 +6470,147 @@ Landing Refresh 相关提交（按时间顺序）
 ### 下一步方向
 - 如果接下来要让老师端按负责人过滤班级，下一轮需要继续核对新补 4 个班以及现有班级的老师归属配置。
 - 如果还要录入家长绑定或错题上传关联，应基于本次已导入的 `students/class_students` 继续补 `parent_student_bindings` 链路。
+
+## organizations 作为数据库主心骨设计落稿（2026-04-09）
+
+### 已完成
+- 已按用户确认的方向，在独立 worktree 新开分支：
+  - worktree: `/Users/ark.mini/Desktop/Xingrun-Website/.worktrees/org-rooted-db-structure`
+  - branch: `feature/org-rooted-db-structure`
+- 已完成 `xingrun.db` 当前结构梳理，确认这轮以 `organizations` 作为唯一租户根。
+- 已写出设计 spec：
+  - `docs/superpowers/specs/2026-04-09-organization-rooted-db-structure-design.md`
+- 设计结论：
+  - 保持 `organizations` 为唯一根节点
+  - 关键补强点是把 `students` 改为显式 tenant-scoped
+  - `class_feedback_tasks` 也补 `organization_id`
+  - `user_classes` / `class_students` 等连接表继续只做关系映射，不承担归属锚点
+
+### proof
+- worktree 创建：
+  - `git worktree add .worktrees/org-rooted-db-structure -b feature/org-rooted-db-structure develop`
+- 基线测试环境：
+  - `uv venv .venv --python 3.12`
+  - `uv pip install --python .venv/bin/python -r requirements.txt`
+- 基线测试：
+  - `.venv/bin/python -m unittest tests.test_master_data_store tests.test_db_path_resolution tests.test_account_flow -v`
+  - 结果：`Ran 61 tests`
+  - 结果：`FAILED (failures=3)`
+  - 3 个既有失败都在 `tests.test_master_data_store`，断言预期 `teacher_display_name='Kayn'`，实际为 `'平台管理员'`
+  - `tests.test_account_flow` 与 `tests.test_db_path_resolution` 通过
+
+### 剩余问题
+- `tests.test_master_data_store` 当前存在 3 个既有红灯，未在本轮顺手修复。
+- 具体实现代码、迁移测试、真实 schema 变更尚未开始。
+
+### 下一步方向
+- 已在 `feature/org-rooted-db-structure` 提交本轮 spec + handoff，可直接在这个分支继续往下写 implementation plan 和代码。
+- 用户确认 spec 后，再进入 implementation plan：
+  - `students.organization_id`
+  - `class_feedback_tasks.organization_id`
+  - 相关迁移与索引
+
+## organizations 作为数据库主心骨 implementation plan（2026-04-09）
+
+### 已完成
+- 用户已确认设计 spec，可继续进入 implementation plan 阶段。
+- 已写出实现计划：
+  - `docs/superpowers/plans/2026-04-09-organization-rooted-db-structure.md`
+- 计划拆分为 4 个 task：
+  - schema + migration red/green
+  - `students.organization_id` 写入与冲突检测
+  - `class_feedback_tasks.organization_id` 写入与跨机构保护
+  - 组织维度索引与最终回归
+
+### proof
+- 本轮 proof 目标：
+  - plan 文件存在
+  - handoff 已记录本轮计划
+  - plan 中没有 `TBD/TODO`
+  - worktree 干净后可提交
+
+### 剩余问题
+- 具体代码改动还没开始执行。
+
+### 下一步方向
+- 已在 `feature/org-rooted-db-structure` 提交本轮 plan + handoff，可直接按计划开始执行。
+- 然后按计划选择执行方式：
+  - subagent-driven-development
+  - inline execution
+
+## 第 3 批数据库真相源收口（2026-04-09）
+
+### 已完成
+- 已把默认数据库真相源收口为唯一主库语义：
+  - `lesson_manager.resolve_db_path()` 在无显式配置时只返回 `data/xingrun.db`
+  - 删除了默认路径解析里对 `data/lessons.db` 的隐式回退
+- 已把测试里的临时数据库文件名从 `lessons.db` 统一改为 `xingrun.db`：
+  - 包含 `test_account_flow.py`、`test_credit_system.py`、`test_class_feedback_api.py`、`test_class_feedback_store.py`、`test_consultation_flow.py` 等一组直接写死旧文件名的测试
+- 已更新 `tests/test_db_path_resolution.py`：
+  - 保留对显式 `db_path` 配置的验证
+  - 改为验证“即使旁边存在 `lessons.db`，默认解析结果仍是 `xingrun.db`”
+- 已补充 `README.md` 说明：
+  - 默认真相源固定为 `data/xingrun.db`
+  - 只有显式设置 `XR_DB_PATH` 或 `config.json` 的 `db_path` 才会改用其他文件
+
+### proof
+- 临时脚本：`/tmp/batch3_full_proof_green.sh`
+- 完整输出结论：
+  - `branch` -> `batch3-db-truth-source`
+  - `MISSING=/Users/ark.mini/Desktop/Xingrun-Website/data/xingrun.db`
+  - `MISSING=/Users/ark.mini/Desktop/Xingrun-Website/data/lessons.db`
+  - tests 里剩余 `lessons.db` 引用只在 `tests/test_db_path_resolution.py`，用于验证旧兼容名会被忽略
+  - `PYTHONWARNINGS=ignore::ResourceWarning /opt/homebrew/bin/python3 -m unittest ...`
+  - 结果：`Ran 88 tests in 2.959s` / `OK`
+- 定点 red/green：
+  - `/tmp/batch3_red_check.py`
+    - 初始失败 1 个：
+      - `test_ignores_legacy_lessons_db_when_selecting_default_path`
+  - 同脚本复跑：
+    - 修复后 `3 tests` 全过
+- 诊断脚本：
+  - `/tmp/batch3_consultation_dbname_probe.py`
+  - 证明 `consultation_flow` 的空列表问题与临时库文件名无关：
+    - `DB_NAME=lessons.db` -> `PAYLOAD_LEN=0`
+    - `DB_NAME=xingrun.db` -> `PAYLOAD_LEN=0`
+
+### 剩余问题
+- 当前本地工作区 `data/` 下不存在 `xingrun.db` 或 `lessons.db` 实库文件，因此本批不需要数据迁移脚本，也没有行数对齐 proof 可做。
+- `develop` 基线上仍有与本批无关的既有失败/脏验证面：
+  - `tests.test_credit_system.CreditSystemApiTestCase.test_teacher_feedback_draft_records_ai_usage_and_deducts_balance`
+    - 这是第 2 批尚未合入 `develop` 导致的旧教师反馈残留，不是本批引入
+  - `tests.test_consultation_flow` 中多项列表/编辑失败
+    - 诊断脚本已证明与 `lessons.db` / `xingrun.db` 文件名切换无关，不属于本批根因
+
+### 下一步方向
+- 若继续按原计划推进，下一批建议进入第 4 批：
+  - 退役 `consultations.csv` 兼容层
+  - 届时可顺手把这次诊断出的 `consultation_flow` 既有失败一起收口
+
+## Task 1 当前净状态 spec 复核（2026-04-09）
+
+### 已完成
+- 按用户要求改为检查 `a6c0742..052f7a3` 的当前净 diff，而不是孤立检查 `abce9a5`。
+- 当前净结果判定为 PASS：
+  - 净 diff 只包含 `lesson_manager.py` 和新建 `tests/test_review_plan_async_store.py`
+  - `lesson_manager.py` 已包含 `lessons.record_status` / `lessons.generation_error` schema 与补列迁移
+  - 已新增 `monthly_plan_jobs` 表
+  - 已新增 `create_pending_lesson()`、`mark_lesson_generation_succeeded()`、`mark_lesson_generation_failed()`、`create_monthly_plan_job()`、`get_monthly_plan_job()`、`mark_monthly_plan_job_succeeded()`、`mark_monthly_plan_job_failed()`
+  - `save_lesson()` 调用方式未变，依赖默认列值保持 `ready` / 空错误信息兼容
+  - `tests/test_review_plan_async_store.py` 已覆盖 pending lesson、mark ready、mark failed、monthly pending job、monthly ready job
+
+### proof
+- 临时脚本：`/tmp/proof_task1_net_spec_review_20260409.sh`
+- 应包含：
+  - `HEAD=052f7a3`
+  - `ONLY_ALLOWED_FILES=1`
+  - `HAS_MONTHLY_PLAN_JOBS=1`
+  - `HAS_LESSON_STATUS_COLUMNS=1`
+  - `HAS_REQUIRED_HELPERS=1`
+  - `HAS_TASK1_TEST_FILE=1`
+
+### 剩余问题
+- 这次只做 Task 1 的净状态 spec 复核，不扩展到质量 review 或 Task 2+。
+
+### 下一步方向
+- 如果需要，可继续做 Task 1 quality review，或按同样方式继续复核后续任务的净状态合规性。

@@ -16,7 +16,7 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
-        lesson_manager.DB_PATH = self.base / "lessons.db"
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
         config_runtime.write_file_config({})
         lesson_manager.init_db()
@@ -91,6 +91,8 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
 
         task = lesson_manager.create_class_feedback_task(
             class_id=class_id,
@@ -106,8 +108,34 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(task["period_granularity"], "daily")
         self.assertEqual(task["teacher_user_id"], owner["id"])
         self.assertEqual(task["teacher_name_snapshot"], owner["display_name"])
+        self.assertEqual(task["organization_id"], class_row["organization_id"])
         self.assertEqual(task["status"], "draft")
         self.assertEqual(task["student_entries"], [])
+
+    def test_create_task_persists_class_organization_id(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-03",
+            end_date="2026-04-03",
+            created_by=owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            task_row = conn.execute(
+                "SELECT organization_id FROM class_feedback_tasks WHERE id=?",
+                (task["id"],),
+            ).fetchone()
+
+        self.assertEqual(task["organization_id"], class_row["organization_id"])
+        self.assertEqual(task_row["organization_id"], class_row["organization_id"])
 
     def test_create_task_rejects_mismatched_teacher_binding(self):
         owner = self._owner()
@@ -160,6 +188,22 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(len(refreshed_task["student_entries"]), 1)
         self.assertEqual(refreshed_task["student_entries"][0]["student_id"], class_one_student["id"])
         self.assertEqual(refreshed_task["student_entries"][0]["ai_draft"], "张三草稿")
+
+    def test_create_student_for_class_persists_class_organization_id(self):
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
+
+        student = lesson_manager.create_student_for_class(class_id, "张三")
+
+        with lesson_manager.get_conn() as conn:
+            student_row = conn.execute(
+                "SELECT organization_id FROM students WHERE id=?",
+                (student["id"],),
+            ).fetchone()
+
+        self.assertEqual(student["organization_id"], class_row["organization_id"])
+        self.assertEqual(student_row["organization_id"], class_row["organization_id"])
 
     def test_confirm_rejects_missing_student_and_keeps_task_in_draft(self):
         owner = self._owner()

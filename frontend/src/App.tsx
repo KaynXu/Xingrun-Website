@@ -90,6 +90,8 @@ interface Lesson {
   pdf_path: string;
   class_id: number | null;
   created_at: string;
+  record_status?: string;
+  generation_error?: string;
 }
 
 interface Stats {
@@ -2099,17 +2101,37 @@ const ReviewDocumentHistory = ({
   const [loading, setLoading] = useState(true);
   const [historyPage, setHistoryPage] = useState(1);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    apiFetch<Lesson[]>('/api/review-plans')
+  const load = useCallback((quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+    }
+    return apiFetch<Lesson[]>('/api/review-plans')
       .then(setLessons)
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!quiet) {
+          setLoading(false);
+        }
+      });
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load, refreshToken]);
+
+  const hasPendingLesson = lessons.some((lesson) => lesson.record_status === 'pending');
+
+  useEffect(() => {
+    if (!hasPendingLesson) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [hasPendingLesson, load]);
 
   const totalHistoryPages = Math.max(1, Math.ceil(lessons.length / REVIEW_HISTORY_PAGE_SIZE));
   const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
@@ -2139,72 +2161,104 @@ const ReviewDocumentHistory = ({
                 key={lesson.id}
                 className="group flex h-full flex-col rounded-2xl border border-sky-100/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
-                      <FileText size={16} />
-                    </div>
-                    <p className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={cn('h-2 w-2 rounded-full', lesson.pdf_path ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{lesson.pdf_path ? '已生成' : '无 PDF'}</span>
-                  </div>
-                </div>
+                {(() => {
+                  const statusLabel = lesson.record_status === 'pending'
+                    ? '生成中'
+                    : lesson.record_status === 'failed'
+                      ? '生成失败'
+                      : lesson.pdf_path
+                        ? '已生成'
+                        : '无 PDF';
+                  const statusDotClass = lesson.record_status === 'pending'
+                    ? 'bg-amber-500'
+                    : lesson.record_status === 'failed'
+                      ? 'bg-rose-500'
+                      : lesson.pdf_path
+                        ? 'bg-emerald-500'
+                        : 'bg-slate-300 dark:bg-slate-600';
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {lesson.subject && (
-                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-                      {lesson.subject}
-                    </span>
-                  )}
-                  {lesson.grade && (
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
-                      {lesson.grade}
-                    </span>
-                  )}
-                </div>
-
-                <dl className="mt-4 space-y-2 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-500 dark:text-slate-400">日期</dt>
-                    <dd className="font-mono text-slate-700 dark:text-slate-200">{lesson.date}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-500 dark:text-slate-400">生成时间</dt>
-                    <dd className="text-slate-700 dark:text-slate-200">{new Date(lesson.created_at).toLocaleString('zh-CN')}</dd>
-                  </div>
-                </dl>
-
-                <div className="mt-4 flex flex-wrap justify-end gap-1">
-                  {lesson.pdf_path && (
+                  return (
                     <>
-                      <a
-                        href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                        title="查看"
-                      >
-                        <Eye size={16} />
-                      </a>
-                      <a
-                        href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                        title="下载"
-                      >
-                        <Download size={16} />
-                      </a>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
+                            <FileText size={16} />
+                          </div>
+                          <p className="font-medium text-slate-900 dark:text-white">{lesson.topic || `${lesson.subject} 课程`}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className={cn('h-2 w-2 rounded-full', statusDotClass)} />
+                          <span className="text-xs text-slate-500 dark:text-slate-400">{statusLabel}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {lesson.subject && (
+                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                            {lesson.subject}
+                          </span>
+                        )}
+                        {lesson.grade && (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                            {lesson.grade}
+                          </span>
+                        )}
+                      </div>
+
+                      <dl className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">日期</dt>
+                          <dd className="font-mono text-slate-700 dark:text-slate-200">{lesson.date}</dd>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">生成时间</dt>
+                          <dd className="text-slate-700 dark:text-slate-200">{new Date(lesson.created_at).toLocaleString('zh-CN')}</dd>
+                        </div>
+                      </dl>
+
+                      {lesson.record_status === 'pending' && (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                          可离开页面，完成后会出现在列表中
+                        </div>
+                      )}
+                      {lesson.record_status === 'failed' && (
+                        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50/90 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+                          {lesson.generation_error || '生成失败'}
+                        </div>
+                      )}
+
+                      <div className="mt-4 flex flex-wrap justify-end gap-1">
+                        {lesson.pdf_path && (
+                          <>
+                            <a
+                              href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                              title="查看"
+                            >
+                              <Eye size={16} />
+                            </a>
+                            <a
+                              href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                              title="下载"
+                            >
+                              <Download size={16} />
+                            </a>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleDelete(lesson.id)}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                          title="删除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </>
-                  )}
-                  <button
-                    onClick={() => handleDelete(lesson.id)}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                    title="删除"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+                  );
+                })()}
               </article>
             ))}
           </div>
@@ -2249,7 +2303,7 @@ const ReviewGenerationPage = ({
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
 
   const handleFormSuccess = () => {
-    setComposerOpen(true);
+    setComposerOpen(false);
     setHistoryRefreshToken((current) => current + 1);
     onSuccess();
   };

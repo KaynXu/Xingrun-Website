@@ -18,7 +18,7 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
-        lesson_manager.DB_PATH = self.base / "lessons.db"
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
         config_runtime.write_file_config({})
         lesson_manager.init_db()
