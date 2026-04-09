@@ -1,3 +1,19 @@
+## 部署文档已修正到当前可用流程（2026-04-09）
+
+### 已完成
+- 已修正 [server deploy.md](/Users/ark.mini/Desktop/Xingrun-Website/server%20deploy.md) 中失效的 `deploy.sh` 指引，改为仓库实际存在的 `./scripts/deploy_backend.sh` 与手动发布步骤。
+- 已补充生产机 SSH 登录兜底参数：`PubkeyAuthentication=no` + `PreferredAuthentications=password,keyboard-interactive` + `sshpass`。
+- 已明确当前生产发布分支以 `develop` 为准，不再沿用旧文档里的 `git pull origin master`。
+
+### proof
+- 已根据本轮成功登录与部署命令回填文档：同一套 SSH 参数已在生产机登录、拉取、构建、重启、健康检查中实测成功。
+
+### 剩余问题
+- 当前文档仍包含明文密码，仅适合短期内网协作；如要长期保留，建议后续改成 SSH key 或环境变量说明。
+
+### 下一步方向
+- 如需继续收口，可把生产机登录方式从密码切到 SSH key，并同步更新文档。
+
 ## develop 已推送到远端（2026-04-09）
 
 ### 已完成

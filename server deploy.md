@@ -13,38 +13,77 @@
 
 ## 日常发布
 
-优先使用根目录下的脚本：
+当前仓库没有根目录 `deploy.sh`，实际可用脚本是：
 
 ```bash
-./deploy.sh "feat: your change" Xingrun-Summary/app.py Xingrun-Summary/frontend/src/App.tsx
+cd /Users/ark.mini/Desktop/Xingrun-Website
+./scripts/deploy_backend.sh master
 ```
 
-如果这次代码已经提前 commit 过了，只想推送并部署：
+如果要发布 `develop`：
 
 ```bash
-./deploy.sh --skip-commit
+cd /Users/ark.mini/Desktop/Xingrun-Website
+git push origin develop
+```
+
+然后登录生产机并执行：
+
+```bash
+cd /home/ubuntu/Xingrun-Website
+git fetch origin
+git checkout develop
+git pull --ff-only origin develop
+npm --prefix frontend run build
+pm2 restart xingrun
+pm2 status xingrun
+curl -fsS http://127.0.0.1:5001/
 ```
 
 ## 脚本默认行为
 
-- 默认服务器：`ubuntu@49.234.185.86`
-- 默认远端仓库：`/home/ubuntu/Xingrun-Website`
-- 默认重启 PM2：`xingrun`
-- 前端仍会执行 `npm --prefix frontend run build`
+- `./scripts/deploy_backend.sh <branch>` 运行在服务器仓库内。
+- 脚本会执行：拉取分支 -> 安装后端依赖 -> 初始化数据库 -> 重启后端 -> 健康检查。
+- 这个脚本只管后端，不会替代前端构建；前端仍需单独执行 `npm --prefix frontend run build`。
 
-## 脚本失效时的手动兜底
+## SSH 登录兜底
+
+如果普通 `ssh ubuntu@49.234.185.86` 一直失败，但已确认密码可用，优先强制走密码认证：
 
 ```bash
-ssh ubuntu@49.234.185.86
+export SSHPASS='***REMOVED-ROTATED-SSH-PASSWORD***'
+sshpass -e ssh -tt \
+	-o PubkeyAuthentication=no \
+	-o PreferredAuthentications=password,keyboard-interactive \
+	-o StrictHostKeyChecking=accept-new \
+	ubuntu@49.234.185.86
+```
+
+这次实测就是靠这组参数恢复了服务器登录。根因不是仓库或 PM2，而是默认 SSH 认证顺序没有正确落到密码登录。
+
+## 手动发布兜底
+
+```bash
+export SSHPASS='***REMOVED-ROTATED-SSH-PASSWORD***'
+sshpass -e ssh -tt \
+	-o PubkeyAuthentication=no \
+	-o PreferredAuthentications=password,keyboard-interactive \
+	-o StrictHostKeyChecking=accept-new \
+	ubuntu@49.234.185.86 '
+set -euo pipefail
 cd /home/ubuntu/Xingrun-Website
-git pull origin master
+git fetch origin
+git checkout develop
+git pull --ff-only origin develop
 npm --prefix frontend run build
 pm2 restart xingrun
-pm2 status
+pm2 status xingrun | sed -n "1,20p"
+curl -fsS http://127.0.0.1:5001/ | head -c 200 && echo
+'
 ```
 
 ## 备注
 
-- `deploy.sh` 在工作区根目录，本地默认进入 `Xingrun-Summary`
 - 线上服务器默认仓库路径是 `/home/ubuntu/Xingrun-Website`
+- 当前发布分支以 `develop` 为准；不要再按旧文档直接 `git pull origin master`
 - 如果未来再引入 staging 或备用机，必须在文档里明确标注用途，不能覆盖这份生产机说明
