@@ -433,6 +433,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
+  const selectedRecordOrder = selectedRecord ? memberNotebookRecords.findIndex((item) => item.id === selectedRecord.id) + 1 : 0;
   const handleMemberClassChange = (value: string) => {
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
@@ -1086,6 +1087,24 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </div>
 
               <div className="min-h-0 overflow-y-auto p-5">
+                <div className="mb-5 rounded-[24px] border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.96),rgba(239,246,255,0.92))] p-5 dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(15,23,42,0.88))]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600 dark:text-sky-300">错题档案</p>
+                  <h4 className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
+                    第 {selectedRecordOrder || 1} 题 · {selectedRecord?.analysis.questionCategory || '未分类错题'}
+                  </h4>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">把当前题目按错题库文档方式展开，先看记录，再在同一侧继续老师跟进。</p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.studentName || selectedStudentName}</span>
+                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.className || '未标注班级'}</span>
+                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.createdAt || '未记录时间'}</span>
+                  </div>
+                </div>
+
+                <div className="mb-5 flex flex-wrap gap-2 border-b border-slate-200/80 pb-4 text-sm dark:border-white/10">
+                  <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">题目记录</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">教师跟进区</span>
+                </div>
+
                 <div className="mb-5">
                   <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看这个孩子当前记录，并直接保存跟进内容。</p>

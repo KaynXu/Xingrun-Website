@@ -236,9 +236,9 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
 
 test('buildMemberStudentNotebookSummaries groups current-class records by student', () => {
   const summaries = buildMemberStudentNotebookSummaries([
-    makeWrongQuestionRecord({ id: 'a', classId: 101, className: '六年级 1 班', studentName: 'Alice', reviewStatus: 'pending', createdAt: '2026-03-29T08:00:00Z' }),
-    makeWrongQuestionRecord({ id: 'b', classId: 101, className: '六年级 1 班', studentName: 'Alice', teacherComment: '已跟进', createdAt: '2026-03-29T09:00:00Z' }),
-    makeWrongQuestionRecord({ id: 'c', classId: 101, className: '六年级 1 班', studentName: 'Bob', createdAt: '2026-03-29T07:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'a', source: 'wechat_mp', classId: 101, className: '六年级 1 班', studentName: 'Alice', createdAt: '2026-03-29T08:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'b', source: 'wechat_mp', classId: 101, className: '六年级 1 班', studentName: 'Alice', createdAt: '2026-03-29T09:00:00Z', isMastered: true }),
+    makeWrongQuestionRecord({ id: 'c', source: 'wechat_mp', classId: 101, className: '六年级 1 班', studentName: 'Bob', createdAt: '2026-03-29T07:00:00Z' }),
     makeWrongQuestionRecord({ id: 'd', classId: 202, className: '初一 2 班', studentName: 'Alice', createdAt: '2026-03-29T10:00:00Z' }),
   ], 101);
 
@@ -780,16 +780,21 @@ test('normalizeWrongQuestionRecord keeps wechat mini-program review fields for l
     teacher_display_name: 'Kayn',
     created_at: '2026-03-29T08:00:00Z',
     image_url: 'https://cdn.example.com/local-question.png',
-    parent_note: '孩子订正后还是不会',
-    teacher_comment: '下节课单独复讲',
-    status: 'reviewed',
-    analysis: {},
+    child_raw_reason_text: '我把单位换算漏掉了',
+    primary_error_type: '审题不清',
+    secondary_error_summary: '孩子忽略了题目里的单位换算要求。',
+    archive_status: 'archived',
+    analysis: {
+      error_type: '审题不清',
+      student_note: '孩子忽略了题目里的单位换算要求。',
+    },
   });
 
   assert.equal(normalized.source, 'wechat_mp');
-  assert.equal(normalized.parentNote, '孩子订正后还是不会');
-  assert.equal(normalized.teacherComment, '下节课单独复讲');
-  assert.equal(normalized.reviewStatus, 'reviewed');
+  assert.equal(normalized.childReasonText, '我把单位换算漏掉了');
+  assert.equal(normalized.primaryErrorType, '审题不清');
+  assert.equal(normalized.causeNote, '孩子忽略了题目里的单位换算要求。');
+  assert.equal(normalized.isMastered, true);
   assert.equal(getWrongQuestionSourceLabel(normalized.source), '微信小程序');
   assert.equal(isWechatMiniProgramWrongQuestionRecord(normalized), true);
 });
@@ -826,8 +831,9 @@ test('smart wrong question page shows wechat mini-program source badge and local
 
   assert.match(pageSource, /selectedRecord\?\.source === 'wechat_mp'/);
   assert.match(pageSource, /微信小程序/);
-  assert.match(pageSource, /家长上传信息/);
-  assert.match(pageSource, /老师处理结果/);
+  assert.match(pageSource, /孩子自述错因/);
+  assert.match(pageSource, /AI 归类错因/);
+  assert.match(pageSource, /是否掌握/);
 });
 
 test('SmartWrongQuestionsPage loads selected record detail into a review draft state', () => {
@@ -1334,10 +1340,14 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
           question_text: '原始 AI 文本',
           question_text_source: 'ai',
           student_library_pdf_path: '/api/wechat/student-libraries/1',
-          parent_note: '孩子订正后还是不会',
-          teacher_comment: '',
-          status: 'pending',
-          analysis: {},
+          child_raw_reason_text: '我把乘法优先级看漏了',
+          primary_error_type: '计算粗心',
+          secondary_error_summary: '孩子知道规则，但这道题没先算乘法。',
+          archive_status: 'active',
+          analysis: {
+            error_type: '计算粗心',
+            student_note: '孩子知道规则，但这道题没先算乘法。',
+          },
         });
       }
 
@@ -1357,10 +1367,14 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
             question_text: '老师修正后的题目文本',
             question_text_source: 'teacher',
             student_library_pdf_path: '/api/wechat/student-libraries/1',
-            parent_note: '孩子订正后还是不会',
-            teacher_comment: '已跟进',
-            status: 'reviewed',
-            analysis: {},
+            child_raw_reason_text: '我把乘法优先级看漏了',
+            primary_error_type: '计算粗心',
+            secondary_error_summary: '孩子知道规则，但这道题没先算乘法。',
+            archive_status: 'archived',
+            analysis: {
+              error_type: '计算粗心',
+              student_note: '孩子知道规则，但这道题没先算乘法。',
+            },
           },
         });
       }
@@ -1384,24 +1398,26 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /题目文本/);
+      assert.match(pageText, /孩子自述错因/);
+      assert.match(pageText, /AI 归类错因/);
       const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
       assert.ok(textarea instanceof HTMLTextAreaElement);
       assert.equal(textarea.value, '原始 AI 文本');
     });
 
     const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
-    const teacherCommentTextarea = domEnvironment.container.querySelector('textarea[placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"]') as HTMLTextAreaElement | null;
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存处理结果'));
+    const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
 
     assert.ok(questionTextarea instanceof HTMLTextAreaElement);
-    assert.ok(teacherCommentTextarea instanceof HTMLTextAreaElement);
+    assert.ok(masteryCheckbox instanceof HTMLInputElement);
     assert.ok(saveButton instanceof HTMLButtonElement);
 
     await act(async () => {
       questionTextarea.value = '老师修正后的题目文本';
       questionTextarea.dispatchEvent(new Event('input', { bubbles: true }));
-      teacherCommentTextarea.value = '已跟进';
-      teacherCommentTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+      masteryCheckbox.checked = true;
+      masteryCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -1412,7 +1428,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       assert.ok(saveCall);
       const payload = JSON.parse(String(saveCall?.init?.body));
       assert.equal(payload.question_text, '老师修正后的题目文本');
-      assert.equal(payload.teacherComment, '已跟进');
+      assert.equal(payload.is_mastered, true);
     });
   } finally {
     if (root) {
@@ -2070,13 +2086,15 @@ test('SmartWrongQuestionsPage saves review content only for the selected member 
             teacher_name: '成员老师',
             teacher_user_id: 7,
             created_at: '2026-03-29T09:00:00Z',
-            parent_note: '第一题又错了',
-            status: 'reviewed',
-            teacher_comment: '已跟进',
+            child_raw_reason_text: '我把单位换算漏掉了',
+            primary_error_type: '审题不清',
+            secondary_error_summary: '孩子忽略了题目里的单位换算要求。',
+            archive_status: 'archived',
             analysis: {
               question_category: '计算',
-              error_type: '计算错误',
+              error_type: '审题不清',
               knowledge_points: ['分数运算'],
+              student_note: '孩子忽略了题目里的单位换算要求。',
             },
           },
         });
@@ -2128,19 +2146,18 @@ test('SmartWrongQuestionsPage saves review content only for the selected member 
     });
 
     await waitForAssertion(() => {
-      const textarea = domEnvironment.container.querySelector('textarea[placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"]') as HTMLTextAreaElement | null;
-      const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进'));
-      assert.ok(textarea instanceof HTMLTextAreaElement);
+      const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+      const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
+      assert.ok(masteryCheckbox instanceof HTMLInputElement);
       assert.ok(saveButton instanceof HTMLButtonElement);
     });
 
-    const textarea = domEnvironment.container.querySelector('textarea[placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"]') as HTMLTextAreaElement;
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进')) as HTMLButtonElement;
+    const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况')) as HTMLButtonElement;
 
     await act(async () => {
-      textarea.value = '已跟进';
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      masteryCheckbox.checked = true;
+      masteryCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -2150,7 +2167,7 @@ test('SmartWrongQuestionsPage saves review content only for the selected member 
       assert.equal(reviewRequests.length, 1);
       assert.equal(reviewRequests[0]?.url, '/api/wrong-questions/record-a/review');
       const payload = JSON.parse(reviewRequests[0]?.body ?? '{}');
-      assert.equal(payload.teacherComment, '已跟进');
+      assert.equal(payload.is_mastered, true);
     });
   } finally {
     if (root) {
@@ -2428,6 +2445,126 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
       assert.match(pageText, /左侧是紧凑错题目录/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage presents the modal detail pane like a notebook document', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 101, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-a',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T09:00:00Z',
+              parent_note: '第一题又错了',
+              status: 'pending',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-a',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T09:00:00Z',
+          parent_note: '第一题又错了',
+          status: 'pending',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+    assert.ok(classSelect);
+
+    await act(async () => {
+      classSelect.value = '101';
+      classSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const aliceButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Alice'));
+    assert.ok(aliceButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      aliceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /错题档案/);
+      assert.match(pageText, /题目记录/);
+      assert.match(pageText, /教师跟进区/);
     });
   } finally {
     if (root) {
