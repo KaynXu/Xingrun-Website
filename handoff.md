@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## Task 5 已完成 super_owner 平台总览（2026-04-09）
 
 ### 已完成
@@ -321,6 +322,32 @@
 
 ### 下一步方向
 - 该项可视为已完成；后续如需收口，只需补一次合并后的整体验收即可。
+
+## Task 3 课堂反馈周期显式控件已完成（2026-04-09）
+
+### 已完成
+- 已把课堂反馈任务创建从原始起止日期输入改为显式反馈周期控件，支持按日、按周、按月、按阶段四种模式。
+- 前端已新增 `buildClassFeedbackPeriodPreview`，统一生成周期 label、起止日期与天数。
+- 前端已新增 `buildCreateClassFeedbackTaskRequest`，按后端已支持的结构化 payload 发送 daily/weekly/monthly/stage 请求。
+- `App.tsx` 已改为基于周期预览做课次命中统计和任务创建，不再直接维护 `startDate/endDate` 创建态。
+- 已补前端回归断言，覆盖：
+  - 周期预览 helper 输出
+  - 结构化任务请求 helper 输出
+  - App 使用周期预览而不是原始日期控件
+  - 控制栏移除原始 `startDate/endDate` 输入
+
+### proof
+- 指定验证命令：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/class-feedback-period-selection/frontend && npx tsx --test src/class-feedback-generation.test.tsx`
+- 完整输出结论：
+  - `tests 10`
+  - `pass 10`
+  - `fail 0`
+
+### 剩余问题
+- 无。
+
+### 下一步方向
+- Task 4 可继续基于当前周期预览结果收口工作台摘要显示与更细的文案表现，但本轮未触及 `ClassFeedbackGenerationWorkspace.tsx`。
 
 ## 错题工作区统计与权限范围已调整（2026-04-09）
 

@@ -21,6 +21,64 @@ export interface ClassFeedbackStudentCard {
   highlightNote: string;
 }
 
+export type ClassFeedbackPeriodGranularity = 'daily' | 'weekly' | 'monthly' | 'stage';
+
+export type ClassFeedbackStageName = '春季' | '暑假' | '秋季' | '寒假';
+
+export type ClassFeedbackPeriodSelection =
+  | {
+      periodGranularity: 'daily';
+      anchorDate: string;
+    }
+  | {
+      periodGranularity: 'weekly';
+      year: number;
+      week: number;
+    }
+  | {
+      periodGranularity: 'monthly';
+      year: number;
+      month: number;
+    }
+  | {
+      periodGranularity: 'stage';
+      year: number;
+      stageName: ClassFeedbackStageName;
+    };
+
+export type CreateClassFeedbackTaskRequest =
+  | {
+      class_id: number;
+      period_granularity: 'daily';
+      anchor_date: string;
+    }
+  | {
+      class_id: number;
+      period_granularity: 'weekly';
+      year: number;
+      week: number;
+    }
+  | {
+      class_id: number;
+      period_granularity: 'monthly';
+      year: number;
+      month: number;
+    }
+  | {
+      class_id: number;
+      period_granularity: 'stage';
+      year: number;
+      stage_name: ClassFeedbackStageName;
+    };
+
+export interface ClassFeedbackPeriodPreview {
+  label: string;
+  startDate: string;
+  endDate: string;
+  periodLengthDays: number;
+  periodGranularity: ClassFeedbackPeriodGranularity;
+}
+
 export interface ClassFeedbackTask {
   id: number;
   class_id: number;
@@ -61,6 +119,176 @@ export const defaultStageLabelGroups: StageLabelGroup[] = [
   { group: '课后执行', labels: ['作业完成更稳', '作业拖延', '复习配合度提升', '家长跟进较积极', '家庭练习不足'] },
   { group: '阶段变化', labels: ['进步明显', '有点回落', '变化不大', '情绪更稳定', '需要下阶段重点关注'] },
 ];
+
+const CLASS_FEEDBACK_MONTH_LABELS = ['', '一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+
+function parseIsoDate(value: string, fieldName: string): Date {
+  const parsed = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${fieldName} must be a valid ISO date`);
+  }
+  return parsed;
+}
+
+function formatIsoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function getIsoWeekPartsForDate(value: Date): { year: number; week: number } {
+  const thursday = new Date(value.getTime());
+  const weekday = thursday.getDay() || 7;
+  thursday.setDate(thursday.getDate() + 4 - weekday);
+
+  const year = thursday.getFullYear();
+  const firstThursday = new Date(`${year}-01-04T12:00:00`);
+  const firstWeekday = firstThursday.getDay() || 7;
+  firstThursday.setDate(firstThursday.getDate() + 4 - firstWeekday);
+
+  const diffDays = Math.round((thursday.getTime() - firstThursday.getTime()) / 86_400_000);
+  const week = Math.floor(diffDays / 7) + 1;
+  return { year, week };
+}
+
+function getIsoWeekStartDate(year: number, week: number): Date {
+  if (!Number.isInteger(year)) {
+    throw new Error('year must be an integer');
+  }
+  if (!Number.isInteger(week) || week < 1 || week > 53) {
+    throw new Error('week must be between 1 and 53');
+  }
+
+  const jan4 = new Date(`${year}-01-04T12:00:00`);
+  const jan4Weekday = jan4.getDay() || 7;
+  const weekOneMonday = new Date(jan4.getTime());
+  weekOneMonday.setDate(jan4.getDate() - jan4Weekday + 1);
+
+  const monday = new Date(weekOneMonday.getTime());
+  monday.setDate(weekOneMonday.getDate() + (week - 1) * 7);
+
+  const resolved = getIsoWeekPartsForDate(monday);
+  if (resolved.year !== year || resolved.week !== week) {
+    throw new Error('week is out of range for year');
+  }
+  return monday;
+}
+
+function getLastDayOfMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+function getStageRange(year: number, stageName: ClassFeedbackStageName): { startDate: string; endDate: string } {
+  if (stageName === '春季') {
+    return { startDate: `${year}-03-01`, endDate: `${year}-05-31` };
+  }
+  if (stageName === '暑假') {
+    return { startDate: `${year}-07-01`, endDate: `${year}-08-31` };
+  }
+  if (stageName === '秋季') {
+    return { startDate: `${year}-09-01`, endDate: `${year}-11-30` };
+  }
+  return {
+    startDate: `${year}-01-01`,
+    endDate: `${year}-02-${String(getLastDayOfMonth(year, 2)).padStart(2, '0')}`,
+  };
+}
+
+export function buildClassFeedbackPeriodPreview(
+  input: ClassFeedbackPeriodSelection,
+): ClassFeedbackPeriodPreview {
+  if (input.periodGranularity === 'daily') {
+    const selectedDate = formatIsoDate(parseIsoDate(input.anchorDate, 'anchorDate'));
+    return {
+      label: selectedDate,
+      startDate: selectedDate,
+      endDate: selectedDate,
+      periodLengthDays: 1,
+      periodGranularity: 'daily',
+    };
+  }
+
+  if (input.periodGranularity === 'weekly') {
+    const monday = getIsoWeekStartDate(input.year, input.week);
+    const sunday = new Date(monday.getTime());
+    sunday.setDate(monday.getDate() + 6);
+    return {
+      label: `${input.year}第${input.week}周`,
+      startDate: formatIsoDate(monday),
+      endDate: formatIsoDate(sunday),
+      periodLengthDays: 7,
+      periodGranularity: 'weekly',
+    };
+  }
+
+  if (input.periodGranularity === 'monthly') {
+    if (!Number.isInteger(input.year)) {
+      throw new Error('year must be an integer');
+    }
+    if (!Number.isInteger(input.month) || input.month < 1 || input.month > 12) {
+      throw new Error('month must be between 1 and 12');
+    }
+    const startDate = `${input.year}-${String(input.month).padStart(2, '0')}-01`;
+    const endDate = `${input.year}-${String(input.month).padStart(2, '0')}-${String(getLastDayOfMonth(input.year, input.month)).padStart(2, '0')}`;
+    return {
+      label: `${input.year}${CLASS_FEEDBACK_MONTH_LABELS[input.month]}`,
+      startDate,
+      endDate,
+      periodLengthDays: getLastDayOfMonth(input.year, input.month),
+      periodGranularity: 'monthly',
+    };
+  }
+
+  const { startDate, endDate } = getStageRange(input.year, input.stageName);
+  const start = parseIsoDate(startDate, 'stageStartDate');
+  const end = parseIsoDate(endDate, 'stageEndDate');
+  return {
+    label: `${input.year}${input.stageName}`,
+    startDate,
+    endDate,
+    periodLengthDays: Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1,
+    periodGranularity: 'stage',
+  };
+}
+
+export function buildCreateClassFeedbackTaskRequest(
+  input: { classId: number } & ClassFeedbackPeriodSelection,
+): CreateClassFeedbackTaskRequest {
+  if (input.periodGranularity === 'daily') {
+    return {
+      class_id: input.classId,
+      period_granularity: 'daily',
+      anchor_date: formatIsoDate(parseIsoDate(input.anchorDate, 'anchorDate')),
+    };
+  }
+
+  if (input.periodGranularity === 'weekly') {
+    getIsoWeekStartDate(input.year, input.week);
+    return {
+      class_id: input.classId,
+      period_granularity: 'weekly',
+      year: input.year,
+      week: input.week,
+    };
+  }
+
+  if (input.periodGranularity === 'monthly') {
+    if (!Number.isInteger(input.month) || input.month < 1 || input.month > 12) {
+      throw new Error('month must be between 1 and 12');
+    }
+    return {
+      class_id: input.classId,
+      period_granularity: 'monthly',
+      year: input.year,
+      month: input.month,
+    };
+  }
+
+  return {
+    class_id: input.classId,
+    period_granularity: 'stage',
+    year: input.year,
+    stage_name: input.stageName,
+  };
+}
 
 export function buildClassFeedbackConfirmPayload(input: {
   classSummaryFinalText: string;
@@ -127,18 +355,10 @@ export const saveClassFeedbackLabels = (groups: StageLabelGroup[]) =>
     body: JSON.stringify({ groups }),
   });
 
-export const createClassFeedbackTask = (payload: {
-  classId: number;
-  startDate: string;
-  endDate: string;
-}) =>
+export const createClassFeedbackTask = (payload: CreateClassFeedbackTaskRequest) =>
   callApiFetch<ClassFeedbackTask>('/api/class-feedback/tasks', {
     method: 'POST',
-    body: JSON.stringify({
-      class_id: payload.classId,
-      start_date: payload.startDate,
-      end_date: payload.endDate,
-    }),
+    body: JSON.stringify(payload),
   });
 
 export const loadClassFeedbackTask = (taskId: number) =>

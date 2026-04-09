@@ -45,6 +45,8 @@ import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import { WorkspaceDashboard } from './WorkspaceDashboard';
 import {
+  buildClassFeedbackPeriodPreview,
+  buildCreateClassFeedbackTaskRequest,
   createClassStudent,
   deleteClassStudent,
   listClassStudents,
@@ -60,6 +62,9 @@ import {
   saveClassFeedbackTaskDraft,
   type ClassFeedbackStageNotes,
   type ClassFeedbackStudentCard,
+  type ClassFeedbackPeriodGranularity,
+  type ClassFeedbackPeriodSelection,
+  type ClassFeedbackStageName,
   type StageLabelGroup,
 } from './classFeedbackGeneration';
 
@@ -717,6 +722,38 @@ function shiftIsoDate(dateString: string, days: number): string {
   const base = new Date(`${dateString}T12:00:00`);
   base.setDate(base.getDate() + days);
   return base.toISOString().slice(0, 10);
+}
+
+function getIsoWeekParts(dateString: string): { year: number; week: number } {
+  const base = new Date(`${dateString}T12:00:00`);
+  const thursday = new Date(base.getTime());
+  const weekday = thursday.getDay() || 7;
+  thursday.setDate(thursday.getDate() + 4 - weekday);
+
+  const year = thursday.getFullYear();
+  const firstThursday = new Date(`${year}-01-04T12:00:00`);
+  const firstWeekday = firstThursday.getDay() || 7;
+  firstThursday.setDate(firstThursday.getDate() + 4 - firstWeekday);
+
+  const diffDays = Math.round((thursday.getTime() - firstThursday.getTime()) / 86_400_000);
+  return {
+    year,
+    week: Math.floor(diffDays / 7) + 1,
+  };
+}
+
+function inferClassFeedbackStageName(dateString: string): ClassFeedbackStageName {
+  const month = Number(dateString.slice(5, 7));
+  if (month >= 3 && month <= 5) {
+    return '春季';
+  }
+  if (month >= 7 && month <= 8) {
+    return '暑假';
+  }
+  if (month >= 9 && month <= 11) {
+    return '秋季';
+  }
+  return '寒假';
 }
 
 function getLatestLessonDate(lessons: Lesson[]): string {
@@ -2256,17 +2293,25 @@ const ClassFeedbackGenerationPage = ({
 }: {
   currentUser: CurrentUser;
 }) => {
+  const todayIsoDate = getTodayIsoDate();
+  const initialIsoWeek = getIsoWeekParts(todayIsoDate);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [labelGroups, setLabelGroups] = useState<StageLabelGroup[]>(defaultStageLabelGroups);
   const [classesLoading, setClassesLoading] = useState(true);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [startDate, setStartDate] = useState(() => shiftIsoDate(getTodayIsoDate(), -6));
-  const [endDate, setEndDate] = useState(() => getTodayIsoDate());
+  const [classFeedbackPeriodMode, setClassFeedbackPeriodMode] = useState<ClassFeedbackPeriodGranularity>('weekly');
+  const [classFeedbackAnchorDate, setClassFeedbackAnchorDate] = useState(todayIsoDate);
+  const [classFeedbackPeriodYear, setClassFeedbackPeriodYear] = useState(initialIsoWeek.year);
+  const [classFeedbackPeriodWeek, setClassFeedbackPeriodWeek] = useState(initialIsoWeek.week);
+  const [classFeedbackPeriodMonth, setClassFeedbackPeriodMonth] = useState(Number(todayIsoDate.slice(5, 7)));
+  const [classFeedbackStageName, setClassFeedbackStageName] = useState<ClassFeedbackStageName>(
+    inferClassFeedbackStageName(todayIsoDate),
+  );
   const [activeClassFeedbackTaskId, setActiveClassFeedbackTaskId] = useState<number | null>(null);
   const [classFeedbackStudents, setClassFeedbackStudents] = useState<ClassFeedbackStudentCard[]>([]);
   const [classFeedbackSummary, setClassFeedbackSummary] = useState('');
   const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState(
-    '先选择班级和时间范围，再汇总阶段素材。',
+    '先选择班级和反馈周期，再汇总阶段素材。',
   );
   const [classFeedbackStageNotes, setClassFeedbackStageNotes] = useState<ClassFeedbackStageNotes>(
     createEmptyClassFeedbackStageNotes(),
@@ -2282,6 +2327,48 @@ const ClassFeedbackGenerationPage = ({
   const classFeedbackDraftSnapshotRef = useRef('');
 
   const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
+  const classFeedbackPeriodSelection = useMemo<ClassFeedbackPeriodSelection>(() => {
+    if (classFeedbackPeriodMode === 'daily') {
+      return {
+        periodGranularity: 'daily',
+        anchorDate: classFeedbackAnchorDate,
+      };
+    }
+    if (classFeedbackPeriodMode === 'weekly') {
+      return {
+        periodGranularity: 'weekly',
+        year: classFeedbackPeriodYear,
+        week: classFeedbackPeriodWeek,
+      };
+    }
+    if (classFeedbackPeriodMode === 'monthly') {
+      return {
+        periodGranularity: 'monthly',
+        year: classFeedbackPeriodYear,
+        month: classFeedbackPeriodMonth,
+      };
+    }
+    return {
+      periodGranularity: 'stage',
+      year: classFeedbackPeriodYear,
+      stageName: classFeedbackStageName,
+    };
+  }, [
+    classFeedbackAnchorDate,
+    classFeedbackPeriodMode,
+    classFeedbackPeriodMonth,
+    classFeedbackPeriodWeek,
+    classFeedbackPeriodYear,
+    classFeedbackStageName,
+  ]);
+  const classFeedbackPeriodPreview = useMemo(
+    () => buildClassFeedbackPeriodPreview(classFeedbackPeriodSelection),
+    [classFeedbackPeriodSelection],
+  );
+  const classFeedbackPeriodYearOptions = useMemo(
+    () => [classFeedbackPeriodYear - 1, classFeedbackPeriodYear, classFeedbackPeriodYear + 1],
+    [classFeedbackPeriodYear],
+  );
 
   const loadRosterOnly = useCallback(async (classId: number) => {
     const roster = await listClassStudents(classId);
@@ -2378,7 +2465,7 @@ const ClassFeedbackGenerationPage = ({
   }, [classes, classesLoading, currentUser.role, selectedClassId]);
 
   useEffect(() => {
-    if (!selectedClassId || !startDate || !endDate || startDate > endDate) {
+    if (!selectedClassId) {
       setMatchedLessonCount(0);
       return;
     }
@@ -2392,8 +2479,8 @@ const ClassFeedbackGenerationPage = ({
         const count = lessons.filter(
           (lesson) =>
             lesson.class_id === selectedClassId &&
-            lesson.date >= startDate &&
-            lesson.date <= endDate,
+            lesson.date >= classFeedbackPeriodPreview.startDate &&
+            lesson.date <= classFeedbackPeriodPreview.endDate,
         ).length;
         setMatchedLessonCount(count);
       })
@@ -2406,7 +2493,7 @@ const ClassFeedbackGenerationPage = ({
     return () => {
       cancelled = true;
     };
-  }, [endDate, selectedClassId, startDate]);
+  }, [classFeedbackPeriodPreview.endDate, classFeedbackPeriodPreview.startDate, selectedClassId]);
 
   const handleClassChange = async (nextClassId: number | null) => {
     setSelectedClassId(nextClassId);
@@ -2421,7 +2508,7 @@ const ClassFeedbackGenerationPage = ({
 
     if (!nextClassId) {
       setClassFeedbackStudents([]);
-      setClassFeedbackStatusMessage('先选择班级和时间范围，再汇总阶段素材。');
+      setClassFeedbackStatusMessage('先选择班级和反馈周期，再汇总阶段素材。');
       return;
     }
 
@@ -2445,17 +2532,14 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackStatusMessage('请先选择班级。');
       return;
     }
-    if (!startDate || !endDate || startDate > endDate) {
-      setClassFeedbackStatusMessage('请填写有效的起止日期。');
-      return;
-    }
 
     setIsSavingClassFeedback(true);
     try {
       const created = await createClassFeedbackTask({
-        classId: selectedClassId,
-        startDate,
-        endDate,
+        ...buildCreateClassFeedbackTaskRequest({
+          classId: selectedClassId,
+          ...classFeedbackPeriodSelection,
+        }),
       });
       await hydrateClassFeedbackTask(created.id, selectedClassId);
       setClassFeedbackStatusMessage(`已创建反馈任务，按 ${created.period_granularity} 粒度准备资料。`);
@@ -2464,7 +2548,7 @@ const ClassFeedbackGenerationPage = ({
     } finally {
       setIsSavingClassFeedback(false);
     }
-  }, [endDate, hydrateClassFeedbackTask, selectedClassId, startDate]);
+  }, [classFeedbackPeriodSelection, hydrateClassFeedbackTask, selectedClassId]);
 
   const handleRefreshClassFeedbackTask = useCallback(async () => {
     if (!activeClassFeedbackTaskId || !selectedClassId) {
@@ -2747,7 +2831,8 @@ const ClassFeedbackGenerationPage = ({
 
   const sourceSummaryItems = [
     selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
-    `时间范围：${startDate} 至 ${endDate}`,
+    `反馈周期：${classFeedbackPeriodPreview.label}`,
+    `时间范围：${classFeedbackPeriodPreview.startDate} 至 ${classFeedbackPeriodPreview.endDate}`,
     `已命中 ${matchedLessonCount} 节课次记录`,
     `学生人数：${classFeedbackStudents.length} 名`,
     `已检查 ${checkedStudentCount} 名，待检查 ${uncheckedStudentCount} 名`,
@@ -2763,7 +2848,7 @@ const ClassFeedbackGenerationPage = ({
   ];
   const classFeedbackControlBar = (
     <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] xl:min-w-[48rem]">
         <select
           value={selectedClassId ?? ''}
           onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
@@ -2777,22 +2862,116 @@ const ClassFeedbackGenerationPage = ({
             </option>
           ))}
         </select>
-        <input
-          type="date"
-          value={startDate}
-          onChange={(event) => setStartDate(event.target.value)}
+        <select
+          value={classFeedbackPeriodMode}
+          onChange={(event) => setClassFeedbackPeriodMode(event.target.value as ClassFeedbackPeriodGranularity)}
           className={workspaceFieldClass}
           disabled={isRefreshingTask || isSavingClassFeedback}
-        />
-        <input
-          type="date"
-          value={endDate}
-          onChange={(event) => setEndDate(event.target.value)}
-          className={workspaceFieldClass}
-          disabled={isRefreshingTask || isSavingClassFeedback}
-        />
+        >
+          <option value="daily">按日</option>
+          <option value="weekly">按周</option>
+          <option value="monthly">按月</option>
+          <option value="stage">按阶段</option>
+        </select>
+        {classFeedbackPeriodMode === 'daily' ? (
+          <input
+            type="date"
+            value={classFeedbackAnchorDate}
+            onChange={(event) => setClassFeedbackAnchorDate(event.target.value)}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          />
+        ) : classFeedbackPeriodMode === 'weekly' ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select
+              value={classFeedbackPeriodYear}
+              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {classFeedbackPeriodYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year} 年
+                </option>
+              ))}
+            </select>
+            <select
+              value={classFeedbackPeriodWeek}
+              onChange={(event) => setClassFeedbackPeriodWeek(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {Array.from({ length: 53 }, (_, index) => index + 1).map((week) => (
+                <option key={week} value={week}>
+                  第 {week} 周
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : classFeedbackPeriodMode === 'monthly' ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select
+              value={classFeedbackPeriodYear}
+              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {classFeedbackPeriodYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year} 年
+                </option>
+              ))}
+            </select>
+            <select
+              value={classFeedbackPeriodMonth}
+              onChange={(event) => setClassFeedbackPeriodMonth(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                <option key={month} value={month}>
+                  {month} 月
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select
+              value={classFeedbackPeriodYear}
+              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {classFeedbackPeriodYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year} 年
+                </option>
+              ))}
+            </select>
+            <select
+              value={classFeedbackStageName}
+              onChange={(event) => setClassFeedbackStageName(event.target.value as ClassFeedbackStageName)}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {(['春季', '暑假', '秋季', '寒假'] as ClassFeedbackStageName[]).map((stageName) => (
+                <option key={stageName} value={stageName}>
+                  {stageName}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-[11rem] rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {classFeedbackPeriodPreview.startDate} 至 {classFeedbackPeriodPreview.endDate}
+          </div>
+        </div>
         <button
           type="button"
           onClick={() => void handleCreateClassFeedbackTask()}
