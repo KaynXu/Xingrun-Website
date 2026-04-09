@@ -319,6 +319,22 @@ test('App source injects the class feedback control bar into the workspace heade
   assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
 });
 
+test('App source keeps class feedback filters and task actions in a stable desktop grid layout', () => {
+  assert.match(
+    appSource,
+    /const classFeedbackControlBar = \(\s*<div className="grid gap-4 2xl:grid-cols-\[minmax\(0,1fr\)_auto\] 2xl:items-center">/,
+  );
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 xl:grid-cols-\[minmax\(0,1\.15fr\)_minmax\(0,0\.85fr\)_minmax\(0,1\.2fr\)\] 2xl:min-w-\[44rem\]">/,
+  );
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 sm:grid-cols-\[minmax\(11rem,1fr\)_auto_auto\] sm:items-stretch 2xl:justify-self-end">/,
+  );
+  assert.doesNotMatch(appSource, /<div className="flex flex-wrap items-start gap-3">/);
+});
+
 test('App source synchronizes class feedback member selection against accessible classes', () => {
   assert.match(appSource, /function syncMemberScopedClassSelection\(/);
   assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classItems, current\)\);/);

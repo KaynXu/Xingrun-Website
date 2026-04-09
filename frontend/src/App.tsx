@@ -2849,8 +2849,8 @@ const ClassFeedbackGenerationPage = ({
       : []),
   ];
   const classFeedbackControlBar = (
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] xl:min-w-[48rem]">
+    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] 2xl:min-w-[44rem]">
         <select
           value={selectedClassId ?? ''}
           onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
@@ -2966,7 +2966,7 @@ const ClassFeedbackGenerationPage = ({
           </div>
         )}
       </div>
-      <div className="flex flex-wrap items-start gap-3">
+      <div className="grid gap-3 sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-stretch 2xl:justify-self-end">
         <div className="min-w-[11rem] rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
           <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
           <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
@@ -2978,7 +2978,7 @@ const ClassFeedbackGenerationPage = ({
           type="button"
           onClick={() => void handleCreateClassFeedbackTask()}
           disabled={!selectedClassId || isSavingClassFeedback}
-          className={workspacePrimaryButtonClass}
+          className={`${workspacePrimaryButtonClass} justify-center`}
         >
           <PlusCircle size={18} />
           创建反馈任务
@@ -2987,7 +2987,7 @@ const ClassFeedbackGenerationPage = ({
           type="button"
           onClick={() => void handleRefreshClassFeedbackTask()}
           disabled={!activeClassFeedbackTaskId || isRefreshingTask}
-          className={workspaceSecondaryButtonClass}
+          className={`${workspaceSecondaryButtonClass} justify-center`}
         >
           <RefreshCw size={18} />
           刷新任务
