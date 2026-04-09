@@ -189,6 +189,61 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(forwarded_args.get("empty"), "")
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_staff_wrong_question_list_returns_scoped_summary_counts(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        fetch_wrong_question_records.return_value = {
+            "items": [
+                {
+                    "id": "record-1",
+                    "student_name": "Alice",
+                    "class_name": "六年级 1 班",
+                    "class_id": 101,
+                    "analysis": {
+                        "is_repeated_mistake": "是",
+                        "teacher_priority": "高",
+                    },
+                },
+                {
+                    "id": "record-2",
+                    "student_name": "Bob",
+                    "class_name": "六年级 1 班",
+                    "class_id": 101,
+                    "analysis": {
+                        "selected_error_type": "计算错误",
+                    },
+                },
+                {
+                    "id": "record-3",
+                    "student_name": "Carol",
+                    "class_name": "六年级 2 班",
+                    "class_id": 202,
+                    "analysis": {},
+                },
+            ],
+            "total": 3,
+        }
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(
+            payload["summary"],
+            {
+                "total_count": 3,
+                "repeated_mistake_count": 1,
+                "high_priority_count": 1,
+                "pending_review_count": 2,
+                "unique_class_count": 2,
+                "unique_student_count": 3,
+            },
+        )
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_staff_can_see_unmapped_org_records_in_global_workspace(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
         fetch_wrong_question_records.return_value = {

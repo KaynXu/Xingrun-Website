@@ -218,10 +218,12 @@
 - 已保留 `owner/admin/super_owner` 现有全局工作台形态，不把 member 限制外溢到其他角色。
 - 已完成一次定向代码审查，并确认本轮没有新增阻塞性回归问题。
 - 已将 `feature/member-class-scope` rebase 到最新 `develop`，并在 rebase 后重新通过定向 proof。
+- 已补齐 `/api/wrong-questions` 的后端 scoped summary 一致性：所有角色都会返回 summary，且后端 summary 现在包含 `unique_class_count` 与 `unique_student_count`。
+- 已新增 staff 侧回归测试，覆盖 wrong-question 列表 summary 的总数、待复盘数、重复错题数、高优先级数、班级数、学生数。
 
 ### proof
-- 临时脚本：`/tmp/xingrun-member-class-scope-proof-20260409.sh`
-- backend：`2 / 2` 通过
+- 临时脚本：`/tmp/xingrun-member-class-scope-proof-20260409-v2.sh`
+- backend：`3 / 3` 通过
 - frontend：`40 / 40` 通过（含 develop 新增的课堂反馈 header 回归断言）
 
 ### 已知旧噪音
@@ -233,11 +235,15 @@
 
 ### 下一步方向
 <<<<<<< HEAD
+<<<<<<< HEAD
 - 请求代码审查，确认 member 流程与现有 staff 流程没有回归后再合并。
 >>>>>>> 780afbb (feat: scope member class workflows)
 =======
 - 选择是直接合并回 `develop`，还是继续补齐 wrong-question summary 的后端一致性整理后再合并。
 >>>>>>> d1862a6 (docs: update member class scope handoff)
+=======
+- 当前功能与后端一致性整理都已完成，可直接合并回 `develop`。
+>>>>>>> 9a9081d (fix: unify wrong question summary payload)
 
 ## 错题工作区统计与权限范围已调整（2026-04-09）
 
