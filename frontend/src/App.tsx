@@ -38,7 +38,6 @@ import {
   Sun,
   X,
   ChevronDown,
-  Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
@@ -76,7 +75,6 @@ type Page =
   | 'classes'
   | 'accounts'
   | 'credit'
-  | 'teacher-mapping'
   | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
@@ -1417,7 +1415,6 @@ const Sidebar = ({
     { id: 'classes', icon: Home, label: '班级管理' },
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
-    ...(hasOwnerAccess(currentUser.role) ? [{ id: 'teacher-mapping', icon: Users, label: '讲师映射' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
   ];
 
@@ -4295,213 +4292,6 @@ interface TeacherAliasEntry {
   aliases: string[];
 }
 
-const TeacherMappingPage = ({ currentUser }: { currentUser: CurrentUser }) => {
-  const [entries, setEntries] = useState<TeacherAliasEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [editingEntry, setEditingEntry] = useState<TeacherAliasEntry | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-  const [formUserId, setFormUserId] = useState('');
-  const [formDisplayName, setFormDisplayName] = useState('');
-  const [formAliases, setFormAliases] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiFetch<TeacherAliasEntry[]>('/api/teacher-aliases');
-      setEntries(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load().catch(() => undefined); }, [load]);
-
-  const openCreate = () => {
-    setEditingEntry(null);
-    setFormUserId('');
-    setFormDisplayName('');
-    setFormAliases('');
-    setModalMode('create');
-    setModalOpen(true);
-  };
-
-  const openEdit = (entry: TeacherAliasEntry) => {
-    setEditingEntry(entry);
-    setFormUserId(entry.wecom_userid);
-    setFormDisplayName(entry.display_name);
-    setFormAliases(entry.aliases.slice(1).join(', '));
-    setModalMode('edit');
-    setModalOpen(true);
-  };
-
-  const handleSubmit = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      const aliases = formAliases.split(/[,，]/).map(s => s.trim()).filter(Boolean);
-      if (modalMode === 'create') {
-        await apiFetch('/api/teacher-aliases', {
-          method: 'POST',
-          body: JSON.stringify({ wecom_userid: formUserId.trim(), display_name: formDisplayName.trim(), aliases }),
-        });
-      } else if (editingEntry) {
-        await apiFetch(`/api/teacher-aliases/${encodeURIComponent(editingEntry.wecom_userid)}`, {
-          method: 'PUT',
-          body: JSON.stringify({ display_name: formDisplayName.trim(), aliases }),
-        });
-      }
-      setModalOpen(false);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '操作失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (wecom_userid: string) => {
-    if (!window.confirm(`确认删除 ${wecom_userid} 的映射？`)) return;
-    setDeletingId(wecom_userid);
-    try {
-      await apiFetch(`/api/teacher-aliases/${encodeURIComponent(wecom_userid)}`, { method: 'DELETE' });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  return (
-    <div className={workspacePageClass}>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">讲师映射</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">管理企业微信 ID 到讲师中文名的映射关系</p>
-        </div>
-        <button type="button" className={workspacePrimaryButtonClass} onClick={openCreate}>
-          <PlusCircle className="h-4 w-4" />
-          添加
-        </button>
-      </div>
-
-      {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
-
-      <div className={`${workspaceSoftCardClass} overflow-hidden`}>
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-slate-400">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-            加载中...
-          </div>
-        ) : entries.length === 0 ? (
-          <div className="py-16 text-center text-slate-400">暂无映射，点击右上角「添加」创建</div>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-sky-100 dark:border-white/10">
-                <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">企微 ID</th>
-                <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">中文名</th>
-                <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">别名</th>
-                <th className="px-5 py-3.5 text-right font-semibold text-slate-500 dark:text-slate-400">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.wecom_userid} className="border-b border-sky-50 last:border-b-0 dark:border-white/5">
-                  <td className="px-5 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{entry.wecom_userid}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">{entry.display_name}</td>
-                  <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{entry.aliases.slice(1).join('、') || '—'}</td>
-                  <td className="px-5 py-3 text-right">
-                    <button type="button" className="mr-2 text-sky-600 hover:text-sky-500 dark:text-sky-400" onClick={() => openEdit(entry)}>
-                      <Pencil className="inline h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="text-red-500 hover:text-red-400 disabled:opacity-40"
-                      disabled={deletingId === entry.wecom_userid}
-                      onClick={() => handleDelete(entry.wecom_userid)}
-                    >
-                      <Trash2 className="inline h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <AnimatePresence>
-        {modalOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setModalOpen(false)}
-          >
-            <motion.div
-              className={`${workspaceCardClass} mx-4 w-full max-w-md p-6`}
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            >
-              <h3 className="mb-5 text-lg font-bold text-slate-900 dark:text-white">{modalMode === 'create' ? '添加讲师映射' : '编辑讲师映射'}</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">企微 ID</label>
-                  <input
-                    className={workspaceFieldClass}
-                    value={formUserId}
-                    onChange={(e) => setFormUserId(e.target.value)}
-                    placeholder="例：XuJianYi"
-                    disabled={modalMode === 'edit'}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">中文名</label>
-                  <input
-                    className={workspaceFieldClass}
-                    value={formDisplayName}
-                    onChange={(e) => setFormDisplayName(e.target.value)}
-                    placeholder="例：徐健译"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">别名（逗号分隔，可选）</label>
-                  <input
-                    className={workspaceFieldClass}
-                    value={formAliases}
-                    onChange={(e) => setFormAliases(e.target.value)}
-                    placeholder="例：小徐, 徐老师"
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <button type="button" className={workspaceSecondaryButtonClass} onClick={() => setModalOpen(false)}>取消</button>
-                <button
-                  type="button"
-                  className={workspacePrimaryButtonClass}
-                  disabled={submitting || !formUserId.trim() || !formDisplayName.trim()}
-                  onClick={handleSubmit}
-                >{submitting ? '保存中...' : '保存'}</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -4534,6 +4324,19 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [organizationInviteResetting, setOrganizationInviteResetting] = useState(false);
   const [deletingOrgId, setDeletingOrgId] = useState<number | null>(null);
   const [confirmDeleteOrgId, setConfirmDeleteOrgId] = useState<number | null>(null);
+
+  // Teacher alias mapping state
+  const [teacherAliases, setTeacherAliases] = useState<TeacherAliasEntry[]>([]);
+  const [teacherAliasLoading, setTeacherAliasLoading] = useState(true);
+  const [teacherAliasError, setTeacherAliasError] = useState('');
+  const [teacherAliasModalOpen, setTeacherAliasModalOpen] = useState(false);
+  const [teacherAliasModalMode, setTeacherAliasModalMode] = useState<'create' | 'edit'>('create');
+  const [teacherAliasEditingEntry, setTeacherAliasEditingEntry] = useState<TeacherAliasEntry | null>(null);
+  const [taFormUserId, setTaFormUserId] = useState('');
+  const [taFormDisplayName, setTaFormDisplayName] = useState('');
+  const [taFormAliases, setTaFormAliases] = useState('');
+  const [taSubmitting, setTaSubmitting] = useState(false);
+  const [taDeletingId, setTaDeletingId] = useState<string | null>(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -4647,6 +4450,75 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     }
   }, [currentUser.role]);
 
+  const loadTeacherAliases = useCallback(async () => {
+    setTeacherAliasLoading(true);
+    setTeacherAliasError('');
+    try {
+      const data = await apiFetch<TeacherAliasEntry[]>('/api/teacher-aliases');
+      setTeacherAliases(data);
+    } catch (err) {
+      setTeacherAliasError(err instanceof Error ? err.message : '讲师映射加载失败');
+    } finally {
+      setTeacherAliasLoading(false);
+    }
+  }, []);
+
+  const openTeacherAliasCreate = () => {
+    setTeacherAliasEditingEntry(null);
+    setTaFormUserId('');
+    setTaFormDisplayName('');
+    setTaFormAliases('');
+    setTeacherAliasModalMode('create');
+    setTeacherAliasModalOpen(true);
+  };
+
+  const openTeacherAliasEdit = (entry: TeacherAliasEntry) => {
+    setTeacherAliasEditingEntry(entry);
+    setTaFormUserId(entry.wecom_userid);
+    setTaFormDisplayName(entry.display_name);
+    setTaFormAliases(entry.aliases.slice(1).join(', '));
+    setTeacherAliasModalMode('edit');
+    setTeacherAliasModalOpen(true);
+  };
+
+  const handleTeacherAliasSubmit = async () => {
+    setTaSubmitting(true);
+    setTeacherAliasError('');
+    try {
+      const aliases = taFormAliases.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+      if (teacherAliasModalMode === 'create') {
+        await apiFetch('/api/teacher-aliases', {
+          method: 'POST',
+          body: JSON.stringify({ wecom_userid: taFormUserId.trim(), display_name: taFormDisplayName.trim(), aliases }),
+        });
+      } else if (teacherAliasEditingEntry) {
+        await apiFetch(`/api/teacher-aliases/${encodeURIComponent(teacherAliasEditingEntry.wecom_userid)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ display_name: taFormDisplayName.trim(), aliases }),
+        });
+      }
+      setTeacherAliasModalOpen(false);
+      await loadTeacherAliases();
+    } catch (err) {
+      setTeacherAliasError(err instanceof Error ? err.message : '操作失败');
+    } finally {
+      setTaSubmitting(false);
+    }
+  };
+
+  const handleTeacherAliasDelete = async (wecom_userid: string) => {
+    if (!window.confirm(`确认删除 ${wecom_userid} 的映射？`)) return;
+    setTaDeletingId(wecom_userid);
+    try {
+      await apiFetch(`/api/teacher-aliases/${encodeURIComponent(wecom_userid)}`, { method: 'DELETE' });
+      await loadTeacherAliases();
+    } catch (err) {
+      setTeacherAliasError(err instanceof Error ? err.message : '删除失败');
+    } finally {
+      setTaDeletingId(null);
+    }
+  };
+
   useEffect(() => {
     loadItems().catch(() => undefined);
     loadUsers().catch(() => undefined);
@@ -4654,7 +4526,8 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     loadBindingSummaries().catch(() => undefined);
     loadOrganizationRequests().catch(() => undefined);
     loadOrganizationInvite().catch(() => undefined);
-  }, [loadItems, loadUsers, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests]);
+    loadTeacherAliases().catch(() => undefined);
+  }, [loadItems, loadUsers, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests, loadTeacherAliases]);
 
   useEffect(() => {
     const handleWindowFocus = () => {
@@ -5431,6 +5304,127 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
           )}
         </section>
       )}
+
+      {/* Teacher Alias Mapping Section */}
+      <section className={`${workspaceCardClass} mt-6 p-6`}>
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">讲师映射</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">管理企业微信 ID 到讲师中文名的映射（咨询助手自动识别用）</p>
+          </div>
+          <button type="button" className={workspacePrimaryButtonClass} onClick={openTeacherAliasCreate}>
+            <PlusCircle className="h-4 w-4" />
+            添加
+          </button>
+        </div>
+
+        {teacherAliasError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">{teacherAliasError}</div>}
+
+        {teacherAliasLoading ? (
+          <div className="flex items-center justify-center py-10 text-slate-400">
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            加载中...
+          </div>
+        ) : teacherAliases.length === 0 ? (
+          <div className="py-10 text-center text-slate-400">暂无映射，点击「添加」创建</div>
+        ) : (
+          <div className={`${workspaceSoftCardClass} overflow-hidden`}>
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-sky-100 dark:border-white/10">
+                  <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">企微 ID</th>
+                  <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">中文名</th>
+                  <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">别名</th>
+                  <th className="px-5 py-3.5 text-right font-semibold text-slate-500 dark:text-slate-400">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teacherAliases.map((entry) => (
+                  <tr key={entry.wecom_userid} className="border-b border-sky-50 last:border-b-0 dark:border-white/5">
+                    <td className="px-5 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{entry.wecom_userid}</td>
+                    <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">{entry.display_name}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{entry.aliases.slice(1).join('、') || '—'}</td>
+                    <td className="px-5 py-3 text-right">
+                      <button type="button" className="mr-2 text-sky-600 hover:text-sky-500 dark:text-sky-400" onClick={() => openTeacherAliasEdit(entry)}>
+                        <Pencil className="inline h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="text-red-500 hover:text-red-400 disabled:opacity-40"
+                        disabled={taDeletingId === entry.wecom_userid}
+                        onClick={() => handleTeacherAliasDelete(entry.wecom_userid)}
+                      >
+                        <Trash2 className="inline h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <AnimatePresence>
+        {teacherAliasModalOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setTeacherAliasModalOpen(false)}
+          >
+            <motion.div
+              className={`${workspaceCardClass} mx-4 w-full max-w-md p-6`}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
+              <h3 className="mb-5 text-lg font-bold text-slate-900 dark:text-white">{teacherAliasModalMode === 'create' ? '添加讲师映射' : '编辑讲师映射'}</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">企微 ID</label>
+                  <input
+                    className={workspaceFieldClass}
+                    value={taFormUserId}
+                    onChange={(e) => setTaFormUserId(e.target.value)}
+                    placeholder="例：XuJianYi"
+                    disabled={teacherAliasModalMode === 'edit'}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">中文名</label>
+                  <input
+                    className={workspaceFieldClass}
+                    value={taFormDisplayName}
+                    onChange={(e) => setTaFormDisplayName(e.target.value)}
+                    placeholder="例：徐健译"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">别名（逗号分隔，可选）</label>
+                  <input
+                    className={workspaceFieldClass}
+                    value={taFormAliases}
+                    onChange={(e) => setTaFormAliases(e.target.value)}
+                    placeholder="例：小徐, 徐老师"
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" className={workspaceSecondaryButtonClass} onClick={() => setTeacherAliasModalOpen(false)}>取消</button>
+                <button
+                  type="button"
+                  className={workspacePrimaryButtonClass}
+                  disabled={taSubmitting || !taFormUserId.trim() || !taFormDisplayName.trim()}
+                  onClick={handleTeacherAliasSubmit}
+                >{taSubmitting ? '保存中...' : '保存'}</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -8531,7 +8525,6 @@ export default function App() {
     classes: '班级管理',
     accounts: '账号审批',
     credit: '积分中心',
-    'teacher-mapping': '讲师映射',
     settings: '系统设置',
   };
 
@@ -8691,7 +8684,6 @@ export default function App() {
                 )}
                 {activePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
                 {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
-                {activePage === 'teacher-mapping' && hasOwnerAccess(currentUser.role) && <TeacherMappingPage currentUser={currentUser} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>
