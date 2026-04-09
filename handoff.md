@@ -6426,3 +6426,31 @@ Landing Refresh 相关提交（按时间顺序）
 - 若继续按原计划推进，下一批建议进入第 4 批：
   - 退役 `consultations.csv` 兼容层
   - 届时可顺手把这次诊断出的 `consultation_flow` 既有失败一起收口
+
+## Task 1 当前净状态 spec 复核（2026-04-09）
+
+### 已完成
+- 按用户要求改为检查 `a6c0742..052f7a3` 的当前净 diff，而不是孤立检查 `abce9a5`。
+- 当前净结果判定为 PASS：
+  - 净 diff 只包含 `lesson_manager.py` 和新建 `tests/test_review_plan_async_store.py`
+  - `lesson_manager.py` 已包含 `lessons.record_status` / `lessons.generation_error` schema 与补列迁移
+  - 已新增 `monthly_plan_jobs` 表
+  - 已新增 `create_pending_lesson()`、`mark_lesson_generation_succeeded()`、`mark_lesson_generation_failed()`、`create_monthly_plan_job()`、`get_monthly_plan_job()`、`mark_monthly_plan_job_succeeded()`、`mark_monthly_plan_job_failed()`
+  - `save_lesson()` 调用方式未变，依赖默认列值保持 `ready` / 空错误信息兼容
+  - `tests/test_review_plan_async_store.py` 已覆盖 pending lesson、mark ready、mark failed、monthly pending job、monthly ready job
+
+### proof
+- 临时脚本：`/tmp/proof_task1_net_spec_review_20260409.sh`
+- 应包含：
+  - `HEAD=052f7a3`
+  - `ONLY_ALLOWED_FILES=1`
+  - `HAS_MONTHLY_PLAN_JOBS=1`
+  - `HAS_LESSON_STATUS_COLUMNS=1`
+  - `HAS_REQUIRED_HELPERS=1`
+  - `HAS_TASK1_TEST_FILE=1`
+
+### 剩余问题
+- 这次只做 Task 1 的净状态 spec 复核，不扩展到质量 review 或 Task 2+。
+
+### 下一步方向
+- 如果需要，可继续做 Task 1 quality review，或按同样方式继续复核后续任务的净状态合规性。
