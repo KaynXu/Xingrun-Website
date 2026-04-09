@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { WorkspaceDashboard } from './WorkspaceDashboard';
+import { WorkspaceDashboard, getOrganizationManagementEntries } from './WorkspaceDashboard';
 
 type DashboardRole = 'super_owner' | 'owner' | 'admin' | 'member';
 
@@ -26,6 +26,7 @@ function renderDashboard(role: DashboardRole): string {
       }}
       setActivePage={() => undefined}
       styles={defaultStyles}
+      canOpenAccounts={role === 'owner'}
     />,
   );
 }
@@ -48,12 +49,23 @@ test('workspace dashboard shows admin operations overview', () => {
   const markup = renderDashboard('admin');
 
   assert.match(markup, /机构运营概览/);
+  assert.match(markup, /班级管理/);
+  assert.match(markup, /咨询记录/);
+  assert.match(markup, /课堂反馈/);
+  assert.match(markup, /智能错题/);
+  assert.doesNotMatch(markup, /账号审批/);
+  assert.doesNotMatch(markup, /新建复习文档/);
 });
 
 test('workspace dashboard shows owner operations overview', () => {
   const markup = renderDashboard('owner');
 
   assert.match(markup, /机构运营概览/);
+  assert.match(markup, /班级管理/);
+  assert.match(markup, /账号审批/);
+  assert.match(markup, /课堂反馈/);
+  assert.match(markup, /智能错题/);
+  assert.doesNotMatch(markup, /新建复习文档/);
 });
 
 test('workspace dashboard shows super owner platform overview', () => {
@@ -67,10 +79,22 @@ test('app source routes the dashboard page through WorkspaceDashboard', () => {
 
   assert.match(source, /import \{ WorkspaceDashboard \} from '\.\/WorkspaceDashboard';/);
   assert.match(source, /\{activePage === 'dashboard' && \([\s\S]*<WorkspaceDashboard[\s\S]*currentUser=\{currentUser\}[\s\S]*setActivePage=\{setActivePage\}[\s\S]*styles=\{/);
+  assert.match(source, /canOpenAccounts=\{hasOwnerAccess\(currentUser\.role\)\}/);
   assert.doesNotMatch(source, /\{activePage === 'dashboard' && \(\s*<Dashboard/);
   assert.doesNotMatch(source, /const Dashboard = \(/);
 });
 
 test('workspace dashboard source does not import shared styles from App directly', () => {
   assert.doesNotMatch(workspaceSource, /from '\.\/App'/);
+});
+
+test('organization management entries keep owner and admin routes inside their real access bounds', () => {
+  assert.deepEqual(
+    getOrganizationManagementEntries(true).map((entry) => entry.page),
+    ['classes', 'accounts', 'class-feedback-generation', 'smartWrongQuestions'],
+  );
+  assert.deepEqual(
+    getOrganizationManagementEntries(false).map((entry) => entry.page),
+    ['classes', 'consultation', 'class-feedback-generation', 'smartWrongQuestions'],
+  );
 });
