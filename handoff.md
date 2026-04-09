@@ -1,3 +1,28 @@
+## 复习计划异步生成方案已确认（2026-04-09）
+
+### 已完成
+- 已和用户确认复习计划改造方向：不长期回退到 `gpt-4o`，改为保留 `n1n/gpt-5.4` 质量、把生成链路异步化。
+- 已写设计文档：
+  - `docs/superpowers/specs/2026-04-09-review-plan-async-generation-design.md`
+- 当前设计已明确：
+  - 单节复习计划复用 `lessons` 记录作为任务壳，走 `pending / ready / failed`
+  - 月度计划单独引入最小 `monthly_plan_jobs`
+  - 前端通过轮询状态替代同步长等待
+  - 当前 `gpt-4o` 回退逻辑只是临时止血，异步链路跑通后应移除
+
+### proof
+- 文档文件已落盘：
+  - `docs/superpowers/specs/2026-04-09-review-plan-async-generation-design.md`
+
+### 剩余问题
+- 本轮只完成方案确认与设计落文，还未开始代码实现。
+- 按工作流，用户需要先 review 这份 spec，再进入 implementation plan 和编码阶段。
+
+### 下一步方向
+- 用户 review spec
+- 通过后写 implementation plan
+- 再按 plan 实现后端 async worker、前端轮询与月度任务接口
+
 ## 复习计划生成卡死：n1n/gpt-5.4 回退到 gpt-4o（2026-04-09）
 
 ### 已完成
