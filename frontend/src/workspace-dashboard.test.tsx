@@ -30,11 +30,18 @@ function renderDashboard(role: DashboardRole): string {
   );
 }
 
-test('workspace dashboard shows member quick start instead of today todo', () => {
+test('member workspace prioritizes quick actions and personal work context', () => {
   const markup = renderDashboard('member');
 
   assert.match(markup, /快速开始/);
+  assert.match(markup, /复习生成/);
+  assert.match(markup, /课堂反馈/);
+  assert.match(markup, /课程日历/);
+  assert.match(markup, /智能错题/);
+  assert.match(markup, /我的教学概览/);
+  assert.match(markup, /最近工作/);
   assert.doesNotMatch(markup, /今日待办/);
+  assert.doesNotMatch(markup, /通知中心/);
 });
 
 test('workspace dashboard shows admin operations overview', () => {
