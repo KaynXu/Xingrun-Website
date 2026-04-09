@@ -185,27 +185,8 @@
 - 尚未实现本地微信错题识别字段、PDF 重建链路、老师题目文本编辑能力。
 
 ### 下一步方向
-- 用户审阅并确认 spec 无误后，进入 implementation plan，再按 TDD 落地后端、PDF 与网页端改动。## member 班级范围实现计划已完成（2026-04-09）
+- 用户审阅并确认 spec 无误后，进入 implementation plan，再按 TDD 落地后端、PDF 与网页端改动。
 
-### 已完成
-- 已确认并冻结设计文档：`docs/superpowers/specs/2026-04-09-member-class-scope-design.md`
-- 已按中型改动隔离要求创建独立实现分支：`feature/member-class-scope`
-- 已创建隔离 worktree：`/Users/ark.mini/Desktop/Xingrun-Website-member-class-scope`
-- 已补实现计划文档：`docs/superpowers/plans/2026-04-09-member-class-scope-implementation.md`
-- 已核对本轮真实落点文件，避免继续沿用不存在的测试文件名
-
-### proof
-- worktree 状态：新 worktree 当前位于 `feature/member-class-scope`，启动时为干净基线
-- 前端依赖：已在隔离 worktree 安装 `frontend` 依赖
-- 计划文件已落盘：`docs/superpowers/plans/2026-04-09-member-class-scope-implementation.md`
-
-### 剩余问题
-- 本轮只完成 spec 批准后的隔离分支与实现计划，还未开始改业务代码
-- 新 worktree 的前端基线测试完整摘要未单独整理入 handoff，本轮下一步会在执行任务 1 前先跑对应目标测试
-
-### 下一步方向
-- 选择执行方式后，按实现计划从 Task 1 红测开始推进
-=======
 ## member 班级范围功能已实现并完成定向 proof（2026-04-09）
 
 ### 已完成
@@ -227,23 +208,14 @@
 - frontend：`40 / 40` 通过（含 develop 新增的课堂反馈 header 回归断言）
 
 ### 已知旧噪音
-- `ai_processor.py` proof 仍会出现既有 `SyntaxWarning`（无效 `\s` 转义），本轮未处理。
 - `tests/test_account_flow.py` proof 仍会出现既有 `ResourceWarning: unclosed database`，本轮未处理。
 
 ### 剩余问题
-- 当前分支还未合并回 `develop`。
+- 功能代码已合并回 `develop`。
+- 本轮前 `handoff.md` 残留了 merge 冲突标记，已清理。
 
 ### 下一步方向
-<<<<<<< HEAD
-<<<<<<< HEAD
-- 请求代码审查，确认 member 流程与现有 staff 流程没有回归后再合并。
->>>>>>> 780afbb (feat: scope member class workflows)
-=======
-- 选择是直接合并回 `develop`，还是继续补齐 wrong-question summary 的后端一致性整理后再合并。
->>>>>>> d1862a6 (docs: update member class scope handoff)
-=======
-- 当前功能与后端一致性整理都已完成，可直接合并回 `develop`。
->>>>>>> 9a9081d (fix: unify wrong question summary payload)
+- 该项可视为已完成；后续如需收口，只需补一次合并后的整体验收即可。
 
 ## 错题工作区统计与权限范围已调整（2026-04-09）
 
