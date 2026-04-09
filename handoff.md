@@ -6497,19 +6497,3 @@ Landing Refresh 相关提交（按时间顺序）
 
 ### 下一步方向
 - 如果需要，可继续做 Task 1 quality review，或按同样方式继续复核后续任务的净状态合规性。
-
-## Task 1 月度复习计划作业存储强化（2026-04-09）
-
-### 已完成
-- `lesson_manager.create_monthly_plan_job()` 现在在插入前检查用户存在且归属与传入组织一致，保证跨机构调度被拒绝。
-- 删除用户/机构时会清理对应的 `monthly_plan_jobs` 条目，旧 delete 流程不再留下孤立作业。
-- `tests/test_review_plan_async_store.py` 补上了组织/用户错配、用户/组织删除后必须同时移除作业的用例，并用临时环境跑 `/tmp/xingrun-proof-venv/bin/python -m unittest tests.test_review_plan_async_store -v` 确认通过。
-
-### proof
-- `/tmp/xingrun-proof-venv/bin/python -m unittest tests.test_review_plan_async_store -v`（输出 `Ran 6 tests ... OK`，期间现存 `ResourceWarning: unclosed database` 仍会打印）
-
-### 剩余问题
-- 测试跑完仍会打印既有的 `lesson_manager.py:945` `ResourceWarning`，但这不在本次 scope 内。
-
-### 下一步方向
-- 如果要进一步改善，则可针对 `PRAGMA table_info` 的连接复用/关闭逻辑写一个后续修复。
