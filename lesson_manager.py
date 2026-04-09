@@ -934,8 +934,16 @@ def delete_consultation(consultation_id: int, organization_id: Optional[int] = N
 
 
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
+class _ManagedConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, factory=_ManagedConnection)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
@@ -2650,19 +2658,21 @@ def _dedupe_student_name_in_class(
     if conn is None:
         conn = get_conn()
         owns_conn = True
-    rows = conn.execute(
-        """
-        SELECT s.name
-        FROM class_students cs
-        JOIN students s ON s.id = cs.student_id
-        WHERE cs.class_id=?
-        ORDER BY cs.id
-        """,
-        (class_id,),
-    ).fetchall()
-    existing_names = [row["name"] for row in rows]
-    if owns_conn:
-        conn.close()
+    try:
+        rows = conn.execute(
+            """
+            SELECT s.name
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY cs.id
+            """,
+            (class_id,),
+        ).fetchall()
+        existing_names = [row["name"] for row in rows]
+    finally:
+        if owns_conn:
+            conn.close()
 
     if base_name not in existing_names:
         return base_name

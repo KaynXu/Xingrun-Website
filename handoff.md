@@ -14,11 +14,11 @@
   - 结果：`tests 25`，`pass 25`，`fail 0`
 
 ### 剩余问题
-- 定向 proof 仍会打印既有 `sqlite3.Connection` 未关闭 `ResourceWarning`，当前未扩 scope 清理测试基础设施层的连接生命周期噪音。
+- 本轮学生错题库相关定向 proof 中，既有 `sqlite3.Connection` 未关闭 `ResourceWarning` 已通过连接生命周期修复清理干净。
 - 学生错题库 PDF 现阶段已能稳定生成文本版成品，但几何题/原题图片在 PDF 中仍是第一版能力，后续如果要强化版式或嵌图细节，可单开一轮。
 
 ### 下一步方向
-- 如果要继续收口本链路，优先处理 `lesson_manager.py` 相关数据库连接告警，再考虑增强学生错题库 PDF 的图片呈现质量。
+- 如果要继续收口本链路，下一步更值得做的是增强学生错题库 PDF 的图片呈现质量，以及顺手清理 `ai_processor.py` 里已有的 `SyntaxWarning` 文本转义写法。
 
 ## 工作台重写设计已确认并写成 spec（2026-04-09）
 
