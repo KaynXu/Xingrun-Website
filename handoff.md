@@ -1,3 +1,53 @@
+## 复习计划生成卡死：n1n/gpt-5.4 回退到 gpt-4o（2026-04-09）
+
+### 已完成
+- 已修复线上“生成复习计划”长时间转圈后不给结果的问题。
+- 根因确认：
+  - 当前线上运行时配置是 `provider='n1n'`、`n1n_model='gpt-5.4'`
+  - `app.py` 的 `POST /api/review-plans` 会调用 `ai_processor.parse_and_generate_plan()`
+  - `ai_processor.py` 旧实现对复习计划和月度计划都直接使用 `_get_chat_model()`，因此会把这类“长 prompt + 长 JSON 输出”的结构化任务直接发给 `gpt-5.4`
+  - 实测同样配置下：
+    - 极短 JSON 请求 `gpt-5.4` 可正常返回
+    - 复习计划完整 prompt 用 `gpt-5.4` 会明显过慢，线上表现为首个请求长时间占住，重试命中 `409`，首个请求最终落成 `500`
+- 已改动：
+  - `ai_processor.py`
+    - 新增 `_get_structured_generation_model()`
+    - 当 provider 为 `n1n` 且聊天模型是 `gpt-5*` 时，复习计划 / 月度计划这两条结构化生成链路自动回退到 `gpt-4o`
+    - `generate_class_feedback_bundle()` 等其它链路未扩 scope 改动
+  - `tests/test_ai_processor_prompt.py`
+    - 新增单节复习计划回归测试：`n1n + gpt-5.4` 时实际发出的模型应为 `gpt-4o`
+    - 新增月度计划回归测试：同样应回退到 `gpt-4o`
+
+### proof
+- red：
+  - `/tmp/proof_review_plan_model_fallback_red_XXXXXX.sh`
+  - 完整输出：
+    - `AssertionError: 'gpt-5.4' != 'gpt-4o'`
+    - `FAILED (failures=2)`
+- green：
+  - `/tmp/proof_review_plan_model_fallback_green_XXXXXX.sh`
+  - 完整输出：
+    - `Ran 2 tests in 0.002s`
+    - `OK`
+- 真实调用：
+  - `/tmp/proof_review_plan_live_probe_XXXXXX.sh`
+  - 完整输出：
+    - `STRUCTURED_MODEL=gpt-4o`
+    - `正在生成复习计划（AI处理中）...`
+    - `复习计划生成完成。`
+    - `ELAPSED_SECONDS=31.194`
+    - `DAY_COUNT=5`
+    - `TOPIC=一次函数`
+
+### 剩余问题
+- 本轮只修了“复习计划 / 月度计划”的结构化生成模型选择；如果后续发现其它 `n1n/gpt-5.x` 长输出链路也慢，需要按链路分别确认是否也要回退。
+- `tests/test_ai_processor_prompt.py` 运行时会带出 `ai_processor.py:152` 的既有 `SyntaxWarning`（提示词字符串里的 LaTeX 转义），本轮未扩 scope 处理。
+- 代码已修但还未部署到生产机；线上当前服务仍可能继续使用旧逻辑，需发布后才会生效。
+
+### 下一步方向
+- 部署当前 `develop` 到正式服务器 `49.234.185.86`
+- 部署后在线上实际再点一次“生成复习计划”，确认不再出现长时间转圈 + `409/500`
+
 ## 智能错题未配置时保留本地微信错题列表（2026-04-09）
 
 ### 已完成

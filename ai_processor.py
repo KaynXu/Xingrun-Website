@@ -85,6 +85,14 @@ def _get_chat_model() -> str:
     return "gpt-4o"
 
 
+def _get_structured_generation_model() -> str:
+    model = str(_get_chat_model() or "gpt-4o")
+    provider = _provider_name()
+    if provider == "n1n" and model.lower().startswith("gpt-5"):
+        return "gpt-4o"
+    return model
+
+
 def _get_whisper_client():
     """音频转录专用客户端（仅支持 OpenAI Whisper）。"""
     from openai import OpenAI
@@ -371,7 +379,7 @@ def parse_and_generate_plan(
     print("正在生成复习计划（AI处理中）...")
     system_prompt = _build_system_prompt(prompt_styles or [])
     response = client.chat.completions.create(
-        model=_get_chat_model(),
+        model=_get_structured_generation_model(),
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_msg},
@@ -547,7 +555,7 @@ def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = Fals
 
     print(f"正在生成 {month_str} 月度复习计划（AI处理中）...")
     response = client.chat.completions.create(
-        model=_get_chat_model(),
+        model=_get_structured_generation_model(),
         messages=[
             {"role": "system", "content": MONTHLY_SYSTEM_PROMPT},
             {"role": "user",   "content": combined},
