@@ -16,12 +16,15 @@
 - 临时脚本：`/tmp/xingrun-class-feedback-proof-20260409.sh`
 - 完整输出结论：
   - Frontend: `tests 6` / `pass 6` / `fail 0`
+- 提交前复验脚本：`/tmp/xingrun-class-feedback-proof-20260409-commit.sh`
+- 提交前复验输出结论：
+  - Frontend: `tests 7` / `pass 7` / `fail 0`
 
 ### 剩余问题
 - 无。
 
 ### 下一步方向
-- 如需继续收口，可再做一次课堂反馈页人工点击验证，确认空班级提示与学生管理页路径文案符合预期。
+- 已可在 `develop` 上做单独 commit；如需进一步确认体验，可再做一次课堂反馈页人工点击验证，确认空班级提示与学生管理页路径文案符合预期。
 
 ### 已完成
 - 错题工作区顶部四个统计卡已调整为：

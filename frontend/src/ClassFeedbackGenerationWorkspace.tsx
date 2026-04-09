@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 
 import {
   workspaceCardClass,
@@ -34,7 +34,6 @@ interface ClassFeedbackGenerationWorkspaceProps {
   onHighlightNoteChange: (studentId: number, value: string) => void;
   onStudentFinalTextChange: (studentId: number, value: string) => void;
   onStudentCheckedChange: (studentId: number, checked: boolean) => void;
-  onAddStudent: (name: string) => void | Promise<void>;
   onGenerate: () => void | Promise<void>;
   onSaveDraft: () => void | Promise<void>;
   onCopyClassSummary: () => void | Promise<void>;
@@ -43,22 +42,10 @@ interface ClassFeedbackGenerationWorkspaceProps {
 }
 
 export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationWorkspaceProps) {
-  const [newStudentName, setNewStudentName] = useState('');
-
   const labelLookup = useMemo(
     () => props.labelGroups.flatMap((group) => group.labels.map((label) => ({ group: group.group, label }))),
     [props.labelGroups],
   );
-
-  const handleAddStudent = () => {
-    const name = newStudentName.trim();
-    if (!name) {
-      return;
-    }
-    void Promise.resolve(props.onAddStudent(name))
-      .then(() => setNewStudentName(''))
-      .catch(() => undefined);
-  };
 
   const cardClass = `${workspaceCardClass} p-6`;
   const softCardClass = `${workspaceSoftCardClass} p-4`;
@@ -148,24 +135,6 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
             </div>
           </div>
 
-          <div>
-            <h4 className={sectionTitleClass}>补充学生</h4>
-            <div className="mt-3 rounded-[1.5rem] border border-dashed border-sky-200/90 bg-sky-50/30 p-4 dark:border-white/10 dark:bg-white/5">
-              <input
-                value={newStudentName}
-                onChange={(event) => setNewStudentName(event.target.value)}
-                placeholder="新增学生姓名"
-                className={fieldClass}
-              />
-              <button
-                type="button"
-                onClick={handleAddStudent}
-                className={`${workspaceSecondaryButtonClass} mt-3 w-full`}
-              >
-                新增学生
-              </button>
-            </div>
-          </div>
         </section>
 
         <section className={`${cardClass} space-y-6`}>
