@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, RefreshCw, Search } from 'lucide-react';
+import { AlertCircle, RefreshCw, Search, X } from 'lucide-react';
 
 import {
   apiFetch,
@@ -439,6 +439,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setSelectedStudentName(null);
     setSelectedId(null);
   };
+  const handleCloseMemberNotebook = () => {
+    setSelectedStudentName(null);
+    setSelectedId(null);
+    setDetailError('');
+    setSaveError('');
+  };
   const handleOpenMemberNotebook = (studentName: string) => {
     const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, studentName);
     setSelectedStudentName(studentName);
@@ -809,60 +815,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   );
                 })}
               </div>
-
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
-                <div className="space-y-3">
-                  {selectedStudentName ? memberNotebookRecords.map((item) => {
-                    const active = item.id === selectedRecord?.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedId(item.id)}
-                        className={`${workspaceSoftCardClass} w-full p-4 text-left transition ${active ? 'border-sky-400 shadow-[0_18px_48px_rgba(47,128,237,0.12)]' : ''}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-base font-semibold text-slate-900 dark:text-white">{item.analysis.questionCategory || '未分类错题'}</p>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.createdAt}</p>
-                          </div>
-                          <span className="rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                            {item.reviewStatus === 'reviewed' ? '已处理' : '待处理'}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{item.analysis.errorType || '待分析'}</p>
-                      </button>
-                    );
-                  }) : (
-                    <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                      请选择学生查看这个孩子的错题库。
-                    </div>
-                  )}
-                </div>
-
-                <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                  <div>
-                    <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看这个孩子当前记录，并直接保存跟进内容。</p>
-                  </div>
-
-                  {detailError && (
-                    <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                      <AlertCircle size={16} />
-                      {detailError}
-                    </div>
-                  )}
-
-                  {saveError && (
-                    <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                      <AlertCircle size={16} />
-                      {saveError}
-                    </div>
-                  )}
-
-                  {detailPanel}
-                </div>
-              </div>
             </>
           )}
         </section>
@@ -1068,6 +1020,96 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </div>
         )}
       </section>
+      )}
+
+      {isMemberScope && selectedStudentName && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm"
+          onClick={(event) => event.target === event.currentTarget && handleCloseMemberNotebook()}
+        >
+          <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-[28px] border border-sky-100 bg-white shadow-[0_32px_90px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-950">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-white/10">
+              <div>
+                <h4 className="text-2xl font-semibold text-slate-900 dark:text-white">{selectedStudentName} 的错题库</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧是紧凑错题目录，右侧保留当前题目的完整详情与编辑区。</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseMemberNotebook}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:text-slate-400 dark:hover:text-white"
+                aria-label="关闭错题库"
+              >
+                <X size={18} />
+                <span className="sr-only">关闭错题库</span>
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 xl:grid-cols-[minmax(20rem,25rem)_minmax(0,1fr)]">
+              <div className="min-h-0 overflow-y-auto border-b border-slate-200/80 p-5 dark:border-white/10 xl:border-b-0 xl:border-r">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按时间倒序查看，点击左侧条目切换当前题目。</p>
+                  </div>
+                  <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                    {memberNotebookRecords.length} 题
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {memberNotebookRecords.map((item, index) => {
+                    const active = item.id === selectedRecord?.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedId(item.id)}
+                        className={`w-full rounded-2xl border px-4 py-3 text-left transition ${active ? 'border-sky-400 bg-sky-50/70 shadow-[0_14px_36px_rgba(47,128,237,0.14)] dark:bg-sky-500/10' : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-white/20'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">第 {index + 1} 题</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.analysis.questionCategory || '未分类错题'}</p>
+                          </div>
+                          <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
+                            {item.reviewStatus === 'reviewed' ? '已处理' : '待处理'}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                          <span className="truncate">{item.analysis.errorType || '待分析'}</span>
+                          <span className="shrink-0">{item.createdAt}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="min-h-0 overflow-y-auto p-5">
+                <div className="mb-5">
+                  <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看这个孩子当前记录，并直接保存跟进内容。</p>
+                </div>
+
+                {detailError && (
+                  <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                    <AlertCircle size={16} />
+                    {detailError}
+                  </div>
+                )}
+
+                {saveError && (
+                  <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                    <AlertCircle size={16} />
+                    {saveError}
+                  </div>
+                )}
+
+                <div className="space-y-5">{detailPanel}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
