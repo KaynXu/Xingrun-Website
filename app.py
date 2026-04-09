@@ -418,6 +418,16 @@ def _build_ai_charge_request_id(
     return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
 
 
+def _build_review_plan_request_id(*, user_id: int, request_key: str) -> str:
+    return _build_ai_charge_request_id(
+        user_id=user_id,
+        feature_key="lesson_plan_generate",
+        source_record_type="lesson_request",
+        source_record_id="pending",
+        request_key=request_key,
+    )
+
+
 def _claim_ai_request_identity(*, organization_id: int, request_id: str) -> None:
     now = monotonic()
     with _AI_REQUEST_IN_FLIGHT_LOCK:
@@ -484,19 +494,22 @@ def _run_ai_feature_with_charge(
     model: str,
     after_success=None,
     request_key: str | None = None,
+    request_id: str | None = None,
+    claim_request_identity: bool = True,
 ):
     organization_id = int(user["organization_id"])
-    request_id = _build_ai_charge_request_id(
+    request_id = request_id or _build_ai_charge_request_id(
         user_id=int(user["id"]),
         feature_key=feature_key,
         source_record_type=source_record_type,
         source_record_id=source_record_id,
         request_key=request_key,
     )
-    _claim_ai_request_identity(
-        organization_id=organization_id,
-        request_id=request_id,
-    )
+    if claim_request_identity:
+        _claim_ai_request_identity(
+            organization_id=organization_id,
+            request_id=request_id,
+        )
     try:
         _claim_ai_organization_execution(organization_id)
         ensure_feature_credits_available(
@@ -519,7 +532,8 @@ def _run_ai_feature_with_charge(
         return business_value
     finally:
         _release_ai_organization_execution(organization_id)
-        _release_ai_request_identity(request_id)
+        if claim_request_identity:
+            _release_ai_request_identity(request_id)
 
 
 def _run_review_plan_generation_job(
@@ -529,76 +543,97 @@ def _run_review_plan_generation_job(
     chat_provider: str,
     chat_model: str,
     request_key: str | None = None,
+    request_id: str | None = None,
 ) -> None:
-    lesson = get_lesson(lesson_id)
-    if not lesson:
-        logger.warning("Review plan generation skipped: lesson %s not found", lesson_id)
-        return
-    if lesson.get("record_status") != "pending":
-        logger.info(
-            "Review plan generation skipped for lesson %s with status %s",
-            lesson_id,
-            lesson.get("record_status"),
-        )
-        return
-
-    lesson_date = str(lesson.get("date") or "")
-    subject = str(lesson.get("subject") or "")
-    grade = str(lesson.get("grade") or "")
-    topic = str(lesson.get("topic") or "")
-    weak_points = str(lesson.get("weak_points") or "")
-    raw_text = str(lesson.get("summary") or "")
-
     try:
+        lesson = get_lesson(lesson_id)
+        if not lesson:
+            logger.warning("Review plan generation skipped: lesson %s not found", lesson_id)
+            return
+        if lesson.get("record_status") != "pending":
+            logger.info(
+                "Review plan generation skipped for lesson %s with status %s",
+                lesson_id,
+                lesson.get("record_status"),
+            )
+            return
+
+        lesson_date = str(lesson.get("date") or "")
+        subject = str(lesson.get("subject") or "")
+        grade = str(lesson.get("grade") or "")
+        topic = str(lesson.get("topic") or "")
+        weak_points = str(lesson.get("weak_points") or "")
+        raw_text = str(lesson.get("summary") or "")
+
         from ai_processor import parse_and_generate_plan
-        plan = _run_ai_feature_with_charge(
-            user=user,
-            feature_key="lesson_plan_generate",
-            source_record_type="lesson",
-            source_record_id=lesson_id,
-            producer=lambda: _call_ai_helper_with_usage(
-                parse_and_generate_plan,
-                summary_text=raw_text,
-                subject=subject,
-                grade=grade,
-                topic=topic,
-                weak_points=weak_points,
-                lesson_date=lesson_date,
-            ),
-            provider=chat_provider,
-            model=chat_model,
-            request_key=request_key,
-        )
-    except Exception:
-        logger.exception("Review plan AI generation failed for lesson %s", lesson_id)
         try:
-            mark_lesson_generation_failed(lesson_id, "AI 生成失败，请稍后重试")
-        except LookupError:
-            logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
-        return
+            plan = _run_ai_feature_with_charge(
+                user=user,
+                feature_key="lesson_plan_generate",
+                source_record_type="lesson",
+                source_record_id=lesson_id,
+                producer=lambda: _call_ai_helper_with_usage(
+                    parse_and_generate_plan,
+                    summary_text=raw_text,
+                    subject=subject,
+                    grade=grade,
+                    topic=topic,
+                    weak_points=weak_points,
+                    lesson_date=lesson_date,
+                ),
+                provider=chat_provider,
+                model=chat_model,
+                request_key=request_key,
+                request_id=request_id,
+                claim_request_identity=request_id is None,
+            )
+        except DuplicateAiRequestError as exc:
+            logger.exception("Review plan AI request rejected for lesson %s", lesson_id)
+            try:
+                mark_lesson_generation_failed(lesson_id, str(exc))
+            except LookupError:
+                logger.exception("Failed to mark lesson %s as failed after duplicate request", lesson_id)
+            return
+        except CreditBalanceError as exc:
+            logger.exception("Review plan credit preflight failed for lesson %s", lesson_id)
+            try:
+                mark_lesson_generation_failed(lesson_id, str(exc))
+            except LookupError:
+                logger.exception("Failed to mark lesson %s as failed after credit error", lesson_id)
+            return
+        except Exception:
+            logger.exception("Review plan AI generation failed for lesson %s", lesson_id)
+            try:
+                mark_lesson_generation_failed(lesson_id, "AI 生成失败，请稍后重试")
+            except LookupError:
+                logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
+            return
 
-    try:
         from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
-        safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
-        pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
-        pdf_path = str(PDF_DIR / pdf_name)
-        generate_single_lesson_pdf(plan, pdf_path)
-    except Exception:
-        logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
         try:
-            mark_lesson_generation_failed(lesson_id, "PDF 生成失败，请稍后重试")
-        except LookupError:
-            logger.exception("Failed to mark lesson %s as failed after PDF error", lesson_id)
-        return
+            safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
+            pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
+            pdf_path = str(PDF_DIR / pdf_name)
+            generate_single_lesson_pdf(plan, pdf_path)
+        except Exception:
+            logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
+            try:
+                mark_lesson_generation_failed(lesson_id, "PDF 生成失败，请稍后重试")
+            except LookupError:
+                logger.exception("Failed to mark lesson %s as failed after PDF error", lesson_id)
+            return
 
-    try:
-        mark_lesson_generation_succeeded(
-            lesson_id,
-            plan=plan,
-            pdf_path=pdf_path,
-        )
-    except LookupError:
-        logger.exception("Failed to mark lesson %s as ready", lesson_id)
+        try:
+            mark_lesson_generation_succeeded(
+                lesson_id,
+                plan=plan,
+                pdf_path=pdf_path,
+            )
+        except LookupError:
+            logger.exception("Failed to mark lesson %s as ready", lesson_id)
+    finally:
+        if request_id is not None:
+            _release_ai_request_identity(request_id)
 
 
 def _start_review_plan_generation_thread(**job_kwargs) -> None:
@@ -2474,25 +2509,61 @@ def api_lesson_create():
     if not raw_text:
         return jsonify({"error": "提取的总结内容为空"}), 400
 
-    lesson_id = create_pending_lesson(
-        date_str=lesson_date,
-        subject=subject,
-        grade=grade,
-        topic=topic,
-        summary=raw_text,
-        weak_points=weak_points,
-        class_id=class_id,
+    request_key = _current_ai_request_key()
+    request_id = _build_review_plan_request_id(
+        user_id=int(user["id"]),
+        request_key=request_key,
     )
-    _start_review_plan_generation_thread(
-        lesson_id=lesson_id,
-        user={
-            "id": int(user["id"]),
-            "organization_id": int(user["organization_id"]),
-        },
-        chat_provider=chat_provider,
-        chat_model=chat_model,
-        request_key=_current_ai_request_key(),
-    )
+    request_identity_claimed = False
+    try:
+        _claim_ai_request_identity(
+            organization_id=int(user["organization_id"]),
+            request_id=request_id,
+        )
+        request_identity_claimed = True
+        ensure_feature_credits_available(
+            organization_id=int(user["organization_id"]),
+            feature_key="lesson_plan_generate",
+        )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        if request_identity_claimed:
+            _release_ai_request_identity(request_id)
+        return jsonify({"error": str(exc)}), 402
+    except Exception:
+        if request_identity_claimed:
+            _release_ai_request_identity(request_id)
+        raise
+
+    lesson_id = 0
+    try:
+        lesson_id = create_pending_lesson(
+            date_str=lesson_date,
+            subject=subject,
+            grade=grade,
+            topic=topic,
+            summary=raw_text,
+            weak_points=weak_points,
+            class_id=class_id,
+        )
+        _start_review_plan_generation_thread(
+            lesson_id=lesson_id,
+            user={
+                "id": int(user["id"]),
+                "organization_id": int(user["organization_id"]),
+            },
+            chat_provider=chat_provider,
+            chat_model=chat_model,
+            request_key=request_key,
+            request_id=request_id,
+        )
+    except Exception:
+        if lesson_id:
+            db_delete_lesson(lesson_id)
+        if request_identity_claimed:
+            _release_ai_request_identity(request_id)
+        raise
     return jsonify({"id": lesson_id, "success": True, "status": "pending"}), 202
 
 

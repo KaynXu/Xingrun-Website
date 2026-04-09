@@ -27,6 +27,8 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.owner_token = self._login_as_owner()
 
     def tearDown(self):
+        app_module._AI_REQUEST_IN_FLIGHT.clear()
+        app_module._AI_ORGANIZATION_IN_FLIGHT.clear()
         gc.collect()
         self.temp_dir.cleanup()
 
@@ -45,10 +47,12 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         return payload["token"]
 
     @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
     @patch("app.has_api_key", return_value=True)
     def test_post_review_plan_returns_202_and_creates_pending_lesson(
         self,
         _mock_has_api_key,
+        _mock_ensure_credits,
         mock_start_thread,
     ):
         response = self.client.post(
@@ -92,6 +96,113 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertNotIn("topic", thread_kwargs)
         self.assertNotIn("weak_points", thread_kwargs)
         self.assertNotIn("raw_text", thread_kwargs)
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app._current_ai_request_key", return_value="header:duplicate-review-plan")
+    @patch("app.has_api_key", return_value=True)
+    def test_post_review_plan_rejects_duplicate_request_key_before_creating_pending_lesson(
+        self,
+        _mock_has_api_key,
+        _mock_request_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        payload = {
+            "date": "2026-04-09",
+            "subject": "数学",
+            "grade": "初二",
+            "topic": "一次函数",
+            "weak_points": "斜率判断",
+            "summary_text": "课堂总结文本",
+            "input_type": "text",
+        }
+
+        first = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json=payload,
+        )
+        second = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json=payload,
+        )
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 409)
+        second_payload = second.get_json()
+        self.assertIsNotNone(second_payload)
+        self.assertIn("重复请求", second_payload["error"])
+        self.assertEqual(len(lesson_manager.list_lessons()), 1)
+        mock_start_thread.assert_called_once()
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
+    @patch("app.has_api_key", return_value=True)
+    def test_post_review_plan_returns_402_when_credits_are_insufficient(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "weak_points": "斜率判断",
+                "summary_text": "课堂总结文本",
+                "input_type": "text",
+            },
+        )
+
+        self.assertEqual(response.status_code, 402)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["error"], "积分不足，请先充值")
+        self.assertEqual(lesson_manager.list_lessons(), [])
+        mock_start_thread.assert_not_called()
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app._current_ai_request_key", return_value="header:preflight-crash")
+    @patch("app.ensure_feature_credits_available", side_effect=RuntimeError("db boom"))
+    @patch("app.has_api_key", return_value=True)
+    def test_post_review_plan_releases_request_identity_when_preflight_crashes(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        _mock_request_key,
+        mock_start_thread,
+    ):
+        payload = {
+            "date": "2026-04-09",
+            "subject": "数学",
+            "grade": "初二",
+            "topic": "一次函数",
+            "weak_points": "斜率判断",
+            "summary_text": "课堂总结文本",
+            "input_type": "text",
+        }
+
+        first = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json=payload,
+        )
+        second = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json=payload,
+        )
+
+        self.assertEqual(first.status_code, 500)
+        self.assertEqual(second.status_code, 500)
+        self.assertEqual(lesson_manager.list_lessons(), [])
+        mock_start_thread.assert_not_called()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
     @patch("ai_processor.parse_and_generate_plan")
@@ -202,6 +313,33 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         saved = lesson_manager.get_lesson(lesson_id)
         self.assertEqual(saved["record_status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
+
+    @patch("app._run_ai_feature_with_charge", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
+    def test_worker_writes_credit_balance_error_message(
+        self,
+        _mock_run_with_charge,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            class_id=0,
+        )
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-4o",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "failed")
+        self.assertEqual(saved["generation_error"], "积分不足，请先充值")
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf", side_effect=RuntimeError("pdf boom"))
     @patch("app._run_ai_feature_with_charge", return_value={"lesson_info": {"topic": "一次函数"}, "days": []})
