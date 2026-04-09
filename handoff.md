@@ -25,11 +25,25 @@
   - Backend: `Ran 22 tests in 0.478s` → `OK`
   - Frontend: `tests 22` / `pass 22` / `fail 0`
 
+### 发布状态
+- 已提交到 `develop`：`01f7240 fix: scope wrong question workspace by role`
+- 已手动合并到 `master`：`0f846d3 merge: release wrong question workspace fixes`
+- 已推送：
+  - `origin/develop` → `01f7240`
+  - `origin/master` → `0f846d3`
+- 生产部署未完成：本地到生产机 `ubuntu@49.234.185.86` 的 SSH 认证失败，当前密码与无密钥登录都不可用。
+
 ### 剩余问题
 - 后端测试输出仍有既有 `ResourceWarning: unclosed database` 噪音，但本轮目标测试已全部通过；当前未扩 scope 处理这类测试基础设施问题。
+- 如需真正完成上线，还需要可用的生产机 SSH 登录方式，然后执行：
+  - `cd /home/ubuntu/Xingrun-Website`
+  - `git pull origin master`
+  - `npm --prefix frontend run build`
+  - `pm2 restart xingrun`
+  - 健康检查 `http://127.0.0.1:5001/`
 
 ### 下一步方向
-- 如需正式发生产，可把本次变更按发布流程合入发布分支并部署到生产机。
+- 提供可用 SSH 凭证或在已登录终端上执行上述 4 条命令，即可完成生产发布。
 
 ## 生产排查：复习计划长时间“生成中”实际为 n1n 524 超时（2026-04-09）
 
