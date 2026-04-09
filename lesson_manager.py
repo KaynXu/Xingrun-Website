@@ -1682,16 +1682,14 @@ def init_db():
                 """
             ).fetchall()
             for task_row in unlabeled_task_rows:
+                _, _, _, _, period_label = _resolve_class_feedback_period_selection(
+                    start_date=task_row["start_date"],
+                    end_date=task_row["end_date"],
+                    period_granularity=(task_row["period_granularity"] or "").strip() or "custom",
+                )
                 conn.execute(
                     "UPDATE class_feedback_tasks SET period_label=? WHERE id=?",
-                    (
-                        _format_class_feedback_period_label(
-                            task_row["period_granularity"],
-                            task_row["start_date"],
-                            task_row["end_date"],
-                        ),
-                        task_row["id"],
-                    ),
+                    (period_label, task_row["id"]),
                 )
         _ensure_class_feedback_task_integrity_guards(conn)
         _migrate_legacy_organization_scope(conn)
@@ -2811,32 +2809,6 @@ def _infer_class_feedback_stage_name(start: date, end: date) -> Optional[str]:
         if start == candidate_start and end == candidate_end:
             return candidate
     return None
-
-
-def _format_class_feedback_period_label(period_granularity: str, start_date: str, end_date: str) -> str:
-    start = date.fromisoformat((start_date or "").strip())
-    end = date.fromisoformat((end_date or "").strip())
-    normalized_granularity = (period_granularity or "").strip()
-    if normalized_granularity == "daily":
-        return start.isoformat()
-    if normalized_granularity == "weekly":
-        iso_year, iso_week, _ = start.isocalendar()
-        return week_label(f"{iso_year}-W{iso_week:02d}")
-    if normalized_granularity == "monthly":
-        return f"{start.year}{CLASS_FEEDBACK_MONTH_LABELS[start.month]}"
-    if normalized_granularity == "stage":
-        stage_name = _infer_class_feedback_stage_name(start, end)
-        if stage_name:
-            return f"{start.year}{stage_name}"
-    return _format_legacy_custom_period_label(start.isoformat(), end.isoformat())
-
-
-def _derive_class_feedback_period_fields(start_date: str, end_date: str) -> tuple[int, str, str]:
-    resolved_start_date, resolved_end_date, period_length_days, period_granularity, period_label = _resolve_class_feedback_period_selection(
-        start_date=start_date,
-        end_date=end_date,
-    )
-    return period_length_days, period_granularity, period_label
 
 
 def _resolve_class_feedback_period_selection(

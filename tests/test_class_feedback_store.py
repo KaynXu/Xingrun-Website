@@ -180,6 +180,33 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(task["period_granularity"], "custom")
         self.assertEqual(task["period_label"], "2026-04-02至2026-04-05")
 
+    def test_init_db_rejects_invalid_legacy_custom_range_when_backfilling_period_label(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-02",
+            end_date="2026-04-05",
+            created_by=owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_feedback_tasks
+                SET start_date=?, end_date=?, period_granularity='custom', period_label=''
+                WHERE id=?
+                """,
+                ("2026-04-05", "2026-04-02", task["id"]),
+            )
+
+        with self.assertRaisesRegex(ValueError, "end_date must be on or after start_date"):
+            lesson_manager.init_db()
+
     def test_create_task_persists_class_organization_id(self):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
