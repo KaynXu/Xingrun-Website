@@ -22,6 +22,30 @@
 ### 下一步方向
 - 后续再遇到“本地数据 + 外部服务混合依赖”场景，可直接复用这条方法，不必重新总结。
 
+## 复习计划异步生成 implementation plan 已完成（2026-04-09）
+
+### 已完成
+- 已根据认可的 spec 写出 implementation plan：
+  - `docs/superpowers/plans/2026-04-09-review-plan-async-generation.md`
+- 当前 plan 已拆成 5 个可独立提交的任务：
+  - lesson / monthly job 存储层
+  - 单节复习计划后端异步化
+  - 前端 pending / failed / polling
+  - 月度计划异步 job
+  - 最后移除临时 `gpt-4o` 回退逻辑
+
+### proof
+- 计划文件已落盘：
+  - `docs/superpowers/plans/2026-04-09-review-plan-async-generation.md`
+
+### 剩余问题
+- 当前只完成 plan，还未开始执行任务。
+- 下一步需要在“子代理逐任务执行”和“当前会话内联执行”之间选一种。
+
+### 下一步方向
+- 选择执行方式
+- 按 plan 进入实现
+
 ## 复习计划异步生成方案已确认（2026-04-09）
 
 ### 已完成
