@@ -1,477 +1,65 @@
-## 部署文档已修正到当前可用流程（2026-04-09）
+## member 错题本切换为选班级后看学生卡片（2026-04-09）
 
 ### 已完成
-- 已修正 [server deploy.md](/Users/ark.mini/Desktop/Xingrun-Website/server%20deploy.md) 中失效的 `deploy.sh` 指引，改为仓库实际存在的 `./scripts/deploy_backend.sh` 与手动发布步骤。
-- 已补充生产机 SSH 登录兜底参数：`PubkeyAuthentication=no` + `PreferredAuthentications=password,keyboard-interactive` + `sshpass`。
-- 已明确当前生产发布分支以 `develop` 为准，不再沿用旧文档里的 `git pull origin master`。
+- 已将 `member` 角色的 `智能错题` 工作区改为“先选班级，再显示学生卡片，再打开孩子错题本”的流程，不再保留原来的全局错题列表视图。
+- 已明确保持“默认不自动选中班级”，只有手动选班后才展示该班学生卡片。
+- 已在 `frontend/src/SmartWrongQuestionsPage.tsx` 接入现有 notebook helper，按所选班级汇总学生卡片，并将详情区绑定到所选学生的错题记录集合。
+- 已补回小程序非几何题的 `题目文本` 可编辑区，保存时会把老师修正后的 `question_text` 一并提交。
+- 已修正“编辑后立即保存”场景，保存逻辑现在读取最新 draft，不会因为同一轮输入/点击而丢失刚修改的内容。
+- 已同步更新前端测试，member 相关断言改为先手动选班，和当前交互保持一致。
 
 ### proof
-- 已根据本轮成功登录与部署命令回填文档：同一套 SSH 参数已在生产机登录、拉取、构建、重启、健康检查中实测成功。
-
-### 剩余问题
-- 当前文档仍包含明文密码，仅适合短期内网协作；如要长期保留，建议后续改成 SSH key 或环境变量说明。
-
-### 下一步方向
-- 如需继续收口，可把生产机登录方式从密码切到 SSH key，并同步更新文档。
-
-## develop 已推送到远端（2026-04-09）
-
-### 已完成
-- 当前本地 `develop` 已推送到远端，远端分支现已对齐到 `f3a5f48`（`docs: archive specs and cleanup generated files`）。
-- 已确认本地 `HEAD` 与 `origin/develop` 指向同一提交。
-- 已确认推送后主工作区仍保持干净。
-
-### proof
-- 核对命令：`git rev-parse --short HEAD && git rev-parse --short origin/develop && git status --short`
+- 临时命令：`cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
 - 完整输出结论：
-  - `HEAD f3a5f48`
-  - `origin/develop f3a5f48`
-  - `git status --short` 无输出
-
-### 剩余问题
-- 远端 Git 已同步，但生产服务器 SSH 登录仍未恢复，部署链路仍卡在服务器凭据阶段。
-
-### 下一步方向
-- 如需继续发布，下一步仍是修复服务器登录，然后在生产机执行拉取、前端构建和 PM2 重启。
-
-## 文档归档与运行产物清理已完成（2026-04-09）
-
-### 已完成
-- 已确认本轮应入库的 8 份正式 spec / implementation plan，并准备随 `develop` 一起归档。
-- 已确认 `docs/superpowers/plans/2026-04-02-review-generation-teacher-feedback-progress.md` 属于旧分支过程性进度总结，不再保留到仓库。
-- 已确认 `data/pdfs/` 下 3 个 PDF 为运行产物，不应继续留在主工作区。
-
-### proof
-- 将通过临时脚本核对：
-  - 8 份正式文档已被纳入 git 跟踪
-  - 旧 progress 文档与 3 个 PDF 已从工作区清理
-  - 清理后 `git status --short` 不再残留本轮这批未跟踪文件
-
-### 剩余问题
-- 无。
-
-### 下一步方向
-- 如需继续收口，可把 `data/pdfs/` 和类似过程性文档加入忽略规则，避免后续再次污染主工作区。
-
-## develop 已部署到生产并修复课堂反馈旧任务启动崩溃（2026-04-09）
-
-### 已完成
-- 已定位生产启动失败根因：`lesson_manager.init_db()` 在回填旧 `class_feedback_tasks.period_label` 时，直接按 `period_granularity` 走 `weekly/monthly/stage` 解析，但旧记录只有 `start_date/end_date`，缺少 `year/week/month/stage_name`，导致后端启动时抛 `ValueError: year is required`。
-- 已新增回归测试，覆盖旧显式周期任务在 `period_label=''` 时重跑 `init_db()` 能从历史日期范围反推标签。
-- 已修复周期解析逻辑：当旧记录缺少显式周期元数据但仍保留日期范围时，`daily/weekly/monthly/stage` 都会优先从既有范围反推标签，而不是直接崩溃。
-- 已将生产服务器 `/home/ubuntu/Xingrun-Website` 从 `master@0f846d31` 切到 `develop@0061a3a`。
-- 已在生产机完成前端构建并重启 `pm2` 服务 `xingrun`。
-
-### proof
-- 本地临时脚本：`/tmp/xingrun-class-feedback-legacy-backfill-proof-20260409.sh`
-- 完整输出结论：`Ran 21 tests in 0.728s` → `OK`
-- 热修提交：`0061a3a` `fix: backfill legacy class feedback period labels`
-- 远端部署结果：
-  - `deployed branch=develop`
-  - `deployed head=0061a3a6`
-  - `npm --prefix frontend run build` 成功
-  - `pm2 status xingrun` → `online`
-  - 健康检查返回 Flask 根路由重定向 HTML，目标为 `http://127.0.0.1:3000`
-
-### 剩余问题
-- 仓库文档 [server deploy.md](/Users/ark.mini/Desktop/Xingrun-Website/server%20deploy.md) 仍引用不存在的根目录 `deploy.sh`；当前仓库实际可用脚本是 `scripts/deploy_backend.sh`，手动发布时仍需额外执行前端构建。
-- 前端构建仍有既有 chunk size warning，本轮未扩 scope 处理。
-
-### 下一步方向
-- 如需收口部署文档，应统一 [server deploy.md](/Users/ark.mini/Desktop/Xingrun-Website/server%20deploy.md) 与 [README.md](/Users/ark.mini/Desktop/Xingrun-Website/README.md) 的发布入口，避免继续引用不存在的 `deploy.sh`。
-
-## 本轮部署尝试受阻（2026-04-09）
-
-### 已完成
-- 已确认当时的本地发布目标提交为 `90d52b2`（`feat: show normalized class feedback period summaries`）。
-- 已完成当时版本的 `develop` 远端推送；后续远端已继续前进到 `f3a5f48`，见上方最新记录。
-- 已核对当前本地工作区已清理干净，不再残留当时提到的运行产物与文档草稿。
-
-### proof
-- 推送命令：`git push origin develop`
-- 完整输出结论：`5e5a425..90d52b2  develop -> develop`
-- SSH 探针：`sshpass -e ssh ... ubuntu@49.234.185.86 ...`
-- 完整输出结论：`Permission denied (publickey,password)`
-
-### 剩余问题
-- 生产服务器 `49.234.185.86` 当前无法通过文档中的密码或本机 SSH key 登录，无法继续执行远端拉取、前端构建与 PM2 重启。
-
-### 下一步方向
-- 更新可用的生产机 SSH 凭据后，登录服务器执行：`cd /home/ubuntu/Xingrun-Website && git pull origin develop && npm --prefix frontend run build && pm2 restart xingrun && pm2 status`。
-
-## Task 4 课堂反馈阶段摘要文案已收口（2026-04-09）
-
-### 已完成
-- 已把课堂反馈工作台摘要从 `反馈周期 / 时间范围` 改为 `反馈阶段 / 覆盖范围`，直接展示规范化 period label 和对应日期覆盖区间。
-- 已清理课堂反馈页残留的旧提示文案，不再提示“选择时间范围”，统一改为“选择反馈阶段”。
-- 已补前端回归断言，防止 `App.tsx` 回退到旧的 `反馈周期 / 时间范围` 文案。
-
-### proof
-- 临时脚本：`/tmp/xingrun_class_feedback_frontend_proof.sh`
-- 完整输出结论：
-  - `tests 10`
-  - `pass 10`
-  - `fail 0`
-- 临时脚本：`/tmp/xingrun_class_feedback_period_proof.sh`
-- 完整输出结论：
-  - Backend: `Ran 40 tests in 1.388s` → `OK`
-  - 说明：输出里仍有既有 `ResourceWarning: unclosed database` 与 `ai_processor.py` 的既有 `SyntaxWarning` 噪声，本轮未扩 scope 处理。
-
-### 剩余问题
-- 无新增问题。
-
-### 下一步方向
-- 当前 feature 分支上的 Task 1-4 已全部完成；如需进入集成阶段，可继续做分支收尾、评审或合并准备。
-
-## Task 5 已完成 super_owner 平台总览（2026-04-09）
-
-### 已完成
-- `frontend/src/WorkspaceDashboard.tsx` 已为 `super_owner` 切换到独立的平台总览首页，不再复用机构工作流占位页。
-- 平台首页已落最小但真实的卡片与入口：`平台总览`、`机构观察`、`账号审批`、`系统设置`。
-- `机构观察` 卡片现在会跳转到现有的机构管理视图，避免首页只剩静态文案壳层。
-- `super_owner` 首页已移除 `新建复习文档` 作为中心入口，避免继续表现成机构内教学工作流。
-- `member` 工作台与 `owner/admin` 机构运营概览行为保持不变。
-- `frontend/src/workspace-dashboard.test.tsx` 已补 red-green 断言与点击测试，覆盖平台卡片、真实跳转、去除机构概览文案与移除复习文档 CTA。
-
-### proof
-- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-  - 结果：`tests 7` / `pass 6` / `fail 1`，失败点为 `super_owner` 仍缺少 `机构观察`，且仍渲染 `新建复习文档`。
-- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-  - 结果：`tests 7` / `pass 7` / `fail 0`
-- Task 5 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/course-calendar.test.tsx src/class-feedback-generation.test.tsx src/review-generation-async.test.tsx src/app-storage-guard.test.tsx`
-  - 结果：`tests 67` / `pass 67` / `fail 0`
-- Task 5 收口复验：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/course-calendar.test.tsx src/class-feedback-generation.test.tsx src/review-generation-async.test.tsx src/app-storage-guard.test.tsx`
-  - 结果：`tests 68` / `pass 68` / `fail 0`
-
-### 剩余问题
-- 当前 `机构观察` 已有真实入口，但下层观察面板仍是 truthful shell，尚未接独立的跨机构观察页面；这符合 Task 5 只落平台卡片与真实入口的 scope。
-
-### 下一步方向
-- 如果后续 plan 继续细化 `super_owner`，优先决定是否新增独立的跨机构观察页，再把首页壳层接到真实数据或页面。
-
-## Task 4 已完成 owner/admin 机构概览（2026-04-09）
-
-### 已完成
-- `frontend/src/WorkspaceDashboard.tsx` 已为 `owner/admin` 切换到机构运营概览首页，不再把“新建复习文档”放在页面中心。
-- 首页已落真实管理入口卡片：
-  - `owner`：`班级管理`、`账号审批`、`课堂反馈`、`智能错题`
-  - `admin`：`班级管理`、`咨询记录`、`课堂反馈`、`智能错题`
-- 保留 `member` 快速开工工作台与 `super_owner` 平台总览行为不变。
-- `frontend/src/workspace-dashboard.test.tsx` 已补 red-green 断言，覆盖 owner/admin 首页必备入口、移除复习文档中心态，以及 owner/admin 真实可达入口映射。
-
-### proof
-- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-  - 结果：`tests 6` / `pass 4` / `fail 2`，失败点为 owner/admin 仍缺少 `班级管理` 等入口，且仍渲染 `新建复习文档`。
-- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-  - 结果：`tests 6` / `pass 6` / `fail 0`
-- Task 4 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/course-calendar.test.tsx`
-  - 结果：`tests 53` / `pass 53` / `fail 0`
-
-### 剩余问题
-- 无新增阻塞；后续可继续细化 `super_owner` 首页和下层平台观察页。
-
-### 下一步方向
-- 继续执行工作台重写后续任务，优先收 `super_owner` 平台首页与剩余首页细节。
-
-## Task 3 member 工作台 workbench 已落地（2026-04-09）
-
-### 已完成
-- `frontend/src/WorkspaceDashboard.tsx` 的 `member` 分支已从占位文案扩展为真实教学工作台。
-- 首页现已渲染：`快速开始`、`复习生成`、`课堂反馈`、`课程日历`、`智能错题`、`我的教学概览`、`最近工作`。
-- 首页不再渲染或提及 `今日待办`、`通知中心` 这类未落地模块。
-- `admin` / `owner` / `super_owner` 的 Task 2 分支保持不变。
-- `frontend/src/workspace-dashboard.test.tsx` 已补强 member 工作台断言，覆盖必需入口与禁止文案。
-
-### proof
-- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-  - 结果：`tests 6` / `pass 5` / `fail 1`，初始失败点为缺少 `课程日历`。
-- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/review-generation-async.test.tsx`
-  - 结果：`tests 10` / `pass 10` / `fail 0`
-- Task 3 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/review-generation-async.test.tsx`
-  - 结果：`tests 10` / `pass 10` / `fail 0`
-
-### 剩余问题
-- `我的教学概览` 和 `最近工作` 当前仍是 truthful shell，尚未接真实数据，这符合 Task 3 当前 scope。
-
-### 下一步方向
-- Task 4 可继续在 `WorkspaceDashboard` 内补 owner/admin 的机构运营入口卡与真实概览结构。
-
-## Task 2 工作台角色分发组件已落地（2026-04-09）
-
-### 已完成
-- 已新增 `frontend/src/WorkspaceDashboard.tsx` 作为角色分发入口。
-- `member` 当前看到 `快速开始` 首页。
-- `owner` / `admin` 当前看到 `机构运营概览`。
-- `super_owner` 当前看到 `平台总览`。
-- `frontend/src/App.tsx` 的 `activePage === 'dashboard'` 分支已切换为渲染 `WorkspaceDashboard`，其余工作台 shell 未改。
-
-### proof
-- Red：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-- Green：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx`
-  - 结果：`tests 4` / `pass 4` / `fail 0`
-- Task 2 验证：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/workspace-dashboard.test.tsx src/account-card.test.tsx src/app-storage-guard.test.tsx`
-  - 结果：`tests 52` / `pass 52` / `fail 0`
-
-### 剩余问题
-- 当前仍是 Task 2 的最小占位实现，真实角色首页内容会在 Task 3-5 继续展开。
-
-### 下一步方向
-- Task 3 可在当前 `WorkspaceDashboard` 基础上继续把具体角色首页内容从占位文案扩展成真实卡片与动作入口。
-
-## 智能错题学生级错题库实现完成（2026-04-09）
-
-### 已完成
-- 本地微信错题上传已改为“先识别，后入库”，非几何题识别失败会直接阻止入库。
-- `wrong_question_submissions` 已补齐识别状态、几何标记、题目文本、文本来源、学生错题库 PDF 路径等字段，并支持老师改题目文本。
-- 网站后端已支持按学生重建固定路径错题库 PDF，并新增学生错题库读取接口供网页端和小程序端共用。
-- 网页端 `智能错题` 已支持本地微信非几何题的“题目文本”编辑与保存，保存时会带上 `question_text` 并刷新本地记录草稿。
-- 学生错题库 PDF 已增强为“仅几何题嵌入原题图片，非几何题继续文字为主”的版式，且图片拉取失败时会自动降级为提示文本，不影响 PDF 生成。
-- 学生错题库 PDF 的几何题图片区已进一步收口为固定高度图片区卡片，包含标题、占位区域与说明文案；图片不可用时仍保持同一版式，不再退化成散落文本。
-
-### proof
-- 通过临时脚本完成定向回归：
-  - Backend: `/opt/homebrew/bin/python3 -m unittest tests.test_wechat_parent_upload_data tests.test_wrong_question_library_pdf tests.test_wechat_parent_upload_api tests.test_smart_wrong_questions_api -v`
-  - 结果：`Ran 45 tests in 1.214s`，`OK`
-  - Frontend: `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
-  - 结果：`tests 25`，`pass 25`，`fail 0`
-- 本轮新增临时脚本 proof：
-  - `/tmp/wrong-question-pdf-proof-XXXXXX.py`
-  - 实际执行内容：`/opt/homebrew/bin/python3 -m unittest tests.test_wrong_question_library_pdf -v`
-  - 结果：`Ran 4 tests in 0.289s`，`OK`
-- 本轮新增临时脚本 proof：
-  - `/tmp/wrong-question-pdf-layout-proof-XXXXXX.py`
-  - 实际执行内容：`/opt/homebrew/bin/python3 -m unittest tests.test_wrong_question_library_pdf -v`
-  - 结果：`Ran 6 tests in 0.303s`，`OK`
-
-### 剩余问题
-- 本轮学生错题库相关定向 proof 中，既有 `sqlite3.Connection` 未关闭 `ResourceWarning` 已通过连接生命周期修复清理干净。
-- 学生错题库 PDF 现已支持几何题固定图片区卡片；若后续继续细化，更值得做的是图片裁切策略、页内元信息分栏与跨页视觉一致性。
-
-### 下一步方向
-- 如果要继续收口本链路，下一步更值得做的是补图片裁切和页内信息分栏，而不是再动数据链路。
-
-## 工作台重写设计已确认并写成 spec（2026-04-09）
-
-### 已完成
-- 已完成“工作台 tab 重写”设计确认，目标从“复习资料首页”切换为“多功能平台首页”。
-- 已确定采用角色驾驶舱方案，而不是轻改旧 dashboard。
-- 已固定三套角色视角：
-  - `super_owner`：跨机构总览优先
-  - `owner/admin`：机构运营概览优先
-  - `member/teacher`：快速开工入口优先
-- 已明确约束：
-  - 不伪造待办/通知等未实装能力
-  - 不以新增后端接口作为首版前置条件
-  - 不继续把三套首页逻辑堆进 `frontend/src/App.tsx`
-- 新 spec 已落盘：
-  - `docs/superpowers/specs/2026-04-09-workspace-tab-redesign-design.md`
-- 已创建隔离实现分支：`feature/workspace-tab-redesign`
-- 已创建隔离 worktree：`/Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign`
-- 已完成工作台相关前端基线测试：`tests 60 / pass 60 / fail 0`
-- 已新增 implementation plan：
-  - `docs/superpowers/plans/2026-04-09-workspace-tab-redesign-implementation.md`
-
-### proof
-- 本轮已完成设计、implementation plan 与隔离 worktree 基线验证。
-- 已对 spec 做占位符扫描，未发现 `TBD` / `TODO` / `implement later` / `fill in details`。
-- 工作台基线命令：
-  - `cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/account-card.test.tsx src/course-calendar.test.tsx src/class-feedback-generation.test.tsx src/review-generation-async.test.tsx src/app-storage-guard.test.tsx`
-- 基线输出结论：
-  - `tests 60`
-  - `pass 60`
+  - `tests 29`
+  - `pass 29`
   - `fail 0`
 
 ### 剩余问题
-- 还未开始按 plan 落业务代码。
-- 当前主工作区仍有与本轮无关的未提交文件，但本轮实现已经切到独立 worktree，不再需要在脏主工作区上直接开发。
+- 本轮只调整了 `member` 的错题工作区流转；`owner/admin/super_owner` 仍保留现有全局筛选与列表布局。
 
 ### 下一步方向
-- 用户选择执行方式后，在 `feature/workspace-tab-redesign` worktree 内按 plan 从 Task 2 红测开始推进。
+- 如需继续收口，可以补一次真实 `member` 账号人工点击，重点确认“选班级 -> 学生卡片 -> 保存跟进”在浏览器里的交互节奏是否符合预期。
 
-## 课堂反馈周期选择 implementation plan 已写好（2026-04-09）
-
-### 已完成
-- 已新增 implementation plan：
-  - `docs/superpowers/plans/2026-04-09-class-feedback-period-selection-implementation.md`
-- 计划已按实现顺序拆成 4 个任务：
-  - store/schema 增加 `period_label` 与显式周期派生
-  - API 接受结构化周期 payload
-  - 前端创建栏切换到周期模式选择器
-  - 工作台摘要与定向 proof 收尾
-- 计划已明确保留旧 `start_date/end_date` 调用兼容，用于平滑过渡旧 `custom` 数据与旧调用方。
-
-### proof
-- 已对 plan 做自审：
-  - `TBD/TODO/implement later/fill in details` 占位词扫描为 0
-  - 计划文件与 spec 已逐段对照，四类周期、标签规则、旧 `custom` 兼容、前后端验证均已覆盖
-
-### 剩余问题
-- 还未进入代码实现。
-## member 班级范围功能已实现并完成定向 proof（2026-04-09）
+## 班级管理成员白屏修复已部署到生产（2026-04-09）
 
 ### 已完成
-- 已完成 member 端复习资料与课堂反馈页面的班级选择同步：单班自动选中，越权/失效班级选择会被回收。
-- 已为 member 端补充课堂反馈任务访问回归测试，确认只能创建和读取自己负责班级的任务。
-- 已新增智能错题 member 学生错题本 view-model：
-  - `buildMemberStudentNotebookSummaries`
-  - `filterWrongQuestionRecordsForMemberNotebook`
-- 已将 member 智能错题页面改成“班级 -> 学生卡片 -> 学生错题本 -> 具体记录”的流转。
-- 已保留 `owner/admin/super_owner` 现有全局工作台形态，不把 member 限制外溢到其他角色。
-- 已完成一次定向代码审查，并确认本轮没有新增阻塞性回归问题。
-- 已将 `feature/member-class-scope` rebase 到最新 `develop`，并在 rebase 后重新通过定向 proof。
-- 已补齐 `/api/wrong-questions` 的后端 scoped summary 一致性：所有角色都会返回 summary，且后端 summary 现在包含 `unique_class_count` 与 `unique_student_count`。
-- 已新增 staff 侧回归测试，覆盖 wrong-question 列表 summary 的总数、待复盘数、重复错题数、高优先级数、班级数、学生数。
+- 已将 `develop` 推送到远端，包含修复提交 `fc47468`（`fix: hide class management for members`）。
+- 已在生产机 `/home/ubuntu/Xingrun-Website` 拉到最新 `develop`，从 `0061a3a6` 快进到 `fc47468a`。
+- 已完成生产前端构建并重启 PM2 服务 `xingrun`。
+- 已确认当前线上后端根路由恢复可达，成员老师不会再从侧边栏进入不可渲染的 `班级管理` 页面。
 
 ### proof
-- 临时脚本：`/tmp/xingrun-member-class-scope-proof-20260409-v2.sh`
-- backend：`3 / 3` 通过
-- frontend：`40 / 40` 通过（含 develop 新增的课堂反馈 header 回归断言）
-
-### 已知旧噪音
-- `ai_processor.py` proof 仍会出现既有 `SyntaxWarning`（无效 `\s` 转义），本轮未处理。
-- `tests/test_account_flow.py` proof 仍会出现既有 `ResourceWarning: unclosed database`，本轮未处理。
+- 推送结果：`2c6562d..fc47468  develop -> develop`
+- 生产构建结果：`npm --prefix frontend run build` 成功，`vite build` 完成。
+- PM2 重启结果：`[PM2] [xingrun](6) ✓`，`pm2 status` 显示 `xingrun` 为 `online`。
+- 健康检查结果：`HTTP/1.1 302 FOUND`，响应头来自 `Werkzeug/3.1.7 Python/3.12.3`，正文为 Flask 根路由重定向 HTML。
 
 ### 剩余问题
-- 当前分支还未合并回 `develop`。
+- 重启后第一下即时健康检查返回过一次连接失败，二次重试即恢复；本轮未扩 scope 继续排查启动瞬时窗口。
 
 ### 下一步方向
-- 当前功能与后端一致性整理都已完成，可直接合并回 `develop`。
+- 如需继续收口，可用真实 `member/test` 账号做一次线上人工点击确认，验证 `班级管理` tab 已不再出现。
 
-## 课堂反馈周期选择设计已确认并写成 spec（2026-04-09）
-
-### 已完成
-- 已完成“课堂反馈生成”从自由日期范围切换到显式周期模式的设计确认。
-- 新 spec 已落盘：`docs/superpowers/specs/2026-04-09-class-feedback-period-selection-design.md`
-- 设计已固定以下规则：
-  - 周期类型：`日反馈 / 周反馈 / 月反馈 / 阶段反馈`
-  - 标签格式：
-    - 日：`YYYY-MM-DD`
-    - 周：`YYYY第N周`
-    - 月：`YYYY三月`
-    - 阶段：`YYYY春季 / YYYY秋季 / YYYY寒假 / YYYY暑假`
-  - 后端保存显式 `period_granularity + period_label`
-  - 同时保留 `start_date / end_date` 作为素材命中范围
-- 已完成只读并行调研，确认当前影响面主要在：
-  - `frontend/src/App.tsx`
-  - `frontend/src/ClassFeedbackGenerationWorkspace.tsx`
-  - `frontend/src/classFeedbackGeneration.ts`
-  - `app.py`
-  - `lesson_manager.py`
-  - `frontend/src/class-feedback-generation.test.tsx`
-  - `tests/test_class_feedback_api.py`
-
-### proof
-- 本轮为设计与文档落盘，没有运行业务测试或修改业务代码。
-- 设计依据来自当前代码与相关测试的只读检查，以及 3 个并行只读 agent 的影响面分析。
-
-### 剩余问题
-- spec 已写完，但还未转成实现计划。
-- 旧 `custom` 粒度历史数据的迁移策略，在实现阶段还需要结合现网数据量决定是“兼容读取”还是“批量回填归类”。
-
-### 下一步方向
-- 等用户审阅并确认 spec 后，再写实现计划并开始 TDD 落代码。
-
-## 智能错题学生级错题库 implementation plan 已写好（2026-04-09）
+## member 老师班级管理白屏已修复（2026-04-09）
 
 ### 已完成
-- 已新增 implementation plan：
-  - `docs/superpowers/plans/2026-04-09-student-wrong-question-library-implementation.md`
-- 计划已拆分为 6 个任务：
-  - 数据层 recognition/library 字段落库
-  - AI 识别与学生 PDF 生成
-  - 小程序上传识别拦截与学生库接口
-  - 网页端老师改题目文本并重建 PDF
-  - 前端工作台展示与保存
-  - 后端/前端定向 proof 与 handoff 收尾
+- 已定位根因：侧边栏一直向 `member` 角色暴露 `班级管理` tab，但主内容区只允许 `hasStaffAccess` 渲染该页面，导致成员老师点击后主区为空白。
+- 已在 `frontend/src/App.tsx` 收口导航权限：`班级管理` 仅对 `owner/admin/super_owner` 显示，不再让 `member` 进入不可渲染页面。
+- 已在 `frontend/src/workspace-navigation.test.ts` 补 source-level 回归断言，防止侧边栏再次把 `classes` 页面暴露给非 staff。
 
 ### proof
-- 待用户选择执行方式后进入实现，本轮未开始代码实现 proof。
-
-### 剩余问题
-- 尚未开始按计划实现。
-
-### 下一步方向
-- 用户选择执行方式：subagent-driven 或 inline execution。
-
-## 智能错题学生级错题库设计已确认（2026-04-09）
-
-### 已完成
-- 已明确本轮产品决策：
-  - 每个学生长期只有一份固定路径的错题库 PDF
-  - 新增一题时，对外表现为“新增一页”，底层允许按全量记录重建同一路径 PDF
-  - 非几何题必须先通过 AI 提取出可信题目文本才允许入库
-  - 几何题按图片形式入库，不强制抽题目文本
-  - 非几何题识别失败时直接阻止入库，要求重新识别
-  - 网页端老师拥有修改题目文本的权限，保存后需重建学生 PDF
-  - 网页端和家长小程序端访问同一份学生级 PDF
-- 已写设计规格：
-  - `docs/superpowers/specs/2026-04-09-student-wrong-question-library-design.md`
-
-### proof
-- 待用户审阅 spec 后进入实现，本轮尚未进入代码实现 proof。
-
-### 剩余问题
-- 尚未开始 implementation plan。
-- 尚未实现本地微信错题识别字段、PDF 重建链路、老师题目文本编辑能力。
-
-### 下一步方向
-- 用户审阅并确认 spec 无误后，进入 implementation plan，再按 TDD 落地后端、PDF 与网页端改动。
-
-## member 班级范围功能已实现并完成定向 proof（2026-04-09）
-
-### 已完成
-- 已完成 member 端复习资料与课堂反馈页面的班级选择同步：单班自动选中，越权/失效班级选择会被回收。
-- 已为 member 端补充课堂反馈任务访问回归测试，确认只能创建和读取自己负责班级的任务。
-- 已新增智能错题 member 学生错题本 view-model：
-  - `buildMemberStudentNotebookSummaries`
-  - `filterWrongQuestionRecordsForMemberNotebook`
-- 已将 member 智能错题页面改成“班级 -> 学生卡片 -> 学生错题本 -> 具体记录”的流转。
-- 已保留 `owner/admin/super_owner` 现有全局工作台形态，不把 member 限制外溢到其他角色。
-- 已完成一次定向代码审查，并确认本轮没有新增阻塞性回归问题。
-- 已将 `feature/member-class-scope` rebase 到最新 `develop`，并在 rebase 后重新通过定向 proof。
-- 已补齐 `/api/wrong-questions` 的后端 scoped summary 一致性：所有角色都会返回 summary，且后端 summary 现在包含 `unique_class_count` 与 `unique_student_count`。
-- 已新增 staff 侧回归测试，覆盖 wrong-question 列表 summary 的总数、待复盘数、重复错题数、高优先级数、班级数、学生数。
-
-### proof
-- 临时脚本：`/tmp/xingrun-member-class-scope-proof-20260409-v2.sh`
-- backend：`3 / 3` 通过
-- frontend：`40 / 40` 通过（含 develop 新增的课堂反馈 header 回归断言）
-
-### 已知旧噪音
-- `tests/test_account_flow.py` proof 仍会出现既有 `ResourceWarning: unclosed database`，本轮未处理。
-
-### 剩余问题
-- 功能代码已合并回 `develop`。
-- 本轮前 `handoff.md` 残留了 merge 冲突标记，已清理。
-
-### 下一步方向
-- 该项可视为已完成；后续如需收口，只需补一次合并后的整体验收即可。
-
-## Task 3 课堂反馈周期显式控件已完成（2026-04-09）
-
-### 已完成
-- 已把课堂反馈任务创建从原始起止日期输入改为显式反馈周期控件，支持按日、按周、按月、按阶段四种模式。
-- 前端已新增 `buildClassFeedbackPeriodPreview`，统一生成周期 label、起止日期与天数。
-- 前端已新增 `buildCreateClassFeedbackTaskRequest`，按后端已支持的结构化 payload 发送 daily/weekly/monthly/stage 请求。
-- `App.tsx` 已改为基于周期预览做课次命中统计和任务创建，不再直接维护 `startDate/endDate` 创建态。
-- 已补前端回归断言，覆盖：
-  - 周期预览 helper 输出
-  - 结构化任务请求 helper 输出
-  - App 使用周期预览而不是原始日期控件
-  - 控制栏移除原始 `startDate/endDate` 输入
-
-### proof
-- 指定验证命令：`cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/class-feedback-period-selection/frontend && npx tsx --test src/class-feedback-generation.test.tsx`
+- 临时脚本：`/tmp/xingrun-class-management-member-proof-20260409.sh`
 - 完整输出结论：
-  - `tests 10`
-  - `pass 10`
-  - `fail 0`
+  - `PASS class menu hidden for member users`
+  - `PASS class page render still guarded by hasStaffAccess`
+  - `PASS stale unauthorized classes page resets to dashboard`
 
 ### 剩余问题
-- 无。
+- `frontend/src/workspace-navigation.test.ts` 整个文件仍有 2 个与本次修复无关的既有失败，本轮未扩 scope 处理。
 
 ### 下一步方向
-- Task 4 可继续基于当前周期预览结果收口工作台摘要显示与更细的文案表现，但本轮未触及 `ClassFeedbackGenerationWorkspace.tsx`。
+- 如需继续收口，可单独清理 `workspace-navigation.test.ts` 里剩余的历史失败项，再把这条导航权限回归纳入常规前端验证。
 
 ## 错题工作区统计与权限范围已调整（2026-04-09）
 
@@ -3164,6 +2752,19 @@
   - `class-feedback-release` 通过 `git range-diff bf47a10..origin/class-feedback-release bf47a10..master` 对比，前 12 个 class feedback 功能提交均已被当前 `master` 上的等价提交覆盖，仅剩旧的 `feat: prepare class feedback release` 收尾提交未保留，因此按“已被后续整合线取代”处理并删除远端旧分支。
 - 保留项：
   - `feature/wechat-parent-upload` 仍未并入 `master`，且绑定独立 worktree，未清理。
+- proof：
+  - `git push origin --delete integrate/class-feedback-safe class-feedback-release`
+  - `git fetch --prune origin`
+  - 结果：远端仅剩 `origin/master`
+
+补充记录（2026-04-07，按用户要求将本地 master 推送到云端）
+- 已完成：
+  - 复核推送前状态：`master` 相对 `origin/master` 为 `ahead 17 / behind 0`。
+  - 执行 `git push origin master`，远端已从 `bf47a10` 更新到 `7c136b9`。
+- 结果：
+  - 代码仓库 `Xingrun-Summary` 的本地 `master` 与 `origin/master` 已对齐。
+  - 仓库未跟踪脏文件仍存在，仅为本地生成文件，未随 push 上传。
+- 下一步方向：
   - 如需继续发布到服务器，可在此基础上执行部署流程。
   - 如需继续清理本地工作区，可删除 `__pycache__` 与 `data/pdfs` 下新生成的 PDF。
 

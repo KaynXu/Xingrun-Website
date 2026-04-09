@@ -1917,11 +1917,26 @@ test('SmartWrongQuestionsPage renders member student cards for the selected clas
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /学生错题本/);
+      assert.match(pageText, /请选择班级查看学生错题本/);
+      assert.doesNotMatch(pageText, /筛选与列表/);
+    });
+
+    const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+    assert.ok(classSelect);
+
+    await act(async () => {
+      classSelect.value = '101';
+      classSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /Alice/);
       assert.match(pageText, /Bob/);
       assert.match(pageText, /2 题/);
       assert.match(pageText, /1 题/);
-      assert.doesNotMatch(pageText, /筛选与列表/);
     });
   } finally {
     if (root) {
@@ -2081,6 +2096,21 @@ test('SmartWrongQuestionsPage saves review content only for the selected member 
           },
         }),
       );
+    });
+
+    await waitForAssertion(() => {
+      const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+      assert.ok(classSelect);
+    });
+
+    const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+    assert.ok(classSelect);
+
+    await act(async () => {
+      classSelect.value = '101';
+      classSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
     await waitForAssertion(() => {
