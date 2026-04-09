@@ -2541,7 +2541,7 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackStatusMessage(
         studentCount > 0
           ? `已同步 ${studentCount} 名学生，请选择时间范围后创建反馈任务。`
-          : '当前班级还没有学生，可以先在这里新增学生。',
+            : '当前班级还没有学生，请先到学生管理页面添加学生。',
       );
     } catch (error) {
       setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级学生同步失败，请重试。');
@@ -2709,29 +2709,6 @@ const ClassFeedbackGenerationPage = ({
     saveCurrentClassFeedbackDraft,
   ]);
 
-  const handleAddStudent = async (name: string) => {
-    if (!selectedClassId) {
-      setClassFeedbackStatusMessage('请先选择班级，再新增学生。');
-      return;
-    }
-
-    setIsSavingClassFeedback(true);
-    try {
-      await createClassStudent(selectedClassId, name);
-      if (activeClassFeedbackTaskId) {
-        await hydrateClassFeedbackTask(activeClassFeedbackTaskId, selectedClassId);
-        setClassFeedbackStatusMessage('已新增学生，并重新同步当前反馈任务。');
-      } else {
-        const rosterCount = await loadRosterOnly(selectedClassId);
-        setClassFeedbackStatusMessage(`已新增学生，当前班级共 ${rosterCount} 名学生。`);
-      }
-    } catch (error) {
-      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '新增学生失败，请重试。');
-    } finally {
-      setIsSavingClassFeedback(false);
-    }
-  };
-
   const handleGenerateClassFeedback = useCallback(async () => {
     if (!activeClassFeedbackTaskId) {
       setClassFeedbackStatusMessage('请先创建反馈任务。');
@@ -2897,46 +2874,37 @@ const ClassFeedbackGenerationPage = ({
 
   return (
     <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
-      <section className={`${workspaceCardClass} p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Stage Feedback</p>
-            <h3 className={`${workspaceSectionTitleClass} mt-3`}>课堂反馈</h3>
-            <p className={`${workspaceSectionTextClass} mt-2`}>
-              选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
-            <select
-              value={selectedClassId ?? ''}
-              onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
-              className={workspaceFieldClass}
-              disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
-            >
-              <option value="">选择班级</option>
-              {classes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(event) => setStartDate(event.target.value)}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            />
-            <input
-              type="date"
-              value={endDate}
-              onChange={(event) => setEndDate(event.target.value)}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            />
-          </div>
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
+          <select
+            value={selectedClassId ?? ''}
+            onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+            className={workspaceFieldClass}
+            disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+          >
+            <option value="">选择班级</option>
+            {classes.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          />
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => void handleCreateClassFeedbackTask()}
@@ -2956,7 +2924,7 @@ const ClassFeedbackGenerationPage = ({
             刷新任务
           </button>
         </div>
-      </section>
+      </div>
 
       <ClassFeedbackGenerationWorkspace
         classNameLabel={selectedClass?.name ?? '未选择班级'}
@@ -2979,7 +2947,6 @@ const ClassFeedbackGenerationPage = ({
         onHighlightNoteChange={handleHighlightNoteChange}
         onStudentFinalTextChange={handleStudentFinalTextChange}
         onStudentCheckedChange={handleStudentCheckedChange}
-        onAddStudent={handleAddStudent}
         onGenerate={handleGenerateClassFeedback}
         onSaveDraft={saveCurrentClassFeedbackDraft}
         onCopyClassSummary={handleCopyClassFeedbackSummary}

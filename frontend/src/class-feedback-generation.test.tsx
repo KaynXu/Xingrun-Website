@@ -112,7 +112,6 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
       onHighlightNoteChange={() => undefined}
       onStudentFinalTextChange={() => undefined}
       onStudentCheckedChange={() => undefined}
-      onAddStudent={() => undefined}
       onGenerate={() => undefined}
       onSaveDraft={() => undefined}
       onCopyClassSummary={() => undefined}
@@ -131,6 +130,8 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   assert.match(markup, /张三/);
   assert.match(markup, /保存草稿/);
   assert.match(markup, /确认本次反馈/);
+  assert.doesNotMatch(markup, /补充学生/);
+  assert.doesNotMatch(markup, /新增学生/);
   assert.match(markup, /dark:text-white/);
   assert.match(markup, /bg-sky-600/);
   assert.match(markup, /dark:bg-slate-950\/78/);
@@ -154,7 +155,7 @@ test('App source wires the standalone class feedback page and existing class stu
   assert.match(appSource, /await createClassFeedbackTask\(\{/);
   assert.match(appSource, /await saveClassFeedbackTaskDraft\(activeClassFeedbackTaskId, \{/);
   assert.match(appSource, /classStatusTags: classFeedbackStatusTags/);
-  assert.match(appSource, /await createClassStudent\(selectedClassId, name\);/);
+  assert.doesNotMatch(appSource, /onAddStudent=\{handleAddStudent\}/);
   assert.match(appSource, /await generateClassFeedbackTask\(activeClassFeedbackTaskId, \{/);
   assert.match(appSource, /formatClassFeedbackStudentCopyText\(sortedClassFeedbackStudents\)/);
   assert.match(appSource, /const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'/);
@@ -162,4 +163,10 @@ test('App source wires the standalone class feedback page and existing class stu
   assert.match(appSource, /已命中 \$\{matchedLessonCount\} 节课次记录/);
   assert.match(appSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
   assert.match(appSource, /<ClassFeedbackGenerationWorkspace/);
+});
+
+test('App source no longer renders the class feedback intro hero section', () => {
+  assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.3em\] text-sky-600">Stage Feedback<\/p>/);
+  assert.doesNotMatch(appSource, /<h3 className=\{`\$\{workspaceSectionTitleClass\} mt-3`\}>课堂反馈<\/h3>/);
+  assert.doesNotMatch(appSource, /选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。/);
 });

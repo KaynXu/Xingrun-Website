@@ -1,5 +1,28 @@
 ## 错题工作区统计与权限范围已调整（2026-04-09）
 
+## 课堂反馈页移除冗余“新增学生”入口（2026-04-09）
+
+### 已完成
+- 已移除“课堂反馈”tab 工作台内的“补充学生 / 新增学生”入口。
+- 当前学生新增入口只保留在独立学生管理页面，避免重复入口。
+- `ClassFeedbackGenerationWorkspace` 已删除新增学生表单与 `onAddStudent` 接口。
+- `App.tsx` 已删除课堂反馈页内对应的 `handleAddStudent` 接线。
+- 当班级暂无学生时，提示文案已改为引导去学生管理页面添加学生。
+- 已补前端回归断言，覆盖：
+  - 工作台不再渲染“补充学生 / 新增学生”
+  - App 不再向课堂反馈工作台传 `onAddStudent`
+
+### proof
+- 临时脚本：`/tmp/xingrun-class-feedback-proof-20260409.sh`
+- 完整输出结论：
+  - Frontend: `tests 6` / `pass 6` / `fail 0`
+
+### 剩余问题
+- 无。
+
+### 下一步方向
+- 如需继续收口，可再做一次课堂反馈页人工点击验证，确认空班级提示与学生管理页路径文案符合预期。
+
 ### 已完成
 - 错题工作区顶部四个统计卡已调整为：
   - `错题总数`
@@ -335,6 +358,42 @@
 - 按 plan 进入实现
 
 ## 复习计划异步生成方案已确认（2026-04-09）
+
+## 课堂反馈页顶部介绍 section 已移除（2026-04-09）
+
+### 已完成
+- 已移除课堂反馈页顶部带 `Stage Feedback / 课堂反馈` 标题和说明文案的整块介绍 section。
+- 保留了原有功能入口，但改成无标题的紧凑控制栏：
+  - 班级选择
+  - 开始日期 / 结束日期
+  - 创建反馈任务
+  - 刷新任务
+- 已补前端源码级回归断言，覆盖：
+  - `App.tsx` 不再渲染该介绍 section 的标题与说明文案
+
+### proof
+- 临时脚本：`/tmp/xingrun-remove-class-feedback-section-proof-20260409.sh`
+- 完整输出：
+  - `✔ defaultStageLabelGroups exposes the built-in grouped labels`
+  - `✔ buildClassFeedbackConfirmPayload keeps final class summary and checked student entries`
+  - `✔ formatClassFeedbackStudentCopyText joins student feedback into a parent-friendly batch format`
+  - `✔ ClassFeedbackGenerationWorkspace renders source summary, stage notes, class summary, and student cards`
+  - `✔ ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for surfaces, fields, and buttons`
+  - `✔ App source wires the standalone class feedback page and existing class student APIs`
+  - `✔ App source no longer renders the class feedback intro hero section`
+  - `ℹ tests 7`
+  - `ℹ pass 7`
+  - `ℹ fail 0`
+
+### 剩余问题
+- 当前工作区仍有与本轮无关的未提交文件：
+  - `frontend/src/ClassFeedbackGenerationWorkspace.tsx`
+  - `data/pdfs/*`
+  - `docs/superpowers/plans/2026-04-02-review-generation-teacher-feedback-progress.md`
+- 本轮未扩 scope 处理这些文件。
+
+### 下一步方向
+- 如果还想继续收口课堂反馈页，可以再指定是否要把当前这条紧凑控制栏也继续往下合并进工作台头部。
 
 ### 已完成
 - 已和用户确认复习计划改造方向：不长期回退到 `gpt-4o`，改为保留 `n1n/gpt-5.4` 质量、把生成链路异步化。
