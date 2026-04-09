@@ -622,6 +622,38 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         fetch_wrong_question_record.assert_not_called()
         save_wrong_question_review.assert_not_called()
 
+    @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
+    def test_local_wrong_question_review_can_update_question_text(self, _mock_rebuild):
+        owner_payload = self.login_owner()
+        record = self.create_local_wechat_record(owner_payload["user"]["id"])
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='原始 AI 文本',
+                    question_text_source='ai'
+                WHERE id=?
+                """,
+                (record["id"],),
+            )
+
+        response = self.client.put(
+            f"/api/wrong-questions/{record['id']}/review",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "teacher_comment": "老师备注",
+                "status": "reviewed",
+                "question_text": "老师修正后的题目文本",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        saved = response.get_json()["record"]
+        self.assertEqual(saved["question_text"], "老师修正后的题目文本")
+        self.assertEqual(saved["question_text_source"], "teacher")
+        self.assertEqual(saved["student_library_pdf_path"], "/tmp/student-1.pdf")
+
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_detail_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
         owner_payload = self.login_owner()

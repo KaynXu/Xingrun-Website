@@ -310,6 +310,58 @@ def _render_item(item: dict, styles: dict, show_answers: bool = False) -> list:
     return result
 
 
+def generate_student_wrong_question_library_pdf(
+    *,
+    student_name: str,
+    class_name: str,
+    records: list[dict],
+    output_path: str,
+) -> str:
+    _ensure_fonts()
+    styles = _make_styles()
+    destination = Path(output_path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(destination),
+        pagesize=A4,
+        leftMargin=LM,
+        rightMargin=RM,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        title=f"{student_name} 错题库",
+    )
+
+    story = [
+        _spacer(0.4),
+        Paragraph(f"{html.escape(student_name)} 错题库", styles["title"]),
+        Paragraph(f"班级：{html.escape(class_name)}", styles["meta"]),
+        Paragraph(f"错题总数：{len(records)}", styles["meta"]),
+        HRFlowable(width=CONTENT_W, thickness=1.2, color=C_DAY1, spaceAfter=10),
+    ]
+
+    for index, record in enumerate(records, start=1):
+        if index > 1:
+            story.append(PageBreak())
+        story.append(Paragraph(f"第 {index} 题", styles["section"]))
+        story.append(Paragraph(f"上传时间：{html.escape(str(record.get('created_at') or ''))}", styles["body"]))
+        story.append(Paragraph(f"老师：{html.escape(str(record.get('teacher_display_name') or ''))}", styles["body"]))
+        if record.get("is_geometry"):
+            story.append(Paragraph("题目内容：几何题按图片入库", styles["body"]))
+        else:
+            story.append(
+                Paragraph(
+                    f"题目内容：{_normalize_blanks(str(record.get('question_text') or ''))}",
+                    styles["body"],
+                )
+            )
+        story.append(Paragraph(f"家长备注：{html.escape(str(record.get('parent_note') or '无'))}", styles["body"]))
+        story.append(Paragraph(f"老师备注：{html.escape(str(record.get('teacher_comment') or '无'))}", styles["body"]))
+
+    doc.build(story)
+    return str(destination)
+
+
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────
 def _render_day1(day_data: dict, styles: dict, bg: colors.Color,
                  border: colors.Color, show_answers: bool = False) -> list:

@@ -255,5 +255,57 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(row["archive_status"], "active")
         self.assertEqual(row["archived_at"], "")
 
+    def test_wrong_question_submission_stores_recognition_and_library_fields(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            parent_note="这题又错了",
+            recognition_status="recognized",
+            is_geometry=False,
+            question_text="计算 $2+3\\times4$ 的结果。",
+            question_text_source="ai",
+            student_library_pdf_path="/tmp/student-1.pdf",
+        )
+
+        self.assertEqual(submission["recognition_status"], "recognized")
+        self.assertEqual(submission["is_geometry"], 0)
+        self.assertEqual(submission["question_text"], "计算 $2+3\\times4$ 的结果。")
+        self.assertEqual(submission["question_text_source"], "ai")
+        self.assertEqual(submission["student_library_pdf_path"], "/tmp/student-1.pdf")
+
+    def test_update_local_question_text_marks_teacher_source(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            recognition_status="recognized",
+            is_geometry=False,
+            question_text="原始 AI 文本",
+            question_text_source="ai",
+        )
+
+        updated = lesson_manager.update_wechat_wrong_question_question_text(
+            submission["id"],
+            question_text="老师修正后的题目文本",
+            student_library_pdf_path="/tmp/student-1.pdf",
+        )
+
+        self.assertEqual(updated["question_text"], "老师修正后的题目文本")
+        self.assertEqual(updated["question_text_source"], "teacher")
+        self.assertEqual(updated["question_text_edited"], 1)
+        self.assertEqual(updated["student_library_pdf_path"], "/tmp/student-1.pdf")
+
 if __name__ == "__main__":
     unittest.main()

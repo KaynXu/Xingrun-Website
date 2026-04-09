@@ -26,6 +26,8 @@ from typing import Optional, Set
 from flask import Flask, abort, redirect, request, send_file, jsonify
 from flask_cors import CORS
 from config_runtime import env_controlled_keys, get_runtime_config, load_file_config, write_file_config
+import ai_processor
+import pdf_engine
 
 # ─── 路径 ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -51,6 +53,7 @@ logger = logging.getLogger(__name__)
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
     actor_can_manage_user,
+    attach_student_library_pdf_path,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -102,6 +105,7 @@ from lesson_manager import (
     list_organizations,
     list_organization_requests,
     list_parent_student_bindings_for_openid,
+    list_student_wrong_question_library_records,
     list_students_for_class,
     list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
@@ -132,6 +136,7 @@ from lesson_manager import (
     set_wechat_wrong_question_archive_status,
     get_wechat_wrong_question_submission,
     save_wechat_wrong_question_review,
+    update_wechat_wrong_question_question_text,
     update_user_display_name_for_actor,
     update_class,
     update_consultation,
@@ -1926,6 +1931,15 @@ def api_wrong_question_review_save(record_id):
         saved_record = save_wechat_wrong_question_review(record_id, request.json or {})
         if not saved_record:
             return jsonify({"error": "not found"}), 404
+        question_text = str(((request.json or {}).get("question_text") or "")).strip()
+        if question_text and not local_record.get("is_geometry"):
+            saved_record = update_wechat_wrong_question_question_text(
+                record_id,
+                question_text=question_text,
+                student_library_pdf_path=str(local_record.get("student_library_pdf_path") or ""),
+            )
+            pdf_path = _rebuild_student_wrong_question_library(local_record["student_id"])
+            saved_record = attach_student_library_pdf_path(record_id, pdf_path)
         return jsonify({"ok": True, "record": saved_record})
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
@@ -2362,6 +2376,25 @@ def api_wechat_bindings_list():
     return jsonify({"bindings": list_parent_student_bindings_for_openid(open_id)})
 
 
+def _student_wrong_question_library_path(student_id: int) -> Path:
+    library_dir = PDF_DIR / "wrong_question_libraries"
+    library_dir.mkdir(parents=True, exist_ok=True)
+    return library_dir / f"student-{student_id}.pdf"
+
+
+def _rebuild_student_wrong_question_library(student_id: int) -> str:
+    records = list_student_wrong_question_library_records(student_id)
+    if not records:
+        raise ValueError("student wrong question library has no records")
+    output_path = _student_wrong_question_library_path(student_id)
+    return pdf_engine.generate_student_wrong_question_library_pdf(
+        student_name=str(records[0].get("student_name") or ""),
+        class_name=str(records[0].get("class_display_name") or ""),
+        records=records,
+        output_path=str(output_path),
+    )
+
+
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
 def api_wechat_wrong_questions_create():
     _, error = _require_wechat_service()
@@ -2386,6 +2419,13 @@ def api_wechat_wrong_questions_create():
         return jsonify({"error": "binding not found"}), 404
 
     try:
+        recognition = ai_processor.recognize_wrong_question_image(image_url)
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 422
+    except Exception as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 502
+
+    try:
         record = create_wechat_wrong_question_submission(
             binding_id=binding_id,
             image_url=image_url,
@@ -2394,13 +2434,30 @@ def api_wechat_wrong_questions_create():
             child_reason_input_mode=(data.get("child_reason_input_mode") or "text").strip(),
             primary_error_type=(data.get("primary_error_type") or "").strip(),
             secondary_error_summary=(data.get("secondary_error_summary") or "").strip(),
+            recognition_status="recognized",
+            is_geometry=bool(recognition.get("is_geometry")),
+            question_text=str(recognition.get("question_text") or ""),
+            question_text_source="ai",
         )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    return jsonify({"record": record}), 201
+    try:
+        pdf_path = _rebuild_student_wrong_question_library(binding["student_id"])
+        record = attach_student_library_pdf_path(record["id"], pdf_path)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM wrong_question_submissions WHERE id=?", (record["id"],))
+        return jsonify({"error": str(exc), "retryable": True}), 502
+
+    return jsonify(
+        {
+            "record": record,
+            "student_library_pdf_url": f"/api/wechat/student-libraries/{binding['student_id']}",
+        }
+    ), 201
 
 
 @app.route("/api/wechat/children/<int:student_id>/wrong-questions", methods=["GET"])
@@ -2426,6 +2483,44 @@ def api_wechat_child_wrong_questions(student_id):
         student_id=student_id,
     )
     return jsonify({"items": items, "total": len(items)})
+
+
+@app.route("/api/wechat/children/<int:student_id>/wrong-question-library", methods=["GET"])
+def api_wechat_child_wrong_question_library(student_id):
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    binding = get_parent_student_binding_for_student(account["id"], student_id)
+    if not binding:
+        return jsonify({"error": "binding not found"}), 404
+
+    items = list_student_wrong_question_library_records(student_id)
+    latest_updated_at = str(items[-1].get("updated_at") or "") if items else ""
+    return jsonify(
+        {
+            "student_id": student_id,
+            "pdf_url": f"/api/wechat/student-libraries/{student_id}",
+            "updated_at": latest_updated_at,
+            "total_items": len(items),
+        }
+    )
+
+
+@app.route("/api/wechat/student-libraries/<int:student_id>", methods=["GET"])
+def api_wechat_student_library_pdf(student_id):
+    pdf_path = _student_wrong_question_library_path(student_id)
+    if not pdf_path.exists():
+        return jsonify({"error": "student library pdf not found"}), 404
+    return send_file(pdf_path, mimetype="application/pdf", download_name=pdf_path.name)
 
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])

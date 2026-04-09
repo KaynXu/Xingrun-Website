@@ -102,6 +102,78 @@ def _get_whisper_client():
     return OpenAI(api_key=key)
 
 
+WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
+你需要判断上传图片是否属于几何题或几何体题，并为非几何题提取可直接进入错题库的题目文本。
+只返回 JSON，不要输出额外解释。
+返回字段必须包含：
+- is_geometry: boolean
+- question_text: string
+- confidence: string
+- notes: string
+如果是几何题，question_text 返回空字符串。
+如果不是几何题但无法可靠识别题目文本，也要如实返回空字符串，并在 notes 里说明原因。"""
+
+_WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
+    "",
+    "无法识别",
+    "看不清",
+    "题目缺失",
+    "无法看清",
+    "识别失败",
+}
+
+
+def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
+    is_geometry = bool(payload.get("is_geometry"))
+    question_text = str(payload.get("question_text") or "").strip()
+    confidence = str(payload.get("confidence") or "").strip()
+    notes = str(payload.get("notes") or "").strip()
+
+    if is_geometry:
+        return {
+            "is_geometry": True,
+            "question_text": "",
+            "confidence": confidence,
+            "notes": notes,
+        }
+
+    normalized_text = re.sub(r"\s+", " ", question_text)
+    if normalized_text in _WRONG_QUESTION_TEXT_FAILURE_MARKERS or len(normalized_text) < 6:
+        raise ValueError("题目识别失败，请重新识别")
+
+    return {
+        "is_geometry": False,
+        "question_text": normalized_text,
+        "confidence": confidence,
+        "notes": notes,
+    }
+
+
+def recognize_wrong_question_image(image_url: str) -> dict:
+    normalized_image_url = str(image_url or "").strip()
+    if not normalized_image_url:
+        raise ValueError("image_url is required")
+
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_RECOGNITION_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "请判断这道错题是否属于几何题，并提取非几何题题目文本。"},
+                    {"type": "image_url", "image_url": {"url": normalized_image_url}},
+                ],
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    payload = json.loads(response.choices[0].message.content or "{}")
+    return _normalize_wrong_question_recognition_result(payload)
+
+
 # ─── 生成复习计划的提示词 ───────────────────────────────────────────────────────
 PLAN_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师，擅长把课堂反馈整理成高质量课后复习计划。
 你将收到课堂总结与元信息，必须返回一个可直接用于 PDF 生成的结构化 JSON。

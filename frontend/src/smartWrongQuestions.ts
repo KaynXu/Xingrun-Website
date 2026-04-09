@@ -19,6 +19,18 @@ export interface WrongQuestionReviewDraft {
   studentNote: string;
   teacherComment: string;
   reviewStatus: string;
+  questionText?: string;
+}
+
+export interface WrongQuestionReviewPayload {
+  selectedErrorType: string;
+  selectedKnowledgePoints: string[];
+  selectedActions: string[];
+  selectedReasons: string[];
+  studentNote: string;
+  teacherComment: string;
+  reviewStatus: string;
+  question_text?: string;
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
@@ -27,6 +39,11 @@ export interface WrongQuestionRecord {
   id: string;
   roomId: string;
   source: string;
+  recognitionStatus?: string;
+  isGeometry?: boolean;
+  questionText?: string;
+  questionTextSource?: string;
+  studentLibraryPdfPath?: string;
   studentName: string;
   className: string;
   classNameSnapshot: string;
@@ -213,8 +230,20 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const teacherNameSnapshot = pickStringValue(source, ['teacherNameSnapshot', 'teacher_name_snapshot', 'teacherName', 'teacher_name']) || teacherName;
   const normalizedSource = pickStringValue(source, ['source']) || 'downstream';
   const normalizedReviewStatus = pickStringValue(source, ['status']) || (normalizedSource === 'wechat_mp' ? 'pending' : '');
+  const recognitionStatus = pickStringValue(source, ['recognitionStatus', 'recognition_status']);
+  const questionText = pickStringValue(source, ['questionText', 'question_text']);
+  const questionTextSource = pickStringValue(source, ['questionTextSource', 'question_text_source']);
+  const studentLibraryPdfPath = pickStringValue(source, ['studentLibraryPdfPath', 'student_library_pdf_path']);
+  const rawIsGeometry = source.isGeometry ?? source.is_geometry;
+  const isGeometry = typeof rawIsGeometry === 'boolean'
+    ? rawIsGeometry
+    : typeof rawIsGeometry === 'number'
+      ? rawIsGeometry !== 0
+      : typeof rawIsGeometry === 'string'
+        ? ['1', 'true', 'yes'].includes(rawIsGeometry.trim().toLowerCase())
+        : undefined;
 
-  return {
+  const record: WrongQuestionRecord = {
     id: typeof rawId === 'string' || typeof rawId === 'number' ? String(rawId) : `wrong-question-${fallbackIndex}`,
     roomId: pickStringValue(source, ['roomId', 'room_id']),
     source: normalizedSource,
@@ -234,6 +263,28 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     reviewStatus: normalizedReviewStatus,
     analysis: normalizeWrongQuestionAnalysis(source.analysis),
   };
+
+  if (recognitionStatus) {
+    record.recognitionStatus = recognitionStatus;
+  }
+
+  if (typeof isGeometry === 'boolean') {
+    record.isGeometry = isGeometry;
+  }
+
+  if (questionText) {
+    record.questionText = questionText;
+  }
+
+  if (questionTextSource) {
+    record.questionTextSource = questionTextSource;
+  }
+
+  if (studentLibraryPdfPath) {
+    record.studentLibraryPdfPath = studentLibraryPdfPath;
+  }
+
+  return record;
 }
 
 function normalizeDraftList(values: string[]): string[] {
@@ -243,7 +294,7 @@ function normalizeDraftList(values: string[]): string[] {
 }
 
 export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
-  return {
+  const draft: WrongQuestionReviewDraft = {
     selectedErrorType: record.analysis.selectedErrorType?.trim() ?? '',
     selectedKnowledgePoints: normalizeDraftList(record.analysis.selectedKnowledgePoints ?? []),
     selectedActions: normalizeDraftList(record.analysis.selectedActions ?? []),
@@ -252,10 +303,16 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     teacherComment: record.teacherComment.trim(),
     reviewStatus: record.reviewStatus.trim() || (isWechatMiniProgramWrongQuestionRecord(record) ? 'pending' : ''),
   };
+
+  if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
+    draft.questionText = record.questionText?.trim() ?? '';
+  }
+
+  return draft;
 }
 
-export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft): WrongQuestionReviewDraft {
-  return {
+export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft): WrongQuestionReviewPayload {
+  const payload: WrongQuestionReviewPayload = {
     selectedErrorType: draft.selectedErrorType.trim(),
     selectedKnowledgePoints: normalizeDraftList(draft.selectedKnowledgePoints),
     selectedActions: normalizeDraftList(draft.selectedActions),
@@ -264,6 +321,12 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
     teacherComment: draft.teacherComment.trim(),
     reviewStatus: draft.reviewStatus.trim(),
   };
+
+  if (typeof draft.questionText === 'string') {
+    payload.question_text = draft.questionText.trim();
+  }
+
+  return payload;
 }
 
 export function hydrateWrongQuestionReviewDraftFromDetail(
@@ -318,6 +381,7 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     ...record,
     teacherComment: payload.teacherComment,
     reviewStatus: payload.reviewStatus || record.reviewStatus,
+    questionText: typeof payload.question_text === 'string' ? payload.question_text : record.questionText,
     analysis: nextAnalysis,
   };
 }

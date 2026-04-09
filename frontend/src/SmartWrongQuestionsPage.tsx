@@ -134,8 +134,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
+  const reviewDraftByRecordIdRef = useRef<Record<string, WrongQuestionReviewDraft>>({});
+  const wechatQuestionTextRef = useRef<HTMLTextAreaElement | null>(null);
+  const wechatTeacherCommentRef = useRef<HTMLTextAreaElement | null>(null);
   const recordsRef = useRef(records);
   recordsRef.current = records;
+
+  useEffect(() => {
+    reviewDraftByRecordIdRef.current = reviewDraftByRecordId;
+  }, [reviewDraftByRecordId]);
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -255,10 +262,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         return current;
       }
 
-      return {
+      const nextDrafts = {
         ...current,
         [selectedRecord.id]: buildWrongQuestionReviewDraft(selectedRecord),
       };
+      reviewDraftByRecordIdRef.current = nextDrafts;
+      return nextDrafts;
     });
   }, [reviewDraftDirtyByRecordId, selectedRecord, updateDraftDirtyState]);
 
@@ -287,15 +296,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         }
 
         const detailRecord = normalizeWrongQuestionRecord(response);
-        const hasLocalEdits = Boolean(reviewDraftDirtyByRecordIdRef.current[detailRecord.id]);
         setRecords((current) => current.map((item) => item.id === detailRecord.id ? detailRecord : item));
         setServerSummary(null);
         setReviewDraftByRecordId((current) => {
-          return {
+          const hasLocalEdits = Boolean(reviewDraftDirtyByRecordIdRef.current[detailRecord.id]);
+          const nextDrafts = {
             ...current,
             [detailRecord.id]: hydrateWrongQuestionReviewDraftFromDetail(detailRecord, current[detailRecord.id], hasLocalEdits),
           };
+          reviewDraftByRecordIdRef.current = nextDrafts;
+          return nextDrafts;
         });
+        const hasLocalEdits = Boolean(reviewDraftDirtyByRecordIdRef.current[detailRecord.id]);
         if (!hasLocalEdits) {
           updateDraftDirtyState(detailRecord.id, false);
         }
@@ -330,18 +342,23 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
-    setReviewDraftByRecordId((current) => ({
-      ...current,
-      [selectedRecord.id]: {
-        ...(current[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord)),
-        [key]: value,
-      },
-    }));
+    setReviewDraftByRecordId((current) => {
+        const nextDrafts = {
+          ...current,
+          [selectedRecord.id]: {
+            ...(current[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord)),
+            [key]: value,
+          },
+        };
+        reviewDraftByRecordIdRef.current = nextDrafts;
+        return nextDrafts;
+      });
     updateDraftDirtyState(selectedRecord.id, true);
   };
 
   const handleSaveReview = async () => {
-    if (!selectedRecord || !selectedDraft) {
+    const latestDraft = selectedRecord ? reviewDraftByRecordIdRef.current[selectedRecord.id] ?? selectedDraft : null;
+    if (!selectedRecord || !latestDraft) {
       return;
     }
 
@@ -349,7 +366,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setSaveError('');
 
     try {
-      const payload = buildWrongQuestionReviewPayload(selectedDraft);
+      const payload = buildWrongQuestionReviewPayload(latestDraft);
+      if (selectedRecord.source === 'wechat_mp') {
+        payload.teacherComment = wechatTeacherCommentRef.current?.value.trim() ?? payload.teacherComment;
+        if (!selectedRecord.isGeometry) {
+          payload.question_text = wechatQuestionTextRef.current?.value.trim() ?? payload.question_text;
+        }
+      }
       const response = await apiFetch<unknown>(buildWrongQuestionReviewPath(selectedRecord.id, selectedRecord.roomId), {
         method: 'PUT',
         body: JSON.stringify(payload),
@@ -362,10 +385,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
       setRecords((current) => current.map((item) => item.id === selectedRecord.id ? nextRecord : item));
       setServerSummary(null);
-      setReviewDraftByRecordId((current) => ({
-        ...current,
-        [selectedRecord.id]: buildWrongQuestionReviewDraft(nextRecord),
-      }));
+      setReviewDraftByRecordId((current) => {
+        const nextDrafts = {
+          ...current,
+          [selectedRecord.id]: buildWrongQuestionReviewDraft(nextRecord),
+        };
+        reviewDraftByRecordIdRef.current = nextDrafts;
+        return nextDrafts;
+      });
       updateDraftDirtyState(selectedRecord.id, false);
     } catch (saveReviewError) {
       setSaveError(saveReviewError instanceof Error ? saveReviewError.message : '智能错题保存失败');
@@ -384,6 +411,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
+  const showWechatQuestionTextEditor = Boolean(
+    selectedDraft
+    && selectedRecord
+    && selectedRecord.source === 'wechat_mp'
+    && !selectedRecord.isGeometry,
+  );
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
@@ -752,6 +785,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       </div>
 
                       <div className="grid gap-4 sm:grid-cols-2">
+                        {showWechatQuestionTextEditor && (
+                          <label className="space-y-2 text-sm sm:col-span-2">
+                            <span className="text-slate-500 dark:text-slate-400">题目文本</span>
+                            <textarea
+                              ref={wechatQuestionTextRef}
+                              value={selectedDraft.questionText ?? ''}
+                              onInput={(event) => handleDraftChange('questionText', event.currentTarget.value)}
+                              className={`${workspaceFieldClass} min-h-28 resize-y`}
+                              placeholder="填写可直接进入错题库 PDF 的题目文本"
+                            />
+                          </label>
+                        )}
                         <label className="space-y-2 text-sm">
                           <span className="text-slate-500 dark:text-slate-400">处理状态</span>
                           <select
@@ -766,8 +811,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         <label className="space-y-2 text-sm sm:col-span-2">
                           <span className="text-slate-500 dark:text-slate-400">老师处理备注</span>
                           <textarea
+                            ref={wechatTeacherCommentRef}
                             value={selectedDraft.teacherComment}
-                            onChange={(event) => handleDraftChange('teacherComment', event.target.value)}
+                            onInput={(event) => handleDraftChange('teacherComment', event.currentTarget.value)}
                             className={`${workspaceFieldClass} min-h-28 resize-y`}
                             placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"
                           />

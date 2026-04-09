@@ -722,6 +722,23 @@ test('normalizeWrongQuestionRecord keeps wechat mini-program review fields for l
   assert.equal(isWechatMiniProgramWrongQuestionRecord(normalized), true);
 });
 
+test('normalizeWrongQuestionRecord keeps local recognition fields', () => {
+  const normalized = normalizeWrongQuestionRecord({
+    id: 'wechat-record-2',
+    source: 'wechat_mp',
+    recognition_status: 'recognized',
+    is_geometry: 0,
+    question_text: '计算 2+3×4 的结果。',
+    question_text_source: 'ai',
+    student_library_pdf_path: '/api/wechat/student-libraries/1',
+  });
+
+  assert.equal(normalized.recognitionStatus, 'recognized');
+  assert.equal(normalized.isGeometry, false);
+  assert.equal(normalized.questionText, '计算 2+3×4 的结果。');
+  assert.equal(normalized.studentLibraryPdfPath, '/api/wechat/student-libraries/1');
+});
+
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
@@ -756,6 +773,14 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /后续练习建议/);
   assert.match(pageSource, /原因分析/);
   assert.match(pageSource, /教师备注/);
+});
+
+test('SmartWrongQuestionsPage source exposes editable question text for local non-geometry records', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /题目文本/);
+  assert.match(pageSource, /填写可直接进入错题库 PDF 的题目文本/);
+  assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
 });
 
 test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unresolved mapping warning', async () => {
@@ -1161,6 +1186,161 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
       assert.match(pageText, /班级：六年级 1 班/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
       assert.match(pageText, /映射状态：待确认映射/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage lets teachers edit local non-geometry question text', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'wechat-record-edit',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_display_name: '六年级 1 班',
+              subject: '数学',
+              teacher_display_name: 'Kayn',
+              created_at: '2026-03-29T08:00:00Z',
+              recognition_status: 'recognized',
+              is_geometry: 0,
+              question_text: '原始 AI 文本',
+              question_text_source: 'ai',
+              student_library_pdf_path: '/api/wechat/student-libraries/1',
+              parent_note: '孩子订正后还是不会',
+              teacher_comment: '',
+              status: 'pending',
+              analysis: {},
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/wechat-record-edit' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'wechat-record-edit',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_display_name: '六年级 1 班',
+          subject: '数学',
+          teacher_display_name: 'Kayn',
+          created_at: '2026-03-29T08:00:00Z',
+          recognition_status: 'recognized',
+          is_geometry: 0,
+          question_text: '原始 AI 文本',
+          question_text_source: 'ai',
+          student_library_pdf_path: '/api/wechat/student-libraries/1',
+          parent_note: '孩子订正后还是不会',
+          teacher_comment: '',
+          status: 'pending',
+          analysis: {},
+        });
+      }
+
+      if (input === '/api/wrong-questions/wechat-record-edit/review' && init?.method === 'PUT') {
+        return createJsonResponse({
+          ok: true,
+          record: {
+            id: 'wechat-record-edit',
+            source: 'wechat_mp',
+            student_name: 'Alice',
+            class_display_name: '六年级 1 班',
+            subject: '数学',
+            teacher_display_name: 'Kayn',
+            created_at: '2026-03-29T08:00:00Z',
+            recognition_status: 'recognized',
+            is_geometry: 0,
+            question_text: '老师修正后的题目文本',
+            question_text_source: 'teacher',
+            student_library_pdf_path: '/api/wechat/student-libraries/1',
+            parent_note: '孩子订正后还是不会',
+            teacher_comment: '已跟进',
+            status: 'reviewed',
+            analysis: {},
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '管理员',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /题目文本/);
+      const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+      assert.ok(textarea instanceof HTMLTextAreaElement);
+      assert.equal(textarea.value, '原始 AI 文本');
+    });
+
+    const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+    const teacherCommentTextarea = domEnvironment.container.querySelector('textarea[placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"]') as HTMLTextAreaElement | null;
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存处理结果'));
+
+    assert.ok(questionTextarea instanceof HTMLTextAreaElement);
+    assert.ok(teacherCommentTextarea instanceof HTMLTextAreaElement);
+    assert.ok(saveButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      questionTextarea.value = '老师修正后的题目文本';
+      questionTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+      teacherCommentTextarea.value = '已跟进';
+      teacherCommentTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const saveCall = fetchCalls.find((call) => call.input === '/api/wrong-questions/wechat-record-edit/review' && call.init?.method === 'PUT');
+      assert.ok(saveCall);
+      const payload = JSON.parse(String(saveCall?.init?.body));
+      assert.equal(payload.question_text, '老师修正后的题目文本');
+      assert.equal(payload.teacherComment, '已跟进');
     });
   } finally {
     if (root) {

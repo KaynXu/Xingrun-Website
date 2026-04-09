@@ -1,3 +1,186 @@
+## 智能错题学生级错题库实现完成（2026-04-09）
+
+### 已完成
+- 本地微信错题上传已改为“先识别，后入库”，非几何题识别失败会直接阻止入库。
+- `wrong_question_submissions` 已补齐识别状态、几何标记、题目文本、文本来源、学生错题库 PDF 路径等字段，并支持老师改题目文本。
+- 网站后端已支持按学生重建固定路径错题库 PDF，并新增学生错题库读取接口供网页端和小程序端共用。
+- 网页端 `智能错题` 已支持本地微信非几何题的“题目文本”编辑与保存，保存时会带上 `question_text` 并刷新本地记录草稿。
+
+### proof
+- 通过临时脚本完成定向回归：
+  - Backend: `/opt/homebrew/bin/python3 -m unittest tests.test_wechat_parent_upload_data tests.test_wrong_question_library_pdf tests.test_wechat_parent_upload_api tests.test_smart_wrong_questions_api -v`
+  - 结果：`Ran 45 tests in 1.214s`，`OK`
+  - Frontend: `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
+  - 结果：`tests 25`，`pass 25`，`fail 0`
+
+### 剩余问题
+- 定向 proof 仍会打印既有 `sqlite3.Connection` 未关闭 `ResourceWarning`，当前未扩 scope 清理测试基础设施层的连接生命周期噪音。
+- 学生错题库 PDF 现阶段已能稳定生成文本版成品，但几何题/原题图片在 PDF 中仍是第一版能力，后续如果要强化版式或嵌图细节，可单开一轮。
+
+### 下一步方向
+- 如果要继续收口本链路，优先处理 `lesson_manager.py` 相关数据库连接告警，再考虑增强学生错题库 PDF 的图片呈现质量。
+
+## 工作台重写设计已确认并写成 spec（2026-04-09）
+
+### 已完成
+- 已完成“工作台 tab 重写”设计确认，目标从“复习资料首页”切换为“多功能平台首页”。
+- 已确定采用角色驾驶舱方案，而不是轻改旧 dashboard。
+- 已固定三套角色视角：
+  - `super_owner`：跨机构总览优先
+  - `owner/admin`：机构运营概览优先
+  - `member/teacher`：快速开工入口优先
+- 已明确约束：
+  - 不伪造待办/通知等未实装能力
+  - 不以新增后端接口作为首版前置条件
+  - 不继续把三套首页逻辑堆进 `frontend/src/App.tsx`
+- 新 spec 已落盘：
+  - `docs/superpowers/specs/2026-04-09-workspace-tab-redesign-design.md`
+- 已创建隔离实现分支：`feature/workspace-tab-redesign`
+- 已创建隔离 worktree：`/Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign`
+- 已完成工作台相关前端基线测试：`tests 60 / pass 60 / fail 0`
+- 已新增 implementation plan：
+  - `docs/superpowers/plans/2026-04-09-workspace-tab-redesign-implementation.md`
+
+### proof
+- 本轮已完成设计、implementation plan 与隔离 worktree 基线验证。
+- 已对 spec 做占位符扫描，未发现 `TBD` / `TODO` / `implement later` / `fill in details`。
+- 工作台基线命令：
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/.worktrees/workspace-tab-redesign/frontend && npx tsx --test src/account-card.test.tsx src/course-calendar.test.tsx src/class-feedback-generation.test.tsx src/review-generation-async.test.tsx src/app-storage-guard.test.tsx`
+- 基线输出结论：
+  - `tests 60`
+  - `pass 60`
+  - `fail 0`
+
+### 剩余问题
+- 还未开始按 plan 落业务代码。
+- 当前主工作区仍有与本轮无关的未提交文件，但本轮实现已经切到独立 worktree，不再需要在脏主工作区上直接开发。
+
+### 下一步方向
+- 用户选择执行方式后，在 `feature/workspace-tab-redesign` worktree 内按 plan 从 Task 2 红测开始推进。
+
+## 课堂反馈周期选择 implementation plan 已写好（2026-04-09）
+
+### 已完成
+- 已新增 implementation plan：
+  - `docs/superpowers/plans/2026-04-09-class-feedback-period-selection-implementation.md`
+- 计划已按实现顺序拆成 4 个任务：
+  - store/schema 增加 `period_label` 与显式周期派生
+  - API 接受结构化周期 payload
+  - 前端创建栏切换到周期模式选择器
+  - 工作台摘要与定向 proof 收尾
+- 计划已明确保留旧 `start_date/end_date` 调用兼容，用于平滑过渡旧 `custom` 数据与旧调用方。
+
+### proof
+- 已对 plan 做自审：
+  - `TBD/TODO/implement later/fill in details` 占位词扫描为 0
+  - 计划文件与 spec 已逐段对照，四类周期、标签规则、旧 `custom` 兼容、前后端验证均已覆盖
+
+### 剩余问题
+- 还未进入代码实现。
+- 计划中的前端周范围预览与后端 ISO 周推导，落代码时需要保持完全一致，避免 UI 预览和后端入库偏移。
+
+### 下一步方向
+- 让用户选择执行方式：`Subagent-Driven` 或 `Inline Execution`。
+
+## 课堂反馈周期选择设计已确认并写成 spec（2026-04-09）
+
+### 已完成
+- 已完成“课堂反馈生成”从自由日期范围切换到显式周期模式的设计确认。
+- 新 spec 已落盘：`docs/superpowers/specs/2026-04-09-class-feedback-period-selection-design.md`
+- 设计已固定以下规则：
+  - 周期类型：`日反馈 / 周反馈 / 月反馈 / 阶段反馈`
+  - 标签格式：
+    - 日：`YYYY-MM-DD`
+    - 周：`YYYY第N周`
+    - 月：`YYYY三月`
+    - 阶段：`YYYY春季 / YYYY秋季 / YYYY寒假 / YYYY暑假`
+  - 后端保存显式 `period_granularity + period_label`
+  - 同时保留 `start_date / end_date` 作为素材命中范围
+- 已完成只读并行调研，确认当前影响面主要在：
+  - `frontend/src/App.tsx`
+  - `frontend/src/ClassFeedbackGenerationWorkspace.tsx`
+  - `frontend/src/classFeedbackGeneration.ts`
+  - `app.py`
+  - `lesson_manager.py`
+  - `frontend/src/class-feedback-generation.test.tsx`
+  - `tests/test_class_feedback_api.py`
+
+### proof
+- 本轮为设计与文档落盘，没有运行业务测试或修改业务代码。
+- 设计依据来自当前代码与相关测试的只读检查，以及 3 个并行只读 agent 的影响面分析。
+
+### 剩余问题
+- spec 已写完，但还未转成实现计划。
+- 旧 `custom` 粒度历史数据的迁移策略，在实现阶段还需要结合现网数据量决定是“兼容读取”还是“批量回填归类”。
+
+### 下一步方向
+- 等用户审阅并确认 spec 后，再写实现计划并开始 TDD 落代码。
+
+## 智能错题学生级错题库 implementation plan 已写好（2026-04-09）
+
+### 已完成
+- 已新增 implementation plan：
+  - `docs/superpowers/plans/2026-04-09-student-wrong-question-library-implementation.md`
+- 计划已拆分为 6 个任务：
+  - 数据层 recognition/library 字段落库
+  - AI 识别与学生 PDF 生成
+  - 小程序上传识别拦截与学生库接口
+  - 网页端老师改题目文本并重建 PDF
+  - 前端工作台展示与保存
+  - 后端/前端定向 proof 与 handoff 收尾
+
+### proof
+- 待用户选择执行方式后进入实现，本轮未开始代码实现 proof。
+
+### 剩余问题
+- 尚未开始按计划实现。
+
+### 下一步方向
+- 用户选择执行方式：subagent-driven 或 inline execution。
+
+## 智能错题学生级错题库设计已确认（2026-04-09）
+
+### 已完成
+- 已明确本轮产品决策：
+  - 每个学生长期只有一份固定路径的错题库 PDF
+  - 新增一题时，对外表现为“新增一页”，底层允许按全量记录重建同一路径 PDF
+  - 非几何题必须先通过 AI 提取出可信题目文本才允许入库
+  - 几何题按图片形式入库，不强制抽题目文本
+  - 非几何题识别失败时直接阻止入库，要求重新识别
+  - 网页端老师拥有修改题目文本的权限，保存后需重建学生 PDF
+  - 网页端和家长小程序端访问同一份学生级 PDF
+- 已写设计规格：
+  - `docs/superpowers/specs/2026-04-09-student-wrong-question-library-design.md`
+
+### proof
+- 待用户审阅 spec 后进入实现，本轮尚未进入代码实现 proof。
+
+### 剩余问题
+- 尚未开始 implementation plan。
+- 尚未实现本地微信错题识别字段、PDF 重建链路、老师题目文本编辑能力。
+
+### 下一步方向
+- 用户审阅并确认 spec 无误后，进入 implementation plan，再按 TDD 落地后端、PDF 与网页端改动。## member 班级范围实现计划已完成（2026-04-09）
+
+### 已完成
+- 已确认并冻结设计文档：`docs/superpowers/specs/2026-04-09-member-class-scope-design.md`
+- 已按中型改动隔离要求创建独立实现分支：`feature/member-class-scope`
+- 已创建隔离 worktree：`/Users/ark.mini/Desktop/Xingrun-Website-member-class-scope`
+- 已补实现计划文档：`docs/superpowers/plans/2026-04-09-member-class-scope-implementation.md`
+- 已核对本轮真实落点文件，避免继续沿用不存在的测试文件名
+
+### proof
+- worktree 状态：新 worktree 当前位于 `feature/member-class-scope`，启动时为干净基线
+- 前端依赖：已在隔离 worktree 安装 `frontend` 依赖
+- 计划文件已落盘：`docs/superpowers/plans/2026-04-09-member-class-scope-implementation.md`
+
+### 剩余问题
+- 本轮只完成 spec 批准后的隔离分支与实现计划，还未开始改业务代码
+- 新 worktree 的前端基线测试完整摘要未单独整理入 handoff，本轮下一步会在执行任务 1 前先跑对应目标测试
+
+### 下一步方向
+- 选择执行方式后，按实现计划从 Task 1 红测开始推进
+
 ## 错题工作区统计与权限范围已调整（2026-04-09）
 
 ## 课堂反馈页移除冗余“新增学生”入口（2026-04-09）

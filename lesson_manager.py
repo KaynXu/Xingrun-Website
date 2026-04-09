@@ -1479,6 +1479,13 @@ def init_db():
             archived_at               TEXT DEFAULT '',
             teacher_comment           TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
+            recognition_status        TEXT NOT NULL DEFAULT 'pending',
+            is_geometry               INTEGER NOT NULL DEFAULT 0,
+            question_text             TEXT NOT NULL DEFAULT '',
+            question_text_edited      INTEGER NOT NULL DEFAULT 0,
+            question_text_source      TEXT NOT NULL DEFAULT 'ai',
+            recognition_error         TEXT NOT NULL DEFAULT '',
+            student_library_pdf_path  TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -1679,6 +1686,13 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
         _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "recognition_status", "TEXT NOT NULL DEFAULT 'pending'")
+        _ensure_column(conn, "wrong_question_submissions", "is_geometry", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "question_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "question_text_edited", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
+        _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
         _drop_legacy_table_if_exists(conn, "questions")
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -4428,6 +4442,12 @@ def create_wechat_wrong_question_submission(
     child_reason_input_mode: str = "text",
     primary_error_type: str = "",
     secondary_error_summary: str = "",
+    recognition_status: str = "pending",
+    is_geometry: bool = False,
+    question_text: str = "",
+    question_text_source: str = "ai",
+    recognition_error: str = "",
+    student_library_pdf_path: str = "",
 ) -> dict:
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
@@ -4455,8 +4475,10 @@ def create_wechat_wrong_question_submission(
                 id, organization_id, source, parent_wechat_account_id, binding_id,
                 class_id, student_id, teacher_user_id, image_url, parent_note,
                 child_raw_reason_text, child_reason_input_mode,
-                primary_error_type, secondary_error_summary, archive_status, status
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending')
+                primary_error_type, secondary_error_summary, archive_status, status,
+                recognition_status, is_geometry, question_text, question_text_edited,
+                question_text_source, recognition_error, student_library_pdf_path
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 record_id,
@@ -4472,6 +4494,12 @@ def create_wechat_wrong_question_submission(
                 normalized_reason_input_mode,
                 (primary_error_type or "").strip(),
                 (secondary_error_summary or "").strip(),
+                (recognition_status or "pending").strip() or "pending",
+                1 if is_geometry else 0,
+                (question_text or "").strip(),
+                (question_text_source or "ai").strip() or "ai",
+                (recognition_error or "").strip(),
+                (student_library_pdf_path or "").strip(),
             ),
         )
         created = conn.execute(
@@ -4479,6 +4507,36 @@ def create_wechat_wrong_question_submission(
             (record_id,),
         ).fetchone()
     return dict(created) if created else {}
+
+
+def update_wechat_wrong_question_question_text(
+    record_id: str,
+    *,
+    question_text: str,
+    student_library_pdf_path: str,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET question_text=?,
+                question_text_edited=1,
+                question_text_source='teacher',
+                student_library_pdf_path=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                (question_text or "").strip(),
+                (student_library_pdf_path or "").strip(),
+                record_id,
+            ),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
 
 
 def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> Optional[dict]:
@@ -4579,6 +4637,48 @@ def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(row)
+
+
+def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.student_id=?
+              AND wqs.source='wechat_mp'
+              AND wqs.recognition_status='recognized'
+              AND wqs.archive_status='active'
+            ORDER BY wqs.created_at ASC, wqs.id ASC
+            """,
+            (student_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET student_library_pdf_path=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            ((pdf_path or "").strip(), record_id),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
 
 
 def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str) -> Optional[dict]:
