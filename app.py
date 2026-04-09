@@ -2797,6 +2797,18 @@ def api_class_feedback_labels_put():
     return jsonify({"groups": list_class_feedback_label_configs(user["id"])})
 
 
+def _normalize_created_class_feedback_task_response(task: dict) -> dict:
+    response = dict(task)
+    if response.get("period_granularity") == "weekly":
+        try:
+            period_start = date.fromisoformat(str(response.get("start_date") or ""))
+        except ValueError:
+            return response
+        iso_year, iso_week, _ = period_start.isocalendar()
+        response["period_label"] = f"{iso_year}第{iso_week}周"
+    return response
+
+
 @app.route("/api/class-feedback/tasks", methods=["POST"])
 def api_class_feedback_task_create():
     user, error = _require_auth()
@@ -2815,6 +2827,15 @@ def api_class_feedback_task_create():
 
     start_date = str(data.get("start_date") or "").strip()
     end_date = str(data.get("end_date") or "").strip()
+    period_granularity = str(data.get("period_granularity") or "").strip()
+    anchor_date = str(data.get("anchor_date") or "").strip()
+    year = data.get("year")
+    week = data.get("week")
+    month = data.get("month")
+    stage_name = str(data.get("stage_name") or "").strip()
+    if not period_granularity and start_date and start_date == end_date:
+        period_granularity = "daily"
+        anchor_date = anchor_date or start_date
     teacher_name_snapshot = (
         str(cls.get("teacher_name") or "").strip()
         or str(user.get("display_name") or "").strip()
@@ -2829,13 +2850,19 @@ def api_class_feedback_task_create():
             teacher_name_snapshot=teacher_name_snapshot,
             start_date=start_date,
             end_date=end_date,
+            period_granularity=period_granularity or None,
+            anchor_date=anchor_date or None,
+            year=year,
+            week=week,
+            month=month,
+            stage_name=stage_name or None,
             created_by=user["id"],
         )
     except LookupError:
         return jsonify({"error": "not found"}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(task), 201
+    return jsonify(_normalize_created_class_feedback_task_response(task)), 201
 
 
 @app.route("/api/class-feedback/tasks/<int:task_id>", methods=["GET"])

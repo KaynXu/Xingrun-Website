@@ -1,3 +1,24 @@
+## 课堂反馈周期选择 Task 2 已完成（2026-04-09）
+
+### 已完成
+- `app.py` 的 `POST /api/class-feedback/tasks` 已接受结构化周期 payload：`period_granularity`、`anchor_date`、`year`、`week`、`month`、`stage_name`。
+- 保留旧 `start_date/end_date` 调用兼容；当旧 payload 是单日范围时，API 现在按 `daily` 归一化返回，维持现有分支测试预期。
+- create 路由保持原有认证、班级访问控制、教师快照行为不变。
+- 新增 API 回归测试覆盖：
+  - 周反馈结构化 payload 创建成功
+  - 非法 `stage_name` 返回 400 且报错包含 `stage_name`
+  - 旧单日 `start_date/end_date` payload 继续兼容
+
+### proof
+- 临时脚本执行：`/opt/homebrew/bin/python3 -m unittest tests.test_class_feedback_api -v`
+- 结果：`Ran 13 tests in 0.373s`，`OK`
+
+### 剩余问题
+- 定向测试仍会打印既有 `sqlite3.Connection` 未关闭 `ResourceWarning`；本轮未扩 scope 处理测试基础设施层连接生命周期。
+
+### 下一步方向
+- 可继续进入 Task 3，处理前端周期选择器与前后端标签展示对齐。
+
 ## Task 5 已完成 super_owner 平台总览（2026-04-09）
 
 ### 已完成
