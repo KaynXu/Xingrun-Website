@@ -105,6 +105,10 @@ start.bat
 - `XR_WRONG_QUESTION_SERVICE_URL`
 - `XR_WRONG_QUESTION_SERVICE_TOKEN`
 
+说明：
+- 默认数据库真相源固定为 `data/xingrun.db`
+- 只有显式设置 `XR_DB_PATH` 或 `config.json` 里的 `db_path` 时，才会改用其他 SQLite 文件
+
 ## 5. 测试与构建
 
 ### 5.1 后端测试

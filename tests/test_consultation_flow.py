@@ -20,7 +20,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
 
-        lesson_manager.DB_PATH = self.base / "lessons.db"
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
         lesson_manager.CONSULTATION_TEACHERS_JSON_CANDIDATES = [self.base / "teachers.json"]
 
         config_runtime.CFG_PATH = self.base / "config.json"

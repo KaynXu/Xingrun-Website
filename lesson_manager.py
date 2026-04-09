@@ -36,7 +36,6 @@ BASE_DIR   = Path(__file__).parent.resolve()
 DATA_DIR   = BASE_DIR / "data"
 PDF_DIR    = DATA_DIR / "pdfs"
 DEFAULT_DB_PATH = DATA_DIR / "xingrun.db"
-LEGACY_DB_PATH = DATA_DIR / "lessons.db"
 CFG_PATH   = BASE_DIR / "config.json"
 DEFAULT_ORGANIZATION_NAME = "星润Starain"
 OWNER_USERNAME = "kayn"
@@ -171,13 +170,7 @@ def resolve_db_path(
     if configured_path is not None:
         return configured_path
 
-    preferred_path = data_dir / DEFAULT_DB_PATH.name
-    legacy_path = data_dir / LEGACY_DB_PATH.name
-    if preferred_path.exists():
-        return preferred_path
-    if legacy_path.exists():
-        return legacy_path
-    return preferred_path
+    return data_dir / DEFAULT_DB_PATH.name
 
 
 DB_PATH = resolve_db_path()

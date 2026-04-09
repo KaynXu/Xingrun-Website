@@ -42,9 +42,8 @@ class DatabasePathResolutionTestCase(unittest.TestCase):
 
         self.assertEqual(resolved, preferred_path)
 
-    def test_falls_back_to_legacy_lessons_db_when_needed(self):
-        legacy_path = self.data_dir / "lessons.db"
-        legacy_path.write_text("", encoding="utf-8")
+    def test_ignores_legacy_lessons_db_when_selecting_default_path(self):
+        (self.data_dir / "lessons.db").write_text("", encoding="utf-8")
 
         resolved = lesson_manager.resolve_db_path(
             runtime_config={},
@@ -52,7 +51,7 @@ class DatabasePathResolutionTestCase(unittest.TestCase):
             data_dir=self.data_dir,
         )
 
-        self.assertEqual(resolved, legacy_path)
+        self.assertEqual(resolved, self.data_dir / "xingrun.db")
 
     def test_uses_xingrun_db_for_fresh_install(self):
         resolved = lesson_manager.resolve_db_path(

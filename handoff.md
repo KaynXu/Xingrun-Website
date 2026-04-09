@@ -1,3 +1,44 @@
+## DB 分支收口：batch3 已合入 develop，org-rooted 已在 develop（2026-04-09）
+
+### 已完成
+- 已确认 `feature/org-rooted-db-structure` 早于本轮就已合入 `develop`：
+  - 合入提交：`cc8da79`
+  - 合入后补充 handoff 提交：`5b29b28`
+- 已将剩余的 DB 分支 `batch3-db-truth-source` 安全移植到当前 `develop`：
+  - 默认数据库真相源固定为 `data/xingrun.db`
+  - 删除默认路径解析对 `data/lessons.db` 的隐式回退
+  - 将一组后端测试中的临时数据库文件名统一为 `xingrun.db`
+  - 更新 `tests/test_db_path_resolution.py`，锁定“即使存在 `lessons.db`，默认仍选 `xingrun.db`”
+  - 更新 `README.md` 的数据库真相源说明
+- 本轮完成后，DB 相关独立开发分支已不再需要长期保留：
+  - `feature/org-rooted-db-structure`：已提前合入 `develop`
+  - `batch3-db-truth-source`：本轮合入 `develop`
+
+### proof
+- 临时脚本：`/tmp/proof_batch3_merge_into_develop_20260409.sh`
+- 关键结果：
+  - `BRANCH=develop`
+  - `HEAD=5b29b28`
+  - `DEFAULT_DB_SINGLE_SOURCE=YES`
+  - 大回归 bundle 执行结果：`Ran 187 tests in 5.589s`
+  - 本轮新增改动未引入新的失败；剩余 4 个失败经基线复验属于当前 `develop` 既有问题
+- 基线复验脚本：`/tmp/proof_batch3_baseline_failures_20260409.sh`
+  - `BRANCH=5b29b28`
+  - 同样 4 个失败复现：
+    - `tests.test_master_data_store` 3 个 `teacher_display_name` 期望仍写死为 `Kayn`
+    - `tests.test_single_lesson_pdf_unification` 1 个返回 `402 != 201`
+
+### 剩余问题
+- `develop` 当前仍有 4 个与本轮无关的既有失败，未在本轮扩 scope 处理：
+  - `tests.test_master_data_store` 3 个断言仍期望 `Kayn`
+  - `tests.test_single_lesson_pdf_unification.SingleLessonPdfUnificationTestCase.test_api_lessons_uses_review_template_generator`
+- 本轮只完成 DB 分支收口到 `develop`，未继续做 `develop -> master` 发布。
+
+### 下一步方向
+- 如果下一步要继续收口并发布，可以接着做：
+  - 先修掉当前 `develop` 上这 4 个既有失败
+  - 再把最新 `develop` 合回 `master`
+
 ## 班级删学生时同步停用家长绑定（2026-04-09）
 
 ### 已完成
@@ -6080,3 +6121,52 @@ Landing Refresh 相关提交（按时间顺序）
 - 然后按计划选择执行方式：
   - subagent-driven-development
   - inline execution
+
+## 第 3 批数据库真相源收口（2026-04-09）
+
+### 已完成
+- 已把默认数据库真相源收口为唯一主库语义：
+  - `lesson_manager.resolve_db_path()` 在无显式配置时只返回 `data/xingrun.db`
+  - 删除了默认路径解析里对 `data/lessons.db` 的隐式回退
+- 已把测试里的临时数据库文件名从 `lessons.db` 统一改为 `xingrun.db`：
+  - 包含 `test_account_flow.py`、`test_credit_system.py`、`test_class_feedback_api.py`、`test_class_feedback_store.py`、`test_consultation_flow.py` 等一组直接写死旧文件名的测试
+- 已更新 `tests/test_db_path_resolution.py`：
+  - 保留对显式 `db_path` 配置的验证
+  - 改为验证“即使旁边存在 `lessons.db`，默认解析结果仍是 `xingrun.db`”
+- 已补充 `README.md` 说明：
+  - 默认真相源固定为 `data/xingrun.db`
+  - 只有显式设置 `XR_DB_PATH` 或 `config.json` 的 `db_path` 才会改用其他文件
+
+### proof
+- 临时脚本：`/tmp/batch3_full_proof_green.sh`
+- 完整输出结论：
+  - `branch` -> `batch3-db-truth-source`
+  - `MISSING=/Users/ark.mini/Desktop/Xingrun-Website/data/xingrun.db`
+  - `MISSING=/Users/ark.mini/Desktop/Xingrun-Website/data/lessons.db`
+  - tests 里剩余 `lessons.db` 引用只在 `tests/test_db_path_resolution.py`，用于验证旧兼容名会被忽略
+  - `PYTHONWARNINGS=ignore::ResourceWarning /opt/homebrew/bin/python3 -m unittest ...`
+  - 结果：`Ran 88 tests in 2.959s` / `OK`
+- 定点 red/green：
+  - `/tmp/batch3_red_check.py`
+    - 初始失败 1 个：
+      - `test_ignores_legacy_lessons_db_when_selecting_default_path`
+  - 同脚本复跑：
+    - 修复后 `3 tests` 全过
+- 诊断脚本：
+  - `/tmp/batch3_consultation_dbname_probe.py`
+  - 证明 `consultation_flow` 的空列表问题与临时库文件名无关：
+    - `DB_NAME=lessons.db` -> `PAYLOAD_LEN=0`
+    - `DB_NAME=xingrun.db` -> `PAYLOAD_LEN=0`
+
+### 剩余问题
+- 当前本地工作区 `data/` 下不存在 `xingrun.db` 或 `lessons.db` 实库文件，因此本批不需要数据迁移脚本，也没有行数对齐 proof 可做。
+- `develop` 基线上仍有与本批无关的既有失败/脏验证面：
+  - `tests.test_credit_system.CreditSystemApiTestCase.test_teacher_feedback_draft_records_ai_usage_and_deducts_balance`
+    - 这是第 2 批尚未合入 `develop` 导致的旧教师反馈残留，不是本批引入
+  - `tests.test_consultation_flow` 中多项列表/编辑失败
+    - 诊断脚本已证明与 `lessons.db` / `xingrun.db` 文件名切换无关，不属于本批根因
+
+### 下一步方向
+- 若继续按原计划推进，下一批建议进入第 4 批：
+  - 退役 `consultations.csv` 兼容层
+  - 届时可顺手把这次诊断出的 `consultation_flow` 既有失败一起收口

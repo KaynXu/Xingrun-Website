@@ -15,7 +15,7 @@ import lesson_manager
 class WeChatParentUploadDataTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        lesson_manager.DB_PATH = Path(self.temp_dir.name) / "lessons.db"
+        lesson_manager.DB_PATH = Path(self.temp_dir.name) / "xingrun.db"
         lesson_manager.init_db()
         self.organization_id = 1
         self.owner_id = 1
