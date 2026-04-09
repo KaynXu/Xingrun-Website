@@ -60,6 +60,7 @@ from lesson_manager import (
     build_lesson_feedback_editor_state,
     confirm_class_feedback_task,
     create_class_feedback_task,
+    create_pending_lesson,
     create_wechat_wrong_question_submission,
     create_organization_request,
     create_student_for_class,
@@ -119,7 +120,8 @@ from lesson_manager import (
     save_class_feedback_label_configs,
     save_class_feedback_task_notes,
     save_class,
-    save_lesson,
+    mark_lesson_generation_failed,
+    mark_lesson_generation_succeeded,
     set_class_teacher_user_id,
     set_user_class_ids,
     set_wechat_wrong_question_archive_status,
@@ -518,6 +520,74 @@ def _run_ai_feature_with_charge(
     finally:
         _release_ai_organization_execution(organization_id)
         _release_ai_request_identity(request_id)
+
+
+def _run_review_plan_generation_job(
+    *,
+    lesson_id: int,
+    user: dict,
+    lesson_date: str,
+    class_id: int,
+    subject: str,
+    grade: str,
+    topic: str,
+    weak_points: str,
+    raw_text: str,
+    chat_provider: str,
+    chat_model: str,
+    request_key: str | None = None,
+) -> None:
+    source_record_id = (
+        f"draft:{class_id}:{lesson_date}:{topic or 'untitled'}:"
+        f"{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}"
+    )
+    try:
+        from ai_processor import parse_and_generate_plan
+        plan = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="lesson_plan_generate",
+            source_record_type="lesson",
+            source_record_id=source_record_id,
+            producer=lambda: _call_ai_helper_with_usage(
+                parse_and_generate_plan,
+                summary_text=raw_text,
+                subject=subject,
+                grade=grade,
+                topic=topic,
+                weak_points=weak_points,
+                lesson_date=lesson_date,
+            ),
+            provider=chat_provider,
+            model=chat_model,
+            request_key=request_key,
+        )
+        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
+        safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
+        pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
+        pdf_path = str(PDF_DIR / pdf_name)
+        generate_single_lesson_pdf(plan, pdf_path)
+        mark_lesson_generation_succeeded(
+            lesson_id,
+            plan=plan,
+            pdf_path=pdf_path,
+        )
+    except Exception as exc:
+        logger.exception("Review plan generation failed for lesson %s", lesson_id)
+        error_message = str(exc).strip() or "未知错误"
+        if not error_message.startswith("AI 生成失败："):
+            error_message = f"AI 生成失败：{error_message}"
+        try:
+            mark_lesson_generation_failed(lesson_id, error_message)
+        except LookupError:
+            logger.exception("Failed to mark lesson %s as failed", lesson_id)
+
+
+def _start_review_plan_generation_thread(**job_kwargs) -> None:
+    threading.Thread(
+        target=_run_review_plan_generation_job,
+        kwargs=job_kwargs,
+        daemon=True,
+    ).start()
 
 
 def has_api_key():
@@ -2385,52 +2455,33 @@ def api_lesson_create():
     if not raw_text:
         return jsonify({"error": "提取的总结内容为空"}), 400
 
-    try:
-        from ai_processor import parse_and_generate_plan
-        plan = _run_ai_feature_with_charge(
-            user=user,
-            feature_key="lesson_plan_generate",
-            source_record_type="lesson",
-            source_record_id=f"draft:{class_id}:{lesson_date}:{topic or 'untitled'}:{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}",
-            producer=lambda: _call_ai_helper_with_usage(
-                parse_and_generate_plan,
-                summary_text=raw_text,
-                subject=subject,
-                grade=grade,
-                topic=topic,
-                weak_points=weak_points,
-                lesson_date=lesson_date,
-            ),
-            provider=chat_provider,
-            model=chat_model,
-        )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
-    except Exception as e:
-        return jsonify({"error": f"AI 生成失败：{e}"}), 500
-    pdf_path = ""
-    pdf_warning = None
-    try:
-        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
-        safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
-        pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
-        pdf_path = str(PDF_DIR / pdf_name)
-        generate_single_lesson_pdf(plan, pdf_path)
-    except Exception as e:
-        app.logger.exception("PDF generation failed for lesson %s/%s: %s", lesson_date, topic, e)
-        pdf_path = ""
-        pdf_warning = f"PDF 生成失败：{e}"
-    lesson_id = save_lesson(
-        date_str=lesson_date, subject=subject, grade=grade,
-        topic=topic, summary=raw_text, weak_points=weak_points,
-        plan=plan, pdf_path=pdf_path, class_id=class_id,
+    lesson_id = create_pending_lesson(
+        date_str=lesson_date,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        summary=raw_text,
+        weak_points=weak_points,
+        class_id=class_id,
     )
-    response: dict = {"id": lesson_id, "success": True}
-    if pdf_warning:
-        response["warning"] = pdf_warning
-    return jsonify(response), 201
+    _start_review_plan_generation_thread(
+        lesson_id=lesson_id,
+        user={
+            "id": int(user["id"]),
+            "organization_id": int(user["organization_id"]),
+        },
+        lesson_date=lesson_date,
+        class_id=class_id,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        weak_points=weak_points,
+        raw_text=raw_text,
+        chat_provider=chat_provider,
+        chat_model=chat_model,
+        request_key=_current_ai_request_key(),
+    )
+    return jsonify({"id": lesson_id, "success": True, "status": "pending"}), 202
 
 
 @app.route("/api/class-feedback/labels", methods=["GET"])
