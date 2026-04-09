@@ -348,6 +348,37 @@ def _build_wrong_question_image(image_url: str):
     return flowable
 
 
+def _build_wrong_question_geometry_image_card(image_url: str, styles: dict):
+    _ensure_fonts()
+    title = Paragraph("几何原题图片", styles["section"])
+    caption = Paragraph("保留原图入库，便于按图复盘几何关系。", styles["tip"])
+    geometry_image = _build_wrong_question_image(image_url)
+    if geometry_image is None:
+        image_content = Paragraph("图片暂时无法载入，已保留原图记录。", styles["tip"])
+    else:
+        image_content = geometry_image
+
+    table = Table(
+        [[title], [image_content], [caption]],
+        colWidths=[CONTENT_W],
+        rowHeights=[None, 12.4 * cm, None],
+    )
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fbff')),
+        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor('#b8cfe6')),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 2), (-1, 2), 'LEFT'),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.35, colors.HexColor('#d7e5f2')),
+        ('LINEABOVE', (0, 2), (-1, 2), 0.35, colors.HexColor('#d7e5f2')),
+    ]))
+    return table
+
+
 def generate_student_wrong_question_library_pdf(
     *,
     student_name: str,
@@ -386,14 +417,9 @@ def generate_student_wrong_question_library_pdf(
         story.append(Paragraph(f"老师：{html.escape(str(record.get('teacher_display_name') or ''))}", styles["body"]))
         if record.get("is_geometry"):
             story.append(Paragraph("题目内容：几何题按图片入库", styles["body"]))
-            geometry_image = _build_wrong_question_image(str(record.get("image_url") or ""))
-            if geometry_image is not None:
-                story.append(_spacer(0.15))
-                story.append(Paragraph("题目图片：", styles["section"]))
-                story.append(geometry_image)
-                story.append(_spacer(0.1))
-            else:
-                story.append(Paragraph("题目图片：暂时无法载入，已保留原图记录。", styles["tip"]))
+            story.append(_spacer(0.15))
+            story.append(_build_wrong_question_geometry_image_card(str(record.get("image_url") or ""), styles))
+            story.append(_spacer(0.1))
         else:
             story.append(
                 Paragraph(

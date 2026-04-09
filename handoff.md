@@ -6,6 +6,7 @@
 - 网站后端已支持按学生重建固定路径错题库 PDF，并新增学生错题库读取接口供网页端和小程序端共用。
 - 网页端 `智能错题` 已支持本地微信非几何题的“题目文本”编辑与保存，保存时会带上 `question_text` 并刷新本地记录草稿。
 - 学生错题库 PDF 已增强为“仅几何题嵌入原题图片，非几何题继续文字为主”的版式，且图片拉取失败时会自动降级为提示文本，不影响 PDF 生成。
+- 学生错题库 PDF 的几何题图片区已进一步收口为固定高度图片区卡片，包含标题、占位区域与说明文案；图片不可用时仍保持同一版式，不再退化成散落文本。
 
 ### proof
 - 通过临时脚本完成定向回归：
@@ -17,13 +18,17 @@
   - `/tmp/wrong-question-pdf-proof-XXXXXX.py`
   - 实际执行内容：`/opt/homebrew/bin/python3 -m unittest tests.test_wrong_question_library_pdf -v`
   - 结果：`Ran 4 tests in 0.289s`，`OK`
+- 本轮新增临时脚本 proof：
+  - `/tmp/wrong-question-pdf-layout-proof-XXXXXX.py`
+  - 实际执行内容：`/opt/homebrew/bin/python3 -m unittest tests.test_wrong_question_library_pdf -v`
+  - 结果：`Ran 6 tests in 0.303s`，`OK`
 
 ### 剩余问题
 - 本轮学生错题库相关定向 proof 中，既有 `sqlite3.Connection` 未关闭 `ResourceWarning` 已通过连接生命周期修复清理干净。
-- 学生错题库 PDF 现已支持几何题嵌图，但图片仍是基础单图展示；若后续要做更强版式，可再补图片裁切、占位框、页内说明等视觉细化。
+- 学生错题库 PDF 现已支持几何题固定图片区卡片；若后续继续细化，更值得做的是图片裁切策略、页内元信息分栏与跨页视觉一致性。
 
 ### 下一步方向
-- 如果要继续收口本链路，下一步更值得做的是补强图片展示的视觉细节，而不是再动数据链路。
+- 如果要继续收口本链路，下一步更值得做的是补图片裁切和页内信息分栏，而不是再动数据链路。
 
 ## 工作台重写设计已确认并写成 spec（2026-04-09）
 

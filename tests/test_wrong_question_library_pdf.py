@@ -4,8 +4,11 @@ import base64
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
+
+from reportlab.platypus import Paragraph, Table
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -114,6 +117,33 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
         urlopen.assert_not_called()
+
+    def test_build_wrong_question_geometry_image_card_uses_fixed_box_and_caption(self):
+        with patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = SAMPLE_PNG_BYTES
+
+            card = pdf_engine._build_wrong_question_geometry_image_card(
+                "https://files.example.com/geometry-1.png",
+                pdf_engine._make_styles(),
+            )
+
+        self.assertIsInstance(card, Table)
+        self.assertEqual(len(card._cellvalues), 3)
+        self.assertEqual(card._argW[0], pdf_engine.CONTENT_W)
+        self.assertEqual(card._cellvalues[0][0].getPlainText(), "几何原题图片")
+        self.assertEqual(card._cellvalues[2][0].getPlainText(), "保留原图入库，便于按图复盘几何关系。")
+
+    def test_build_wrong_question_geometry_image_card_keeps_placeholder_when_image_unavailable(self):
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
+            card = pdf_engine._build_wrong_question_geometry_image_card(
+                "https://files.example.com/geometry-1.png",
+                pdf_engine._make_styles(),
+            )
+
+        self.assertIsInstance(card, Table)
+        self.assertEqual(len(card._cellvalues), 3)
+        self.assertIsInstance(card._cellvalues[1][0], Paragraph)
+        self.assertEqual(card._cellvalues[1][0].getPlainText(), "图片暂时无法载入，已保留原图记录。")
 
     def test_recognize_wrong_question_image_rejects_blank_non_geometry_text(self):
         with self.assertRaises(ValueError):
