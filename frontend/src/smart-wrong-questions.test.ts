@@ -9,12 +9,14 @@ import { JSDOM } from 'jsdom';
 
 import {
   applyWrongQuestionReviewDraft,
+  buildMemberStudentNotebookSummaries,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewDraft,
   buildWrongQuestionReviewPath,
   buildWrongQuestionSummaryExportPath,
   downloadWrongQuestionSummary,
+  filterWrongQuestionRecordsForMemberNotebook,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
@@ -115,6 +117,33 @@ function setupDomEnvironment(): {
   };
 }
 
+function makeWrongQuestionRecord(overrides: Partial<WrongQuestionRecord>): WrongQuestionRecord {
+  return {
+    id: 'record-default',
+    roomId: '',
+    source: 'downstream',
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    classNameSnapshot: '六年级 1 班',
+    classId: 101,
+    subject: '数学',
+    teacherName: '成员老师',
+    teacherNameSnapshot: '成员老师',
+    teacherUserId: 7,
+    mappingStatus: 'mapped',
+    createdAt: '2026-03-29T08:00:00Z',
+    parentNote: '',
+    teacherComment: '',
+    reviewStatus: '',
+    analysis: {
+      questionCategory: '计算',
+      errorType: '计算错误',
+      knowledgePoints: ['分数运算'],
+    },
+    ...overrides,
+  };
+}
+
 test('summarizeWrongQuestionRecords derives the overview card counts from loaded records', () => {
   const records: WrongQuestionRecord[] = [
     {
@@ -203,6 +232,49 @@ test('summarizeWrongQuestionRecords derives the overview card counts from loaded
     uniqueClassCount: 3,
     uniqueStudentCount: 3,
   });
+});
+
+test('buildMemberStudentNotebookSummaries groups current-class records by student', () => {
+  const summaries = buildMemberStudentNotebookSummaries([
+    makeWrongQuestionRecord({ id: 'a', classId: 101, className: '六年级 1 班', studentName: 'Alice', reviewStatus: 'pending', createdAt: '2026-03-29T08:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'b', classId: 101, className: '六年级 1 班', studentName: 'Alice', teacherComment: '已跟进', createdAt: '2026-03-29T09:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'c', classId: 101, className: '六年级 1 班', studentName: 'Bob', createdAt: '2026-03-29T07:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'd', classId: 202, className: '初一 2 班', studentName: 'Alice', createdAt: '2026-03-29T10:00:00Z' }),
+  ], 101);
+
+  assert.deepEqual(summaries, [
+    {
+      studentName: 'Alice',
+      classId: 101,
+      className: '六年级 1 班',
+      totalCount: 2,
+      pendingReviewCount: 1,
+      hasTeacherFollowUp: true,
+      latestCreatedAt: '2026-03-29T09:00:00Z',
+    },
+    {
+      studentName: 'Bob',
+      classId: 101,
+      className: '六年级 1 班',
+      totalCount: 1,
+      pendingReviewCount: 0,
+      hasTeacherFollowUp: false,
+      latestCreatedAt: '2026-03-29T07:00:00Z',
+    },
+  ]);
+});
+
+test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records', () => {
+  const records = [
+    makeWrongQuestionRecord({ id: 'a', classId: 101, studentName: 'Alice', createdAt: '2026-03-29T09:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'b', classId: 101, studentName: 'Bob', createdAt: '2026-03-29T08:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'c', classId: 202, studentName: 'Alice', createdAt: '2026-03-29T10:00:00Z' }),
+  ];
+
+  assert.deepEqual(
+    filterWrongQuestionRecordsForMemberNotebook(records, 101, 'Alice').map((item) => item.id),
+    ['a'],
+  );
 });
 
 test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => {
@@ -1707,6 +1779,348 @@ test('SmartWrongQuestionsPage hides teacher filter and avoids admin user fetches
       assert.equal(teacherSelect, null);
       assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), false);
       assert.match(pageText, /仅查看你负责班级与学生的错题记录/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage renders member student cards for the selected class', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 101, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-a',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T09:00:00Z',
+              parent_note: '第一题又错了',
+              image_url: 'https://cdn.example.com/a.png',
+              status: 'pending',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+            {
+              id: 'record-b',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T08:00:00Z',
+              parent_note: '第二题订正后还不会',
+              status: 'reviewed',
+              teacher_comment: '已讲解',
+              analysis: {
+                question_category: '应用题',
+                error_type: '审题错误',
+                knowledge_points: ['数量关系'],
+              },
+            },
+            {
+              id: 'record-c',
+              source: 'wechat_mp',
+              student_name: 'Bob',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T07:00:00Z',
+              parent_note: '第三题不会',
+              status: 'pending',
+              analysis: {
+                question_category: '几何',
+                error_type: '图形理解错误',
+                knowledge_points: ['面积'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 3,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 2,
+            unique_class_count: 1,
+            unique_student_count: 2,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-a',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T09:00:00Z',
+          parent_note: '第一题又错了',
+          image_url: 'https://cdn.example.com/a.png',
+          status: 'pending',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /学生错题本/);
+      assert.match(pageText, /Alice/);
+      assert.match(pageText, /Bob/);
+      assert.match(pageText, /2 题/);
+      assert.match(pageText, /1 题/);
+      assert.doesNotMatch(pageText, /筛选与列表/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage saves review content only for the selected member notebook record set', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const reviewRequests: Array<{ url: string; body: string }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 101, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-a',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T09:00:00Z',
+              parent_note: '第一题又错了',
+              status: 'pending',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+            {
+              id: 'record-c',
+              source: 'wechat_mp',
+              student_name: 'Bob',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T07:00:00Z',
+              parent_note: '第三题不会',
+              status: 'pending',
+              analysis: {
+                question_category: '几何',
+                error_type: '图形理解错误',
+                knowledge_points: ['面积'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 2,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 2,
+            unique_class_count: 1,
+            unique_student_count: 2,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-a',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T09:00:00Z',
+          parent_note: '第一题又错了',
+          status: 'pending',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-c' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-c',
+          source: 'wechat_mp',
+          student_name: 'Bob',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T07:00:00Z',
+          parent_note: '第三题不会',
+          status: 'pending',
+          analysis: {
+            question_category: '几何',
+            error_type: '图形理解错误',
+            knowledge_points: ['面积'],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-a/review' && init?.method === 'PUT') {
+        reviewRequests.push({ url: String(input), body: String(init.body ?? '') });
+        return createJsonResponse({
+          record: {
+            id: 'record-a',
+            source: 'wechat_mp',
+            student_name: 'Alice',
+            class_name: '六年级 1 班',
+            class_id: 101,
+            subject: '数学',
+            teacher_name: '成员老师',
+            teacher_user_id: 7,
+            created_at: '2026-03-29T09:00:00Z',
+            parent_note: '第一题又错了',
+            status: 'reviewed',
+            teacher_comment: '已跟进',
+            analysis: {
+              question_category: '计算',
+              error_type: '计算错误',
+              knowledge_points: ['分数运算'],
+            },
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const aliceButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Alice'));
+      assert.ok(aliceButton instanceof HTMLButtonElement);
+    });
+
+    const aliceButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Alice'));
+    assert.ok(aliceButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      aliceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const textarea = domEnvironment.container.querySelector('textarea[placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"]') as HTMLTextAreaElement | null;
+      const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进'));
+      assert.ok(textarea instanceof HTMLTextAreaElement);
+      assert.ok(saveButton instanceof HTMLButtonElement);
+    });
+
+    const textarea = domEnvironment.container.querySelector('textarea[placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"]') as HTMLTextAreaElement;
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进')) as HTMLButtonElement;
+
+    await act(async () => {
+      textarea.value = '已跟进';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.equal(reviewRequests.length, 1);
+      assert.equal(reviewRequests[0]?.url, '/api/wrong-questions/record-a/review');
+      const payload = JSON.parse(reviewRequests[0]?.body ?? '{}');
+      assert.equal(payload.teacherComment, '已跟进');
     });
   } finally {
     if (root) {

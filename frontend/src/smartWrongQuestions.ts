@@ -90,6 +90,16 @@ export interface NormalizedWrongQuestionListResponse {
   summary: WrongQuestionSummary;
 }
 
+export interface MemberStudentNotebookSummary {
+  studentName: string;
+  classId: number;
+  className: string;
+  totalCount: number;
+  pendingReviewCount: number;
+  hasTeacherFollowUp: boolean;
+  latestCreatedAt: string;
+}
+
 export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionRecord): boolean {
   return record.source === 'wechat_mp';
 }
@@ -515,6 +525,56 @@ export function summarizeWrongQuestionRecords(records: WrongQuestionRecord[]): W
   });
 
   return { ...base, uniqueClassCount: classes.size, uniqueStudentCount: students.size };
+}
+
+export function filterWrongQuestionRecordsForMemberNotebook(
+  records: WrongQuestionRecord[],
+  classId: number | null,
+  studentName: string | null,
+): WrongQuestionRecord[] {
+  return records
+    .filter((item) => classId === null || item.classId === classId)
+    .filter((item) => !studentName || item.studentName === studentName)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function buildMemberStudentNotebookSummaries(
+  records: WrongQuestionRecord[],
+  classId: number | null,
+): MemberStudentNotebookSummary[] {
+  const buckets = new Map<string, MemberStudentNotebookSummary>();
+
+  for (const record of filterWrongQuestionRecordsForMemberNotebook(records, classId, null)) {
+    const normalizedStudentName = record.studentName.trim();
+    const normalizedClassName = record.className.trim();
+    const normalizedClassId = record.classId ?? 0;
+    const bucketKey = `${normalizedClassId}::${normalizedStudentName}`;
+    const pendingReviewCount = record.reviewStatus.trim() === 'pending' ? 1 : 0;
+    const hasTeacherFollowUp = hasTeacherReview(record) || Boolean(record.teacherComment.trim());
+    const current = buckets.get(bucketKey);
+
+    if (!current) {
+      buckets.set(bucketKey, {
+        studentName: normalizedStudentName,
+        classId: normalizedClassId,
+        className: normalizedClassName,
+        totalCount: 1,
+        pendingReviewCount,
+        hasTeacherFollowUp,
+        latestCreatedAt: record.createdAt,
+      });
+      continue;
+    }
+
+    current.totalCount += 1;
+    current.pendingReviewCount += pendingReviewCount;
+    current.hasTeacherFollowUp = current.hasTeacherFollowUp || hasTeacherFollowUp;
+    if (record.createdAt.localeCompare(current.latestCreatedAt) > 0) {
+      current.latestCreatedAt = record.createdAt;
+    }
+  }
+
+  return Array.from(buckets.values()).sort((left, right) => right.latestCreatedAt.localeCompare(left.latestCreatedAt));
 }
 
 export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {

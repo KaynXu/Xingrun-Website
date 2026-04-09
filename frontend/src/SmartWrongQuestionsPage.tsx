@@ -11,12 +11,14 @@ import {
   workspaceSoftCardClass,
 } from './App';
 import {
+  buildMemberStudentNotebookSummaries,
   buildWrongQuestionDetailPath,
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
   downloadWrongQuestionSummary,
+  filterWrongQuestionRecordsForMemberNotebook,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
@@ -117,11 +119,14 @@ function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
 
 export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPageProps) {
   const hasStaffScope = currentUser.role === 'super_owner' || currentUser.role === 'owner' || currentUser.role === 'admin';
+  const isMemberScope = currentUser.role === 'member';
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
   const [records, setRecords] = useState<WrongQuestionRecord[]>([]);
   const [classOptions, setClassOptions] = useState<WrongQuestionClassFilterOption[]>([]);
   const [teacherOptions, setTeacherOptions] = useState<WrongQuestionTeacherFilterOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [detailLoading, setDetailLoading] = useState(false);
@@ -133,12 +138,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [serverSummary, setServerSummary] = useState<WrongQuestionSummary | null>(null);
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
-  const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
   const reviewDraftByRecordIdRef = useRef<Record<string, WrongQuestionReviewDraft>>({});
+  const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
   const wechatQuestionTextRef = useRef<HTMLTextAreaElement | null>(null);
   const wechatTeacherCommentRef = useRef<HTMLTextAreaElement | null>(null);
   const recordsRef = useRef(records);
   recordsRef.current = records;
+  reviewDraftByRecordIdRef.current = reviewDraftByRecordId;
 
   useEffect(() => {
     reviewDraftByRecordIdRef.current = reviewDraftByRecordId;
@@ -151,7 +157,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     return serverSummary ?? summarizeWrongQuestionRecords(records);
   }, [records, serverSummary]);
-  const selectedRecord = records.find((item) => item.id === selectedId) ?? records[0] ?? null;
+  const memberNotebookSummaries = useMemo(
+    () => buildMemberStudentNotebookSummaries(records, selectedClassId),
+    [records, selectedClassId],
+  );
+  const memberNotebookRecords = useMemo(
+    () => filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, selectedStudentName),
+    [records, selectedClassId, selectedStudentName],
+  );
+  const selectedRecordSource = isMemberScope ? memberNotebookRecords : records;
+  const selectedRecord = selectedRecordSource.find((item) => item.id === selectedId) ?? selectedRecordSource[0] ?? null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
@@ -245,6 +260,52 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   useEffect(() => {
     void loadList(initialFilters);
   }, [loadList]);
+
+  useEffect(() => {
+    if (!isMemberScope) {
+      return;
+    }
+
+    setSelectedClassId((current) => {
+      if (current !== null && classOptions.some((item) => item.id === current)) {
+        return current;
+      }
+
+      if (classOptions.length === 1) {
+        return classOptions[0]?.id ?? null;
+      }
+
+      return null;
+    });
+  }, [classOptions, isMemberScope]);
+
+  useEffect(() => {
+    if (!isMemberScope) {
+      return;
+    }
+
+    setSelectedStudentName((current) => {
+      if (current && memberNotebookSummaries.some((item) => item.studentName === current)) {
+        return current;
+      }
+
+      return memberNotebookSummaries[0]?.studentName ?? null;
+    });
+  }, [isMemberScope, memberNotebookSummaries]);
+
+  useEffect(() => {
+    if (!isMemberScope) {
+      return;
+    }
+
+    setSelectedId((current) => {
+      if (current && memberNotebookRecords.some((item) => item.id === current)) {
+        return current;
+      }
+
+      return memberNotebookRecords[0]?.id ?? null;
+    });
+  }, [isMemberScope, memberNotebookRecords]);
 
   useEffect(() => {
     if (!selectedRecord) {
@@ -342,31 +403,34 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
-    setReviewDraftByRecordId((current) => {
-        const nextDrafts = {
-          ...current,
-          [selectedRecord.id]: {
-            ...(current[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord)),
-            [key]: value,
-          },
-        };
-        reviewDraftByRecordIdRef.current = nextDrafts;
-        return nextDrafts;
-      });
+    const nextDraft = {
+      ...(reviewDraftByRecordIdRef.current[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord)),
+      [key]: value,
+    };
+    reviewDraftByRecordIdRef.current = {
+      ...reviewDraftByRecordIdRef.current,
+      [selectedRecord.id]: nextDraft,
+    };
+
+    setReviewDraftByRecordId((current) => ({
+      ...current,
+      [selectedRecord.id]: nextDraft,
+    }));
     updateDraftDirtyState(selectedRecord.id, true);
   };
 
   const handleSaveReview = async () => {
-    const latestDraft = selectedRecord ? reviewDraftByRecordIdRef.current[selectedRecord.id] ?? selectedDraft : null;
-    if (!selectedRecord || !latestDraft) {
+    if (!selectedRecord) {
       return;
     }
+
+    const draftToSave = reviewDraftByRecordIdRef.current[selectedRecord.id] ?? selectedDraft ?? buildWrongQuestionReviewDraft(selectedRecord);
 
     setSavingReview(true);
     setSaveError('');
 
     try {
-      const payload = buildWrongQuestionReviewPayload(latestDraft);
+      const payload = buildWrongQuestionReviewPayload(draftToSave);
       if (selectedRecord.source === 'wechat_mp') {
         payload.teacherComment = wechatTeacherCommentRef.current?.value.trim() ?? payload.teacherComment;
         if (!selectedRecord.isGeometry) {
@@ -417,6 +481,340 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     && selectedRecord.source === 'wechat_mp'
     && !selectedRecord.isGeometry,
   );
+
+  if (isMemberScope) {
+    return (
+      <div className={`${workspacePageClass} space-y-8`}>
+        <section className={`${workspaceCardClass} space-y-4 p-6`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-[0.25em] text-sky-600">学生错题本</p>
+              <h3 className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
+              <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
+                仅查看你负责班级与学生的错题记录，并直接跟进自己的教师复盘。
+              </p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前操作人：{currentUser.display_name}</p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">当前班级</span>
+                <select
+                  aria-label="班级"
+                  value={selectedClassId ?? ''}
+                  onChange={(event) => {
+                    const nextClassId = Number(event.target.value) || null;
+                    setSelectedClassId(nextClassId);
+                    setSelectedStudentName(null);
+                    setSelectedId(null);
+                  }}
+                  className={workspaceFieldClass}
+                >
+                  <option value="">请选择班级</option>
+                  {classOptions.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.subject ? `${item.name} · ${item.subject}` : item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void loadList(initialFilters)}
+                  disabled={loading}
+                  className={workspaceSecondaryButtonClass}
+                >
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                  刷新列表
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">错题总数</p>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.totalCount}</p>
+            </div>
+            <div className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">待跟进</p>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.pendingReviewCount}</p>
+            </div>
+            <div className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责班级</p>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.uniqueClassCount}</p>
+            </div>
+            <div className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责学生</p>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.uniqueStudentCount}</p>
+            </div>
+          </div>
+        </section>
+
+        {error && (
+          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+            <AlertCircle size={16} />
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+            正在加载智能错题列表...
+          </div>
+        ) : (
+          <>
+            <section className={`${workspaceCardClass} space-y-4 p-6`}>
+              <div>
+                <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学生卡片</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按当前班级汇总学生错题，点击卡片进入学生错题本。</p>
+              </div>
+              {memberNotebookSummaries.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                  当前班级下暂无错题记录。
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {memberNotebookSummaries.map((item) => {
+                    const active = item.studentName === selectedStudentName;
+                    return (
+                      <button
+                        key={`${item.classId}-${item.studentName}`}
+                        type="button"
+                        onClick={() => setSelectedStudentName(item.studentName)}
+                        className={`${workspaceSoftCardClass} w-full p-4 text-left transition ${active ? 'border-sky-400 shadow-[0_18px_48px_rgba(47,128,237,0.12)]' : ''}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.className || '未标注班级'}</p>
+                          </div>
+                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                            {item.pendingReviewCount} 待跟进
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
+                          <span>{item.totalCount} 题</span>
+                          <span>{item.hasTeacherFollowUp ? '已有老师跟进' : '尚未跟进'}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className={`${workspaceCardClass} space-y-5 p-6`}>
+              <div>
+                <h4 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedStudentName ? `${selectedStudentName} 的错题本` : '学生错题本'}</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按学生查看该班级下的错题记录，并保存当前记录的跟进内容。</p>
+              </div>
+
+              {detailError && (
+                <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                  <AlertCircle size={16} />
+                  {detailError}
+                </div>
+              )}
+
+              {saveError && (
+                <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                  <AlertCircle size={16} />
+                  {saveError}
+                </div>
+              )}
+
+              {memberNotebookRecords.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                  请选择学生查看错题本。
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-3">
+                    {memberNotebookRecords.map((record) => {
+                      const active = record.id === selectedRecord?.id;
+                      return (
+                        <button
+                          key={record.id}
+                          type="button"
+                          onClick={() => setSelectedId(record.id)}
+                          className={`${workspaceSoftCardClass} px-4 py-3 text-left transition ${active ? 'border-sky-400 shadow-[0_18px_48px_rgba(47,128,237,0.12)]' : ''}`}
+                        >
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{record.analysis.questionCategory || '未分类错题'}</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{record.createdAt}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedRecord && (
+                    <>
+                      <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{selectedRecord.studentName}</span>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getWrongQuestionSourceBadgeClass(selectedRecord.source)}`}>
+                            {getWrongQuestionSourceLabel(selectedRecord.source)}
+                          </span>
+                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                            {selectedRecord.subject || '未标注科目'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">班级：{selectedRecord.className || '未标注班级'}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
+                        <p className="whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.parentNote || '暂无家长备注'}</p>
+                      </div>
+
+                      {detailLoading && (
+                        <div className="rounded-2xl border border-dashed border-sky-200 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                          正在加载记录详情...
+                        </div>
+                      )}
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className={`${workspaceSoftCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">题型分类</p>
+                          <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedRecord.analysis.questionCategory || '待识别'}</p>
+                        </div>
+                        <div className={`${workspaceSoftCardClass} p-4`}>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">重复错题</p>
+                          <p className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{selectedRecord.analysis.isRepeatedMistake || '待确认'}</p>
+                        </div>
+                      </div>
+
+                      <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">知识点</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedRecord.analysis.knowledgePoints.length > 0 ? selectedRecord.analysis.knowledgePoints.map((point) => (
+                            <span
+                              key={point}
+                              className="rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300"
+                            >
+                              {point}
+                            </span>
+                          )) : (
+                            <span className="text-sm text-slate-500 dark:text-slate-400">暂无知识点标签</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {selectedDraft && selectedRecord.source === 'wechat_mp' ? (
+                        <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">老师跟进</p>
+                              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先记录老师是否已处理，再补一句面向内部的处理备注。</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveReview()}
+                              disabled={savingReview}
+                              className={workspacePrimaryButtonClass}
+                            >
+                              保存跟进
+                            </button>
+                          </div>
+
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="space-y-2 text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">处理状态</span>
+                              <select
+                                value={selectedDraft.reviewStatus}
+                                onChange={(event) => handleDraftChange('reviewStatus', event.target.value)}
+                                className={workspaceFieldClass}
+                              >
+                                <option value="pending">待处理</option>
+                                <option value="reviewed">已处理</option>
+                              </select>
+                            </label>
+                            <label className="space-y-2 text-sm sm:col-span-2">
+                              <span className="text-slate-500 dark:text-slate-400">老师处理备注</span>
+                              <textarea
+                                value={selectedDraft.teacherComment}
+                                onInput={(event) => handleDraftChange('teacherComment', event.currentTarget.value)}
+                                onChange={(event) => handleDraftChange('teacherComment', event.target.value)}
+                                className={`${workspaceFieldClass} min-h-28 resize-y`}
+                                placeholder="例如：已在下节课讲解，家长可再让孩子重做一遍"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : selectedDraft ? (
+                        <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">教师复盘</p>
+                              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败时会保留当前草稿，便于继续修改后重试。</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveReview()}
+                              disabled={savingReview}
+                              className={workspacePrimaryButtonClass}
+                            >
+                              保存跟进
+                            </button>
+                          </div>
+
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="space-y-2 text-sm sm:col-span-2">
+                              <span className="text-slate-500 dark:text-slate-400">最终错误类型</span>
+                              <input
+                                type="text"
+                                value={selectedDraft.selectedErrorType}
+                                onChange={(event) => handleDraftChange('selectedErrorType', event.target.value)}
+                                className={workspaceFieldClass}
+                                placeholder="填写教师最终确认的错误类型"
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">核心知识点</span>
+                              <textarea
+                                value={selectedKnowledgePointText}
+                                onChange={(event) => handleDraftChange('selectedKnowledgePoints', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
+                                className={`${workspaceFieldClass} min-h-28 resize-y`}
+                                placeholder="每行一个知识点"
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">后续练习建议</span>
+                              <textarea
+                                value={selectedActionsText}
+                                onChange={(event) => handleDraftChange('selectedActions', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
+                                className={`${workspaceFieldClass} min-h-28 resize-y`}
+                                placeholder="每行一个后续动作"
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">原因分析</span>
+                              <textarea
+                                value={selectedReasonsText}
+                                onChange={(event) => handleDraftChange('selectedReasons', event.target.value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))}
+                                className={`${workspaceFieldClass} min-h-28 resize-y`}
+                                placeholder="每行一个原因"
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">教师备注</span>
+                              <textarea
+                                value={selectedDraft.studentNote}
+                                onChange={(event) => handleDraftChange('studentNote', event.target.value)}
+                                className={`${workspaceFieldClass} min-h-28 resize-y`}
+                                placeholder="补充学生当前表现或教师备注"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>

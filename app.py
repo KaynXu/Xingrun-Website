@@ -1073,11 +1073,26 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
         "repeated_mistake_count": 0,
         "high_priority_count": 0,
         "pending_review_count": 0,
+        "unique_class_count": 0,
+        "unique_student_count": 0,
     }
+    class_keys: set[str] = set()
+    student_keys: set[str] = set()
 
     for item in items:
         analysis = item.get("analysis") if isinstance(item.get("analysis"), dict) else {}
         summary["total_count"] += 1
+
+        class_name = str(item.get("class_name") or item.get("className") or "").strip()
+        class_id = item.get("class_id") if item.get("class_id") is not None else item.get("classId")
+        if class_id is not None:
+            class_keys.add(str(class_id))
+        elif class_name:
+            class_keys.add(class_name)
+
+        student_name = str(item.get("student_name") or item.get("studentName") or "").strip()
+        if student_name:
+            student_keys.add(student_name)
 
         repeated_mistake = str(
             analysis.get("is_repeated_mistake")
@@ -1102,6 +1117,9 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
         ).strip()
         if not selected_error_type:
             summary["pending_review_count"] += 1
+
+    summary["unique_class_count"] = len(class_keys)
+    summary["unique_student_count"] = len(student_keys)
 
     return summary
 
@@ -1876,8 +1894,7 @@ def api_wrong_questions_list():
     scoped_items = _filter_wrong_question_items_for_user(user, merged_items)
     payload["items"] = scoped_items
     payload["total"] = len(scoped_items)
-    if user.get("role") == "member":
-        payload["summary"] = _summarize_wrong_question_records(scoped_items)
+    payload["summary"] = _summarize_wrong_question_records(scoped_items)
     return jsonify(payload)
 
 

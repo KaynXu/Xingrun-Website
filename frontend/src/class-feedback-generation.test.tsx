@@ -179,3 +179,9 @@ test('App source injects the class feedback control bar into the workspace heade
   assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*controlBar=\{/);
   assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
 });
+
+test('App source synchronizes class feedback member selection against accessible classes', () => {
+  assert.match(appSource, /function syncMemberScopedClassSelection\(/);
+  assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classItems, current\)\);/);
+  assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
+});
