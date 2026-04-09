@@ -37,6 +37,33 @@
 ### 下一步方向
 - 如需继续收口，可把 `data/pdfs/` 和类似过程性文档加入忽略规则，避免后续再次污染主工作区。
 
+## develop 已部署到生产并修复课堂反馈旧任务启动崩溃（2026-04-09）
+
+### 已完成
+- 已定位生产启动失败根因：`lesson_manager.init_db()` 在回填旧 `class_feedback_tasks.period_label` 时，直接按 `period_granularity` 走 `weekly/monthly/stage` 解析，但旧记录只有 `start_date/end_date`，缺少 `year/week/month/stage_name`，导致后端启动时抛 `ValueError: year is required`。
+- 已新增回归测试，覆盖旧显式周期任务在 `period_label=''` 时重跑 `init_db()` 能从历史日期范围反推标签。
+- 已修复周期解析逻辑：当旧记录缺少显式周期元数据但仍保留日期范围时，`daily/weekly/monthly/stage` 都会优先从既有范围反推标签，而不是直接崩溃。
+- 已将生产服务器 `/home/ubuntu/Xingrun-Website` 从 `master@0f846d31` 切到 `develop@0061a3a`。
+- 已在生产机完成前端构建并重启 `pm2` 服务 `xingrun`。
+
+### proof
+- 本地临时脚本：`/tmp/xingrun-class-feedback-legacy-backfill-proof-20260409.sh`
+- 完整输出结论：`Ran 21 tests in 0.728s` → `OK`
+- 热修提交：`0061a3a` `fix: backfill legacy class feedback period labels`
+- 远端部署结果：
+  - `deployed branch=develop`
+  - `deployed head=0061a3a6`
+  - `npm --prefix frontend run build` 成功
+  - `pm2 status xingrun` → `online`
+  - 健康检查返回 Flask 根路由重定向 HTML，目标为 `http://127.0.0.1:3000`
+
+### 剩余问题
+- 仓库文档 [server deploy.md](/Users/ark.mini/Desktop/Xingrun-Website/server%20deploy.md) 仍引用不存在的根目录 `deploy.sh`；当前仓库实际可用脚本是 `scripts/deploy_backend.sh`，手动发布时仍需额外执行前端构建。
+- 前端构建仍有既有 chunk size warning，本轮未扩 scope 处理。
+
+### 下一步方向
+- 如需收口部署文档，应统一 [server deploy.md](/Users/ark.mini/Desktop/Xingrun-Website/server%20deploy.md) 与 [README.md](/Users/ark.mini/Desktop/Xingrun-Website/README.md) 的发布入口，避免继续引用不存在的 `deploy.sh`。
+
 ## 本轮部署尝试受阻（2026-04-09）
 
 ### 已完成
