@@ -89,6 +89,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
     <ClassFeedbackGenerationWorkspace
       classNameLabel="S01A1"
       teacherNameLabel="王老师"
+      controlBar={<div>控制栏占位</div>}
       sourceSummaryItems={['已命中 2 节课次记录', '1 名学生资料完整']}
       labelGroups={defaultStageLabelGroups}
       classStatusTags={['进入状态快']}
@@ -121,6 +122,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   );
 
   assert.match(markup, /课堂反馈/);
+  assert.match(markup, /控制栏占位/);
   assert.match(markup, /资料摘要/);
   assert.match(markup, /阶段备注/);
   assert.match(markup, /班级状态标签/);
@@ -145,6 +147,7 @@ test('ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for
   assert.match(workspaceSource, /const cardClass = `\$\{workspaceCardClass\} p-6`;/);
   assert.match(workspaceSource, /const softCardClass = `\$\{workspaceSoftCardClass\} p-4`;/);
   assert.match(workspaceSource, /const fieldClass = workspaceFieldClass;/);
+  assert.match(workspaceSource, /props\.controlBar \? <div className="mt-4">\{props\.controlBar\}<\/div> : null/);
   assert.match(workspaceSource, /className=\{workspacePrimaryButtonClass\}/);
   assert.match(workspaceSource, /className=\{workspaceSecondaryButtonClass\}/);
 });
@@ -169,4 +172,10 @@ test('App source no longer renders the class feedback intro hero section', () =>
   assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.3em\] text-sky-600">Stage Feedback<\/p>/);
   assert.doesNotMatch(appSource, /<h3 className=\{`\$\{workspaceSectionTitleClass\} mt-3`\}>课堂反馈<\/h3>/);
   assert.doesNotMatch(appSource, /选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。/);
+});
+
+test('App source injects the class feedback control bar into the workspace header instead of rendering it above the workspace', () => {
+  assert.match(appSource, /const classFeedbackControlBar = \(/);
+  assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*controlBar=\{/);
+  assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
 });

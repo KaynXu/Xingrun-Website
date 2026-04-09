@@ -9,13 +9,13 @@ import {
 } from './App';
 import type {
   ClassFeedbackStageNotes,
-  ClassFeedbackStudentCard,
   StageLabelGroup,
 } from './classFeedbackGeneration';
 
 interface ClassFeedbackGenerationWorkspaceProps {
   classNameLabel: string;
   teacherNameLabel: string;
+  controlBar?: React.ReactNode;
   sourceSummaryItems: string[];
   labelGroups: StageLabelGroup[];
   classStatusTags: string[];
@@ -67,6 +67,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
       <header className={cardClass}>
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600 dark:text-sky-300">Class Feedback</p>
         <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">课堂反馈</h3>
+        {props.controlBar ? <div className="mt-4">{props.controlBar}</div> : null}
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           {props.classNameLabel} · {props.teacherNameLabel}
         </p>
@@ -74,6 +75,7 @@ export function ClassFeedbackGenerationWorkspace(props: ClassFeedbackGenerationW
         <p className="mt-3 inline-flex w-fit rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
           {props.draftStatusLabel}
         </p>
+        {props.controlBar ? <div className="mt-4">{props.controlBar}</div> : null}
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

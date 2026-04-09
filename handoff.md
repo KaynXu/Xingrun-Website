@@ -74,6 +74,41 @@
 
 ## 生产排查：复习计划长时间“生成中”实际为 n1n 524 超时（2026-04-09）
 
+## 课堂反馈控制栏已并入工作台头部（2026-04-09）
+
+### 已完成
+- 已将课堂反馈页原先独立于工作台上方的紧凑控制栏并入 `ClassFeedbackGenerationWorkspace` 头部。
+- 当前班级 / 日期范围 / 任务按钮的逻辑没有搬迁或重写，仍保留在 `App.tsx`，只是以 `controlBar` 槽位传入工作台，避免重复改状态管理。
+- `App.tsx` 顶层不再单独渲染这条控制栏。
+- 已补前端回归断言，覆盖：
+  - 工作台支持渲染注入的 `controlBar`
+  - `App.tsx` 把课堂反馈控制栏注入到工作台头部
+
+### proof
+- 临时脚本：`/tmp/xingrun-class-feedback-controlbar-merge-proof-20260409.sh`
+- 完整输出：
+  - `✔ defaultStageLabelGroups exposes the built-in grouped labels`
+  - `✔ buildClassFeedbackConfirmPayload keeps final class summary and checked student entries`
+  - `✔ formatClassFeedbackStudentCopyText joins student feedback into a parent-friendly batch format`
+  - `✔ ClassFeedbackGenerationWorkspace renders source summary, stage notes, class summary, and student cards`
+  - `✔ ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for surfaces, fields, and buttons`
+  - `✔ App source wires the standalone class feedback page and existing class student APIs`
+  - `✔ App source no longer renders the class feedback intro hero section`
+  - `✔ App source injects the class feedback control bar into the workspace header instead of rendering it above the workspace`
+  - `ℹ tests 8`
+  - `ℹ pass 8`
+  - `ℹ fail 0`
+
+### 剩余问题
+- 当前工作区仍有与本轮无关的未提交文件：
+  - `data/pdfs/*`
+  - `docs/superpowers/plans/2026-04-02-review-generation-teacher-feedback-progress.md`
+  - `docs/superpowers/specs/2026-04-09-member-class-scope-design.md`
+- 本轮未扩 scope 处理这些文件。
+
+### 下一步方向
+- 如果还要继续收口课堂反馈页，可再决定是否把工作台头部中的英文 `Class Feedback` / 中文标题层级再进一步压缩成更轻的视觉样式。
+
 ### 已完成
 - 已登录生产机 `49.234.185.86` 排查 `pm2`、日志与数据库状态。
 - 确认本次请求发生在 `2026-04-09 16:31:32`：

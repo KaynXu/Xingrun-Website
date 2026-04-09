@@ -2871,64 +2871,66 @@ const ClassFeedbackGenerationPage = ({
       ? ['当前阶段课次较少，建议补充阶段备注帮助生成更稳定。']
       : []),
   ];
+  const classFeedbackControlBar = (
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
+        <select
+          value={selectedClassId ?? ''}
+          onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+          className={workspaceFieldClass}
+          disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+        >
+          <option value="">选择班级</option>
+          {classes.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(event) => setStartDate(event.target.value)}
+          className={workspaceFieldClass}
+          disabled={isRefreshingTask || isSavingClassFeedback}
+        />
+        <input
+          type="date"
+          value={endDate}
+          onChange={(event) => setEndDate(event.target.value)}
+          className={workspaceFieldClass}
+          disabled={isRefreshingTask || isSavingClassFeedback}
+        />
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => void handleCreateClassFeedbackTask()}
+          disabled={!selectedClassId || isSavingClassFeedback}
+          className={workspacePrimaryButtonClass}
+        >
+          <PlusCircle size={18} />
+          创建反馈任务
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleRefreshClassFeedbackTask()}
+          disabled={!activeClassFeedbackTaskId || isRefreshingTask}
+          className={workspaceSecondaryButtonClass}
+        >
+          <RefreshCw size={18} />
+          刷新任务
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
-          <select
-            value={selectedClassId ?? ''}
-            onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
-            className={workspaceFieldClass}
-            disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
-          >
-            <option value="">选择班级</option>
-            {classes.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
-            className={workspaceFieldClass}
-            disabled={isRefreshingTask || isSavingClassFeedback}
-          />
-          <input
-            type="date"
-            value={endDate}
-            onChange={(event) => setEndDate(event.target.value)}
-            className={workspaceFieldClass}
-            disabled={isRefreshingTask || isSavingClassFeedback}
-          />
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => void handleCreateClassFeedbackTask()}
-            disabled={!selectedClassId || isSavingClassFeedback}
-            className={workspacePrimaryButtonClass}
-          >
-            <PlusCircle size={18} />
-            创建反馈任务
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRefreshClassFeedbackTask()}
-            disabled={!activeClassFeedbackTaskId || isRefreshingTask}
-            className={workspaceSecondaryButtonClass}
-          >
-            <RefreshCw size={18} />
-            刷新任务
-          </button>
-        </div>
-      </div>
-
       <ClassFeedbackGenerationWorkspace
         classNameLabel={selectedClass?.name ?? '未选择班级'}
         teacherNameLabel={teacherNameLabel}
+        controlBar={classFeedbackControlBar}
         sourceSummaryItems={sourceSummaryItems}
         labelGroups={labelGroups}
         classStatusTags={classFeedbackStatusTags}
