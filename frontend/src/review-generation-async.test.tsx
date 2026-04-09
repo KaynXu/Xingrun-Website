@@ -26,3 +26,10 @@ test('review history source renders pending and failed status copy', () => {
 test('review generation page closes composer after async creation succeeds', () => {
   assert.match(appSource, /const handleFormSuccess = \(\) => \{\s*setComposerOpen\(false\);/);
 });
+
+test('review generation source synchronizes member class selection against accessible classes', () => {
+  assert.match(appSource, /function syncMemberScopedClassSelection\(/);
+  assert.match(appSource, /if \(role !== 'member'\) \{\s*return selectedClassId;/);
+  assert.match(appSource, /if \(classes.length === 1\) \{\s*return classes\[0\]\?\.id \?\? null;/);
+  assert.match(appSource, /setClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
+});

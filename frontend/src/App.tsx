@@ -349,6 +349,27 @@ function hasStaffAccess(role: Role): boolean {
 function canAccessSmartWrongQuestions(role: Role): boolean {
   return hasStaffAccess(role) || role === 'member';
 }
+
+function syncMemberScopedClassSelection(
+  role: Role,
+  classes: ClassItem[],
+  selectedClassId: number | null,
+): number | null {
+  if (role !== 'member') {
+    return selectedClassId;
+  }
+
+  if (selectedClassId !== null && classes.some((item) => item.id === selectedClassId)) {
+    return selectedClassId;
+  }
+
+  if (classes.length === 1) {
+    return classes[0]?.id ?? null;
+  }
+
+  return null;
+}
+
 function canManageOwnerRole(role: Role): boolean {
   return role === 'super_owner';
 }
@@ -1844,6 +1865,14 @@ const LessonInput = ({
     setClassId(null);
   }, [classId, classes, classesLoading]);
 
+  useEffect(() => {
+    if (classesLoading || currentUser.role !== 'member') {
+      return;
+    }
+
+    setClassId((current) => syncMemberScopedClassSelection(currentUser.role, classes, current));
+  }, [classes, classesLoading, currentUser.role]);
+
   const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
 
   const handleClassChange = (id: number) => {
@@ -2469,6 +2498,7 @@ const ClassFeedbackGenerationPage = ({
           return;
         }
         setClasses(classItems);
+        setSelectedClassId((current) => syncMemberScopedClassSelection(currentUser.role, classItems, current));
         setLabelGroups(labelResult.groups?.length ? labelResult.groups : defaultStageLabelGroups);
       })
       .catch((error) => {
@@ -2486,6 +2516,26 @@ const ClassFeedbackGenerationPage = ({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (classesLoading || currentUser.role !== 'member') {
+      return;
+    }
+
+    setSelectedClassId((current) => syncMemberScopedClassSelection(currentUser.role, classes, current));
+  }, [classes, classesLoading, currentUser.role]);
+
+  useEffect(() => {
+    if (classesLoading || currentUser.role === 'member' || selectedClassId === null) {
+      return;
+    }
+
+    if (classes.some((item) => item.id === selectedClassId)) {
+      return;
+    }
+
+    setSelectedClassId(null);
+  }, [classes, classesLoading, currentUser.role, selectedClassId]);
 
   useEffect(() => {
     if (!selectedClassId || !startDate || !endDate || startDate > endDate) {
