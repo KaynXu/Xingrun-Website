@@ -8309,6 +8309,7 @@ export default function App() {
                       primaryButtonClass: workspacePrimaryButtonClass,
                       secondaryButtonClass: workspaceSecondaryButtonClass,
                     }}
+                    canOpenAccounts={hasOwnerAccess(currentUser.role)}
                   />
                 )}
                 {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}

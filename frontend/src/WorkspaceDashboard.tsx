@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Library, PlusCircle } from 'lucide-react';
+import { ArrowRight, PlusCircle } from 'lucide-react';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
 type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
@@ -19,32 +19,6 @@ type WorkspaceDashboardProps = {
   styles: WorkspaceStyles;
   canOpenAccounts: boolean;
 };
-
-function getPlaceholderCopy(role: WorkspaceRole): {
-  eyebrow: string;
-  title: string;
-  description: string;
-  panelTitle: string;
-  panelBody: string;
-} {
-  if (role === 'super_owner') {
-    return {
-      eyebrow: 'Platform command',
-      title: '平台总览',
-      description: '集中查看跨机构运行状态与关键工作入口。',
-      panelTitle: '平台总览',
-      panelBody: '这里会承接平台级指标、审批与配置入口。',
-    };
-  }
-
-  return {
-    eyebrow: 'Operations focus',
-    title: '机构运营概览',
-    description: '优先处理机构日常运营、排课协同与教学跟进。',
-    panelTitle: '机构运营概览',
-    panelBody: '这里会承接机构级经营看板与运营动作。',
-  };
-}
 
 function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
   return (
@@ -101,6 +75,84 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">最近工作</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
             最近工作区会承接复习生成、课堂反馈和错题处理的最近记录。当前阶段先保留真实说明，不伪造任务列表。
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
+  return (
+    <div className={`${styles.pageClass} space-y-6`}>
+      <section className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-6 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)] md:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Platform command</p>
+        <div className="mt-4 space-y-3">
+          <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">平台总览</h3>
+          <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            欢迎回来，{currentUser.display_name}。这里聚焦跨机构观察、平台账号审批与系统级配置入口，不再沿用机构工作流首页。
+          </p>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className={`${styles.cardClass} min-h-32 p-5`}>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Overview</p>
+          <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">平台总览</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">保留平台级概览壳层，后续承接跨机构运行指标和核心状态。</p>
+        </div>
+        <button type="button" onClick={() => setActivePage('classes')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Organizations</p>
+            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">通过现有机构管理视图进入组织工作区，查看机构开通、活跃度和跨机构运营切面。</p>
+          </div>
+          <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+            查看机构工作区
+            <ArrowRight size={16} />
+          </span>
+        </button>
+        <button type="button" onClick={() => setActivePage('accounts')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Approval</p>
+            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">账号审批</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">处理跨机构账号开通、归属确认与审批入口。</p>
+          </div>
+          <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+            进入审批
+            <ArrowRight size={16} />
+          </span>
+        </button>
+        <button type="button" onClick={() => setActivePage('settings')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Settings</p>
+            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">系统设置</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">进入系统级配置，维护平台运行所需的全局参数。</p>
+          </div>
+          <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+            打开设置
+            <ArrowRight size={16} />
+          </span>
+        </button>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+        <div className={`${styles.cardClass} p-6`}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                这里保留跨机构观察区，承接组织状态、平台覆盖面和异常排查入口的真实壳层。
+              </p>
+            </div>
+            <ArrowRight size={18} className="shrink-0 text-sky-500 dark:text-sky-400" />
+          </div>
+        </div>
+
+        <div className={`${styles.cardClass} p-6`}>
+          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">系统设置</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            平台级设置入口已经可达，当前首页只保留真实入口说明，不添加虚构通知或任务系统。
           </p>
         </div>
       </section>
@@ -221,48 +273,5 @@ export function WorkspaceDashboard({ currentUser, setActivePage, styles, canOpen
     return <OrganizationWorkspace currentUser={currentUser} setActivePage={setActivePage} styles={styles} canOpenAccounts={canOpenAccounts} />;
   }
 
-  const copy = getPlaceholderCopy(currentUser.role);
-
-  return (
-    <div className={`${styles.pageClass} space-y-6`}>
-      <section className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-6 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)] md:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">{copy.eyebrow}</p>
-        <div className="mt-4 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
-            <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{copy.title}</h3>
-            <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-              欢迎回来，{currentUser.display_name}。{copy.description}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={() => setActivePage('review-generation')} className={styles.primaryButtonClass}>
-              <PlusCircle size={18} />
-              新建复习文档
-            </button>
-            <button type="button" onClick={() => setActivePage('review-generation')} className={styles.secondaryButtonClass}>
-              <Library size={18} />
-              查看历史文档
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-        <div className={`${styles.cardClass} p-6`}>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{copy.panelTitle}</p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{copy.panelBody}</p>
-            </div>
-            <ArrowRight size={18} className="shrink-0 text-sky-500 dark:text-sky-400" />
-          </div>
-        </div>
-
-        <div className={`${styles.cardClass} p-6`}>
-          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">当前身份</p>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{currentUser.role}</p>
-        </div>
-      </section>
-    </div>
-  );
+  return <PlatformWorkspace currentUser={currentUser} setActivePage={setActivePage} styles={styles} canOpenAccounts={canOpenAccounts} />;
 }
