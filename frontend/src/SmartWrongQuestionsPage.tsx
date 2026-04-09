@@ -134,6 +134,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
+  const recordsRef = useRef(records);
+  recordsRef.current = records;
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -265,7 +267,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
-    const selectedRecordForDetail = records.find((item) => item.id === selectedId);
+    const selectedRecordForDetail = recordsRef.current.find((item) => item.id === selectedId);
     if (!selectedRecordForDetail) {
       return;
     }
@@ -309,7 +311,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         }
       }
     })();
-  }, [records, selectedId]);
+  }, [selectedId]);
 
   const handleFilterChange = <K extends keyof WrongQuestionFilters>(key: K, value: WrongQuestionFilters[K]) => {
     setFilters((current) => ({
