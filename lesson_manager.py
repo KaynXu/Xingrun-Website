@@ -2319,7 +2319,7 @@ def create_pending_lesson(
 def mark_lesson_generation_succeeded(lesson_id: int, *, plan: dict, pdf_path: str) -> None:
     plan_json = json.dumps(plan, ensure_ascii=False)
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE lessons
             SET plan_json=?, pdf_path=?, record_status='ready', generation_error=''
@@ -2327,11 +2327,13 @@ def mark_lesson_generation_succeeded(lesson_id: int, *, plan: dict, pdf_path: st
             """,
             (plan_json, pdf_path, lesson_id),
         )
+        if cur.rowcount == 0:
+            raise LookupError("lesson not found")
 
 
 def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE lessons
             SET record_status='failed', generation_error=?
@@ -2339,6 +2341,8 @@ def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
             """,
             (error_message, lesson_id),
         )
+        if cur.rowcount == 0:
+            raise LookupError("lesson not found")
 
 
 def get_lesson(lesson_id: int):
@@ -2409,7 +2413,7 @@ def get_monthly_plan_job(job_id: int):
 
 def mark_monthly_plan_job_succeeded(job_id: int, *, pdf_filename: str) -> None:
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE monthly_plan_jobs
             SET status='ready',
@@ -2420,11 +2424,13 @@ def mark_monthly_plan_job_succeeded(job_id: int, *, pdf_filename: str) -> None:
             """,
             (pdf_filename, job_id),
         )
+        if cur.rowcount == 0:
+            raise LookupError("monthly plan job not found")
 
 
 def mark_monthly_plan_job_failed(job_id: int, error_message: str) -> None:
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE monthly_plan_jobs
             SET status='failed',
@@ -2435,6 +2441,8 @@ def mark_monthly_plan_job_failed(job_id: int, error_message: str) -> None:
             """,
             (error_message, job_id),
         )
+        if cur.rowcount == 0:
+            raise LookupError("monthly plan job not found")
 
 
 # ─── 班级 CRUD ─────────────────────────────────────────────────────────────────

@@ -63,6 +63,21 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
 
+    def test_mark_lesson_generation_succeeded_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "lesson not found"):
+            lesson_manager.mark_lesson_generation_succeeded(
+                lesson_id=999999,
+                plan={"dummy": "data"},
+                pdf_path="/tmp/placeholder.pdf",
+            )
+
+    def test_mark_lesson_generation_failed_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "lesson not found"):
+            lesson_manager.mark_lesson_generation_failed(
+                lesson_id=999999,
+                error_message="failure",
+            )
+
     def test_create_monthly_plan_job_and_mark_ready(self):
         job = lesson_manager.create_monthly_plan_job(
             organization_id=1,
@@ -76,6 +91,20 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         saved = lesson_manager.get_monthly_plan_job(job["id"])
         self.assertEqual(saved["status"], "ready")
         self.assertEqual(saved["pdf_filename"], "2026-04_月度综合复习.pdf")
+
+    def test_mark_monthly_plan_job_succeeded_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "monthly plan job not found"):
+            lesson_manager.mark_monthly_plan_job_succeeded(
+                job_id=999999,
+                pdf_filename="ghost.pdf",
+            )
+
+    def test_mark_monthly_plan_job_failed_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "monthly plan job not found"):
+            lesson_manager.mark_monthly_plan_job_failed(
+                job_id=999999,
+                error_message="failure",
+            )
 
     def test_create_monthly_plan_job_rejects_cross_organization_user(self):
         with lesson_manager.get_conn() as conn:
