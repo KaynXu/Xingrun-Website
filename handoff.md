@@ -1,3 +1,23 @@
+## develop 已推送到远端（2026-04-09）
+
+### 已完成
+- 当前本地 `develop` 已推送到远端，远端分支现已对齐到 `f3a5f48`（`docs: archive specs and cleanup generated files`）。
+- 已确认本地 `HEAD` 与 `origin/develop` 指向同一提交。
+- 已确认推送后主工作区仍保持干净。
+
+### proof
+- 核对命令：`git rev-parse --short HEAD && git rev-parse --short origin/develop && git status --short`
+- 完整输出结论：
+  - `HEAD f3a5f48`
+  - `origin/develop f3a5f48`
+  - `git status --short` 无输出
+
+### 剩余问题
+- 远端 Git 已同步，但生产服务器 SSH 登录仍未恢复，部署链路仍卡在服务器凭据阶段。
+
+### 下一步方向
+- 如需继续发布，下一步仍是修复服务器登录，然后在生产机执行拉取、前端构建和 PM2 重启。
+
 ## 文档归档与运行产物清理已完成（2026-04-09）
 
 ### 已完成
@@ -20,9 +40,9 @@
 ## 本轮部署尝试受阻（2026-04-09）
 
 ### 已完成
-- 已确认当前本地发布目标提交为 `90d52b2`（`feat: show normalized class feedback period summaries`）。
-- 已将当前 `develop` 推送到远端：`origin/develop = 90d52b2`。
-- 已核对本地工作区仍有未提交的运行产物与文档草稿，但它们不影响已提交版本推送。
+- 已确认当时的本地发布目标提交为 `90d52b2`（`feat: show normalized class feedback period summaries`）。
+- 已完成当时版本的 `develop` 远端推送；后续远端已继续前进到 `f3a5f48`，见上方最新记录。
+- 已核对当前本地工作区已清理干净，不再残留当时提到的运行产物与文档草稿。
 
 ### proof
 - 推送命令：`git push origin develop`
