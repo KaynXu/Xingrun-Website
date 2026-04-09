@@ -25,7 +25,7 @@ import secrets
 import sqlite3
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -74,6 +74,20 @@ DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS = [
     {"group": "课后执行", "labels": ["作业完成更稳", "作业拖延", "复习配合度提升", "家长跟进较积极", "家庭练习不足"]},
     {"group": "阶段变化", "labels": ["进步明显", "有点回落", "变化不大", "情绪更稳定", "需要下阶段重点关注"]},
 ]
+CLASS_FEEDBACK_MONTH_LABELS = {
+    1: "一月",
+    2: "二月",
+    3: "三月",
+    4: "四月",
+    5: "五月",
+    6: "六月",
+    7: "七月",
+    8: "八月",
+    9: "九月",
+    10: "十月",
+    11: "十一月",
+    12: "十二月",
+}
 CONSULTATION_SOURCE_ALIASES = {
     "转介绍": {"转介绍", "介绍", "朋友介绍", "家长介绍", "熟人介绍", "亲友介绍", "老带新", "推荐介绍", "推荐"},
     "朋友圈": {"朋友圈", "微信朋友圈", "pyq"},
@@ -1205,6 +1219,7 @@ def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection)
                 end_date TEXT NOT NULL,
                 period_length_days INTEGER NOT NULL DEFAULT 1,
                 period_granularity TEXT NOT NULL DEFAULT 'daily',
+                period_label TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'draft',
                 class_summary_ai_draft TEXT NOT NULL DEFAULT '',
                 class_summary_final_text TEXT NOT NULL DEFAULT '',
@@ -1225,14 +1240,15 @@ def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection)
             """
             INSERT INTO class_feedback_tasks (
                 id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity, status,
+                start_date, end_date, period_length_days, period_granularity, period_label, status,
                 class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
                 class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
                 student_highlights_json, created_by, created_at, updated_at, confirmed_at
             )
             SELECT
                 id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity, status,
+                start_date, end_date, period_length_days, period_granularity,
+                COALESCE(period_label, ''), status,
                 class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
                 class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
                 student_highlights_json, created_by, created_at, updated_at, confirmed_at
@@ -1583,6 +1599,7 @@ def init_db():
             end_date TEXT NOT NULL,
             period_length_days INTEGER NOT NULL DEFAULT 1,
             period_granularity TEXT NOT NULL DEFAULT 'daily',
+            period_label TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'draft',
             class_summary_ai_draft TEXT NOT NULL DEFAULT '',
             class_summary_final_text TEXT NOT NULL DEFAULT '',
@@ -1655,6 +1672,27 @@ def init_db():
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN next_stage_preview_note TEXT NOT NULL DEFAULT ''")
             if "student_highlights_json" not in class_feedback_task_cols:
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
+            if "period_label" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN period_label TEXT NOT NULL DEFAULT ''")
+            unlabeled_task_rows = conn.execute(
+                """
+                SELECT id, start_date, end_date, period_granularity
+                FROM class_feedback_tasks
+                WHERE trim(coalesce(period_label, '')) = ''
+                """
+            ).fetchall()
+            for task_row in unlabeled_task_rows:
+                conn.execute(
+                    "UPDATE class_feedback_tasks SET period_label=? WHERE id=?",
+                    (
+                        _format_class_feedback_period_label(
+                            task_row["period_granularity"],
+                            task_row["start_date"],
+                            task_row["end_date"],
+                        ),
+                        task_row["id"],
+                    ),
+                )
         _ensure_class_feedback_task_integrity_guards(conn)
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "record_status", "TEXT NOT NULL DEFAULT 'ready'")
@@ -2731,17 +2769,177 @@ def remove_student_from_class(class_id: int, student_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def _derive_class_feedback_period_fields(start_date: str, end_date: str) -> tuple[int, str]:
+def _last_day_of_month(year: int, month: int) -> int:
+    if month == 12:
+        next_month = date(year + 1, 1, 1)
+    else:
+        next_month = date(year, month + 1, 1)
+    return (next_month - timedelta(days=1)).day
+
+
+def _coerce_period_int(value, field_name: str) -> int:
+    if isinstance(value, bool) or value in (None, ""):
+        raise ValueError(f"{field_name} is required")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+
+
+def _format_legacy_custom_period_label(start_date: str, end_date: str) -> str:
+    return f"{start_date}至{end_date}"
+
+
+def _resolve_class_feedback_stage_dates(year: int, stage_name: str) -> tuple[date, date]:
+    normalized_stage_name = (stage_name or "").strip()
+    if not normalized_stage_name:
+        raise ValueError("stage_name is required")
+    if normalized_stage_name == "春季":
+        return date(year, 3, 1), date(year, 5, 31)
+    if normalized_stage_name in {"暑假", "夏季"}:
+        return date(year, 7, 1), date(year, 8, 31)
+    if normalized_stage_name == "秋季":
+        return date(year, 9, 1), date(year, 11, 30)
+    if normalized_stage_name in {"寒假", "冬季"}:
+        return date(year, 1, 1), date(year, 2, _last_day_of_month(year, 2))
+    raise ValueError("unsupported stage_name")
+
+
+def _infer_class_feedback_stage_name(start: date, end: date) -> Optional[str]:
+    for candidate in ("春季", "暑假", "秋季", "寒假"):
+        candidate_start, candidate_end = _resolve_class_feedback_stage_dates(start.year, candidate)
+        if start == candidate_start and end == candidate_end:
+            return candidate
+    return None
+
+
+def _format_class_feedback_period_label(period_granularity: str, start_date: str, end_date: str) -> str:
     start = date.fromisoformat((start_date or "").strip())
     end = date.fromisoformat((end_date or "").strip())
-    if end < start:
-        raise ValueError("end_date must be on or after start_date")
-    period_length_days = (end - start).days + 1
-    if period_length_days <= 1:
-        return period_length_days, "daily"
-    if 6 <= period_length_days <= 8:
-        return period_length_days, "weekly"
-    return period_length_days, "custom"
+    normalized_granularity = (period_granularity or "").strip()
+    if normalized_granularity == "daily":
+        return start.isoformat()
+    if normalized_granularity == "weekly":
+        iso_year, iso_week, _ = start.isocalendar()
+        return week_label(f"{iso_year}-W{iso_week:02d}")
+    if normalized_granularity == "monthly":
+        return f"{start.year}{CLASS_FEEDBACK_MONTH_LABELS[start.month]}"
+    if normalized_granularity == "stage":
+        stage_name = _infer_class_feedback_stage_name(start, end)
+        if stage_name:
+            return f"{start.year}{stage_name}"
+    return _format_legacy_custom_period_label(start.isoformat(), end.isoformat())
+
+
+def _derive_class_feedback_period_fields(start_date: str, end_date: str) -> tuple[int, str, str]:
+    resolved_start_date, resolved_end_date, period_length_days, period_granularity, period_label = _resolve_class_feedback_period_selection(
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return period_length_days, period_granularity, period_label
+
+
+def _resolve_class_feedback_period_selection(
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    period_granularity: Optional[str] = None,
+    anchor_date: Optional[str] = None,
+    year: Optional[int] = None,
+    week: Optional[int] = None,
+    month: Optional[int] = None,
+    stage_name: Optional[str] = None,
+) -> tuple[str, str, int, str, str]:
+    normalized_granularity = (period_granularity or "").strip()
+    normalized_start_date = (start_date or "").strip()
+    normalized_end_date = (end_date or "").strip()
+    normalized_anchor_date = (anchor_date or "").strip()
+
+    if not normalized_granularity:
+        if not normalized_start_date or not normalized_end_date:
+            raise ValueError("start_date and end_date are required")
+        start = date.fromisoformat(normalized_start_date)
+        end = date.fromisoformat(normalized_end_date)
+        if end < start:
+            raise ValueError("end_date must be on or after start_date")
+        resolved_start_date = start.isoformat()
+        resolved_end_date = end.isoformat()
+        period_length_days = (end - start).days + 1
+        return (
+            resolved_start_date,
+            resolved_end_date,
+            period_length_days,
+            "custom",
+            _format_legacy_custom_period_label(resolved_start_date, resolved_end_date),
+        )
+
+    if normalized_granularity == "custom":
+        if not normalized_start_date or not normalized_end_date:
+            raise ValueError("start_date and end_date are required")
+        start = date.fromisoformat(normalized_start_date)
+        end = date.fromisoformat(normalized_end_date)
+        if end < start:
+            raise ValueError("end_date must be on or after start_date")
+        resolved_start_date = start.isoformat()
+        resolved_end_date = end.isoformat()
+        period_length_days = (end - start).days + 1
+        return (
+            resolved_start_date,
+            resolved_end_date,
+            period_length_days,
+            "custom",
+            _format_legacy_custom_period_label(resolved_start_date, resolved_end_date),
+        )
+
+    if normalized_granularity == "daily":
+        selected_day = date.fromisoformat(normalized_anchor_date or normalized_start_date)
+        resolved_start_date = selected_day.isoformat()
+        return resolved_start_date, resolved_start_date, 1, "daily", resolved_start_date
+
+    if normalized_granularity == "weekly":
+        if normalized_anchor_date:
+            anchor = date.fromisoformat(normalized_anchor_date)
+            resolved_year, resolved_week, _ = anchor.isocalendar()
+        else:
+            resolved_year = _coerce_period_int(year, "year")
+            resolved_week = _coerce_period_int(week, "week")
+        start = date.fromisocalendar(resolved_year, resolved_week, 1)
+        end = start + timedelta(days=6)
+        return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
+
+    if normalized_granularity == "monthly":
+        if normalized_anchor_date:
+            anchor = date.fromisoformat(normalized_anchor_date)
+            resolved_year = anchor.year
+            resolved_month = anchor.month
+        else:
+            resolved_year = _coerce_period_int(year, "year")
+            resolved_month = _coerce_period_int(month, "month")
+        if resolved_month < 1 or resolved_month > 12:
+            raise ValueError("month must be between 1 and 12")
+        start = date(resolved_year, resolved_month, 1)
+        end = date(resolved_year, resolved_month, _last_day_of_month(resolved_year, resolved_month))
+        return (
+            start.isoformat(),
+            end.isoformat(),
+            (end - start).days + 1,
+            "monthly",
+            f"{resolved_year}{CLASS_FEEDBACK_MONTH_LABELS[resolved_month]}",
+        )
+
+    if normalized_granularity == "stage":
+        resolved_year = date.fromisoformat(normalized_anchor_date).year if normalized_anchor_date else _coerce_period_int(year, "year")
+        normalized_stage_name = (stage_name or "").strip()
+        start, end = _resolve_class_feedback_stage_dates(resolved_year, normalized_stage_name)
+        return (
+            start.isoformat(),
+            end.isoformat(),
+            (end - start).days + 1,
+            "stage",
+            f"{resolved_year}{normalized_stage_name}",
+        )
+
+    raise ValueError("unsupported period_granularity")
 
 
 def _load_json_list(value) -> list:
@@ -2844,6 +3042,7 @@ def _serialize_class_feedback_task_row(row: sqlite3.Row, student_entries: Option
     task["student_highlights"] = _load_json_list(task.get("student_highlights_json"))
     task.pop("class_status_tags_json", None)
     task.pop("student_highlights_json", None)
+    task["period_label"] = task.get("period_label") or ""
     task["class_status_note"] = task.get("class_status_note") or ""
     task["parent_feedback_note"] = task.get("parent_feedback_note") or ""
     task["teaching_focus_note"] = task.get("teaching_focus_note") or ""
@@ -2990,14 +3189,29 @@ def create_class_feedback_task(
     class_id: int,
     teacher_user_id: Optional[int],
     teacher_name_snapshot: str,
-    start_date: str,
-    end_date: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    period_granularity: Optional[str] = None,
+    anchor_date: Optional[str] = None,
+    year: Optional[int] = None,
+    week: Optional[int] = None,
+    month: Optional[int] = None,
+    stage_name: Optional[str] = None,
     created_by: int,
 ):
     teacher_name_snapshot = (teacher_name_snapshot or "").strip()
     if not teacher_name_snapshot:
         raise ValueError("teacher_name_snapshot is required")
-    period_length_days, period_granularity = _derive_class_feedback_period_fields(start_date, end_date)
+    start_date, end_date, period_length_days, period_granularity, period_label = _resolve_class_feedback_period_selection(
+        start_date=start_date,
+        end_date=end_date,
+        period_granularity=period_granularity,
+        anchor_date=anchor_date,
+        year=year,
+        week=week,
+        month=month,
+        stage_name=stage_name,
+    )
     with get_conn() as conn:
         class_row = conn.execute("SELECT id, organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
         if not class_row:
@@ -3022,9 +3236,9 @@ def create_class_feedback_task(
             """
             INSERT INTO class_feedback_tasks (
                 organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity,
+                start_date, end_date, period_length_days, period_granularity, period_label,
                 status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
             """,
             (
                 class_row["organization_id"],
@@ -3035,6 +3249,7 @@ def create_class_feedback_task(
                 end_date,
                 period_length_days,
                 period_granularity,
+                period_label,
                 created_by,
             ),
         )
@@ -3285,6 +3500,7 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
                 t.end_date,
                 t.period_length_days,
                 t.period_granularity,
+                t.period_label,
                 t.status,
                 t.class_summary_final_text,
                 t.created_by,
@@ -3327,6 +3543,7 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
                 t.end_date,
                 t.period_length_days,
                 t.period_granularity,
+                t.period_label,
                 t.status,
                 t.class_summary_final_text,
                 t.created_by,
@@ -3370,6 +3587,7 @@ def list_recent_confirmed_class_feedback_summaries(*, class_id: int, before_end_
                 end_date,
                 period_length_days,
                 period_granularity,
+                period_label,
                 class_summary_final_text,
                 confirmed_at
             FROM class_feedback_tasks
