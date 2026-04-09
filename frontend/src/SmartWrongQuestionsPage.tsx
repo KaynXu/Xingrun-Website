@@ -134,6 +134,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
+  const recordsRef = useRef(records);
+  recordsRef.current = records;
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -265,7 +267,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
-    const selectedRecordForDetail = records.find((item) => item.id === selectedId);
+    const selectedRecordForDetail = recordsRef.current.find((item) => item.id === selectedId);
     if (!selectedRecordForDetail) {
       return;
     }
@@ -309,7 +311,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         }
       }
     })();
-  }, [records, selectedId]);
+  }, [selectedId]);
 
   const handleFilterChange = <K extends keyof WrongQuestionFilters>(key: K, value: WrongQuestionFilters[K]) => {
     setFilters((current) => ({
@@ -398,20 +400,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">记录总数</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">错题总数</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.totalCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">重复错题</p>
-            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.repeatedMistakeCount}</p>
-          </div>
-          <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">高优先级</p>
-            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.highPriorityCount}</p>
-          </div>
-          <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">待教师跟进</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">待跟进</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.pendingReviewCount}</p>
+          </div>
+          <div className={`${workspaceSoftCardClass} p-4`}>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责班级</p>
+            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.uniqueClassCount}</p>
+          </div>
+          <div className={`${workspaceSoftCardClass} p-4`}>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">负责学生</p>
+            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.uniqueStudentCount}</p>
           </div>
         </div>
       </section>
@@ -478,16 +480,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               ))}
             </select>
           </label>
-          <label className="space-y-2 text-sm">
-            <span className="text-slate-500 dark:text-slate-400">科目</span>
-            <input
-              type="text"
-              value={filters.subject ?? ''}
-              onChange={(event) => handleFilterChange('subject', event.target.value)}
-              className={workspaceFieldClass}
-              placeholder="如：数学"
-            />
-          </label>
+          {hasStaffScope && (
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">科目</span>
+              <input
+                type="text"
+                value={filters.subject ?? ''}
+                onChange={(event) => handleFilterChange('subject', event.target.value)}
+                className={workspaceFieldClass}
+                placeholder="如：数学"
+              />
+            </label>
+          )}
           {hasStaffScope && (
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">老师</span>
@@ -504,19 +508,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </select>
             </label>
           )}
-          <label className="space-y-2 text-sm">
-            <span className="text-slate-500 dark:text-slate-400">错误类型</span>
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-              <input
-                type="text"
-                value={filters.errorType ?? ''}
-                onChange={(event) => handleFilterChange('errorType', event.target.value)}
-                className={`${workspaceFieldClass} pl-11`}
-                placeholder="如：计算错误"
-              />
-            </div>
-          </label>
+          {hasStaffScope && (
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">错误类型</span>
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                <input
+                  type="text"
+                  value={filters.errorType ?? ''}
+                  onChange={(event) => handleFilterChange('errorType', event.target.value)}
+                  className={`${workspaceFieldClass} pl-11`}
+                  placeholder="如：计算错误"
+                />
+              </div>
+            </label>
+          )}
           <label className="flex items-center gap-3 self-end rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
             <input
               type="checkbox"

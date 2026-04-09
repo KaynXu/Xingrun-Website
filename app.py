@@ -1111,19 +1111,24 @@ def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
     if user.get("role") == "super_owner":
         return [item for item in items if isinstance(item, dict)]
     if user.get("role") in {"owner", "admin"}:
-        scoped_classes = list_classes_for_actor(user)
-        scoped_users = list_users_for_actor(user)
-        scoped_class_ids = {item["id"] for item in scoped_classes}
-        scoped_user_ids = {item["id"] for item in scoped_users}
+        user_organization_id = user.get("organization_id")
+
+        def _normalize_organization_id(value):
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.isdigit():
+                    return int(stripped)
+            return None
+
         return [
             item
             for item in items
             if isinstance(item, dict)
-            and _can_access_wrong_question_record(
-                user,
-                item,
-                scoped_class_ids,
-                scoped_user_ids,
+            and (
+                _normalize_organization_id(item.get("organization_id")) is None
+                or _normalize_organization_id(item.get("organization_id")) == user_organization_id
             )
         ]
 
