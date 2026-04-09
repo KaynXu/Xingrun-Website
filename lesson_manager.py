@@ -2811,6 +2811,18 @@ def _infer_class_feedback_stage_name(start: date, end: date) -> Optional[str]:
     return None
 
 
+def _parse_class_feedback_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[date, date]:
+    normalized_start_date = (start_date or "").strip()
+    normalized_end_date = (end_date or "").strip()
+    if not normalized_start_date or not normalized_end_date:
+        raise ValueError("start_date and end_date are required")
+    start = date.fromisoformat(normalized_start_date)
+    end = date.fromisoformat(normalized_end_date)
+    if end < start:
+        raise ValueError("end_date must be on or after start_date")
+    return start, end
+
+
 def _resolve_class_feedback_period_selection(
     *,
     start_date: Optional[str] = None,
@@ -2823,17 +2835,10 @@ def _resolve_class_feedback_period_selection(
     stage_name: Optional[str] = None,
 ) -> tuple[str, str, int, str, str]:
     normalized_granularity = (period_granularity or "").strip()
-    normalized_start_date = (start_date or "").strip()
-    normalized_end_date = (end_date or "").strip()
     normalized_anchor_date = (anchor_date or "").strip()
 
     if not normalized_granularity:
-        if not normalized_start_date or not normalized_end_date:
-            raise ValueError("start_date and end_date are required")
-        start = date.fromisoformat(normalized_start_date)
-        end = date.fromisoformat(normalized_end_date)
-        if end < start:
-            raise ValueError("end_date must be on or after start_date")
+        start, end = _parse_class_feedback_range(start_date, end_date)
         resolved_start_date = start.isoformat()
         resolved_end_date = end.isoformat()
         period_length_days = (end - start).days + 1
@@ -2846,12 +2851,7 @@ def _resolve_class_feedback_period_selection(
         )
 
     if normalized_granularity == "custom":
-        if not normalized_start_date or not normalized_end_date:
-            raise ValueError("start_date and end_date are required")
-        start = date.fromisoformat(normalized_start_date)
-        end = date.fromisoformat(normalized_end_date)
-        if end < start:
-            raise ValueError("end_date must be on or after start_date")
+        start, end = _parse_class_feedback_range(start_date, end_date)
         resolved_start_date = start.isoformat()
         resolved_end_date = end.isoformat()
         period_length_days = (end - start).days + 1
@@ -2864,7 +2864,13 @@ def _resolve_class_feedback_period_selection(
         )
 
     if normalized_granularity == "daily":
-        selected_day = date.fromisoformat(normalized_anchor_date or normalized_start_date)
+        if normalized_anchor_date:
+            selected_day = date.fromisoformat(normalized_anchor_date)
+        else:
+            start, end = _parse_class_feedback_range(start_date, end_date)
+            if start != end:
+                raise ValueError("daily period requires a single-day range")
+            selected_day = start
         resolved_start_date = selected_day.isoformat()
         return resolved_start_date, resolved_start_date, 1, "daily", resolved_start_date
 
@@ -2872,11 +2878,23 @@ def _resolve_class_feedback_period_selection(
         if normalized_anchor_date:
             anchor = date.fromisoformat(normalized_anchor_date)
             resolved_year, resolved_week, _ = anchor.isocalendar()
-        else:
+            start = date.fromisocalendar(resolved_year, resolved_week, 1)
+            end = start + timedelta(days=6)
+            return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
+        if year not in (None, "") and week not in (None, ""):
             resolved_year = _coerce_period_int(year, "year")
             resolved_week = _coerce_period_int(week, "week")
-        start = date.fromisocalendar(resolved_year, resolved_week, 1)
-        end = start + timedelta(days=6)
+            start = date.fromisocalendar(resolved_year, resolved_week, 1)
+            end = start + timedelta(days=6)
+            return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
+
+        start, end = _parse_class_feedback_range(start_date, end_date)
+        if (end - start).days != 6:
+            raise ValueError("weekly period requires a 7-day range")
+        resolved_year, resolved_week, _ = start.isocalendar()
+        expected_end = start + timedelta(days=6)
+        if end != expected_end:
+            raise ValueError("weekly period requires a contiguous 7-day range")
         return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
 
     if normalized_granularity == "monthly":
@@ -2884,9 +2902,24 @@ def _resolve_class_feedback_period_selection(
             anchor = date.fromisoformat(normalized_anchor_date)
             resolved_year = anchor.year
             resolved_month = anchor.month
-        else:
+        elif year not in (None, "") and month not in (None, ""):
             resolved_year = _coerce_period_int(year, "year")
             resolved_month = _coerce_period_int(month, "month")
+        else:
+            start, end = _parse_class_feedback_range(start_date, end_date)
+            resolved_year = start.year
+            resolved_month = start.month
+            if start.day != 1 or end.year != resolved_year or end.month != resolved_month:
+                raise ValueError("monthly period requires a full calendar month range")
+            if end.day != _last_day_of_month(resolved_year, resolved_month):
+                raise ValueError("monthly period requires a full calendar month range")
+            return (
+                start.isoformat(),
+                end.isoformat(),
+                (end - start).days + 1,
+                "monthly",
+                f"{resolved_year}{CLASS_FEEDBACK_MONTH_LABELS[resolved_month]}",
+            )
         if resolved_month < 1 or resolved_month > 12:
             raise ValueError("month must be between 1 and 12")
         start = date(resolved_year, resolved_month, 1)
@@ -2900,8 +2933,23 @@ def _resolve_class_feedback_period_selection(
         )
 
     if normalized_granularity == "stage":
-        resolved_year = date.fromisoformat(normalized_anchor_date).year if normalized_anchor_date else _coerce_period_int(year, "year")
         normalized_stage_name = (stage_name or "").strip()
+        if normalized_anchor_date:
+            resolved_year = date.fromisoformat(normalized_anchor_date).year
+        elif year not in (None, ""):
+            resolved_year = _coerce_period_int(year, "year")
+        else:
+            start, end = _parse_class_feedback_range(start_date, end_date)
+            inferred_stage_name = _infer_class_feedback_stage_name(start, end)
+            if inferred_stage_name is None:
+                raise ValueError("stage period requires valid stage_name")
+            return (
+                start.isoformat(),
+                end.isoformat(),
+                (end - start).days + 1,
+                "stage",
+                f"{start.year}{inferred_stage_name}",
+            )
         start, end = _resolve_class_feedback_stage_dates(resolved_year, normalized_stage_name)
         return (
             start.isoformat(),

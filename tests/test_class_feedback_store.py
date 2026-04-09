@@ -207,6 +207,60 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "end_date must be on or after start_date"):
             lesson_manager.init_db()
 
+    def test_init_db_backfills_period_label_for_legacy_explicit_granularity_rows(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+
+        weekly_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="weekly",
+            year=2026,
+            week=15,
+            created_by=owner["id"],
+        )
+        monthly_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="monthly",
+            year=2026,
+            month=4,
+            created_by=owner["id"],
+        )
+        stage_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="stage",
+            year=2026,
+            stage_name="春季",
+            created_by=owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE class_feedback_tasks SET period_label='' WHERE id IN (?, ?, ?)",
+                (weekly_task["id"], monthly_task["id"], stage_task["id"]),
+            )
+
+        lesson_manager.init_db()
+
+        self.assertEqual(
+            lesson_manager.get_class_feedback_task(weekly_task["id"])["period_label"],
+            lesson_manager.week_label("2026-W15"),
+        )
+        self.assertEqual(
+            lesson_manager.get_class_feedback_task(monthly_task["id"])["period_label"],
+            "2026四月",
+        )
+        self.assertEqual(
+            lesson_manager.get_class_feedback_task(stage_task["id"])["period_label"],
+            "2026春季",
+        )
+
     def test_create_task_persists_class_organization_id(self):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
