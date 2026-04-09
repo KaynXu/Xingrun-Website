@@ -51,7 +51,7 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("不得超过 30%", ai_processor.PLAN_SYSTEM_PROMPT)
         self.assertIn("至少 70% 的填空题", ai_processor.PLAN_SYSTEM_PROMPT)
 
-    def test_parse_and_generate_plan_falls_back_to_gpt_4o_for_n1n_gpt_5_models(self):
+    def test_parse_and_generate_plan_uses_configured_model_for_n1n(self):
         fake_client = _FakeClient(
             {
                 "lesson_info": {},
@@ -70,9 +70,9 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         ), patch("ai_processor._get_client", return_value=fake_client):
             ai_processor.parse_and_generate_plan("课堂总结")
 
-        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-4o")
+        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
 
-    def test_generate_monthly_plan_falls_back_to_gpt_4o_for_n1n_gpt_5_models(self):
+    def test_generate_monthly_plan_uses_configured_model_for_n1n(self):
         fake_client = _FakeClient(
             {
                 "lesson_info": {},
@@ -94,7 +94,7 @@ class AiProcessorPromptTestCase(unittest.TestCase):
                 "2026-04",
             )
 
-        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-4o")
+        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
 
 
 if __name__ == "__main__":

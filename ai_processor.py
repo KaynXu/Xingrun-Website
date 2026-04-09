@@ -86,11 +86,7 @@ def _get_chat_model() -> str:
 
 
 def _get_structured_generation_model() -> str:
-    model = str(_get_chat_model() or "gpt-4o")
-    provider = _provider_name()
-    if provider == "n1n" and model.lower().startswith("gpt-5"):
-        return "gpt-4o"
-    return model
+    return str(_get_chat_model() or "gpt-4o")
 
 
 def _get_whisper_client():

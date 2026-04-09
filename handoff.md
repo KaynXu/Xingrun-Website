@@ -1,3 +1,29 @@
+## Task 5 移除 gpt-4o fallback 并最终回归验证（2026-04-09）
+
+### 已完成
+- 移除 `ai_processor.py` 中 `_get_structured_generation_model()` 对 n1n/gpt-5 系列模型的临时 gpt-4o 回退逻辑。
+- `parse_and_generate_plan` 和 `generate_monthly_plan` 在 provider=n1n、n1n_model=gpt-5.4 时，实际调用 gpt-5.4。
+- `tests/test_ai_processor_prompt.py` 两个测试已改为断言使用配置模型，不再断言回退到 gpt-4o。
+
+### proof
+- 临时脚本：`/tmp/proof_task5_final_20260409.sh`
+- 完整输出：
+  - Backend: `Ran 23 tests in 0.841s` → `OK`
+    - `tests.test_review_plan_async_store` (10 tests)
+    - `tests.test_review_plan_async_api` (10 tests)
+    - `tests.test_ai_processor_prompt` (3 tests)
+  - Frontend: `pass 6, fail 0`
+    - `review-generation-async.test.tsx` (4 tests)
+    - `course-calendar-data.test.ts` (2 tests)
+
+### 剩余问题
+- `tests.test_monthly_plan_async_api` 不存在（Task 4 月度异步 API 尚未实现），本轮未涉及。
+- 前端测试全集中既有失败 `class management fetches and resets class invite codes` 仍未处理，不属于本轮范围。
+
+### 下一步方向
+- Task 4（月度计划异步 job / API / retry）待完成后，可追加 `test_monthly_plan_async_api`。
+- 后续可考虑把 `_get_structured_generation_model` 简化为直接复用 `_get_chat_model`（已等价）。
+
 ## AGENTS 协作规则已更新（2026-04-09）
 
 ## Task 3 前端异步状态已完成（2026-04-09）
