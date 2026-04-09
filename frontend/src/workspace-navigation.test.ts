@@ -199,10 +199,11 @@ test('credit center page source supports member drilldown and ledger filtering',
 
 test('workspace navigation source reserves classes management for owner and admin shells', () => {
   const classManagementBlock = requireMatch(/const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
   assert.match(appSource, /hasStaffAccess\(currentUser\.role\)/);
-  assert.match(appSource, /id: 'classes'[\s\S]*label: '班级管理'/);
+  assert.match(sidebarBlock, /\.\.\.\(hasStaffAccess\(currentUser\.role\)[\s\S]*?\[\{ id: 'classes', icon: Home, label: '班级管理' \}\][\s\S]*?: \[\]\)/);
   assert.match(appSource, /classes: '班级管理'/);
   assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
   assert.match(classManagementBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);

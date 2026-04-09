@@ -1464,7 +1464,9 @@ const Sidebar = ({
     ...(canAccessSmartWrongQuestions(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
       : []),
-    { id: 'classes', icon: Home, label: '班级管理' },
+    ...(hasStaffAccess(currentUser.role)
+      ? [{ id: 'classes', icon: Home, label: '班级管理' }]
+      : []),
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
