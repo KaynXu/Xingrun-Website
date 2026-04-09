@@ -8,15 +8,18 @@ PDF 生成引擎（数据驱动版）
 """
 
 import html
+import io
 import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
     HRFlowable, KeepTogether, PageBreak,
 )
 from reportlab.pdfbase import pdfmetrics
@@ -310,6 +313,41 @@ def _render_item(item: dict, styles: dict, show_answers: bool = False) -> list:
     return result
 
 
+def _fetch_wrong_question_image_bytes(image_url: str) -> bytes | None:
+    normalized_image_url = (image_url or "").strip()
+    if not normalized_image_url:
+        return None
+    try:
+        with urllib.request.urlopen(normalized_image_url, timeout=10) as response:
+            image_bytes = response.read()
+    except (urllib.error.URLError, ValueError, OSError):
+        return None
+    return image_bytes or None
+
+
+def _build_wrong_question_image(image_url: str):
+    image_bytes = _fetch_wrong_question_image_bytes(image_url)
+    if not image_bytes:
+        return None
+    try:
+        flowable = Image(io.BytesIO(image_bytes))
+    except Exception:
+        return None
+
+    max_width = CONTENT_W - 1.2 * cm
+    max_height = 11.5 * cm
+    draw_width = float(getattr(flowable, "drawWidth", 0) or 0)
+    draw_height = float(getattr(flowable, "drawHeight", 0) or 0)
+    if draw_width <= 0 or draw_height <= 0:
+        return None
+
+    scale = min(max_width / draw_width, max_height / draw_height, 1.0)
+    flowable.drawWidth = draw_width * scale
+    flowable.drawHeight = draw_height * scale
+    flowable.hAlign = 'CENTER'
+    return flowable
+
+
 def generate_student_wrong_question_library_pdf(
     *,
     student_name: str,
@@ -348,6 +386,14 @@ def generate_student_wrong_question_library_pdf(
         story.append(Paragraph(f"老师：{html.escape(str(record.get('teacher_display_name') or ''))}", styles["body"]))
         if record.get("is_geometry"):
             story.append(Paragraph("题目内容：几何题按图片入库", styles["body"]))
+            geometry_image = _build_wrong_question_image(str(record.get("image_url") or ""))
+            if geometry_image is not None:
+                story.append(_spacer(0.15))
+                story.append(Paragraph("题目图片：", styles["section"]))
+                story.append(geometry_image)
+                story.append(_spacer(0.1))
+            else:
+                story.append(Paragraph("题目图片：暂时无法载入，已保留原图记录。", styles["tip"]))
         else:
             story.append(
                 Paragraph(

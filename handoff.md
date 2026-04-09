@@ -5,6 +5,7 @@
 - `wrong_question_submissions` 已补齐识别状态、几何标记、题目文本、文本来源、学生错题库 PDF 路径等字段，并支持老师改题目文本。
 - 网站后端已支持按学生重建固定路径错题库 PDF，并新增学生错题库读取接口供网页端和小程序端共用。
 - 网页端 `智能错题` 已支持本地微信非几何题的“题目文本”编辑与保存，保存时会带上 `question_text` 并刷新本地记录草稿。
+- 学生错题库 PDF 已增强为“仅几何题嵌入原题图片，非几何题继续文字为主”的版式，且图片拉取失败时会自动降级为提示文本，不影响 PDF 生成。
 
 ### proof
 - 通过临时脚本完成定向回归：
@@ -12,13 +13,17 @@
   - 结果：`Ran 45 tests in 1.214s`，`OK`
   - Frontend: `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
   - 结果：`tests 25`，`pass 25`，`fail 0`
+- 本轮新增临时脚本 proof：
+  - `/tmp/wrong-question-pdf-proof-XXXXXX.py`
+  - 实际执行内容：`/opt/homebrew/bin/python3 -m unittest tests.test_wrong_question_library_pdf -v`
+  - 结果：`Ran 4 tests in 0.289s`，`OK`
 
 ### 剩余问题
 - 本轮学生错题库相关定向 proof 中，既有 `sqlite3.Connection` 未关闭 `ResourceWarning` 已通过连接生命周期修复清理干净。
-- 学生错题库 PDF 现阶段已能稳定生成文本版成品，但几何题/原题图片在 PDF 中仍是第一版能力，后续如果要强化版式或嵌图细节，可单开一轮。
+- 学生错题库 PDF 现已支持几何题嵌图，但图片仍是基础单图展示；若后续要做更强版式，可再补图片裁切、占位框、页内说明等视觉细化。
 
 ### 下一步方向
-- 如果要继续收口本链路，下一步更值得做的是增强学生错题库 PDF 的图片呈现质量。
+- 如果要继续收口本链路，下一步更值得做的是补强图片展示的视觉细节，而不是再动数据链路。
 
 ## 工作台重写设计已确认并写成 spec（2026-04-09）
 
