@@ -1,3 +1,47 @@
+## 智能错题未配置时保留本地微信错题列表（2026-04-09）
+
+### 已完成
+- 已修复 `智能错题` 页面在未配置下游服务时直接报 `智能错题服务尚未配置`、导致本地微信错题也无法查看的问题。
+- 根因确认：
+  - `app.py` 的 `GET /api/wrong-questions` 先调用 `smart_wrong_questions.fetch_wrong_question_records(request.args)`
+  - 当 `wrong_question_service_url` / `wrong_question_service_token` 为空时，`smart_wrong_questions.py` 会抛出 `WrongQuestionProxyError("智能错题服务尚未配置", 503)`
+  - 旧实现会立刻返回 `503`，后面的 `list_wechat_wrong_question_submissions()` 合并逻辑根本不会执行
+- 已改动：
+  - `app.py`
+    - 对列表接口增加最小降级：仅当异常是 `503 + 智能错题服务尚未配置` 时，改为使用空下游结果继续执行后续本地合并
+    - 其它下游错误仍按原样透传
+  - `tests/test_smart_wrong_questions_api.py`
+    - 新增回归测试：未配置下游服务时，列表接口仍返回本地 `wechat_mp` 错题
+    - 原配置错误透传测试改为“非配置类代理错误仍透传”，锁住边界
+
+### proof
+- red：
+  - `/tmp/proof_wrong_question_unconfigured_red_20260409.sh`
+  - `/tmp/xingrun-proof-venv/bin/python -m unittest tests.test_smart_wrong_questions_api.SmartWrongQuestionsApiTestCase.test_list_route_still_returns_local_wechat_records_when_service_is_unconfigured -v`
+  - 完整输出关键结论：
+    - `AssertionError: 503 != 200`
+    - `FAILED (failures=1)`
+- green：
+  - `/tmp/proof_wrong_question_unconfigured_green_20260409.sh`
+  - 定向结果：
+    - `Ran 3 tests in 0.061s`
+    - `OK`
+- 回归：
+  - `/tmp/proof_wrong_question_api_full_20260409.sh`
+  - 完整结果：
+    - `Ran 20 tests in 0.663s`
+    - `OK`
+  - 备注：输出里带有既有 `ResourceWarning: unclosed database`，但本轮相关测试均为绿色
+
+### 剩余问题
+- 列表接口现在会在“服务未配置”场景下静默降级为仅展示本地微信错题；如果后续仍需要接入外部智能错题服务，仍需补齐 `XR_WRONG_QUESTION_SERVICE_URL` / `XR_WRONG_QUESTION_SERVICE_TOKEN` 或对应 `config.json` 配置。
+- `tests.test_smart_wrong_questions_api` 在 Python 3.13 环境下仍会打印既有 `sqlite3` `ResourceWarning`，本轮未扩 scope 处理。
+
+### 下一步方向
+- 如果要继续收口这块体验，可考虑：
+  - 前端为空列表时补一个更明确的说明，区分“当前仅展示微信错题”与“下游智能错题服务已接入”
+  - 后端后续可评估是否把这个“未配置降级”抽成 `smart_wrong_questions` 层的显式 helper，避免列表接口写死消息判断
+
 ## DB 分支收口：batch3 已合入 develop，org-rooted 已在 develop（2026-04-09）
 
 ### 已完成

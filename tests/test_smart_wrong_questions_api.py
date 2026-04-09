@@ -629,11 +629,11 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         )
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
-    def test_list_route_translates_config_proxy_errors(self, fetch_wrong_question_records):
+    def test_list_route_translates_non_config_proxy_errors(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
         fetch_wrong_question_records.side_effect = smart_wrong_questions.WrongQuestionProxyError(
-            "智能错题服务尚未配置",
-            503,
+            "下游服务不可用: timeout",
+            502,
         )
 
         response = self.client.get(
@@ -641,8 +641,30 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             headers=self.auth_headers(owner_payload["token"]),
         )
 
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.get_json(), {"error": "智能错题服务尚未配置"})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json(), {"error": "下游服务不可用: timeout"})
+
+    def test_list_route_still_returns_local_wechat_records_when_service_is_unconfigured(self):
+        owner_payload = self.login_owner()
+        record = self.create_local_wechat_record(owner_payload["user"]["id"])
+        config_runtime.write_file_config(
+            {
+                "wrong_question_service_url": "",
+                "wrong_question_service_token": "",
+            }
+        )
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual([item["id"] for item in payload["items"]], [record["id"]])
+        self.assertEqual(payload["items"][0]["source"], "wechat_mp")
 
     @patch("smart_wrong_questions.fetch_wrong_question_record")
     @patch("smart_wrong_questions.save_wrong_question_review")

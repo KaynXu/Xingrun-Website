@@ -1646,7 +1646,10 @@ def api_wrong_questions_list():
     try:
         payload = smart_wrong_questions.fetch_wrong_question_records(request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
+        if exc.status_code == 503 and str(exc) == "智能错题服务尚未配置":
+            payload = {"items": [], "total": 0}
+        else:
+            return jsonify({"error": str(exc)}), exc.status_code
 
     local_items = list_wechat_wrong_question_submissions()
     merged_items = [*local_items, *payload.get("items", [])]
