@@ -2797,18 +2797,6 @@ def api_class_feedback_labels_put():
     return jsonify({"groups": list_class_feedback_label_configs(user["id"])})
 
 
-def _normalize_created_class_feedback_task_response(task: dict) -> dict:
-    response = dict(task)
-    if response.get("period_granularity") == "weekly":
-        try:
-            period_start = date.fromisoformat(str(response.get("start_date") or ""))
-        except ValueError:
-            return response
-        iso_year, iso_week, _ = period_start.isocalendar()
-        response["period_label"] = f"{iso_year}第{iso_week}周"
-    return response
-
-
 @app.route("/api/class-feedback/tasks", methods=["POST"])
 def api_class_feedback_task_create():
     user, error = _require_auth()
@@ -2862,7 +2850,7 @@ def api_class_feedback_task_create():
         return jsonify({"error": "not found"}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(_normalize_created_class_feedback_task_response(task)), 201
+    return jsonify(task), 201
 
 
 @app.route("/api/class-feedback/tasks/<int:task_id>", methods=["GET"])

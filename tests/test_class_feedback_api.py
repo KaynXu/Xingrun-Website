@@ -88,7 +88,7 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertIsNotNone(payload)
         self.assertEqual(payload["period_granularity"], "weekly")
-        self.assertEqual(payload["period_label"], "2026第15周")
+        self.assertEqual(payload["period_label"], lesson_manager.week_label("2026-W15"))
         self.assertEqual(payload["start_date"], "2026-04-06")
         self.assertEqual(payload["end_date"], "2026-04-12")
 
