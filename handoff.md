@@ -1,3 +1,29 @@
+## 智能错题残留旧筛选已彻底清干净并完成生产发布（2026-04-10）
+
+### 已完成
+- 已补删 `frontend/src/SmartWrongQuestionsPage.tsx` 里残留的旧 `onlyPendingReview` 默认筛选和 checkbox UI，不再保留任何 `只看待教师跟进` 入口。
+- 已同步收口 staff 顶部说明与汇总卡文案，把历史 `待跟进` 表述改成当前实际使用的 `未掌握` 语义。
+- 已把 `frontend/src/smart-wrong-questions.test.ts` 中仍期待 `导出 PDF 汇总` 的 owner 回归断言改到当前 notebook 结构，避免测试继续盯着已删除控件。
+- 已提交并推送：`72e0aa5 fix: remove stale smart wrong question filters`。
+- 已通过 git bundle 将 `develop` 发布到生产机 `/home/ubuntu/Xingrun-Website`，前端构建成功，`pm2 restart xingrun` 后复查恢复正常。
+
+### proof
+- 临时脚本：系统临时脚本执行 `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts && npm run build`
+- 完整输出结论：
+  - `tests 32`
+  - `pass 32`
+  - `fail 0`
+  - `vite build` 成功
+- 推送结果：`14ac9b4..72e0aa5  develop -> develop`
+- 生产发布结果：bundle fast-forward 到 `72e0aa5`，`npm --prefix frontend run build` 成功，`pm2 status xingrun` 为 `online`。
+- 生产健康检查：复查返回 `HTTP/1.1 302 FOUND`，`Location: http://127.0.0.1:3000`。
+
+### 剩余问题
+- 重启后的第一下即时健康检查仍可能短暂失败；本轮复查已确认服务随后恢复为正常 `302`。
+
+### 下一步方向
+- 如果还要继续收口智能错题页面，可以再扫一遍文案和测试里是否还残留 `待跟进 / 教师复盘工作区` 这类旧说法，避免后续再出现“UI 已删但文案没清干净”的情况。
+
 ## 智能错题当前状态已校正（2026-04-10）
 
 ### 已完成
@@ -24,8 +50,8 @@
 
 ### proof
 - 前端临时脚本：`cd frontend && npx tsx --test src/smart-wrong-questions.test.ts src/landing-legal-pages.test.tsx`
-  - `tests 47`
-  - `pass 47`
+  - `tests 45`
+  - `pass 45`
   - `fail 0`
 - 后端临时脚本：`/opt/homebrew/bin/python3 -m unittest tests.test_smart_wrong_questions_api`
   - `Ran 22 tests in 0.372s`
