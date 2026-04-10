@@ -10,9 +10,13 @@
 ### proof
 - 临时脚本：系统临时脚本执行 `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
 - 完整输出结论：
-  - `tests 34`
-  - `pass 34`
+  - `tests 35`
+  - `pass 35`
   - `fail 0`
+- 提交结果：`81b10d4 fix: refine smart wrong question notebook filters`
+- 推送结果：`72e31ac..81b10d4  develop -> develop`
+- 生产发布结果：因生产机到 GitHub HTTPS 不通，已使用 git bundle 兜底将 `develop` 发布到 `/home/ubuntu/Xingrun-Website`；前端构建成功，`pm2 restart xingrun` 后复查为 `online`。
+- 生产健康检查：重启后第一下即时 `curl` 仍短暂失败一次，二次复查恢复为 `HTTP/1.1 302 FOUND`，`Location: http://127.0.0.1:3000`。
 
 ### 剩余问题
 - 本轮没有继续动后端筛选参数定义，当前只是把前端旧入口删掉并改成新的单班级 notebook 交互。
