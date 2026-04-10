@@ -705,7 +705,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </div>
             <div className={`${workspaceCardClass} p-4`}>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 归类错因</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.primaryErrorType || selectedRecord.analysis.errorType || '待归类'}</p>
+              {selectedDraft ? (
+                <select
+                  aria-label="AI 归类错因"
+                  value={selectedDraft.selectedErrorType}
+                  onChange={(event) => handleDraftChange('selectedErrorType', event.target.value)}
+                  className={`${workspaceFieldClass} mt-2`}
+                >
+                  <option value="">请选择错因</option>
+                  {finalErrorTypeOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.primaryErrorType || selectedRecord.analysis.errorType || '待归类'}</p>
+              )}
             </div>
             <div className={`${workspaceCardClass} p-4`}>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 备注</p>
