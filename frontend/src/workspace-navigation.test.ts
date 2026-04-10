@@ -52,11 +52,10 @@ test('review generation source defaults to history documents and expands the sha
   assert.match(reviewGenerationBlock, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} \/>/);
 });
 
-test('review generation source keeps the shared composer open after successful generation and refreshes history', () => {
+test('review generation source closes the shared composer after successful generation and refreshes history', () => {
   const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
 
-  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(\) => \{\s*setComposerOpen\(true\);\s*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
-  assert.doesNotMatch(reviewGenerationBlock, /setComposerOpen\(false\);\s*onSuccess\(\);/);
+  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(\) => \{\s*setComposerOpen\(false\);\s*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
   assert.doesNotMatch(reviewGenerationBlock, /setActivePage\('library'\)/);
 });
 
@@ -244,7 +243,7 @@ test('class management source adds a specific grade filter and reuses the shared
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '全部'\) \{\s*return true;\s*\}/);
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '未绑定'\) \{\s*return item\.teacher_user_id == null;\s*\}/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'grade', e\.target\.value\)\}/);
-  assert.match(classManagementBlock, /<select[\s\S]*?value=\{formState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(item\.id, 'grade', e\.target\.value\)\}/);
+  assert.match(classManagementBlock, /<select[\s\S]*?value=\{editingFormState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(editingClass\.id, 'grade', e\.target\.value\)\}/);
   assert.match(appSource, /gradeOptions\.includes\(\s*[^)]*grade[^)]*\)/);
   assert.match(appSource, /请选择年级/);
 });

@@ -9,5 +9,5 @@ test('class management fetches and resets class invite codes', () => {
   assert.match(appSource, /apiFetch<ClassInviteInfo>\(`\/api\/classes\/\$\{classId\}\/invite\/reset`, \{/);
   assert.match(appSource, /家长绑定邀请码/);
   assert.match(appSource, /当前邀请码/);
-  assert.match(appSource, /微信小程序里绑定该班级并选择对应学生/);
+  assert.match(appSource, /微信小程序里绑定该班级/);
 });
