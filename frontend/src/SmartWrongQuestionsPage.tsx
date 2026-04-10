@@ -116,6 +116,23 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function readWrongQuestionToken(): string {
+  try {
+    return globalThis.localStorage?.getItem?.('xr_token') || '';
+  } catch {
+    return '';
+  }
+}
+
+function buildWrongQuestionAuthedPath(path: string): string {
+  const token = readWrongQuestionToken();
+  if (!token) {
+    return path;
+  }
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
 function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
   if (!isObjectRecord(response)) {
     return undefined;
@@ -585,6 +602,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
+  const selectedRecordLibraryPdfPath = selectedRecord?.studentLibraryPdfPath
+    ? buildWrongQuestionAuthedPath(selectedRecord.studentLibraryPdfPath)
+    : '';
   const handleMemberClassChange = (value: string) => {
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
@@ -645,6 +665,25 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传记录</p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，孩子上传时会先写清自己为什么错，系统再归类固定错因并生成备注。</p>
           </div>
+          {selectedRecordLibraryPdfPath ? (
+            <div className="flex flex-wrap gap-3">
+              <a
+                href={selectedRecordLibraryPdfPath}
+                target="_blank"
+                rel="noreferrer"
+                className={workspaceSecondaryButtonClass}
+              >
+                预览 PDF
+              </a>
+              <a
+                href={selectedRecordLibraryPdfPath}
+                download="student-library.pdf"
+                className={workspacePrimaryButtonClass}
+              >
+                下载 PDF
+              </a>
+            </div>
+          ) : null}
           {selectedRecord.imageUrl ? (
             <a
               href={selectedRecord.imageUrl}

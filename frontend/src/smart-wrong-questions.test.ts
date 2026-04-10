@@ -786,6 +786,8 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
 
   assert.match(pageSource, /题目文本/);
   assert.match(pageSource, /填写可直接进入错题库 PDF 的题目文本/);
+  assert.match(pageSource, /预览 PDF/);
+  assert.match(pageSource, /下载 PDF/);
   assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
 });
 
@@ -1367,10 +1369,19 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /题目文本/);
+      assert.match(pageText, /预览 PDF/);
+      assert.match(pageText, /下载 PDF/);
       assert.match(pageText, /孩子自述错因/);
       assert.match(pageText, /AI 归类错因/);
       const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+      const previewLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('预览 PDF')) ?? null;
+      const downloadLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('下载 PDF')) ?? null;
       assert.ok(textarea instanceof HTMLTextAreaElement);
+      assert.equal(previewLink?.tagName, 'A');
+      assert.equal(downloadLink?.tagName, 'A');
+      assert.equal(previewLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
+      assert.equal(downloadLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
+      assert.equal(downloadLink?.getAttribute('download'), 'student-library.pdf');
       assert.equal(textarea.value, '原始 AI 文本');
     });
 
