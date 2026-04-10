@@ -139,8 +139,13 @@ test('workspace dashboard shows super owner platform overview', () => {
 test('workspace dashboard copy avoids conversational welcome and placeholder narration', () => {
   const memberMarkup = renderDashboard('member');
   const ownerMarkup = renderDashboard('owner');
+  const superOwnerMarkup = renderDashboard('super_owner');
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
+  assert.match(memberMarkup, /AI 复习生成/);
+  assert.match(ownerMarkup, /AI 教学入口/);
+  assert.match(superOwnerMarkup, /AI 平台/);
+  assert.match(appSource, /生成 AI 复习资料和教学素材/);
   assert.doesNotMatch(memberMarkup, /欢迎回来/);
   assert.doesNotMatch(memberMarkup, /直接进入真实可用的教学动作/);
   assert.doesNotMatch(memberMarkup, /不伪造任务列表/);

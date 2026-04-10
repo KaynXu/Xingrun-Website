@@ -1855,7 +1855,7 @@ const LessonInput = ({
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
                 <h3 className={`${workspaceSectionTitleClass} mt-3`}>生成复习文档</h3>
                 <p className={`${workspaceSectionTextClass} mt-2`}>
-                  上传录音或粘贴笔记，生成复习资料和教学素材。
+                  上传录音或粘贴笔记，生成 AI 复习资料和教学素材。
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">

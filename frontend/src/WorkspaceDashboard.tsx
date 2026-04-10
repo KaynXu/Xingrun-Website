@@ -29,7 +29,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           <div className="space-y-3">
             <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">快速开始</h3>
             <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-              已开放复习生成、课堂反馈、课程日历和智能错题入口。
+              已开放 AI 复习生成、课堂反馈、课程日历和智能错题入口。
             </p>
           </div>
           <button type="button" onClick={() => setActivePage('review-generation')} className={styles.primaryButtonClass}>
@@ -42,7 +42,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <button type="button" onClick={() => setActivePage('review-generation')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">复习生成</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">生成讲义、错题回顾和阶段复习资料。</span>
+          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">生成讲义、错题回顾和 AI 阶段复习资料。</span>
         </button>
         <button type="button" onClick={() => setActivePage('class-feedback-generation')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">课堂反馈</span>
@@ -90,7 +90,7 @@ function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDash
         <div className="mt-4 space-y-3">
           <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">平台总览</h3>
           <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            跨机构观察、账号审批和系统设置入口。
+            AI 平台的跨机构观察、账号审批和系统设置入口。
           </p>
         </div>
       </section>
@@ -99,7 +99,7 @@ function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDash
         <div className={`${styles.cardClass} min-h-32 p-5`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Overview</p>
           <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">平台总览</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总跨机构运行指标和核心状态。</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总 AI 平台跨机构运行指标和核心状态。</p>
         </div>
         <button type="button" onClick={() => setActivePage('classes')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <div>
@@ -211,7 +211,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
         <div className="mt-4 space-y-3">
           <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">机构运营概览</h3>
           <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            已开放机构管理、运营观察和教学入口。
+            已开放机构管理、运营观察和 AI 教学入口。
           </p>
         </div>
       </section>
