@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -11,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 import config_runtime
 import lesson_manager
+import app as app_module
 from app import app
 
 
@@ -74,6 +76,9 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.base = Path(self.temp_dir.name)
         lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
+        self.original_pdf_dir = app_module.PDF_DIR
+        app_module.PDF_DIR = self.base / "pdfs"
+        app_module.PDF_DIR.mkdir(parents=True, exist_ok=True)
         lesson_manager.init_db()
         self.client = app.test_client()
         self.owner_payload = self.login_owner()
@@ -91,6 +96,7 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
             class_id=self.class_id,
             student_id=self.student["id"],
         )
+        self.binding_id = binding["id"]
         submission = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=binding["id"],
             image_url="https://files.example.com/wrong-question.png",
@@ -101,6 +107,7 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.record_id = submission["id"]
 
     def tearDown(self):
+        app_module.PDF_DIR = self.original_pdf_dir
         self.temp_dir.cleanup()
 
     @staticmethod
@@ -160,6 +167,114 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         )
 
         self.assertEqual(archive.status_code, 404)
+
+    def test_visible_user_can_delete_local_wrong_question_and_rebuild_pdf(self):
+        library_dir = app_module.PDF_DIR / "wrong_question_libraries"
+        library_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = library_dir / f"student-{self.student['id']}.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\nold pdf\n")
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='第一题',
+                    question_text_source='ai',
+                    student_library_pdf_path=?
+                WHERE id=?
+                """,
+                (str(pdf_path), self.record_id),
+            )
+
+        second = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=self.binding_id,
+            image_url="https://files.example.com/wrong-question-2.png",
+            child_raw_reason_text="第二题",
+            primary_error_type="计算问题",
+            secondary_error_summary="第二题备注",
+            recognition_status="recognized",
+            question_text="第二题题干",
+            question_text_source="ai",
+            student_library_pdf_path=str(pdf_path),
+        )
+
+        with patch("app._rebuild_student_wrong_question_library", return_value=str(pdf_path)) as rebuild:
+            response = self.client.delete(
+                f"/api/wrong-questions/{self.record_id}",
+                headers=self.auth_headers(self.owner_payload["token"]),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["deleted_record_id"], self.record_id)
+        self.assertEqual(payload["student_id"], self.student["id"])
+        self.assertEqual(payload["next_student_library_pdf_path"], str(pdf_path))
+        self.assertIsNone(lesson_manager.get_wechat_wrong_question_submission(self.record_id))
+        remaining = lesson_manager.get_wechat_wrong_question_submission(second["id"])
+        self.assertIsNotNone(remaining)
+        self.assertEqual(remaining["student_library_pdf_path"], str(pdf_path))
+        rebuild.assert_called_once_with(self.student["id"])
+
+    def test_delete_last_local_wrong_question_removes_pdf_without_rebuild(self):
+        library_dir = app_module.PDF_DIR / "wrong_question_libraries"
+        library_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = library_dir / f"student-{self.student['id']}.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\nold pdf\n")
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='最后一题',
+                    question_text_source='ai',
+                    student_library_pdf_path=?
+                WHERE id=?
+                """,
+                (str(pdf_path), self.record_id),
+            )
+
+        with patch("app._rebuild_student_wrong_question_library") as rebuild:
+            response = self.client.delete(
+                f"/api/wrong-questions/{self.record_id}",
+                headers=self.auth_headers(self.owner_payload["token"]),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["next_student_library_pdf_path"], "")
+        self.assertFalse(pdf_path.exists())
+        self.assertIsNone(lesson_manager.get_wechat_wrong_question_submission(self.record_id))
+        rebuild.assert_not_called()
+
+    def test_visible_member_can_delete_local_wrong_question(self):
+        with lesson_manager.get_conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, 'member', 'active', ?)
+                """,
+                (
+                    "member_delete",
+                    lesson_manager.hash_password("member-delete-123"),
+                    "Member Delete",
+                    self.owner_payload["user"]["organization_id"],
+                ),
+            )
+            member_id = cur.lastrowid
+        lesson_manager.set_user_class_ids(member_id, [self.class_id])
+        member_token = lesson_manager.create_auth_session(member_id)
+
+        response = self.client.delete(
+            f"/api/wrong-questions/{self.record_id}",
+            headers=self.auth_headers(member_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":

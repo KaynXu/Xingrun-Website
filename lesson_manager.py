@@ -5069,6 +5069,29 @@ def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[d
     return _serialize_wechat_wrong_question_submission_row(refreshed)
 
 
+def set_student_wrong_question_library_pdf_path(student_id: int, pdf_path: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET student_library_pdf_path=?,
+                updated_at=datetime('now','localtime')
+            WHERE student_id=?
+            """,
+            ((pdf_path or "").strip(), student_id),
+        )
+
+
+def delete_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        serialized = _serialize_wechat_wrong_question_submission_row(row)
+        conn.execute("DELETE FROM wrong_question_submissions WHERE id=?", (record_id,))
+    return serialized
+
+
 def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str) -> Optional[dict]:
     normalized_status = (archive_status or "").strip() or "active"
     if normalized_status not in {"active", "archived"}:

@@ -599,6 +599,50 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleDeleteRecord = async () => {
+    if (!selectedRecord || selectedRecord.source !== 'wechat_mp') {
+      return;
+    }
+
+    if (!globalThis.window?.confirm?.('确定删除这道错题吗？删除后会同步更新该学生错题库 PDF。')) {
+      return;
+    }
+
+    setSaveError('');
+
+    try {
+      const selectedIndex = memberNotebookRecords.findIndex((item) => item.id === selectedRecord.id);
+      const nextSelectedRecord = selectedIndex >= 0 ? memberNotebookRecords[selectedIndex + 1] ?? null : null;
+
+      await apiFetch(`/api/wrong-questions/${encodeURIComponent(selectedRecord.id)}`, {
+        method: 'DELETE',
+      });
+
+      setRecords((current) => current.filter((item) => item.id !== selectedRecord.id));
+      setServerSummary(null);
+      setDetailError('');
+      setSelectedId(nextSelectedRecord?.id ?? null);
+      setReviewDraftByRecordId((current) => {
+        const next = { ...current };
+        delete next[selectedRecord.id];
+        return next;
+      });
+      setReviewDraftDirtyByRecordId((current) => {
+        const next = { ...current };
+        delete next[selectedRecord.id];
+        return next;
+      });
+      reviewDraftByRecordIdRef.current = Object.fromEntries(
+        Object.entries(reviewDraftByRecordIdRef.current).filter(([recordId]) => recordId !== selectedRecord.id),
+      );
+      reviewDraftDirtyByRecordIdRef.current = Object.fromEntries(
+        Object.entries(reviewDraftDirtyByRecordIdRef.current).filter(([recordId]) => recordId !== selectedRecord.id),
+      );
+    } catch (deleteError) {
+      setSaveError(deleteError instanceof Error ? deleteError.message : '删除错题失败');
+    }
+  };
+
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -789,14 +833,24 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="text-sm font-semibold text-slate-900 dark:text-white">掌握情况</p>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">仅保留掌握状态。标记为已掌握后，后续错题练习会自动排除。</p>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleSaveReview()}
-              disabled={savingReview}
-              className={workspacePrimaryButtonClass}
-            >
-              保存掌握情况
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void handleDeleteRecord()}
+                disabled={savingReview}
+                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/30 dark:bg-slate-950/70 dark:text-rose-300 dark:hover:bg-rose-500/10"
+              >
+                删除本题
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveReview()}
+                disabled={savingReview}
+                className={workspacePrimaryButtonClass}
+              >
+                保存掌握情况
+              </button>
+            </div>
           </div>
 
           {selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
