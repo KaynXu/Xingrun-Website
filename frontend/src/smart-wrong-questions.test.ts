@@ -82,6 +82,40 @@ async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promi
   throw lastError instanceof Error ? lastError : new Error('Timed out waiting for assertion');
 }
 
+function getNotebookClassSelect(container: ParentNode): HTMLSelectElement | null {
+  const classSelects = Array.from(container.querySelectorAll('select[aria-label="班级"]'));
+  const notebookClassSelect = classSelects[classSelects.length - 1];
+  return notebookClassSelect instanceof HTMLSelectElement ? notebookClassSelect : null;
+}
+
+async function selectNotebookClass(container: ParentNode, classId: string): Promise<void> {
+  const classSelect = getNotebookClassSelect(container);
+  assert.ok(classSelect instanceof HTMLSelectElement);
+
+  await act(async () => {
+    classSelect.value = classId;
+    classSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+  });
+}
+
+async function openNotebookStudent(container: ParentNode, studentName: string): Promise<void> {
+  await waitForAssertion(() => {
+    const studentButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(studentName));
+    assert.ok(studentButton instanceof HTMLButtonElement);
+  });
+
+  const studentButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(studentName));
+  assert.ok(studentButton instanceof HTMLButtonElement);
+
+  await act(async () => {
+    studentButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+  });
+}
+
 function setupDomEnvironment(): {
   cleanup: () => void;
   container: HTMLDivElement;
@@ -96,6 +130,7 @@ function setupDomEnvironment(): {
     setGlobalValue('HTMLElement', dom.window.HTMLElement),
     setGlobalValue('HTMLButtonElement', dom.window.HTMLButtonElement),
     setGlobalValue('HTMLInputElement', dom.window.HTMLInputElement),
+    setGlobalValue('HTMLSelectElement', dom.window.HTMLSelectElement),
     setGlobalValue('HTMLTextAreaElement', dom.window.HTMLTextAreaElement),
     setGlobalValue('Node', dom.window.Node),
     setGlobalValue('Event', dom.window.Event),
@@ -859,7 +894,7 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
   assert.match(pageSource, /题目文本/);
-  assert.match(pageSource, /填写可直接进入错题库 PDF 的题目文本/);
+  assert.match(pageSource, /补充这道题的完整题目文本/);
   assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
 });
 
@@ -872,7 +907,7 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
     localStorage.setItem('xr_token', 'token-123');
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (input === '/api/classes') {
-        return createJsonResponse([]);
+        return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
       if (input === '/api/admin/users') {
@@ -949,9 +984,12 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
       );
     });
 
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-        assert.match(pageText, /老师与班级归属待确认/);
+      assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /请先在班级管理中确认负责班级；如果老师名称与系统成员姓名不一致，需要补充老师别名映射/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
@@ -981,7 +1019,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
       fetchCalls.push({ input, init });
 
       if (input === '/api/classes') {
-        return createJsonResponse([]);
+        return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
       if (input === '/api/admin/users') {
@@ -995,6 +1033,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
               id: 'record-1',
               student_name: 'Alice',
               class_name: '六年级 1 班',
+              class_id: 42,
               subject: '数学',
               teacher_name: '雷文浩',
               created_at: '2026-03-29T08:00:00Z',
@@ -1022,6 +1061,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
           id: 'record-1',
           student_name: 'Alice',
           class_name: '六年级 1 班',
+          class_id: 42,
           subject: '数学',
           teacher_name: '雷文浩',
           created_at: '2026-03-29T08:00:00Z',
@@ -1074,8 +1114,11 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
       );
     });
 
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 4);
+      assert.ok(fetchCalls.length >= 4);
       const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
       const selectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
 
@@ -1085,7 +1128,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
       assert.equal(selectedKnowledgePointsTextarea.value, '');
     });
 
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进记录'));
 
     assert.ok(saveButton instanceof HTMLButtonElement);
 
@@ -1096,8 +1139,8 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 5);
-      const saveCall = fetchCalls[4];
+      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-1/review');
+      assert.ok(saveCall);
       assert.equal(saveCall?.input, '/api/wrong-questions/record-1/review');
       assert.equal(saveCall?.init?.method, 'PUT');
 
@@ -1145,7 +1188,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
       fetchCalls.push({ input, init });
 
       if (input === '/api/classes') {
-        return createJsonResponse([]);
+        return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
       if (input === '/api/admin/users') {
@@ -1239,15 +1282,18 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
       );
     });
 
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-        assert.match(pageText, /老师与班级归属待确认/);
+      assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /老师：Kayn/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
     });
 
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进记录'));
 
     assert.ok(saveButton instanceof HTMLButtonElement);
 
@@ -1258,7 +1304,8 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 5);
+      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-save-legacy/review');
+      assert.ok(saveCall);
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /老师：Kayn/);
@@ -1290,7 +1337,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       fetchCalls.push({ input, init });
 
       if (input === '/api/classes') {
-        return createJsonResponse([]);
+        return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
       if (input === '/api/admin/users') {
@@ -1305,6 +1352,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
               source: 'wechat_mp',
               student_name: 'Alice',
               class_display_name: '六年级 1 班',
+              class_id: 42,
               subject: '数学',
               teacher_display_name: 'Kayn',
               created_at: '2026-03-29T08:00:00Z',
@@ -1334,6 +1382,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
           source: 'wechat_mp',
           student_name: 'Alice',
           class_display_name: '六年级 1 班',
+          class_id: 42,
           subject: '数学',
           teacher_display_name: 'Kayn',
           created_at: '2026-03-29T08:00:00Z',
@@ -1397,17 +1446,20 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       );
     });
 
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /题目文本/);
       assert.match(pageText, /孩子自述错因/);
       assert.match(pageText, /AI 归类错因/);
-      const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+      const textarea = domEnvironment.container.querySelector('textarea[placeholder="补充这道题的完整题目文本"]') as HTMLTextAreaElement | null;
       assert.ok(textarea instanceof HTMLTextAreaElement);
       assert.equal(textarea.value, '原始 AI 文本');
     });
 
-    const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+    const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="补充这道题的完整题目文本"]') as HTMLTextAreaElement | null;
     const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
 
@@ -1452,7 +1504,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       fetchCalls.push({ input, init });
 
       if (input === '/api/classes') {
-        return createJsonResponse([]);
+        return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
       if (input === '/api/admin/users') {
@@ -1544,14 +1596,17 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       );
     });
 
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-        assert.match(pageText, /老师与班级归属待确认/);
+      assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
     });
 
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进记录'));
 
     assert.ok(saveButton instanceof HTMLButtonElement);
 
@@ -1562,7 +1617,8 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
     });
 
     await waitForAssertion(() => {
-      assert.equal(fetchCalls.length, 5);
+      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-save-top-level/review');
+      assert.ok(saveCall);
       const pageText = domEnvironment.container.textContent || '';
       const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
       assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
@@ -1590,7 +1646,7 @@ test('SmartWrongQuestionsPage reuses the current filter query for PDF export', (
 
   assert.match(pageSource, /const handleExportSummary = \(\) => \{/);
   assert.match(pageSource, /downloadWrongQuestionSummary\(filters\)/);
-  assert.match(pageSource, /导出 PDF 汇总/);
+  assert.match(pageSource, /导出汇总/);
 });
 
 test('SmartWrongQuestionsPage loads teacher and class filter options as selects instead of free text inputs', async () => {
@@ -1793,7 +1849,7 @@ test('SmartWrongQuestionsPage hides teacher filter and avoids admin user fetches
       assert.ok(classSelect);
       assert.equal(teacherSelect, null);
       assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), false);
-      assert.match(pageText, /仅查看你负责班级与学生的错题记录/);
+      assert.match(pageText, /仅显示你负责班级与学生的错题/);
     });
   } finally {
     if (root) {
@@ -1951,6 +2007,163 @@ test('SmartWrongQuestionsPage renders member student cards for the selected clas
       assert.match(pageText, /Alice/);
       assert.match(pageText, /Bob/);
       assert.match(pageText, /2 题/);
+      assert.match(pageText, /1 题/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage renders class-based student notebooks for owner accounts while keeping staff controls', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 101, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 102, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_user_id: 8 },
+        ]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([
+          { id: 7, name: 'Kayn' },
+          { id: 8, name: 'Luna' },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'staff-record-a',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: 'Kayn',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T09:00:00Z',
+              status: 'pending',
+              child_raw_reason_text: '第一题把符号抄错了',
+              primary_error_type: '计算错误',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算错误',
+                knowledge_points: ['分数运算'],
+              },
+            },
+            {
+              id: 'staff-record-b',
+              source: 'wechat_mp',
+              student_name: 'Bob',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: 'Kayn',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T08:00:00Z',
+              status: 'reviewed',
+              archive_status: 'archived',
+              child_raw_reason_text: '第二题没看清单位',
+              primary_error_type: '审题错误',
+              analysis: {
+                question_category: '应用题',
+                error_type: '审题错误',
+                knowledge_points: ['单位换算'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 2,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 2,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/staff-record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'staff-record-a',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: 'Kayn',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T09:00:00Z',
+          status: 'pending',
+          child_raw_reason_text: '第一题把符号抄错了',
+          primary_error_type: '计算错误',
+          analysis: {
+            question_category: '计算',
+            error_type: '计算错误',
+            knowledge_points: ['分数运算'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      const classSelect = getNotebookClassSelect(domEnvironment.container);
+      const teacherSelect = domEnvironment.container.querySelector('select[aria-label="老师"]') as HTMLSelectElement | null;
+
+      assert.ok(classSelect);
+      assert.ok(teacherSelect);
+      assert.match(pageText, /学生错题本/);
+      assert.match(pageText, /导出汇总/);
+      assert.doesNotMatch(pageText, /筛选与列表/);
+      assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), true);
+    });
+
+    const classSelect = getNotebookClassSelect(domEnvironment.container);
+    assert.ok(classSelect);
+
+    await act(async () => {
+      classSelect.value = '101';
+      classSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /Alice/);
+      assert.match(pageText, /Bob/);
       assert.match(pageText, /1 题/);
     });
   } finally {
@@ -2565,7 +2778,7 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /错题档案/);
       assert.match(pageText, /题目记录/);
-      assert.match(pageText, /教师跟进区/);
+      assert.match(pageText, /老师记录/);
     });
   } finally {
     if (root) {
