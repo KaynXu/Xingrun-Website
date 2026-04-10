@@ -567,7 +567,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900 dark:text-white">掌握情况</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">老师这里只保留是否掌握的勾选。掌握后，后续错题练习会自动排除这题。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">仅保留掌握状态。标记为已掌握后，后续错题练习会自动排除。</p>
             </div>
             <button
               type="button"
@@ -608,8 +608,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">教师复盘</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败时会保留当前草稿，便于继续修改后重试。</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">跟进记录</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败后保留当前草稿。</p>
             </div>
             <button
               type="button"
@@ -617,7 +617,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               disabled={savingReview}
               className={workspacePrimaryButtonClass}
             >
-              保存教师复盘
+              保存跟进记录
             </button>
           </div>
 
@@ -685,13 +685,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <section className={`${workspaceCardClass} space-y-4 p-6`}>
-        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">错题工作区</p>
+        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">错题跟进</p>
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
             {hasStaffScope
-              ? `在 ${currentUser.organization_name} 内部查看错题记录，按班级或学生打开错题本，并统一处理教师复盘。`
-              : '仅查看你负责班级与学生的错题记录，并直接跟进自己的教师复盘。'}
+              ? `查看 ${currentUser.organization_name} 的错题记录，按班级或学生打开错题本。`
+              : '查看负责范围内的错题记录。'}
           </p>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前操作人：{currentUser.display_name}</p>
         </div>
@@ -960,7 +960,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   <h4 className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
                     第 {selectedRecordOrder || 1} 题 · {selectedRecord?.analysis.questionCategory || '未分类错题'}
                   </h4>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">把当前题目按错题库文档方式展开，先看记录，再在同一侧继续老师跟进。</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">按错题本版式展示题目记录和跟进内容。</p>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
                     <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.studentName || selectedStudentName}</span>
                     <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.className || '未标注班级'}</span>
@@ -975,7 +975,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
                 <div className="mb-5">
                   <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看这个孩子当前记录，并直接保存跟进内容。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看当前记录并保存跟进内容。</p>
                 </div>
 
                 {detailError && (

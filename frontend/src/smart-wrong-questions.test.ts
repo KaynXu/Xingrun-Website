@@ -1019,7 +1019,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
       assert.equal(selectedKnowledgePointsTextarea.value, '');
     });
 
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进记录'));
 
     assert.ok(saveButton instanceof HTMLButtonElement);
 
@@ -1184,7 +1184,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
       assert.match(pageText, /原始班级：六年级一班（临时）/);
     });
 
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进记录'));
 
     assert.ok(saveButton instanceof HTMLButtonElement);
 
@@ -1497,7 +1497,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       assert.match(pageText, /原始班级：六年级一班（临时）/);
     });
 
-    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存教师复盘'));
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存跟进记录'));
 
     assert.ok(saveButton instanceof HTMLButtonElement);
 
@@ -1544,6 +1544,15 @@ test('SmartWrongQuestionsPage source no longer exposes export or pending-review 
   assert.doesNotMatch(helperSource, /buildWrongQuestionSummaryExportPath/);
   assert.doesNotMatch(helperSource, /downloadWrongQuestionSummary/);
   assert.doesNotMatch(helperSource, /summary\/export/);
+});
+
+test('SmartWrongQuestionsPage copy avoids conversational guidance text', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.doesNotMatch(pageSource, /老师这里只保留是否掌握的勾选/);
+  assert.doesNotMatch(pageSource, /保存失败时会保留当前草稿，便于继续修改后重试/);
+  assert.doesNotMatch(pageSource, /把当前题目按错题库文档方式展开/);
+  assert.doesNotMatch(pageSource, /查看这个孩子当前记录，并直接保存跟进内容/);
 });
 
 test('SmartWrongQuestionsPage loads teacher and class filter options as selects instead of free text inputs', async () => {
@@ -1746,7 +1755,7 @@ test('SmartWrongQuestionsPage hides teacher filter and avoids admin user fetches
       assert.ok(classSelect);
       assert.equal(teacherSelect, null);
       assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), false);
-      assert.match(pageText, /仅查看你负责班级与学生的错题记录/);
+      assert.match(pageText, /查看负责范围内的错题记录/);
     });
   } finally {
     if (root) {

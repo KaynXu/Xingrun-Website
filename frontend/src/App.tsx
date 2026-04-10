@@ -568,7 +568,7 @@ const LANDING_LEGAL_DOCUMENTS: Record<
       {
         title: '服务内容与使用边界',
         paragraphs: [
-          'Starain 当前提供并持续迭代的能力包括但不限于课后复习资料生成、题库沉淀、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
+          'Starain 当前提供并持续迭代的能力包括但不限于课后复习资料生成、题目整理、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
           '我们会持续优化产品功能，但不承诺所有展示中的方案模块都已在当前版本全面上线，也不保证服务在任何时间点都完全不中断。',
         ],
       },
@@ -1855,7 +1855,7 @@ const LessonInput = ({
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
                 <h3 className={`${workspaceSectionTitleClass} mt-3`}>生成复习文档</h3>
                 <p className={`${workspaceSectionTextClass} mt-2`}>
-                  上传录音或粘贴笔记，AI 会整理成统一的复习资料与后续题库资产。
+                  上传录音或粘贴笔记，生成复习资料和教学素材。
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
@@ -2409,7 +2409,7 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackStatusMessage(
         task.status === 'confirmed'
           ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
-            : `已同步 ${roster.students.length} 名学生，继续补充阶段备注后可生成草稿。`,
+            : `已同步 ${roster.students.length} 名学生，可补充阶段备注并生成草稿。`,
         );
       } finally {
         setIsRefreshingTask(false);
@@ -2822,14 +2822,14 @@ const ClassFeedbackGenerationPage = ({
     buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents) !==
       classFeedbackDraftSnapshotRef.current;
   const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'
-    ? '本次反馈已确认，会作为后续 AI 的正式积累素材。'
+    ? '本次反馈已确认。'
     : !activeClassFeedbackTaskId
-      ? '创建反馈任务后，系统会开始记录你的草稿编辑。'
+      ? '创建反馈任务后开始记录草稿。'
       : isSavingClassFeedback
         ? '正在保存草稿...'
         : hasUnsavedDraftChanges
-          ? '有未保存修改，系统会自动保存。'
-          : '草稿已保存，可继续编辑。';
+          ? '有未保存修改，自动保存中。'
+          : '草稿已保存。';
 
   const sourceSummaryItems = [
     selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
@@ -3232,7 +3232,7 @@ const ConsultationModal = ({
                 placeholder="例如：张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础"
               />
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {parseFeedback || '系统会先帮你整理字段，你再确认后保存。'}
+                {parseFeedback || '解析后可确认并保存。'}
               </p>
             </section>
           )}
@@ -3615,7 +3615,7 @@ const ConsultationBatchModal = ({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Batch</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">AI 批量整理</h3>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              先贴原始文本，让 AI 只做解析和预览；确认后才会按现有咨询记录接口逐条写入。
+              粘贴原始文本后生成解析预览；确认后按现有咨询记录接口逐条写入。
             </p>
           </div>
           <button
@@ -3750,7 +3750,7 @@ const ConsultationBatchModal = ({
 
             {drafts.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 bg-white/60 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400">
-                还没有草稿。先粘贴原始文本，再点击“开始解析”。
+                暂无草稿。粘贴原始文本后点击“开始解析”。
               </div>
             ) : (
               <div className="space-y-3">
@@ -7924,7 +7924,7 @@ export const LandingPage = ({
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因沉淀</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因整理</span>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">薄弱点追踪</span>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">个性化复习</span>
               </div>

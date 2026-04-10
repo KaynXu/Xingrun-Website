@@ -7,6 +7,7 @@
 
 ### 当前状态
 - 当前主线是 `智能错题` 收口。
+- 登录后工作区里的对话式文案已收口，`WorkspaceDashboard.tsx`、`App.tsx`、`SmartWrongQuestionsPage.tsx` 不再保留 `欢迎回来 / 系统会帮你 / 先这样再那样` 这类口吻。
 - 旧 `导出汇总`、`onlyPendingReview`、`只看待教师跟进` 链路已经删除，前后端不再保留隐藏入口。
 - 当前智能错题仍是双语义模型：
   - `wechat_mp` 走 `wechat_mastery`
@@ -22,8 +23,8 @@
 ### 下一步
 - 最适合继续做的是一轮“小范围文案收口”，只清当前源码里仍露出来的旧说法，不扩到底层契约改造。
 - 优先处理：
-  - `frontend/src/SmartWrongQuestionsPage.tsx` 里的 `错题工作区 / 教师复盘 / 保存教师复盘`
-  - `frontend/src/App.tsx` 里的 `题库沉淀 / 题库资产 / 错因沉淀`
+  - 登录前首页和营销页里是否还保留类似的拟人化或对话式文案
+  - `frontend/src/App.tsx` 里的旧产品词，比如 `题库沉淀 / 错因沉淀`
 - 这一步适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
@@ -35,13 +36,13 @@
 
 ### 已删除但仍有残留
 - 旧智能错题入口本身已经删干净，但源码里还残留部分旧命名：
-  - `frontend/src/SmartWrongQuestionsPage.tsx` 还保留 `教师复盘`、`错题工作区`
+  - `frontend/src/SmartWrongQuestionsPage.tsx` 还保留 `跟进记录`、`错题跟进`
   - `frontend/src/App.tsx` 还保留部分旧产品文案
-- 旧 `teacher feedback` 工作流虽然产品层面已移除，但仓库里还有残留命名：
-  - `lesson_manager.py` 仍有 `lesson_feedbacks` 表和 `save_lesson_feedback()` / `build_lesson_feedback_editor_state()`
-  - `app.py` 仍导入 `build_lesson_feedback_editor_state`，当前源码里没有实际调用
-  - `tests/test_teacher_feedback_store.py` 文件名仍沿用旧命名
-- 文档层面仍有不少历史 `teacher feedback` / 已删除 helper 的旧上下文，容易误导下一轮判断。
+- 旧 `legacy lesson feedback` 工作流虽然产品层面已移除，但仓库里还有残留命名：
+  - `lesson_manager.py` 仍有 `lesson_class_feedbacks` 表和 `save_lesson_class_feedback()` / `build_lesson_class_feedback_editor_state()`
+  - `app.py` 仍导入 `build_lesson_class_feedback_editor_state`，当前源码里没有实际调用
+  - `tests/test_lesson_class_feedback_store.py` 文件名仍沿用旧命名
+- 文档层面仍有不少历史 `legacy lesson feedback` / 已删除 helper 的旧上下文，容易误导下一轮判断。
 
 ### 最近相关提交
 - `72e0aa5` `fix: remove stale smart wrong question filters`

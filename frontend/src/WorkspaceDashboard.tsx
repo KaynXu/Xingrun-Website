@@ -29,7 +29,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           <div className="space-y-3">
             <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">快速开始</h3>
             <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-              欢迎回来，{currentUser.display_name}。直接进入真实可用的教学动作，首页只放已经落地的工作入口和说明区。
+              已开放复习生成、课堂反馈、课程日历和智能错题入口。
             </p>
           </div>
           <button type="button" onClick={() => setActivePage('review-generation')} className={styles.primaryButtonClass}>
@@ -42,7 +42,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <button type="button" onClick={() => setActivePage('review-generation')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">复习生成</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">继续生成讲义、错题回顾和阶段复习资料。</span>
+          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">生成讲义、错题回顾和阶段复习资料。</span>
         </button>
         <button type="button" onClick={() => setActivePage('class-feedback-generation')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">课堂反馈</span>
@@ -54,7 +54,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
         </button>
         <button type="button" onClick={() => setActivePage('smartWrongQuestions')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">智能错题</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看学生错题，继续记录错因和掌握情况。</span>
+          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看学生错题，记录错因和掌握情况。</span>
         </button>
       </section>
 
@@ -64,7 +64,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
             <div>
               <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">我的教学概览</p>
               <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                这里承接你自己的教学工作视角，首版先保留真实概览区，集中说明班级、反馈和复习资料入口。
+                汇总班级、课堂反馈和复习资料入口。
               </p>
             </div>
             <ArrowRight size={18} className="shrink-0 text-sky-500 dark:text-sky-400" />
@@ -74,7 +74,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
         <div className={`${styles.cardClass} p-6`}>
           <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">最近工作</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            这里会继续展示复习生成、课堂反馈和错题跟进的最近记录。当前阶段先保留真实说明，不伪造任务列表。
+            展示复习生成、课堂反馈和错题跟进的最近记录。
           </p>
         </div>
       </section>
@@ -90,7 +90,7 @@ function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDash
         <div className="mt-4 space-y-3">
           <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">平台总览</h3>
           <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            欢迎回来，{currentUser.display_name}。这里聚焦跨机构观察、平台账号审批与系统级配置入口，不再沿用机构工作流首页。
+            跨机构观察、账号审批和系统设置入口。
           </p>
         </div>
       </section>
@@ -99,13 +99,13 @@ function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDash
         <div className={`${styles.cardClass} min-h-32 p-5`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Overview</p>
           <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">平台总览</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">保留平台级概览壳层，后续承接跨机构运行指标和核心状态。</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总跨机构运行指标和核心状态。</p>
         </div>
         <button type="button" onClick={() => setActivePage('classes')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Organizations</p>
             <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">通过现有机构管理视图进入组织工作区，查看机构开通、活跃度和跨机构运营切面。</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看机构状态、活跃度和跨机构运营数据。</p>
           </div>
           <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
             查看机构工作区
@@ -142,7 +142,7 @@ function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDash
             <div>
               <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
               <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                这里保留跨机构观察区，承接组织状态、平台覆盖面和异常排查入口的真实壳层。
+                汇总组织状态、平台覆盖面和异常排查入口。
               </p>
             </div>
             <ArrowRight size={18} className="shrink-0 text-sky-500 dark:text-sky-400" />
@@ -152,7 +152,7 @@ function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDash
         <div className={`${styles.cardClass} p-6`}>
           <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">系统设置</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            平台级设置入口已经可达，当前首页只保留真实入口说明，不添加虚构通知或任务系统。
+            平台级设置入口。
           </p>
         </div>
       </section>
@@ -211,7 +211,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
         <div className="mt-4 space-y-3">
           <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">机构运营概览</h3>
           <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            欢迎回来，{currentUser.display_name}。首页聚焦已经可用的机构管理入口和当前运营观察区，不继续把复习生成放在页面中心。
+            已开放机构管理、运营观察和教学入口。
           </p>
         </div>
       </section>
@@ -220,7 +220,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
         <div className={`${styles.cardClass} min-h-28 p-5`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Overview</p>
           <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">机构运营概览</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">保留真实概览壳层，后续承接组织级运营指标。</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总组织级运营指标。</p>
         </div>
         <div className={`${styles.cardClass} min-h-28 p-5`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Classes</p>
@@ -231,13 +231,13 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">{canOpenAccounts ? 'Approval' : 'Consultation'}</p>
           <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">{canOpenAccounts ? '账号审批' : '咨询记录'}</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            {canOpenAccounts ? '成员开通与组织归属在这里集中处理。' : '已落地的咨询记录入口可以作为机构运营协同补位。'}
+            {canOpenAccounts ? '处理成员开通与组织归属。' : '查看咨询记录与跟进状态。'}
           </p>
         </div>
         <div className={`${styles.cardClass} min-h-28 p-5`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Teaching</p>
           <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">课堂反馈</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">教学记录和错题跟进从这里继续推进。</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总课堂反馈和错题跟进入口。</p>
         </div>
       </section>
 
