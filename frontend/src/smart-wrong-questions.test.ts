@@ -792,6 +792,14 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
   assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
 });
 
+test('SmartWrongQuestionsPage source exposes a hard delete action for local wechat records', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /删除本题/);
+  assert.match(pageSource, /method:\s*'DELETE'/);
+  assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
+});
+
 test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unresolved mapping warning', async () => {
   const domEnvironment = setupDomEnvironment();
   const originalFetch = globalThis.fetch;
@@ -1273,7 +1281,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
               class_id: 42,
               subject: '数学',
               teacher_display_name: 'Kayn',
-              created_at: '2026-03-29T08:00:00Z',
+              created_at: '2026-03-29T09:00:00Z',
               recognition_status: 'recognized',
               is_geometry: 0,
               question_text: '原始 AI 文本',
@@ -1435,6 +1443,195 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       assert.equal(requestPayload.selectedErrorType, '方法错误');
     });
   } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the next notebook question', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const originalConfirm = window.confirm;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    window.confirm = () => true;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'wechat-delete-a',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_display_name: '六年级 1 班',
+              class_id: 42,
+              subject: '数学',
+              teacher_display_name: 'Kayn',
+              created_at: '2026-03-29T08:00:00Z',
+              recognition_status: 'recognized',
+              is_geometry: 0,
+              question_text: '第一题',
+              question_text_source: 'ai',
+              student_library_pdf_path: '/api/wechat/student-libraries/1',
+              archive_status: 'active',
+              analysis: {},
+            },
+            {
+              id: 'wechat-delete-b',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_display_name: '六年级 1 班',
+              class_id: 42,
+              subject: '数学',
+              teacher_display_name: 'Kayn',
+              created_at: '2026-03-29T08:00:00Z',
+              recognition_status: 'recognized',
+              is_geometry: 0,
+              question_text: '第二题',
+              question_text_source: 'ai',
+              student_library_pdf_path: '/api/wechat/student-libraries/1',
+              archive_status: 'active',
+              analysis: {},
+            },
+          ],
+          summary: {
+            total_count: 2,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 2,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/wechat-delete-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'wechat-delete-a',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_display_name: '六年级 1 班',
+          class_id: 42,
+          subject: '数学',
+          teacher_display_name: 'Kayn',
+          created_at: '2026-03-29T09:00:00Z',
+          recognition_status: 'recognized',
+          is_geometry: 0,
+          question_text: '第一题',
+          question_text_source: 'ai',
+          student_library_pdf_path: '/api/wechat/student-libraries/1',
+          child_raw_reason_text: '第一题原因',
+          primary_error_type: '计算粗心',
+          secondary_error_summary: '第一题备注',
+          archive_status: 'active',
+          analysis: {
+            error_type: '计算粗心',
+            student_note: '第一题备注',
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/wechat-delete-b' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'wechat-delete-b',
+          source: 'wechat_mp',
+          student_name: 'Alice',
+          class_display_name: '六年级 1 班',
+          class_id: 42,
+          subject: '数学',
+          teacher_display_name: 'Kayn',
+          created_at: '2026-03-29T08:00:00Z',
+          recognition_status: 'recognized',
+          is_geometry: 0,
+          question_text: '第二题',
+          question_text_source: 'ai',
+          student_library_pdf_path: '/api/wechat/student-libraries/1',
+          child_raw_reason_text: '第二题原因',
+          primary_error_type: '方法错误',
+          secondary_error_summary: '第二题备注',
+          archive_status: 'active',
+          analysis: {
+            error_type: '方法错误',
+            student_note: '第二题备注',
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/wechat-delete-a' && init?.method === 'DELETE') {
+        return createJsonResponse({
+          ok: true,
+          deleted_record_id: 'wechat-delete-a',
+          student_id: 1,
+          next_student_library_pdf_path: '/api/wechat/student-libraries/1',
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '管理员',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /第一题/);
+      const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除本题'));
+      assert.ok(deleteButton instanceof HTMLButtonElement);
+    });
+
+    const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除本题'));
+    assert.ok(deleteButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const deleteCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/wechat-delete-a' && call.init?.method === 'DELETE');
+      assert.ok(deleteCall);
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /第二题/);
+      assert.doesNotMatch(pageText, /第一题原因/);
+    });
+  } finally {
+    window.confirm = originalConfirm;
     if (root) {
       await act(async () => {
         root?.unmount();

@@ -68,6 +68,7 @@ from lesson_manager import (
     create_auth_session,
     create_consultation,
     create_registration_request,
+    delete_wechat_wrong_question_submission,
     delete_user_for_actor,
     delete_consultation,
     delete_class as db_delete_class,
@@ -130,6 +131,7 @@ from lesson_manager import (
     mark_monthly_plan_job_succeeded,
     requeue_monthly_plan_job,
     set_class_teacher_user_id,
+    set_student_wrong_question_library_pdf_path,
     set_user_class_ids,
     set_wechat_wrong_question_archive_status,
     get_wechat_wrong_question_submission,
@@ -1963,6 +1965,41 @@ def api_wrong_question_detail(record_id):
     if not _can_access_wrong_question_record(user, record):
         return jsonify({"error": "not found"}), 404
     return jsonify(record)
+
+
+@app.route("/api/wrong-questions/<record_id>", methods=["DELETE"])
+def api_wrong_question_delete(record_id):
+    user, error = _require_auth()
+    if error:
+        return error
+
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if not local_record or not _can_access_wrong_question_record(user, local_record):
+        return jsonify({"error": "not found"}), 404
+
+    student_id = int(local_record["student_id"])
+    pdf_path = _student_wrong_question_library_path(student_id)
+    deleted_record = delete_wechat_wrong_question_submission(record_id)
+    if not deleted_record:
+        return jsonify({"error": "not found"}), 404
+
+    pdf_path.unlink(missing_ok=True)
+    remaining_records = list_student_wrong_question_library_records(student_id)
+    next_pdf_path = ""
+    if remaining_records:
+        next_pdf_path = str(_rebuild_student_wrong_question_library(student_id) or "").strip()
+        set_student_wrong_question_library_pdf_path(student_id, next_pdf_path)
+    else:
+        set_student_wrong_question_library_pdf_path(student_id, "")
+
+    return jsonify(
+        {
+            "ok": True,
+            "deleted_record_id": record_id,
+            "student_id": student_id,
+            "next_student_library_pdf_path": next_pdf_path,
+        }
+    )
 
 
 @app.route("/api/wrong-questions/<record_id>/review", methods=["PUT"])
