@@ -8,6 +8,8 @@
 ### 当前状态
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
+- 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
+- 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
 - 本次已部署生产的最新提交是 `5ff8adb Merge branch 'develop'`；其中包含微信错题 `删除本题`、学生错题库旧 PDF 清理与自动跳下一题。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -45,7 +47,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
-- 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，服务器拉 GitHub 失败时直接切 `bundle` 兜底。
+- 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
 - 当前最值得继续做的是打开真实页面做一次手工 smoke check，确认生产环境下删除本题后二次确认文案、跳下一题、最后一题删完后右侧详情收起，以及 PDF 入口都符合预期。
 - 最值得继续做的是打开真实页面做一轮人工 smoke check，确认 staff 视角下“老师 -> 班级 -> 学生”联动和 notebook 区交互符合预期，然后再决定是否跟随下一次 release 一起部署。
@@ -57,7 +59,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
-- 生产服务器到 GitHub 的 TLS / 出网稳定性仍不可靠；这次直拉再次卡住，已确认 `bundle + scp` 是更稳的兜底发布路径。
+- 生产机虽然已经改成 GitHub SSH over 443，但这条链路仍依赖服务器里的 deploy key 和 `~/.ssh/config` alias；如果后续被误删，部署会重新退化成 bundle 场景。
 - 旧的零散部署口径已经开始收口，但历史对话、旧提交和个别旧文档里仍可能残留“直接发 develop”或“先看 master 再说”的过期说法；下一轮如果有人只看旧记录，不看 `docs/deploy-release.md`，仍可能误判流程。
 - 当前错误类型下拉为了兼容现有错题记录，同时保留了固定错因和已出现过的 legacy downstream 分类；在真正统一错题后端分类口径前，这里仍是“固定列表 + 兼容旧值”的过渡态。
 - 当前最大风险不是功能坏掉，而是“语义看起来像统一了，其实没有”。

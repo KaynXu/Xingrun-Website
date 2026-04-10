@@ -27,6 +27,14 @@ cd /Users/ark.mini/Desktop/Xingrun-Website
 
 完整步骤见 `docs/deploy-release.md`。
 
+当前生产机仓库已经修成 GitHub SSH over 443 直拉，仓库 `origin` 应该是：
+
+```text
+git@github-xingrun-website:KaynXu/Xingrun-Website.git
+```
+
+不要再把 HTTPS `https://github.com/KaynXu/Xingrun-Website.git` 当成生产机默认远端。
+
 如果只是同步 `develop` 远端：
 
 ```bash
@@ -93,4 +101,5 @@ curl -fsS http://127.0.0.1:5001/ | head -c 200 && echo
 
 - 线上服务器默认仓库路径是 `/home/ubuntu/Xingrun-Website`
 - 当前生产发布目标分支是 `master`，开发集成分支是 `develop`
+- 生产机当前通过 `~/.ssh/config` 里的 `github-xingrun-website` alias 连接 `ssh.github.com:443`
 - 如果未来再引入 staging 或备用机，必须在文档里明确标注用途，不能覆盖这份生产机说明
