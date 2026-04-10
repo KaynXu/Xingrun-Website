@@ -6,6 +6,13 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- `develop -> master` 这轮 release 已在本地完成并推远端：
+  - `develop` 已合入 `master`，远端推进到 `5b1831d`
+  - `master` 已合入最新 `develop`，远端推进到 `fab4f2e`
+- release 前本地验证已通过：
+  - `frontend npm test` = `156 passed`
+  - `frontend npm run build` 成功
+  - Python 3.13 临时虚拟环境下目标后端用例 = `45 passed`
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
 - notebook 弹窗右侧顶部重复的 `错题档案` 区和下面两块切换小卡片已删除，只保留真正的详情与编辑区。
@@ -38,6 +45,8 @@
 - 最近一次相关产品代码提交并已部署生产的是 `72e0aa5 fix: remove stale smart wrong question filters`。
 
 ### 下一步
+- 优先做一轮生产 smoke check，确认最新 `master` 部署后智能错题 notebook、PDF 入口、错因下拉在真实账号下都正常。
+- 如果服务器继续出现 `git fetch origin` 的 GitHub TLS 抖动，后续 release 直接优先走本地 bundle / scp 兜底，不再把生产发布时间浪费在远端出网上。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
 - 最值得继续做的是打开真实页面做一轮人工 smoke check，确认 staff 视角下“老师 -> 班级 -> 学生”联动和 notebook 区交互符合预期，然后再决定是否跟随下一次 release 一起部署。
 - 这 3 条后端失败修完后，下一步就是按 release 流程重新做一次 `develop -> push -> merge master -> 部署`，不需要再先卡在这 3 条上。
@@ -48,6 +57,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 生产服务器到 GitHub 的 TLS / 出网稳定性仍不可靠，`git fetch origin` 本轮已连续失败；即使代码已 push，也可能卡住“服务器自行拉取”这一步。
 - 当前错误类型下拉为了兼容现有错题记录，同时保留了固定错因和已出现过的 legacy downstream 分类；在真正统一错题后端分类口径前，这里仍是“固定列表 + 兼容旧值”的过渡态。
 - 当前最大风险不是功能坏掉，而是“语义看起来像统一了，其实没有”。
 - `monthly` 现在已经改成“PDF 成功后再扣费”，但单节 `review plan` worker 仍是 AI 成功后立即扣费；如果后面也要求单节 PDF 失败不扣费，这一块语义还没有跟上。
@@ -63,6 +73,8 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `fab4f2e` `Merge branch 'develop'`
+- `5b1831d` `Merge branch 'master' into develop`
 - `72e0aa5` `fix: remove stale smart wrong question filters`
 - `5627f20` `fix: remove stale wrong question export flow`
 - `14ac9b4` `fix: allow notebook search before class selection`
@@ -71,7 +83,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`develop`
+- 当前分支：`master`
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
 - 后续更新这份文件时，只写：
   - 当前状态有没有变化
