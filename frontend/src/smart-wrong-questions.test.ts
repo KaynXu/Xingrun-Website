@@ -15,11 +15,11 @@ import {
   buildWrongQuestionReviewDraft,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
-  buildWrongQuestionSummaryExportPath,
-  downloadWrongQuestionSummary,
   filterWrongQuestionRecordsForMemberNotebook,
+  getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
+  isDownstreamWrongQuestionRecord,
   isWechatMiniProgramWrongQuestionRecord,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
@@ -321,23 +321,11 @@ test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => 
       subject: ' 数学 ',
       teacherName: '',
       errorType: '  ',
-      onlyPendingReview: true,
     }),
-    '?studentName=Alice&className=%E5%85%AD%E5%B9%B4%E7%BA%A7%201%20%E7%8F%AD&subject=%E6%95%B0%E5%AD%A6&onlyPendingReview=true',
+    '?studentName=Alice&className=%E5%85%AD%E5%B9%B4%E7%BA%A7%201%20%E7%8F%AD&subject=%E6%95%B0%E5%AD%A6',
   );
 
-  assert.equal(buildWrongQuestionQuery({ studentName: '   ', onlyPendingReview: false }), '');
-});
-
-test('buildWrongQuestionSummaryExportPath reuses the normalized filter query', () => {
-  assert.equal(
-    buildWrongQuestionSummaryExportPath({
-      studentName: ' Alice ',
-      className: ' 六年级 1 班 ',
-      onlyPendingReview: true,
-    }),
-    '/api/wrong-questions/summary/export?studentName=Alice&className=%E5%85%AD%E5%B9%B4%E7%BA%A7%201%20%E7%8F%AD&onlyPendingReview=true',
-  );
+  assert.equal(buildWrongQuestionQuery({ studentName: '   ' }), '');
 });
 
 test('record detail and review paths encode record ids consistently', () => {
@@ -362,103 +350,6 @@ test('record detail and review paths keep roomId when the downstream contract re
     buildWrongQuestionReviewPath('record-1', 'ROOM A/1'),
     '/api/wrong-questions/record-1/review?roomId=ROOM%20A%2F1',
   );
-});
-
-test('downloadWrongQuestionSummary fetches the export with auth header and triggers a blob download', async () => {
-  const originalFetch = globalThis.fetch;
-  const originalDocument = globalThis.document;
-  const originalLocalStorage = globalThis.localStorage;
-  const originalUrl = globalThis.URL;
-
-  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
-  const clickedHrefs: string[] = [];
-  const appendCalls: unknown[] = [];
-  const removeCalls: unknown[] = [];
-  const revokeCalls: string[] = [];
-  const anchor = {
-    href: '',
-    download: '',
-    rel: '',
-    style: { display: '' },
-    click() {
-      clickedHrefs.push(this.href);
-    },
-  };
-
-  try {
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      fetchCalls.push({ input, init });
-      return {
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        headers: {
-          get(name: string) {
-            return name.toLowerCase() === 'content-disposition'
-              ? 'attachment; filename="smart-summary.pdf"'
-              : null;
-          },
-        },
-        blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' }),
-      } as Response;
-    }) as typeof fetch;
-
-    globalThis.localStorage = {
-      getItem(key: string) {
-        return key === 'xr_token' ? 'token-123' : null;
-      },
-      setItem() {},
-      removeItem() {},
-      clear() {},
-      key() {
-        return null;
-      },
-      length: 0,
-    } as Storage;
-
-    globalThis.document = {
-      body: {
-        appendChild(node: unknown) {
-          appendCalls.push(node);
-        },
-        removeChild(node: unknown) {
-          removeCalls.push(node);
-        },
-      },
-      createElement(tagName: string) {
-        assert.equal(tagName, 'a');
-        return anchor as unknown as HTMLAnchorElement;
-      },
-    } as Document;
-
-    globalThis.URL = {
-      ...originalUrl,
-      createObjectURL(blob: Blob) {
-        assert.equal(blob.type, 'application/pdf');
-        return 'blob:smart-summary';
-      },
-      revokeObjectURL(url: string) {
-        revokeCalls.push(url);
-      },
-    } as typeof URL;
-
-    await downloadWrongQuestionSummary({ studentName: ' Alice ', onlyPendingReview: true });
-  } finally {
-    globalThis.fetch = originalFetch;
-    globalThis.document = originalDocument;
-    globalThis.localStorage = originalLocalStorage;
-    globalThis.URL = originalUrl;
-  }
-
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0]?.input, '/api/wrong-questions/summary/export?studentName=Alice&onlyPendingReview=true');
-  assert.equal((fetchCalls[0]?.init?.headers as Record<string, string>)['X-Auth-Token'], 'token-123');
-  assert.equal(anchor.download, 'smart-summary.pdf');
-  assert.equal(anchor.rel, 'noopener');
-  assert.deepEqual(clickedHrefs, ['blob:smart-summary']);
-  assert.equal(appendCalls.length, 1);
-  assert.equal(removeCalls.length, 1);
-  assert.deepEqual(revokeCalls, ['blob:smart-summary']);
 });
 
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
@@ -1641,12 +1532,18 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
   }
 });
 
-test('SmartWrongQuestionsPage reuses the current filter query for PDF export', () => {
+test('SmartWrongQuestionsPage source no longer exposes export or pending-review controls in the notebook view', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+  const helperSource = readFileSync(resolve(currentDir, 'smartWrongQuestions.ts'), 'utf8');
 
-  assert.match(pageSource, /const handleExportSummary = \(\) => \{/);
-  assert.match(pageSource, /downloadWrongQuestionSummary\(filters\)/);
-  assert.match(pageSource, /导出 PDF 汇总/);
+  assert.doesNotMatch(pageSource, /downloadWrongQuestionSummary\(filters\)/);
+  assert.doesNotMatch(pageSource, /导出汇总/);
+  assert.doesNotMatch(pageSource, /只看待教师跟进/);
+  assert.match(pageSource, /未掌握/);
+  assert.doesNotMatch(helperSource, /onlyPendingReview\?: boolean/);
+  assert.doesNotMatch(helperSource, /buildWrongQuestionSummaryExportPath/);
+  assert.doesNotMatch(helperSource, /downloadWrongQuestionSummary/);
+  assert.doesNotMatch(helperSource, /summary\/export/);
 });
 
 test('SmartWrongQuestionsPage loads teacher and class filter options as selects instead of free text inputs', async () => {
@@ -2145,7 +2042,7 @@ test('SmartWrongQuestionsPage renders class-based student notebooks for owner ac
       assert.ok(classSelect);
       assert.ok(teacherSelect);
       assert.match(pageText, /学生错题本/);
-      assert.match(pageText, /导出 PDF 汇总/);
+      assert.match(pageText, /未掌握/);
       assert.doesNotMatch(pageText, /筛选与列表/);
       assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), true);
     });

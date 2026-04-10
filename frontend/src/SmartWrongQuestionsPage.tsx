@@ -17,8 +17,8 @@ import {
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
-  downloadWrongQuestionSummary,
   filterWrongQuestionRecordsForMemberNotebook,
+  getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
@@ -60,7 +60,6 @@ const initialFilters: WrongQuestionFilters = {
   subject: '',
   teacherName: '',
   errorType: '',
-  onlyPendingReview: false,
 };
 
 function formatWrongQuestionMappingStatus(status: WrongQuestionMappingStatus): string {
@@ -422,13 +421,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
-  const handleExportSummary = () => {
-    setError('');
-    void downloadWrongQuestionSummary(filters).catch((downloadError) => {
-      setError(downloadError instanceof Error ? downloadError.message : '智能错题导出失败');
-    });
-  };
-
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -698,7 +690,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
             {hasStaffScope
-              ? `在 ${currentUser.organization_name} 内部查看错题记录，筛选待跟进条目，并为后续教师复盘预留统一工作区。`
+              ? `在 ${currentUser.organization_name} 内部查看错题记录，按班级或学生打开错题本，并统一处理教师复盘。`
               : '仅查看你负责班级与学生的错题记录，并直接跟进自己的教师复盘。'}
           </p>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前操作人：{currentUser.display_name}</p>
@@ -709,7 +701,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.totalCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">待跟进</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">未掌握</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.pendingReviewCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -736,16 +728,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学生错题本</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {hasStaffScope
-                ? '先按筛选条件缩小范围，再选择班级并打开学生卡片查看错题本；筛选结果也可以直接导出 PDF 汇总。'
+                ? '先按筛选条件缩小范围，再选择班级并打开学生卡片查看错题本。'
                 : '先选择班级，再打开学生卡片查看这个孩子的错题库。'}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            {hasStaffScope && (
-              <button type="button" onClick={handleExportSummary} className={workspaceSecondaryButtonClass}>
-                导出 PDF 汇总
-              </button>
-            )}
             <button
               type="button"
               onClick={() => void loadList(filters)}
@@ -822,15 +809,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   placeholder="如：计算错误"
                 />
               </div>
-            </label>
-            <label className="flex items-center gap-3 self-end rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={Boolean(filters.onlyPendingReview)}
-                onChange={(event) => handleFilterChange('onlyPendingReview', event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              只看待教师跟进
             </label>
             <div className="flex flex-wrap gap-3 lg:col-span-3 lg:justify-end">
               <button
