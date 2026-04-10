@@ -708,18 +708,18 @@ test('normalizeWrongQuestionRecord keeps wechat mini-program review fields for l
     created_at: '2026-03-29T08:00:00Z',
     image_url: 'https://cdn.example.com/local-question.png',
     child_raw_reason_text: '我把单位换算漏掉了',
-    primary_error_type: '审题不清',
+    primary_error_type: '审题问题',
     secondary_error_summary: '孩子忽略了题目里的单位换算要求。',
     archive_status: 'archived',
     analysis: {
-      error_type: '审题不清',
+      error_type: '审题问题',
       student_note: '孩子忽略了题目里的单位换算要求。',
     },
   });
 
   assert.equal(normalized.source, 'wechat_mp');
   assert.equal(normalized.childReasonText, '我把单位换算漏掉了');
-  assert.equal(normalized.primaryErrorType, '审题不清');
+  assert.equal(normalized.primaryErrorType, '审题问题');
   assert.equal(normalized.causeNote, '孩子忽略了题目里的单位换算要求。');
   assert.equal(normalized.isMastered, true);
   assert.equal(getWrongQuestionSourceLabel(normalized.source), '微信小程序');
@@ -759,9 +759,9 @@ test('smart wrong question page shows wechat mini-program source badge and local
   assert.match(pageSource, /selectedRecord\?\.source === 'wechat_mp'/);
   assert.match(pageSource, /微信小程序/);
   assert.match(pageSource, /孩子自述错因/);
-  assert.match(pageSource, /AI 归类错因/);
-  assert.match(pageSource, /aria-label="AI 归类错因"/);
-  assert.match(pageSource, /AI 备注/);
+  assert.match(pageSource, /问题归类/);
+  assert.match(pageSource, /aria-label="问题归类"/);
+  assert.match(pageSource, /补充备注/);
   assert.match(pageSource, /是否掌握/);
 });
 
@@ -775,7 +775,7 @@ test('SmartWrongQuestionsPage loads selected record detail into a review draft s
   assert.match(pageSource, /buildWrongQuestionDetailPath\(selectedId, selectedRecordForDetail\?\.roomId\)/);
   assert.match(pageSource, /setReviewDraftByRecordId\(\(current\) => \{/);
   assert.match(pageSource, /hydrateWrongQuestionReviewDraftFromDetail\(/);
-  assert.match(pageSource, /最终错误类型/);
+  assert.match(pageSource, /最终问题归类/);
   assert.match(pageSource, /核心知识点/);
   assert.match(pageSource, /后续练习建议/);
   assert.match(pageSource, /原因分析/);
@@ -1033,7 +1033,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
 
     await waitForAssertion(() => {
       assert.ok(fetchCalls.length >= 4);
-      const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终错误类型"]') as HTMLSelectElement | null;
+      const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终问题归类"]') as HTMLSelectElement | null;
       const selectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
 
       assert.ok(selectedErrorTypeInput instanceof HTMLSelectElement);
@@ -1072,7 +1072,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     });
 
     await waitForAssertion(() => {
-      const rebuiltSelectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终错误类型"]') as HTMLSelectElement | null;
+      const rebuiltSelectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终问题归类"]') as HTMLSelectElement | null;
       const rebuiltSelectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
       assert.ok(rebuiltSelectedErrorTypeInput instanceof HTMLSelectElement);
       assert.ok(rebuiltSelectedKnowledgePointsTextarea instanceof HTMLTextAreaElement);
@@ -1318,11 +1318,11 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
           question_text_source: 'ai',
           student_library_pdf_path: '/api/wechat/student-libraries/1',
           child_raw_reason_text: '我把乘法优先级看漏了',
-          primary_error_type: '计算粗心',
+          primary_error_type: '方法问题',
           secondary_error_summary: '孩子知道规则，但这道题没先算乘法。',
           archive_status: 'active',
           analysis: {
-            error_type: '计算粗心',
+            error_type: '方法问题',
             student_note: '孩子知道规则，但这道题没先算乘法。',
           },
         });
@@ -1345,11 +1345,11 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
             question_text_source: 'teacher',
             student_library_pdf_path: '/api/wechat/student-libraries/1',
             child_raw_reason_text: '我把乘法优先级看漏了',
-            primary_error_type: '计算粗心',
+            primary_error_type: '方法问题',
             secondary_error_summary: '孩子知道规则，但这道题没先算乘法。',
             archive_status: 'archived',
             analysis: {
-              error_type: '计算粗心',
+              error_type: '方法问题',
               student_note: '孩子知道规则，但这道题没先算乘法。',
             },
           },
@@ -1381,14 +1381,14 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       assert.match(pageText, /预览 PDF/);
       assert.match(pageText, /下载 PDF/);
       assert.match(pageText, /孩子自述错因/);
-      assert.match(pageText, /AI 归类错因/);
+      assert.match(pageText, /问题归类/);
       const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
-      const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="AI 归类错因"]') as HTMLSelectElement | null;
+      const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="问题归类"]') as HTMLSelectElement | null;
       const previewLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('预览 PDF')) ?? null;
       const downloadLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('下载 PDF')) ?? null;
       assert.ok(textarea instanceof HTMLTextAreaElement);
       assert.ok(errorTypeSelect instanceof HTMLSelectElement);
-      assert.equal(errorTypeSelect.value, '计算粗心');
+      assert.equal(errorTypeSelect.value, '方法问题');
       assert.equal(previewLink?.tagName, 'A');
       assert.equal(downloadLink?.tagName, 'A');
       assert.equal(previewLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
@@ -1398,7 +1398,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     });
 
     const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
-    const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="AI 归类错因"]') as HTMLSelectElement | null;
+  const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="问题归类"]') as HTMLSelectElement | null;
     const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
 
@@ -1408,14 +1408,14 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     assert.ok(saveButton instanceof HTMLButtonElement);
 
     await act(async () => {
-      errorTypeSelect.value = '方法错误';
+      errorTypeSelect.value = '方法问题';
       errorTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
     const payload = buildWrongQuestionReviewPayload({
-      selectedErrorType: '方法错误',
+      selectedErrorType: '方法问题',
       selectedKnowledgePoints: [],
       selectedActions: [],
       selectedReasons: [],
@@ -1427,7 +1427,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     });
 
     assert.equal(payload.question_text, '老师修正后的题目文本');
-    assert.equal(payload.selectedErrorType, '方法错误');
+    assert.equal(payload.selectedErrorType, '方法问题');
     assert.equal(payload.is_mastered, true);
 
     await act(async () => {
@@ -1440,7 +1440,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/wechat-record-edit/review');
       assert.ok(saveCall);
       const requestPayload = JSON.parse(String(saveCall?.init?.body));
-      assert.equal(requestPayload.selectedErrorType, '方法错误');
+      assert.equal(requestPayload.selectedErrorType, '方法问题');
     });
   } finally {
     if (root) {
@@ -1776,7 +1776,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-save-top-level/review');
       assert.ok(saveCall);
       const pageText = domEnvironment.container.textContent || '';
-      const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终错误类型"]') as HTMLSelectElement | null;
+      const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终问题归类"]') as HTMLSelectElement | null;
       assert.ok(selectedErrorTypeInput instanceof HTMLSelectElement);
       assert.equal(selectedErrorTypeInput.value, '服务端修正');
       assert.match(pageText, /老师与班级归属待确认/);
@@ -2479,12 +2479,12 @@ test('SmartWrongQuestionsPage saves review content only for the selected member 
             teacher_user_id: 7,
             created_at: '2026-03-29T09:00:00Z',
             child_raw_reason_text: '我把单位换算漏掉了',
-            primary_error_type: '审题不清',
+            primary_error_type: '审题问题',
             secondary_error_summary: '孩子忽略了题目里的单位换算要求。',
             archive_status: 'archived',
             analysis: {
               question_category: '计算',
-              error_type: '审题不清',
+              error_type: '审题问题',
               knowledge_points: ['分数运算'],
               student_note: '孩子忽略了题目里的单位换算要求。',
             },
@@ -3010,12 +3010,12 @@ test('SmartWrongQuestionsPage member notebook keeps wechat records on error-caus
               is_geometry: 0,
               question_text: '计算 2+3×4 的结果。',
               child_raw_reason_text: '我把乘法优先级看漏了',
-              primary_error_type: '计算粗心',
+              primary_error_type: '方法问题',
               secondary_error_summary: '孩子知道规则，但这道题没先算乘法。',
               archive_status: 'active',
               analysis: {
                 question_category: '计算',
-                error_type: '计算粗心',
+                error_type: '方法问题',
                 knowledge_points: ['运算顺序'],
                 is_repeated_mistake: '是',
                 student_note: '孩子知道规则，但这道题没先算乘法。',
@@ -3069,11 +3069,13 @@ test('SmartWrongQuestionsPage member notebook keeps wechat records on error-caus
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /孩子自述错因/);
-      assert.match(pageText, /AI 归类错因/);
-      assert.match(pageText, /AI 备注/);
+      assert.match(pageText, /问题归类/);
+      assert.match(pageText, /补充备注/);
       assert.match(pageText, /是否掌握/);
       assert.doesNotMatch(pageText, /重复错题/);
-      assert.doesNotMatch(pageText, /知识点/);
+      assert.doesNotMatch(pageText, /核心知识点/);
+      assert.doesNotMatch(pageText, /后续练习建议/);
+      assert.doesNotMatch(pageText, /原因分析/);
     });
   } finally {
     if (root) {

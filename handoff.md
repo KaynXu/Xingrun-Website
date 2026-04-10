@@ -2,6 +2,27 @@
 
 最后更新：2026-04-14
 
+### 2026-04-10 Parent Voice Reason Flow Progress
+- Website worktree `feature/parent-voice-reason-website` 本轮已完成两部分：
+  - 后端 Task 1：
+    - 四类新口径已替换旧六类：`知识点问题 / 细节问题 / 方法问题 / 审题问题`
+    - 新增 `POST /api/wechat/reason-transcriptions`
+    - 新增 `POST /api/wechat/reason-classifications`
+    - `POST /api/wechat/wrong-questions` 改为直接持久化 caller 提供的 finalized fields，不再内部重分类
+  - 前端 Task 2：
+    - 智能错题页面老师侧文案已切到新口径
+    - 微信错题卡片与筛选下拉只保留四类顶层标签
+    - `AI 归类错因 / AI 备注 / 最终错误类型` 已分别收口成 `问题归类 / 补充备注 / 最终问题归类`
+- 已验证：
+  - `/Users/ark.mini/Desktop/Xingrun-MiniProgram/.venv/bin/python -m unittest tests.test_wechat_parent_upload_api.WeChatParentUploadApiTestCase.test_wechat_service_can_transcribe_child_reason_audio tests.test_wechat_parent_upload_api.WeChatParentUploadApiTestCase.test_wechat_service_can_classify_child_reason_text tests.test_wechat_parent_upload_api.WeChatParentUploadApiTestCase.test_wechat_upload_persists_finalized_reason_fields_without_reclassifying` -> `Ran 3 tests ... OK`
+  - `frontend && npm test -- --runInBand src/smart-wrong-questions.test.ts` -> `pass 156 / fail 0`
+  - 2026-04-10 追加跨服务 smoke：
+    - 临时起本地 Website `127.0.0.1:5501` 和 bridge `127.0.0.1:3301`
+    - 实际走通 `家长登录 -> 班级预览 -> 绑定学生 -> 文本错因分类上传 -> 语音转写分类上传 -> Website 查询落库`
+    - 结果：文本链路落库 `primary_error_type=方法问题`；语音链路落库 `child_reason_input_mode=voice`、`child_raw_reason_text=我把单位换算漏掉了`、`primary_error_type=审题问题`
+- 当前残留：
+  - Task 3~5 在 MiniProgram repo 继续推进，Website 这边本轮已够停点
+
 这份文件只记录当前权威状态、下一步、风险和残留。
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
