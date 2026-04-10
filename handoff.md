@@ -1,3 +1,50 @@
+## 智能错题已删掉重复班级框和旧导出入口（2026-04-10）
+
+### 已完成
+- 已把 staff 端智能错题页里的重复班级选择框删掉；现在页面只保留一个班级选择框，用它决定下方学生卡片和错题库入口。
+- 之前的 `学生姓名` 自由输入已改成 `学生` 下拉，并且只有在选中班级后，才会展示该班级下的学生选项，不再跨班级混选。
+- 已删除 staff 端 `导出汇总` 按钮，以及旧的 `只看待教师跟进` 筛选入口，避免继续保留已经不适用的旧工作流。
+- 汇总卡里的 `待跟进` 文案已收口为 `未掌握`，和当前错题跟进语义保持一致。
+- staff 端在未选择班级时，现已恢复支持直接输入学生姓名搜索；搜到学生后可直接点开，这时页面会自动落到该学生所属班级的错题库。
+
+### proof
+- 临时脚本：系统临时脚本执行 `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
+- 完整输出结论：
+  - `tests 34`
+  - `pass 34`
+  - `fail 0`
+
+### 剩余问题
+- 本轮没有继续动后端筛选参数定义，当前只是把前端旧入口删掉并改成新的单班级 notebook 交互。
+
+### 下一步方向
+- 如果还要继续收口，可以再看是否要把 `smartWrongQuestions.ts` 里未再使用的导出 helper 和 `onlyPendingReview` 查询参数一起清掉，彻底删掉前端这条旧链路。
+
+## 智能错题测试已对齐当前 notebook 结构（2026-04-10）
+
+### 已完成
+- 已定位本轮失败根因：`frontend/src/smart-wrong-questions.test.ts` 里有两条断言仍停留在旧结构，和当前 `SmartWrongQuestionsPage` 的 notebook 版 staff 视图不一致。
+- 当前页面真实结构是：staff 侧保留 `老师` 与 notebook `班级` 选择，并新增按当前班级收口的 `学生` 选择；同时已移除 `导出汇总` 和 `只看待教师跟进` 控件。
+- 已将 source-level 与 owner UI 回归测试同步到当前实现，未额外改动业务逻辑。
+
+### proof
+- 临时脚本：系统临时脚本执行 `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts --test-name-pattern "owner accounts while keeping staff controls"`
+- 完整输出：
+  - `tests 34`
+  - `pass 34`
+  - `fail 0`
+- 临时脚本：系统临时脚本执行 `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
+- 完整输出：
+  - `tests 34`
+  - `pass 34`
+  - `fail 0`
+
+### 剩余问题
+- 这轮只修正了测试与当前实现的错位，没有继续判断 notebook 版 staff 视图是否应长期保留“移除导出/待教师跟进”这一产品方向。
+
+### 下一步方向
+- 如果要继续推进，可以单独决定 staff notebook 版是否保留当前“学生选择器 + 无导出按钮”的方向；确定后再清理对应的历史 helper 和命名。
+
 ## 智能题库老师端文案已收口工程化表述（2026-04-10）
 
 ### 已完成

@@ -17,7 +17,6 @@ import {
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
-  downloadWrongQuestionSummary,
   filterWrongQuestionRecordsForMemberNotebook,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
@@ -159,6 +158,19 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
     return buildMemberStudentNotebookSummaries(records, selectedClassId);
   }, [records, selectedClassId, usesStudentNotebook]);
+  const classStudentOptions = useMemo(() => {
+    if (!selectedClassId) {
+      return [];
+    }
+    return memberNotebookSummaries.map((item) => item.studentName);
+  }, [memberNotebookSummaries, selectedClassId]);
+  const visibleNotebookSummaries = useMemo(() => {
+    const normalizedStudentName = filters.studentName?.trim() ?? '';
+    if (!normalizedStudentName) {
+      return memberNotebookSummaries;
+    }
+    return memberNotebookSummaries.filter((item) => item.studentName.toLowerCase().includes(normalizedStudentName.toLowerCase()));
+  }, [filters.studentName, memberNotebookSummaries]);
   const memberNotebookRecords = useMemo(() => {
     if (!usesStudentNotebook) {
       return [];
@@ -205,7 +217,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         if (current && nextRecords.some((item) => item.id === current)) {
           return current;
         }
-        return nextRecords[0]?.id ?? null;
+        return null;
       });
     } catch (loadError) {
       if (requestVersion !== requestVersionRef.current) {
@@ -278,6 +290,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       setSelectedId(null);
     }
   }, [memberNotebookSummaries, selectedStudentName, usesStudentNotebook]);
+
+  useEffect(() => {
+    const normalizedStudentName = filters.studentName?.trim() ?? '';
+    if (!selectedClassId || !normalizedStudentName) {
+      return;
+    }
+
+    if (!classStudentOptions.includes(normalizedStudentName)) {
+      setFilters((current) => ({
+        ...current,
+        studentName: '',
+      }));
+    }
+  }, [classStudentOptions, filters.studentName, selectedClassId]);
 
   useEffect(() => {
     if (!selectedRecord) {
@@ -422,13 +448,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
-  const handleExportSummary = () => {
-    setError('');
-    void downloadWrongQuestionSummary(filters).catch((downloadError) => {
-      setError(downloadError instanceof Error ? downloadError.message : '智能错题导出失败');
-    });
-  };
-
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -436,6 +455,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const handleMemberClassChange = (value: string) => {
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
+    setFilters((current) => ({
+      ...current,
+      studentName: '',
+      className: '',
+    }));
     setSelectedStudentName(null);
     setSelectedId(null);
   };
@@ -445,8 +469,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setDetailError('');
     setSaveError('');
   };
-  const handleOpenMemberNotebook = (studentName: string) => {
-    const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, studentName);
+  const handleOpenMemberNotebook = (classId: number, studentName: string) => {
+    const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, classId, studentName);
+    setSelectedClassId(classId);
     setSelectedStudentName(studentName);
     setSelectedId(nextRecords[0]?.id ?? null);
   };
@@ -709,7 +734,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.totalCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">待跟进</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">未掌握</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.pendingReviewCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -736,16 +761,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学生错题本</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {hasStaffScope
-                ? '先按筛选条件缩小范围，再选择班级并打开学生卡片查看错题本；需要留存时也可以导出本次汇总。'
+                ? '先按老师、科目或错因缩小范围，再选择班级和学生查看这个孩子的错题本。'
                 : '先选择班级，再打开学生卡片查看这个孩子最近的错题记录。'}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            {hasStaffScope && (
-              <button type="button" onClick={handleExportSummary} className={workspaceSecondaryButtonClass}>
-                导出汇总
-              </button>
-            )}
             <button
               type="button"
               onClick={() => void loadList(filters)}
@@ -760,32 +780,37 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
         {hasStaffScope && (
           <form className="grid gap-4 lg:grid-cols-3" onSubmit={handleSubmit}>
-            <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">学生姓名</span>
-              <input
-                type="text"
-                value={filters.studentName ?? ''}
-                onChange={(event) => handleFilterChange('studentName', event.target.value)}
-                className={workspaceFieldClass}
-                placeholder="如：Alice"
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">班级</span>
-              <select
-                aria-label="班级"
-                value={filters.className ?? ''}
-                onChange={(event) => handleFilterChange('className', event.target.value)}
-                className={workspaceFieldClass}
-              >
-                <option value="">全部班级</option>
-                {classOptions.map((item) => (
-                  <option key={item.id} value={item.name}>
-                    {item.subject ? `${item.name} · ${item.subject}` : item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {selectedClassId ? (
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">学生</span>
+                <select
+                  aria-label="学生"
+                  value={filters.studentName ?? ''}
+                  onChange={(event) => handleFilterChange('studentName', event.target.value)}
+                  className={workspaceFieldClass}
+                  disabled={classStudentOptions.length === 0}
+                >
+                  <option value="">全部学生</option>
+                  {classStudentOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">学生姓名</span>
+                <input
+                  type="text"
+                  value={filters.studentName ?? ''}
+                  onChange={(event) => handleFilterChange('studentName', event.target.value)}
+                  onInput={(event) => handleFilterChange('studentName', (event.target as HTMLInputElement).value)}
+                  className={workspaceFieldClass}
+                  placeholder="如：Alice"
+                />
+              </label>
+            )}
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">科目</span>
               <input
@@ -823,15 +848,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 />
               </div>
             </label>
-            <label className="flex items-center gap-3 self-end rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={Boolean(filters.onlyPendingReview)}
-                onChange={(event) => handleFilterChange('onlyPendingReview', event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              只看待教师跟进
-            </label>
             <div className="flex flex-wrap gap-3 lg:col-span-3 lg:justify-end">
               <button
                 type="button"
@@ -868,27 +884,27 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </select>
         </label>
 
-        {!selectedClassId ? (
+        {!selectedClassId && !(hasStaffScope && filters.studentName?.trim()) ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-            请选择班级查看学生错题本。
+            {hasStaffScope ? '请选择班级或输入学生姓名搜索错题本。' : '请选择班级查看学生错题本。'}
           </div>
         ) : loading ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
             正在加载学生错题本...
           </div>
-        ) : memberNotebookSummaries.length === 0 ? (
+        ) : visibleNotebookSummaries.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-            当前班级下暂无错题记录。
+            {selectedClassId ? '当前班级下暂无错题记录。' : '没有找到匹配的学生错题本。'}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {memberNotebookSummaries.map((item) => {
-              const isActive = item.studentName === selectedStudentName;
+            {visibleNotebookSummaries.map((item) => {
+              const isActive = item.studentName === selectedStudentName && item.classId === selectedClassId;
               return (
                 <button
                   key={`${item.classId}-${item.studentName}`}
                   type="button"
-                  onClick={() => handleOpenMemberNotebook(item.studentName)}
+                  onClick={() => handleOpenMemberNotebook(item.classId, item.studentName)}
                   className={`${workspaceSoftCardClass} w-full p-5 text-left transition ${isActive ? 'border-sky-400 shadow-[0_18px_48px_rgba(47,128,237,0.12)]' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-3">
