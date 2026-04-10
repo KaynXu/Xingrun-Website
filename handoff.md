@@ -7,6 +7,10 @@
 
 ### 当前状态
 - 当前主线是 `智能错题` 收口。
+- 预发布前卡住的 3 条后端失败已在本地修通：
+  - `review-plans` 音频上传 credit 用例已改成异步 `202 + pending` 语义
+  - `monthly` PDF 失败后不再提前扣费，重试后可成功扣一次并完成任务
+  - `monthly` 后台 worker 不再依赖 request context 生成 request identity
 - 登录后工作区里的对话式文案已收口，`WorkspaceDashboard.tsx`、`App.tsx`、`SmartWrongQuestionsPage.tsx` 不再保留 `欢迎回来 / 系统会帮你 / 先这样再那样` 这类口吻。
 - 登录后工作区已恢复少量明确的 `AI` 能力标识，用于保留产品定位；当前原则是“保留 AI 能力名词，不保留 AI 助手式对话口吻”。
 - 旧 `导出汇总`、`onlyPendingReview`、`只看待教师跟进` 链路已经删除，前后端不再保留隐藏入口。
@@ -22,6 +26,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `72e0aa5 fix: remove stale smart wrong question filters`。
 
 ### 下一步
+- 这 3 条后端失败修完后，下一步就是按 release 流程重新做一次 `develop -> push -> merge master -> 部署`，不需要再先卡在这 3 条上。
 - 最适合继续做的是确认这轮命名收口是否要继续扩到更多历史文档文件名，当前先只改了内容和活代码命名，没有批量重命名 `docs/superpowers/*` 的历史文件路径。
 - 优先处理：
   - 如果还要继续收口，可以单独决定是否把 `teacher_comment` / `status='reviewed'` 这类兼容旧列也进一步包到更显式的 legacy helper 里
@@ -30,6 +35,7 @@
 
 ### 风险
 - 当前最大风险不是功能坏掉，而是“语义看起来像统一了，其实没有”。
+- `monthly` 现在已经改成“PDF 成功后再扣费”，但单节 `review plan` worker 仍是 AI 成功后立即扣费；如果后面也要求单节 PDF 失败不扣费，这一块语义还没有跟上。
 - `wechat_mp` 和 `downstream` 仍是两套字段语义；在真正统一后端契约前，不要只在共享前端类型上继续顺手收口字段。
 - `wrong_question_submissions` 表里的兼容列 `teacher_comment` / `status` 还在，所以后续维护时仍有误写回旧字段的风险。
 - `smart_wrong_questions.py` 下游代理链还在，运行时仍是“本地微信错题 + downstream 服务”双来源模型。

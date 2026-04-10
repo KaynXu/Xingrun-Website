@@ -710,6 +710,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
             ).fetchone()
         self.assertEqual(usage_count["total"], 1)
 
+    @patch("app._start_review_plan_generation_thread")
     @patch("app.datetime")
     @patch("app._ai_fallback_request_bucket", side_effect=[12345, 54321])
     @patch("app.has_api_key", return_value=True)
@@ -722,6 +723,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         _mock_has_api_key,
         _mock_bucket,
         mock_datetime,
+        mock_start_thread,
     ):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
@@ -770,9 +772,15 @@ class CreditSystemApiTestCase(unittest.TestCase):
         first = post_audio_retry()
         second = post_audio_retry()
 
-        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.status_code, 202)
         self.assertEqual(second.status_code, 409)
         self.assertIn("重复请求", second.get_json()["error"])
+        self.assertEqual(mock_start_thread.call_count, 1)
+
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["lesson_id"], first.get_json()["id"])
+        app_module._run_review_plan_generation_job(**thread_kwargs)
+
         self.assertEqual(mock_transcribe.call_count, 1)
 
         overview = self.client.get(
@@ -801,6 +809,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(audio_usage_count["total"], 1)
         self.assertEqual(total_usage_count["total"], 2)
 
+    @patch("app._start_review_plan_generation_thread")
     @patch("app.datetime")
     @patch("app.has_api_key", return_value=True)
     @patch("ai_processor.parse_and_generate_plan")
@@ -811,6 +820,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         mock_generate_plan,
         _mock_has_api_key,
         mock_datetime,
+        mock_start_thread,
     ):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
@@ -871,8 +881,13 @@ class CreditSystemApiTestCase(unittest.TestCase):
         second = post_audio_upload(b"audio-file-bb")
 
         self.assertEqual(len(b"audio-file-aa"), len(b"audio-file-bb"))
-        self.assertEqual(first.status_code, 201)
-        self.assertEqual(second.status_code, 201)
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(mock_start_thread.call_count, 2)
+
+        for call in mock_start_thread.call_args_list:
+            app_module._run_review_plan_generation_job(**call.kwargs)
+
         self.assertEqual(mock_transcribe.call_count, 2)
 
         overview = self.client.get(
@@ -892,6 +907,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
             ).fetchone()
         self.assertEqual(audio_usage_count["total"], 2)
 
+    @patch("app._start_monthly_plan_generation_thread")
     @patch("app.has_api_key", return_value=True)
     @patch("pdf_engine.generate_monthly_pdf")
     @patch("ai_processor.generate_monthly_plan")
@@ -900,6 +916,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         mock_generate_plan,
         mock_generate_pdf,
         _mock_has_api_key,
+        mock_start_thread,
     ):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
@@ -939,8 +956,18 @@ class CreditSystemApiTestCase(unittest.TestCase):
             json={"month": "2026-04"},
         )
 
-        self.assertEqual(first.status_code, 500)
-        self.assertIn("pdf failed", first.get_json()["error"])
+        self.assertEqual(first.status_code, 202)
+        first_payload = first.get_json()
+        self.assertIsNotNone(first_payload)
+        self.assertEqual(first_payload["status"], "pending")
+        self.assertEqual(mock_start_thread.call_count, 1)
+
+        app_module._run_monthly_plan_generation_job(**mock_start_thread.call_args.kwargs)
+
+        failed_job = lesson_manager.get_monthly_plan_job(first_payload["id"])
+        self.assertIsNotNone(failed_job)
+        self.assertEqual(failed_job["status"], "failed")
+        self.assertEqual(failed_job["generation_error"], "PDF 生成失败，请稍后重试")
 
         overview_after_failure = self.client.get(
             "/api/credits/overview",
@@ -960,13 +987,23 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(failed_usage_count["total"], 0)
 
         second = self.client.post(
-            "/api/monthly/generate",
-            headers=headers,
-            json={"month": "2026-04"},
+            f"/api/monthly/jobs/{first_payload['id']}/retry",
+            headers=self.auth_headers(self.owner_token),
         )
 
-        self.assertEqual(second.status_code, 200)
-        self.assertTrue(second.get_json()["ok"])
+        self.assertEqual(second.status_code, 202)
+        second_payload = second.get_json()
+        self.assertIsNotNone(second_payload)
+        self.assertEqual(second_payload["id"], first_payload["id"])
+        self.assertEqual(second_payload["status"], "pending")
+        self.assertEqual(mock_start_thread.call_count, 2)
+
+        app_module._run_monthly_plan_generation_job(**mock_start_thread.call_args.kwargs)
+
+        ready_job = lesson_manager.get_monthly_plan_job(first_payload["id"])
+        self.assertIsNotNone(ready_job)
+        self.assertEqual(ready_job["status"], "ready")
+
         self.assertEqual(mock_generate_plan.call_count, 2)
         self.assertEqual(mock_generate_pdf.call_count, 2)
 

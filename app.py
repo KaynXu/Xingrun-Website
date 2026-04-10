@@ -669,16 +669,35 @@ def _run_monthly_plan_generation_job(
             return
 
         from ai_processor import generate_monthly_plan
-
+        organization_id = int(user["organization_id"])
+        request_id = _build_ai_charge_request_id(
+            user_id=int(user["id"]),
+            feature_key="monthly_plan_generate",
+            source_record_type="monthly_plan",
+            source_record_id=job_id,
+            request_key=f"monthly-job:{job_id}",
+        )
+        request_identity_claimed = False
+        organization_execution_claimed = False
         try:
-            plan = _run_ai_feature_with_charge(
-                user=user,
+            _claim_ai_request_identity(
+                organization_id=organization_id,
+                request_id=request_id,
+            )
+            request_identity_claimed = True
+            _claim_ai_organization_execution(organization_id)
+            organization_execution_claimed = True
+            ensure_feature_credits_available(
+                organization_id=organization_id,
                 feature_key="monthly_plan_generate",
-                source_record_type="monthly_plan",
-                source_record_id=month_str,
-                producer=lambda: _call_ai_helper_with_usage(
-                    generate_monthly_plan, lesson_dicts, month_str,
-                ),
+            )
+            result = _call_ai_helper_with_usage(
+                generate_monthly_plan,
+                lesson_dicts,
+                month_str,
+            )
+            plan, usage = _split_ai_result_with_usage(
+                result,
                 provider=chat_provider,
                 model=chat_model,
             )
@@ -703,24 +722,50 @@ def _run_monthly_plan_generation_job(
             except LookupError:
                 logger.exception("Failed to mark monthly job %s as failed", job_id)
             return
-
-        from pdf_engine import generate_monthly_pdf
+        finally:
+            if organization_execution_claimed:
+                _release_ai_organization_execution(organization_id)
 
         try:
-            pdf_name = f"{month_str}_月度综合复习.pdf"
-            generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
-        except Exception:
-            logger.exception("Monthly plan PDF generation failed for job %s", job_id)
+            from pdf_engine import generate_monthly_pdf
+
             try:
-                mark_monthly_plan_job_failed(job_id, "PDF 生成失败，请稍后重试")
-            except LookupError:
-                logger.exception("Failed to mark monthly job %s as failed", job_id)
-            return
+                pdf_name = f"{month_str}_月度综合复习.pdf"
+                generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+            except Exception:
+                logger.exception("Monthly plan PDF generation failed for job %s", job_id)
+                try:
+                    mark_monthly_plan_job_failed(job_id, "PDF 生成失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark monthly job %s as failed", job_id)
+                return
 
-        try:
-            mark_monthly_plan_job_succeeded(job_id, pdf_filename=pdf_name)
-        except LookupError:
-            logger.exception("Failed to mark monthly job %s as ready", job_id)
+            try:
+                finalize_ai_charge(
+                    organization_id=organization_id,
+                    user_id=int(user["id"]),
+                    feature_key="monthly_plan_generate",
+                    usage=usage,
+                    source_record_type="monthly_plan",
+                    source_record_id=job_id,
+                    request_id=request_id,
+                )
+                mark_monthly_plan_job_succeeded(job_id, pdf_filename=pdf_name)
+            except CreditBalanceError as exc:
+                logger.exception("Monthly plan charge finalization failed for job %s", job_id)
+                try:
+                    mark_monthly_plan_job_failed(job_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark monthly job %s as failed", job_id)
+            except Exception:
+                logger.exception("Monthly plan charge finalization failed for job %s", job_id)
+                try:
+                    mark_monthly_plan_job_failed(job_id, "AI 生成失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark monthly job %s as failed", job_id)
+        finally:
+            if request_identity_claimed:
+                _release_ai_request_identity(request_id)
     except Exception:
         logger.exception("Unexpected error in monthly plan generation job %s", job_id)
 
