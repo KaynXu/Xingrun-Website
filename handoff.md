@@ -38,6 +38,10 @@
   - `tests 34`
   - `pass 34`
   - `fail 0`
+- 提交结果：`9017448 fix: unify smart wrong question notebook view`
+- 推送结果：`0c064ac..9017448  develop -> develop`
+- 生产发布结果：生产机 `/home/ubuntu/Xingrun-Website` 已快进到 `9017448`，`npm --prefix frontend run build` 成功，`pm2 restart xingrun` 后复查 `pm2 status xingrun` 为 `online`。
+- 生产健康检查：重启后的第一下即时 `curl` 仍短暂失败一次，二次复查恢复为 `HTTP/1.1 302 FOUND`，`Location: http://127.0.0.1:3000`。
 
 ### 剩余问题
 - 本轮只收口了前端工作区入口与交互；后端角色数据范围没有改，因为当前需求就是 `admin/owner` 看本机构全体、`super_owner` 看跨机构全体。
