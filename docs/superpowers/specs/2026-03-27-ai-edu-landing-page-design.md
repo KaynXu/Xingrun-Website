@@ -204,7 +204,7 @@ Title:
 
 Body:
 
-- `面向 AP、A-Level、IB 等国际课程场景，支持题库沉淀、标签化管理与自动组卷。`
+- `面向 AP、A-Level、IB 等国际课程场景，支持题目整理、标签化管理与自动组卷。`
 
 Status role:
 

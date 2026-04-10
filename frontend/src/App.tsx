@@ -43,7 +43,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
+import { WorkspaceDashboard } from './WorkspaceDashboard';
 import {
+  buildClassFeedbackPeriodPreview,
+  buildCreateClassFeedbackTaskRequest,
   createClassStudent,
   deleteClassStudent,
   listClassStudents,
@@ -59,6 +62,9 @@ import {
   saveClassFeedbackTaskDraft,
   type ClassFeedbackStageNotes,
   type ClassFeedbackStudentCard,
+  type ClassFeedbackPeriodGranularity,
+  type ClassFeedbackPeriodSelection,
+  type ClassFeedbackStageName,
   type StageLabelGroup,
 } from './classFeedbackGeneration';
 
@@ -92,13 +98,6 @@ interface Lesson {
   created_at: string;
   record_status?: string;
   generation_error?: string;
-}
-
-interface Stats {
-  total_lessons: number;
-  month_lessons: number;
-  total_pdfs: number;
-  total_questions: number;
 }
 
 interface ApiSettings {
@@ -349,6 +348,27 @@ function hasStaffAccess(role: Role): boolean {
 function canAccessSmartWrongQuestions(role: Role): boolean {
   return hasStaffAccess(role) || role === 'member';
 }
+
+function syncMemberScopedClassSelection(
+  role: Role,
+  classes: ClassItem[],
+  selectedClassId: number | null,
+): number | null {
+  if (role !== 'member') {
+    return selectedClassId;
+  }
+
+  if (selectedClassId !== null && classes.some((item) => item.id === selectedClassId)) {
+    return selectedClassId;
+  }
+
+  if (classes.length === 1) {
+    return classes[0]?.id ?? null;
+  }
+
+  return null;
+}
+
 function canManageOwnerRole(role: Role): boolean {
   return role === 'super_owner';
 }
@@ -548,7 +568,7 @@ const LANDING_LEGAL_DOCUMENTS: Record<
       {
         title: '服务内容与使用边界',
         paragraphs: [
-          'Starain 当前提供并持续迭代的能力包括但不限于课后复习资料生成、题库沉淀、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
+          'Starain 当前提供并持续迭代的能力包括但不限于课后复习资料生成、题目整理、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
           '我们会持续优化产品功能，但不承诺所有展示中的方案模块都已在当前版本全面上线，也不保证服务在任何时间点都完全不中断。',
         ],
       },
@@ -702,6 +722,38 @@ function shiftIsoDate(dateString: string, days: number): string {
   const base = new Date(`${dateString}T12:00:00`);
   base.setDate(base.getDate() + days);
   return base.toISOString().slice(0, 10);
+}
+
+function getIsoWeekParts(dateString: string): { year: number; week: number } {
+  const base = new Date(`${dateString}T12:00:00`);
+  const thursday = new Date(base.getTime());
+  const weekday = thursday.getDay() || 7;
+  thursday.setDate(thursday.getDate() + 4 - weekday);
+
+  const year = thursday.getFullYear();
+  const firstThursday = new Date(`${year}-01-04T12:00:00`);
+  const firstWeekday = firstThursday.getDay() || 7;
+  firstThursday.setDate(firstThursday.getDate() + 4 - firstWeekday);
+
+  const diffDays = Math.round((thursday.getTime() - firstThursday.getTime()) / 86_400_000);
+  return {
+    year,
+    week: Math.floor(diffDays / 7) + 1,
+  };
+}
+
+function inferClassFeedbackStageName(dateString: string): ClassFeedbackStageName {
+  const month = Number(dateString.slice(5, 7));
+  if (month >= 3 && month <= 5) {
+    return '春季';
+  }
+  if (month >= 7 && month <= 8) {
+    return '暑假';
+  }
+  if (month >= 9 && month <= 11) {
+    return '秋季';
+  }
+  return '寒假';
 }
 
 function getLatestLessonDate(lessons: Lesson[]): string {
@@ -1412,7 +1464,9 @@ const Sidebar = ({
     ...(canAccessSmartWrongQuestions(currentUser.role)
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
       : []),
-    { id: 'classes', icon: Home, label: '班级管理' },
+    ...(hasStaffAccess(currentUser.role)
+      ? [{ id: 'classes', icon: Home, label: '班级管理' }]
+      : []),
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
     ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
     { id: 'settings', icon: Settings, label: '系统设置' },
@@ -1580,160 +1634,6 @@ const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) 
   </div>
 );
 
-// --- Pages ---
-
-const Dashboard = ({
-  currentUser,
-  setActivePage,
-  activeClassCount,
-}: {
-  currentUser: CurrentUser;
-  setActivePage: (p: Page) => void;
-  activeClassCount: number;
-}) => {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [recentLessons, setRecentLessons] = useState<Lesson[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([apiFetch<Stats>('/api/stats'), apiFetch<Lesson[]>('/api/review-plans')])
-      .then(([s, lessons]) => {
-        setStats(s);
-        setRecentLessons(lessons.slice(0, 5));
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const statCards = [
-    { label: '本月课程', value: stats?.month_lessons ?? '—', icon: FileText, color: 'text-blue-500' },
-    { label: '累计课程', value: stats?.total_lessons ?? '—', icon: Library, color: 'text-green-500' },
-    { label: '已生成 PDF', value: stats?.total_pdfs ?? '—', icon: Download, color: 'text-purple-500' },
-    { label: '活跃班级', value: activeClassCount, icon: CalendarDays, color: 'text-cyan-500' },
-  ];
-
-  return (
-    <div className={`${workspacePageClass} space-y-8`}>
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
-        <div className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-8 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)]">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">Today at Starain</p>
-            <h3 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">欢迎回来，{currentUser.display_name}</h3>
-            <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-300">
-              {loading
-                ? '正在加载你的课堂数据与教学资产。'
-                : `本月已记录 ${stats?.month_lessons ?? 0} 节课，累计生成 ${stats?.total_pdfs ?? 0} 份 PDF 复习资料。`}
-            </p>
-          </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button onClick={() => setActivePage('review-generation')} className={workspacePrimaryButtonClass}>
-              <PlusCircle size={20} />
-              新建复习文档
-            </button>
-            <button onClick={() => setActivePage('review-generation')} className={workspaceSecondaryButtonClass}>
-              <Library size={20} />
-              查看历史文档
-            </button>
-          </div>
-        </div>
-
-        <div className={`${workspaceSoftCardClass} p-6`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Account</p>
-          <div className="mt-5 flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-xl font-bold text-white shadow-[0_16px_32px_rgba(34,199,232,0.25)]">
-              {currentUser.display_name.slice(0, 1).toUpperCase()}
-            </div>
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{getRoleLabel(currentUser.role)}</p>
-            </div>
-          </div>
-          <div className="mt-6 space-y-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500 dark:text-slate-400">机构</span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">{currentUser.organization_name}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500 dark:text-slate-400">账号状态</span>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                {currentUser.status === 'active' ? '正常' : currentUser.status}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-        {statCards.map((stat, i) => (
-          <div key={i} className={`${workspaceCardClass} group p-6`}>
-            <div className="mb-4 flex items-center justify-between">
-              <div className={`rounded-2xl bg-sky-50 p-3 dark:bg-white/5 ${stat.color}`}>
-                <stat.icon size={20} />
-              </div>
-              <ArrowRight size={16} className="text-slate-300 transition-colors group-hover:text-sky-500 dark:text-slate-600 dark:group-hover:text-sky-400" />
-            </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{stat.label}</p>
-            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{stat.value}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className={`${workspaceCardClass} overflow-hidden`}>
-        <div className="flex items-center justify-between border-b border-sky-100/80 p-6 dark:border-white/10">
-          <div>
-            <h4 className="font-semibold text-slate-900 dark:text-white">最近课程</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近录入的课堂内容会优先出现在这里。</p>
-          </div>
-          <button onClick={() => setActivePage('review-generation')} className="text-sm font-medium text-sky-600 transition-colors hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300">
-            查看全部
-          </button>
-        </div>
-        {loading ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
-        ) : recentLessons.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">暂无课程记录</div>
-        ) : (
-          <div className="divide-y divide-sky-100/80 dark:divide-white/10">
-            {recentLessons.map((lesson) => (
-              <div key={lesson.id} className="flex items-center gap-4 p-4 transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
-                  <FileText size={22} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-900 dark:text-slate-100">{lesson.topic || `${lesson.subject} 课程`}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {lesson.date} • {lesson.subject} • {lesson.grade}
-                  </p>
-                </div>
-                {lesson.pdf_path && (
-                  <div className="flex gap-2">
-                    <a
-                      href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                      title="下载"
-                    >
-                      <Download size={18} />
-                    </a>
-                    <a
-                      href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-slate-500 transition-all hover:bg-sky-100 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                      title="查看"
-                    >
-                      <Eye size={18} />
-                    </a>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 const SubjectCombobox = ({
   value,
   onChange,
@@ -1844,6 +1744,14 @@ const LessonInput = ({
     setClassId(null);
   }, [classId, classes, classesLoading]);
 
+  useEffect(() => {
+    if (classesLoading || currentUser.role !== 'member') {
+      return;
+    }
+
+    setClassId((current) => syncMemberScopedClassSelection(currentUser.role, classes, current));
+  }, [classes, classesLoading, currentUser.role]);
+
   const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
 
   const handleClassChange = (id: number) => {
@@ -1947,7 +1855,7 @@ const LessonInput = ({
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
                 <h3 className={`${workspaceSectionTitleClass} mt-3`}>生成复习文档</h3>
                 <p className={`${workspaceSectionTextClass} mt-2`}>
-                  上传录音或粘贴笔记，AI 会整理成统一的复习资料与后续题库资产。
+                  上传录音或粘贴笔记，生成 AI 复习资料和教学素材。
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
@@ -2387,17 +2295,25 @@ const ClassFeedbackGenerationPage = ({
 }: {
   currentUser: CurrentUser;
 }) => {
+  const todayIsoDate = getTodayIsoDate();
+  const initialIsoWeek = getIsoWeekParts(todayIsoDate);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [labelGroups, setLabelGroups] = useState<StageLabelGroup[]>(defaultStageLabelGroups);
   const [classesLoading, setClassesLoading] = useState(true);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [startDate, setStartDate] = useState(() => shiftIsoDate(getTodayIsoDate(), -6));
-  const [endDate, setEndDate] = useState(() => getTodayIsoDate());
+  const [classFeedbackPeriodMode, setClassFeedbackPeriodMode] = useState<ClassFeedbackPeriodGranularity>('weekly');
+  const [classFeedbackAnchorDate, setClassFeedbackAnchorDate] = useState(todayIsoDate);
+  const [classFeedbackPeriodYear, setClassFeedbackPeriodYear] = useState(initialIsoWeek.year);
+  const [classFeedbackPeriodWeek, setClassFeedbackPeriodWeek] = useState(initialIsoWeek.week);
+  const [classFeedbackPeriodMonth, setClassFeedbackPeriodMonth] = useState(Number(todayIsoDate.slice(5, 7)));
+  const [classFeedbackStageName, setClassFeedbackStageName] = useState<ClassFeedbackStageName>(
+    inferClassFeedbackStageName(todayIsoDate),
+  );
   const [activeClassFeedbackTaskId, setActiveClassFeedbackTaskId] = useState<number | null>(null);
   const [classFeedbackStudents, setClassFeedbackStudents] = useState<ClassFeedbackStudentCard[]>([]);
   const [classFeedbackSummary, setClassFeedbackSummary] = useState('');
   const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState(
-    '先选择班级和时间范围，再汇总阶段素材。',
+    '先选择班级和反馈阶段，再汇总阶段素材。',
   );
   const [classFeedbackStageNotes, setClassFeedbackStageNotes] = useState<ClassFeedbackStageNotes>(
     createEmptyClassFeedbackStageNotes(),
@@ -2413,6 +2329,48 @@ const ClassFeedbackGenerationPage = ({
   const classFeedbackDraftSnapshotRef = useRef('');
 
   const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
+  const classFeedbackPeriodSelection = useMemo<ClassFeedbackPeriodSelection>(() => {
+    if (classFeedbackPeriodMode === 'daily') {
+      return {
+        periodGranularity: 'daily',
+        anchorDate: classFeedbackAnchorDate,
+      };
+    }
+    if (classFeedbackPeriodMode === 'weekly') {
+      return {
+        periodGranularity: 'weekly',
+        year: classFeedbackPeriodYear,
+        week: classFeedbackPeriodWeek,
+      };
+    }
+    if (classFeedbackPeriodMode === 'monthly') {
+      return {
+        periodGranularity: 'monthly',
+        year: classFeedbackPeriodYear,
+        month: classFeedbackPeriodMonth,
+      };
+    }
+    return {
+      periodGranularity: 'stage',
+      year: classFeedbackPeriodYear,
+      stageName: classFeedbackStageName,
+    };
+  }, [
+    classFeedbackAnchorDate,
+    classFeedbackPeriodMode,
+    classFeedbackPeriodMonth,
+    classFeedbackPeriodWeek,
+    classFeedbackPeriodYear,
+    classFeedbackStageName,
+  ]);
+  const classFeedbackPeriodPreview = useMemo(
+    () => buildClassFeedbackPeriodPreview(classFeedbackPeriodSelection),
+    [classFeedbackPeriodSelection],
+  );
+  const classFeedbackPeriodYearOptions = useMemo(
+    () => [classFeedbackPeriodYear - 1, classFeedbackPeriodYear, classFeedbackPeriodYear + 1],
+    [classFeedbackPeriodYear],
+  );
 
   const loadRosterOnly = useCallback(async (classId: number) => {
     const roster = await listClassStudents(classId);
@@ -2451,7 +2409,7 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackStatusMessage(
         task.status === 'confirmed'
           ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
-            : `已同步 ${roster.students.length} 名学生，继续补充阶段备注后可生成草稿。`,
+            : `已同步 ${roster.students.length} 名学生，可补充阶段备注并生成草稿。`,
         );
       } finally {
         setIsRefreshingTask(false);
@@ -2469,6 +2427,7 @@ const ClassFeedbackGenerationPage = ({
           return;
         }
         setClasses(classItems);
+        setSelectedClassId((current) => syncMemberScopedClassSelection(currentUser.role, classItems, current));
         setLabelGroups(labelResult.groups?.length ? labelResult.groups : defaultStageLabelGroups);
       })
       .catch((error) => {
@@ -2488,7 +2447,27 @@ const ClassFeedbackGenerationPage = ({
   }, []);
 
   useEffect(() => {
-    if (!selectedClassId || !startDate || !endDate || startDate > endDate) {
+    if (classesLoading || currentUser.role !== 'member') {
+      return;
+    }
+
+    setSelectedClassId((current) => syncMemberScopedClassSelection(currentUser.role, classes, current));
+  }, [classes, classesLoading, currentUser.role]);
+
+  useEffect(() => {
+    if (classesLoading || currentUser.role === 'member' || selectedClassId === null) {
+      return;
+    }
+
+    if (classes.some((item) => item.id === selectedClassId)) {
+      return;
+    }
+
+    setSelectedClassId(null);
+  }, [classes, classesLoading, currentUser.role, selectedClassId]);
+
+  useEffect(() => {
+    if (!selectedClassId) {
       setMatchedLessonCount(0);
       return;
     }
@@ -2502,8 +2481,8 @@ const ClassFeedbackGenerationPage = ({
         const count = lessons.filter(
           (lesson) =>
             lesson.class_id === selectedClassId &&
-            lesson.date >= startDate &&
-            lesson.date <= endDate,
+            lesson.date >= classFeedbackPeriodPreview.startDate &&
+            lesson.date <= classFeedbackPeriodPreview.endDate,
         ).length;
         setMatchedLessonCount(count);
       })
@@ -2516,7 +2495,7 @@ const ClassFeedbackGenerationPage = ({
     return () => {
       cancelled = true;
     };
-  }, [endDate, selectedClassId, startDate]);
+  }, [classFeedbackPeriodPreview.endDate, classFeedbackPeriodPreview.startDate, selectedClassId]);
 
   const handleClassChange = async (nextClassId: number | null) => {
     setSelectedClassId(nextClassId);
@@ -2531,7 +2510,7 @@ const ClassFeedbackGenerationPage = ({
 
     if (!nextClassId) {
       setClassFeedbackStudents([]);
-      setClassFeedbackStatusMessage('先选择班级和时间范围，再汇总阶段素材。');
+      setClassFeedbackStatusMessage('先选择班级和反馈阶段，再汇总阶段素材。');
       return;
     }
 
@@ -2540,8 +2519,8 @@ const ClassFeedbackGenerationPage = ({
       const studentCount = await loadRosterOnly(nextClassId);
       setClassFeedbackStatusMessage(
         studentCount > 0
-          ? `已同步 ${studentCount} 名学生，请选择时间范围后创建反馈任务。`
-          : '当前班级还没有学生，可以先在这里新增学生。',
+          ? `已同步 ${studentCount} 名学生，请选择反馈阶段后创建反馈任务。`
+            : '当前班级还没有学生，请先到学生管理页面添加学生。',
       );
     } catch (error) {
       setClassFeedbackStatusMessage(error instanceof Error ? error.message : '班级学生同步失败，请重试。');
@@ -2555,17 +2534,14 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackStatusMessage('请先选择班级。');
       return;
     }
-    if (!startDate || !endDate || startDate > endDate) {
-      setClassFeedbackStatusMessage('请填写有效的起止日期。');
-      return;
-    }
 
     setIsSavingClassFeedback(true);
     try {
       const created = await createClassFeedbackTask({
-        classId: selectedClassId,
-        startDate,
-        endDate,
+        ...buildCreateClassFeedbackTaskRequest({
+          classId: selectedClassId,
+          ...classFeedbackPeriodSelection,
+        }),
       });
       await hydrateClassFeedbackTask(created.id, selectedClassId);
       setClassFeedbackStatusMessage(`已创建反馈任务，按 ${created.period_granularity} 粒度准备资料。`);
@@ -2574,7 +2550,7 @@ const ClassFeedbackGenerationPage = ({
     } finally {
       setIsSavingClassFeedback(false);
     }
-  }, [endDate, hydrateClassFeedbackTask, selectedClassId, startDate]);
+  }, [classFeedbackPeriodSelection, hydrateClassFeedbackTask, selectedClassId]);
 
   const handleRefreshClassFeedbackTask = useCallback(async () => {
     if (!activeClassFeedbackTaskId || !selectedClassId) {
@@ -2708,29 +2684,6 @@ const ClassFeedbackGenerationPage = ({
     isRefreshingTask,
     saveCurrentClassFeedbackDraft,
   ]);
-
-  const handleAddStudent = async (name: string) => {
-    if (!selectedClassId) {
-      setClassFeedbackStatusMessage('请先选择班级，再新增学生。');
-      return;
-    }
-
-    setIsSavingClassFeedback(true);
-    try {
-      await createClassStudent(selectedClassId, name);
-      if (activeClassFeedbackTaskId) {
-        await hydrateClassFeedbackTask(activeClassFeedbackTaskId, selectedClassId);
-        setClassFeedbackStatusMessage('已新增学生，并重新同步当前反馈任务。');
-      } else {
-        const rosterCount = await loadRosterOnly(selectedClassId);
-        setClassFeedbackStatusMessage(`已新增学生，当前班级共 ${rosterCount} 名学生。`);
-      }
-    } catch (error) {
-      setClassFeedbackStatusMessage(error instanceof Error ? error.message : '新增学生失败，请重试。');
-    } finally {
-      setIsSavingClassFeedback(false);
-    }
-  };
 
   const handleGenerateClassFeedback = useCallback(async () => {
     if (!activeClassFeedbackTaskId) {
@@ -2869,18 +2822,19 @@ const ClassFeedbackGenerationPage = ({
     buildClassFeedbackDraftSnapshot(classFeedbackSummary, classFeedbackStudents) !==
       classFeedbackDraftSnapshotRef.current;
   const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'
-    ? '本次反馈已确认，会作为后续 AI 的正式积累素材。'
+    ? '本次反馈已确认。'
     : !activeClassFeedbackTaskId
-      ? '创建反馈任务后，系统会开始记录你的草稿编辑。'
+      ? '创建反馈任务后开始记录草稿。'
       : isSavingClassFeedback
         ? '正在保存草稿...'
         : hasUnsavedDraftChanges
-          ? '有未保存修改，系统会自动保存。'
-          : '草稿已保存，可继续编辑。';
+          ? '有未保存修改，自动保存中。'
+          : '草稿已保存。';
 
   const sourceSummaryItems = [
     selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
-    `时间范围：${startDate} 至 ${endDate}`,
+    `反馈阶段：${classFeedbackPeriodPreview.label}`,
+    `覆盖范围：${classFeedbackPeriodPreview.startDate} 至 ${classFeedbackPeriodPreview.endDate}`,
     `已命中 ${matchedLessonCount} 节课次记录`,
     `学生人数：${classFeedbackStudents.length} 名`,
     `已检查 ${checkedStudentCount} 名，待检查 ${uncheckedStudentCount} 名`,
@@ -2894,73 +2848,160 @@ const ClassFeedbackGenerationPage = ({
       ? ['当前阶段课次较少，建议补充阶段备注帮助生成更稳定。']
       : []),
   ];
-
-  return (
-    <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
-      <section className={`${workspaceCardClass} p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Stage Feedback</p>
-            <h3 className={`${workspaceSectionTitleClass} mt-3`}>课堂反馈</h3>
-            <p className={`${workspaceSectionTextClass} mt-2`}>
-              选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] xl:min-w-[42rem]">
+  const classFeedbackControlBar = (
+    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] 2xl:min-w-[44rem]">
+        <select
+          value={selectedClassId ?? ''}
+          onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+          className={workspaceFieldClass}
+          disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+        >
+          <option value="">选择班级</option>
+          {classes.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={classFeedbackPeriodMode}
+          onChange={(event) => setClassFeedbackPeriodMode(event.target.value as ClassFeedbackPeriodGranularity)}
+          className={workspaceFieldClass}
+          disabled={isRefreshingTask || isSavingClassFeedback}
+        >
+          <option value="daily">按日</option>
+          <option value="weekly">按周</option>
+          <option value="monthly">按月</option>
+          <option value="stage">按阶段</option>
+        </select>
+        {classFeedbackPeriodMode === 'daily' ? (
+          <input
+            type="date"
+            value={classFeedbackAnchorDate}
+            onChange={(event) => setClassFeedbackAnchorDate(event.target.value)}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          />
+        ) : classFeedbackPeriodMode === 'weekly' ? (
+          <div className="grid gap-3 sm:grid-cols-2">
             <select
-              value={selectedClassId ?? ''}
-              onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+              value={classFeedbackPeriodYear}
+              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
               className={workspaceFieldClass}
-              disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+              disabled={isRefreshingTask || isSavingClassFeedback}
             >
-              <option value="">选择班级</option>
-              {classes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
+              {classFeedbackPeriodYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year} 年
                 </option>
               ))}
             </select>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(event) => setStartDate(event.target.value)}
+            <select
+              value={classFeedbackPeriodWeek}
+              onChange={(event) => setClassFeedbackPeriodWeek(Number(event.target.value))}
               className={workspaceFieldClass}
               disabled={isRefreshingTask || isSavingClassFeedback}
-            />
-            <input
-              type="date"
-              value={endDate}
-              onChange={(event) => setEndDate(event.target.value)}
+            >
+              {Array.from({ length: 53 }, (_, index) => index + 1).map((week) => (
+                <option key={week} value={week}>
+                  第 {week} 周
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : classFeedbackPeriodMode === 'monthly' ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select
+              value={classFeedbackPeriodYear}
+              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
               className={workspaceFieldClass}
               disabled={isRefreshingTask || isSavingClassFeedback}
-            />
+            >
+              {classFeedbackPeriodYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year} 年
+                </option>
+              ))}
+            </select>
+            <select
+              value={classFeedbackPeriodMonth}
+              onChange={(event) => setClassFeedbackPeriodMonth(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                <option key={month} value={month}>
+                  {month} 月
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select
+              value={classFeedbackPeriodYear}
+              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {classFeedbackPeriodYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year} 年
+                </option>
+              ))}
+            </select>
+            <select
+              value={classFeedbackStageName}
+              onChange={(event) => setClassFeedbackStageName(event.target.value as ClassFeedbackStageName)}
+              className={workspaceFieldClass}
+              disabled={isRefreshingTask || isSavingClassFeedback}
+            >
+              {(['春季', '暑假', '秋季', '寒假'] as ClassFeedbackStageName[]).map((stageName) => (
+                <option key={stageName} value={stageName}>
+                  {stageName}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-stretch 2xl:justify-self-end">
+        <div className="min-w-[11rem] rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {classFeedbackPeriodPreview.startDate} 至 {classFeedbackPeriodPreview.endDate}
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => void handleCreateClassFeedbackTask()}
-            disabled={!selectedClassId || isSavingClassFeedback}
-            className={workspacePrimaryButtonClass}
-          >
-            <PlusCircle size={18} />
-            创建反馈任务
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRefreshClassFeedbackTask()}
-            disabled={!activeClassFeedbackTaskId || isRefreshingTask}
-            className={workspaceSecondaryButtonClass}
-          >
-            <RefreshCw size={18} />
-            刷新任务
-          </button>
-        </div>
-      </section>
+        <button
+          type="button"
+          onClick={() => void handleCreateClassFeedbackTask()}
+          disabled={!selectedClassId || isSavingClassFeedback}
+          className={`${workspacePrimaryButtonClass} justify-center`}
+        >
+          <PlusCircle size={18} />
+          创建反馈任务
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleRefreshClassFeedbackTask()}
+          disabled={!activeClassFeedbackTaskId || isRefreshingTask}
+          className={`${workspaceSecondaryButtonClass} justify-center`}
+        >
+          <RefreshCw size={18} />
+          刷新任务
+        </button>
+      </div>
+    </div>
+  );
 
+  return (
+    <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
       <ClassFeedbackGenerationWorkspace
         classNameLabel={selectedClass?.name ?? '未选择班级'}
         teacherNameLabel={teacherNameLabel}
+        controlBar={classFeedbackControlBar}
         sourceSummaryItems={sourceSummaryItems}
         labelGroups={labelGroups}
         classStatusTags={classFeedbackStatusTags}
@@ -2979,7 +3020,6 @@ const ClassFeedbackGenerationPage = ({
         onHighlightNoteChange={handleHighlightNoteChange}
         onStudentFinalTextChange={handleStudentFinalTextChange}
         onStudentCheckedChange={handleStudentCheckedChange}
-        onAddStudent={handleAddStudent}
         onGenerate={handleGenerateClassFeedback}
         onSaveDraft={saveCurrentClassFeedbackDraft}
         onCopyClassSummary={handleCopyClassFeedbackSummary}
@@ -3192,7 +3232,7 @@ const ConsultationModal = ({
                 placeholder="例如：张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础"
               />
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {parseFeedback || '系统会先帮你整理字段，你再确认后保存。'}
+                {parseFeedback || '解析后可确认并保存。'}
               </p>
             </section>
           )}
@@ -3575,7 +3615,7 @@ const ConsultationBatchModal = ({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Batch</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">AI 批量整理</h3>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              先贴原始文本，让 AI 只做解析和预览；确认后才会按现有咨询记录接口逐条写入。
+              粘贴原始文本后生成解析预览；确认后按现有咨询记录接口逐条写入。
             </p>
           </div>
           <button
@@ -3710,7 +3750,7 @@ const ConsultationBatchModal = ({
 
             {drafts.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 bg-white/60 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400">
-                还没有草稿。先粘贴原始文本，再点击“开始解析”。
+                暂无草稿。粘贴原始文本后点击“开始解析”。
               </div>
             ) : (
               <div className="space-y-3">
@@ -7927,7 +7967,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.32, duration: 0.78 }}
                 className="mt-7 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg md:text-xl dark:text-slate-200"
               >
-                从复习资料生成，到题库沉淀、讲义生成与教学协同，Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台。
+                从复习资料生成，到错题跟进、讲义整理与教师协作，Starain 正在把日常教学里最常重复的工作整理进同一套平台流程。
               </motion.p>
 
               <motion.div
@@ -7938,8 +7978,8 @@ export const LandingPage = ({
               >
                 {[
                   ['复习资料生成', '把课堂内容快速整理成学生可直接使用的复习材料。'],
-                  ['题库与内容沉淀', '把题目、讲义与教学素材沉淀为可复用的内容资产。'],
-                  ['教学协同交付', '让教师、教研与机构团队在同一平台里完成生产与交付。'],
+                  ['错题跟进与复习安排', '围绕错题记录、老师备注和掌握状态，持续安排后续跟进。'],
+                  ['教师协作交付', '让教师、教研与机构团队在同一平台里完成整理、复核与交付。'],
                 ].map(([label, description]) => (
                   <div
                     key={label}
@@ -8004,8 +8044,8 @@ export const LandingPage = ({
                 <div className="mt-5 space-y-3">
                   {[
                     { icon: Upload, title: '复习资料', body: '课堂内容生成讲义、总结与学生复习材料' },
-                    { icon: CheckCircle2, title: '题库系统', body: '题目与知识点持续归档，支持后续调用与组织' },
-                    { icon: FileText, title: '教学交付', body: '面向教师与机构团队沉淀可复用的教学资产' },
+                    { icon: CheckCircle2, title: '错题跟进', body: '记录题目、错因与掌握状态，方便老师持续跟进' },
+                    { icon: FileText, title: '教学交付', body: '把课堂内容整理成教师与机构团队都能直接使用的交付材料' },
                   ].map((item, index) => (
                     <motion.div
                       key={item.title}
@@ -8065,7 +8105,7 @@ export const LandingPage = ({
                   </div>
                   <h3 className="text-3xl font-bold mb-4 text-slate-900 dark:text-white">从课堂素材到复习交付</h3>
                   <p className="text-slate-600 text-lg max-w-2xl dark:text-slate-300">
-                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与可复用的交付资产。
+                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与更稳定的教学交付材料。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
@@ -8088,13 +8128,13 @@ export const LandingPage = ({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把错误沉淀成可追踪资产</h3>
+                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把错误整理成可持续跟进记录</h3>
                 <p className="text-slate-600 dark:text-slate-300">
                   不是一次性纠错，而是持续记录高频错误、薄弱点与个性化复习路径。
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因沉淀</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因整理</span>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">薄弱点追踪</span>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">个性化复习</span>
               </div>
@@ -8112,13 +8152,13 @@ export const LandingPage = ({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把题目沉淀成可调用的题库系统</h3>
+                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把题目整理成可复用的教学素材</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  面向不同课程体系与教学场景，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
+                  围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。
                 </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-blue-600 font-bold text-sm dark:text-blue-400">
-                <span>多课程体系</span>
+                <span>题目整理</span>
                 <ArrowRight size={14} />
               </div>
             </motion.div>
@@ -8201,7 +8241,7 @@ export const LandingPage = ({
                 </p>
               </div>
               <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed dark:text-slate-400">
-                我们先在自己的教育机构中解决复习资料、题库沉淀、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
+                我们先在自己的教育机构中解决复习资料、错题跟进、讲义整理与教师协作问题，再把这套已经跑通的流程产品化，服务更多同行团队。
               </p>
             </motion.div>
 
@@ -8213,7 +8253,7 @@ export const LandingPage = ({
                 },
                 {
                   title: '能力模块化',
-                  body: '错题沉淀、题库调用与讲义生成作为统一工作流持续复用。',
+                  body: '错题跟进、复习安排与讲义整理可以在同一条教学链路里持续复用。',
                 },
                 {
                   title: '服务对象',
@@ -8651,10 +8691,16 @@ export default function App() {
                 transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
               >
                 {activePage === 'dashboard' && (
-                  <Dashboard
+                  <WorkspaceDashboard
                     currentUser={currentUser}
                     setActivePage={setActivePage}
-                    activeClassCount={calendarClasses.length}
+                    styles={{
+                      pageClass: workspacePageClass,
+                      cardClass: workspaceCardClass,
+                      primaryButtonClass: workspacePrimaryButtonClass,
+                      secondaryButtonClass: workspaceSecondaryButtonClass,
+                    }}
+                    canOpenAccounts={hasOwnerAccess(currentUser.role)}
                   />
                 )}
                 {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}

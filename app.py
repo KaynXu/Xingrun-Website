@@ -8,7 +8,6 @@
 """
 
 import hashlib
-import io
 import json
 import logging
 import os
@@ -26,6 +25,8 @@ from typing import Optional, Set
 from flask import Flask, abort, redirect, request, send_file, jsonify
 from flask_cors import CORS
 from config_runtime import env_controlled_keys, get_runtime_config, load_file_config, write_file_config
+import ai_processor
+import pdf_engine
 
 # ─── 路径 ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -51,13 +52,13 @@ logger = logging.getLogger(__name__)
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
     actor_can_manage_user,
+    attach_student_library_pdf_path,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
     approve_registration_request,
     authenticate_user,
     bind_parent_to_student,
-    build_lesson_feedback_editor_state,
     confirm_class_feedback_task,
     create_class_feedback_task,
     create_pending_lesson,
@@ -102,6 +103,7 @@ from lesson_manager import (
     list_organizations,
     list_organization_requests,
     list_parent_student_bindings_for_openid,
+    list_student_wrong_question_library_records,
     list_students_for_class,
     list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
@@ -132,6 +134,7 @@ from lesson_manager import (
     set_wechat_wrong_question_archive_status,
     get_wechat_wrong_question_submission,
     save_wechat_wrong_question_review,
+    update_wechat_wrong_question_question_text,
     update_user_display_name_for_actor,
     update_class,
     update_consultation,
@@ -670,16 +673,35 @@ def _run_monthly_plan_generation_job(
             return
 
         from ai_processor import generate_monthly_plan
-
+        organization_id = int(user["organization_id"])
+        request_id = _build_ai_charge_request_id(
+            user_id=int(user["id"]),
+            feature_key="monthly_plan_generate",
+            source_record_type="monthly_plan",
+            source_record_id=job_id,
+            request_key=f"monthly-job:{job_id}",
+        )
+        request_identity_claimed = False
+        organization_execution_claimed = False
         try:
-            plan = _run_ai_feature_with_charge(
-                user=user,
+            _claim_ai_request_identity(
+                organization_id=organization_id,
+                request_id=request_id,
+            )
+            request_identity_claimed = True
+            _claim_ai_organization_execution(organization_id)
+            organization_execution_claimed = True
+            ensure_feature_credits_available(
+                organization_id=organization_id,
                 feature_key="monthly_plan_generate",
-                source_record_type="monthly_plan",
-                source_record_id=month_str,
-                producer=lambda: _call_ai_helper_with_usage(
-                    generate_monthly_plan, lesson_dicts, month_str,
-                ),
+            )
+            result = _call_ai_helper_with_usage(
+                generate_monthly_plan,
+                lesson_dicts,
+                month_str,
+            )
+            plan, usage = _split_ai_result_with_usage(
+                result,
                 provider=chat_provider,
                 model=chat_model,
             )
@@ -704,24 +726,50 @@ def _run_monthly_plan_generation_job(
             except LookupError:
                 logger.exception("Failed to mark monthly job %s as failed", job_id)
             return
-
-        from pdf_engine import generate_monthly_pdf
+        finally:
+            if organization_execution_claimed:
+                _release_ai_organization_execution(organization_id)
 
         try:
-            pdf_name = f"{month_str}_月度综合复习.pdf"
-            generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
-        except Exception:
-            logger.exception("Monthly plan PDF generation failed for job %s", job_id)
+            from pdf_engine import generate_monthly_pdf
+
             try:
-                mark_monthly_plan_job_failed(job_id, "PDF 生成失败，请稍后重试")
-            except LookupError:
-                logger.exception("Failed to mark monthly job %s as failed", job_id)
-            return
+                pdf_name = f"{month_str}_月度综合复习.pdf"
+                generate_monthly_pdf(plan, str(PDF_DIR / pdf_name))
+            except Exception:
+                logger.exception("Monthly plan PDF generation failed for job %s", job_id)
+                try:
+                    mark_monthly_plan_job_failed(job_id, "PDF 生成失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark monthly job %s as failed", job_id)
+                return
 
-        try:
-            mark_monthly_plan_job_succeeded(job_id, pdf_filename=pdf_name)
-        except LookupError:
-            logger.exception("Failed to mark monthly job %s as ready", job_id)
+            try:
+                finalize_ai_charge(
+                    organization_id=organization_id,
+                    user_id=int(user["id"]),
+                    feature_key="monthly_plan_generate",
+                    usage=usage,
+                    source_record_type="monthly_plan",
+                    source_record_id=job_id,
+                    request_id=request_id,
+                )
+                mark_monthly_plan_job_succeeded(job_id, pdf_filename=pdf_name)
+            except CreditBalanceError as exc:
+                logger.exception("Monthly plan charge finalization failed for job %s", job_id)
+                try:
+                    mark_monthly_plan_job_failed(job_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark monthly job %s as failed", job_id)
+            except Exception:
+                logger.exception("Monthly plan charge finalization failed for job %s", job_id)
+                try:
+                    mark_monthly_plan_job_failed(job_id, "AI 生成失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark monthly job %s as failed", job_id)
+        finally:
+            if request_identity_claimed:
+                _release_ai_request_identity(request_id)
     except Exception:
         logger.exception("Unexpected error in monthly plan generation job %s", job_id)
 
@@ -1072,11 +1120,26 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
         "repeated_mistake_count": 0,
         "high_priority_count": 0,
         "pending_review_count": 0,
+        "unique_class_count": 0,
+        "unique_student_count": 0,
     }
+    class_keys: set[str] = set()
+    student_keys: set[str] = set()
 
     for item in items:
         analysis = item.get("analysis") if isinstance(item.get("analysis"), dict) else {}
         summary["total_count"] += 1
+
+        class_name = str(item.get("class_name") or item.get("className") or "").strip()
+        class_id = item.get("class_id") if item.get("class_id") is not None else item.get("classId")
+        if class_id is not None:
+            class_keys.add(str(class_id))
+        elif class_name:
+            class_keys.add(class_name)
+
+        student_name = str(item.get("student_name") or item.get("studentName") or "").strip()
+        if student_name:
+            student_keys.add(student_name)
 
         repeated_mistake = str(
             analysis.get("is_repeated_mistake")
@@ -1101,6 +1164,9 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
         ).strip()
         if not selected_error_type:
             summary["pending_review_count"] += 1
+
+    summary["unique_class_count"] = len(class_keys)
+    summary["unique_student_count"] = len(student_keys)
 
     return summary
 
@@ -1875,27 +1941,8 @@ def api_wrong_questions_list():
     scoped_items = _filter_wrong_question_items_for_user(user, merged_items)
     payload["items"] = scoped_items
     payload["total"] = len(scoped_items)
-    if user.get("role") == "member":
-        payload["summary"] = _summarize_wrong_question_records(scoped_items)
+    payload["summary"] = _summarize_wrong_question_records(scoped_items)
     return jsonify(payload)
-
-
-@app.route("/api/wrong-questions/summary/export", methods=["GET"])
-def api_wrong_question_summary_export():
-    _, error = _require_staff()
-    if error:
-        return error
-    try:
-        export_result = smart_wrong_questions.export_wrong_question_summary(request.args)
-    except smart_wrong_questions.WrongQuestionProxyError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
-
-    return send_file(
-        io.BytesIO(export_result["content"]),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=export_result["filename"],
-    )
 
 
 @app.route("/api/wrong-questions/<record_id>", methods=["GET"])
@@ -1930,6 +1977,15 @@ def api_wrong_question_review_save(record_id):
         saved_record = save_wechat_wrong_question_review(record_id, request.json or {})
         if not saved_record:
             return jsonify({"error": "not found"}), 404
+        question_text = str(((request.json or {}).get("question_text") or "")).strip()
+        if question_text and not local_record.get("is_geometry"):
+            saved_record = update_wechat_wrong_question_question_text(
+                record_id,
+                question_text=question_text,
+                student_library_pdf_path=str(local_record.get("student_library_pdf_path") or ""),
+            )
+            pdf_path = _rebuild_student_wrong_question_library(local_record["student_id"])
+            saved_record = attach_student_library_pdf_path(record_id, pdf_path)
         return jsonify({"ok": True, "record": saved_record})
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
@@ -2431,6 +2487,25 @@ def api_wechat_bindings_list():
     return jsonify({"bindings": list_parent_student_bindings_for_openid(open_id)})
 
 
+def _student_wrong_question_library_path(student_id: int) -> Path:
+    library_dir = PDF_DIR / "wrong_question_libraries"
+    library_dir.mkdir(parents=True, exist_ok=True)
+    return library_dir / f"student-{student_id}.pdf"
+
+
+def _rebuild_student_wrong_question_library(student_id: int) -> str:
+    records = list_student_wrong_question_library_records(student_id)
+    if not records:
+        raise ValueError("student wrong question library has no records")
+    output_path = _student_wrong_question_library_path(student_id)
+    return pdf_engine.generate_student_wrong_question_library_pdf(
+        student_name=str(records[0].get("student_name") or ""),
+        class_name=str(records[0].get("class_display_name") or ""),
+        records=records,
+        output_path=str(output_path),
+    )
+
+
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
 def api_wechat_wrong_questions_create():
     _, error = _require_wechat_service()
@@ -2443,8 +2518,12 @@ def api_wechat_wrong_questions_create():
     open_id = (data.get("open_id") or "").strip()
     binding_id = int(data.get("binding_id") or 0)
     image_url = (data.get("image_url") or "").strip()
+    child_raw_reason_text = (data.get("child_raw_reason_text") or "").strip()
+    child_reason_input_mode = (data.get("child_reason_input_mode") or "text").strip() or "text"
     if not open_id or not binding_id or not image_url:
         return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
+    if not child_raw_reason_text:
+        return jsonify({"error": "child_raw_reason_text is required"}), 400
 
     account = _get_parent_wechat_account_by_openid(open_id)
     if not account:
@@ -2455,21 +2534,55 @@ def api_wechat_wrong_questions_create():
         return jsonify({"error": "binding not found"}), 404
 
     try:
+        recognition = ai_processor.recognize_wrong_question_image(image_url)
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 422
+    except Exception as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 502
+
+    try:
+        reason_classification = ai_processor.classify_wrong_question_reason(
+            child_raw_reason_text,
+            question_text=str(recognition.get("question_text") or ""),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 422
+    except Exception as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 502
+
+    try:
         record = create_wechat_wrong_question_submission(
             binding_id=binding_id,
             image_url=image_url,
-            parent_note=(data.get("parent_note") or "").strip(),
-            child_raw_reason_text=(data.get("child_raw_reason_text") or "").strip(),
-            child_reason_input_mode=(data.get("child_reason_input_mode") or "text").strip(),
-            primary_error_type=(data.get("primary_error_type") or "").strip(),
-            secondary_error_summary=(data.get("secondary_error_summary") or "").strip(),
+            parent_note="",
+            child_raw_reason_text=child_raw_reason_text,
+            child_reason_input_mode=child_reason_input_mode,
+            primary_error_type=reason_classification["primary_error_type"],
+            secondary_error_summary=reason_classification["secondary_error_summary"],
+            recognition_status="recognized",
+            is_geometry=bool(recognition.get("is_geometry")),
+            question_text=str(recognition.get("question_text") or ""),
+            question_text_source="ai",
         )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    return jsonify({"record": record}), 201
+    try:
+        pdf_path = _rebuild_student_wrong_question_library(binding["student_id"])
+        record = attach_student_library_pdf_path(record["id"], pdf_path)
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM wrong_question_submissions WHERE id=?", (record["id"],))
+        return jsonify({"error": str(exc), "retryable": True}), 502
+
+    return jsonify(
+        {
+            "record": record,
+            "student_library_pdf_url": f"/api/wechat/student-libraries/{binding['student_id']}",
+        }
+    ), 201
 
 
 @app.route("/api/wechat/children/<int:student_id>/wrong-questions", methods=["GET"])
@@ -2495,6 +2608,44 @@ def api_wechat_child_wrong_questions(student_id):
         student_id=student_id,
     )
     return jsonify({"items": items, "total": len(items)})
+
+
+@app.route("/api/wechat/children/<int:student_id>/wrong-question-library", methods=["GET"])
+def api_wechat_child_wrong_question_library(student_id):
+    _, error = _require_wechat_service()
+    if error:
+        return error
+
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    binding = get_parent_student_binding_for_student(account["id"], student_id)
+    if not binding:
+        return jsonify({"error": "binding not found"}), 404
+
+    items = list_student_wrong_question_library_records(student_id)
+    latest_updated_at = str(items[-1].get("updated_at") or "") if items else ""
+    return jsonify(
+        {
+            "student_id": student_id,
+            "pdf_url": f"/api/wechat/student-libraries/{student_id}",
+            "updated_at": latest_updated_at,
+            "total_items": len(items),
+        }
+    )
+
+
+@app.route("/api/wechat/student-libraries/<int:student_id>", methods=["GET"])
+def api_wechat_student_library_pdf(student_id):
+    pdf_path = _student_wrong_question_library_path(student_id)
+    if not pdf_path.exists():
+        return jsonify({"error": "student library pdf not found"}), 404
+    return send_file(pdf_path, mimetype="application/pdf", download_name=pdf_path.name)
 
 
 @app.route("/api/classes/<int:class_id>", methods=["PUT"])
@@ -2772,6 +2923,15 @@ def api_class_feedback_task_create():
 
     start_date = str(data.get("start_date") or "").strip()
     end_date = str(data.get("end_date") or "").strip()
+    period_granularity = str(data.get("period_granularity") or "").strip()
+    anchor_date = str(data.get("anchor_date") or "").strip()
+    year = data.get("year")
+    week = data.get("week")
+    month = data.get("month")
+    stage_name = str(data.get("stage_name") or "").strip()
+    if not period_granularity and start_date and start_date == end_date:
+        period_granularity = "daily"
+        anchor_date = anchor_date or start_date
     teacher_name_snapshot = (
         str(cls.get("teacher_name") or "").strip()
         or str(user.get("display_name") or "").strip()
@@ -2786,6 +2946,12 @@ def api_class_feedback_task_create():
             teacher_name_snapshot=teacher_name_snapshot,
             start_date=start_date,
             end_date=end_date,
+            period_granularity=period_granularity or None,
+            anchor_date=anchor_date or None,
+            year=year,
+            week=week,
+            month=month,
+            stage_name=stage_name or None,
             created_by=user["id"],
         )
     except LookupError:

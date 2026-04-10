@@ -1,12 +1,12 @@
 # Remove Teacher Feedback Implementation Plan
 
-> Historical note: `frontend/src/reviewGenerationTeacherFeedback.ts` was removed in the 2026-04-09 batch-1 orphan cleanup. References below are kept as part of the original implementation plan.
+> Historical note: `frontend/src/reviewGenerationLegacyLessonFeedback.ts` was removed in the 2026-04-09 batch-1 orphan cleanup. References below are kept as part of the original implementation plan.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Completely remove the abandoned teacher feedback workflow from the review-generation product surface, backend API, data layer, tests, and runtime schema.
+**Goal:** Completely remove the abandoned legacy lesson feedback workflow from the review-generation product surface, backend API, data layer, tests, and runtime schema.
 
-**Architecture:** Delete the feature end-to-end instead of hiding it. Remove the dedicated frontend modules and `LessonInput` branches, delete the Flask feedback endpoints and helper functions, remove the `lesson_feedbacks` data-layer code and schema management, update tests to assert absence, then verify with frontend and backend checks.
+**Architecture:** Delete the feature end-to-end instead of hiding it. Remove the dedicated frontend modules and `LessonInput` branches, delete the Flask feedback endpoints and helper functions, remove the `lesson_class_feedbacks` data-layer code and schema management, update tests to assert absence, then verify with frontend and backend checks.
 
 **Tech Stack:** React 19, TypeScript, Vite, Flask, SQLite, Python unittest, Node source-based tests
 
@@ -15,10 +15,10 @@
 ## File Structure
 
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/App.tsx`
-  - Remove teacher feedback imports, state, branches, actions, labels, and history-entry UI.
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/TeacherFeedbackWorkspace.tsx`
+  - Remove legacy lesson feedback imports, state, branches, actions, labels, and history-entry UI.
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/LegacyLessonFeedbackWorkspace.tsx`
   - Dedicated abandoned feedback editor UI.
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts` (removed in the 2026-04-09 batch-1 orphan cleanup pass)
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationLegacyLessonFeedback.ts` (removed in the 2026-04-09 batch-1 orphan cleanup pass)
   - Feedback-specific frontend helpers and API wrappers.
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/workspace-navigation.test.ts`
   - Replace feedback-presence assertions with feedback-removal assertions.
@@ -27,7 +27,7 @@
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/app.py`
   - Remove feedback routes, helper functions, imports, and feedback-specific credit labels.
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/lesson_manager.py`
-  - Remove `lesson_feedbacks` schema logic and feedback persistence helpers; drop the table during init/migration.
+  - Remove `lesson_class_feedbacks` schema logic and feedback persistence helpers; drop the table during init/migration.
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/tests/test_account_flow.py`
   - Add regression coverage confirming removed feedback endpoints are gone or inaccessible.
 
@@ -46,9 +46,9 @@ Replace teacher-feedback-presence assertions in `frontend/src/workspace-navigati
 assert.doesNotMatch(reviewGenerationBlock, /selectedLessonForFeedback/);
 assert.doesNotMatch(historyBlock, /继续编辑反馈/);
 assert.doesNotMatch(historyBlock, /Pencil/);
-assert.doesNotMatch(appSource, /TeacherFeedbackWorkspace/);
-assert.doesNotMatch(appSource, /reviewGenerationTeacherFeedback/);
-assert.doesNotMatch(appSource, /teacher_feedback_draft/);
+assert.doesNotMatch(appSource, /LegacyLessonFeedbackWorkspace/);
+assert.doesNotMatch(appSource, /reviewGenerationLegacyLessonFeedback/);
+assert.doesNotMatch(appSource, /legacy_lesson_feedback_draft/);
 assert.doesNotMatch(appSource, /继续编辑课后反馈/);
 assert.doesNotMatch(appSource, /课后反馈/);
 ```
@@ -93,35 +93,35 @@ If using granular commits, commit only after implementation makes the suite gree
 
 **Files:**
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/App.tsx`
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/TeacherFeedbackWorkspace.tsx`
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts`
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/LegacyLessonFeedbackWorkspace.tsx`
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationLegacyLessonFeedback.ts`
 
 - [ ] **Step 1: Remove feedback imports and types from `App.tsx`**
 
 Delete the dedicated imports:
 
 ```tsx
-import { TeacherFeedbackWorkspace } from './TeacherFeedbackWorkspace';
+import { LegacyLessonFeedbackWorkspace } from './LegacyLessonFeedbackWorkspace';
 import {
-  buildTeacherFeedbackSavePayload,
+  buildLegacyLessonFeedbackSavePayload,
   createClassStudent,
-  defaultTeacherFeedbackTemplates,
+  defaultLegacyLessonFeedbackTemplates,
   deleteClassStudent,
   generateLessonFeedbackDraft,
   listClassStudents,
   loadLessonFeedback,
   mergeRosterWithFeedbackDraft,
   saveLessonFeedback,
-  type TeacherFeedbackStudentDraft,
-  type TeacherFeedbackTemplate,
-} from './reviewGenerationTeacherFeedback';
+  type LegacyLessonFeedbackStudentDraft,
+  type LegacyLessonFeedbackTemplate,
+} from './reviewGenerationLegacyLessonFeedback';
 ```
 
 Also remove any feedback-specific feature labels:
 
 ```tsx
-teacher_feedback_draft: '教师反馈草稿',
-teacher_feedback: '教师反馈',
+legacy_lesson_feedback_draft: '教师反馈草稿',
+legacy_lesson_feedback: '教师反馈',
 ```
 
 - [ ] **Step 2: Remove `LessonInput` feedback state and behavior**
@@ -129,8 +129,8 @@ teacher_feedback: '教师反馈',
 Delete feedback-specific state and callbacks from `LessonInput`, including patterns like:
 
 ```tsx
-const [feedbackStudents, setFeedbackStudents] = useState<TeacherFeedbackStudentDraft[]>([]);
-const [feedbackTemplates, setFeedbackTemplates] = useState<TeacherFeedbackTemplate[]>(defaultTeacherFeedbackTemplates);
+const [feedbackStudents, setFeedbackStudents] = useState<LegacyLessonFeedbackStudentDraft[]>([]);
+const [feedbackTemplates, setFeedbackTemplates] = useState<LegacyLessonFeedbackTemplate[]>(defaultLegacyLessonFeedbackTemplates);
 const [feedbackText, setFeedbackText] = useState('');
 const [isLoadingFeedbackStudents, setIsLoadingFeedbackStudents] = useState(false);
 const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
@@ -175,8 +175,8 @@ Keep only preview, download, and delete actions in history.
 Delete:
 
 ```bash
-frontend/src/TeacherFeedbackWorkspace.tsx
-frontend/src/reviewGenerationTeacherFeedback.ts
+frontend/src/LegacyLessonFeedbackWorkspace.tsx
+frontend/src/reviewGenerationLegacyLessonFeedback.ts
 frontend/src/review-generation-teacher-feedback.test.tsx
 ```
 
@@ -194,19 +194,19 @@ Expected: PASS with feedback-removal assertions green.
 
 - [ ] **Step 1: Remove feedback imports and feature-accounting branches from `app.py`**
 
-Delete imports that only exist for teacher feedback, such as:
+Delete imports that only exist for legacy lesson feedback, such as:
 
 ```python
-from ai_processor import generate_teacher_feedback_draft
-from lesson_manager import build_lesson_feedback_editor_state, save_lesson_feedback
+from ai_processor import generate_legacy_lesson_feedback_draft
+from lesson_manager import build_lesson_class_feedback_editor_state, save_lesson_class_feedback
 ```
 
 Also remove feedback-specific label or accounting branches tied to:
 
 ```python
-teacher_feedback_draft
+legacy_lesson_feedback_draft
 lesson_feedback
-generate_teacher_feedback_draft
+generate_legacy_lesson_feedback_draft
 ```
 
 - [ ] **Step 2: Delete feedback helper functions and routes from `app.py`**
@@ -215,7 +215,7 @@ Remove the whole set of feedback-only helpers and endpoints, including patterns 
 
 ```python
 def _validate_lesson_feedback_access(...):
-def _build_teacher_feedback_template_lookup(...):
+def _build_legacy_lesson_feedback_template_lookup(...):
 def _normalize_feedback_custom_templates(...):
 def _normalize_feedback_students_for_draft(...):
 def _normalize_feedback_editor_students(...):
@@ -233,21 +233,21 @@ Do not leave dead helper code behind.
 Delete:
 
 ```python
-CREATE TABLE IF NOT EXISTS lesson_feedbacks ...
-ALTER TABLE lesson_feedbacks ...
-def save_lesson_feedback(...):
-def get_lesson_feedback(...):
-def build_lesson_feedback_editor_state(...):
+CREATE TABLE IF NOT EXISTS lesson_class_feedbacks ...
+ALTER TABLE lesson_class_feedbacks ...
+def save_lesson_class_feedback(...):
+def get_lesson_class_feedback(...):
+def build_lesson_class_feedback_editor_state(...):
 ```
 
-Also remove any organization cleanup code that deletes from `lesson_feedbacks`.
+Also remove any organization cleanup code that deletes from `lesson_class_feedbacks`.
 
 - [ ] **Step 4: Add destructive schema cleanup**
 
 In database initialization/migration, explicitly drop the abandoned table if it exists:
 
 ```python
-conn.execute("DROP TABLE IF EXISTS lesson_feedbacks")
+conn.execute("DROP TABLE IF EXISTS lesson_class_feedbacks")
 ```
 
 Place it in the initialization path that runs consistently for app startup and test DB setup so the schema is truly removed.
@@ -270,8 +270,8 @@ Expected: PASS for the full backend regression suite.
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/app.py`
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/lesson_manager.py`
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/tests/test_account_flow.py`
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/TeacherFeedbackWorkspace.tsx`
-- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationTeacherFeedback.ts`
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/LegacyLessonFeedbackWorkspace.tsx`
+- Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/reviewGenerationLegacyLessonFeedback.ts`
 - Delete: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend/src/review-generation-teacher-feedback.test.tsx`
 
 - [ ] **Step 1: Run the focused frontend regression**
@@ -312,8 +312,8 @@ Commit:
 
 ```bash
 git add frontend/src/App.tsx frontend/src/workspace-navigation.test.ts app.py lesson_manager.py tests/test_account_flow.py
-git add -u frontend/src/TeacherFeedbackWorkspace.tsx frontend/src/reviewGenerationTeacherFeedback.ts frontend/src/review-generation-teacher-feedback.test.tsx
-git commit -m "refactor: remove abandoned teacher feedback workflow"
+git add -u frontend/src/LegacyLessonFeedbackWorkspace.tsx frontend/src/reviewGenerationLegacyLessonFeedback.ts frontend/src/review-generation-teacher-feedback.test.tsx
+git commit -m "refactor: remove abandoned legacy lesson feedback workflow"
 ```
 
 ## Task 5: Deployment
@@ -364,4 +364,4 @@ Expected: a clear report of any remote local modifications. Do not overwrite the
 - Placeholder scan:
   - Tasks include exact files, exact commands, and concrete code targets.
 - Type consistency:
-  - Removed symbols are referenced consistently across the plan: `TeacherFeedbackWorkspace`, `reviewGenerationTeacherFeedback`, feedback endpoints, and `lesson_feedbacks`.
+  - Removed symbols are referenced consistently across the plan: `LegacyLessonFeedbackWorkspace`, `reviewGenerationLegacyLessonFeedback`, feedback endpoints, and `lesson_class_feedbacks`.

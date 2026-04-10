@@ -87,30 +87,179 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
         )
         return lesson_manager.get_class_feedback_task(task["id"])
 
-    def test_create_task_derives_granularity_and_teacher_snapshot(self):
+    def test_create_task_resolves_explicit_period_selection_and_teacher_snapshot(self):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
         with lesson_manager.get_conn() as conn:
             class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
 
+        daily_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="daily",
+            anchor_date="2026-04-09",
+            created_by=owner["id"],
+        )
+        weekly_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="weekly",
+            year=2026,
+            week=15,
+            created_by=owner["id"],
+        )
+        monthly_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="monthly",
+            year=2026,
+            month=4,
+            created_by=owner["id"],
+        )
+        stage_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="stage",
+            year=2026,
+            stage_name="春季",
+            created_by=owner["id"],
+        )
+
+        self.assertEqual(daily_task["class_id"], class_id)
+        self.assertEqual(daily_task["start_date"], "2026-04-09")
+        self.assertEqual(daily_task["end_date"], "2026-04-09")
+        self.assertEqual(daily_task["period_length_days"], 1)
+        self.assertEqual(daily_task["period_granularity"], "daily")
+        self.assertEqual(daily_task["period_label"], "2026-04-09")
+        self.assertEqual(daily_task["teacher_user_id"], owner["id"])
+        self.assertEqual(daily_task["teacher_name_snapshot"], owner["display_name"])
+        self.assertEqual(daily_task["organization_id"], class_row["organization_id"])
+        self.assertEqual(daily_task["status"], "draft")
+        self.assertEqual(daily_task["student_entries"], [])
+
+        self.assertEqual(weekly_task["start_date"], "2026-04-06")
+        self.assertEqual(weekly_task["end_date"], "2026-04-12")
+        self.assertEqual(weekly_task["period_length_days"], 7)
+        self.assertEqual(weekly_task["period_granularity"], "weekly")
+        self.assertEqual(weekly_task["period_label"], lesson_manager.week_label("2026-W15"))
+
+        self.assertEqual(monthly_task["start_date"], "2026-04-01")
+        self.assertEqual(monthly_task["end_date"], "2026-04-30")
+        self.assertEqual(monthly_task["period_length_days"], 30)
+        self.assertEqual(monthly_task["period_granularity"], "monthly")
+        self.assertEqual(monthly_task["period_label"], "2026四月")
+
+        self.assertEqual(stage_task["start_date"], "2026-03-01")
+        self.assertEqual(stage_task["end_date"], "2026-05-31")
+        self.assertEqual(stage_task["period_length_days"], 92)
+        self.assertEqual(stage_task["period_granularity"], "stage")
+        self.assertEqual(stage_task["period_label"], "2026春季")
+
+    def test_create_task_legacy_start_end_path_returns_custom_range_label(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+
         task = lesson_manager.create_class_feedback_task(
             class_id=class_id,
             teacher_user_id=owner["id"],
             teacher_name_snapshot=owner["display_name"],
-            start_date="2026-04-03",
-            end_date="2026-04-03",
+            start_date="2026-04-02",
+            end_date="2026-04-05",
             created_by=owner["id"],
         )
 
-        self.assertEqual(task["class_id"], class_id)
-        self.assertEqual(task["period_length_days"], 1)
-        self.assertEqual(task["period_granularity"], "daily")
-        self.assertEqual(task["teacher_user_id"], owner["id"])
-        self.assertEqual(task["teacher_name_snapshot"], owner["display_name"])
-        self.assertEqual(task["organization_id"], class_row["organization_id"])
-        self.assertEqual(task["status"], "draft")
-        self.assertEqual(task["student_entries"], [])
+        self.assertEqual(task["start_date"], "2026-04-02")
+        self.assertEqual(task["end_date"], "2026-04-05")
+        self.assertEqual(task["period_length_days"], 4)
+        self.assertEqual(task["period_granularity"], "custom")
+        self.assertEqual(task["period_label"], "2026-04-02至2026-04-05")
+
+    def test_init_db_rejects_invalid_legacy_custom_range_when_backfilling_period_label(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+
+        task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            start_date="2026-04-02",
+            end_date="2026-04-05",
+            created_by=owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_feedback_tasks
+                SET start_date=?, end_date=?, period_granularity='custom', period_label=''
+                WHERE id=?
+                """,
+                ("2026-04-05", "2026-04-02", task["id"]),
+            )
+
+        with self.assertRaisesRegex(ValueError, "end_date must be on or after start_date"):
+            lesson_manager.init_db()
+
+    def test_init_db_backfills_period_label_for_legacy_explicit_granularity_rows(self):
+        owner = self._owner()
+        class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(class_id, owner["id"])
+
+        weekly_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="weekly",
+            year=2026,
+            week=15,
+            created_by=owner["id"],
+        )
+        monthly_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="monthly",
+            year=2026,
+            month=4,
+            created_by=owner["id"],
+        )
+        stage_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="stage",
+            year=2026,
+            stage_name="春季",
+            created_by=owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE class_feedback_tasks SET period_label='' WHERE id IN (?, ?, ?)",
+                (weekly_task["id"], monthly_task["id"], stage_task["id"]),
+            )
+
+        lesson_manager.init_db()
+
+        self.assertEqual(
+            lesson_manager.get_class_feedback_task(weekly_task["id"])["period_label"],
+            lesson_manager.week_label("2026-W15"),
+        )
+        self.assertEqual(
+            lesson_manager.get_class_feedback_task(monthly_task["id"])["period_label"],
+            "2026四月",
+        )
+        self.assertEqual(
+            lesson_manager.get_class_feedback_task(stage_task["id"])["period_label"],
+            "2026春季",
+        )
 
     def test_create_task_persists_class_organization_id(self):
         owner = self._owner()
@@ -478,8 +627,9 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             class_id=class_id,
             teacher_user_id=owner["id"],
             teacher_name_snapshot=owner["display_name"],
-            start_date="2026-03-24",
-            end_date="2026-03-30",
+            period_granularity="weekly",
+            year=2026,
+            week=13,
             created_by=owner["id"],
         )
         lesson_manager.save_class_feedback_generation_result(
@@ -497,8 +647,8 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             class_id=class_id,
             teacher_user_id=owner["id"],
             teacher_name_snapshot=owner["display_name"],
-            start_date="2026-04-01",
-            end_date="2026-04-01",
+            period_granularity="daily",
+            anchor_date="2026-04-01",
             created_by=owner["id"],
         )
         lesson_manager.save_class_feedback_generation_result(
@@ -512,47 +662,82 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             student_entries=[{"student_id": student["id"], "final_text": "日报终稿", "checked_at": "2026-04-01 20:00:00"}],
         )
 
-        custom_task = lesson_manager.create_class_feedback_task(
+        monthly_task = lesson_manager.create_class_feedback_task(
             class_id=class_id,
             teacher_user_id=owner["id"],
             teacher_name_snapshot=owner["display_name"],
-            start_date="2026-04-02",
-            end_date="2026-04-05",
+            period_granularity="monthly",
+            year=2026,
+            month=4,
             created_by=owner["id"],
         )
         lesson_manager.save_class_feedback_generation_result(
-            custom_task["id"],
-            class_summary_ai_draft="班级自定义反馈",
-            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "自定义草稿"}],
+            monthly_task["id"],
+            class_summary_ai_draft="班级月反馈",
+            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "月反馈草稿"}],
         )
         lesson_manager.confirm_class_feedback_task(
-            custom_task["id"],
-            class_summary_final_text="班级自定义反馈终稿",
-            student_entries=[{"student_id": student["id"], "final_text": "自定义终稿", "checked_at": "2026-04-05 20:00:00"}],
+            monthly_task["id"],
+            class_summary_final_text="班级月反馈终稿",
+            student_entries=[{"student_id": student["id"], "final_text": "月反馈终稿", "checked_at": "2026-04-30 20:00:00"}],
+        )
+
+        stage_task = lesson_manager.create_class_feedback_task(
+            class_id=class_id,
+            teacher_user_id=owner["id"],
+            teacher_name_snapshot=owner["display_name"],
+            period_granularity="stage",
+            year=2026,
+            stage_name="春季",
+            created_by=owner["id"],
+        )
+        lesson_manager.save_class_feedback_generation_result(
+            stage_task["id"],
+            class_summary_ai_draft="班级阶段反馈",
+            student_entries=[{"student_id": student["id"], "name": "张三", "ai_draft": "阶段草稿"}],
+        )
+        lesson_manager.confirm_class_feedback_task(
+            stage_task["id"],
+            class_summary_final_text="班级阶段反馈终稿",
+            student_entries=[{"student_id": student["id"], "final_text": "阶段终稿", "checked_at": "2026-05-31 20:00:00"}],
         )
 
         match_daily = lesson_manager.find_previous_confirmed_class_feedback_entry(
             class_id=class_id,
             student_id=student["id"],
             period_granularity="daily",
-            before_end_date="2026-04-06",
+            before_end_date="2026-06-01",
         )
         match_weekly = lesson_manager.find_previous_confirmed_class_feedback_entry(
             class_id=class_id,
             student_id=student["id"],
             period_granularity="weekly",
-            before_end_date="2026-04-06",
+            before_end_date="2026-06-01",
         )
-        fallback_monthly = lesson_manager.find_previous_confirmed_class_feedback_entry(
+        match_monthly = lesson_manager.find_previous_confirmed_class_feedback_entry(
             class_id=class_id,
             student_id=student["id"],
             period_granularity="monthly",
-            before_end_date="2026-04-06",
+            before_end_date="2026-06-01",
+        )
+        match_stage = lesson_manager.find_previous_confirmed_class_feedback_entry(
+            class_id=class_id,
+            student_id=student["id"],
+            period_granularity="stage",
+            before_end_date="2026-06-01",
+        )
+        fallback_unknown = lesson_manager.find_previous_confirmed_class_feedback_entry(
+            class_id=class_id,
+            student_id=student["id"],
+            period_granularity="unsupported",
+            before_end_date="2026-06-01",
         )
 
         self.assertEqual(match_daily["final_text"], "日报终稿")
         self.assertEqual(match_weekly["final_text"], "周反馈终稿")
-        self.assertEqual(fallback_monthly["final_text"], "自定义终稿")
+        self.assertEqual(match_monthly["final_text"], "月反馈终稿")
+        self.assertEqual(match_stage["final_text"], "阶段终稿")
+        self.assertEqual(fallback_unknown["final_text"], "阶段终稿")
 
     def test_only_confirmed_text_is_returned_as_memory_source(self):
         owner = self._owner()

@@ -8,15 +8,18 @@ PDF 生成引擎（数据驱动版）
 """
 
 import html
+import io
 import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
     HRFlowable, KeepTogether, PageBreak,
 )
 from reportlab.pdfbase import pdfmetrics
@@ -308,6 +311,127 @@ def _render_item(item: dict, styles: dict, show_answers: bool = False) -> list:
     else:
         result.append(Paragraph(text, styles['body']))
     return result
+
+
+def _fetch_wrong_question_image_bytes(image_url: str) -> bytes | None:
+    normalized_image_url = (image_url or "").strip()
+    if not normalized_image_url:
+        return None
+    try:
+        with urllib.request.urlopen(normalized_image_url, timeout=10) as response:
+            image_bytes = response.read()
+    except (urllib.error.URLError, ValueError, OSError):
+        return None
+    return image_bytes or None
+
+
+def _build_wrong_question_image(image_url: str):
+    image_bytes = _fetch_wrong_question_image_bytes(image_url)
+    if not image_bytes:
+        return None
+    try:
+        flowable = Image(io.BytesIO(image_bytes))
+    except Exception:
+        return None
+
+    max_width = CONTENT_W - 1.2 * cm
+    max_height = 11.5 * cm
+    draw_width = float(getattr(flowable, "drawWidth", 0) or 0)
+    draw_height = float(getattr(flowable, "drawHeight", 0) or 0)
+    if draw_width <= 0 or draw_height <= 0:
+        return None
+
+    scale = min(max_width / draw_width, max_height / draw_height, 1.0)
+    flowable.drawWidth = draw_width * scale
+    flowable.drawHeight = draw_height * scale
+    flowable.hAlign = 'CENTER'
+    return flowable
+
+
+def _build_wrong_question_geometry_image_card(image_url: str, styles: dict):
+    _ensure_fonts()
+    title = Paragraph("几何原题图片", styles["section"])
+    caption = Paragraph("保留原图入库，便于按图复盘几何关系。", styles["tip"])
+    geometry_image = _build_wrong_question_image(image_url)
+    if geometry_image is None:
+        image_content = Paragraph("图片暂时无法载入，已保留原图记录。", styles["tip"])
+    else:
+        image_content = geometry_image
+
+    table = Table(
+        [[title], [image_content], [caption]],
+        colWidths=[CONTENT_W],
+        rowHeights=[None, 12.4 * cm, None],
+    )
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fbff')),
+        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor('#b8cfe6')),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 2), (-1, 2), 'LEFT'),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.35, colors.HexColor('#d7e5f2')),
+        ('LINEABOVE', (0, 2), (-1, 2), 0.35, colors.HexColor('#d7e5f2')),
+    ]))
+    return table
+
+
+def generate_student_wrong_question_library_pdf(
+    *,
+    student_name: str,
+    class_name: str,
+    records: list[dict],
+    output_path: str,
+) -> str:
+    _ensure_fonts()
+    styles = _make_styles()
+    destination = Path(output_path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(destination),
+        pagesize=A4,
+        leftMargin=LM,
+        rightMargin=RM,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        title=f"{student_name} 错题库",
+    )
+
+    story = [
+        _spacer(0.4),
+        Paragraph(f"{html.escape(student_name)} 错题库", styles["title"]),
+        Paragraph(f"班级：{html.escape(class_name)}", styles["meta"]),
+        Paragraph(f"错题总数：{len(records)}", styles["meta"]),
+        HRFlowable(width=CONTENT_W, thickness=1.2, color=C_DAY1, spaceAfter=10),
+    ]
+
+    for index, record in enumerate(records, start=1):
+        if index > 1:
+            story.append(PageBreak())
+        story.append(Paragraph(f"第 {index} 题", styles["section"]))
+        story.append(Paragraph(f"上传时间：{html.escape(str(record.get('created_at') or ''))}", styles["body"]))
+        story.append(Paragraph(f"老师：{html.escape(str(record.get('teacher_display_name') or ''))}", styles["body"]))
+        if record.get("is_geometry"):
+            story.append(Paragraph("题目内容：几何题按图片入库", styles["body"]))
+            story.append(_spacer(0.15))
+            story.append(_build_wrong_question_geometry_image_card(str(record.get("image_url") or ""), styles))
+            story.append(_spacer(0.1))
+        else:
+            story.append(
+                Paragraph(
+                    f"题目内容：{_normalize_blanks(str(record.get('question_text') or ''))}",
+                    styles["body"],
+                )
+            )
+        story.append(Paragraph(f"家长备注：{html.escape(str(record.get('parent_note') or '无'))}", styles["body"]))
+        story.append(Paragraph(f"老师备注：{html.escape(str(record.get('teacher_comment') or '无'))}", styles["body"]))
+
+    doc.build(story)
+    return str(destination)
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────

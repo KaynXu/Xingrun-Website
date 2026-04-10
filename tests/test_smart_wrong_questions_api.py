@@ -129,35 +129,15 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             parent_note="本地微信错题",
         )
 
-    @patch("smart_wrong_questions.fetch_wrong_question_records")
-    def test_member_can_access_wrong_question_routes_with_class_scope(self, fetch_wrong_question_records):
+    def test_summary_export_route_is_removed(self):
         owner_payload = self.login_owner()
-        member_payload = self.approve_user(
-            owner_token=owner_payload["token"],
-            username="member_wrong_question",
-            display_name="Member Wrong Question",
-            password="member123",
-        )
-        member_id = member_payload["user"]["id"]
-        class_id = lesson_manager.save_class("六年级 7 班", subject="数学", grade="六年级")
-        lesson_manager.set_user_class_ids(member_id, [class_id])
-        fetch_wrong_question_records.return_value = {
-            "items": [
-                {"id": "record-visible", "class_id": class_id, "student_name": "Alice"},
-                {"id": "record-hidden", "class_id": class_id + 1, "student_name": "Bob"},
-            ],
-            "total": 2,
-        }
 
         response = self.client.get(
-            "/api/wrong-questions",
-            headers=self.auth_headers(member_payload["token"]),
+            "/api/wrong-questions/summary/export?studentName=Alice",
+            headers=self.auth_headers(owner_payload["token"]),
         )
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertIsNotNone(payload)
-        self.assertEqual([item["id"] for item in payload["items"]], ["record-visible"])
-        self.assertEqual(payload["summary"]["total_count"], 1)
+
+        self.assertEqual(response.status_code, 404)
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_staff_can_list_wrong_question_records(self, fetch_wrong_question_records):
@@ -187,6 +167,61 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(forwarded_args.get("page"), "1")
         self.assertEqual(forwarded_args.get("pageSize"), "20")
         self.assertEqual(forwarded_args.get("empty"), "")
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_staff_wrong_question_list_returns_scoped_summary_counts(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        fetch_wrong_question_records.return_value = {
+            "items": [
+                {
+                    "id": "record-1",
+                    "student_name": "Alice",
+                    "class_name": "六年级 1 班",
+                    "class_id": 101,
+                    "analysis": {
+                        "is_repeated_mistake": "是",
+                        "teacher_priority": "高",
+                    },
+                },
+                {
+                    "id": "record-2",
+                    "student_name": "Bob",
+                    "class_name": "六年级 1 班",
+                    "class_id": 101,
+                    "analysis": {
+                        "selected_error_type": "计算错误",
+                    },
+                },
+                {
+                    "id": "record-3",
+                    "student_name": "Carol",
+                    "class_name": "六年级 2 班",
+                    "class_id": 202,
+                    "analysis": {},
+                },
+            ],
+            "total": 3,
+        }
+
+        response = self.client.get(
+            "/api/wrong-questions",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(
+            payload["summary"],
+            {
+                "total_count": 3,
+                "repeated_mistake_count": 1,
+                "high_priority_count": 1,
+                "pending_review_count": 2,
+                "unique_class_count": 2,
+                "unique_student_count": 3,
+            },
+        )
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_staff_can_see_unmapped_org_records_in_global_workspace(self, fetch_wrong_question_records):
@@ -611,16 +646,47 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         review = self.client.put(
             f"/api/wrong-questions/{record['id']}/review",
             headers=self.auth_headers(owner_payload["token"]),
-            json={"teacher_comment": "下节课复讲", "status": "reviewed"},
+            json={"is_mastered": True},
         )
 
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.get_json()["id"], record["id"])
         self.assertEqual(review.status_code, 200)
-        self.assertEqual(review.get_json()["record"]["status"], "reviewed")
-        self.assertEqual(review.get_json()["record"]["teacher_comment"], "下节课复讲")
+        self.assertEqual(review.get_json()["record"]["archive_status"], "archived")
+        self.assertTrue(review.get_json()["record"]["is_mastered"])
         fetch_wrong_question_record.assert_not_called()
         save_wrong_question_review.assert_not_called()
+
+    @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
+    def test_local_wrong_question_review_can_update_question_text(self, _mock_rebuild):
+        owner_payload = self.login_owner()
+        record = self.create_local_wechat_record(owner_payload["user"]["id"])
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='原始 AI 文本',
+                    question_text_source='ai'
+                WHERE id=?
+                """,
+                (record["id"],),
+            )
+
+        response = self.client.put(
+            f"/api/wrong-questions/{record['id']}/review",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "is_mastered": False,
+                "question_text": "老师修正后的题目文本",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        saved = response.get_json()["record"]
+        self.assertEqual(saved["question_text"], "老师修正后的题目文本")
+        self.assertEqual(saved["question_text_source"], "teacher")
+        self.assertEqual(saved["student_library_pdf_path"], "/tmp/student-1.pdf")
 
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_detail_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
@@ -820,47 +886,6 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.get_json(), {"error": "下游服务返回了无效响应"})
-
-    @patch("smart_wrong_questions.export_wrong_question_summary")
-    def test_export_route_returns_pdf_attachment(self, export_wrong_question_summary):
-        owner_payload = self.login_owner()
-        export_wrong_question_summary.return_value = {
-            "content": b"%PDF-1.4\nmock pdf\n",
-            "filename": "wrong-question-summary.pdf",
-        }
-
-        response = self.client.get(
-            "/api/wrong-questions/summary/export?studentName=Alice",
-            headers=self.auth_headers(owner_payload["token"]),
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "application/pdf")
-        self.assertIn(
-            'attachment; filename=wrong-question-summary.pdf',
-            response.headers.get("Content-Disposition", ""),
-        )
-        self.assertEqual(response.data, b"%PDF-1.4\nmock pdf\n")
-        export_wrong_question_summary.assert_called_once()
-        forwarded_args = export_wrong_question_summary.call_args.args[0]
-        self.assertEqual(forwarded_args.get("studentName"), "Alice")
-
-    @patch("smart_wrong_questions.export_wrong_question_summary")
-    def test_export_route_translates_proxy_errors(self, export_wrong_question_summary):
-        owner_payload = self.login_owner()
-        export_wrong_question_summary.side_effect = smart_wrong_questions.WrongQuestionProxyError(
-            "导出服务暂不可用",
-            502,
-        )
-
-        response = self.client.get(
-            "/api/wrong-questions/summary/export?studentName=Alice",
-            headers=self.auth_headers(owner_payload["token"]),
-        )
-
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.get_json(), {"error": "导出服务暂不可用"})
-
 
 if __name__ == "__main__":
     unittest.main()

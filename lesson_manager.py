@@ -25,7 +25,7 @@ import secrets
 import sqlite3
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -75,6 +75,21 @@ DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS = [
     {"group": "课后执行", "labels": ["作业完成更稳", "作业拖延", "复习配合度提升", "家长跟进较积极", "家庭练习不足"]},
     {"group": "阶段变化", "labels": ["进步明显", "有点回落", "变化不大", "情绪更稳定", "需要下阶段重点关注"]},
 ]
+LEGACY_LESSON_CLASS_FEEDBACK_TABLE = "_".join(("lesson", "feedbacks"))
+CLASS_FEEDBACK_MONTH_LABELS = {
+    1: "一月",
+    2: "二月",
+    3: "三月",
+    4: "四月",
+    5: "五月",
+    6: "六月",
+    7: "七月",
+    8: "八月",
+    9: "九月",
+    10: "十月",
+    11: "十一月",
+    12: "十二月",
+}
 CONSULTATION_SOURCE_ALIASES = {
     "转介绍": {"转介绍", "介绍", "朋友介绍", "家长介绍", "熟人介绍", "亲友介绍", "老带新", "推荐介绍", "推荐"},
     "朋友圈": {"朋友圈", "微信朋友圈", "pyq"},
@@ -1035,8 +1050,16 @@ def delete_consultation(consultation_id: int, organization_id: Optional[int] = N
 
 
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
+class _ManagedConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, factory=_ManagedConnection)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
@@ -1298,6 +1321,7 @@ def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection)
                 end_date TEXT NOT NULL,
                 period_length_days INTEGER NOT NULL DEFAULT 1,
                 period_granularity TEXT NOT NULL DEFAULT 'daily',
+                period_label TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'draft',
                 class_summary_ai_draft TEXT NOT NULL DEFAULT '',
                 class_summary_final_text TEXT NOT NULL DEFAULT '',
@@ -1318,14 +1342,15 @@ def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection)
             """
             INSERT INTO class_feedback_tasks (
                 id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity, status,
+                start_date, end_date, period_length_days, period_granularity, period_label, status,
                 class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
                 class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
                 student_highlights_json, created_by, created_at, updated_at, confirmed_at
             )
             SELECT
                 id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity, status,
+                start_date, end_date, period_length_days, period_granularity,
+                COALESCE(period_label, ''), status,
                 class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
                 class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
                 student_highlights_json, created_by, created_at, updated_at, confirmed_at
@@ -1580,6 +1605,13 @@ def init_db():
             archived_at               TEXT DEFAULT '',
             teacher_comment           TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
+            recognition_status        TEXT NOT NULL DEFAULT 'pending',
+            is_geometry               INTEGER NOT NULL DEFAULT 0,
+            question_text             TEXT NOT NULL DEFAULT '',
+            question_text_edited      INTEGER NOT NULL DEFAULT 0,
+            question_text_source      TEXT NOT NULL DEFAULT 'ai',
+            recognition_error         TEXT NOT NULL DEFAULT '',
+            student_library_pdf_path  TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -1649,7 +1681,7 @@ def init_db():
         ON ai_usage_ledger (organization_id, request_id)
         WHERE request_id <> '';
 
-        CREATE TABLE IF NOT EXISTS lesson_feedbacks (
+        CREATE TABLE IF NOT EXISTS lesson_class_feedbacks (
             lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
             class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
             merged_text         TEXT DEFAULT '',
@@ -1669,6 +1701,7 @@ def init_db():
             end_date TEXT NOT NULL,
             period_length_days INTEGER NOT NULL DEFAULT 1,
             period_granularity TEXT NOT NULL DEFAULT 'daily',
+            period_label TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'draft',
             class_summary_ai_draft TEXT NOT NULL DEFAULT '',
             class_summary_final_text TEXT NOT NULL DEFAULT '',
@@ -1713,20 +1746,53 @@ def init_db():
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
 
-        feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_feedbacks)").fetchall()]
-        if feedback_cols:
-            if "class_id" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
-            if "created_at" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-        if "updated_at" not in feedback_cols:
-            conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        legacy_feedback_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({LEGACY_LESSON_CLASS_FEEDBACK_TABLE})").fetchall()]
+        if legacy_feedback_cols:
+            if "class_id" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+            if "merged_text" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN merged_text TEXT DEFAULT ''")
+            if "student_index_json" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN student_index_json TEXT DEFAULT '[]'")
+            if "editor_state_json" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN editor_state_json TEXT DEFAULT '{{}}'")
+            if "created_at" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
+            if "updated_at" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+
+        lesson_class_feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_class_feedbacks)").fetchall()]
+        if lesson_class_feedback_cols:
+            if "class_id" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+            if "merged_text" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
+            if "student_index_json" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
+            if "editor_state_json" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
+            if "created_at" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
+            if "updated_at" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+
+        if legacy_feedback_cols:
+            conn.execute(
+                f"""
+                INSERT OR REPLACE INTO lesson_class_feedbacks
+                    (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
+                SELECT
+                    lesson_id,
+                    class_id,
+                    merged_text,
+                    student_index_json,
+                    editor_state_json,
+                    created_at,
+                    updated_at
+                FROM {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}
+                """
+            )
+            conn.execute(f"DROP TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}")
         class_feedback_task_cols = [r[1] for r in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()]
         if class_feedback_task_cols:
             if "class_status_tags_json" not in class_feedback_task_cols:
@@ -1741,6 +1807,25 @@ def init_db():
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN next_stage_preview_note TEXT NOT NULL DEFAULT ''")
             if "student_highlights_json" not in class_feedback_task_cols:
                 conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
+            if "period_label" not in class_feedback_task_cols:
+                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN period_label TEXT NOT NULL DEFAULT ''")
+            unlabeled_task_rows = conn.execute(
+                """
+                SELECT id, start_date, end_date, period_granularity
+                FROM class_feedback_tasks
+                WHERE trim(coalesce(period_label, '')) = ''
+                """
+            ).fetchall()
+            for task_row in unlabeled_task_rows:
+                _, _, _, _, period_label = _resolve_class_feedback_period_selection(
+                    start_date=task_row["start_date"],
+                    end_date=task_row["end_date"],
+                    period_granularity=(task_row["period_granularity"] or "").strip() or "custom",
+                )
+                conn.execute(
+                    "UPDATE class_feedback_tasks SET period_label=? WHERE id=?",
+                    (period_label, task_row["id"]),
+                )
         _ensure_class_feedback_task_integrity_guards(conn)
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "record_status", "TEXT NOT NULL DEFAULT 'ready'")
@@ -1780,6 +1865,13 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
         _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "recognition_status", "TEXT NOT NULL DEFAULT 'pending'")
+        _ensure_column(conn, "wrong_question_submissions", "is_geometry", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "question_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "question_text_edited", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
+        _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
         _drop_legacy_table_if_exists(conn, "questions")
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -2737,19 +2829,21 @@ def _dedupe_student_name_in_class(
     if conn is None:
         conn = get_conn()
         owns_conn = True
-    rows = conn.execute(
-        """
-        SELECT s.name
-        FROM class_students cs
-        JOIN students s ON s.id = cs.student_id
-        WHERE cs.class_id=?
-        ORDER BY cs.id
-        """,
-        (class_id,),
-    ).fetchall()
-    existing_names = [row["name"] for row in rows]
-    if owns_conn:
-        conn.close()
+    try:
+        rows = conn.execute(
+            """
+            SELECT s.name
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY cs.id
+            """,
+            (class_id,),
+        ).fetchall()
+        existing_names = [row["name"] for row in rows]
+    finally:
+        if owns_conn:
+            conn.close()
 
     if base_name not in existing_names:
         return base_name
@@ -2808,17 +2902,199 @@ def remove_student_from_class(class_id: int, student_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def _derive_class_feedback_period_fields(start_date: str, end_date: str) -> tuple[int, str]:
-    start = date.fromisoformat((start_date or "").strip())
-    end = date.fromisoformat((end_date or "").strip())
+def _last_day_of_month(year: int, month: int) -> int:
+    if month == 12:
+        next_month = date(year + 1, 1, 1)
+    else:
+        next_month = date(year, month + 1, 1)
+    return (next_month - timedelta(days=1)).day
+
+
+def _coerce_period_int(value, field_name: str) -> int:
+    if isinstance(value, bool) or value in (None, ""):
+        raise ValueError(f"{field_name} is required")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+
+
+def _format_legacy_custom_period_label(start_date: str, end_date: str) -> str:
+    return f"{start_date}至{end_date}"
+
+
+def _resolve_class_feedback_stage_dates(year: int, stage_name: str) -> tuple[date, date]:
+    normalized_stage_name = (stage_name or "").strip()
+    if not normalized_stage_name:
+        raise ValueError("stage_name is required")
+    if normalized_stage_name == "春季":
+        return date(year, 3, 1), date(year, 5, 31)
+    if normalized_stage_name in {"暑假", "夏季"}:
+        return date(year, 7, 1), date(year, 8, 31)
+    if normalized_stage_name == "秋季":
+        return date(year, 9, 1), date(year, 11, 30)
+    if normalized_stage_name in {"寒假", "冬季"}:
+        return date(year, 1, 1), date(year, 2, _last_day_of_month(year, 2))
+    raise ValueError("unsupported stage_name")
+
+
+def _infer_class_feedback_stage_name(start: date, end: date) -> Optional[str]:
+    for candidate in ("春季", "暑假", "秋季", "寒假"):
+        candidate_start, candidate_end = _resolve_class_feedback_stage_dates(start.year, candidate)
+        if start == candidate_start and end == candidate_end:
+            return candidate
+    return None
+
+
+def _parse_class_feedback_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[date, date]:
+    normalized_start_date = (start_date or "").strip()
+    normalized_end_date = (end_date or "").strip()
+    if not normalized_start_date or not normalized_end_date:
+        raise ValueError("start_date and end_date are required")
+    start = date.fromisoformat(normalized_start_date)
+    end = date.fromisoformat(normalized_end_date)
     if end < start:
         raise ValueError("end_date must be on or after start_date")
-    period_length_days = (end - start).days + 1
-    if period_length_days <= 1:
-        return period_length_days, "daily"
-    if 6 <= period_length_days <= 8:
-        return period_length_days, "weekly"
-    return period_length_days, "custom"
+    return start, end
+
+
+def _resolve_class_feedback_period_selection(
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    period_granularity: Optional[str] = None,
+    anchor_date: Optional[str] = None,
+    year: Optional[int] = None,
+    week: Optional[int] = None,
+    month: Optional[int] = None,
+    stage_name: Optional[str] = None,
+) -> tuple[str, str, int, str, str]:
+    normalized_granularity = (period_granularity or "").strip()
+    normalized_anchor_date = (anchor_date or "").strip()
+
+    if not normalized_granularity:
+        start, end = _parse_class_feedback_range(start_date, end_date)
+        resolved_start_date = start.isoformat()
+        resolved_end_date = end.isoformat()
+        period_length_days = (end - start).days + 1
+        return (
+            resolved_start_date,
+            resolved_end_date,
+            period_length_days,
+            "custom",
+            _format_legacy_custom_period_label(resolved_start_date, resolved_end_date),
+        )
+
+    if normalized_granularity == "custom":
+        start, end = _parse_class_feedback_range(start_date, end_date)
+        resolved_start_date = start.isoformat()
+        resolved_end_date = end.isoformat()
+        period_length_days = (end - start).days + 1
+        return (
+            resolved_start_date,
+            resolved_end_date,
+            period_length_days,
+            "custom",
+            _format_legacy_custom_period_label(resolved_start_date, resolved_end_date),
+        )
+
+    if normalized_granularity == "daily":
+        if normalized_anchor_date:
+            selected_day = date.fromisoformat(normalized_anchor_date)
+        else:
+            start, end = _parse_class_feedback_range(start_date, end_date)
+            if start != end:
+                raise ValueError("daily period requires a single-day range")
+            selected_day = start
+        resolved_start_date = selected_day.isoformat()
+        return resolved_start_date, resolved_start_date, 1, "daily", resolved_start_date
+
+    if normalized_granularity == "weekly":
+        if normalized_anchor_date:
+            anchor = date.fromisoformat(normalized_anchor_date)
+            resolved_year, resolved_week, _ = anchor.isocalendar()
+            start = date.fromisocalendar(resolved_year, resolved_week, 1)
+            end = start + timedelta(days=6)
+            return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
+        if year not in (None, "") and week not in (None, ""):
+            resolved_year = _coerce_period_int(year, "year")
+            resolved_week = _coerce_period_int(week, "week")
+            start = date.fromisocalendar(resolved_year, resolved_week, 1)
+            end = start + timedelta(days=6)
+            return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
+
+        start, end = _parse_class_feedback_range(start_date, end_date)
+        if (end - start).days != 6:
+            raise ValueError("weekly period requires a 7-day range")
+        resolved_year, resolved_week, _ = start.isocalendar()
+        expected_end = start + timedelta(days=6)
+        if end != expected_end:
+            raise ValueError("weekly period requires a contiguous 7-day range")
+        return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
+
+    if normalized_granularity == "monthly":
+        if normalized_anchor_date:
+            anchor = date.fromisoformat(normalized_anchor_date)
+            resolved_year = anchor.year
+            resolved_month = anchor.month
+        elif year not in (None, "") and month not in (None, ""):
+            resolved_year = _coerce_period_int(year, "year")
+            resolved_month = _coerce_period_int(month, "month")
+        else:
+            start, end = _parse_class_feedback_range(start_date, end_date)
+            resolved_year = start.year
+            resolved_month = start.month
+            if start.day != 1 or end.year != resolved_year or end.month != resolved_month:
+                raise ValueError("monthly period requires a full calendar month range")
+            if end.day != _last_day_of_month(resolved_year, resolved_month):
+                raise ValueError("monthly period requires a full calendar month range")
+            return (
+                start.isoformat(),
+                end.isoformat(),
+                (end - start).days + 1,
+                "monthly",
+                f"{resolved_year}{CLASS_FEEDBACK_MONTH_LABELS[resolved_month]}",
+            )
+        if resolved_month < 1 or resolved_month > 12:
+            raise ValueError("month must be between 1 and 12")
+        start = date(resolved_year, resolved_month, 1)
+        end = date(resolved_year, resolved_month, _last_day_of_month(resolved_year, resolved_month))
+        return (
+            start.isoformat(),
+            end.isoformat(),
+            (end - start).days + 1,
+            "monthly",
+            f"{resolved_year}{CLASS_FEEDBACK_MONTH_LABELS[resolved_month]}",
+        )
+
+    if normalized_granularity == "stage":
+        normalized_stage_name = (stage_name or "").strip()
+        if normalized_anchor_date:
+            resolved_year = date.fromisoformat(normalized_anchor_date).year
+        elif year not in (None, ""):
+            resolved_year = _coerce_period_int(year, "year")
+        else:
+            start, end = _parse_class_feedback_range(start_date, end_date)
+            inferred_stage_name = _infer_class_feedback_stage_name(start, end)
+            if inferred_stage_name is None:
+                raise ValueError("stage period requires valid stage_name")
+            return (
+                start.isoformat(),
+                end.isoformat(),
+                (end - start).days + 1,
+                "stage",
+                f"{start.year}{inferred_stage_name}",
+            )
+        start, end = _resolve_class_feedback_stage_dates(resolved_year, normalized_stage_name)
+        return (
+            start.isoformat(),
+            end.isoformat(),
+            (end - start).days + 1,
+            "stage",
+            f"{resolved_year}{normalized_stage_name}",
+        )
+
+    raise ValueError("unsupported period_granularity")
 
 
 def _load_json_list(value) -> list:
@@ -2921,6 +3197,7 @@ def _serialize_class_feedback_task_row(row: sqlite3.Row, student_entries: Option
     task["student_highlights"] = _load_json_list(task.get("student_highlights_json"))
     task.pop("class_status_tags_json", None)
     task.pop("student_highlights_json", None)
+    task["period_label"] = task.get("period_label") or ""
     task["class_status_note"] = task.get("class_status_note") or ""
     task["parent_feedback_note"] = task.get("parent_feedback_note") or ""
     task["teaching_focus_note"] = task.get("teaching_focus_note") or ""
@@ -3067,14 +3344,29 @@ def create_class_feedback_task(
     class_id: int,
     teacher_user_id: Optional[int],
     teacher_name_snapshot: str,
-    start_date: str,
-    end_date: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    period_granularity: Optional[str] = None,
+    anchor_date: Optional[str] = None,
+    year: Optional[int] = None,
+    week: Optional[int] = None,
+    month: Optional[int] = None,
+    stage_name: Optional[str] = None,
     created_by: int,
 ):
     teacher_name_snapshot = (teacher_name_snapshot or "").strip()
     if not teacher_name_snapshot:
         raise ValueError("teacher_name_snapshot is required")
-    period_length_days, period_granularity = _derive_class_feedback_period_fields(start_date, end_date)
+    start_date, end_date, period_length_days, period_granularity, period_label = _resolve_class_feedback_period_selection(
+        start_date=start_date,
+        end_date=end_date,
+        period_granularity=period_granularity,
+        anchor_date=anchor_date,
+        year=year,
+        week=week,
+        month=month,
+        stage_name=stage_name,
+    )
     with get_conn() as conn:
         class_row = conn.execute("SELECT id, organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
         if not class_row:
@@ -3099,9 +3391,9 @@ def create_class_feedback_task(
             """
             INSERT INTO class_feedback_tasks (
                 organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity,
+                start_date, end_date, period_length_days, period_granularity, period_label,
                 status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
             """,
             (
                 class_row["organization_id"],
@@ -3112,6 +3404,7 @@ def create_class_feedback_task(
                 end_date,
                 period_length_days,
                 period_granularity,
+                period_label,
                 created_by,
             ),
         )
@@ -3362,6 +3655,7 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
                 t.end_date,
                 t.period_length_days,
                 t.period_granularity,
+                t.period_label,
                 t.status,
                 t.class_summary_final_text,
                 t.created_by,
@@ -3404,6 +3698,7 @@ def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: i
                 t.end_date,
                 t.period_length_days,
                 t.period_granularity,
+                t.period_label,
                 t.status,
                 t.class_summary_final_text,
                 t.created_by,
@@ -3447,6 +3742,7 @@ def list_recent_confirmed_class_feedback_summaries(*, class_id: int, before_end_
                 end_date,
                 period_length_days,
                 period_granularity,
+                period_label,
                 class_summary_final_text,
                 confirmed_at
             FROM class_feedback_tasks
@@ -3543,7 +3839,7 @@ def save_class_feedback_label_configs(owner_user_id: int, groups: list[dict]):
                 )
 
 
-def save_lesson_feedback(
+def save_lesson_class_feedback(
     lesson_id: int,
     class_id: int,
     merged_text: str,
@@ -3560,7 +3856,7 @@ def save_lesson_feedback(
         lesson_class_id = lesson_row["class_id"]
         conn.execute(
             """
-            INSERT INTO lesson_feedbacks
+            INSERT INTO lesson_class_feedbacks
                 (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
             ON CONFLICT(lesson_id) DO UPDATE SET
@@ -3579,7 +3875,7 @@ def save_lesson_feedback(
             ),
         )
         row = conn.execute(
-            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            "SELECT * FROM lesson_class_feedbacks WHERE lesson_id=?",
             (lesson_id,),
         ).fetchone()
     feedback = dict(row)
@@ -3588,10 +3884,10 @@ def save_lesson_feedback(
     return feedback
 
 
-def get_lesson_feedback(lesson_id: int):
+def get_lesson_class_feedback(lesson_id: int):
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            "SELECT * FROM lesson_class_feedbacks WHERE lesson_id=?",
             (lesson_id,),
         ).fetchone()
     if not row:
@@ -3602,11 +3898,11 @@ def get_lesson_feedback(lesson_id: int):
     return feedback
 
 
-def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
+def build_lesson_class_feedback_editor_state(lesson_id: int) -> dict:
     lesson = get_lesson(lesson_id)
     if not lesson:
         raise LookupError("lesson not found")
-    saved_feedback = get_lesson_feedback(lesson_id) or {}
+    saved_feedback = get_lesson_class_feedback(lesson_id) or {}
     class_id = lesson.get("class_id")
 
     roster = list_students_for_class(class_id) if class_id else []
@@ -4529,6 +4825,12 @@ def create_wechat_wrong_question_submission(
     child_reason_input_mode: str = "text",
     primary_error_type: str = "",
     secondary_error_summary: str = "",
+    recognition_status: str = "pending",
+    is_geometry: bool = False,
+    question_text: str = "",
+    question_text_source: str = "ai",
+    recognition_error: str = "",
+    student_library_pdf_path: str = "",
 ) -> dict:
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
@@ -4556,8 +4858,10 @@ def create_wechat_wrong_question_submission(
                 id, organization_id, source, parent_wechat_account_id, binding_id,
                 class_id, student_id, teacher_user_id, image_url, parent_note,
                 child_raw_reason_text, child_reason_input_mode,
-                primary_error_type, secondary_error_summary, archive_status, status
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending')
+                primary_error_type, secondary_error_summary, archive_status, status,
+                recognition_status, is_geometry, question_text, question_text_edited,
+                question_text_source, recognition_error, student_library_pdf_path
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 record_id,
@@ -4573,6 +4877,12 @@ def create_wechat_wrong_question_submission(
                 normalized_reason_input_mode,
                 (primary_error_type or "").strip(),
                 (secondary_error_summary or "").strip(),
+                (recognition_status or "pending").strip() or "pending",
+                1 if is_geometry else 0,
+                (question_text or "").strip(),
+                (question_text_source or "ai").strip() or "ai",
+                (recognition_error or "").strip(),
+                (student_library_pdf_path or "").strip(),
             ),
         )
         created = conn.execute(
@@ -4580,6 +4890,36 @@ def create_wechat_wrong_question_submission(
             (record_id,),
         ).fetchone()
     return dict(created) if created else {}
+
+
+def update_wechat_wrong_question_question_text(
+    record_id: str,
+    *,
+    question_text: str,
+    student_library_pdf_path: str,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET question_text=?,
+                question_text_edited=1,
+                question_text_source='teacher',
+                student_library_pdf_path=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                (question_text or "").strip(),
+                (student_library_pdf_path or "").strip(),
+                record_id,
+            ),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
 
 
 def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> Optional[dict]:
@@ -4593,7 +4933,12 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     payload["teacher_display_name"] = row["teacher_display_name"]
     payload["teacher_name_snapshot"] = row["teacher_display_name"]
     payload["mapping_status"] = "mapped"
-    payload["analysis"] = {}
+    payload["is_mastered"] = row["archive_status"] == "archived"
+    payload["analysis"] = {
+        "error_type": str(row["primary_error_type"] or ""),
+        "selected_error_type": str(row["primary_error_type"] or ""),
+        "student_note": str(row["secondary_error_summary"] or ""),
+    }
     return payload
 
 
@@ -4682,6 +5027,48 @@ def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     return _serialize_wechat_wrong_question_submission_row(row)
 
 
+def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.student_id=?
+              AND wqs.source='wechat_mp'
+              AND wqs.recognition_status='recognized'
+              AND wqs.archive_status='active'
+            ORDER BY wqs.created_at ASC, wqs.id ASC
+            """,
+            (student_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET student_library_pdf_path=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            ((pdf_path or "").strip(), record_id),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
+
+
 def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str) -> Optional[dict]:
     normalized_status = (archive_status or "").strip() or "active"
     if normalized_status not in {"active", "archived"}:
@@ -4706,8 +5093,10 @@ def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str
 
 
 def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:
-    teacher_comment = str(payload.get("teacher_comment") or "").strip()
-    status = str(payload.get("status") or "").strip() or "pending"
+    raw_is_mastered = payload.get("is_mastered")
+    normalized_is_mastered = bool(raw_is_mastered)
+    if isinstance(raw_is_mastered, str):
+        normalized_is_mastered = raw_is_mastered.strip().lower() in {"1", "true", "yes", "on"}
 
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
@@ -4716,10 +5105,12 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
         conn.execute(
             """
             UPDATE wrong_question_submissions
-            SET teacher_comment=?, status=?, updated_at=datetime('now','localtime')
+            SET archive_status=?,
+                archived_at=CASE WHEN ?='archived' THEN datetime('now','localtime') ELSE '' END,
+                updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (teacher_comment, status, record_id),
+            ("archived" if normalized_is_mastered else "active", "archived" if normalized_is_mastered else "active", record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(refreshed)

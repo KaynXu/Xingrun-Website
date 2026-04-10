@@ -69,6 +69,64 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(payload["teacher_name_snapshot"], self.owner["display_name"])
         self.assertEqual(payload["period_granularity"], "daily")
 
+    def test_create_task_accepts_weekly_structured_period_payload(self):
+        class_id = lesson_manager.save_class("假期冲刺班", subject="英语", grade="六年级")
+        lesson_manager.create_student_for_class(class_id, "张三")
+
+        response = self.client.post(
+            "/api/class-feedback/tasks",
+            headers=self.headers,
+            json={
+                "class_id": class_id,
+                "period_granularity": "weekly",
+                "year": 2026,
+                "week": 15,
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["period_granularity"], "weekly")
+        self.assertEqual(payload["period_label"], lesson_manager.week_label("2026-W15"))
+        self.assertEqual(payload["start_date"], "2026-04-06")
+        self.assertEqual(payload["end_date"], "2026-04-12")
+
+    def test_create_task_rejects_invalid_stage_name_in_structured_payload(self):
+        class_id = lesson_manager.save_class("假期冲刺班", subject="英语", grade="六年级")
+        lesson_manager.create_student_for_class(class_id, "张三")
+
+        response = self.client.post(
+            "/api/class-feedback/tasks",
+            headers=self.headers,
+            json={
+                "class_id": class_id,
+                "period_granularity": "stage",
+                "year": 2026,
+                "stage_name": "春学期",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertIn("stage_name", payload["error"])
+
+    def test_create_task_keeps_legacy_date_range_payload_compatible(self):
+        class_id = lesson_manager.save_class("假期冲刺班", subject="英语", grade="六年级")
+        lesson_manager.create_student_for_class(class_id, "张三")
+
+        response = self.client.post(
+            "/api/class-feedback/tasks",
+            headers=self.headers,
+            json={"class_id": class_id, "start_date": "2026-07-12", "end_date": "2026-07-12"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["period_label"], "2026-07-12")
+
     @patch("app.generate_class_feedback_bundle")
     def test_generate_route_returns_class_summary_and_student_entries(self, generate_class_feedback_bundle):
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
@@ -175,9 +233,9 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(context["end_date"], "2026-04-09")
         self.assertEqual(context["stage_notes"]["class_status_tags"], ["进入状态快"])
         self.assertEqual(context["stage_notes"]["class_status_note"], "班级进入状态快，互动稳定。")
-        self.assertNotIn("lesson_feedbacks", context["stage_notes"])
+        self.assertFalse(any(key.endswith("_feedbacks") for key in context["stage_notes"]))
         source_summary = json.loads(context["source_summary"])
-        self.assertNotIn("lesson_feedbacks", source_summary)
+        self.assertNotIn("_feedbacks", source_summary)
         self.assertEqual(
             [item["class_summary_final_text"] for item in context["stage_notes"]["recent_confirmed_class_summaries"]],
             ["上阶段正式班级反馈", "更早阶段正式班级反馈"],

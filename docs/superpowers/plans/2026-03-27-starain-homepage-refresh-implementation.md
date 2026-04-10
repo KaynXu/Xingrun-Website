@@ -105,7 +105,7 @@ Update the landing/legal brand and hero copy in [frontend/src/App.tsx](/Users/ar
   重新组织好了
 </h1>
 <p className="text-lg md:text-xl text-slate-600 max-w-3xl mx-auto mb-12 leading-relaxed">
-  Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，
+  Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题目整理、讲义生成与教学协同的问题，
   再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。
 </p>
 <button onClick={onLogin}>查看平台方案</button>
@@ -195,7 +195,7 @@ Rewrite the section copy in [frontend/src/App.tsx](/Users/ark.mini/Desktop/Xingr
 ```tsx
 <h3 className="text-2xl font-bold mb-4 text-slate-900">把题目沉淀成可调用的题库系统</h3>
 <p className="text-slate-600">
-  面向 AP、A-Level、IB 等课程，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
+  面向 AP、A-Level、IB 等课程，把零散题目变成可标签化、可复用、可自动组卷的教学素材。
 </p>
 ```
 
@@ -223,7 +223,7 @@ Rewrite the section copy in [frontend/src/App.tsx](/Users/ark.mini/Desktop/Xingr
   Starain 不是从 PPT 里想出来的，而是从真实教学现场长出来的。
 </p>
 <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed">
-  我们先在自己的教育机构中解决复习资料、题库沉淀、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
+  我们先在自己的教育机构中解决复习资料、题目整理、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
 </p>
 ```
 

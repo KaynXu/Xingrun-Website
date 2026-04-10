@@ -19,6 +19,20 @@ export interface WrongQuestionReviewDraft {
   studentNote: string;
   teacherComment: string;
   reviewStatus: string;
+  isMastered?: boolean;
+  questionText?: string;
+}
+
+export interface WrongQuestionReviewPayload {
+  selectedErrorType: string;
+  selectedKnowledgePoints: string[];
+  selectedActions: string[];
+  selectedReasons: string[];
+  studentNote: string;
+  teacherComment: string;
+  reviewStatus: string;
+  is_mastered?: boolean;
+  question_text?: string;
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
@@ -27,6 +41,11 @@ export interface WrongQuestionRecord {
   id: string;
   roomId: string;
   source: string;
+  recognitionStatus?: string;
+  isGeometry?: boolean;
+  questionText?: string;
+  questionTextSource?: string;
+  studentLibraryPdfPath?: string;
   studentName: string;
   className: string;
   classNameSnapshot: string;
@@ -39,6 +58,11 @@ export interface WrongQuestionRecord {
   createdAt: string;
   imageUrl?: string;
   parentNote: string;
+  childReasonText?: string;
+  childReasonInputMode?: string;
+  primaryErrorType?: string;
+  causeNote?: string;
+  isMastered?: boolean;
   teacherComment: string;
   reviewStatus: string;
   analysis: WrongQuestionAnalysis;
@@ -50,7 +74,6 @@ export interface WrongQuestionFilters {
   subject?: string;
   teacherName?: string;
   errorType?: string;
-  onlyPendingReview?: boolean;
 }
 
 export interface WrongQuestionSummary {
@@ -73,8 +96,26 @@ export interface NormalizedWrongQuestionListResponse {
   summary: WrongQuestionSummary;
 }
 
+export interface MemberStudentNotebookSummary {
+  studentName: string;
+  classId: number;
+  className: string;
+  totalCount: number;
+  pendingReviewCount: number;
+  hasTeacherFollowUp: boolean;
+  latestCreatedAt: string;
+}
+
 export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionRecord): boolean {
   return record.source === 'wechat_mp';
+}
+
+export function isDownstreamWrongQuestionRecord(record: WrongQuestionRecord): boolean {
+  return !isWechatMiniProgramWrongQuestionRecord(record);
+}
+
+export function getWrongQuestionSemanticModel(record: WrongQuestionRecord): 'wechat_mastery' | 'downstream_review' {
+  return isWechatMiniProgramWrongQuestionRecord(record) ? 'wechat_mastery' : 'downstream_review';
 }
 
 export function getWrongQuestionSourceLabel(source: string): string {
@@ -213,8 +254,25 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const teacherNameSnapshot = pickStringValue(source, ['teacherNameSnapshot', 'teacher_name_snapshot', 'teacherName', 'teacher_name']) || teacherName;
   const normalizedSource = pickStringValue(source, ['source']) || 'downstream';
   const normalizedReviewStatus = pickStringValue(source, ['status']) || (normalizedSource === 'wechat_mp' ? 'pending' : '');
+  const recognitionStatus = pickStringValue(source, ['recognitionStatus', 'recognition_status']);
+  const questionText = pickStringValue(source, ['questionText', 'question_text']);
+  const questionTextSource = pickStringValue(source, ['questionTextSource', 'question_text_source']);
+  const studentLibraryPdfPath = pickStringValue(source, ['studentLibraryPdfPath', 'student_library_pdf_path']);
+  const childReasonText = pickStringValue(source, ['childReasonText', 'child_reason_text', 'childRawReasonText', 'child_raw_reason_text']);
+  const childReasonInputMode = pickStringValue(source, ['childReasonInputMode', 'child_reason_input_mode']);
+  const primaryErrorType = pickStringValue(source, ['primaryErrorType', 'primary_error_type']);
+  const causeNote = pickStringValue(source, ['causeNote', 'cause_note', 'secondaryErrorSummary', 'secondary_error_summary']);
+  const archiveStatus = pickStringValue(source, ['archiveStatus', 'archive_status']);
+  const rawIsGeometry = source.isGeometry ?? source.is_geometry;
+  const isGeometry = typeof rawIsGeometry === 'boolean'
+    ? rawIsGeometry
+    : typeof rawIsGeometry === 'number'
+      ? rawIsGeometry !== 0
+      : typeof rawIsGeometry === 'string'
+        ? ['1', 'true', 'yes'].includes(rawIsGeometry.trim().toLowerCase())
+        : undefined;
 
-  return {
+  const record: WrongQuestionRecord = {
     id: typeof rawId === 'string' || typeof rawId === 'number' ? String(rawId) : `wrong-question-${fallbackIndex}`,
     roomId: pickStringValue(source, ['roomId', 'room_id']),
     source: normalizedSource,
@@ -234,6 +292,58 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     reviewStatus: normalizedReviewStatus,
     analysis: normalizeWrongQuestionAnalysis(source.analysis),
   };
+
+  if (recognitionStatus) {
+    record.recognitionStatus = recognitionStatus;
+  }
+
+  if (normalizedSource === 'wechat_mp') {
+    if (childReasonText) {
+      record.childReasonText = childReasonText;
+    }
+
+    if (childReasonInputMode) {
+      record.childReasonInputMode = childReasonInputMode;
+    }
+
+    if (primaryErrorType) {
+      record.primaryErrorType = primaryErrorType;
+    } else if (record.analysis.errorType.trim()) {
+      record.primaryErrorType = record.analysis.errorType.trim();
+    }
+
+    if (causeNote) {
+      record.causeNote = causeNote;
+    } else if (record.analysis.studentNote?.trim()) {
+      record.causeNote = record.analysis.studentNote.trim();
+    }
+
+    if (archiveStatus) {
+      record.isMastered = archiveStatus === 'archived';
+    }
+
+    if (typeof source.is_mastered === 'boolean') {
+      record.isMastered = source.is_mastered;
+    }
+  }
+
+  if (typeof isGeometry === 'boolean') {
+    record.isGeometry = isGeometry;
+  }
+
+  if (questionText) {
+    record.questionText = questionText;
+  }
+
+  if (questionTextSource) {
+    record.questionTextSource = questionTextSource;
+  }
+
+  if (studentLibraryPdfPath) {
+    record.studentLibraryPdfPath = studentLibraryPdfPath;
+  }
+
+  return record;
 }
 
 function normalizeDraftList(values: string[]): string[] {
@@ -243,7 +353,7 @@ function normalizeDraftList(values: string[]): string[] {
 }
 
 export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
-  return {
+  const draft: WrongQuestionReviewDraft = {
     selectedErrorType: record.analysis.selectedErrorType?.trim() ?? '',
     selectedKnowledgePoints: normalizeDraftList(record.analysis.selectedKnowledgePoints ?? []),
     selectedActions: normalizeDraftList(record.analysis.selectedActions ?? []),
@@ -252,10 +362,20 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     teacherComment: record.teacherComment.trim(),
     reviewStatus: record.reviewStatus.trim() || (isWechatMiniProgramWrongQuestionRecord(record) ? 'pending' : ''),
   };
+
+  if (isWechatMiniProgramWrongQuestionRecord(record)) {
+    draft.isMastered = Boolean(record.isMastered);
+  }
+
+  if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
+    draft.questionText = record.questionText?.trim() ?? '';
+  }
+
+  return draft;
 }
 
-export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft): WrongQuestionReviewDraft {
-  return {
+export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft): WrongQuestionReviewPayload {
+  const payload: WrongQuestionReviewPayload = {
     selectedErrorType: draft.selectedErrorType.trim(),
     selectedKnowledgePoints: normalizeDraftList(draft.selectedKnowledgePoints),
     selectedActions: normalizeDraftList(draft.selectedActions),
@@ -264,6 +384,16 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
     teacherComment: draft.teacherComment.trim(),
     reviewStatus: draft.reviewStatus.trim(),
   };
+
+  if (typeof draft.isMastered === 'boolean') {
+    payload.is_mastered = draft.isMastered;
+  }
+
+  if (typeof draft.questionText === 'string') {
+    payload.question_text = draft.questionText.trim();
+  }
+
+  return payload;
 }
 
 export function hydrateWrongQuestionReviewDraftFromDetail(
@@ -318,6 +448,8 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     ...record,
     teacherComment: payload.teacherComment,
     reviewStatus: payload.reviewStatus || record.reviewStatus,
+    isMastered: typeof payload.is_mastered === 'boolean' ? payload.is_mastered : record.isMastered,
+    questionText: typeof payload.question_text === 'string' ? payload.question_text : record.questionText,
     analysis: nextAnalysis,
   };
 }
@@ -341,6 +473,7 @@ export function resolveSavedWrongQuestionRecord(
     const hasParentNote = hasOwnKey(responseSource, ['parentNote', 'parent_note']);
     const hasTeacherComment = hasOwnKey(responseSource, ['teacherComment', 'teacher_comment']);
     const hasReviewStatus = hasOwnKey(responseSource, ['status']);
+    const hasMastered = hasOwnKey(responseSource, ['is_mastered', 'archive_status', 'archiveStatus']);
 
     return {
       ...normalizedResponse,
@@ -363,6 +496,7 @@ export function resolveSavedWrongQuestionRecord(
       parentNote: hasParentNote ? normalizedResponse.parentNote : currentRecord.parentNote,
       teacherComment: hasTeacherComment ? normalizedResponse.teacherComment : currentRecord.teacherComment,
       reviewStatus: hasReviewStatus ? normalizedResponse.reviewStatus : currentRecord.reviewStatus,
+      isMastered: hasMastered ? normalizedResponse.isMastered : currentRecord.isMastered,
     };
   }
 
@@ -406,7 +540,7 @@ export function normalizeWrongQuestionListResponse(payload: WrongQuestionListApi
 
 function hasTeacherReview(record: WrongQuestionRecord): boolean {
   if (isWechatMiniProgramWrongQuestionRecord(record)) {
-    return record.reviewStatus.trim() === 'reviewed' || Boolean(record.teacherComment.trim());
+    return Boolean(record.isMastered);
   }
 
   return Boolean(record.analysis.selectedErrorType?.trim());
@@ -453,6 +587,60 @@ export function summarizeWrongQuestionRecords(records: WrongQuestionRecord[]): W
   return { ...base, uniqueClassCount: classes.size, uniqueStudentCount: students.size };
 }
 
+export function filterWrongQuestionRecordsForMemberNotebook(
+  records: WrongQuestionRecord[],
+  classId: number | null,
+  studentName: string | null,
+): WrongQuestionRecord[] {
+  return records
+    .filter((item) => classId === null || item.classId === classId)
+    .filter((item) => !studentName || item.studentName === studentName)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function buildMemberStudentNotebookSummaries(
+  records: WrongQuestionRecord[],
+  classId: number | null,
+): MemberStudentNotebookSummary[] {
+  const buckets = new Map<string, MemberStudentNotebookSummary>();
+
+  for (const record of filterWrongQuestionRecordsForMemberNotebook(records, classId, null)) {
+    const normalizedStudentName = record.studentName.trim();
+    const normalizedClassName = record.className.trim();
+    const normalizedClassId = record.classId ?? 0;
+    const bucketKey = `${normalizedClassId}::${normalizedStudentName}`;
+    const pendingReviewCount = isWechatMiniProgramWrongQuestionRecord(record)
+      ? (record.isMastered ? 0 : 1)
+      : (record.reviewStatus.trim() === 'pending' ? 1 : 0);
+    const hasTeacherFollowUp = isWechatMiniProgramWrongQuestionRecord(record)
+      ? Boolean(record.isMastered)
+      : (hasTeacherReview(record) || Boolean(record.teacherComment.trim()));
+    const current = buckets.get(bucketKey);
+
+    if (!current) {
+      buckets.set(bucketKey, {
+        studentName: normalizedStudentName,
+        classId: normalizedClassId,
+        className: normalizedClassName,
+        totalCount: 1,
+        pendingReviewCount,
+        hasTeacherFollowUp,
+        latestCreatedAt: record.createdAt,
+      });
+      continue;
+    }
+
+    current.totalCount += 1;
+    current.pendingReviewCount += pendingReviewCount;
+    current.hasTeacherFollowUp = current.hasTeacherFollowUp || hasTeacherFollowUp;
+    if (record.createdAt.localeCompare(current.latestCreatedAt) > 0) {
+      current.latestCreatedAt = record.createdAt;
+    }
+  }
+
+  return Array.from(buckets.values()).sort((left, right) => right.latestCreatedAt.localeCompare(left.latestCreatedAt));
+}
+
 export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {
   const parts: string[] = [];
 
@@ -487,86 +675,4 @@ export function buildWrongQuestionDetailPath(recordId: string, roomId?: string):
 
 export function buildWrongQuestionReviewPath(recordId: string, roomId?: string): string {
   return `/api/wrong-questions/${encodeURIComponent(recordId)}/review${buildWrongQuestionRoomQuery(roomId)}`;
-}
-
-export function buildWrongQuestionSummaryExportPath(filters: WrongQuestionFilters): string {
-  return `/api/wrong-questions/summary/export${buildWrongQuestionQuery(filters)}`;
-}
-
-function getWrongQuestionAuthToken(): string {
-  if (typeof localStorage === 'undefined') {
-    return '';
-  }
-
-  return localStorage.getItem('xr_token') || '';
-}
-
-function getDownloadFileName(contentDisposition: string | null, fallbackFileName: string): string {
-  if (!contentDisposition) {
-    return fallbackFileName;
-  }
-
-  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch {
-      return utf8Match[1];
-    }
-  }
-
-  const basicMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
-  return basicMatch?.[1] || fallbackFileName;
-}
-
-async function getResponseErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
-  const errorPayload = await response.json().catch(() => ({ error: response.statusText }));
-  if (typeof errorPayload === 'object' && errorPayload && 'error' in errorPayload && typeof errorPayload.error === 'string') {
-    return errorPayload.error;
-  }
-
-  return fallbackMessage;
-}
-
-export async function downloadWrongQuestionSummary(filters: WrongQuestionFilters): Promise<void> {
-  if (typeof document === 'undefined') {
-    throw new Error('当前环境不支持导出下载');
-  }
-
-  const token = getWrongQuestionAuthToken();
-  const response = await fetch(buildWrongQuestionSummaryExportPath(filters), {
-    headers: token ? { 'X-Auth-Token': token } : {},
-  });
-
-  if (response.status === 401) {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem('xr_token');
-    }
-    if (typeof window !== 'undefined') {
-      window.location.reload();
-    }
-    throw new Error('登录已过期，请重新登录');
-  }
-
-  if (!response.ok) {
-    throw new Error(await getResponseErrorMessage(response, '智能错题导出失败'));
-  }
-
-  const blob = await response.blob();
-  const downloadUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  const fileName = getDownloadFileName(response.headers.get('content-disposition'), 'wrong-questions-summary.pdf');
-
-  link.href = downloadUrl;
-  link.download = fileName;
-  link.rel = 'noopener';
-  link.style.display = 'none';
-  document.body.appendChild(link);
-
-  try {
-    link.click();
-  } finally {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
-  }
 }

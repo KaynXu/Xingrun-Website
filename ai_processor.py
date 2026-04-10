@@ -102,8 +102,149 @@ def _get_whisper_client():
     return OpenAI(api_key=key)
 
 
+WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
+你需要判断上传图片是否属于几何题或几何体题，并为非几何题提取可直接进入错题库的题目文本。
+只返回 JSON，不要输出额外解释。
+返回字段必须包含：
+- is_geometry: boolean
+- question_text: string
+- confidence: string
+- notes: string
+如果是几何题，question_text 返回空字符串。
+如果不是几何题但无法可靠识别题目文本，也要如实返回空字符串，并在 notes 里说明原因。"""
+
+WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
+    "审题不清",
+    "概念不清",
+    "方法错误",
+    "计算粗心",
+    "步骤遗漏",
+    "书写不规范",
+]
+
+WRONG_QUESTION_REASON_CLASSIFICATION_PROMPT = """你是错因归类助手。
+你会收到一道错题的题目文本，以及孩子自己描述“为什么错”。
+你必须把孩子的描述归类到以下固定错因之一：
+- 审题不清
+- 概念不清
+- 方法错误
+- 计算粗心
+- 步骤遗漏
+- 书写不规范
+
+只返回 JSON，不要输出额外解释。
+返回字段必须包含：
+- primary_error_type: string，且必须是以上固定错因之一
+- secondary_error_summary: string，长度控制在 18 到 40 个字，写成老师端可直接显示的备注
+
+规则：
+- 优先依据孩子自己的描述归类，不要编造不存在的学习问题
+- secondary_error_summary 要用自然中文概括这次出错的直接原因，不要复述固定错因名称
+- 如果孩子描述太模糊，也要根据最可能原因给出最稳妥的归类和备注"""
+
+_WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
+    "",
+    "无法识别",
+    "看不清",
+    "题目缺失",
+    "无法看清",
+    "识别失败",
+}
+
+
+def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
+    is_geometry = bool(payload.get("is_geometry"))
+    question_text = str(payload.get("question_text") or "").strip()
+    confidence = str(payload.get("confidence") or "").strip()
+    notes = str(payload.get("notes") or "").strip()
+
+    if is_geometry:
+        return {
+            "is_geometry": True,
+            "question_text": "",
+            "confidence": confidence,
+            "notes": notes,
+        }
+
+    normalized_text = re.sub(r"\s+", " ", question_text)
+    if normalized_text in _WRONG_QUESTION_TEXT_FAILURE_MARKERS or len(normalized_text) < 6:
+        raise ValueError("题目识别失败，请重新识别")
+
+    return {
+        "is_geometry": False,
+        "question_text": normalized_text,
+        "confidence": confidence,
+        "notes": notes,
+    }
+
+
+def recognize_wrong_question_image(image_url: str) -> dict:
+    normalized_image_url = str(image_url or "").strip()
+    if not normalized_image_url:
+        raise ValueError("image_url is required")
+
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_RECOGNITION_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "请判断这道错题是否属于几何题，并提取非几何题题目文本。"},
+                    {"type": "image_url", "image_url": {"url": normalized_image_url}},
+                ],
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    payload = json.loads(response.choices[0].message.content or "{}")
+    return _normalize_wrong_question_recognition_result(payload)
+
+
+def classify_wrong_question_reason(child_reason_text: str, *, question_text: str = "") -> dict:
+    normalized_reason_text = str(child_reason_text or "").strip()
+    if not normalized_reason_text:
+        raise ValueError("child_raw_reason_text is required")
+
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_REASON_CLASSIFICATION_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "question_text": str(question_text or "").strip(),
+                        "child_reason_text": normalized_reason_text,
+                        "allowed_error_types": WRONG_QUESTION_ERROR_TYPE_OPTIONS,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    payload = json.loads(response.choices[0].message.content or "{}")
+    primary_error_type = str(payload.get("primary_error_type") or "").strip()
+    secondary_error_summary = str(payload.get("secondary_error_summary") or "").strip()
+
+    if primary_error_type not in WRONG_QUESTION_ERROR_TYPE_OPTIONS:
+        raise ValueError("wrong question reason classification failed")
+    if not secondary_error_summary:
+        raise ValueError("wrong question reason classification failed")
+
+    return {
+        "primary_error_type": primary_error_type,
+        "secondary_error_summary": secondary_error_summary,
+    }
+
+
 # ─── 生成复习计划的提示词 ───────────────────────────────────────────────────────
-PLAN_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师，擅长把课堂反馈整理成高质量课后复习计划。
+PLAN_SYSTEM_PROMPT = r"""你是一位专业的初中学科辅导老师，擅长把课堂反馈整理成高质量课后复习计划。
 你将收到课堂总结与元信息，必须返回一个可直接用于 PDF 生成的结构化 JSON。
 
 【最高优先级：固定工作流（每次都必须严格执行）】

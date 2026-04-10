@@ -115,7 +115,7 @@ Recommended hero copy:
 - Brand: `Starain`
 - Descriptor: `AI Edu Platform`
 - Main headline: `教育工作流终于被 AI 重新组织好了`
-- Supporting copy: `Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题库沉淀、讲义生成与教学协同的问题，再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。`
+- Supporting copy: `Starain 起源于真实教学场景。我们先为自己的机构解决复习资料、题目整理、讲义生成与教学协同的问题，再把这套已验证的工作流产品化，帮助更多教育团队完成 AI 化升级。`
 - Primary CTA: `查看平台方案`
 - Secondary CTA: `申请试用`
 

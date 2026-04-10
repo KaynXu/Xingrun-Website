@@ -5,6 +5,8 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
+  buildClassFeedbackPeriodPreview,
+  buildCreateClassFeedbackTaskRequest,
   buildClassFeedbackConfirmPayload,
   defaultStageLabelGroups,
   formatClassFeedbackStudentCopyText,
@@ -19,6 +21,127 @@ test('defaultStageLabelGroups exposes the built-in grouped labels', () => {
   assert.equal(defaultStageLabelGroups.length, 4);
   assert.equal(defaultStageLabelGroups[0]?.group, '课堂状态');
   assert.match(defaultStageLabelGroups[3]?.labels.join(','), /进步明显/);
+});
+
+test('buildClassFeedbackPeriodPreview resolves daily weekly monthly and stage ranges', () => {
+  assert.deepEqual(
+    buildClassFeedbackPeriodPreview({
+      periodGranularity: 'daily',
+      anchorDate: '2026-04-09',
+    }),
+    {
+      label: '2026-04-09',
+      startDate: '2026-04-09',
+      endDate: '2026-04-09',
+      periodLengthDays: 1,
+      periodGranularity: 'daily',
+    },
+  );
+
+  assert.deepEqual(
+    buildClassFeedbackPeriodPreview({
+      periodGranularity: 'weekly',
+      year: 2026,
+      week: 15,
+    }),
+    {
+      label: '2026第15周',
+      startDate: '2026-04-06',
+      endDate: '2026-04-12',
+      periodLengthDays: 7,
+      periodGranularity: 'weekly',
+    },
+  );
+
+  assert.deepEqual(
+    buildClassFeedbackPeriodPreview({
+      periodGranularity: 'monthly',
+      year: 2026,
+      month: 3,
+    }),
+    {
+      label: '2026三月',
+      startDate: '2026-03-01',
+      endDate: '2026-03-31',
+      periodLengthDays: 31,
+      periodGranularity: 'monthly',
+    },
+  );
+
+  assert.deepEqual(
+    buildClassFeedbackPeriodPreview({
+      periodGranularity: 'stage',
+      year: 2026,
+      stageName: '春季',
+    }),
+    {
+      label: '2026春季',
+      startDate: '2026-03-01',
+      endDate: '2026-05-31',
+      periodLengthDays: 92,
+      periodGranularity: 'stage',
+    },
+  );
+});
+
+test('buildCreateClassFeedbackTaskRequest emits structured backend period payloads', () => {
+  assert.deepEqual(
+    buildCreateClassFeedbackTaskRequest({
+      classId: 8,
+      periodGranularity: 'daily',
+      anchorDate: '2026-04-09',
+    }),
+    {
+      class_id: 8,
+      period_granularity: 'daily',
+      anchor_date: '2026-04-09',
+    },
+  );
+
+  assert.deepEqual(
+    buildCreateClassFeedbackTaskRequest({
+      classId: 8,
+      periodGranularity: 'weekly',
+      year: 2026,
+      week: 15,
+    }),
+    {
+      class_id: 8,
+      period_granularity: 'weekly',
+      year: 2026,
+      week: 15,
+    },
+  );
+
+  assert.deepEqual(
+    buildCreateClassFeedbackTaskRequest({
+      classId: 8,
+      periodGranularity: 'monthly',
+      year: 2026,
+      month: 3,
+    }),
+    {
+      class_id: 8,
+      period_granularity: 'monthly',
+      year: 2026,
+      month: 3,
+    },
+  );
+
+  assert.deepEqual(
+    buildCreateClassFeedbackTaskRequest({
+      classId: 8,
+      periodGranularity: 'stage',
+      year: 2026,
+      stageName: '春季',
+    }),
+    {
+      class_id: 8,
+      period_granularity: 'stage',
+      year: 2026,
+      stage_name: '春季',
+    },
+  );
 });
 
 test('buildClassFeedbackConfirmPayload keeps final class summary and checked student entries', () => {
@@ -89,6 +212,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
     <ClassFeedbackGenerationWorkspace
       classNameLabel="S01A1"
       teacherNameLabel="王老师"
+      controlBar={<div>控制栏占位</div>}
       sourceSummaryItems={['已命中 2 节课次记录', '1 名学生资料完整']}
       labelGroups={defaultStageLabelGroups}
       classStatusTags={['进入状态快']}
@@ -112,7 +236,6 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
       onHighlightNoteChange={() => undefined}
       onStudentFinalTextChange={() => undefined}
       onStudentCheckedChange={() => undefined}
-      onAddStudent={() => undefined}
       onGenerate={() => undefined}
       onSaveDraft={() => undefined}
       onCopyClassSummary={() => undefined}
@@ -122,6 +245,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   );
 
   assert.match(markup, /课堂反馈/);
+  assert.match(markup, /控制栏占位/);
   assert.match(markup, /资料摘要/);
   assert.match(markup, /阶段备注/);
   assert.match(markup, /班级状态标签/);
@@ -131,6 +255,8 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
   assert.match(markup, /张三/);
   assert.match(markup, /保存草稿/);
   assert.match(markup, /确认本次反馈/);
+  assert.doesNotMatch(markup, /补充学生/);
+  assert.doesNotMatch(markup, /新增学生/);
   assert.match(markup, /dark:text-white/);
   assert.match(markup, /bg-sky-600/);
   assert.match(markup, /dark:bg-slate-950\/78/);
@@ -144,6 +270,7 @@ test('ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for
   assert.match(workspaceSource, /const cardClass = `\$\{workspaceCardClass\} p-6`;/);
   assert.match(workspaceSource, /const softCardClass = `\$\{workspaceSoftCardClass\} p-4`;/);
   assert.match(workspaceSource, /const fieldClass = workspaceFieldClass;/);
+  assert.match(workspaceSource, /props\.controlBar \? <div className="mt-4">\{props\.controlBar\}<\/div> : null/);
   assert.match(workspaceSource, /className=\{workspacePrimaryButtonClass\}/);
   assert.match(workspaceSource, /className=\{workspaceSecondaryButtonClass\}/);
 });
@@ -152,14 +279,64 @@ test('App source wires the standalone class feedback page and existing class stu
   assert.match(appSource, /const \[activeClassFeedbackTaskId, setActiveClassFeedbackTaskId\] = useState<number \| null>\(null\);/);
   assert.match(appSource, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(appSource, /await createClassFeedbackTask\(\{/);
+  assert.match(appSource, /const classFeedbackPeriodPreview = useMemo\(/);
+  assert.match(appSource, /buildClassFeedbackPeriodPreview\(/);
+  assert.match(appSource, /buildCreateClassFeedbackTaskRequest\(/);
   assert.match(appSource, /await saveClassFeedbackTaskDraft\(activeClassFeedbackTaskId, \{/);
   assert.match(appSource, /classStatusTags: classFeedbackStatusTags/);
-  assert.match(appSource, /await createClassStudent\(selectedClassId, name\);/);
+  assert.doesNotMatch(appSource, /onAddStudent=\{handleAddStudent\}/);
   assert.match(appSource, /await generateClassFeedbackTask\(activeClassFeedbackTaskId, \{/);
   assert.match(appSource, /formatClassFeedbackStudentCopyText\(sortedClassFeedbackStudents\)/);
   assert.match(appSource, /const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'/);
   assert.match(appSource, /const sortedClassFeedbackStudents = useMemo/);
   assert.match(appSource, /已命中 \$\{matchedLessonCount\} 节课次记录/);
+  assert.match(appSource, /反馈阶段：\$\{classFeedbackPeriodPreview\.label\}/);
+  assert.match(appSource, /覆盖范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
+  assert.match(appSource, /lesson\.date >= classFeedbackPeriodPreview\.startDate/);
+  assert.match(appSource, /lesson\.date <= classFeedbackPeriodPreview\.endDate/);
   assert.match(appSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
   assert.match(appSource, /<ClassFeedbackGenerationWorkspace/);
+  assert.doesNotMatch(appSource, /反馈周期：\$\{classFeedbackPeriodPreview\.label\}/);
+  assert.doesNotMatch(appSource, /时间范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
+  assert.doesNotMatch(appSource, /请选择时间范围后创建反馈任务/);
+});
+
+test('App source no longer renders the class feedback intro hero section', () => {
+  assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.3em\] text-sky-600">Stage Feedback<\/p>/);
+  assert.doesNotMatch(appSource, /<h3 className=\{`\$\{workspaceSectionTitleClass\} mt-3`\}>课堂反馈<\/h3>/);
+  assert.doesNotMatch(appSource, /选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。/);
+});
+
+test('App source injects the class feedback control bar into the workspace header instead of rendering it above the workspace', () => {
+  assert.match(appSource, /const classFeedbackControlBar = \(/);
+  assert.match(appSource, /<select[\s\S]*value=\{classFeedbackPeriodMode\}/);
+  assert.match(appSource, /classFeedbackPeriodPreview\.label/);
+  assert.doesNotMatch(appSource, /type="date"\s*\n\s*value=\{startDate\}/);
+  assert.doesNotMatch(appSource, /type="date"\s*\n\s*value=\{endDate\}/);
+  assert.doesNotMatch(appSource, /const \[startDate, setStartDate\]/);
+  assert.doesNotMatch(appSource, /const \[endDate, setEndDate\]/);
+  assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*controlBar=\{/);
+  assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
+});
+
+test('App source keeps class feedback filters and task actions in a stable desktop grid layout', () => {
+  assert.match(
+    appSource,
+    /const classFeedbackControlBar = \(\s*<div className="grid gap-4 2xl:grid-cols-\[minmax\(0,1fr\)_auto\] 2xl:items-center">/,
+  );
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 xl:grid-cols-\[minmax\(0,1\.15fr\)_minmax\(0,0\.85fr\)_minmax\(0,1\.2fr\)\] 2xl:min-w-\[44rem\]">/,
+  );
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 sm:grid-cols-\[minmax\(11rem,1fr\)_auto_auto\] sm:items-stretch 2xl:justify-self-end">/,
+  );
+  assert.doesNotMatch(appSource, /<div className="flex flex-wrap items-start gap-3">/);
+});
+
+test('App source synchronizes class feedback member selection against accessible classes', () => {
+  assert.match(appSource, /function syncMemberScopedClassSelection\(/);
+  assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classItems, current\)\);/);
+  assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
 });

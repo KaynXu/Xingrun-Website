@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -46,6 +47,15 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
     @staticmethod
     def service_headers() -> dict[str, str]:
         return {"X-Wechat-Service-Token": "wechat-service-token"}
+
+    @staticmethod
+    def recognized_payload(*, is_geometry: bool = False, question_text: str = "计算 $2+3\\times4$ 的结果。") -> dict:
+        return {
+            "is_geometry": is_geometry,
+            "question_text": "" if is_geometry else question_text,
+            "confidence": "high",
+            "notes": "几何图形题" if is_geometry else "",
+        }
 
     def login_owner(self) -> dict:
         response = self.client.post(
@@ -102,16 +112,25 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(bind.status_code, 200)
         binding = bind.get_json()["binding"]
 
-        upload = self.client.post(
-            "/api/wechat/wrong-questions",
-            headers=self.service_headers(),
-            json={
-                "open_id": "openid-1",
-                "binding_id": binding["id"],
-                "image_url": "https://files.example.com/record.png",
-                "parent_note": "今天订正后还是错",
-            },
-        )
+        with patch("app.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch(
+                 "app.ai_processor.classify_wrong_question_reason",
+                 return_value={
+                     "primary_error_type": "计算粗心",
+                     "secondary_error_summary": "孩子知道运算顺序，但漏算了乘法优先。",
+                 },
+             ), \
+             patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
+            upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": binding["id"],
+                    "image_url": "https://files.example.com/record.png",
+                    "child_raw_reason_text": "我把乘法和加法一起从左往右算了",
+                },
+            )
 
         self.assertEqual(upload.status_code, 201)
         record = upload.get_json()["record"]
@@ -119,6 +138,11 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["teacher_user_id"], self.owner_id)
         self.assertEqual(record["class_id"], self.class_id)
         self.assertEqual(record["student_id"], self.student["id"])
+        self.assertEqual(record["recognition_status"], "recognized")
+        self.assertEqual(record["child_raw_reason_text"], "我把乘法和加法一起从左往右算了")
+        self.assertEqual(record["primary_error_type"], "计算粗心")
+        self.assertEqual(record["secondary_error_summary"], "孩子知道运算顺序，但漏算了乘法优先。")
+        self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
 
     def test_wechat_service_can_fetch_latest_parent_bindings(self):
         self.client.post(
@@ -151,7 +175,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(payload["bindings"][0]["student_name"], "Alice")
         self.assertEqual(payload["bindings"][0]["teacher_name"], "平台管理员")
 
-    def test_wechat_service_upload_requires_reason_payload(self):
+    def test_wechat_service_upload_requires_child_reason_text(self):
         self.client.post(
             "/api/wechat/login",
             headers=self.service_headers(),
@@ -169,26 +193,67 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(bind.status_code, 200)
         binding = bind.get_json()["binding"]
 
-        upload = self.client.post(
-            "/api/wechat/wrong-questions",
+        with patch("app.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
+            upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": binding["id"],
+                    "image_url": "https://files.example.com/record.png",
+                },
+            )
+
+        self.assertEqual(upload.status_code, 400)
+        self.assertEqual(upload.get_json()["error"], "child_raw_reason_text is required")
+
+    def test_wechat_service_upload_auto_classifies_reason_from_child_description(self):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
             headers=self.service_headers(),
             json={
                 "open_id": "openid-1",
-                "binding_id": binding["id"],
-                "image_url": "https://files.example.com/record.png",
-                "child_raw_reason_text": "我忘记了等式两边同时乘一样的数字",
-                "child_reason_input_mode": "voice",
-                "primary_error_type": "计算问题",
-                "secondary_error_summary": "等式两边没有同时乘相同的数字",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
             },
         )
+        self.assertEqual(bind.status_code, 200)
+        binding = bind.get_json()["binding"]
+
+        with patch("app.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch(
+                 "app.ai_processor.classify_wrong_question_reason",
+                 return_value={
+                     "primary_error_type": "审题不清",
+                     "secondary_error_summary": "孩子忽略了题目要求的单位转换。",
+                 },
+             ) as classify_mock, \
+             patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
+            upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": binding["id"],
+                    "image_url": "https://files.example.com/record.png",
+                    "child_raw_reason_text": "我看漏了题目里要先把米换成厘米",
+                    "primary_error_type": "客户端乱传的旧字段",
+                    "secondary_error_summary": "客户端乱传的旧备注",
+                },
+            )
 
         self.assertEqual(upload.status_code, 201)
         record = upload.get_json()["record"]
-        self.assertEqual(record["child_raw_reason_text"], "我忘记了等式两边同时乘一样的数字")
-        self.assertEqual(record["child_reason_input_mode"], "voice")
-        self.assertEqual(record["primary_error_type"], "计算问题")
-        self.assertEqual(record["secondary_error_summary"], "等式两边没有同时乘相同的数字")
+        self.assertEqual(record["primary_error_type"], "审题不清")
+        self.assertEqual(record["secondary_error_summary"], "孩子忽略了题目要求的单位转换。")
+        self.assertEqual(record["child_reason_input_mode"], "text")
+        classify_mock.assert_called_once()
 
     def test_parent_child_library_lists_only_bound_student_records(self):
         second_student = lesson_manager.create_student_for_class(self.class_id, "Bob")
@@ -222,26 +287,46 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(second_binding_response.status_code, 200)
         second_binding = second_binding_response.get_json()["binding"]
 
-        first_upload = self.client.post(
-            "/api/wechat/wrong-questions",
-            headers=self.service_headers(),
-            json={
-                "open_id": "openid-1",
-                "binding_id": first_binding["id"],
-                "image_url": "https://files.example.com/record-1.png",
-            },
-        )
+        with patch("app.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch(
+                 "app.ai_processor.classify_wrong_question_reason",
+                 return_value={
+                     "primary_error_type": "计算粗心",
+                     "secondary_error_summary": "孩子把运算顺序看反了。",
+                 },
+             ), \
+             patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
+            first_upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": first_binding["id"],
+                    "image_url": "https://files.example.com/record-1.png",
+                    "child_raw_reason_text": "我把乘法放到最后算了",
+                },
+            )
         self.assertEqual(first_upload.status_code, 201)
 
-        second_upload = self.client.post(
-            "/api/wechat/wrong-questions",
-            headers=self.service_headers(),
-            json={
-                "open_id": "openid-1",
-                "binding_id": second_binding["id"],
-                "image_url": "https://files.example.com/record-2.png",
-            },
-        )
+        with patch("app.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch(
+                 "app.ai_processor.classify_wrong_question_reason",
+                 return_value={
+                     "primary_error_type": "概念不清",
+                     "secondary_error_summary": "孩子没有抓住题目里的条件关系。",
+                 },
+             ), \
+             patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-2.pdf"):
+            second_upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": second_binding["id"],
+                    "image_url": "https://files.example.com/record-2.png",
+                    "child_raw_reason_text": "我没看明白题目让求什么",
+                },
+            )
         self.assertEqual(second_upload.status_code, 201)
 
         response = self.client.get(
@@ -256,6 +341,127 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(len(payload["items"]), 1)
         self.assertEqual(payload["items"][0]["student_id"], self.student["id"])
         self.assertEqual(payload["items"][0]["id"], first_upload.get_json()["record"]["id"])
+
+    @patch("app.ai_processor.classify_wrong_question_reason", return_value={"primary_error_type": "计算粗心", "secondary_error_summary": "孩子把运算顺序看反了。"})
+    @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
+    @patch("app.ai_processor.recognize_wrong_question_image")
+    def test_wechat_upload_requires_successful_non_geometry_recognition(self, mock_recognize, mock_rebuild, _mock_classify):
+        mock_recognize.return_value = self.recognized_payload()
+
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+        binding = bind.get_json()["binding"]
+
+        response = self.client.post(
+            "/api/wechat/wrong-questions",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "binding_id": binding["id"],
+                "image_url": "https://files.example.com/record.png",
+                "child_raw_reason_text": "我把乘法放到最后算了",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        record = response.get_json()["record"]
+        self.assertEqual(record["recognition_status"], "recognized")
+        self.assertEqual(record["question_text"], "计算 $2+3\\times4$ 的结果。")
+        self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
+        self.assertEqual(response.get_json()["student_library_pdf_url"], f"/api/wechat/student-libraries/{self.student['id']}")
+        mock_rebuild.assert_called_once_with(self.student["id"])
+
+    @patch("app.ai_processor.recognize_wrong_question_image", side_effect=ValueError("题目识别失败，请重新识别"))
+    def test_wechat_upload_rejects_failed_non_geometry_recognition(self, _mock_recognize):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+        binding = bind.get_json()["binding"]
+
+        response = self.client.post(
+            "/api/wechat/wrong-questions",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "binding_id": binding["id"],
+                "image_url": "https://files.example.com/record.png",
+                "child_raw_reason_text": "我把乘法放到最后算了",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["error"], "题目识别失败，请重新识别")
+        self.assertEqual(lesson_manager.list_wechat_wrong_question_submissions(), [])
+
+    @patch("app.ai_processor.classify_wrong_question_reason", return_value={"primary_error_type": "步骤遗漏", "secondary_error_summary": "孩子漏掉了图形条件中的关键一步。"})
+    @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
+    @patch("app.ai_processor.recognize_wrong_question_image")
+    def test_wechat_child_library_endpoint_returns_shared_pdf_url(self, mock_recognize, _mock_rebuild, _mock_classify):
+        mock_recognize.return_value = self.recognized_payload(is_geometry=True)
+
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+        binding = bind.get_json()["binding"]
+        upload = self.client.post(
+            "/api/wechat/wrong-questions",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "binding_id": binding["id"],
+                "image_url": "https://files.example.com/geometry.png",
+                "child_raw_reason_text": "我漏画了一条辅助线",
+            },
+        )
+        self.assertEqual(upload.status_code, 201)
+
+        response = self.client.get(
+            f"/api/wechat/children/{self.student['id']}/wrong-question-library",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["pdf_url"], f"/api/wechat/student-libraries/{self.student['id']}")
+        self.assertEqual(payload["total_items"], 1)
 
     def test_parent_child_library_returns_404_for_different_parent_open_id(self):
         self.client.post(

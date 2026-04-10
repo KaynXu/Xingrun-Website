@@ -11,7 +11,7 @@ import config_runtime
 import lesson_manager
 
 
-class TeacherFeedbackStoreTestCase(unittest.TestCase):
+class LessonClassFeedbackStoreTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
@@ -49,7 +49,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(lesson_manager.list_students_for_class(class_id), [])
         self.assertEqual(lesson_manager.get_student(student["id"])["name"], "陈然")
 
-    def test_build_lesson_feedback_editor_state_keeps_current_roster_and_blanks_new_students(self):
+    def test_build_lesson_class_feedback_editor_state_keeps_current_roster_and_blanks_new_students(self):
         class_id = lesson_manager.save_class("高一数学尖子班", subject="数学", grade="高一")
         lesson_id = lesson_manager.save_lesson(
             date_str="2026-04-02",
@@ -65,7 +65,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
 
         student_a = lesson_manager.create_student_for_class(class_id, "张晨")
         student_b = lesson_manager.create_student_for_class(class_id, "李好")
-        lesson_manager.save_lesson_feedback(
+        lesson_manager.save_lesson_class_feedback(
             lesson_id=lesson_id,
             class_id=class_id,
             merged_text="张晨：已编辑反馈",
@@ -93,7 +93,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
         lesson_manager.remove_student_from_class(class_id, student_b["id"])
         lesson_manager.create_student_for_class(class_id, "王可")
 
-        hydrated = lesson_manager.build_lesson_feedback_editor_state(lesson_id)
+        hydrated = lesson_manager.build_lesson_class_feedback_editor_state(lesson_id)
 
         self.assertEqual(hydrated["merged_text"], "张晨：已编辑反馈")
         self.assertEqual(hydrated["student_index"], [{"student_id": student_a["id"], "name": "张晨"}])
@@ -104,7 +104,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
         self.assertEqual(hydrated["custom_templates"][0]["label"], "回家复述")
         self.assertTrue(hydrated["updated_at"])
 
-    def test_build_lesson_feedback_editor_state_ignores_stale_feedback_class_id_and_uses_lesson_class(self):
+    def test_build_lesson_class_feedback_editor_state_ignores_stale_feedback_class_id_and_uses_lesson_class(self):
         class_a = lesson_manager.save_class("高二数学A班", subject="数学", grade="高二")
         class_b = lesson_manager.save_class("高二数学B班", subject="数学", grade="高二")
         lesson_id = lesson_manager.save_lesson(
@@ -121,7 +121,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
 
         student_a = lesson_manager.create_student_for_class(class_a, "甲同学")
         lesson_manager.create_student_for_class(class_b, "乙同学")
-        lesson_manager.save_lesson_feedback(
+        lesson_manager.save_lesson_class_feedback(
             lesson_id=lesson_id,
             class_id=class_b,
             merged_text="测试",
@@ -130,21 +130,74 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
         )
         with lesson_manager.get_conn() as conn:
             conn.execute(
-                "UPDATE lesson_feedbacks SET class_id=? WHERE lesson_id=?",
+                "UPDATE lesson_class_feedbacks SET class_id=? WHERE lesson_id=?",
                 (class_b, lesson_id),
             )
 
-        hydrated = lesson_manager.build_lesson_feedback_editor_state(lesson_id)
+        hydrated = lesson_manager.build_lesson_class_feedback_editor_state(lesson_id)
 
         self.assertEqual(hydrated["class_id"], class_a)
         self.assertEqual([item["name"] for item in hydrated["students"]], ["甲同学"])
 
-    def test_build_lesson_feedback_editor_state_raises_lookup_error_when_lesson_missing(self):
+    def test_build_lesson_class_feedback_editor_state_raises_lookup_error_when_lesson_missing(self):
         with self.assertRaises(LookupError) as ctx:
-            lesson_manager.build_lesson_feedback_editor_state(999999)
+            lesson_manager.build_lesson_class_feedback_editor_state(999999)
         self.assertEqual(str(ctx.exception), "lesson not found")
 
-    def test_save_lesson_feedback_overwrites_the_same_lesson_row(self):
+    def test_init_db_migrates_legacy_lesson_feedback_rows_into_lesson_class_feedbacks(self):
+        class_id = lesson_manager.save_class("初二英语班", subject="英语", grade="初二")
+        lesson_id = lesson_manager.save_lesson(
+            date_str="2026-04-02",
+            subject="英语",
+            grade="初二",
+            topic="完形填空",
+            summary="课堂笔记",
+            weak_points="",
+            plan={"lesson_info": {"topic": "完形填空"}},
+            pdf_path="",
+            class_id=class_id,
+        )
+        student = lesson_manager.create_student_for_class(class_id, "赵一")
+        legacy_table = lesson_manager.LEGACY_LESSON_CLASS_FEEDBACK_TABLE
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(f"ALTER TABLE lesson_class_feedbacks RENAME TO {legacy_table}")
+            conn.execute(
+                f"""
+                INSERT INTO {legacy_table}
+                    (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
+                """,
+                (
+                    lesson_id,
+                    class_id,
+                    "旧表内容",
+                    '[{"student_id": %d, "name": "赵一"}]' % student["id"],
+                    '{"students":[{"student_id": %d, "selected_template_id": "legacy", "remark": "保留"}],"custom_templates":[]}' % student["id"],
+                ),
+            )
+
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            legacy_row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (legacy_table,),
+            ).fetchone()
+            renamed_row = conn.execute(
+                "SELECT merged_text FROM lesson_class_feedbacks WHERE lesson_id=?",
+                (lesson_id,),
+            ).fetchone()
+
+        self.assertIsNone(legacy_row)
+        self.assertIsNotNone(renamed_row)
+        self.assertEqual(renamed_row["merged_text"], "旧表内容")
+        hydrated = lesson_manager.build_lesson_class_feedback_editor_state(lesson_id)
+        self.assertEqual(hydrated["merged_text"], "旧表内容")
+        self.assertEqual(hydrated["students"][0]["selected_template_id"], "legacy")
+        self.assertEqual(hydrated["students"][0]["remark"], "保留")
+
+    def test_save_lesson_class_feedback_overwrites_the_same_lesson_row(self):
         class_id = lesson_manager.save_class("初一数学班", subject="数学", grade="初一")
         lesson_id = lesson_manager.save_lesson(
             date_str="2026-04-02",
@@ -158,7 +211,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
             class_id=class_id,
         )
 
-        first_saved = lesson_manager.save_lesson_feedback(
+        first_saved = lesson_manager.save_lesson_class_feedback(
             lesson_id=lesson_id,
             class_id=class_id,
             merged_text="第一次",
@@ -168,7 +221,7 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
                 "custom_templates": [{"id": "custom-a", "label": "第一次", "guidance": "第一版"}],
             },
         )
-        second_saved = lesson_manager.save_lesson_feedback(
+        second_saved = lesson_manager.save_lesson_class_feedback(
             lesson_id=lesson_id,
             class_id=class_id,
             merged_text="第二次",
@@ -181,13 +234,13 @@ class TeacherFeedbackStoreTestCase(unittest.TestCase):
 
         self.assertEqual(first_saved["merged_text"], "第一次")
         self.assertEqual(second_saved["merged_text"], "第二次")
-        saved = lesson_manager.get_lesson_feedback(lesson_id)
+        saved = lesson_manager.get_lesson_class_feedback(lesson_id)
         self.assertEqual(saved["merged_text"], "第二次")
         self.assertEqual(saved["editor_state"]["custom_templates"][0]["label"], "第二次")
         self.assertEqual(saved["editor_state"]["students"][0]["remark"], "第二次备注")
         with lesson_manager.get_conn() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) AS count FROM lesson_feedbacks WHERE lesson_id=?",
+                "SELECT COUNT(*) AS count FROM lesson_class_feedbacks WHERE lesson_id=?",
                 (lesson_id,),
             ).fetchone()
         self.assertEqual(row["count"], 1)
