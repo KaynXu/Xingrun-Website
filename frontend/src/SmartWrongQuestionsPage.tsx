@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, RefreshCw, Search, X } from 'lucide-react';
+import { AlertCircle, RefreshCw, X } from 'lucide-react';
 
 import {
   apiFetch,
@@ -47,12 +47,32 @@ type WrongQuestionClassFilterOption = {
   id: number;
   name: string;
   subject: string;
+  teacherUserId: number | null;
 };
 
 type WrongQuestionTeacherFilterOption = {
   id: number;
   name: string;
 };
+
+type WrongQuestionStudentFilterOption = {
+  id: number;
+  name: string;
+};
+
+const WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
+  '审题不清',
+  '概念不清',
+  '方法错误',
+  '计算粗心',
+  '步骤遗漏',
+  '书写不规范',
+  '计算错误',
+  '审题错误',
+  '图形理解错误',
+  '定位错误',
+  '模型错误',
+];
 
 const initialFilters: WrongQuestionFilters = {
   studentName: '',
@@ -125,6 +145,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [records, setRecords] = useState<WrongQuestionRecord[]>([]);
   const [classOptions, setClassOptions] = useState<WrongQuestionClassFilterOption[]>([]);
   const [teacherOptions, setTeacherOptions] = useState<WrongQuestionTeacherFilterOption[]>([]);
+  const [studentOptions, setStudentOptions] = useState<WrongQuestionStudentFilterOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
@@ -152,20 +173,57 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     return serverSummary ?? summarizeWrongQuestionRecords(records);
   }, [records, serverSummary]);
+  const selectedTeacherId = useMemo(() => {
+    const normalizedTeacherName = filters.teacherName?.trim() ?? '';
+    if (!normalizedTeacherName) {
+      return null;
+    }
+
+    return teacherOptions.find((item) => item.name === normalizedTeacherName)?.id ?? null;
+  }, [filters.teacherName, teacherOptions]);
+  const visibleClassOptions = useMemo(() => {
+    if (!hasStaffScope || selectedTeacherId === null) {
+      return classOptions;
+    }
+
+    return classOptions.filter((item) => item.teacherUserId === selectedTeacherId);
+  }, [classOptions, hasStaffScope, selectedTeacherId]);
+  const selectedStaffClassOption = useMemo(() => {
+    const normalizedClassName = filters.className?.trim() ?? '';
+    if (!normalizedClassName) {
+      return null;
+    }
+
+    return visibleClassOptions.find((item) => item.name === normalizedClassName) ?? null;
+  }, [filters.className, visibleClassOptions]);
+  const subjectOptions = useMemo(() => {
+    const optionSource = selectedStaffClassOption ? [selectedStaffClassOption] : visibleClassOptions;
+    return Array.from(new Set(optionSource.map((item) => item.subject.trim()).filter(Boolean)));
+  }, [selectedStaffClassOption, visibleClassOptions]);
+  const activeNotebookClassId = hasStaffScope
+    ? (selectedStaffClassOption?.id ?? null)
+    : selectedClassId;
   const memberNotebookSummaries = useMemo<MemberStudentNotebookSummary[]>(() => {
     if (!usesStudentNotebook) {
       return [];
     }
-    return buildMemberStudentNotebookSummaries(records, selectedClassId);
-  }, [records, selectedClassId, usesStudentNotebook]);
+    return buildMemberStudentNotebookSummaries(records, activeNotebookClassId);
+  }, [activeNotebookClassId, records, usesStudentNotebook]);
   const memberNotebookRecords = useMemo(() => {
     if (!usesStudentNotebook) {
       return [];
     }
-    return filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, selectedStudentName);
-  }, [records, selectedClassId, selectedStudentName, usesStudentNotebook]);
+    return filterWrongQuestionRecordsForMemberNotebook(records, activeNotebookClassId, selectedStudentName);
+  }, [activeNotebookClassId, records, selectedStudentName, usesStudentNotebook]);
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
+  const finalErrorTypeOptions = useMemo(() => {
+    return Array.from(new Set([
+      ...WRONG_QUESTION_ERROR_TYPE_OPTIONS,
+      selectedRecord?.analysis.errorType?.trim() ?? '',
+      selectedDraft?.selectedErrorType?.trim() ?? '',
+    ].filter(Boolean)));
+  }, [selectedDraft?.selectedErrorType, selectedRecord?.analysis.errorType]);
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
     reviewDraftDirtyByRecordIdRef.current = {
@@ -240,6 +298,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           id: item.id,
           name: item.name,
           subject: item.subject?.trim() ?? '',
+          teacherUserId: typeof item.teacher_user_id === 'number' ? item.teacher_user_id : null,
         })));
         setTeacherOptions(userItems.map((item) => ({
           id: item.id,
@@ -260,12 +319,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [loadList]);
 
   useEffect(() => {
-    if (!usesStudentNotebook) {
+    if (!usesStudentNotebook || hasStaffScope) {
       return;
     }
 
     setSelectedClassId((current) => current && classOptions.some((item) => item.id === current) ? current : null);
-  }, [classOptions, usesStudentNotebook]);
+  }, [classOptions, hasStaffScope, usesStudentNotebook]);
 
   useEffect(() => {
     if (!usesStudentNotebook || !selectedStudentName) {
@@ -352,9 +411,111 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     })();
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!hasStaffScope) {
+      return;
+    }
+
+    setFilters((current) => {
+      const normalizedClassName = current.className?.trim() ?? '';
+      if (!normalizedClassName) {
+        return current;
+      }
+
+      if (visibleClassOptions.some((item) => item.name === normalizedClassName)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        className: '',
+        studentName: '',
+      };
+    });
+  }, [hasStaffScope, visibleClassOptions]);
+
+  useEffect(() => {
+    if (!hasStaffScope) {
+      return;
+    }
+
+    setFilters((current) => {
+      const normalizedSubject = current.subject?.trim() ?? '';
+      if (!normalizedSubject || subjectOptions.includes(normalizedSubject)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        subject: '',
+      };
+    });
+  }, [hasStaffScope, subjectOptions]);
+
+  useEffect(() => {
+    if (!hasStaffScope) {
+      return;
+    }
+
+    if (!selectedStaffClassOption) {
+      setStudentOptions([]);
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const response = await apiFetch<{ students?: Array<{ id: number; name: string }> }>(`/api/classes/${selectedStaffClassOption.id}/students`);
+        if (!active) {
+          return;
+        }
+
+        setStudentOptions(
+          Array.isArray(response.students)
+            ? response.students.map((item) => ({
+              id: item.id,
+              name: String(item.name ?? '').trim(),
+            })).filter((item) => item.name)
+            : [],
+        );
+      } catch (loadStudentsError) {
+        if (!active) {
+          return;
+        }
+
+        console.error(loadStudentsError);
+        setStudentOptions([]);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [hasStaffScope, selectedStaffClassOption]);
+
+  useEffect(() => {
+    if (!hasStaffScope || !selectedStaffClassOption) {
+      return;
+    }
+
+    setFilters((current) => {
+      const normalizedStudentName = current.studentName?.trim() ?? '';
+      if (!normalizedStudentName || studentOptions.some((item) => item.name === normalizedStudentName)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        studentName: '',
+      };
+    });
+  }, [hasStaffScope, selectedStaffClassOption, studentOptions]);
+
   const handleFilterChange = <K extends keyof WrongQuestionFilters>(key: K, value: WrongQuestionFilters[K]) => {
     setFilters((current) => ({
       ...current,
+      studentName: key === 'className' ? '' : current.studentName,
       [key]: value,
     }));
   };
@@ -424,12 +585,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
-  const selectedRecordOrder = selectedRecord ? memberNotebookRecords.findIndex((item) => item.id === selectedRecord.id) + 1 : 0;
   const handleMemberClassChange = (value: string) => {
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
     setSelectedStudentName(null);
     setSelectedId(null);
+  };
+  const handleStaffClassChange = (value: string) => {
+    const nextClassId = value ? Number(value) : null;
+    const nextClassOption = Number.isFinite(nextClassId)
+      ? visibleClassOptions.find((item) => item.id === nextClassId) ?? null
+      : null;
+    handleFilterChange('className', nextClassOption?.name ?? '');
   };
   const handleCloseMemberNotebook = () => {
     setSelectedStudentName(null);
@@ -438,7 +605,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setSaveError('');
   };
   const handleOpenMemberNotebook = (studentName: string) => {
-    const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, studentName);
+    const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, activeNotebookClassId, studentName);
     setSelectedStudentName(studentName);
     setSelectedId(nextRecords[0]?.id ?? null);
   };
@@ -624,13 +791,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm sm:col-span-2">
               <span className="text-slate-500 dark:text-slate-400">最终错误类型</span>
-              <input
-                type="text"
+              <select
+                aria-label="最终错误类型"
                 value={selectedDraft.selectedErrorType}
                 onChange={(event) => handleDraftChange('selectedErrorType', event.target.value)}
                 className={workspaceFieldClass}
-                placeholder="填写教师最终确认的错误类型"
-              />
+              >
+                <option value="">请选择错误类型</option>
+                {finalErrorTypeOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
             </label>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">核心知识点</span>
@@ -749,25 +920,40 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <form className="grid gap-4 lg:grid-cols-3" onSubmit={handleSubmit}>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">学生姓名</span>
-              <input
-                type="text"
-                value={filters.studentName ?? ''}
-                onChange={(event) => handleFilterChange('studentName', event.target.value)}
-                className={workspaceFieldClass}
-                placeholder="如：Alice"
-              />
+              {selectedStaffClassOption ? (
+                <select
+                  aria-label="学生姓名"
+                  value={filters.studentName ?? ''}
+                  onChange={(event) => handleFilterChange('studentName', event.target.value)}
+                  className={workspaceFieldClass}
+                >
+                  <option value="">全部学生</option>
+                  {studentOptions.map((item) => (
+                    <option key={item.id} value={item.name}>{item.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  aria-label="学生姓名"
+                  type="text"
+                  value={filters.studentName ?? ''}
+                  onChange={(event) => handleFilterChange('studentName', event.target.value)}
+                  className={workspaceFieldClass}
+                  placeholder="如：Alice"
+                />
+              )}
             </label>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">班级</span>
               <select
                 aria-label="班级"
-                value={filters.className ?? ''}
-                onChange={(event) => handleFilterChange('className', event.target.value)}
+                value={selectedStaffClassOption ? String(selectedStaffClassOption.id) : ''}
+                onChange={(event) => handleStaffClassChange(event.target.value)}
                 className={workspaceFieldClass}
               >
                 <option value="">全部班级</option>
-                {classOptions.map((item) => (
-                  <option key={item.id} value={item.name}>
+                {visibleClassOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
                     {item.subject ? `${item.name} · ${item.subject}` : item.name}
                   </option>
                 ))}
@@ -775,13 +961,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </label>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">科目</span>
-              <input
-                type="text"
+              <select
+                aria-label="科目"
                 value={filters.subject ?? ''}
                 onChange={(event) => handleFilterChange('subject', event.target.value)}
                 className={workspaceFieldClass}
-                placeholder="如：数学"
-              />
+              >
+                <option value="">全部科目</option>
+                {subjectOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
             </label>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">老师</span>
@@ -799,16 +989,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </label>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">错误类型</span>
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-                <input
-                  type="text"
-                  value={filters.errorType ?? ''}
-                  onChange={(event) => handleFilterChange('errorType', event.target.value)}
-                  className={`${workspaceFieldClass} pl-11`}
-                  placeholder="如：计算错误"
-                />
-              </div>
+              <select
+                aria-label="错误类型"
+                value={filters.errorType ?? ''}
+                onChange={(event) => handleFilterChange('errorType', event.target.value)}
+                className={workspaceFieldClass}
+              >
+                <option value="">全部错误类型</option>
+                {WRONG_QUESTION_ERROR_TYPE_OPTIONS.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
             </label>
             <div className="flex flex-wrap gap-3 lg:col-span-3 lg:justify-end">
               <button
@@ -829,24 +1020,26 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </form>
         )}
 
-        <label className="space-y-2 text-sm">
-          <span className="text-slate-500 dark:text-slate-400">班级</span>
-          <select
-            aria-label="班级"
-            value={selectedClassId ? String(selectedClassId) : ''}
-            onChange={(event) => handleMemberClassChange(event.target.value)}
-            className={workspaceFieldClass}
-          >
-            <option value="">请选择班级</option>
-            {classOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.subject ? `${item.name} · ${item.subject}` : item.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!hasStaffScope && (
+          <label className="space-y-2 text-sm">
+            <span className="text-slate-500 dark:text-slate-400">班级</span>
+            <select
+              aria-label="班级"
+              value={selectedClassId ? String(selectedClassId) : ''}
+              onChange={(event) => handleMemberClassChange(event.target.value)}
+              className={workspaceFieldClass}
+            >
+              <option value="">请选择班级</option>
+              {classOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.subject ? `${item.name} · ${item.subject}` : item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-        {!selectedClassId ? (
+        {!activeNotebookClassId ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
             请选择班级查看学生错题本。
           </div>
@@ -900,7 +1093,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-white/10">
               <div>
                 <h4 className="text-2xl font-semibold text-slate-900 dark:text-white">{selectedStudentName} 的错题库</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧是紧凑错题目录，右侧保留当前题目的完整详情与编辑区。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按时间查看题目列表，右侧保留当前题目的详情与编辑区。</p>
               </div>
               <button
                 type="button"
@@ -925,7 +1118,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   </span>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {memberNotebookRecords.map((item, index) => {
                     const active = item.id === selectedRecord?.id;
                     return (
@@ -933,20 +1126,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         key={item.id}
                         type="button"
                         onClick={() => setSelectedId(item.id)}
-                        className={`w-full rounded-2xl border px-4 py-3 text-left transition ${active ? 'border-sky-400 bg-sky-50/70 shadow-[0_14px_36px_rgba(47,128,237,0.14)] dark:bg-sky-500/10' : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-white/20'}`}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${active ? 'border-sky-400 bg-sky-50/70 dark:bg-sky-500/10' : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-white/20'}`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">第 {index + 1} 题</p>
-                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.primaryErrorType || item.analysis.errorType || '未分类错题'}</p>
-                          </div>
-                          <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+                          <span className="font-semibold text-slate-900 dark:text-white">第 {index + 1} 题</span>
+                          <span className="text-slate-500 dark:text-slate-400">{item.createdAt || '未记录时间'}</span>
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${item.isMastered ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border-slate-200 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300'}`}>
                             {item.isMastered ? '已掌握' : '未掌握'}
                           </span>
-                        </div>
-                        <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
-                          <span className="truncate">{item.causeNote || item.childReasonText || item.questionText || '待分析'}</span>
-                          <span className="shrink-0">{item.createdAt}</span>
                         </div>
                       </button>
                     );
@@ -955,24 +1142,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </div>
 
               <div className="min-h-0 overflow-y-auto p-5">
-                <div className="mb-5 rounded-[24px] border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.96),rgba(239,246,255,0.92))] p-5 dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(15,23,42,0.88))]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600 dark:text-sky-300">错题档案</p>
-                  <h4 className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
-                    第 {selectedRecordOrder || 1} 题 · {selectedRecord?.analysis.questionCategory || '未分类错题'}
-                  </h4>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">按错题本版式展示题目记录和跟进内容。</p>
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.studentName || selectedStudentName}</span>
-                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.className || '未标注班级'}</span>
-                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.createdAt || '未记录时间'}</span>
-                  </div>
-                </div>
-
-                <div className="mb-5 flex flex-wrap gap-2 border-b border-slate-200/80 pb-4 text-sm dark:border-white/10">
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">题目记录</span>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">教师跟进区</span>
-                </div>
-
                 <div className="mb-5">
                   <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看当前记录并保存跟进内容。</p>

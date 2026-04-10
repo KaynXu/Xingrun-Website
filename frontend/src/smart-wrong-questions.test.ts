@@ -801,6 +801,12 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
+      }
+
       if (input === '/api/admin/users') {
         return createJsonResponse([]);
       }
@@ -911,6 +917,12 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
 
       if (input === '/api/classes') {
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
       }
 
       if (input === '/api/admin/users') {
@@ -1082,6 +1094,12 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
+      }
+
       if (input === '/api/admin/users') {
         return createJsonResponse([]);
       }
@@ -1229,6 +1247,12 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
 
       if (input === '/api/classes') {
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
       }
 
       if (input === '/api/admin/users') {
@@ -1396,6 +1420,12 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
 
       if (input === '/api/classes') {
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
       }
 
       if (input === '/api/admin/users') {
@@ -1944,6 +1974,15 @@ test('SmartWrongQuestionsPage renders class-based student notebooks for owner ac
         ]);
       }
 
+      if (input === '/api/classes/101/students') {
+        return createJsonResponse({
+          students: [
+            { id: 1, name: 'Alice' },
+            { id: 2, name: 'Bob' },
+          ],
+        });
+      }
+
       if (input === '/api/admin/users') {
         return createJsonResponse([
           { id: 7, name: 'Kayn' },
@@ -2345,6 +2384,7 @@ test('SmartWrongQuestionsPage opens a member notebook modal after clicking a stu
               teacher_name: '成员老师',
               teacher_user_id: 7,
               created_at: '2026-03-27T09:00:00Z',
+              archive_status: 'archived',
               parent_note: '第二题还是错',
               status: 'reviewed',
               analysis: {
@@ -2564,7 +2604,10 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
       assert.match(pageText, /第 1 题/);
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
-      assert.match(pageText, /左侧是紧凑错题目录/);
+      assert.match(pageText, /2026-03-27T09:00:00Z/);
+      assert.match(pageText, /已掌握/);
+      assert.doesNotMatch(pageText, /第二题还是错/);
+      assert.doesNotMatch(pageText, /左侧是紧凑错题目录/);
     });
   } finally {
     if (root) {
@@ -2682,9 +2725,10 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /错题档案/);
-      assert.match(pageText, /题目记录/);
-      assert.match(pageText, /教师跟进区/);
+      assert.match(pageText, /错题详情/);
+      assert.doesNotMatch(pageText, /错题档案/);
+      assert.doesNotMatch(pageText, /题目记录/);
+      assert.doesNotMatch(pageText, /教师跟进区/);
     });
   } finally {
     if (root) {
