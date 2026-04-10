@@ -16,7 +16,8 @@
 - 正常发布主路径永远是：`develop -> master -> 部署生产`
 - 不要把 `master -> develop` 当成日常 release 流程
 - 只有在历史上 `master` 已经混入额外提交、而且明确决定要回灌时，才允许单独处理 `master -> develop`
-- 如果服务器 `git fetch origin` 失败，不要一直重试耗时间，直接切到 `git bundle + scp` 兜底发布
+- 生产机仓库现在已经切到 GitHub SSH over 443；正常情况下直接 `git fetch origin` 即可，不应该再默认走 `bundle`
+- 如果服务器 `git fetch origin` 失败，先确认远端 `origin` 仍是 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，再决定是否切 `git bundle + scp` 兜底
 
 ## 发布前检查
 
@@ -95,7 +96,7 @@ git push origin master
 
 ### 方案 A：服务器直接拉最新 `master`
 
-优先用这个方案。先确保 SSH 走密码认证，不要卡在错误的公钥顺序上：
+优先用这个方案。先确保 SSH 走密码认证登录服务器，不要卡在错误的公钥顺序上；服务器仓库内部再通过专用 deploy key 走 GitHub SSH over 443：
 
 ```bash
 export SSHPASS='***REMOVED-ROTATED-SSH-PASSWORD***'
@@ -103,9 +104,10 @@ sshpass -e ssh -tt \
   -o PubkeyAuthentication=no \
   -o PreferredAuthentications=password,keyboard-interactive \
   -o StrictHostKeyChecking=accept-new \
-  ubuntu@49.234.185.86 '
+ubuntu@49.234.185.86 '
 set -euo pipefail
 cd /home/ubuntu/Xingrun-Website
+git remote get-url origin
 git fetch origin
 git checkout master
 git pull --ff-only origin master
@@ -114,6 +116,31 @@ pm2 restart xingrun
 pm2 status xingrun | sed -n "1,20p"
 curl -sS -D - -o /dev/null http://127.0.0.1:5001/ | sed -n "1,10p"
 '
+```
+
+当前生产机修复后的关键状态应当是：
+
+```bash
+cd /home/ubuntu/Xingrun-Website
+git remote get-url origin
+```
+
+输出应为：
+
+```text
+git@github-xingrun-website:KaynXu/Xingrun-Website.git
+```
+
+对应服务器上的 `~/.ssh/config` 使用专用 alias：
+
+```sshconfig
+Host github-xingrun-website
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_xingrun_website_deploy
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
 ```
 
 ### 方案 B：服务器拉 GitHub 失败时，走 `bundle` 兜底

@@ -124,13 +124,32 @@ function readWrongQuestionToken(): string {
   }
 }
 
+function normalizeStudentLibraryPdfPath(path: string): string {
+  const normalizedPath = path.trim();
+  if (!normalizedPath) {
+    return '';
+  }
+  if (/^(https?:\/\/|\/api\/)/.test(normalizedPath)) {
+    return normalizedPath;
+  }
+  const studentLibraryMatch = normalizedPath.match(/(?:^|\/)student-(\d+)\.pdf$/i);
+  if (studentLibraryMatch) {
+    return `/api/wechat/student-libraries/${studentLibraryMatch[1]}`;
+  }
+  return normalizedPath;
+}
+
 function buildWrongQuestionAuthedPath(path: string): string {
+  const normalizedPath = normalizeStudentLibraryPdfPath(path);
+  if (!normalizedPath) {
+    return '';
+  }
   const token = readWrongQuestionToken();
   if (!token) {
-    return path;
+    return normalizedPath;
   }
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}token=${encodeURIComponent(token)}`;
+  const separator = normalizedPath.includes('?') ? '&' : '?';
+  return `${normalizedPath}${separator}token=${encodeURIComponent(token)}`;
 }
 
 function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
