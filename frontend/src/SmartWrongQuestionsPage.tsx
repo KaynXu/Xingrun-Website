@@ -18,6 +18,7 @@ import {
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
   filterWrongQuestionRecordsForMemberNotebook,
+  getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
@@ -59,7 +60,6 @@ const initialFilters: WrongQuestionFilters = {
   subject: '',
   teacherName: '',
   errorType: '',
-  onlyPendingReview: false,
 };
 
 function formatWrongQuestionMappingStatus(status: WrongQuestionMappingStatus): string {
@@ -178,6 +178,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     return filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, selectedStudentName);
   }, [records, selectedClassId, selectedStudentName, usesStudentNotebook]);
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
+  const selectedRecordSemanticModel = selectedRecord ? getWrongQuestionSemanticModel(selectedRecord) : null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
@@ -505,7 +506,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
       </div>
 
-      {selectedRecord.source === 'wechat_mp' && (
+      {selectedRecordSemanticModel === 'wechat_mastery' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div>
             <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传记录</p>
@@ -564,7 +565,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
 
-      {selectedRecord.source !== 'wechat_mp' && (
+      {selectedRecordSemanticModel === 'downstream_review' && (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className={`${workspaceSoftCardClass} p-4`}>
@@ -595,7 +596,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </>
       )}
 
-      {selectedDraft && selectedRecord.source === 'wechat_mp' && (
+      {selectedDraft && selectedRecordSemanticModel === 'wechat_mastery' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -612,7 +613,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </button>
           </div>
 
-          {selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
+          {selectedRecordSemanticModel === 'wechat_mastery' && !selectedRecord.isGeometry && (
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">题目文本</span>
               <textarea
@@ -637,7 +638,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
 
-      {selectedDraft && selectedRecord.source !== 'wechat_mp' && (
+      {selectedDraft && selectedRecordSemanticModel === 'downstream_review' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
