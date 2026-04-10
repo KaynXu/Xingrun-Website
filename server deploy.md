@@ -2,6 +2,7 @@
 
 > 当前公网生产机就是这台：`49.234.185.86`
 > 默认部署目标按这台机器处理，除非明确说明要发别的环境。
+> 完整生产发布步骤不要只看这份简表，统一以 `docs/deploy-release.md` 为准。
 
 ## 服务器 1
 
@@ -20,7 +21,13 @@ cd /Users/ark.mini/Desktop/Xingrun-Website
 ./scripts/deploy_backend.sh master
 ```
 
-如果要发布 `develop`：
+如果只是把 `develop` 推到远端，不等于已经发生产。生产正式发布仍然是：
+
+`develop -> master -> 生产部署`
+
+完整步骤见 `docs/deploy-release.md`。
+
+如果只是同步 `develop` 远端：
 
 ```bash
 cd /Users/ark.mini/Desktop/Xingrun-Website
@@ -85,5 +92,5 @@ curl -fsS http://127.0.0.1:5001/ | head -c 200 && echo
 ## 备注
 
 - 线上服务器默认仓库路径是 `/home/ubuntu/Xingrun-Website`
-- 当前发布分支以 `develop` 为准；不要再按旧文档直接 `git pull origin master`
+- 当前生产发布目标分支是 `master`，开发集成分支是 `develop`
 - 如果未来再引入 staging 或备用机，必须在文档里明确标注用途，不能覆盖这份生产机说明
