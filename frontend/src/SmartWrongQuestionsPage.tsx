@@ -484,7 +484,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       {selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传信息</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传记录</p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，孩子上传时会先写清自己为什么错，系统再归类固定错因并生成备注。</p>
           </div>
           {selectedRecord.imageUrl ? (
@@ -511,7 +511,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.primaryErrorType || selectedRecord.analysis.errorType || '待归类'}</p>
             </div>
             <div className={`${workspaceCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">备注栏</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 备注</p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{selectedRecord.causeNote || selectedRecord.analysis.studentNote || '暂无备注'}</p>
             </div>
           </div>
@@ -803,7 +803,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       </div>
                       <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
                         <span>{item.totalCount} 题</span>
-                        <span>{item.pendingReviewCount} 待跟进</span>
+                        <span>{item.pendingReviewCount} 未掌握</span>
                       </div>
                     </button>
                   );
@@ -1066,7 +1066,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.primaryErrorType || item.analysis.errorType || '未分类错题'}</p>
                           </div>
                           <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
-                            {item.isMastered ? '已掌握' : '待跟进'}
+                            {item.isMastered ? '已掌握' : '未掌握'}
                           </span>
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">

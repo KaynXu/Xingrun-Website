@@ -834,6 +834,7 @@ test('smart wrong question page shows wechat mini-program source badge and local
   assert.match(pageSource, /微信小程序/);
   assert.match(pageSource, /孩子自述错因/);
   assert.match(pageSource, /AI 归类错因/);
+  assert.match(pageSource, /AI 备注/);
   assert.match(pageSource, /是否掌握/);
 });
 
@@ -2565,6 +2566,116 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
       assert.match(pageText, /错题档案/);
       assert.match(pageText, /题目记录/);
       assert.match(pageText, /教师跟进区/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage member notebook keeps wechat records on error-cause semantics only', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          {
+            id: 101,
+            name: '六年级 1 班',
+            subject: '数学',
+          },
+        ]);
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/wrong-questions')) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'member-wechat-record-1',
+              source: 'wechat_mp',
+              student_name: 'Alice',
+              class_display_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_display_name: '成员老师',
+              created_at: '2026-03-29T08:00:00Z',
+              recognition_status: 'recognized',
+              is_geometry: 0,
+              question_text: '计算 2+3×4 的结果。',
+              child_raw_reason_text: '我把乘法优先级看漏了',
+              primary_error_type: '计算粗心',
+              secondary_error_summary: '孩子知道规则，但这道题没先算乘法。',
+              archive_status: 'active',
+              analysis: {
+                question_category: '计算',
+                error_type: '计算粗心',
+                knowledge_points: ['运算顺序'],
+                is_repeated_mistake: '是',
+                student_note: '孩子知道规则，但这道题没先算乘法。',
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 1,
+            high_priority_count: 0,
+            pending_review_count: 1,
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    const classSelect = domEnvironment.container.querySelector('select[aria-label="班级"]') as HTMLSelectElement | null;
+    assert.ok(classSelect);
+
+    await act(async () => {
+      classSelect.value = '101';
+      classSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const aliceButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('Alice'));
+    assert.ok(aliceButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      aliceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /孩子自述错因/);
+      assert.match(pageText, /AI 归类错因/);
+      assert.match(pageText, /AI 备注/);
+      assert.match(pageText, /是否掌握/);
+      assert.doesNotMatch(pageText, /重复错题/);
+      assert.doesNotMatch(pageText, /知识点/);
     });
   } finally {
     if (root) {

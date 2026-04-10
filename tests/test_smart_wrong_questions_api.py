@@ -666,14 +666,14 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         review = self.client.put(
             f"/api/wrong-questions/{record['id']}/review",
             headers=self.auth_headers(owner_payload["token"]),
-            json={"teacher_comment": "下节课复讲", "status": "reviewed"},
+            json={"is_mastered": True},
         )
 
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.get_json()["id"], record["id"])
         self.assertEqual(review.status_code, 200)
-        self.assertEqual(review.get_json()["record"]["status"], "reviewed")
-        self.assertEqual(review.get_json()["record"]["teacher_comment"], "下节课复讲")
+        self.assertEqual(review.get_json()["record"]["archive_status"], "archived")
+        self.assertTrue(review.get_json()["record"]["is_mastered"])
         fetch_wrong_question_record.assert_not_called()
         save_wrong_question_review.assert_not_called()
 
@@ -697,8 +697,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             f"/api/wrong-questions/{record['id']}/review",
             headers=self.auth_headers(owner_payload["token"]),
             json={
-                "teacher_comment": "老师备注",
-                "status": "reviewed",
+                "is_mastered": False,
                 "question_text": "老师修正后的题目文本",
             },
         )

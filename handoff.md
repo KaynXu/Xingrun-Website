@@ -1,3 +1,28 @@
+## 错题右栏已对齐错因/掌握语义（2026-04-10）
+
+### 已完成
+- 已把 `member` 错题本弹窗右栏的微信错题文案进一步收口到新语义：保留 `孩子自述错因 / AI 归类错因 / AI 备注 / 是否掌握`，不再把旧的 `知识点 / 重复错题` 块混进微信记录详情。
+- 已同步把学生卡片和左侧目录中的未完成状态文案从 `待跟进` 收口为 `未掌握`，与当前“老师侧只勾掌握状态”的业务语义保持一致。
+- 已补前端 member modal 回归，明确防止微信错题详情重新出现旧 `重复错题 / 知识点` 展示。
+- 已顺手修正一条过期后端 API 测试：本地微信错题 `PUT /api/wrong-questions/<id>/review` 现在断言 `archive_status / is_mastered`，不再断言旧 `status='reviewed'` 语义。
+
+### proof
+- 前端临时脚本：系统临时脚本执行 `cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
+- 完整输出结论：
+  - `tests 33`
+  - `pass 33`
+  - `fail 0`
+- 后端临时脚本：系统临时脚本执行 `/opt/homebrew/bin/python3 -m unittest tests.test_wechat_parent_upload_api tests.test_wechat_parent_upload_data tests.test_smart_wrong_questions_api`
+- 完整输出结论：
+  - `Ran 47 tests in 0.756s`
+  - `OK`
+
+### 剩余问题
+- staff 视图里的下游 `downstream` 错题仍保留旧 `教师复盘 / 知识点 / 原因分析` 结构，这是当前外部错题服务的老契约，不在这次微信错题语义收口范围内。
+
+### 下一步方向
+- 如果接下来要继续统一错题工作区，可以再决定是否把 staff 全局列表里针对 `wechat_mp` 的摘要文案也进一步改成“错因/掌握”语言，而把 `downstream` 继续保留为独立老流程。
+
 ## member 错题本改为弹窗 + 紧凑目录（2026-04-10）
 
 ### 已完成
