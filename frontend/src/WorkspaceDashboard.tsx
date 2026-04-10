@@ -54,7 +54,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
         </button>
         <button type="button" onClick={() => setActivePage('smartWrongQuestions')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">智能错题</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">回到错题工作区，继续处理学生错题与跟进内容。</span>
+          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看学生错题，继续记录错因和掌握情况。</span>
         </button>
       </section>
 
@@ -74,7 +74,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
         <div className={`${styles.cardClass} p-6`}>
           <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">最近工作</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            最近工作区会承接复习生成、课堂反馈和错题处理的最近记录。当前阶段先保留真实说明，不伪造任务列表。
+            这里会继续展示复习生成、课堂反馈和错题跟进的最近记录。当前阶段先保留真实说明，不伪造任务列表。
           </p>
         </div>
       </section>
@@ -195,7 +195,7 @@ export function getOrganizationManagementEntries(canOpenAccounts: boolean): Orga
     },
     {
       title: '智能错题',
-      description: '回到错题工作区，继续处理学生错题与跟进内容。',
+      description: '查看学生错题，继续记录错因和掌握情况。',
       page: 'smartWrongQuestions',
     },
   ];
