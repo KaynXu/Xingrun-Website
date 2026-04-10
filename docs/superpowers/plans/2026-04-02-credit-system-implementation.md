@@ -115,7 +115,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         credit_manager.record_ai_charge(
             organization_id=self.owner["organization_id"],
             user_id=approved["id"],
-            feature_key="teacher_feedback_draft",
+            feature_key="legacy_lesson_feedback_draft",
             provider="openai",
             model="gpt-4o",
             input_tokens=80,
@@ -238,7 +238,7 @@ conn.execute(
 # credit_manager.py
 CREDIT_PRICING_RULES = {
     "consultation_ai_parse": {"base_credits": 3, "extra_token_threshold": 4000, "extra_credits": 2},
-    "teacher_feedback_draft": {"base_credits": 2, "extra_token_threshold": 0, "extra_credits": 0},
+    "legacy_lesson_feedback_draft": {"base_credits": 2, "extra_token_threshold": 0, "extra_credits": 0},
     "lesson_plan_generate": {"base_credits": 8, "extra_token_threshold": 5000, "extra_credits": 2},
     "audio_transcription": {"base_credits": 4, "extra_token_threshold": 0, "extra_credits": 0},
     "monthly_plan_generate": {"base_credits": 10, "extra_token_threshold": 6000, "extra_credits": 2},
@@ -570,8 +570,8 @@ from unittest.mock import patch
         self.assertEqual(response.status_code, 402)
         self.assertIn("积分不足", response.get_json()["error"])
 
-    @patch("app.generate_teacher_feedback_draft")
-    def test_teacher_feedback_draft_records_ai_usage_and_deducts_balance(self, mock_feedback):
+    @patch("app.generate_legacy_lesson_feedback_draft")
+    def test_legacy_lesson_feedback_draft_records_ai_usage_and_deducts_balance(self, mock_feedback):
         credit_manager.apply_manual_adjustment(
             organization_id=1,
             actor_user_id=1,
@@ -607,7 +607,7 @@ from unittest.mock import patch
 
 - [ ] **Step 2: Run the AI charging tests and verify they fail because the routes do not yet enforce balance checks or capture usage metadata**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-Review/Xingrun-Summary && /Users/ark.mini/Desktop/Xingrun-Review/.venv/bin/python -m unittest tests.test_credit_system.CreditSystemApiTestCase.test_consultation_ai_parse_blocks_when_balance_is_insufficient tests.test_credit_system.CreditSystemApiTestCase.test_teacher_feedback_draft_records_ai_usage_and_deducts_balance -v`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Review/Xingrun-Summary && /Users/ark.mini/Desktop/Xingrun-Review/.venv/bin/python -m unittest tests.test_credit_system.CreditSystemApiTestCase.test_consultation_ai_parse_blocks_when_balance_is_insufficient tests.test_credit_system.CreditSystemApiTestCase.test_legacy_lesson_feedback_draft_records_ai_usage_and_deducts_balance -v`
 
 Expected: FAIL because the current routes return `200` without checking balance and do not write credit ledger rows.
 
@@ -633,7 +633,7 @@ def parse_consultation_batch_text(raw_text: str, *, include_usage: bool = False)
     return payload
 
 
-def generate_teacher_feedback_draft(*, lesson: dict, students: list[dict], custom_templates: list[dict], include_usage: bool = False):
+def generate_legacy_lesson_feedback_draft(*, lesson: dict, students: list[dict], custom_templates: list[dict], include_usage: bool = False):
     response = client.chat.completions.create(...)
     merged_text = response.choices[0].message.content.strip()
     if include_usage:
@@ -700,9 +700,9 @@ def api_consultation_ai_parse():
 
 - [ ] **Step 4: Run targeted backend tests plus the existing AI-route suites to verify charging does not regress route behavior**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-Review/Xingrun-Summary && /Users/ark.mini/Desktop/Xingrun-Review/.venv/bin/python -m unittest tests.test_credit_system tests.test_consultation_flow tests.test_teacher_feedback_api -v`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Review/Xingrun-Summary && /Users/ark.mini/Desktop/Xingrun-Review/.venv/bin/python -m unittest tests.test_credit_system tests.test_consultation_flow tests.test_legacy_lesson_feedback_api -v`
 
-Expected: PASS with new credit blocking / charging assertions and no regressions in consultation parse or teacher feedback route behavior.
+Expected: PASS with new credit blocking / charging assertions and no regressions in consultation parse or legacy lesson feedback route behavior.
 
 - [ ] **Step 5: Commit the AI charging integration**
 
@@ -954,7 +954,7 @@ def api_admin_credit_adjustments():
 
 - [ ] **Step 4: Run the final backend and frontend verification suites**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-Review/Xingrun-Summary && /Users/ark.mini/Desktop/Xingrun-Review/.venv/bin/python -m unittest tests.test_credit_system tests.test_account_flow tests.test_consultation_flow tests.test_teacher_feedback_api -v && cd frontend && npx tsx --test src/workspace-navigation.test.ts src/credit-center.test.tsx src/account-card.test.tsx && npm run lint && npm run build`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Review/Xingrun-Summary && /Users/ark.mini/Desktop/Xingrun-Review/.venv/bin/python -m unittest tests.test_credit_system tests.test_account_flow tests.test_consultation_flow tests.test_legacy_lesson_feedback_api -v && cd frontend && npx tsx --test src/workspace-navigation.test.ts src/credit-center.test.tsx src/account-card.test.tsx && npm run lint && npm run build`
 
 Expected: PASS across backend credit coverage, account/auth regressions, existing AI-route suites, frontend source tests, TypeScript lint, and production build.
 

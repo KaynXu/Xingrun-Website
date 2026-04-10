@@ -24,7 +24,7 @@ The current product already has:
 
 - Organizations and role-based access with `super_owner`, `owner`, `admin`, and `member`.
 - Organization-scoped membership and owner approval flows.
-- Several AI-backed features with real provider cost, including lesson plan generation, consultation batch parsing, and teacher feedback draft generation.
+- Several AI-backed features with real provider cost, including lesson plan generation, consultation batch parsing, and legacy lesson feedback draft generation.
 - A React frontend and Flask backend in one repository backed by SQLite.
 
 The existing model is a good fit for organization-shared credits because users already belong to one organization and owner-only admin surfaces already exist.
@@ -201,7 +201,7 @@ Pure token-based pricing is accurate but hard for owners to understand because t
 ### Recommended phase 1 rule shape
 
 - `consultation_ai_parse`: fixed base credit, with optional extra charge if token usage crosses a configured threshold
-- `teacher_feedback_draft`: fixed per-run charge
+- `legacy_lesson_feedback_draft`: fixed per-run charge
 - `lesson_plan_generate`: fixed per-run charge
 - `audio_transcription`: separated from lesson generation when present so cost is understandable and tunable
 
@@ -235,7 +235,7 @@ All AI-cost-bearing entry points should use one shared accounting layer instead 
 
 - lesson review generation
 - consultation AI batch parsing
-- teacher feedback draft generation
+- legacy lesson feedback draft generation
 - any future token-consuming AI helper route
 
 ## Owner Experience

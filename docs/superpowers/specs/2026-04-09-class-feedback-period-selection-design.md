@@ -329,7 +329,7 @@
 重点文件：
 
 - [tests/test_class_feedback_api.py](tests/test_class_feedback_api.py)
-- [tests/test_teacher_feedback_store.py](tests/test_teacher_feedback_store.py)
+- [tests/test_lesson_class_feedback_store.py](tests/test_lesson_class_feedback_store.py)
 
 ### Frontend
 

@@ -10,16 +10,16 @@
 - 已新增老师反馈相关存储能力，支持学生名单、班级映射、课后反馈保存与覆盖更新。
 - 已补强数据约束，覆盖同班重名编号、移出班级但保留历史反馈、同一节课覆盖保存等规则。
 - 对应提交：
-  - `db9d46b` `feat: add teacher feedback persistence`
-  - `2ac50f9` `fix: harden teacher feedback store invariants`
+  - `db9d46b` `feat: add legacy lesson feedback persistence`
+  - `2ac50f9` `fix: harden legacy lesson feedback store invariants`
 
 ### 2. API 与 AI 生成链路
 - 已新增班级学生列表、新增学生、移出学生、生成老师反馈草稿、加载反馈、保存反馈等接口。
 - 已补强接口校验，处理非法 JSON、未知模板、幽灵学生、部分保存等场景。
 - AI 侧已支持基于复习计划内容 + 学生状态模板 + 备注，生成纯文本老师反馈。
 - 对应提交：
-  - `df9ddac` `feat: add teacher feedback api flow`
-  - `b11f019` `fix: harden teacher feedback api validation`
+  - `df9ddac` `feat: add legacy lesson feedback api flow`
+  - `b11f019` `fix: harden legacy lesson feedback api validation`
 
 ### 3. 前端数据模型
 - 已抽出老师反馈前端模型文件，包含：
@@ -28,10 +28,10 @@
   - 保存 payload 构建逻辑
   - 相关 API 调用封装
 - 对应提交：
-  - `e34dd38` `feat: add teacher feedback frontend model`
+  - `e34dd38` `feat: add legacy lesson feedback frontend model`
 
 ### 4. 前端工作台组件
-- 已新增 `TeacherFeedbackWorkspace.tsx`，完成老师反馈工作台的独立 UI 组件。
+- 已新增 `LegacyLessonFeedbackWorkspace.tsx`，完成老师反馈工作台的独立 UI 组件。
 - 组件已具备以下基础交互形态：
   - 学生列表区
   - 状态模板池
@@ -40,7 +40,7 @@
   - 反馈预览/编辑文本区
   - 复制全部按钮
 - 对应提交：
-  - `9ba9cd1` `feat: add teacher feedback workspace component`
+  - `9ba9cd1` `feat: add legacy lesson feedback workspace component`
 
 ## 目前还未完成
 

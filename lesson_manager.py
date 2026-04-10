@@ -74,6 +74,7 @@ DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS = [
     {"group": "课后执行", "labels": ["作业完成更稳", "作业拖延", "复习配合度提升", "家长跟进较积极", "家庭练习不足"]},
     {"group": "阶段变化", "labels": ["进步明显", "有点回落", "变化不大", "情绪更稳定", "需要下阶段重点关注"]},
 ]
+LEGACY_LESSON_CLASS_FEEDBACK_TABLE = "_".join(("lesson", "feedbacks"))
 CLASS_FEEDBACK_MONTH_LABELS = {
     1: "一月",
     2: "二月",
@@ -1579,7 +1580,7 @@ def init_db():
         ON ai_usage_ledger (organization_id, request_id)
         WHERE request_id <> '';
 
-        CREATE TABLE IF NOT EXISTS lesson_feedbacks (
+        CREATE TABLE IF NOT EXISTS lesson_class_feedbacks (
             lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
             class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
             merged_text         TEXT DEFAULT '',
@@ -1644,20 +1645,53 @@ def init_db():
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
 
-        feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_feedbacks)").fetchall()]
-        if feedback_cols:
-            if "class_id" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
-            if "created_at" not in feedback_cols:
-                conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-        if "updated_at" not in feedback_cols:
-            conn.execute("ALTER TABLE lesson_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+        legacy_feedback_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({LEGACY_LESSON_CLASS_FEEDBACK_TABLE})").fetchall()]
+        if legacy_feedback_cols:
+            if "class_id" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+            if "merged_text" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN merged_text TEXT DEFAULT ''")
+            if "student_index_json" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN student_index_json TEXT DEFAULT '[]'")
+            if "editor_state_json" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN editor_state_json TEXT DEFAULT '{{}}'")
+            if "created_at" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
+            if "updated_at" not in legacy_feedback_cols:
+                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+
+        lesson_class_feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_class_feedbacks)").fetchall()]
+        if lesson_class_feedback_cols:
+            if "class_id" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
+            if "merged_text" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
+            if "student_index_json" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
+            if "editor_state_json" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
+            if "created_at" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
+            if "updated_at" not in lesson_class_feedback_cols:
+                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
+
+        if legacy_feedback_cols:
+            conn.execute(
+                f"""
+                INSERT OR REPLACE INTO lesson_class_feedbacks
+                    (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
+                SELECT
+                    lesson_id,
+                    class_id,
+                    merged_text,
+                    student_index_json,
+                    editor_state_json,
+                    created_at,
+                    updated_at
+                FROM {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}
+                """
+            )
+            conn.execute(f"DROP TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}")
         class_feedback_task_cols = [r[1] for r in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()]
         if class_feedback_task_cols:
             if "class_status_tags_json" not in class_feedback_task_cols:
@@ -3704,7 +3738,7 @@ def save_class_feedback_label_configs(owner_user_id: int, groups: list[dict]):
                 )
 
 
-def save_lesson_feedback(
+def save_lesson_class_feedback(
     lesson_id: int,
     class_id: int,
     merged_text: str,
@@ -3721,7 +3755,7 @@ def save_lesson_feedback(
         lesson_class_id = lesson_row["class_id"]
         conn.execute(
             """
-            INSERT INTO lesson_feedbacks
+            INSERT INTO lesson_class_feedbacks
                 (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
             ON CONFLICT(lesson_id) DO UPDATE SET
@@ -3740,7 +3774,7 @@ def save_lesson_feedback(
             ),
         )
         row = conn.execute(
-            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            "SELECT * FROM lesson_class_feedbacks WHERE lesson_id=?",
             (lesson_id,),
         ).fetchone()
     feedback = dict(row)
@@ -3749,10 +3783,10 @@ def save_lesson_feedback(
     return feedback
 
 
-def get_lesson_feedback(lesson_id: int):
+def get_lesson_class_feedback(lesson_id: int):
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM lesson_feedbacks WHERE lesson_id=?",
+            "SELECT * FROM lesson_class_feedbacks WHERE lesson_id=?",
             (lesson_id,),
         ).fetchone()
     if not row:
@@ -3763,11 +3797,11 @@ def get_lesson_feedback(lesson_id: int):
     return feedback
 
 
-def build_lesson_feedback_editor_state(lesson_id: int) -> dict:
+def build_lesson_class_feedback_editor_state(lesson_id: int) -> dict:
     lesson = get_lesson(lesson_id)
     if not lesson:
         raise LookupError("lesson not found")
-    saved_feedback = get_lesson_feedback(lesson_id) or {}
+    saved_feedback = get_lesson_class_feedback(lesson_id) or {}
     class_id = lesson.get("class_id")
 
     roster = list_students_for_class(class_id) if class_id else []

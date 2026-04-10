@@ -35,7 +35,7 @@
 ## Existing Context
 
 - 当前仓库已经有老师反馈工作台能力，包含前后端存储、生成草稿、自动保存、复制全部等基础链路。
-- 已有 `TeacherFeedbackWorkspace` 与相关 API 更偏向“单节课 / 课后反馈”场景，而本需求是向上抽象成“班级阶段反馈”。
+- 已有 `LegacyLessonFeedbackWorkspace` 与相关 API 更偏向“单节课 / 课后反馈”场景，而本需求是向上抽象成“班级阶段反馈”。
 - 当前讨论中已经确认：这个能力不应绑定“每周一次”，因为假期存在按天发送班级测评的场景。
 - 当前系统已经沉淀了课次记录、课后反馈等素材，适合作为“班级反馈生成”的基础数据源。
 - 当前系统已经有班级下学生 roster 能力，可通过 `/api/classes/<id>/students` 读取和维护。
@@ -357,7 +357,7 @@
 - `task_id`
 - `source_type`
   - `lesson`
-  - `teacher_feedback`
+  - `legacy_lesson_feedback`
   - `confirmed_class_feedback`
 - `source_id`
 - `student_id`（可空；班级级素材可不绑定学生）

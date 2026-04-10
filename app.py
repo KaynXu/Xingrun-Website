@@ -59,7 +59,6 @@ from lesson_manager import (
     approve_registration_request,
     authenticate_user,
     bind_parent_to_student,
-    build_lesson_feedback_editor_state,
     confirm_class_feedback_task,
     create_class_feedback_task,
     create_pending_lesson,

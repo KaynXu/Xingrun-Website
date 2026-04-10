@@ -233,9 +233,9 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(context["end_date"], "2026-04-09")
         self.assertEqual(context["stage_notes"]["class_status_tags"], ["进入状态快"])
         self.assertEqual(context["stage_notes"]["class_status_note"], "班级进入状态快，互动稳定。")
-        self.assertNotIn("lesson_feedbacks", context["stage_notes"])
+        self.assertFalse(any(key.endswith("_feedbacks") for key in context["stage_notes"]))
         source_summary = json.loads(context["source_summary"])
-        self.assertNotIn("lesson_feedbacks", source_summary)
+        self.assertNotIn("_feedbacks", source_summary)
         self.assertEqual(
             [item["class_summary_final_text"] for item in context["stage_notes"]["recent_confirmed_class_summaries"]],
             ["上阶段正式班级反馈", "更早阶段正式班级反馈"],

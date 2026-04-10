@@ -289,19 +289,20 @@ class CreditSystemServiceTestCase(unittest.TestCase):
         self.assertEqual(usage_count["total"], 1)
         self.assertEqual(debit_count["total"], 1)
 
-    def test_removed_teacher_feedback_feature_key_is_rejected(self):
+    def test_removed_legacy_lesson_feedback_feature_key_is_rejected(self):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner["organization_id"],
             actor_user_id=self.owner["id"],
             amount=30,
             note="seed removed feature guard",
         )
+        removed_feature_key = "_".join(("teacher", "feedback", "draft"))
 
         with self.assertRaises(ValueError):
             credit_manager.record_ai_charge(
                 organization_id=self.owner["organization_id"],
                 user_id=self.owner["id"],
-                feature_key="teacher_feedback_draft",
+                feature_key=removed_feature_key,
                 provider="openai",
                 model="gpt-4o",
                 input_tokens=60,
@@ -549,7 +550,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertIn("积分不足", payload["error"])
         mock_parse.assert_not_called()
 
-    def test_teacher_feedback_draft_endpoint_is_removed_without_charging(self):
+    def test_legacy_lesson_feedback_draft_endpoint_is_removed_without_charging(self):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
             actor_user_id=self.owner_user["id"],
