@@ -1,3 +1,30 @@
+## handoff 审查结论：下一步 / 未统一风险 / 删除残留（2026-04-10）
+
+### 推荐下一步
+- 下一步最适合做一轮“智能错题语义收口”小扫尾，只处理当前代码里还看得见的旧话术，不扩到底层契约改造。
+- 优先清的是真实源码而不是历史 handoff：
+  - `frontend/src/SmartWrongQuestionsPage.tsx` 里仍有 `错题工作区 / 教师复盘 / 保存教师复盘`。
+  - `frontend/src/App.tsx` 里仍有 `题库沉淀 / 题库资产 / 错因沉淀` 一类旧产品说法。
+- 这一步适合直接在当前 `develop` 做，因为工作区干净、范围小，而且能先把“UI 已改、文案未统一”的尾巴收掉。
+
+### 潜在未统一风险
+- 当前智能错题仍是两套语义并存：
+  - `wechat_mp` 走 `wechat_mastery`，主状态是 `is_mastered -> archive_status`
+  - `downstream` 走 `downstream_review`，主状态仍是 `teacher_comment / status / 知识点 / 原因分析`
+- 这个边界虽然现在已显式分支，但前端共享同一套 `WrongQuestionRecord / WrongQuestionReviewDraft`，后续如果有人继续“顺手统一字段”，很容易把微信错题旧字段又写回去。
+- `wrong_question_submissions` 表里旧兼容列 `teacher_comment` 与 `status` 还在，测试也保留了“传旧字段但应忽略”的断言；它们现在不是主流程字段，但仍是后续误写入口。
+- `smart_wrong_questions.py` 这条下游代理链仍然保留，说明产品方向虽然已转向本地 `wechat_mp`，但运行时仍存在“本地 + downstream”双来源模型，真正统一前不要在前端单边改语义。
+
+### 已删除但仍有残留
+- 已删除的旧智能错题入口本身基本清干净了，但残留还在：
+  - `frontend/src/SmartWrongQuestionsPage.tsx` 仍保留 `教师复盘`、`错题工作区` 等旧命名，用在 `downstream` 分支上。
+  - `frontend/src/App.tsx` 仍有 `题库沉淀 / 题库资产 / 错因沉淀` 等历史文案。
+- 已删除的旧 `teacher feedback` 工作流还有明显残留命名：
+  - `lesson_manager.py` 仍保留 `lesson_feedbacks` 表和 `save_lesson_feedback()` / `build_lesson_feedback_editor_state()` helper。
+  - `app.py` 仍导入 `build_lesson_feedback_editor_state`，但当前源码里没有实际调用。
+  - `tests/test_teacher_feedback_store.py` 仍沿用旧文件名，虽然测试内容现在更接近“课堂反馈存储”。
+- 文档残留依然很多：`docs/superpowers/*` 和历史 `handoff.md` 条目里仍大量出现 teacher feedback / 已删除 helper 的旧上下文；这不一定影响运行，但会持续误导下一轮判断。
+
 ## 智能错题残留旧筛选已彻底清干净并完成生产发布（2026-04-10）
 
 ### 已完成
