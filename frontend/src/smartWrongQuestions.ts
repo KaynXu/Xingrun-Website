@@ -354,7 +354,11 @@ function normalizeDraftList(values: string[]): string[] {
 
 export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
   const draft: WrongQuestionReviewDraft = {
-    selectedErrorType: record.analysis.selectedErrorType?.trim() ?? '',
+    selectedErrorType: record.analysis.selectedErrorType?.trim()
+      || (isWechatMiniProgramWrongQuestionRecord(record)
+        ? record.primaryErrorType?.trim() || record.analysis.errorType?.trim()
+        : '')
+      || '',
     selectedKnowledgePoints: normalizeDraftList(record.analysis.selectedKnowledgePoints ?? []),
     selectedActions: normalizeDraftList(record.analysis.selectedActions ?? []),
     selectedReasons: normalizeDraftList(record.analysis.selectedReasons ?? []),

@@ -760,6 +760,7 @@ test('smart wrong question page shows wechat mini-program source badge and local
   assert.match(pageSource, /微信小程序/);
   assert.match(pageSource, /孩子自述错因/);
   assert.match(pageSource, /AI 归类错因/);
+  assert.match(pageSource, /aria-label="AI 归类错因"/);
   assert.match(pageSource, /AI 备注/);
   assert.match(pageSource, /是否掌握/);
 });
@@ -786,6 +787,8 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
 
   assert.match(pageSource, /题目文本/);
   assert.match(pageSource, /填写可直接进入错题库 PDF 的题目文本/);
+  assert.match(pageSource, /预览 PDF/);
+  assert.match(pageSource, /下载 PDF/);
   assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
 });
 
@@ -799,6 +802,12 @@ test('SmartWrongQuestionsPage shows canonical identities, snapshots, and an unre
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (input === '/api/classes') {
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
       }
 
       if (input === '/api/admin/users') {
@@ -913,6 +922,12 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
+      }
+
       if (input === '/api/admin/users') {
         return createJsonResponse([]);
       }
@@ -1010,10 +1025,10 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
 
     await waitForAssertion(() => {
       assert.ok(fetchCalls.length >= 4);
-      const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
+      const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终错误类型"]') as HTMLSelectElement | null;
       const selectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
 
-      assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
+      assert.ok(selectedErrorTypeInput instanceof HTMLSelectElement);
       assert.ok(selectedKnowledgePointsTextarea instanceof HTMLTextAreaElement);
       assert.equal(selectedErrorTypeInput.value, '');
       assert.equal(selectedKnowledgePointsTextarea.value, '');
@@ -1049,9 +1064,9 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     });
 
     await waitForAssertion(() => {
-      const rebuiltSelectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
+      const rebuiltSelectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终错误类型"]') as HTMLSelectElement | null;
       const rebuiltSelectedKnowledgePointsTextarea = domEnvironment.container.querySelector('textarea[placeholder="每行一个知识点"]') as HTMLTextAreaElement | null;
-      assert.ok(rebuiltSelectedErrorTypeInput instanceof HTMLInputElement);
+      assert.ok(rebuiltSelectedErrorTypeInput instanceof HTMLSelectElement);
       assert.ok(rebuiltSelectedKnowledgePointsTextarea instanceof HTMLTextAreaElement);
       assert.equal(rebuiltSelectedErrorTypeInput.value, '');
       assert.equal(rebuiltSelectedKnowledgePointsTextarea.value, '');
@@ -1080,6 +1095,12 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
 
       if (input === '/api/classes') {
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
       }
 
       if (input === '/api/admin/users') {
@@ -1231,6 +1252,12 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
       }
 
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
+      }
+
       if (input === '/api/admin/users') {
         return createJsonResponse([]);
       }
@@ -1343,23 +1370,44 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /题目文本/);
+      assert.match(pageText, /预览 PDF/);
+      assert.match(pageText, /下载 PDF/);
       assert.match(pageText, /孩子自述错因/);
       assert.match(pageText, /AI 归类错因/);
       const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+      const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="AI 归类错因"]') as HTMLSelectElement | null;
+      const previewLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('预览 PDF')) ?? null;
+      const downloadLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('下载 PDF')) ?? null;
       assert.ok(textarea instanceof HTMLTextAreaElement);
+      assert.ok(errorTypeSelect instanceof HTMLSelectElement);
+      assert.equal(errorTypeSelect.value, '计算粗心');
+      assert.equal(previewLink?.tagName, 'A');
+      assert.equal(downloadLink?.tagName, 'A');
+      assert.equal(previewLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
+      assert.equal(downloadLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
+      assert.equal(downloadLink?.getAttribute('download'), 'student-library.pdf');
       assert.equal(textarea.value, '原始 AI 文本');
     });
 
     const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+    const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="AI 归类错因"]') as HTMLSelectElement | null;
     const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
 
     assert.ok(questionTextarea instanceof HTMLTextAreaElement);
+    assert.ok(errorTypeSelect instanceof HTMLSelectElement);
     assert.ok(masteryCheckbox instanceof HTMLInputElement);
     assert.ok(saveButton instanceof HTMLButtonElement);
 
+    await act(async () => {
+      errorTypeSelect.value = '方法错误';
+      errorTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
     const payload = buildWrongQuestionReviewPayload({
-      selectedErrorType: '',
+      selectedErrorType: '方法错误',
       selectedKnowledgePoints: [],
       selectedActions: [],
       selectedReasons: [],
@@ -1371,7 +1419,21 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     });
 
     assert.equal(payload.question_text, '老师修正后的题目文本');
+    assert.equal(payload.selectedErrorType, '方法错误');
     assert.equal(payload.is_mastered, true);
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/wechat-record-edit/review');
+      assert.ok(saveCall);
+      const requestPayload = JSON.parse(String(saveCall?.init?.body));
+      assert.equal(requestPayload.selectedErrorType, '方法错误');
+    });
   } finally {
     if (root) {
       await act(async () => {
@@ -1396,6 +1458,12 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
 
       if (input === '/api/classes') {
         return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学' }]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 1, name: 'Alice' }],
+        });
       }
 
       if (input === '/api/admin/users') {
@@ -1511,8 +1579,8 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-save-top-level/review');
       assert.ok(saveCall);
       const pageText = domEnvironment.container.textContent || '';
-      const selectedErrorTypeInput = domEnvironment.container.querySelector('input[placeholder="填写教师最终确认的错误类型"]') as HTMLInputElement | null;
-      assert.ok(selectedErrorTypeInput instanceof HTMLInputElement);
+      const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终错误类型"]') as HTMLSelectElement | null;
+      assert.ok(selectedErrorTypeInput instanceof HTMLSelectElement);
       assert.equal(selectedErrorTypeInput.value, '服务端修正');
       assert.match(pageText, /老师与班级归属待确认/);
       assert.match(pageText, /老师：Kayn/);
@@ -1944,6 +2012,15 @@ test('SmartWrongQuestionsPage renders class-based student notebooks for owner ac
         ]);
       }
 
+      if (input === '/api/classes/101/students') {
+        return createJsonResponse({
+          students: [
+            { id: 1, name: 'Alice' },
+            { id: 2, name: 'Bob' },
+          ],
+        });
+      }
+
       if (input === '/api/admin/users') {
         return createJsonResponse([
           { id: 7, name: 'Kayn' },
@@ -2345,6 +2422,7 @@ test('SmartWrongQuestionsPage opens a member notebook modal after clicking a stu
               teacher_name: '成员老师',
               teacher_user_id: 7,
               created_at: '2026-03-27T09:00:00Z',
+              archive_status: 'archived',
               parent_note: '第二题还是错',
               status: 'reviewed',
               analysis: {
@@ -2564,7 +2642,10 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
       assert.match(pageText, /第 1 题/);
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
-      assert.match(pageText, /左侧是紧凑错题目录/);
+      assert.match(pageText, /2026-03-27T09:00:00Z/);
+      assert.match(pageText, /已掌握/);
+      assert.doesNotMatch(pageText, /第二题还是错/);
+      assert.doesNotMatch(pageText, /左侧是紧凑错题目录/);
     });
   } finally {
     if (root) {
@@ -2682,9 +2763,10 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /错题档案/);
-      assert.match(pageText, /题目记录/);
-      assert.match(pageText, /教师跟进区/);
+      assert.match(pageText, /错题详情/);
+      assert.doesNotMatch(pageText, /错题档案/);
+      assert.doesNotMatch(pageText, /题目记录/);
+      assert.doesNotMatch(pageText, /教师跟进区/);
     });
   } finally {
     if (root) {
