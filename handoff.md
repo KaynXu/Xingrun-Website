@@ -1,3 +1,30 @@
+## 错题错因链路已合回 develop 并部署生产（2026-04-10）
+
+### 已完成
+- 已将 `feature/wrong-question-error-cause` rebase 到最新 `develop` 后快进合并回 `develop`，保留错题链路的 4 个原始提交，不做 squash。
+- 已在合并结果上重新验证错题链路：前端 member modal / 错因语义回归通过，后端微信错题上传与 review API 回归通过。
+- 已推送远端：`origin/develop` 从 `fc47468` 更新到 `9454172`。
+- 已在生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 拉取最新 `develop`，完成前端构建并重启 `pm2` 服务 `xingrun`。
+- 已复查生产状态：`pm2 status xingrun` 为 `online`，本机健康检查返回根路由 `302` 跳转到前端地址。
+
+### proof
+- 合并后前端临时脚本：`cd frontend && npx tsx --test src/smart-wrong-questions.test.ts`
+  - `tests 33`
+  - `pass 33`
+  - `fail 0`
+- 合并后后端临时脚本：`/opt/homebrew/bin/python3 -m unittest tests.test_wechat_parent_upload_api tests.test_wechat_parent_upload_data tests.test_smart_wrong_questions_api`
+  - `Ran 47 tests in 0.804s`
+  - `OK`
+- 推送结果：`fc47468..9454172  develop -> develop`
+- 生产构建结果：`npm --prefix frontend run build` 成功，保留既有 Vite chunk size warning，无新增构建错误。
+- 生产健康检查：二次复查返回 `HTTP/1.1 302 FOUND`，`Server: Werkzeug/3.1.7 Python/3.12.3`，`Location: http://127.0.0.1:3000`。
+
+### 剩余问题
+- 刚重启后第一下即时 `curl http://127.0.0.1:5001/` 仍短暂失败一次，随后复查已恢复；当前未扩 scope 继续排查启动瞬时窗口。
+
+### 下一步方向
+- 如需继续收口，可做一次线上真实教师账号点击，重点看 member 端错题弹窗和微信错因/掌握语义是否与预期一致。
+
 ## 错题右栏已对齐错因/掌握语义（2026-04-10）
 
 ### 已完成
