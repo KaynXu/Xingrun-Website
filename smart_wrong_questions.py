@@ -61,19 +61,6 @@ def _extract_error_message(raw: bytes) -> str:
     return text or "下游服务请求失败"
 
 
-def _extract_filename(headers: Any) -> str:
-    content_disposition = headers.get("Content-Disposition", "")
-    if not content_disposition:
-        return "wrong-question-summary.pdf"
-
-    for part in content_disposition.split(";"):
-        part = part.strip()
-        if part.startswith("filename="):
-            filename = part.split("=", 1)[1].strip()
-            return filename.strip('"') or "wrong-question-summary.pdf"
-    return "wrong-question-summary.pdf"
-
-
 def _request_downstream(
     path: str,
     *,
@@ -161,12 +148,3 @@ def save_wrong_question_review(record_id: str, query: Any, payload: dict[str, An
             payload=payload,
         )
     )
-
-
-def export_wrong_question_summary(query: Any) -> dict[str, Any]:
-    pdf_bytes, headers = _request_downstream(
-        "/wrong-questions/summary/export",
-        query=query,
-        expect_binary=True,
-    )
-    return {"content": pdf_bytes, "filename": _extract_filename(headers)}

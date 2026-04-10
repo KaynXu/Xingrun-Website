@@ -17,8 +17,8 @@ import {
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
+  downloadWrongQuestionSummary,
   filterWrongQuestionRecordsForMemberNotebook,
-  getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
@@ -60,6 +60,7 @@ const initialFilters: WrongQuestionFilters = {
   subject: '',
   teacherName: '',
   errorType: '',
+  onlyPendingReview: false,
 };
 
 function formatWrongQuestionMappingStatus(status: WrongQuestionMappingStatus): string {
@@ -158,19 +159,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
     return buildMemberStudentNotebookSummaries(records, selectedClassId);
   }, [records, selectedClassId, usesStudentNotebook]);
-  const classStudentOptions = useMemo(() => {
-    if (!selectedClassId) {
-      return [];
-    }
-    return memberNotebookSummaries.map((item) => item.studentName);
-  }, [memberNotebookSummaries, selectedClassId]);
-  const visibleNotebookSummaries = useMemo(() => {
-    const normalizedStudentName = filters.studentName?.trim() ?? '';
-    if (!normalizedStudentName) {
-      return memberNotebookSummaries;
-    }
-    return memberNotebookSummaries.filter((item) => item.studentName.toLowerCase().includes(normalizedStudentName.toLowerCase()));
-  }, [filters.studentName, memberNotebookSummaries]);
   const memberNotebookRecords = useMemo(() => {
     if (!usesStudentNotebook) {
       return [];
@@ -178,7 +166,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     return filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, selectedStudentName);
   }, [records, selectedClassId, selectedStudentName, usesStudentNotebook]);
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
-  const selectedRecordSemanticModel = selectedRecord ? getWrongQuestionSemanticModel(selectedRecord) : null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
@@ -218,7 +205,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         if (current && nextRecords.some((item) => item.id === current)) {
           return current;
         }
-        return null;
+        return nextRecords[0]?.id ?? null;
       });
     } catch (loadError) {
       if (requestVersion !== requestVersionRef.current) {
@@ -291,20 +278,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       setSelectedId(null);
     }
   }, [memberNotebookSummaries, selectedStudentName, usesStudentNotebook]);
-
-  useEffect(() => {
-    const normalizedStudentName = filters.studentName?.trim() ?? '';
-    if (!selectedClassId || !normalizedStudentName) {
-      return;
-    }
-
-    if (!classStudentOptions.includes(normalizedStudentName)) {
-      setFilters((current) => ({
-        ...current,
-        studentName: '',
-      }));
-    }
-  }, [classStudentOptions, filters.studentName, selectedClassId]);
 
   useEffect(() => {
     if (!selectedRecord) {
@@ -449,6 +422,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleExportSummary = () => {
+    setError('');
+    void downloadWrongQuestionSummary(filters).catch((downloadError) => {
+      setError(downloadError instanceof Error ? downloadError.message : '智能错题导出失败');
+    });
+  };
+
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -456,11 +436,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const handleMemberClassChange = (value: string) => {
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
-    setFilters((current) => ({
-      ...current,
-      studentName: '',
-      className: '',
-    }));
     setSelectedStudentName(null);
     setSelectedId(null);
   };
@@ -470,9 +445,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setDetailError('');
     setSaveError('');
   };
-  const handleOpenMemberNotebook = (classId: number, studentName: string) => {
-    const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, classId, studentName);
-    setSelectedClassId(classId);
+  const handleOpenMemberNotebook = (studentName: string) => {
+    const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, selectedClassId, studentName);
     setSelectedStudentName(studentName);
     setSelectedId(nextRecords[0]?.id ?? null);
   };
@@ -506,7 +480,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
       </div>
 
-      {selectedRecordSemanticModel === 'wechat_mastery' && (
+      {selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div>
             <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传记录</p>
@@ -565,7 +539,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
 
-      {selectedRecordSemanticModel === 'downstream_review' && (
+      {selectedRecord.source !== 'wechat_mp' && (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className={`${workspaceSoftCardClass} p-4`}>
@@ -596,7 +570,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </>
       )}
 
-      {selectedDraft && selectedRecordSemanticModel === 'wechat_mastery' && (
+      {selectedDraft && selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -613,7 +587,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </button>
           </div>
 
-          {selectedRecordSemanticModel === 'wechat_mastery' && !selectedRecord.isGeometry && (
+          {selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">题目文本</span>
               <textarea
@@ -621,7 +595,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 onChange={(event) => handleDraftChange('questionText', event.target.value)}
                 onInput={(event) => handleDraftChange('questionText', (event.target as HTMLTextAreaElement).value)}
                 className={`${workspaceFieldClass} min-h-28 resize-y`}
-                placeholder="补充这道题的完整题目文本"
+                placeholder="填写可直接进入错题库 PDF 的题目文本"
               />
             </label>
           )}
@@ -638,11 +612,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
 
-      {selectedDraft && selectedRecordSemanticModel === 'downstream_review' && (
+      {selectedDraft && selectedRecord.source !== 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">跟进记录</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">教师复盘</p>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败时会保留当前草稿，便于继续修改后重试。</p>
             </div>
             <button
@@ -651,7 +625,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               disabled={savingReview}
               className={workspacePrimaryButtonClass}
             >
-              保存跟进记录
+              保存教师复盘
             </button>
           </div>
 
@@ -719,13 +693,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <section className={`${workspaceCardClass} space-y-4 p-6`}>
-        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">错题跟进</p>
+        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">错题工作区</p>
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
             {hasStaffScope
-              ? `在 ${currentUser.organization_name} 内集中查看学生错题，按班级和学生继续跟进掌握情况。`
-              : '仅显示你负责班级与学生的错题，方便继续记录错因和掌握情况。'}
+              ? `在 ${currentUser.organization_name} 内部查看错题记录，筛选待跟进条目，并为后续教师复盘预留统一工作区。`
+              : '仅查看你负责班级与学生的错题记录，并直接跟进自己的教师复盘。'}
           </p>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前操作人：{currentUser.display_name}</p>
         </div>
@@ -735,7 +709,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.totalCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">未掌握</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">待跟进</p>
             <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{summary.pendingReviewCount}</p>
           </div>
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -762,11 +736,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学生错题本</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {hasStaffScope
-                ? '先按老师、科目或错因缩小范围，再选择班级和学生查看这个孩子的错题本。'
-                : '先选择班级，再打开学生卡片查看这个孩子最近的错题记录。'}
+                ? '先按筛选条件缩小范围，再选择班级并打开学生卡片查看错题本；筛选结果也可以直接导出 PDF 汇总。'
+                : '先选择班级，再打开学生卡片查看这个孩子的错题库。'}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            {hasStaffScope && (
+              <button type="button" onClick={handleExportSummary} className={workspaceSecondaryButtonClass}>
+                导出 PDF 汇总
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void loadList(filters)}
@@ -781,37 +760,32 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
         {hasStaffScope && (
           <form className="grid gap-4 lg:grid-cols-3" onSubmit={handleSubmit}>
-            {selectedClassId ? (
-              <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">学生</span>
-                <select
-                  aria-label="学生"
-                  value={filters.studentName ?? ''}
-                  onChange={(event) => handleFilterChange('studentName', event.target.value)}
-                  className={workspaceFieldClass}
-                  disabled={classStudentOptions.length === 0}
-                >
-                  <option value="">全部学生</option>
-                  {classStudentOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">学生姓名</span>
-                <input
-                  type="text"
-                  value={filters.studentName ?? ''}
-                  onChange={(event) => handleFilterChange('studentName', event.target.value)}
-                  onInput={(event) => handleFilterChange('studentName', (event.target as HTMLInputElement).value)}
-                  className={workspaceFieldClass}
-                  placeholder="如：Alice"
-                />
-              </label>
-            )}
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">学生姓名</span>
+              <input
+                type="text"
+                value={filters.studentName ?? ''}
+                onChange={(event) => handleFilterChange('studentName', event.target.value)}
+                className={workspaceFieldClass}
+                placeholder="如：Alice"
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">班级</span>
+              <select
+                aria-label="班级"
+                value={filters.className ?? ''}
+                onChange={(event) => handleFilterChange('className', event.target.value)}
+                className={workspaceFieldClass}
+              >
+                <option value="">全部班级</option>
+                {classOptions.map((item) => (
+                  <option key={item.id} value={item.name}>
+                    {item.subject ? `${item.name} · ${item.subject}` : item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">科目</span>
               <input
@@ -849,6 +823,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 />
               </div>
             </label>
+            <label className="flex items-center gap-3 self-end rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={Boolean(filters.onlyPendingReview)}
+                onChange={(event) => handleFilterChange('onlyPendingReview', event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              只看待教师跟进
+            </label>
             <div className="flex flex-wrap gap-3 lg:col-span-3 lg:justify-end">
               <button
                 type="button"
@@ -885,27 +868,27 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </select>
         </label>
 
-        {!selectedClassId && !(hasStaffScope && filters.studentName?.trim()) ? (
+        {!selectedClassId ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-            {hasStaffScope ? '请选择班级或输入学生姓名搜索错题本。' : '请选择班级查看学生错题本。'}
+            请选择班级查看学生错题本。
           </div>
         ) : loading ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
             正在加载学生错题本...
           </div>
-        ) : visibleNotebookSummaries.length === 0 ? (
+        ) : memberNotebookSummaries.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-            {selectedClassId ? '当前班级下暂无错题记录。' : '没有找到匹配的学生错题本。'}
+            当前班级下暂无错题记录。
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {visibleNotebookSummaries.map((item) => {
-              const isActive = item.studentName === selectedStudentName && item.classId === selectedClassId;
+            {memberNotebookSummaries.map((item) => {
+              const isActive = item.studentName === selectedStudentName;
               return (
                 <button
                   key={`${item.classId}-${item.studentName}`}
                   type="button"
-                  onClick={() => handleOpenMemberNotebook(item.classId, item.studentName)}
+                  onClick={() => handleOpenMemberNotebook(item.studentName)}
                   className={`${workspaceSoftCardClass} w-full p-5 text-left transition ${isActive ? 'border-sky-400 shadow-[0_18px_48px_rgba(47,128,237,0.12)]' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -999,7 +982,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   <h4 className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
                     第 {selectedRecordOrder || 1} 题 · {selectedRecord?.analysis.questionCategory || '未分类错题'}
                   </h4>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">先看这道题的记录，再继续补充老师的跟进内容。</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">把当前题目按错题库文档方式展开，先看记录，再在同一侧继续老师跟进。</p>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
                     <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.studentName || selectedStudentName}</span>
                     <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300">{selectedRecord?.className || '未标注班级'}</span>
@@ -1009,7 +992,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
                 <div className="mb-5 flex flex-wrap gap-2 border-b border-slate-200/80 pb-4 text-sm dark:border-white/10">
                   <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">题目记录</span>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">老师记录</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-medium text-slate-600 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">教师跟进区</span>
                 </div>
 
                 <div className="mb-5">

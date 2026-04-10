@@ -8,7 +8,6 @@
 """
 
 import hashlib
-import io
 import json
 import logging
 import os
@@ -1896,24 +1895,6 @@ def api_wrong_questions_list():
     payload["total"] = len(scoped_items)
     payload["summary"] = _summarize_wrong_question_records(scoped_items)
     return jsonify(payload)
-
-
-@app.route("/api/wrong-questions/summary/export", methods=["GET"])
-def api_wrong_question_summary_export():
-    _, error = _require_staff()
-    if error:
-        return error
-    try:
-        export_result = smart_wrong_questions.export_wrong_question_summary(request.args)
-    except smart_wrong_questions.WrongQuestionProxyError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
-
-    return send_file(
-        io.BytesIO(export_result["content"]),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=export_result["filename"],
-    )
 
 
 @app.route("/api/wrong-questions/<record_id>", methods=["GET"])

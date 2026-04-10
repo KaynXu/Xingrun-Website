@@ -23,7 +23,7 @@ test('landing page renders Starain hero branding and approved messaging', () => 
   assert.match(markup, /Starain/);
   assert.match(markup, /学习全流程 AI 平台/);
   assert.match(markup, /Starain，用 AI 赋能教育机构。/);
-  assert.match(markup, /Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台/);
+  assert.match(markup, /Starain 正在把日常教学里最常重复的工作整理进同一套平台流程/);
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);
   assert.match(markup, /申请开通机构/);
@@ -47,14 +47,15 @@ test('landing hero uses exhibition-panel copy with a light result preview instea
 
   assert.match(markup, /服务学校与机构的 AI 教育平台/);
   assert.match(markup, /复习资料生成/);
-  assert.match(markup, /题库与内容沉淀/);
-  assert.match(markup, /教学协同交付/);
+  assert.match(markup, /错题跟进与复习安排/);
+  assert.match(markup, /教师协作交付/);
   assert.match(markup, /平台概览/);
   assert.match(markup, /面向学习全流程的 AI 教育平台/);
   assert.match(markup, /复习资料/);
-  assert.match(markup, /题库系统/);
+  assert.match(markup, /错题跟进/);
   assert.match(markup, /教学交付/);
   assert.doesNotMatch(markup, /rounded-\[2rem\] border border-sky-100 bg-white\/85 p-5 sm:p-8 md:p-12/);
+  assert.doesNotMatch(markup, /题库系统/);
 });
 
 test('landing page tells the validated workflow story', () => {
@@ -72,10 +73,10 @@ test('landing page tells the validated workflow story', () => {
   );
 
   assert.match(markup, /从课堂素材到复习交付/);
-  assert.match(markup, /把错误沉淀成可追踪资产/);
-  assert.match(markup, /把题目沉淀成可调用的题库系统/);
-  assert.match(markup, /面向不同课程体系与教学场景，把零散题目变成可标签化、可复用、可自动组卷的题库资产。/);
-  assert.match(markup, /多课程体系/);
+  assert.match(markup, /把错误整理成可持续跟进记录/);
+  assert.match(markup, /把题目整理成可复用的教学素材/);
+  assert.match(markup, /围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。/);
+  assert.match(markup, /题目整理/);
   assert.doesNotMatch(markup, /AP、A-Level、IB/);
   assert.doesNotMatch(markup, /AP \/ A-Level \/ IB/);
   assert.match(markup, /把课程目标转化为讲义与教研交付/);
@@ -85,6 +86,8 @@ test('landing page tells the validated workflow story', () => {
   assert.match(markup, /教学交付/);
   assert.match(markup, /关于 Starain/);
   assert.match(markup, /不是从 PPT 里想出来的/);
+  assert.doesNotMatch(markup, /把错误沉淀成可追踪资产/);
+  assert.doesNotMatch(markup, /把题目沉淀成可调用的题库系统/);
 });
 
 test('legal pages use Starain branding in the chrome', () => {

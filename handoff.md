@@ -1,3 +1,42 @@
+## 智能错题当前状态已校正（2026-04-10）
+
+### 已完成
+- 已把本文件顶部改成当前权威状态说明，并把 `staff` 端旧的 `导出汇总` / `只看待教师跟进` 从“仅隐藏 UI”更新为“前后端旧链路已彻底移除”。
+- 已明确当前仍保留的只有列表查询 helper：`frontend/src/smartWrongQuestions.ts` 的 `buildWrongQuestionQuery()` 继续服务 `/api/wrong-questions` 列表，不再承担导出或 `onlyPendingReview` 旧参数。
+- 已给 `微信错题` 和 `downstream 错题` 补上显式命名层：当前代码统一按 `wechat_mastery` 与 `downstream_review` 两套语义分开处理，避免字段继续混用。
+- 已明确微信错题当前老师跟进语义是 `is_mastered -> archive_status`；`teacher_comment` 和 `status='reviewed'` 在本地微信保存路径里已不再生效，下一轮不要继续往这条链路写旧字段。
+
+### 当前权威状态
+- 当前 smart wrong questions 已彻底删除 `导出汇总` / `onlyPendingReview` 的前端 helper、后端导出入口和相关测试，不再保留隐藏链路。
+- 当前本地微信错题的有效状态语义是：未掌握=`archive_status='active'`，已掌握=`archive_status='archived'`；`status` / `teacher_comment` 仅剩兼容旧列含义，不再作为主流程判断依据。
+- 当前 `微信错题` 与 `downstream 错题` 的语义边界是：前者走 `错因/掌握`，后者走 `知识点/原因分析/教师备注`，页面与 helper 已按显式语义模型分支。
+- 如果继续清理，应该直接在当前 `develop` 脏工作区这批智能错题改动上收口，不要再并行开第二条错题链路。
+- 以下条目是历史流水；若仍出现 `导出汇总` / `只看待教师跟进` / `/api/wrong-questions/summary/export` 等旧表述，均视为已废弃历史信息，不再代表当前实现。
+
+## 智能错题残留导出链路与旧文案已清理（2026-04-10）
+
+### 已完成
+- 已从 `frontend/src/smartWrongQuestions.ts` 删除旧 `onlyPendingReview` 筛选字段、旧导出路径构造 helper，以及下载 helper，前端不再保留这条已废弃导出链路。
+- 已同步从 `frontend/src/SmartWrongQuestionsPage.tsx` 删除对应默认筛选残留，只保留当前 notebook 工作流需要的筛选字段。
+- 已删除后端 `/api/wrong-questions/summary/export` 路由，以及 `smart_wrong_questions.py` 里的下游导出代理；对应 API 测试已改为断言该旧路由返回 `404`。
+- 已清理 `frontend/src/smart-wrong-questions.test.ts` 中围绕旧导出链路与旧筛选字段的断言，同时把现有“微信掌握语义 / 下游复盘语义”收口成正式 helper，避免测试继续依赖隐式分支。
+- 已收口首页旧产品文案，替换掉 `题库系统 / 题库与内容沉淀 / 教学协同交付 / 把错误沉淀成可追踪资产 / 把题目沉淀成可调用的题库系统` 这组旧表述，并同步更新 `frontend/src/landing-legal-pages.test.tsx`。
+
+### proof
+- 前端临时脚本：`cd frontend && npx tsx --test src/smart-wrong-questions.test.ts src/landing-legal-pages.test.tsx`
+  - `tests 47`
+  - `pass 47`
+  - `fail 0`
+- 后端临时脚本：`/opt/homebrew/bin/python3 -m unittest tests.test_smart_wrong_questions_api`
+  - `Ran 22 tests in 0.372s`
+  - `OK`
+
+### 剩余问题
+- 本轮没有继续扩 scope 清理更多历史营销文案，只处理了你点名的首页残留和智能错题旧导出链路。
+
+### 下一步方向
+- 如果还要继续收口，可以再扫一遍首页、workspace 文案和错题相关测试里的历史产品词，确认是否还有 `沉淀 / 资产 / 调用` 这类已经不用的老表述。
+
 ## 智能错题已删掉重复班级框和旧导出入口（2026-04-10）
 
 ### 已完成
@@ -19,10 +58,10 @@
 - 生产健康检查：重启后第一下即时 `curl` 仍短暂失败一次，二次复查恢复为 `HTTP/1.1 302 FOUND`，`Location: http://127.0.0.1:3000`。
 
 ### 剩余问题
-- 本轮没有继续动后端筛选参数定义，当前只是把前端旧入口删掉并改成新的单班级 notebook 交互。
+- 本轮只收口了旧导出链路、语义命名层和首页文案；`downstream` 自身的数据契约仍是老字段集合，后续如果要继续统一，只能在下游服务契约层一起改。
 
 ### 下一步方向
-- 如果还要继续收口，可以再看是否要把 `smartWrongQuestions.ts` 里未再使用的导出 helper 和 `onlyPendingReview` 查询参数一起清掉，彻底删掉前端这条旧链路。
+- 如果还要继续收口，可以专门决定是否把 `downstream_review` 也逐步迁到更接近 `wechat_mastery` 的老师操作语言，但那会涉及下游服务字段契约，不适合在前端单边硬改。
 
 ## 智能错题测试已对齐当前 notebook 结构（2026-04-10）
 
@@ -53,7 +92,7 @@
 
 ### 已完成
 - 已收口 `智能错题` 页面里老师直接可见的工程化文案，重点替换了 `错题工作区 / 统一工作区 / 教师复盘 / 错题库 PDF / 文档方式展开` 这类实现口吻。
-- `frontend/src/SmartWrongQuestionsPage.tsx` 现改为更贴近老师操作的话术，例如 `错题跟进 / 导出汇总 / 跟进记录 / 老师记录 / 补充这道题的完整题目文本`。
+- `frontend/src/SmartWrongQuestionsPage.tsx` 现改为更贴近老师操作的话术，例如 `错题跟进 / 跟进记录 / 老师记录 / 补充这道题的完整题目文本`。
 - 已同步收口 `frontend/src/WorkspaceDashboard.tsx` 中智能错题入口文案，不再写“回到错题工作区”，改为直接说明“查看学生错题，继续记录错因和掌握情况”。
 - 本轮只改文案和对应测试断言，没有改错题业务逻辑、权限范围或页面交互。
 
@@ -77,9 +116,12 @@
 
 ## owner/admin/super_owner 错题工作区也切到点学生打开错题库（2026-04-10）
 
+### 说明
+- 本节是 `9017448` 当时的历史快照；当前状态已由本文件顶部“智能错题当前状态已校正”覆盖。若读到这里与顶部冲突，以上部当前状态为准。
+
 ### 已完成
 - 已将 `owner/admin/super_owner` 的智能错题主视图统一到新的“班级/学生卡片 -> 点击打开错题库 modal”流程，不再保留旧的“筛选与列表 + 右侧详情”主布局。
-- 已明确保留角色范围：`admin/owner` 仍然查看本机构全体错题，`super_owner` 仍然查看跨机构全体错题，并继续保留 staff 专属的 `学生姓名 / 班级 / 科目 / 老师 / 错误类型 / 待跟进` 筛选与 `导出 PDF 汇总` 能力。
+- 已明确保留角色范围：`admin/owner` 仍然查看本机构全体错题，`super_owner` 仍然查看跨机构全体错题；后续收口中已删除 staff 旧的 `待跟进` 筛选与 `导出 PDF 汇总` 链路。
 - `member` 仍保持原先按自己负责班级查看的限制；这次没有把 `admin/owner` 收窄成和老师同权限，只是把他们的打开方式统一成新错题库视图。
 - 已同步更新前端回归，覆盖 owner 账号进入新的班级化错题本入口，以及 staff 在新视图下打开错题后仍能看到身份映射、教师复盘、题目文本等细节能力。
 

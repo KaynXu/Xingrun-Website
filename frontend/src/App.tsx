@@ -7757,7 +7757,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.32, duration: 0.78 }}
                 className="mt-7 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg md:text-xl dark:text-slate-200"
               >
-                从复习资料生成，到题库沉淀、讲义生成与教学协同，Starain 正在把分散的 AI 教学能力组织成一个真正可落地的平台。
+                从复习资料生成，到错题跟进、讲义整理与教师协作，Starain 正在把日常教学里最常重复的工作整理进同一套平台流程。
               </motion.p>
 
               <motion.div
@@ -7768,8 +7768,8 @@ export const LandingPage = ({
               >
                 {[
                   ['复习资料生成', '把课堂内容快速整理成学生可直接使用的复习材料。'],
-                  ['题库与内容沉淀', '把题目、讲义与教学素材沉淀为可复用的内容资产。'],
-                  ['教学协同交付', '让教师、教研与机构团队在同一平台里完成生产与交付。'],
+                  ['错题跟进与复习安排', '围绕错题记录、老师备注和掌握状态，持续安排后续跟进。'],
+                  ['教师协作交付', '让教师、教研与机构团队在同一平台里完成整理、复核与交付。'],
                 ].map(([label, description]) => (
                   <div
                     key={label}
@@ -7834,8 +7834,8 @@ export const LandingPage = ({
                 <div className="mt-5 space-y-3">
                   {[
                     { icon: Upload, title: '复习资料', body: '课堂内容生成讲义、总结与学生复习材料' },
-                    { icon: CheckCircle2, title: '题库系统', body: '题目与知识点持续归档，支持后续调用与组织' },
-                    { icon: FileText, title: '教学交付', body: '面向教师与机构团队沉淀可复用的教学资产' },
+                    { icon: CheckCircle2, title: '错题跟进', body: '记录题目、错因与掌握状态，方便老师持续跟进' },
+                    { icon: FileText, title: '教学交付', body: '把课堂内容整理成教师与机构团队都能直接使用的交付材料' },
                   ].map((item, index) => (
                     <motion.div
                       key={item.title}
@@ -7895,7 +7895,7 @@ export const LandingPage = ({
                   </div>
                   <h3 className="text-3xl font-bold mb-4 text-slate-900 dark:text-white">从课堂素材到复习交付</h3>
                   <p className="text-slate-600 text-lg max-w-2xl dark:text-slate-300">
-                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与可复用的交付资产。
+                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与更稳定的教学交付材料。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
@@ -7918,7 +7918,7 @@ export const LandingPage = ({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把错误沉淀成可追踪资产</h3>
+                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把错误整理成可持续跟进记录</h3>
                 <p className="text-slate-600 dark:text-slate-300">
                   不是一次性纠错，而是持续记录高频错误、薄弱点与个性化复习路径。
                 </p>
@@ -7942,13 +7942,13 @@ export const LandingPage = ({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
-                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把题目沉淀成可调用的题库系统</h3>
+                <h3 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">把题目整理成可复用的教学素材</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  面向不同课程体系与教学场景，把零散题目变成可标签化、可复用、可自动组卷的题库资产。
+                  围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。
                 </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-blue-600 font-bold text-sm dark:text-blue-400">
-                <span>多课程体系</span>
+                <span>题目整理</span>
                 <ArrowRight size={14} />
               </div>
             </motion.div>
@@ -8031,7 +8031,7 @@ export const LandingPage = ({
                 </p>
               </div>
               <p className="max-w-2xl text-sm md:text-base text-slate-500 leading-relaxed dark:text-slate-400">
-                我们先在自己的教育机构中解决复习资料、题库沉淀、讲义生成与教学协同问题，再把这套已经跑通的流程产品化，服务更多同行团队。
+                我们先在自己的教育机构中解决复习资料、错题跟进、讲义整理与教师协作问题，再把这套已经跑通的流程产品化，服务更多同行团队。
               </p>
             </motion.div>
 
@@ -8043,7 +8043,7 @@ export const LandingPage = ({
                 },
                 {
                   title: '能力模块化',
-                  body: '错题沉淀、题库调用与讲义生成作为统一工作流持续复用。',
+                  body: '错题跟进、复习安排与讲义整理可以在同一条教学链路里持续复用。',
                 },
                 {
                   title: '服务对象',

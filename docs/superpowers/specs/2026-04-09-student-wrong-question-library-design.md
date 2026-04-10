@@ -170,7 +170,9 @@ AI 提取出来的 `question_text` 不是不可变真相，而是初稿。
 - `image_url`
 - `parent_note`
 - `teacher_comment`
+  - 兼容旧列，当前本地微信老师跟进主流程不再依赖它驱动状态变更
 - `status`
+  - 兼容旧列，当前本地微信主流程不再以 `pending` / `reviewed` 作为有效状态切换
 - 孩子原因类字段
 
 本期新增以下字段：
@@ -216,14 +218,16 @@ AI 提取出来的 `question_text` 不是不可变真相，而是初稿。
 
 ### 3. 记录状态语义
 
-当前 `status` 已被网页端当作 review 状态使用，不适合直接承担识别状态。
+当前实现里，本地微信记录的老师跟进已经不再用 `status='pending/reviewed'` 驱动；保存 review 时实际生效的是 `is_mastered` 与 `archive_status`。
 
 因此：
 
-- `status` 继续表示老师跟进状态，例如 `pending` / `reviewed`
 - `recognition_status` 单独表示识别结果
+- `is_mastered=true` 时，记录写成 `archive_status='archived'`
+- `is_mastered=false` 时，记录保持 `archive_status='active'`
+- `status` 与 `teacher_comment` 保留为兼容旧列，不再作为本地微信主流程判断依据
 
-只有 `recognition_status='recognized'` 的记录才算正式入库、才进入学生错题库 PDF。
+只有 `recognition_status='recognized'` 且 `archive_status='active'` 的记录才算正式入库、才进入学生错题库 PDF。
 
 ## AI Recognition Contract
 
@@ -324,17 +328,23 @@ AI 提取出来的 `question_text` 不是不可变真相，而是初稿。
 
 ### 4. 网页端老师编辑接口
 
-在现有 `PUT /api/wrong-questions/<record_id>/review` 基础上，允许老师提交：
+在现有 `PUT /api/wrong-questions/<record_id>/review` 基础上，对本地微信记录允许老师提交：
 
-- `teacher_comment`
-- `status`
+- `is_mastered`
 - `question_text`
+
+兼容说明：
+
+- `teacher_comment` / `status` 仍可能存在于历史数据或其他来源记录里，但不应再作为本地微信 review contract 的有效控制字段
 
 对于本地微信记录：
 
 - 如果 `question_text` 被修改，则写回 `question_text`
 - `question_text_edited=1`
 - `question_text_source='teacher'`
+- 如果 `is_mastered=true`，则写回 `archive_status='archived'`
+- 如果 `is_mastered=false`，则写回 `archive_status='active'`
+- 传入 `teacher_comment` / `status` 时不再用它们驱动本地微信记录状态变更
 - 保存成功后触发学生 PDF 重建
 
 ## PDF Design
