@@ -11,6 +11,7 @@
   - `review-plans` 音频上传 credit 用例已改成异步 `202 + pending` 语义
   - `monthly` PDF 失败后不再提前扣费，重试后可成功扣一次并完成任务
   - `monthly` 后台 worker 不再依赖 request context 生成 request identity
+- 合并 `master` 前暴露出的 3 条前端源码断言测试也已收口，当前是测试预期对齐现有实现，没有新增产品逻辑修改。
 - 登录后工作区里的对话式文案已收口，`WorkspaceDashboard.tsx`、`App.tsx`、`SmartWrongQuestionsPage.tsx` 不再保留 `欢迎回来 / 系统会帮你 / 先这样再那样` 这类口吻。
 - 登录后工作区已恢复少量明确的 `AI` 能力标识，用于保留产品定位；当前原则是“保留 AI 能力名词，不保留 AI 助手式对话口吻”。
 - 旧 `导出汇总`、`onlyPendingReview`、`只看待教师跟进` 链路已经删除，前后端不再保留隐藏入口。
