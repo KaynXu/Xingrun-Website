@@ -1219,22 +1219,43 @@ function HeroBackgroundGrainient() {
       data-background="grainient"
       data-grainient-palette="sky-cyan"
       data-grainient-motion="pronounced"
+      data-grainient-style="flow-bands"
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(34,199,232,0.34),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(47,128,237,0.28),transparent_24%),radial-gradient(circle_at_50%_72%,rgba(255,255,255,0.9),transparent_34%),linear-gradient(135deg,rgba(248,251,255,0.98)_0%,rgba(232,246,255,0.96)_46%,rgba(216,240,255,0.92)_100%)] dark:bg-[radial-gradient(circle_at_16%_18%,rgba(34,199,232,0.18),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(47,128,237,0.22),transparent_24%),radial-gradient(circle_at_50%_72%,rgba(56,189,248,0.12),transparent_34%),linear-gradient(135deg,rgba(7,14,25,0.98)_0%,rgba(10,20,35,0.96)_46%,rgba(14,29,46,0.94)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.54),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.42),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(255,255,255,0.52),transparent_24%),linear-gradient(135deg,rgba(240,249,255,0.99)_0%,rgba(214,239,255,0.97)_42%,rgba(197,228,255,0.95)_100%)] dark:bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.24),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.28),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(125,211,252,0.12),transparent_24%),linear-gradient(135deg,rgba(7,14,25,0.99)_0%,rgba(10,22,38,0.97)_42%,rgba(16,32,54,0.95)_100%)]" />
       <motion.div
-        className="absolute left-[-14%] top-[-18%] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(34,199,232,0.62)_0%,rgba(34,199,232,0.22)_34%,transparent_72%)] opacity-75 blur-[92px] dark:bg-[radial-gradient(circle,rgba(34,199,232,0.34)_0%,rgba(34,199,232,0.12)_34%,transparent_72%)] dark:opacity-90"
+        className="absolute left-[-14%] top-[-18%] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(34,199,232,0.72)_0%,rgba(34,199,232,0.28)_34%,transparent_72%)] opacity-90 blur-[72px] dark:bg-[radial-gradient(circle,rgba(34,199,232,0.42)_0%,rgba(34,199,232,0.16)_34%,transparent_72%)] dark:opacity-95"
         animate={reduceMotion ? undefined : { x: [0, 88, -52, 0], y: [0, 34, -58, 0], scale: [1, 1.16, 0.9, 1], rotate: [0, 14, -10, 0] }}
         transition={reduceMotion ? undefined : { duration: 10, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute right-[-10%] top-[4%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(47,128,237,0.42)_0%,rgba(47,128,237,0.16)_36%,transparent_72%)] opacity-85 blur-[110px] dark:bg-[radial-gradient(circle,rgba(47,128,237,0.28)_0%,rgba(47,128,237,0.12)_36%,transparent_72%)]"
+        className="absolute right-[-10%] top-[4%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(47,128,237,0.52)_0%,rgba(47,128,237,0.22)_36%,transparent_72%)] opacity-90 blur-[84px] dark:bg-[radial-gradient(circle,rgba(47,128,237,0.34)_0%,rgba(47,128,237,0.16)_36%,transparent_72%)]"
         animate={reduceMotion ? undefined : { x: [0, -72, 46, 0], y: [0, 40, -34, 0], scale: [1, 0.92, 1.12, 1], rotate: [0, -12, 8, 0] }}
         transition={reduceMotion ? undefined : { duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
       />
       <motion.div
-        className="absolute bottom-[-18%] left-[18%] h-[30rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.18)_0%,rgba(255,255,255,0.08)_36%,transparent_72%)] opacity-70 blur-[118px] dark:bg-[radial-gradient(circle,rgba(249,115,22,0.14)_0%,rgba(34,197,94,0.06)_36%,transparent_72%)]"
+        className="absolute bottom-[-18%] left-[18%] h-[30rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.24)_0%,rgba(255,255,255,0.1)_36%,transparent_72%)] opacity-75 blur-[92px] dark:bg-[radial-gradient(circle,rgba(249,115,22,0.18)_0%,rgba(34,197,94,0.08)_36%,transparent_72%)]"
         animate={reduceMotion ? undefined : { x: [0, 64, -40, 0], y: [0, -54, 30, 0], scale: [1, 1.14, 0.94, 1] }}
         transition={reduceMotion ? undefined : { duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
+      />
+      <motion.div
+        className="absolute inset-[-18%] opacity-[0.34] mix-blend-multiply blur-[18px] dark:opacity-[0.16] dark:mix-blend-screen"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(116deg, rgba(34,199,232,0) 0px, rgba(34,199,232,0) 38px, rgba(34,199,232,0.24) 38px, rgba(34,199,232,0.24) 52px, rgba(255,255,255,0) 52px, rgba(255,255,255,0) 92px, rgba(47,128,237,0.2) 92px, rgba(47,128,237,0.2) 108px, rgba(255,255,255,0) 108px, rgba(255,255,255,0) 156px)',
+          backgroundSize: '220px 220px',
+        }}
+        animate={reduceMotion ? undefined : { x: [0, 148, -96, 0], y: [0, -44, 68, 0], opacity: [0.24, 0.38, 0.28, 0.24] }}
+        transition={reduceMotion ? undefined : { duration: 7, repeat: Infinity, ease: 'linear' }}
+      />
+      <motion.div
+        className="absolute inset-[-10%] opacity-[0.22] mix-blend-soft-light dark:opacity-[0.12]"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(180deg, rgba(255,255,255,0) 0px, rgba(255,255,255,0) 24px, rgba(255,255,255,0.34) 24px, rgba(255,255,255,0.34) 28px, rgba(255,255,255,0) 28px, rgba(255,255,255,0) 58px)',
+          backgroundSize: '100% 120px',
+        }}
+        animate={reduceMotion ? undefined : { y: [0, -64, 0], opacity: [0.16, 0.28, 0.16] }}
+        transition={reduceMotion ? undefined : { duration: 5.2, repeat: Infinity, ease: 'linear' }}
       />
       <motion.div
         className="absolute inset-[-12%] opacity-45 mix-blend-soft-light blur-3xl dark:opacity-20"
@@ -1261,7 +1282,7 @@ function HeroBackgroundGrainient() {
         animate={reduceMotion ? undefined : { rotate: [0, 18, -12, 0], scale: [1, 1.05, 0.98, 1] }}
         transition={reduceMotion ? undefined : { duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.1)_0%,rgba(238,246,255,0.3)_52%,rgba(238,246,255,0.9)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.08)_0%,rgba(10,20,35,0.34)_52%,rgba(8,15,27,0.82)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.08)_0%,rgba(238,246,255,0.14)_46%,rgba(238,246,255,0.72)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.06)_0%,rgba(10,20,35,0.22)_46%,rgba(8,15,27,0.72)_100%)]" />
     </div>
   );
 }
