@@ -7,7 +7,7 @@
 
 ### 当前状态
 - 2026-04-14 已完成“咨询记录”页备注展示方案收口：备注不单独开列，直接并入现有“咨询科目 / 来源渠道”信息块；桌面端与移动端都按统一三层信息预算展示，目标是不引入横向滚动、悬浮展开或不等高列表。
-- 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并保留轻微颗粒与缓动流动感。
+- 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并已把背景位移、节奏与颗粒流动调到更容易肉眼感知的版本。
 - landing 断言测试已同步改成检查 `data-background="grainient"` 和 `data-grainient-palette="sky-cyan"`，不再依赖旧视频流地址。
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。

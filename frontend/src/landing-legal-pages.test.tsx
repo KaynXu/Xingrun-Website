@@ -29,6 +29,7 @@ test('landing page renders Starain hero branding and a theme-aware grainient her
   assert.match(markup, /申请开通机构/);
   assert.match(markup, /data-background="grainient"/);
   assert.match(markup, /data-grainient-palette="sky-cyan"/);
+  assert.match(markup, /data-grainient-motion="pronounced"/);
   assert.doesNotMatch(markup, /data-stream-src=/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });

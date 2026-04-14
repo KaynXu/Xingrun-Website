@@ -1218,22 +1218,23 @@ function HeroBackgroundGrainient() {
       aria-hidden="true"
       data-background="grainient"
       data-grainient-palette="sky-cyan"
+      data-grainient-motion="pronounced"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(34,199,232,0.34),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(47,128,237,0.28),transparent_24%),radial-gradient(circle_at_50%_72%,rgba(255,255,255,0.9),transparent_34%),linear-gradient(135deg,rgba(248,251,255,0.98)_0%,rgba(232,246,255,0.96)_46%,rgba(216,240,255,0.92)_100%)] dark:bg-[radial-gradient(circle_at_16%_18%,rgba(34,199,232,0.18),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(47,128,237,0.22),transparent_24%),radial-gradient(circle_at_50%_72%,rgba(56,189,248,0.12),transparent_34%),linear-gradient(135deg,rgba(7,14,25,0.98)_0%,rgba(10,20,35,0.96)_46%,rgba(14,29,46,0.94)_100%)]" />
       <motion.div
         className="absolute left-[-14%] top-[-18%] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(34,199,232,0.62)_0%,rgba(34,199,232,0.22)_34%,transparent_72%)] opacity-75 blur-[92px] dark:bg-[radial-gradient(circle,rgba(34,199,232,0.34)_0%,rgba(34,199,232,0.12)_34%,transparent_72%)] dark:opacity-90"
-        animate={reduceMotion ? undefined : { x: [0, 28, -16, 0], y: [0, 12, -22, 0], scale: [1, 1.08, 0.95, 1], rotate: [0, 8, -5, 0] }}
-        transition={reduceMotion ? undefined : { duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+        animate={reduceMotion ? undefined : { x: [0, 88, -52, 0], y: [0, 34, -58, 0], scale: [1, 1.16, 0.9, 1], rotate: [0, 14, -10, 0] }}
+        transition={reduceMotion ? undefined : { duration: 10, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
         className="absolute right-[-10%] top-[4%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(47,128,237,0.42)_0%,rgba(47,128,237,0.16)_36%,transparent_72%)] opacity-85 blur-[110px] dark:bg-[radial-gradient(circle,rgba(47,128,237,0.28)_0%,rgba(47,128,237,0.12)_36%,transparent_72%)]"
-        animate={reduceMotion ? undefined : { x: [0, -24, 18, 0], y: [0, 16, -14, 0], scale: [1, 0.96, 1.06, 1], rotate: [0, -6, 4, 0] }}
-        transition={reduceMotion ? undefined : { duration: 20, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+        animate={reduceMotion ? undefined : { x: [0, -72, 46, 0], y: [0, 40, -34, 0], scale: [1, 0.92, 1.12, 1], rotate: [0, -12, 8, 0] }}
+        transition={reduceMotion ? undefined : { duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
       />
       <motion.div
         className="absolute bottom-[-18%] left-[18%] h-[30rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.18)_0%,rgba(255,255,255,0.08)_36%,transparent_72%)] opacity-70 blur-[118px] dark:bg-[radial-gradient(circle,rgba(249,115,22,0.14)_0%,rgba(34,197,94,0.06)_36%,transparent_72%)]"
-        animate={reduceMotion ? undefined : { x: [0, 22, -12, 0], y: [0, -20, 12, 0], scale: [1, 1.04, 0.98, 1] }}
-        transition={reduceMotion ? undefined : { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
+        animate={reduceMotion ? undefined : { x: [0, 64, -40, 0], y: [0, -54, 30, 0], scale: [1, 1.14, 0.94, 1] }}
+        transition={reduceMotion ? undefined : { duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
       />
       <motion.div
         className="absolute inset-[-12%] opacity-45 mix-blend-soft-light blur-3xl dark:opacity-20"
@@ -1241,10 +1242,10 @@ function HeroBackgroundGrainient() {
           backgroundImage:
             'linear-gradient(128deg, rgba(255,255,255,0.82) 0%, rgba(34,199,232,0.24) 26%, rgba(47,128,237,0.14) 54%, rgba(249,115,22,0.14) 100%)',
         }}
-        animate={reduceMotion ? undefined : { rotate: [0, 3, -2, 0], scale: [1, 1.03, 0.99, 1] }}
-        transition={reduceMotion ? undefined : { duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+        animate={reduceMotion ? undefined : { rotate: [0, 7, -5, 0], scale: [1, 1.08, 0.97, 1], x: [0, 40, -26, 0], y: [0, -24, 18, 0] }}
+        transition={reduceMotion ? undefined : { duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <div
+      <motion.div
         className="absolute inset-0 opacity-[0.18] mix-blend-soft-light dark:opacity-[0.08]"
         style={{
           backgroundImage:
@@ -1252,6 +1253,13 @@ function HeroBackgroundGrainient() {
           backgroundPosition: '0 0, 12px 14px',
           backgroundSize: '18px 18px, 22px 22px',
         }}
+        animate={reduceMotion ? undefined : { x: [0, 24, -18, 0], y: [0, -14, 10, 0], opacity: [0.14, 0.24, 0.16, 0.14] }}
+        transition={reduceMotion ? undefined : { duration: 6, repeat: Infinity, ease: 'linear' }}
+      />
+      <motion.div
+        className="absolute inset-[-18%] bg-[conic-gradient(from_180deg_at_50%_50%,rgba(34,199,232,0.04)_0deg,rgba(47,128,237,0.18)_96deg,rgba(255,255,255,0.02)_180deg,rgba(249,115,22,0.16)_260deg,rgba(34,199,232,0.04)_360deg)] opacity-60 blur-[86px] dark:opacity-30"
+        animate={reduceMotion ? undefined : { rotate: [0, 18, -12, 0], scale: [1, 1.05, 0.98, 1] }}
+        transition={reduceMotion ? undefined : { duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.1)_0%,rgba(238,246,255,0.3)_52%,rgba(238,246,255,0.9)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.08)_0%,rgba(10,20,35,0.34)_52%,rgba(8,15,27,0.82)_100%)]" />
     </div>
