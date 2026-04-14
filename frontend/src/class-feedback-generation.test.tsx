@@ -319,20 +319,24 @@ test('App source injects the class feedback control bar into the workspace heade
   assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
 });
 
-test('App source keeps class feedback filters and task actions in a stable desktop grid layout', () => {
+test('App source keeps class feedback header full width with a balanced desktop control layout', () => {
   assert.match(
     appSource,
-    /const classFeedbackControlBar = \(\s*<div className="grid gap-4 2xl:grid-cols-\[minmax\(0,1fr\)_auto\] 2xl:items-center">/,
+    /return \(\s*<div className=\{`\$\{workspacePageClass\} space-y-6`\}>/,
   );
   assert.match(
     appSource,
-    /<div className="grid gap-3 xl:grid-cols-\[minmax\(0,1\.15fr\)_minmax\(0,0\.85fr\)_minmax\(0,1\.2fr\)\] 2xl:min-w-\[44rem\]">/,
+    /const classFeedbackControlBar = \(\s*<div className="grid gap-3 xl:grid-cols-\[minmax\(0,1\.45fr\)_minmax\(14rem,0\.72fr\)_auto\] xl:items-end">/,
   );
   assert.match(
     appSource,
-    /<div className="grid gap-3 sm:grid-cols-\[minmax\(11rem,1fr\)_auto_auto\] sm:items-stretch 2xl:justify-self-end">/,
+    /<div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-\[minmax\(0,1\.1fr\)_minmax\(0,0\.8fr\)_minmax\(0,1fr\)\]">/,
   );
-  assert.doesNotMatch(appSource, /<div className="flex flex-wrap items-start gap-3">/);
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 sm:grid-cols-2 xl:min-w-\[18rem\]">/,
+  );
+  assert.doesNotMatch(appSource, /<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>/);
 });
 
 test('App source synchronizes class feedback member selection against accessible classes', () => {

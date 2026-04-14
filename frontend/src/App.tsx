@@ -2870,8 +2870,8 @@ const ClassFeedbackGenerationPage = ({
       : []),
   ];
   const classFeedbackControlBar = (
-    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] 2xl:min-w-[44rem]">
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(14rem,0.72fr)_auto] xl:items-end">
+      <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
         <select
           value={selectedClassId ?? ''}
           onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
@@ -2987,19 +2987,19 @@ const ClassFeedbackGenerationPage = ({
           </div>
         )}
       </div>
-      <div className="grid gap-3 sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-stretch 2xl:justify-self-end">
-        <div className="min-w-[11rem] rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
+      <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
           <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
           <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             {classFeedbackPeriodPreview.startDate} 至 {classFeedbackPeriodPreview.endDate}
           </div>
-        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[18rem]">
         <button
           type="button"
           onClick={() => void handleCreateClassFeedbackTask()}
           disabled={!selectedClassId || isSavingClassFeedback}
-          className={`${workspacePrimaryButtonClass} justify-center`}
+          className={`${workspacePrimaryButtonClass} w-full justify-center`}
         >
           <PlusCircle size={18} />
           创建反馈任务
@@ -3008,7 +3008,7 @@ const ClassFeedbackGenerationPage = ({
           type="button"
           onClick={() => void handleRefreshClassFeedbackTask()}
           disabled={!activeClassFeedbackTaskId || isRefreshingTask}
-          className={`${workspaceSecondaryButtonClass} justify-center`}
+          className={`${workspaceSecondaryButtonClass} w-full justify-center`}
         >
           <RefreshCw size={18} />
           刷新任务
@@ -3018,7 +3018,7 @@ const ClassFeedbackGenerationPage = ({
   );
 
   return (
-    <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
+    <div className={`${workspacePageClass} space-y-6`}>
       <ClassFeedbackGenerationWorkspace
         classNameLabel={selectedClass?.name ?? '未选择班级'}
         teacherNameLabel={teacherNameLabel}
