@@ -19,6 +19,17 @@
 - 生产机仓库现在已经切到 GitHub SSH over 443；正常情况下直接 `git fetch origin` 即可，不应该再默认走 `bundle`
 - 如果服务器 `git fetch origin` 失败，先确认远端 `origin` 仍是 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，再决定是否切 `git bundle + scp` 兜底
 
+## 推荐闭环
+
+每次正式发布，默认按这 4 步闭环，不要只做中间一段：
+
+1. 先在 `develop` 做 fresh verification，并把通过验证的提交推到 `origin/develop`
+2. 再把 `develop` 合到 `master`，并在合并后的 `master` 结果上重跑 verification
+3. 部署成功后，再补 `handoff.md` 或相关发布文档的 docs commit，把这次真实发布结果写回仓库
+4. 最后把生产机仓库 `HEAD` 轻量同步到最新 `master`，并用一个 temp script 一次性校验本地仓库、`origin/master`、生产机仓库和线上健康状态
+
+如果只做到第 2 步或第 3 步，仓库记录、远端分支和生产机仓库 `HEAD` 很容易出现“功能已上线，但文档或仓库状态没对齐”的半收口状态。
+
 ## 发布前检查
 
 在本地仓库根目录执行：
@@ -220,6 +231,7 @@ git log --oneline -3 --decorate
 - 更新根目录 `handoff.md`
 - 记录这次是否走了正常发布还是 `bundle` 兜底
 - 如果文档本身有更新，单独提交 docs commit
+- 如果这次补了发布 docs commit，记得把生产机仓库也再 `git pull --ff-only origin master` 一次，只同步仓库头，不必重复重启服务
 - 不要把运行时垃圾文件留在工作区，比如 `__pycache__/`、`tests/__pycache__/`、`data/xingrun.db`
 
 ## 给下一位 AI 的硬规则
