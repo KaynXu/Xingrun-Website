@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import Hls from 'hls.js';
 import {
   Home,
   LayoutDashboard,
@@ -39,7 +38,7 @@ import {
   X,
   ChevronDown,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
@@ -1209,59 +1208,81 @@ const workspaceGhostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
 const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900 dark:text-white';
 const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500 dark:text-slate-400';
-const landingHeroVideoStreamUrl =
-  'https://stream.mux.com/ef2TghmWccnsK54qnxtFWjv36zXb01cK02CAfgDNQMgn4.m3u8';
 
-function HeroBackgroundVideo() {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = landingHeroVideoStreamUrl;
-      return () => {
-        video.removeAttribute('src');
-        video.load();
-      };
-    }
-
-    if (!Hls.isSupported()) {
-      return;
-    }
-
-    const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
-    });
-
-    hls.loadSource(landingHeroVideoStreamUrl);
-    hls.attachMedia(video);
-
-    return () => {
-      hls.destroy();
-      video.removeAttribute('src');
-      video.load();
-    };
-  }, []);
+function HeroBackgroundGrainient() {
+  const reduceMotion = useReducedMotion();
 
   return (
-    <div className="absolute inset-0">
-      <video
-        ref={videoRef}
-        className="h-full w-full object-cover opacity-[0.32] saturate-[0.9] dark:opacity-[0.26]"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        aria-hidden="true"
-        data-stream-src={landingHeroVideoStreamUrl}
+    <div
+      className="absolute inset-0 overflow-hidden"
+      aria-hidden="true"
+      data-background="grainient"
+      data-grainient-palette="sky-cyan"
+      data-grainient-motion="pronounced"
+      data-grainient-style="flow-bands"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.54),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.42),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(255,255,255,0.52),transparent_24%),linear-gradient(135deg,rgba(240,249,255,0.99)_0%,rgba(214,239,255,0.97)_42%,rgba(197,228,255,0.95)_100%)] dark:bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.24),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.28),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(125,211,252,0.12),transparent_24%),linear-gradient(135deg,rgba(7,14,25,0.99)_0%,rgba(10,22,38,0.97)_42%,rgba(16,32,54,0.95)_100%)]" />
+      <motion.div
+        className="absolute left-[-14%] top-[-18%] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(34,199,232,0.72)_0%,rgba(34,199,232,0.28)_34%,transparent_72%)] opacity-90 blur-[72px] dark:bg-[radial-gradient(circle,rgba(34,199,232,0.42)_0%,rgba(34,199,232,0.16)_34%,transparent_72%)] dark:opacity-95"
+        animate={reduceMotion ? undefined : { x: [0, 88, -52, 0], y: [0, 34, -58, 0], scale: [1, 1.16, 0.9, 1], rotate: [0, 14, -10, 0] }}
+        transition={reduceMotion ? undefined : { duration: 10, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.3)_0%,rgba(238,246,255,0.78)_58%,rgba(238,246,255,0.94)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.28)_0%,rgba(15,23,42,0.72)_58%,rgba(15,23,42,0.9)_100%)]" />
+      <motion.div
+        className="absolute right-[-10%] top-[4%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(47,128,237,0.52)_0%,rgba(47,128,237,0.22)_36%,transparent_72%)] opacity-90 blur-[84px] dark:bg-[radial-gradient(circle,rgba(47,128,237,0.34)_0%,rgba(47,128,237,0.16)_36%,transparent_72%)]"
+        animate={reduceMotion ? undefined : { x: [0, -72, 46, 0], y: [0, 40, -34, 0], scale: [1, 0.92, 1.12, 1], rotate: [0, -12, 8, 0] }}
+        transition={reduceMotion ? undefined : { duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
+      />
+      <motion.div
+        className="absolute bottom-[-18%] left-[18%] h-[30rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.24)_0%,rgba(255,255,255,0.1)_36%,transparent_72%)] opacity-75 blur-[92px] dark:bg-[radial-gradient(circle,rgba(249,115,22,0.18)_0%,rgba(34,197,94,0.08)_36%,transparent_72%)]"
+        animate={reduceMotion ? undefined : { x: [0, 64, -40, 0], y: [0, -54, 30, 0], scale: [1, 1.14, 0.94, 1] }}
+        transition={reduceMotion ? undefined : { duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
+      />
+      <motion.div
+        className="absolute inset-[-18%] opacity-[0.34] mix-blend-multiply blur-[18px] dark:opacity-[0.16] dark:mix-blend-screen"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(116deg, rgba(34,199,232,0) 0px, rgba(34,199,232,0) 38px, rgba(34,199,232,0.24) 38px, rgba(34,199,232,0.24) 52px, rgba(255,255,255,0) 52px, rgba(255,255,255,0) 92px, rgba(47,128,237,0.2) 92px, rgba(47,128,237,0.2) 108px, rgba(255,255,255,0) 108px, rgba(255,255,255,0) 156px)',
+          backgroundSize: '220px 220px',
+        }}
+        animate={reduceMotion ? undefined : { x: [0, 148, -96, 0], y: [0, -44, 68, 0], opacity: [0.24, 0.38, 0.28, 0.24] }}
+        transition={reduceMotion ? undefined : { duration: 7, repeat: Infinity, ease: 'linear' }}
+      />
+      <motion.div
+        className="absolute inset-[-10%] opacity-[0.22] mix-blend-soft-light dark:opacity-[0.12]"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(180deg, rgba(255,255,255,0) 0px, rgba(255,255,255,0) 24px, rgba(255,255,255,0.34) 24px, rgba(255,255,255,0.34) 28px, rgba(255,255,255,0) 28px, rgba(255,255,255,0) 58px)',
+          backgroundSize: '100% 120px',
+        }}
+        animate={reduceMotion ? undefined : { y: [0, -64, 0], opacity: [0.16, 0.28, 0.16] }}
+        transition={reduceMotion ? undefined : { duration: 5.2, repeat: Infinity, ease: 'linear' }}
+      />
+      <motion.div
+        className="absolute inset-[-12%] opacity-45 mix-blend-soft-light blur-3xl dark:opacity-20"
+        style={{
+          backgroundImage:
+            'linear-gradient(128deg, rgba(255,255,255,0.82) 0%, rgba(34,199,232,0.24) 26%, rgba(47,128,237,0.14) 54%, rgba(249,115,22,0.14) 100%)',
+        }}
+        animate={reduceMotion ? undefined : { rotate: [0, 7, -5, 0], scale: [1, 1.08, 0.97, 1], x: [0, 40, -26, 0], y: [0, -24, 18, 0] }}
+        transition={reduceMotion ? undefined : { duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute inset-0 opacity-[0.18] mix-blend-soft-light dark:opacity-[0.08]"
+        style={{
+          backgroundImage:
+            'radial-gradient(rgba(255,255,255,0.9) 0.7px, transparent 0.7px), radial-gradient(rgba(14,165,233,0.3) 0.5px, transparent 0.5px)',
+          backgroundPosition: '0 0, 12px 14px',
+          backgroundSize: '18px 18px, 22px 22px',
+        }}
+        animate={reduceMotion ? undefined : { x: [0, 24, -18, 0], y: [0, -14, 10, 0], opacity: [0.14, 0.24, 0.16, 0.14] }}
+        transition={reduceMotion ? undefined : { duration: 6, repeat: Infinity, ease: 'linear' }}
+      />
+      <motion.div
+        className="absolute inset-[-18%] bg-[conic-gradient(from_180deg_at_50%_50%,rgba(34,199,232,0.04)_0deg,rgba(47,128,237,0.18)_96deg,rgba(255,255,255,0.02)_180deg,rgba(249,115,22,0.16)_260deg,rgba(34,199,232,0.04)_360deg)] opacity-60 blur-[86px] dark:opacity-30"
+        animate={reduceMotion ? undefined : { rotate: [0, 18, -12, 0], scale: [1, 1.05, 0.98, 1] }}
+        transition={reduceMotion ? undefined : { duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.08)_0%,rgba(238,246,255,0.14)_46%,rgba(238,246,255,0.72)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.06)_0%,rgba(10,20,35,0.22)_46%,rgba(8,15,27,0.72)_100%)]" />
     </div>
   );
 }
@@ -4097,6 +4118,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden">
               {records.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
+                const followUpNote = record.follow_up_note?.trim();
                 return (
                   <article key={record.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
                     <div className="flex items-start justify-between gap-3">
@@ -4115,13 +4137,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
                       </div>
-                      <div>
+                      <div className="min-h-[96px]">
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询老师</p>
                         <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
                           {getConsultationTeacherName(record, teacherDirectory)}
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
+                        {followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">备注：{followUpNote}</p>}
                       </div>
                     </div>
 
@@ -4203,6 +4226,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
               {records.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
+                const followUpNote = record.follow_up_note?.trim();
                 return (
                   <tr key={record.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
                     <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
@@ -4223,9 +4247,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </p>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                      <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p>{record.consultation_subject || '未填写咨询科目'}</p>
                         <p>{getConsultationSourceLabel(record)}</p>
+                        {followUpNote && <p>备注：{followUpNote}</p>}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -7916,25 +7941,8 @@ export const LandingPage = ({
       </nav>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)] dark:bg-[#0f172a]">
-        <HeroBackgroundVideo />
-        <div className="absolute inset-x-0 top-0 h-full">
-          <motion.div
-            animate={{ scale: [1, 1.12, 1], opacity: [0.5, 0.65, 0.5] }}
-            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px] dark:bg-cyan-500/10"
-          />
-          <motion.div
-            animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.55, 0.4] }}
-            transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-            className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px] dark:bg-blue-500/10"
-          />
-          <motion.div
-            animate={{ scale: [1, 1.15, 1], opacity: [0.7, 0.85, 0.7] }}
-            transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 4 }}
-            className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px] dark:bg-slate-700/20"
-          />
-        </div>
+      <section className="relative min-h-screen overflow-hidden bg-[#F8FBFF] dark:bg-[#0f172a]">
+        <HeroBackgroundGrainient />
 
         <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-end py-24 md:py-32 lg:py-36">
           <div className="grid w-full gap-10 lg:grid-cols-[minmax(0,1.12fr)_360px] lg:items-end">

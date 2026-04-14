@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from datetime import date
 from config_runtime import get_runtime_config
+from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
 
 # ─── 配置加载 ──────────────────────────────────────────────────────────────────
 def _load_config() -> dict:
@@ -421,7 +422,7 @@ MONTHLY_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师。
 """
 
 
-CONSULTATION_BATCH_SYSTEM_PROMPT = """你是咨询记录整理助手。
+CONSULTATION_BATCH_SYSTEM_PROMPT = f"""你是咨询记录整理助手。
 你只能输出 JSON，不要输出额外说明。
 
 请把输入文本拆成 items 数组，每一项都必须是：
@@ -449,7 +450,10 @@ CONSULTATION_BATCH_SYSTEM_PROMPT = """你是咨询记录整理助手。
 2. 没有显式记录 ID 时，必须输出 action=create 且 target_id=null。
 3. 不要编造记录 ID。
 4. 如果一段文本信息不足，可以保留 fields 的部分字段，不要补全虚构内容。
-5. 顶层返回 {"items": [...], "warnings": [...]}。
+5. 如果填写 follow_up_status，值只能是：{"、".join(CONSULTATION_FOLLOW_UP_STATUS_OPTIONS)}。
+6. 不要自造新的跟进状态，例如“待开课缴费”“已试听”“待确认缴费”这类都不能输出到 follow_up_status。
+7. 如果原文只表达“继续联系”“后续再跟”这类模糊意思，但没有明确落到现有状态，就不要填写 follow_up_status。
+8. 顶层返回 {{"items": [...], "warnings": [...]}}。
 """
 
 

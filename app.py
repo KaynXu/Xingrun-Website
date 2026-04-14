@@ -2557,8 +2557,6 @@ def api_wechat_wrong_questions_create():
     image_url = (data.get("image_url") or "").strip()
     child_raw_reason_text = (data.get("child_raw_reason_text") or "").strip()
     child_reason_input_mode = (data.get("child_reason_input_mode") or "text").strip() or "text"
-    pre_primary_error_type = (data.get("primary_error_type") or "").strip()
-    pre_secondary_error_summary = (data.get("secondary_error_summary") or "").strip()
     if not open_id or not binding_id or not image_url:
         return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
     if not child_raw_reason_text:
@@ -2579,21 +2577,15 @@ def api_wechat_wrong_questions_create():
     except Exception as exc:
         return jsonify({"error": str(exc), "retryable": True}), 502
 
-    if pre_primary_error_type and pre_secondary_error_summary:
-        reason_classification = {
-            "primary_error_type": pre_primary_error_type,
-            "secondary_error_summary": pre_secondary_error_summary,
-        }
-    else:
-        try:
-            reason_classification = ai_processor.classify_wrong_question_reason(
-                child_raw_reason_text,
-                question_text=str(recognition.get("question_text") or ""),
-            )
-        except ValueError as exc:
-            return jsonify({"error": str(exc), "retryable": True}), 422
-        except Exception as exc:
-            return jsonify({"error": str(exc), "retryable": True}), 502
+    try:
+        reason_classification = ai_processor.classify_wrong_question_reason(
+            child_raw_reason_text,
+            question_text=str(recognition.get("question_text") or ""),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 422
+    except Exception as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 502
 
     try:
         record = create_wechat_wrong_question_submission(

@@ -102,6 +102,7 @@ CONSULTATION_SOURCE_ALIASES = {
     "校区到访": {"校区到访", "到访", "上门", "线下到访"},
     "其他": {"其他"},
 }
+CONSULTATION_FOLLOW_UP_STATUS_OPTIONS = ("待邀约", "跟进中", "已报班", "已劝退")
 
 CONSULTATION_FIELDNAMES = [
     "id",
@@ -750,13 +751,14 @@ def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
     return updates
 
 
-def _normalize_consultation_batch_fields(fields: Optional[dict]) -> dict[str, str]:
+def _normalize_consultation_batch_fields(fields: Optional[dict]) -> tuple[dict[str, str], list[str]]:
     if fields is None:
         fields = {}
     if not isinstance(fields, dict):
         raise ValueError("AI 解析返回了无效结果")
     updates = _extract_consultation_updates(fields or {})
     normalized: dict[str, str] = {}
+    warnings: list[str] = []
     for api_field, csv_field in CONSULTATION_API_FIELD_MAP.items():
         if csv_field in CONSULTATION_EDITABLE_FIELDS and csv_field in updates:
             normalized[api_field] = updates[csv_field]
@@ -784,7 +786,20 @@ def _normalize_consultation_batch_fields(fields: Optional[dict]) -> dict[str, st
     if source_note or "source_channel_note" in normalized:
         normalized["source_channel_note"] = source_note
 
-    return normalized
+    if "follow_up_status" in normalized:
+        follow_up_status = normalized.get("follow_up_status", "").strip()
+        if not follow_up_status:
+            normalized["follow_up_status"] = ""
+        elif follow_up_status in CONSULTATION_FOLLOW_UP_STATUS_OPTIONS:
+            normalized["follow_up_status"] = follow_up_status
+        else:
+            normalized.pop("follow_up_status", None)
+            warnings.append(
+                "已忽略不存在的跟进状态："
+                f"{follow_up_status}。可选值仅支持：{'、'.join(CONSULTATION_FOLLOW_UP_STATUS_OPTIONS)}。"
+            )
+
+    return normalized, warnings
 
 
 def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
@@ -821,7 +836,7 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
                 normalized_target_id = None
         if normalized_target_id is None:
             action = "create"
-        normalized_fields = _normalize_consultation_batch_fields(raw_item.get("fields"))
+        normalized_fields, field_warnings = _normalize_consultation_batch_fields(raw_item.get("fields"))
         if action == "update":
             normalized_fields = {
                 field: value
@@ -843,7 +858,7 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
                     str(item).strip()
                     for item in (raw_item.get("warnings", []) if isinstance(raw_item.get("warnings", []), list) else [])
                     if str(item).strip()
-                ],
+                ] + field_warnings,
             }
         )
     return {
