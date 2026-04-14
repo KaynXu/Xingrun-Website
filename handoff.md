@@ -16,7 +16,7 @@
 - `develop -> master -> 部署` 已在 2026-04-14 再走完一轮；这次生产机直接通过 GitHub SSH over 443 拉取最新 `master`，没有再走 `bundle + scp` 兜底。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `bef4b6e Merge branch 'develop'`；其中包含咨询记录备注展示、微信错题上传分类回退修复，以及此前 `develop` 上待发布的前端与测试调整。
+- 本次已部署生产的最新提交是 `d11aec8 Merge branch 'develop'`；其中包含咨询记录里“咨询详情”与“跟进”展示位的再次收口，以及此前 `develop` 上待发布的前端与测试调整。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -51,12 +51,11 @@
 - `teacher_comment` 和 `status='reviewed'` 在本地微信错题链路里只剩兼容旧列含义，不再作为主流程判断依据。
 - staff / owner / admin / super_owner 已统一到按班级或学生打开错题本的 notebook 流程。
 - `member` 端已改成学生卡片 -> 弹窗错题本，不再走旧的页面下半区详情布局。
-- 最近一次相关发布 merge 提交并已部署生产的是 `bef4b6e Merge branch 'develop'`。
+- 最近一次相关发布 merge 提交并已部署生产的是 `d11aec8 Merge branch 'develop'`。
 
 ### 下一步
 - 如果继续咨询记录这一项，最值得做的是用一段真实批量整理文案在页面里手工跑一次 `AI 批量整理`，确认非法状态会被 warning 掉、草稿里只保留合法字段，避免只靠单测判断 UI 呈现。
 - 最值得继续做的是打开真实咨询记录页做一次人工 smoke check，确认有无 `咨询详情`、`跟进` 的记录在桌面端、移动端下都保持统一节奏，并确认新增文案没有把操作区和状态 badge 挤乱。
-- 如果继续发版，当前可以直接按 `docs/deploy-release.md` 的标准路径做 `develop -> master -> 部署`；这轮之前卡住的微信错题上传 release blocker 已经修掉。
 - 最值得继续做的是打开真实首页做一次手工 smoke check，确认新的 grainient 背景在桌面端、移动端和夜间模式下都不会压低首屏文案与按钮可读性。
 - 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
