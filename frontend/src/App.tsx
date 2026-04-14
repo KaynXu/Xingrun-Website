@@ -2870,7 +2870,7 @@ const ClassFeedbackGenerationPage = ({
       : []),
   ];
   const classFeedbackControlBar = (
-    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+    <div className="grid gap-3 sm:grid-cols-2 xl:max-w-[43rem] xl:grid-cols-4">
       <select
         value={selectedClassId ?? ''}
         onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
@@ -2904,7 +2904,7 @@ const ClassFeedbackGenerationPage = ({
           disabled={isRefreshingTask || isSavingClassFeedback}
         />
       ) : classFeedbackPeriodMode === 'weekly' ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">
           <select
             value={classFeedbackPeriodYear}
             onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
@@ -2931,7 +2931,7 @@ const ClassFeedbackGenerationPage = ({
           </select>
         </div>
       ) : classFeedbackPeriodMode === 'monthly' ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">
           <select
             value={classFeedbackPeriodYear}
             onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
@@ -2958,7 +2958,7 @@ const ClassFeedbackGenerationPage = ({
           </select>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">
           <select
             value={classFeedbackPeriodYear}
             onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}

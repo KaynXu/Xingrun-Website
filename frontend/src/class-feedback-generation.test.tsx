@@ -334,7 +334,11 @@ test('App source anchors class feedback period preview to the top-right and task
   );
   assert.match(
     appSource,
-    /<div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-\[minmax\(0,1\.1fr\)_minmax\(0,0\.8fr\)_minmax\(0,1fr\)\]">/,
+    /<div className="grid gap-3 sm:grid-cols-2 xl:max-w-\[43rem\] xl:grid-cols-4">/,
+  );
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">/,
   );
   assert.match(
     appSource,
