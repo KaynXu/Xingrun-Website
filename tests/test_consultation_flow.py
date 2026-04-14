@@ -681,6 +681,41 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(draft["target_id"], 182)
         self.assertEqual(draft["fields"], {"follow_up_status": "跟进中"})
 
+    def test_normalize_batch_parse_result_drops_unknown_follow_up_status_with_warning(self):
+        payload = lesson_manager.normalize_consultation_batch_parse_result(
+            {
+                "items": [
+                    {
+                        "action": "create",
+                        "target_id": None,
+                        "reason": "新增咨询记录",
+                        "fields": {
+                            "parent_wechat_name": "张妈妈",
+                            "follow_up_status": "待开课缴费",
+                            "follow_up_note": "模型误写了不存在的状态",
+                        },
+                        "warnings": [],
+                    }
+                ],
+                "warnings": [],
+            }
+        )
+
+        draft = payload["items"][0]
+        self.assertEqual(draft["action"], "create")
+        self.assertIsNone(draft["target_id"])
+        self.assertEqual(
+            draft["fields"],
+            {
+                "parent_wechat_name": "张妈妈",
+                "follow_up_note": "模型误写了不存在的状态",
+            },
+        )
+        self.assertEqual(
+            draft["warnings"],
+            ["已忽略不存在的跟进状态：待开课缴费。可选值仅支持：待邀约、跟进中、已报班、已劝退。"],
+        )
+
     def test_member_sees_only_assigned_consultations(self):
         """Member should only see consultations assigned to them via assigned_user_id"""
         member1_token = self.create_member_token("member1", "Member 1", "test123")
