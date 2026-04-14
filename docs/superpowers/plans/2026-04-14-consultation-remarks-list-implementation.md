@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Show `follow_up_note` directly in the consultation list while keeping both desktop rows and mobile cards visually uniform without adding a new column or any expand-on-hover behavior.
+**Goal:** Show `follow_up_note` directly in the consultation list while keeping both desktop rows and mobile cards visually uniform, without adding a new column, horizontal scrolling, or any expand-on-hover behavior.
 
 **Architecture:** Keep the implementation inside the existing `ConsultationPage` in `frontend/src/App.tsx`. Reuse the existing consultation info blocks, append `备注：{followUpNote}` in place, and use fixed minimum-height budgets instead of adding a new layout abstraction. Lock the behavior with source-level assertions in the existing consultation test file so this stays a minimal front-end-only change.
 
@@ -15,7 +15,7 @@
 - Modify: `frontend/src/App.tsx:4097-4229`
   - Add trimmed `follow_up_note` rendering to the mobile card info block and desktop `咨询科目 / 来源渠道` cell, plus fixed minimum-height classes so note-less and noted records stay the same size.
 - Modify: `frontend/src/account-card.test.tsx:162-170`
-  - Add a consultation-page source assertion that verifies the note stays inside the existing info blocks and no standalone `备注` table column appears.
+  - Add a consultation-page source assertion that verifies the note stays inside the existing info blocks, no standalone `备注` table column appears, and the layout still forbids horizontal scrolling.
 - Modify: `handoff.md:8-68`
   - Record that the implementation plan exists and the next concrete step is to execute the small front-end-only change.
 
@@ -38,6 +38,7 @@ test('consultation page source keeps follow-up notes inside the existing consult
   assert.match(consultationPageBlock[0], /<div className="min-h-\[72px\] space-y-1 text-sm text-slate-500 dark:text-slate-400">/);
   assert.match(consultationPageBlock[0], /followUpNote && <p>备注：\{followUpNote\}<\/p>/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
+  assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
 });
 ```
 
@@ -135,6 +136,7 @@ Use the two existing consultation list map blocks and add one local `followUpNot
 Implementation constraints:
 
 - Do not add a new table header
+- Horizontal scrolling is explicitly forbidden for this feature
 - Do not add `overflow-x-auto`
 - Do not add tooltip, modal, or expand/collapse state
 - Keep the change inside the existing `ConsultationPage` block
@@ -158,7 +160,7 @@ chmod +x "$tmp_script"
 rm -f "$tmp_script"
 ```
 
-Expected: exit `0`; the new consultation-note assertion passes, and the existing adaptive-layout consultation test still passes without any horizontal-scroll regression.
+Expected: exit `0`; the new consultation-note assertion passes, and the existing adaptive-layout consultation test still passes with horizontal scrolling still forbidden.
 
 ### Task 2: Update Handoff, Re-Verify, And Commit The Small Front-End Change
 
