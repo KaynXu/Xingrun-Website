@@ -9,6 +9,7 @@
 - 2026-04-14 已收口咨询批量整理的跟进状态越界问题：`ai_processor.py` 里的咨询助手提示词已明确锁定 `待邀约 / 跟进中 / 已报班 / 已劝退` 4 个可用状态，并明确禁止输出 `待开课缴费`、`已试听` 这类自造状态；`lesson_manager.normalize_consultation_batch_parse_result()` 现在也会自动丢弃非法 `follow_up_status` 并返回 warning，避免脏草稿继续进入前端确认流。
 - 2026-04-14 已落地“咨询记录”页备注展示：`follow_up_note` 不单独开列，直接并入现有“咨询科目 / 来源渠道”信息块；桌面端与移动端都按统一信息高度预算展示，并且明确禁止横向滚动、悬浮展开或不等高列表。
 - 这一轮实现只触达 `frontend/src/App.tsx`、`frontend/src/account-card.test.tsx` 和 `handoff.md`，没有改接口、录入逻辑或搜索逻辑。
+- 2026-04-14 为打通 release 补修了微信错题上传分类回退问题：`/api/wechat/wrong-questions` 不再信任客户端传来的 `primary_error_type` / `secondary_error_summary` 旧字段，而是统一走服务端 `classify_wrong_question_reason()` 重新分类，现有回归用例已恢复通过。
 - 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并已换成更容易直接看出在流动的 `flow bands` 版本。
 - landing 断言测试已同步改成检查 `data-background="grainient"` 和 `data-grainient-palette="sky-cyan"`，不再依赖旧视频流地址。
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
@@ -55,6 +56,7 @@
 ### 下一步
 - 如果继续咨询记录这一项，最值得做的是用一段真实批量整理文案在页面里手工跑一次 `AI 批量整理`，确认非法状态会被 warning 掉、草稿里只保留合法字段，避免只靠单测判断 UI 呈现。
 - 最值得继续做的是打开真实咨询记录页做一次人工 smoke check，确认有备注和无备注的记录在桌面端、移动端下都保持统一节奏，并确认备注没有把操作区和状态 badge 挤乱。
+- 如果继续发版，当前可以直接按 `docs/deploy-release.md` 的标准路径做 `develop -> master -> 部署`；这轮之前卡住的微信错题上传 release blocker 已经修掉。
 - 最值得继续做的是打开真实首页做一次手工 smoke check，确认新的 grainient 背景在桌面端、移动端和夜间模式下都不会压低首屏文案与按钮可读性。
 - 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
