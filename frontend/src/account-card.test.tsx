@@ -169,6 +169,19 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
+test('consultation page source keeps follow-up notes inside the existing consultation info blocks', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
+  assert.match(consultationPageBlock[0], /followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">备注：\{followUpNote\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<div className="min-h-\[72px\] space-y-1 text-sm text-slate-500 dark:text-slate-400">/);
+  assert.match(consultationPageBlock[0], /followUpNote && <p>备注：\{followUpNote\}<\/p>/);
+  assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
+  assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
+});
+
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);

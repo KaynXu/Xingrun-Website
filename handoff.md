@@ -6,8 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-14 已完成“咨询记录”页备注展示方案收口：备注不单独开列，直接并入现有“咨询科目 / 来源渠道”信息块；桌面端与移动端都按统一三层信息预算展示，并且明确禁止横向滚动、悬浮展开或不等高列表。
-- 2026-04-14 已写好对应 implementation plan：`docs/superpowers/plans/2026-04-14-consultation-remarks-list-implementation.md`，当前执行面只覆盖 `frontend/src/App.tsx`、`frontend/src/account-card.test.tsx` 和 `handoff.md`，不碰接口和录入逻辑。
+- 2026-04-14 已落地“咨询记录”页备注展示：`follow_up_note` 不单独开列，直接并入现有“咨询科目 / 来源渠道”信息块；桌面端与移动端都按统一信息高度预算展示，并且明确禁止横向滚动、悬浮展开或不等高列表。
+- 这一轮实现只触达 `frontend/src/App.tsx`、`frontend/src/account-card.test.tsx` 和 `handoff.md`，没有改接口、录入逻辑或搜索逻辑。
 - 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并已换成更容易直接看出在流动的 `flow bands` 版本。
 - landing 断言测试已同步改成检查 `data-background="grainient"` 和 `data-grainient-palette="sky-cyan"`，不再依赖旧视频流地址。
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
@@ -52,7 +52,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
-- 如果继续这一项，下一步就是执行 `docs/superpowers/plans/2026-04-14-consultation-remarks-list-implementation.md`，在 `ConsultationPage` 里把 `follow_up_note` 并入现有信息块，并用源码断言锁住“不新增备注列、明确禁止横向滚动”的约束。
+- 最值得继续做的是打开真实咨询记录页做一次人工 smoke check，确认有备注和无备注的记录在桌面端、移动端下都保持统一节奏，并确认备注没有把操作区和状态 badge 挤乱。
 - 最值得继续做的是打开真实首页做一次手工 smoke check，确认新的 grainient 背景在桌面端、移动端和夜间模式下都不会压低首屏文案与按钮可读性。
 - 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。

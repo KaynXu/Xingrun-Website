@@ -4118,6 +4118,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden">
               {records.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
+                const followUpNote = record.follow_up_note?.trim();
                 return (
                   <article key={record.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
                     <div className="flex items-start justify-between gap-3">
@@ -4136,13 +4137,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
                       </div>
-                      <div>
+                      <div className="min-h-[96px]">
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询老师</p>
                         <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
                           {getConsultationTeacherName(record, teacherDirectory)}
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
+                        {followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">备注：{followUpNote}</p>}
                       </div>
                     </div>
 
@@ -4224,6 +4226,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
               {records.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
+                const followUpNote = record.follow_up_note?.trim();
                 return (
                   <tr key={record.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
                     <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
@@ -4244,9 +4247,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </p>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                      <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p>{record.consultation_subject || '未填写咨询科目'}</p>
                         <p>{getConsultationSourceLabel(record)}</p>
+                        {followUpNote && <p>备注：{followUpNote}</p>}
                       </div>
                     </td>
                     <td className="px-6 py-4">
