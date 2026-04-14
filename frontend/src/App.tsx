@@ -3402,25 +3402,25 @@ const ConsultationModal = ({
             <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">具体需求</span>
+                  <span className="text-slate-500 dark:text-slate-400">咨询详情</span>
                   <textarea
                     value={form.need_detail}
                     onChange={(e) => updateField('need_detail', e.target.value)}
                     disabled={readOnly}
                     rows={5}
                     className={`${fieldClass} resize-none`}
-                    placeholder="家长具体咨询需求"
+                    placeholder="家长本次咨询目标或诉求"
                   />
                 </label>
                 <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">内部备注（可选）</span>
+                  <span className="text-slate-500 dark:text-slate-400">跟进备注（内部）</span>
                   <textarea
                     value={form.follow_up_note}
                     onChange={(e) => updateField('follow_up_note', e.target.value)}
                     disabled={readOnly}
                     rows={5}
                     className={`${fieldClass} resize-none`}
-                    placeholder="补充内部跟进说明"
+                    placeholder="补充后续跟进安排或内部提醒"
                   />
                 </label>
               </div>
@@ -4118,6 +4118,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden">
               {records.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
+                const needDetail = record.need_detail?.trim();
                 const followUpNote = record.follow_up_note?.trim();
                 return (
                   <article key={record.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
@@ -4137,14 +4138,15 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
                       </div>
-                      <div className="min-h-[96px]">
+                      <div className="min-h-[120px]">
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询老师</p>
                         <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
                           {getConsultationTeacherName(record, teacherDirectory)}
                         </p>
+                        {needDetail && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询详情：{needDetail}</p>}
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
-                        {followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">备注：{followUpNote}</p>}
+                        {followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">跟进：{followUpNote}</p>}
                       </div>
                     </div>
 
@@ -4226,6 +4228,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
               {records.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
+                const needDetail = record.need_detail?.trim();
                 const followUpNote = record.follow_up_note?.trim();
                 return (
                   <tr key={record.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
@@ -4242,15 +4245,18 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
                     <td className="px-6 py-4">
-                      <p className="text-sm text-slate-700 dark:text-slate-200">
-                        {getConsultationTeacherName(record, teacherDirectory)}
-                      </p>
+                      <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                        <p className="font-medium text-slate-700 dark:text-slate-200">
+                          {getConsultationTeacherName(record, teacherDirectory)}
+                        </p>
+                        {needDetail && <p>咨询详情：{needDetail}</p>}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p>{record.consultation_subject || '未填写咨询科目'}</p>
                         <p>{getConsultationSourceLabel(record)}</p>
-                        {followUpNote && <p>备注：{followUpNote}</p>}
+                        {followUpNote && <p>跟进：{followUpNote}</p>}
                       </div>
                     </td>
                     <td className="px-6 py-4">
