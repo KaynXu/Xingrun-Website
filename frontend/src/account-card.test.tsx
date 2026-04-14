@@ -146,7 +146,9 @@ test('consultation modal source keeps the create and edit form concise', () => {
   assert.doesNotMatch(source, /placeholder="老师 ID"/);
   assert.doesNotMatch(source, />截图字段</);
   assert.doesNotMatch(source, />老师ID</);
-  assert.match(source, /内部备注（可选）/);
+  assert.match(source, /咨询详情/);
+  assert.match(source, /跟进备注（内部）/);
+  assert.doesNotMatch(source, /内部备注（可选）/);
 });
 
 test('consultation modal source supports quick parsing and structured source metadata confirmation', () => {
@@ -169,15 +171,17 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page source keeps follow-up notes inside the existing consultation info blocks', () => {
+test('consultation page source keeps consultation detail under teacher and follow-up notes in the consultation info block', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const needDetail = record\.need_detail\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
-  assert.match(consultationPageBlock[0], /followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">备注：\{followUpNote\}<\/p>/);
+  assert.match(consultationPageBlock[0], /needDetail && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询详情：\{needDetail\}<\/p>/);
   assert.match(consultationPageBlock[0], /<div className="min-h-\[72px\] space-y-1 text-sm text-slate-500 dark:text-slate-400">/);
-  assert.match(consultationPageBlock[0], /followUpNote && <p>备注：\{followUpNote\}<\/p>/);
+  assert.match(consultationPageBlock[0], /followUpNote && <p>跟进：\{followUpNote\}<\/p>/);
+  assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
   assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
 });
