@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import * as AppModule from './App';
 
-test('landing page renders Starain hero branding and approved messaging', () => {
+test('landing page renders Starain hero branding and a theme-aware grainient hero background', () => {
   const LandingPage = (AppModule as {
     LandingPage?: React.ComponentType<{
       onLogin: () => void;
@@ -27,7 +27,9 @@ test('landing page renders Starain hero branding and approved messaging', () => 
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);
   assert.match(markup, /申请开通机构/);
-  assert.match(markup, /data-stream-src="https:\/\/stream\.mux\.com\/ef2TghmWccnsK54qnxtFWjv36zXb01cK02CAfgDNQMgn4\.m3u8"/);
+  assert.match(markup, /data-background="grainient"/);
+  assert.match(markup, /data-grainient-palette="sky-cyan"/);
+  assert.doesNotMatch(markup, /data-stream-src=/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
 

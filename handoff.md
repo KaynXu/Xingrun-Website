@@ -1,11 +1,13 @@
 ## Handoff
 
-最后更新：2026-04-10
+最后更新：2026-04-14
 
 这份文件只记录当前权威状态、下一步、风险和残留。
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并保留轻微颗粒与缓动流动感。
+- landing 断言测试已同步改成检查 `data-background="grainient"` 和 `data-grainient-palette="sky-cyan"`，不再依赖旧视频流地址。
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
@@ -48,6 +50,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是打开真实首页做一次手工 smoke check，确认新的 grainient 背景在桌面端、移动端和夜间模式下都不会压低首屏文案与按钮可读性。
 - 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
 - 当前最值得继续做的是打开真实页面做一次手工 smoke check，确认生产环境下删除本题后二次确认文案、跳下一题、最后一题删完后右侧详情收起，以及 PDF 入口都符合预期。
@@ -60,6 +63,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 当前 grainient 背景是本地复刻版，不是直接复用 reactbits 原实现；视觉方向已经对齐，但如果后面要追求更接近原站的 shader 波纹细节，还需要再单独设计一轮。
 - 生产机虽然已经改成 GitHub SSH over 443，但这条链路仍依赖服务器里的 deploy key 和 `~/.ssh/config` alias；如果后续被误删，部署会重新退化成 bundle 场景。
 - 旧的零散部署口径已经开始收口，但历史对话、旧提交和个别旧文档里仍可能残留“直接发 develop”或“先看 master 再说”的过期说法；下一轮如果有人只看旧记录，不看 `docs/deploy-release.md`，仍可能误判流程。
 - 当前错误类型下拉为了兼容现有错题记录，同时保留了固定错因和已出现过的 legacy downstream 分类；在真正统一错题后端分类口径前，这里仍是“固定列表 + 兼容旧值”的过渡态。

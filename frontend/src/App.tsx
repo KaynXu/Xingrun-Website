@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import Hls from 'hls.js';
 import {
   Home,
   LayoutDashboard,
@@ -39,7 +38,7 @@ import {
   X,
   ChevronDown,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
@@ -1209,59 +1208,52 @@ const workspaceGhostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
 const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900 dark:text-white';
 const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500 dark:text-slate-400';
-const landingHeroVideoStreamUrl =
-  'https://stream.mux.com/ef2TghmWccnsK54qnxtFWjv36zXb01cK02CAfgDNQMgn4.m3u8';
 
-function HeroBackgroundVideo() {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = landingHeroVideoStreamUrl;
-      return () => {
-        video.removeAttribute('src');
-        video.load();
-      };
-    }
-
-    if (!Hls.isSupported()) {
-      return;
-    }
-
-    const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
-    });
-
-    hls.loadSource(landingHeroVideoStreamUrl);
-    hls.attachMedia(video);
-
-    return () => {
-      hls.destroy();
-      video.removeAttribute('src');
-      video.load();
-    };
-  }, []);
+function HeroBackgroundGrainient() {
+  const reduceMotion = useReducedMotion();
 
   return (
-    <div className="absolute inset-0">
-      <video
-        ref={videoRef}
-        className="h-full w-full object-cover opacity-[0.32] saturate-[0.9] dark:opacity-[0.26]"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        aria-hidden="true"
-        data-stream-src={landingHeroVideoStreamUrl}
+    <div
+      className="absolute inset-0 overflow-hidden"
+      aria-hidden="true"
+      data-background="grainient"
+      data-grainient-palette="sky-cyan"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(34,199,232,0.34),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(47,128,237,0.28),transparent_24%),radial-gradient(circle_at_50%_72%,rgba(255,255,255,0.9),transparent_34%),linear-gradient(135deg,rgba(248,251,255,0.98)_0%,rgba(232,246,255,0.96)_46%,rgba(216,240,255,0.92)_100%)] dark:bg-[radial-gradient(circle_at_16%_18%,rgba(34,199,232,0.18),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(47,128,237,0.22),transparent_24%),radial-gradient(circle_at_50%_72%,rgba(56,189,248,0.12),transparent_34%),linear-gradient(135deg,rgba(7,14,25,0.98)_0%,rgba(10,20,35,0.96)_46%,rgba(14,29,46,0.94)_100%)]" />
+      <motion.div
+        className="absolute left-[-14%] top-[-18%] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(34,199,232,0.62)_0%,rgba(34,199,232,0.22)_34%,transparent_72%)] opacity-75 blur-[92px] dark:bg-[radial-gradient(circle,rgba(34,199,232,0.34)_0%,rgba(34,199,232,0.12)_34%,transparent_72%)] dark:opacity-90"
+        animate={reduceMotion ? undefined : { x: [0, 28, -16, 0], y: [0, 12, -22, 0], scale: [1, 1.08, 0.95, 1], rotate: [0, 8, -5, 0] }}
+        transition={reduceMotion ? undefined : { duration: 18, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.3)_0%,rgba(238,246,255,0.78)_58%,rgba(238,246,255,0.94)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.28)_0%,rgba(15,23,42,0.72)_58%,rgba(15,23,42,0.9)_100%)]" />
+      <motion.div
+        className="absolute right-[-10%] top-[4%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(47,128,237,0.42)_0%,rgba(47,128,237,0.16)_36%,transparent_72%)] opacity-85 blur-[110px] dark:bg-[radial-gradient(circle,rgba(47,128,237,0.28)_0%,rgba(47,128,237,0.12)_36%,transparent_72%)]"
+        animate={reduceMotion ? undefined : { x: [0, -24, 18, 0], y: [0, 16, -14, 0], scale: [1, 0.96, 1.06, 1], rotate: [0, -6, 4, 0] }}
+        transition={reduceMotion ? undefined : { duration: 20, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+      />
+      <motion.div
+        className="absolute bottom-[-18%] left-[18%] h-[30rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.18)_0%,rgba(255,255,255,0.08)_36%,transparent_72%)] opacity-70 blur-[118px] dark:bg-[radial-gradient(circle,rgba(249,115,22,0.14)_0%,rgba(34,197,94,0.06)_36%,transparent_72%)]"
+        animate={reduceMotion ? undefined : { x: [0, 22, -12, 0], y: [0, -20, 12, 0], scale: [1, 1.04, 0.98, 1] }}
+        transition={reduceMotion ? undefined : { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
+      />
+      <motion.div
+        className="absolute inset-[-12%] opacity-45 mix-blend-soft-light blur-3xl dark:opacity-20"
+        style={{
+          backgroundImage:
+            'linear-gradient(128deg, rgba(255,255,255,0.82) 0%, rgba(34,199,232,0.24) 26%, rgba(47,128,237,0.14) 54%, rgba(249,115,22,0.14) 100%)',
+        }}
+        animate={reduceMotion ? undefined : { rotate: [0, 3, -2, 0], scale: [1, 1.03, 0.99, 1] }}
+        transition={reduceMotion ? undefined : { duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.18] mix-blend-soft-light dark:opacity-[0.08]"
+        style={{
+          backgroundImage:
+            'radial-gradient(rgba(255,255,255,0.9) 0.7px, transparent 0.7px), radial-gradient(rgba(14,165,233,0.3) 0.5px, transparent 0.5px)',
+          backgroundPosition: '0 0, 12px 14px',
+          backgroundSize: '18px 18px, 22px 22px',
+        }}
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,251,255,0.1)_0%,rgba(238,246,255,0.3)_52%,rgba(238,246,255,0.9)_100%)] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.08)_0%,rgba(10,20,35,0.34)_52%,rgba(8,15,27,0.82)_100%)]" />
     </div>
   );
 }
@@ -7916,25 +7908,8 @@ export const LandingPage = ({
       </nav>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_28%),radial-gradient(circle_at_85%_15%,_rgba(47,128,237,0.16),_transparent_24%),linear-gradient(180deg,_#F8FBFF_0%,_#EEF6FF_100%)] dark:bg-[#0f172a]">
-        <HeroBackgroundVideo />
-        <div className="absolute inset-x-0 top-0 h-full">
-          <motion.div
-            animate={{ scale: [1, 1.12, 1], opacity: [0.5, 0.65, 0.5] }}
-            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute left-[-6%] top-[8%] h-72 w-72 rounded-full bg-cyan-200/50 blur-[120px] dark:bg-cyan-500/10"
-          />
-          <motion.div
-            animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.55, 0.4] }}
-            transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-            className="absolute right-[-8%] top-[18%] h-80 w-80 rounded-full bg-blue-200/40 blur-[140px] dark:bg-blue-500/10"
-          />
-          <motion.div
-            animate={{ scale: [1, 1.15, 1], opacity: [0.7, 0.85, 0.7] }}
-            transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 4 }}
-            className="absolute bottom-[-12%] left-[25%] h-96 w-96 rounded-full bg-white/70 blur-[100px] dark:bg-slate-700/20"
-          />
-        </div>
+      <section className="relative min-h-screen overflow-hidden bg-[#F8FBFF] dark:bg-[#0f172a]">
+        <HeroBackgroundGrainient />
 
         <div className="max-w-7xl mx-auto px-6 relative z-10 flex min-h-screen items-end py-24 md:py-32 lg:py-36">
           <div className="grid w-full gap-10 lg:grid-cols-[minmax(0,1.12fr)_360px] lg:items-end">
