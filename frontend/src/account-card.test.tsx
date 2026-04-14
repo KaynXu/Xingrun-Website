@@ -192,9 +192,22 @@ test('consultation page source keeps the desktop grade column on one line with t
 
   assert.ok(consultationPageBlock);
   assert.match(consultationPageBlock[0], /<th className="pl-6 pr-3 py-4 font-semibold whitespace-nowrap w-24">年级<\/th>/);
-  assert.match(consultationPageBlock[0], /<td className="pl-6 pr-3 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">\{record\.grade \|\| '—'\}<\/td>/);
+  assert.match(consultationPageBlock[0], /<td className="pl-6 pr-3 py-4 align-top whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">\{record\.grade \|\| '—'\}<\/td>/);
   assert.match(consultationPageBlock[0], /<th className="pl-3 pr-6 py-4 font-semibold whitespace-nowrap">咨询老师<\/th>/);
-  assert.match(consultationPageBlock[0], /<td className="pl-3 pr-6 py-4">/);
+  assert.match(consultationPageBlock[0], /<td className="pl-3 pr-6 py-4 align-top">/);
+});
+
+test('consultation page source top-aligns desktop cells so the first text rows stay visually aligned', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top font-mono text-sm text-slate-500 dark:text-slate-400">/);
+  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top">/);
+  assert.match(consultationPageBlock[0], /<td className="pl-6 pr-3 py-4 align-top whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">/);
+  assert.match(consultationPageBlock[0], /<td className="pl-3 pr-6 py-4 align-top">/);
+  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top text-sm text-slate-500 dark:text-slate-400">/);
+  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top text-right">/);
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
