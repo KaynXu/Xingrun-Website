@@ -4232,8 +4232,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 const followUpNote = record.follow_up_note?.trim();
                 return (
                   <tr key={record.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
-                    <td className="px-6 py-4 font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 align-top font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
+                    <td className="px-6 py-4 align-top">
                       <div className="space-y-1">
                         <p className="font-medium text-slate-900 dark:text-white">
                           {record.parent_wechat_name || '—'}
@@ -4243,8 +4243,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </p>
                       </div>
                     </td>
-                    <td className="pl-6 pr-3 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
-                    <td className="pl-3 pr-6 py-4">
+                    <td className="pl-6 pr-3 py-4 align-top whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
+                    <td className="pl-3 pr-6 py-4 align-top">
                       <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p className="font-medium text-slate-700 dark:text-slate-200">
                           {getConsultationTeacherName(record, teacherDirectory)}
@@ -4252,25 +4252,25 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         {needDetail && <p>咨询详情：{needDetail}</p>}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 align-top">
                       <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p>{record.consultation_subject || '未填写咨询科目'}</p>
                         <p>{getConsultationSourceLabel(record)}</p>
                         {followUpNote && <p>跟进：{followUpNote}</p>}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 align-top">
                       <span className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.08em] ${consultationStatusClass(record.follow_up_status || '')}`}>
                         {record.follow_up_status || '—'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                    <td className="px-6 py-4 align-top text-sm text-slate-500 dark:text-slate-400">
                       <div className="space-y-1">
                         <p>{record.created_at || '—'}</p>
                         <p>{record.updated_at || '—'}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 align-top text-right">
                       <div className="flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                         <button
                           type="button"
