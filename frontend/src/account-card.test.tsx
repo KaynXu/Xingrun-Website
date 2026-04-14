@@ -186,6 +186,17 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
 });
 
+test('consultation page source keeps the desktop grade column on one line with tighter spacing before teacher details', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /<th className="pl-6 pr-3 py-4 font-semibold whitespace-nowrap w-24">年级<\/th>/);
+  assert.match(consultationPageBlock[0], /<td className="pl-6 pr-3 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">\{record\.grade \|\| '—'\}<\/td>/);
+  assert.match(consultationPageBlock[0], /<th className="pl-3 pr-6 py-4 font-semibold whitespace-nowrap">咨询老师<\/th>/);
+  assert.match(consultationPageBlock[0], /<td className="pl-3 pr-6 py-4">/);
+});
+
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);

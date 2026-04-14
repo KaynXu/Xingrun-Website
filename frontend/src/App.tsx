@@ -4217,8 +4217,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">日期</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">家长微信 / 学生姓名</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">年级</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询老师</th>
+                <th className="pl-6 pr-3 py-4 font-semibold whitespace-nowrap w-24">年级</th>
+                <th className="pl-3 pr-6 py-4 font-semibold whitespace-nowrap">咨询老师</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询科目 / 来源渠道</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">跟进状态</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">录入 / 更新</th>
@@ -4243,8 +4243,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
-                    <td className="px-6 py-4">
+                    <td className="pl-6 pr-3 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
+                    <td className="pl-3 pr-6 py-4">
                       <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                         <p className="font-medium text-slate-700 dark:text-slate-200">
                           {getConsultationTeacherName(record, teacherDirectory)}
