@@ -9,6 +9,7 @@
 - 2026-04-14 已收口咨询批量整理的跟进状态越界问题：`ai_processor.py` 里的咨询助手提示词已明确锁定 `待邀约 / 跟进中 / 已报班 / 已劝退` 4 个可用状态，并明确禁止输出 `待开课缴费`、`已试听` 这类自造状态；`lesson_manager.normalize_consultation_batch_parse_result()` 现在也会自动丢弃非法 `follow_up_status` 并返回 warning，避免脏草稿继续进入前端确认流。
 - 2026-04-14 已进一步收口“咨询记录”页信息展示：`need_detail` 现在作为 `咨询详情` 放到“咨询老师”下方，`follow_up_note` 作为 `跟进` 保留在现有“咨询科目 / 来源渠道”信息块里；表单文案也已同步改成 `咨询详情` 和 `跟进备注（内部）`，桌面端与移动端仍保持统一信息高度预算，并且明确禁止横向滚动、悬浮展开或不等高列表。
 - 2026-04-14 已补修咨询记录桌面表格列宽：`年级` 列现在固定单行并收紧与“咨询老师”列之间的横向间隔，避免像 `二年级` 这类值被挤成两行，同时不回退“咨询详情在咨询老师下方”的新布局。
+- 2026-04-14 已通过隔离 hotfix 补修咨询记录桌面表格文本顶对齐：桌面端列表各列单元格统一 `align-top`，避免日期、年级、状态和录入时间与“咨询详情 / 跟进”信息块首行出现视觉错位。
 - 这一轮实现只触达 `frontend/src/App.tsx`、`frontend/src/account-card.test.tsx` 和 `handoff.md`，没有改接口、录入逻辑或搜索逻辑。
 - 2026-04-14 为打通 release 补修了微信错题上传分类回退问题：`/api/wechat/wrong-questions` 不再信任客户端传来的 `primary_error_type` / `secondary_error_summary` 旧字段，而是统一走服务端 `classify_wrong_question_reason()` 重新分类，现有回归用例已恢复通过。
 - 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并已换成更容易直接看出在流动的 `flow bands` 版本。
@@ -18,7 +19,7 @@
 - `develop -> master -> 部署` 已在 2026-04-14 再走完一轮；这次生产机直接通过 GitHub SSH over 443 拉取最新 `master`，没有再走 `bundle + scp` 兜底。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `770b128 Merge branch 'develop'`；其中包含咨询记录桌面表格里“年级”列不再被挤成两行的列宽修复，以及此前 `develop` 上待发布的前端与文档调整。
+- 本次已部署生产的热修 merge 提交是 `851dcd6 Merge branch 'hotfix/consultation-text-align-20260414'`；它只包含咨询记录桌面表格文本顶对齐修复，不包含 `develop` 上尚未发布的 `parent voice` 相关改动。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
