@@ -213,6 +213,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
       classNameLabel="S01A1"
       teacherNameLabel="王老师"
       controlBar={<div>控制栏占位</div>}
+      headerAside={<div>右侧占位</div>}
       sourceSummaryItems={['已命中 2 节课次记录', '1 名学生资料完整']}
       labelGroups={defaultStageLabelGroups}
       classStatusTags={['进入状态快']}
@@ -246,6 +247,7 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
 
   assert.match(markup, /课堂反馈/);
   assert.match(markup, /控制栏占位/);
+  assert.match(markup, /右侧占位/);
   assert.match(markup, /资料摘要/);
   assert.match(markup, /阶段备注/);
   assert.match(markup, /班级状态标签/);
@@ -309,6 +311,7 @@ test('App source no longer renders the class feedback intro hero section', () =>
 
 test('App source injects the class feedback control bar into the workspace header instead of rendering it above the workspace', () => {
   assert.match(appSource, /const classFeedbackControlBar = \(/);
+  assert.match(appSource, /const classFeedbackHeaderAside = \(/);
   assert.match(appSource, /<select[\s\S]*value=\{classFeedbackPeriodMode\}/);
   assert.match(appSource, /classFeedbackPeriodPreview\.label/);
   assert.doesNotMatch(appSource, /type="date"\s*\n\s*value=\{startDate\}/);
@@ -316,17 +319,18 @@ test('App source injects the class feedback control bar into the workspace heade
   assert.doesNotMatch(appSource, /const \[startDate, setStartDate\]/);
   assert.doesNotMatch(appSource, /const \[endDate, setEndDate\]/);
   assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*controlBar=\{/);
+  assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*headerAside=\{/);
   assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
 });
 
-test('App source keeps class feedback header full width with a balanced desktop control layout', () => {
+test('App source anchors class feedback period preview to the top-right and task actions to the bottom-right', () => {
   assert.match(
     appSource,
     /return \(\s*<div className=\{`\$\{workspacePageClass\} space-y-6`\}>/,
   );
   assert.match(
-    appSource,
-    /const classFeedbackControlBar = \(\s*<div className="grid gap-3 xl:grid-cols-\[minmax\(0,1\.45fr\)_minmax\(14rem,0\.72fr\)_auto\] xl:items-end">/,
+    workspaceSource,
+    /<header className=\{`\$\{cardClass\} grid gap-6 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,20rem\)\] xl:items-stretch`\}>/,
   );
   assert.match(
     appSource,
@@ -334,7 +338,15 @@ test('App source keeps class feedback header full width with a balanced desktop 
   );
   assert.match(
     appSource,
-    /<div className="grid gap-3 sm:grid-cols-2 xl:min-w-\[18rem\]">/,
+    /const classFeedbackHeaderAside = \(\s*<div className="flex flex-col gap-3 xl:min-h-\[10\.5rem\] xl:justify-between">/,
+  );
+  assert.match(
+    workspaceSource,
+    /\{props\.headerAside \? props\.headerAside : null\}/,
+  );
+  assert.match(
+    appSource,
+    /<div className="grid gap-3 sm:grid-cols-2">/,
   );
   assert.doesNotMatch(appSource, /<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>/);
 });
