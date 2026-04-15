@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-15 已按 `develop -> master -> 部署` 再走完一轮：生产机 `/home/ubuntu/Xingrun-Website` 当前 `HEAD` 已到 `f42b91f fix: dedupe wechat wrong question box route`；这次 `master` merge 提交是 `574b945 Merge branch 'develop'`，合并后暴露出的重复 `/api/wechat/wrong-question-boxes` 路由已在 `master` 上删掉重复定义；生产机延时健康检查已恢复到本机根路由 `302`、公网 `https://xingrun.online/` 返回 `200 OK`。
 - 2026-04-15 本地学生错题库 PDF 已收口旧备注残留：`wrong_question_submissions` 新库与旧库迁移都不再保留 `parent_note / teacher_comment` 两列；本地微信错题 detail/review 序列化也不再输出这两个字段；PDF 顶部标题现在改成 `学生名 错题库｜任课老师：...`，每题正文已删除单独的老师行，以及 `家长备注 / 老师备注` 两段。
 - 2026-04-15 小程序错题本页已接上学生级 PDF 预览：`miniprogram/miniprogram/pages/parent-wrongbook/index.*` 现在会在页头展示 `查看 PDF`，并在每张错题卡上显示 `question_text`；同时 bridge 已补发 `GET /wechat/parent/children/<student_id>/wrong-question-library`，当前公网探测已不再返回 `Cannot GET ...`，而是正常转成 JSON 业务响应。
 - 2026-04-15 本地网站端已补回家长上传 `AI 框选` 路由 `/api/wechat/wrong-question-boxes`，并在 `smart_wrong_questions.detect_wechat_wrong_question_boxes()` 里固定服务端提示词：当前会明确要求“只框题目区域，忽略孩子手写字迹、演算、答案、批改痕迹”，不改小程序请求协议；本地回归已覆盖 route 与 N1N prompt 组装。
@@ -19,10 +20,11 @@
 - landing 断言测试已同步改成检查 `data-background="grainient"` 和 `data-grainient-palette="sky-cyan"`，不再依赖旧视频流地址。
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
 - `docs/deploy-release.md` 已进一步明确“发布闭环四步”：先验证并推 `develop`，再 merge + 重验 `master`，部署成功后补 docs commit，最后轻量同步生产机仓库 `HEAD` 并用 temp script 一次校验本地 / 远端 / 线上状态。
+- 2026-04-15 这次生产机仍然走的是 GitHub SSH over 443 直拉，不是 `bundle`；但因为这轮 `master` 首次带上了 `Xingrun-MiniProgram/backend/assets/ArialUnicode.ttf` 这类大二进制资源，服务器 `git fetch origin` 明显变慢，现场确认慢点主要来自拉取大文件，不是部署脚本卡死。
 - `develop -> master -> 部署` 已在 2026-04-14 再走完一轮；这次生产机直接通过 GitHub SSH over 443 拉取最新 `master`，没有再走 `bundle + scp` 兜底。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
-- 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的热修 merge 提交是 `851dcd6 Merge branch 'hotfix/consultation-text-align-20260414'`；它只包含咨询记录桌面表格文本顶对齐修复，不包含 `develop` 上尚未发布的 `parent voice` 相关改动。
+- 本轮现场 proof 已确认生产机 `git fetch origin`、`git pull --ff-only origin master`、前端 build、`pm2 restart xingrun` 和延时健康检查都已跑通；如果后续 release 再夹带大二进制资源，不要再用“几秒就能拉完”的旧经验判断卡顿。
+- 本次已部署生产的 `master` 头提交是 `f42b91f fix: dedupe wechat wrong question box route`；它承接的是 `574b945 Merge branch 'develop'`，已包含这轮错题库 PDF 收口、小程序错题本 PDF 入口、家长上传拍照/框选修复等 develop 改动。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -63,7 +65,7 @@
 - 最值得继续做的是拿 3 到 5 张带明显孩子手写痕迹的真实作业图在真机上跑一次 `AI 框选` smoke check，确认这次固定系统提示词之后，误框是否明显下降、是否出现“宁可少框”的漏框副作用。
 - 最值得继续做的是拿一个真实学生错题库 PDF 手工看一遍，确认顶部标题里的老师名、每题正文节奏、分页和几何题图片在真实浏览器/打印预览里都符合老师预期。
 - 最值得继续做的是把新的小程序包上传到微信开发者工具 / 真机，实际点一次错题本页顶部 `查看 PDF`，确认 `wx.downloadFile + wx.openDocument` 在真机里能正常打开网站 PDF。
-- 最值得继续做的是把这轮本地恢复的 `/api/wechat/wrong-question-boxes` 和固定 prompt 按正常 release 流程发到线上，再用真机拿一张“有孩子手写痕迹的整页作业”实测一次 AI 框选，看是否明显减少误框答案区和草稿区。
+- 最值得继续做的是直接用线上环境拿一张“有孩子手写痕迹的整页作业”实测一次 `AI 框选`，确认这次已经发到生产的固定 prompt 是否明显减少误框答案区和草稿区。
 - 最值得继续做的是拿真机在家长上传页拍一张横屏照片和一张竖屏照片各走一遍，再追加拍一张新图，确认四件事都成立：控制台里的 orientation 返回值合理、预览方向正确、框选区默认切到新拍那张、最终提交到老师端的图片方向一致；如果某些真机仍回 `orientation='up'` 但画面横着，优先走页面里的 `顺时针旋转` 兜底。
 - 最值得继续做的是拿一个真实已绑定家长账号在小程序里手工点一次 `查看错题本`，确认现在展示的是孩子错题列表或业务空态，而不是路由缺失兜底文案。
 - 如果继续咨询记录这一项，最值得做的是用一段真实批量整理文案在页面里手工跑一次 `AI 批量整理`，确认非法状态会被 warning 掉、草稿里只保留合法字段，避免只靠单测判断 UI 呈现。
@@ -89,6 +91,7 @@
 - 咨询记录页备注展示方案当前成立的前提是“备注通常不会太长”；如果后续真实数据出现长段落，仍需要单独决定是否加录入约束或二级查看。
 - 当前 grainient 背景是本地复刻版，不是直接复用 reactbits 原实现；视觉方向已经对齐，但如果后面要追求更接近原站的 shader 波纹细节，还需要再单独设计一轮。
 - 生产机虽然已经改成 GitHub SSH over 443，但这条链路仍依赖服务器里的 deploy key 和 `~/.ssh/config` alias；如果后续被误删，部署会重新退化成 bundle 场景。
+- 这次已经确认 GitHub SSH over 443 直拉在功能上可用，但如果 release 首次带入大字体、图片等二进制资源，服务器 `git fetch` 仍可能非常慢；不要把“拉得慢”误判成脚本卡死。
 - 旧的零散部署口径已经开始收口，但历史对话、旧提交和个别旧文档里仍可能残留“直接发 develop”或“先看 master 再说”的过期说法；下一轮如果有人只看旧记录，不看 `docs/deploy-release.md`，仍可能误判流程。
 - 当前错误类型下拉为了兼容现有错题记录，同时保留了固定错因和已出现过的 legacy downstream 分类；在真正统一错题后端分类口径前，这里仍是“固定列表 + 兼容旧值”的过渡态。
 - 当前最大风险不是功能坏掉，而是“语义看起来像统一了，其实没有”。
@@ -107,6 +110,9 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `f42b91f` `fix: dedupe wechat wrong question box route`
+- `574b945` `Merge branch 'develop'`
+- `1e03ce6` `fix: clean wrongbook pdf feedback remnants`
 - `591370d` `Merge branch 'hotfix/wechat-ai-box-route'`
 - `a314b25` `fix: restore wechat ai box route prompt`
 - `fab4f2e` `Merge branch 'develop'`
