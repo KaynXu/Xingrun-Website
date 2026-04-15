@@ -208,6 +208,34 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertEqual(captured_payloads[0]["records"][0]["child_reason_text"], "我把乘法放到最后算了")
         self.assertEqual(captured_payloads[0]["records"][0]["cause_note"], "运算顺序放错了位置")
 
+    def test_generate_student_wrong_question_library_pdf_falls_back_to_reportlab_when_browser_render_fails(self):
+        records = [
+            {
+                "student_name": "Alice",
+                "class_display_name": "六年级 1 班",
+                "teacher_display_name": "平台管理员",
+                "created_at": "2026-04-09 10:00:00",
+                "is_geometry": 0,
+                "question_text": "计算 $2+3\\times4$ 的结果。",
+            }
+        ]
+        output_path = self.base / "fallback-student-1.pdf"
+
+        with patch(
+            "pdf_engine.subprocess.run",
+            return_value=subprocess.CompletedProcess(["node"], 1, "", "browser unavailable"),
+        ):
+            result = pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                records=records,
+                output_path=str(output_path),
+            )
+
+        self.assertEqual(result, str(output_path.resolve()))
+        self.assertTrue(output_path.exists())
+        self.assertGreater(output_path.stat().st_size, 0)
+
     def test_build_wrong_question_geometry_image_card_uses_fixed_box_and_caption(self):
         with patch("urllib.request.urlopen") as urlopen:
             urlopen.return_value.__enter__.return_value.read.return_value = SAMPLE_PNG_BYTES
