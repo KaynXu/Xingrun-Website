@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-15 内嵌小程序快照 `Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.*` 已继续收口“AI 框选慢 + 旋转后回位错乱”：当前 AI 框选不再直接把 `original` 原图整张发给后端，而是先在本地把超大图缩到最长边 `1600` 的临时 JPG 再送 AI，减轻上传与识别耗时；同时每张图现在带 `contentVersion`，如果用户在 AI 返回前又点了 `顺时针旋转`，旧方向那次请求回来的题框/失败状态会被直接丢弃，不再覆盖旋转后的新图位置。隐藏 `cropCanvas` 的导出也已串行化，避免多张图并发 AI 时互相踩画布。
 - 2026-04-15 内嵌小程序快照 `Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.*` 已补一版更稳的本地旋转导出：选图改拿 `original` 原图、页内新增 `顺时针旋转` 兜底按钮、隐藏 canvas 现在显式带 `width/height` 实体尺寸，并在旋转/裁切导出前统一先铺白底再导出 JPG；当前手动顺时针旋转还会同步把现有题框坐标一起转过去，避免图片转了但框留在旧位置。当前目标是先止住“旋转后整张发黑/导出黑底”的问题。
 - 2026-04-15 本地学生错题库 PDF 已收口旧备注残留：`wrong_question_submissions` 新库与旧库迁移都不再保留 `parent_note / teacher_comment` 两列；本地微信错题 detail/review 序列化也不再输出这两个字段；PDF 顶部标题现在改成 `学生名 错题库｜任课老师：...`，每题正文已删除单独的老师行，以及 `家长备注 / 老师备注` 两段。
 - 2026-04-15 小程序错题本页已接上学生级 PDF 预览：`miniprogram/miniprogram/pages/parent-wrongbook/index.*` 现在会在页头展示 `查看 PDF`，并在每张错题卡上显示 `question_text`；同时 bridge 已补发 `GET /wechat/parent/children/<student_id>/wrong-question-library`，当前公网探测已不再返回 `Cannot GET ...`，而是正常转成 JSON 业务响应。
@@ -60,6 +61,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是拿一张 12MP 左右的大图在真机上直接测一次 `AI 框选 -> 旋转 -> 等待旧请求返回`，确认两件事都成立：这轮缩图后体感耗时明显下降，且旧请求回包不会再把题框盖回错误方向。
 - 最值得继续做的是拿一个真实学生错题库 PDF 手工看一遍，确认顶部标题里的老师名、每题正文节奏、分页和几何题图片在真实浏览器/打印预览里都符合老师预期。
 - 最值得继续做的是把新的小程序包上传到微信开发者工具 / 真机，实际点一次错题本页顶部 `查看 PDF`，确认 `wx.downloadFile + wx.openDocument` 在真机里能正常打开网站 PDF。
 - 最值得继续做的是把这轮本地恢复的 `/api/wechat/wrong-question-boxes` 和固定 prompt 按正常 release 流程发到线上，再用真机拿一张“有孩子手写痕迹的整页作业”实测一次 AI 框选，看是否明显减少误框答案区和草稿区。
@@ -83,7 +85,7 @@
 
 ### 风险
 - 这轮 `AI 框选` 提示词优化目前只在本地代码和单测里验证过，还没在线上真机图片上确认收益；如果 provider 实际对提示词不敏感，后续仍可能需要继续叠加坐标过滤或示例图策略。
-- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致，且原图会让 AI 框选阶段的单张本地图片更大。
+- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，且 AI 框选前会先本地缩图，不再直接把原图整张发给后端，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致。
 - 内嵌小程序快照这轮是按“白底 canvas + 显式画布尺寸 + 导出前等待一拍”来止黑图；这在微信 canvas 常见问题里通常有效，但还没有拿真机长图/超大图把旋转和裁切都走完一遍。
 - 当前这次只收口了咨询 `AI 批量整理` 链路；常规 `/api/consultations` create/update 仍没有在后端对白名单状态做硬校验，现阶段还是主要依赖前端下拉不让人手工写出非法状态。
 - 咨询记录页备注展示方案当前成立的前提是“备注通常不会太长”；如果后续真实数据出现长段落，仍需要单独决定是否加录入约束或二级查看。

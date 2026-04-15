@@ -12,9 +12,11 @@ const {
   addManualBoxToImage,
   appendLocalImages,
   applyAiBoxesToImage,
+  buildAiDetectionImagePlan,
   buildImageRotationPlan,
   buildUploadJobs,
   getSubmitBlockers,
+  markAiDetectionFailure,
   rotateImageBoxesClockwise,
 } = require('./model');
 
@@ -288,71 +290,80 @@ Page({
   },
 
   async exportCanvasImage(filePath, options) {
-    const canvasWidth = Math.max(1, Math.round(Number(options && options.canvasWidth) || 0));
-    const canvasHeight = Math.max(1, Math.round(Number(options && options.canvasHeight) || 0));
-    const drawWidth = Math.max(1, Math.round(Number(options && options.drawWidth) || canvasWidth));
-    const drawHeight = Math.max(1, Math.round(Number(options && options.drawHeight) || canvasHeight));
-    const translateX = Math.round(Number(options && options.translateX) || 0);
-    const translateY = Math.round(Number(options && options.translateY) || 0);
-    const rotationRadians = Number(options && options.rotationRadians) || 0;
-    const backgroundColor = String((options && options.backgroundColor) || '#ffffff');
-    const sourceRect = options && options.sourceRect ? options.sourceRect : null;
+    const runExport = async () => {
+      const canvasWidth = Math.max(1, Math.round(Number(options && options.canvasWidth) || 0));
+      const canvasHeight = Math.max(1, Math.round(Number(options && options.canvasHeight) || 0));
+      const drawWidth = Math.max(1, Math.round(Number(options && options.drawWidth) || canvasWidth));
+      const drawHeight = Math.max(1, Math.round(Number(options && options.drawHeight) || canvasHeight));
+      const translateX = Math.round(Number(options && options.translateX) || 0);
+      const translateY = Math.round(Number(options && options.translateY) || 0);
+      const rotationRadians = Number(options && options.rotationRadians) || 0;
+      const backgroundColor = String((options && options.backgroundColor) || '#ffffff');
+      const fileType = String((options && options.fileType) || 'jpg');
+      const quality = Math.max(0.1, Math.min(1, Number(options && options.quality) || 1));
+      const sourceRect = options && options.sourceRect ? options.sourceRect : null;
 
-    await this.setDataAsync({
-      canvasWidth,
-      canvasHeight,
-    });
-    await this.wait(60);
-
-    return new Promise((resolve, reject) => {
-      const ctx = wx.createCanvasContext('cropCanvas', this);
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-      ctx.setFillStyle(backgroundColor);
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-      ctx.save();
-
-      if (translateX || translateY) {
-        ctx.translate(translateX, translateY);
-      }
-      if (rotationRadians) {
-        ctx.rotate(rotationRadians);
-      }
-
-      if (sourceRect) {
-        ctx.drawImage(
-          filePath,
-          sourceRect.x,
-          sourceRect.y,
-          sourceRect.width,
-          sourceRect.height,
-          0,
-          0,
-          drawWidth,
-          drawHeight
-        );
-      } else {
-        ctx.drawImage(filePath, 0, 0, drawWidth, drawHeight);
-      }
-
-      ctx.restore();
-      ctx.draw(false, () => {
-        setTimeout(() => {
-          wx.canvasToTempFilePath({
-            canvasId: 'cropCanvas',
-            x: 0,
-            y: 0,
-            width: canvasWidth,
-            height: canvasHeight,
-            destWidth: canvasWidth,
-            destHeight: canvasHeight,
-            fileType: 'jpg',
-            quality: 1,
-            success: (response) => resolve(response.tempFilePath),
-            fail: reject,
-          }, this);
-        }, 60);
+      await this.setDataAsync({
+        canvasWidth,
+        canvasHeight,
       });
-    });
+      await this.wait(60);
+
+      return new Promise((resolve, reject) => {
+        const ctx = wx.createCanvasContext('cropCanvas', this);
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.setFillStyle(backgroundColor);
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        ctx.save();
+
+        if (translateX || translateY) {
+          ctx.translate(translateX, translateY);
+        }
+        if (rotationRadians) {
+          ctx.rotate(rotationRadians);
+        }
+
+        if (sourceRect) {
+          ctx.drawImage(
+            filePath,
+            sourceRect.x,
+            sourceRect.y,
+            sourceRect.width,
+            sourceRect.height,
+            0,
+            0,
+            drawWidth,
+            drawHeight
+          );
+        } else {
+          ctx.drawImage(filePath, 0, 0, drawWidth, drawHeight);
+        }
+
+        ctx.restore();
+        ctx.draw(false, () => {
+          setTimeout(() => {
+            wx.canvasToTempFilePath({
+              canvasId: 'cropCanvas',
+              x: 0,
+              y: 0,
+              width: canvasWidth,
+              height: canvasHeight,
+              destWidth: canvasWidth,
+              destHeight: canvasHeight,
+              fileType,
+              quality,
+              success: (response) => resolve(response.tempFilePath),
+              fail: reject,
+            }, this);
+          }, 60);
+        });
+      });
+    };
+
+    const previousExport = this.canvasExportChain || Promise.resolve();
+    const nextExport = previousExport.catch(() => null).then(runExport);
+    this.canvasExportChain = nextExport;
+    return nextExport;
   },
 
   chooseImages() {
@@ -690,6 +701,25 @@ Page({
     await this.commitImageItems(imageItems, this.data.selectedImageId, false);
   },
 
+  async prepareAiDetectionFile(imageItem) {
+    let imageInfo;
+    let exportPlan;
+    if (!imageItem || !imageItem.localPath) {
+      return '';
+    }
+
+    imageInfo = await this.getImageInfo(imageItem.localPath);
+    exportPlan = buildAiDetectionImagePlan({
+      width: imageInfo.width,
+      height: imageInfo.height,
+    });
+    if (!exportPlan) {
+      return imageItem.localPath;
+    }
+
+    return this.exportCanvasImage(imageItem.localPath, exportPlan);
+  },
+
   async runAiBoxes() {
     if (!(this.data.imageItems || []).length) {
       wx.showToast({ title: '请先选择图片', icon: 'none' });
@@ -698,12 +728,9 @@ Page({
 
     const pendingItems = this.data.imageItems.map((item) => {
       return {
-        id: item.id,
-        localPath: item.localPath,
+        ...item,
         aiStatus: 'running',
         aiErrorMessage: '',
-        boxes: item.boxes || [],
-        activeBoxId: item.activeBoxId || '',
       };
     });
     await this.commitImageItems(pendingItems, this.data.selectedImageId, false);
@@ -712,34 +739,38 @@ Page({
       return {
         id: item.id,
         localPath: item.localPath,
+        contentVersion: Number(item.contentVersion) || 0,
       };
     });
     const workerCount = Math.min(3, queue.length);
 
     await Promise.all(new Array(workerCount).fill(0).map(async () => {
       let currentJob;
+      let aiFilePath;
       while (queue.length) {
         currentJob = queue.shift();
         if (!currentJob) {
           return;
         }
         try {
+          aiFilePath = await this.prepareAiDetectionFile(currentJob);
           const payload = await detectParentWrongQuestionBoxes(wx, app.globalData.serverUrl, {
-            filePath: currentJob.localPath,
+            filePath: aiFilePath,
           });
           await this.updateImageItem(currentJob.id, (item) => {
-            return applyAiBoxesToImage(item, payload.boxes);
+            return applyAiBoxesToImage(item, payload.boxes, {
+              requestVersion: currentJob.contentVersion,
+            });
           });
         } catch (error) {
           await this.updateImageItem(currentJob.id, (item) => {
-            return {
-              id: item.id,
-              localPath: item.localPath,
-              aiStatus: 'failed',
-              aiErrorMessage: error instanceof Error ? error.message : 'AI 框选失败',
-              boxes: item.boxes || [],
-              activeBoxId: item.activeBoxId || '',
-            };
+            return markAiDetectionFailure(
+              item,
+              error instanceof Error ? error.message : 'AI 框选失败',
+              {
+                requestVersion: currentJob.contentVersion,
+              }
+            );
           });
         }
       }

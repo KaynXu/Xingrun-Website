@@ -3,11 +3,13 @@ const test = require('node:test');
 
 const {
   buildUploadJobs,
+  buildAiDetectionImagePlan,
   buildImageRotationPlan,
   appendLocalImages,
   applyAiBoxesToImage,
   addManualBoxToImage,
   getSubmitBlockers,
+  markAiDetectionFailure,
   rotateImageBoxesClockwise,
 } = require('./model');
 
@@ -137,10 +139,79 @@ test('buildImageRotationPlan normalizes repeated clockwise turns', () => {
   });
 });
 
+test('buildAiDetectionImagePlan downscales oversized originals for faster AI detection', () => {
+  const plan = buildAiDetectionImagePlan({
+    width: 4032,
+    height: 3024,
+  });
+
+  assert.deepEqual(plan, {
+    canvasWidth: 1600,
+    canvasHeight: 1200,
+    drawWidth: 1600,
+    drawHeight: 1200,
+    backgroundColor: '#ffffff',
+    fileType: 'jpg',
+    quality: 0.92,
+  });
+});
+
+test('buildAiDetectionImagePlan skips re-export for already small images', () => {
+  const plan = buildAiDetectionImagePlan({
+    width: 1280,
+    height: 960,
+  });
+
+  assert.equal(plan, null);
+});
+
+test('applyAiBoxesToImage ignores stale AI responses after image content changes', () => {
+  const imageItem = {
+    id: 'img_1',
+    localPath: 'a.jpg',
+    aiStatus: 'running',
+    aiErrorMessage: '',
+    contentVersion: 2,
+    boxes: [
+      { id: 'box_1', x: 0.1, y: 0.2, width: 0.4, height: 0.3 },
+    ],
+    activeBoxId: 'box_1',
+  };
+
+  const next = applyAiBoxesToImage(imageItem, [
+    { x: 0.55, y: 0.5, width: 0.3, height: 0.22 },
+  ], {
+    requestVersion: 1,
+  });
+
+  assert.equal(next, imageItem);
+});
+
+test('markAiDetectionFailure ignores stale AI failures after image rotation', () => {
+  const imageItem = {
+    id: 'img_1',
+    localPath: 'a.jpg',
+    aiStatus: 'idle',
+    aiErrorMessage: '',
+    contentVersion: 3,
+    boxes: [],
+    activeBoxId: '',
+  };
+
+  const next = markAiDetectionFailure(imageItem, 'AI 框选失败', {
+    requestVersion: 2,
+  });
+
+  assert.equal(next, imageItem);
+});
+
 test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate system', () => {
   const next = rotateImageBoxesClockwise({
     id: 'img_1',
     localPath: 'a.jpg',
+    aiStatus: 'running',
+    aiErrorMessage: 'old error',
+    contentVersion: 0,
     boxes: [
       { id: 'box_1', x: 0.1, y: 0.2, width: 0.4, height: 0.3 },
       { id: 'box_2', x: 0.55, y: 0.1, width: 0.2, height: 0.25 },
@@ -153,4 +224,7 @@ test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate s
     { id: 'box_2', x: 0.65, y: 0.55, width: 0.25, height: 0.2 },
   ]);
   assert.equal(next.activeBoxId, 'box_2');
+  assert.equal(next.aiStatus, 'done');
+  assert.equal(next.aiErrorMessage, '');
+  assert.equal(next.contentVersion, 1);
 });

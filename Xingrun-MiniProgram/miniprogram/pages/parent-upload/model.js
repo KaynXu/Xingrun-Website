@@ -1,5 +1,6 @@
 let imageCounter = 0;
 let boxCounter = 0;
+const DEFAULT_AI_DETECTION_MAX_EDGE = 1600;
 
 function normalizeQuarterTurns(value) {
   const turns = Math.round(Number(value) || 0);
@@ -71,6 +72,34 @@ function buildImageRotationPlan(options) {
   };
 }
 
+function buildAiDetectionImagePlan(options) {
+  const width = Math.max(1, Math.round(Number(options && options.width) || 0));
+  const height = Math.max(1, Math.round(Number(options && options.height) || 0));
+  const maxEdge = Math.max(
+    1,
+    Math.round(Number(options && options.maxEdge) || DEFAULT_AI_DETECTION_MAX_EDGE)
+  );
+  const longestEdge = Math.max(width, height);
+
+  if (longestEdge <= maxEdge) {
+    return null;
+  }
+
+  const scale = maxEdge / longestEdge;
+  const targetWidth = Math.max(1, Math.round(width * scale));
+  const targetHeight = Math.max(1, Math.round(height * scale));
+
+  return {
+    canvasWidth: targetWidth,
+    canvasHeight: targetHeight,
+    drawWidth: targetWidth,
+    drawHeight: targetHeight,
+    backgroundColor: '#ffffff',
+    fileType: 'jpg',
+    quality: 0.92,
+  };
+}
+
 function appendLocalImages(imageItems, filePaths) {
   const list = Array.isArray(imageItems) ? imageItems.slice() : [];
   const nextPaths = Array.isArray(filePaths) ? filePaths : [];
@@ -81,13 +110,20 @@ function appendLocalImages(imageItems, filePaths) {
       localPath,
       aiStatus: 'idle',
       aiErrorMessage: '',
+      contentVersion: 0,
       boxes: [],
       activeBoxId: '',
     };
   }));
 }
 
-function applyAiBoxesToImage(imageItem, boxes) {
+function applyAiBoxesToImage(imageItem, boxes, options) {
+  const requestVersion = Number(options && options.requestVersion);
+  const contentVersion = Number(imageItem && imageItem.contentVersion) || 0;
+  if (Number.isFinite(requestVersion) && requestVersion !== contentVersion) {
+    return imageItem;
+  }
+
   const nextBoxes = Array.isArray(boxes)
     ? boxes.map((box) => ({ ...createDefaultBox('ai'), ...box, source: 'ai', childReasonText: String(box.childReasonText || '') }))
     : [];
@@ -97,6 +133,20 @@ function applyAiBoxesToImage(imageItem, boxes) {
     aiErrorMessage: '',
     boxes: nextBoxes,
     activeBoxId: nextBoxes[0] ? nextBoxes[0].id : '',
+  };
+}
+
+function markAiDetectionFailure(imageItem, message, options) {
+  const requestVersion = Number(options && options.requestVersion);
+  const contentVersion = Number(imageItem && imageItem.contentVersion) || 0;
+  if (Number.isFinite(requestVersion) && requestVersion !== contentVersion) {
+    return imageItem;
+  }
+
+  return {
+    ...imageItem,
+    aiStatus: 'failed',
+    aiErrorMessage: String(message || 'AI 框选失败'),
   };
 }
 
@@ -156,17 +206,22 @@ function rotateImageBoxesClockwise(imageItem) {
     return imageItem;
   }
 
+  const nextBoxes = (imageItem.boxes || []).map((box) => {
+    return {
+      ...box,
+      x: Math.max(0, Math.min(1, 1 - (Number(box.y) || 0) - (Number(box.height) || 0))),
+      y: Math.max(0, Math.min(1, Number(box.x) || 0)),
+      width: Math.max(0.08, Math.min(1, Number(box.height) || 0)),
+      height: Math.max(0.08, Math.min(1, Number(box.width) || 0)),
+    };
+  });
+
   return {
     ...imageItem,
-    boxes: (imageItem.boxes || []).map((box) => {
-      return {
-        ...box,
-        x: Math.max(0, Math.min(1, 1 - (Number(box.y) || 0) - (Number(box.height) || 0))),
-        y: Math.max(0, Math.min(1, Number(box.x) || 0)),
-        width: Math.max(0.08, Math.min(1, Number(box.height) || 0)),
-        height: Math.max(0.08, Math.min(1, Number(box.width) || 0)),
-      };
-    }),
+    contentVersion: (Number(imageItem.contentVersion) || 0) + 1,
+    aiStatus: nextBoxes.length ? 'done' : 'idle',
+    aiErrorMessage: '',
+    boxes: nextBoxes,
   };
 }
 
@@ -174,8 +229,10 @@ module.exports = {
   appendLocalImages,
   applyAiBoxesToImage,
   addManualBoxToImage,
+  buildAiDetectionImagePlan,
   buildImageRotationPlan,
   getSubmitBlockers,
   buildUploadJobs,
+  markAiDetectionFailure,
   rotateImageBoxesClockwise,
 };
