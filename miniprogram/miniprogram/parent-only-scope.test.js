@@ -14,6 +14,7 @@ test('mini program keeps only the parent upload flow pages and deletes legacy pa
     'pages/parent-home/index',
     'pages/parent-bind/index',
     'pages/parent-upload/index',
+    'pages/parent-wrongbook/index',
   ]);
 
   for (const page of [

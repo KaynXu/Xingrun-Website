@@ -24,18 +24,18 @@
 - `/Users/ark.mini/Desktop/Xingrun-Website/frontend/src/smartWrongQuestions.ts`
 - `/Users/ark.mini/Desktop/Xingrun-Website/frontend/src/SmartWrongQuestionsPage.tsx`
 - `/Users/ark.mini/Desktop/Xingrun-Website/frontend/src/smart-wrong-questions.test.ts`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/website-client.ts`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/index.ts`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.js`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.js`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.test.js`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.js`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxml`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxss`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/parent-only-scope.test.js`
-- `/Users/ark.mini/Desktop/Xingrun-MiniProgram/handoff.md`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/website-client.ts`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/index.ts`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.js`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.js`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.test.js`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.js`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxml`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxss`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/parent-only-scope.test.js`
+- `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/handoff.md`
 
 **Responsibility Map**
 
@@ -431,14 +431,14 @@ git commit -m "feat: update teacher reason taxonomy display"
 ## Task 3: Add bridge proxies for transcription, classification, and finalized submit fields
 
 **Files:**
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/website-client.ts`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/index.ts`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/website-client.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/index.ts`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`
 
 - [ ] **Step 1: Write the failing bridge tests for transcription/classification proxies**
 
-Add these tests to `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`:
+Add these tests to `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`:
 
 ```ts
 test('parent reason transcription bridge stores the audio file and forwards audio_url to website', async (t) => {
@@ -517,7 +517,7 @@ test('parent reason classification bridge forwards child reason text and returns
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/parent-wechat-bridge.test.ts
 ```
 
@@ -525,7 +525,7 @@ Expected: FAIL because the new routes and website proxy helpers do not exist yet
 
 - [ ] **Step 3: Implement the bridge proxy helpers and routes**
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/website-client.ts`, add:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/website-client.ts`, add:
 
 ```ts
 export async function transcribeParentReasonOnWebsite(input: { audioUrl: string }) {
@@ -570,7 +570,7 @@ export async function submitWechatWrongQuestionToWebsite(input: {
 }
 ```
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/index.ts`, add routes:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/index.ts`, add routes:
 
 ```ts
   app.post('/wechat/parent/reason-transcriptions', upload.single('file'), async (req, res) => {
@@ -615,7 +615,7 @@ Update the existing submit route so it also reads `primaryErrorType` / `secondar
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/parent-wechat-bridge.test.ts
 ```
 
@@ -626,7 +626,7 @@ Expected: PASS with the new transcription/classification bridge cases green.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add backend/src/website-client.ts backend/src/index.ts backend/src/parent-wechat-bridge.test.ts
 git commit -m "feat: add parent voice reason bridge routes"
 ```
@@ -634,16 +634,16 @@ git commit -m "feat: add parent voice reason bridge routes"
 ## Task 4: Extend mini program helpers and pure model for finalized reason data
 
 **Files:**
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.js`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.test.js`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.js`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.test.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.test.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.js`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.test.js`
 
 - [ ] **Step 1: Write failing helper and model tests for finalized reason fields**
 
-Add these tests to `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`:
+Add these tests to `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`:
 
 ```js
 test('transcribeParentReason returns transcriptText from the bridge', async () => {
@@ -680,7 +680,7 @@ test('classifyParentReason returns teacher-facing reason fields from the bridge'
 });
 ```
 
-Add these tests to `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.test.js`:
+Add these tests to `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.test.js`:
 
 ```js
 test('addManualBoxToImage creates finalized reason placeholders for each box', () => {
@@ -716,7 +716,7 @@ test('getSubmitBlockers requires finalized reason text, top-level type, and note
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/utils/parentApi.test.js
 node --test miniprogram/pages/parent-upload/model.test.js
 ```
@@ -725,7 +725,7 @@ Expected: FAIL because the new API helpers are missing and boxes do not yet trac
 
 - [ ] **Step 3: Implement the mini program API helpers and pure state changes**
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.js`, add:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.js`, add:
 
 ```js
 async function transcribeParentReason(wxApi, serverUrl, params) {
@@ -757,7 +757,7 @@ Update `submitParentWrongQuestion(...)` to include finalized reason fields:
 
 and export the new helpers.
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.js`, change the default box shape and upload jobs:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.js`, change the default box shape and upload jobs:
 
 ```js
 function createDefaultBox(source) {
@@ -794,7 +794,7 @@ Update `getSubmitBlockers(...)` so any box missing any of the three finalized re
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/utils/parentApi.test.js
 node --test miniprogram/pages/parent-upload/model.test.js
 ```
@@ -806,7 +806,7 @@ Expected: PASS with the new helper/model cases green.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/utils/parentApi.js miniprogram/utils/parentApi.test.js miniprogram/pages/parent-upload/model.js miniprogram/pages/parent-upload/model.test.js
 git commit -m "feat: add finalized parent reason helpers"
 ```
@@ -814,15 +814,15 @@ git commit -m "feat: add finalized parent reason helpers"
 ## Task 5: Add mini program voice/text reason UI and page orchestration
 
 **Files:**
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.js`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxml`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxss`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/parent-only-scope.test.js`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/parent-only-scope.test.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxml`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxss`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/parent-only-scope.test.js`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/parent-only-scope.test.js`
 
 - [ ] **Step 1: Write the failing page-scope regression test for voice reason UI**
 
-Add assertions to `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/parent-only-scope.test.js`:
+Add assertions to `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/parent-only-scope.test.js`:
 
 ```js
 test('parent upload page exposes text and voice reason entry plus teacher-facing labels', () => {
@@ -840,7 +840,7 @@ test('parent upload page exposes text and voice reason entry plus teacher-facing
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node miniprogram/parent-only-scope.test.js
 ```
 
@@ -848,7 +848,7 @@ Expected: FAIL because the page does not yet expose the new reason UI or labels.
 
 - [ ] **Step 3: Implement the page orchestration and UI**
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.js`, import the new helpers and add per-box handlers:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.js`, import the new helpers and add per-box handlers:
 
 ```js
 const {
@@ -900,7 +900,7 @@ Update the submit loop so each upload job forwards:
         secondaryErrorSummary: job.secondaryErrorSummary,
 ```
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxml`, add a per-box reason card under the crop stage:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxml`, add a per-box reason card under the crop stage:
 
 ```xml
 <view class="reason-card" wx:if="{{activeBox}}">
@@ -922,7 +922,7 @@ In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/
 </view>
 ```
 
-In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxss`, add minimal styles:
+In `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxss`, add minimal styles:
 
 ```css
 .reason-card {
@@ -965,7 +965,7 @@ In `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node miniprogram/parent-only-scope.test.js
 node --test miniprogram/pages/parent-upload/model.test.js
 node --test miniprogram/utils/parentApi.test.js
@@ -978,7 +978,7 @@ Expected: PASS with the voice/text reason assertions green.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/pages/parent-upload/index.js miniprogram/pages/parent-upload/index.wxml miniprogram/pages/parent-upload/index.wxss miniprogram/parent-only-scope.test.js
 git commit -m "feat: add parent voice reason ui"
 ```
@@ -986,17 +986,17 @@ git commit -m "feat: add parent voice reason ui"
 ## Task 6: Full verification and handoff updates
 
 **Files:**
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/handoff.md`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/parent-only-scope.test.js`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/model.test.js`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/handoff.md`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/parent-only-scope.test.js`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/model.test.js`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`
 - Test: `/Users/ark.mini/Desktop/Xingrun-Website/tests/test_wechat_parent_upload_api.py`
 - Test: `/Users/ark.mini/Desktop/Xingrun-Website/frontend/src/smart-wrong-questions.test.ts`
 
 - [ ] **Step 1: Update handoff with the implementation outcome and proof commands**
 
-Append a dated note to `/Users/ark.mini/Desktop/Xingrun-MiniProgram/handoff.md` that records:
+Append a dated note to `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/handoff.md` that records:
 
 ```md
 ## 2026-04-10 Parent Voice Reason Implementation
@@ -1034,7 +1034,7 @@ Expected: PASS with the smart wrong questions frontend suite green.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/utils/parentApi.test.js
 node --test miniprogram/pages/parent-upload/model.test.js
 node miniprogram/parent-only-scope.test.js
@@ -1048,7 +1048,7 @@ Expected: PASS with all mini program and bridge tests green.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add handoff.md docs/superpowers/plans/2026-04-10-parent-voice-reason-plan.md
 git commit -m "docs: add parent voice reason implementation plan"
 ```

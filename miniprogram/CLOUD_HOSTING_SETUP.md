@@ -15,7 +15,7 @@
 
 当前小程序应直连自有服务器：
 
-- [miniprogram/app.js](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.js)
+- [miniprogram/app.js](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.js)
   - `serverUrl = https://xingrun.online`
 
 ## 服务器部署步骤

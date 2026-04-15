@@ -18,7 +18,7 @@
 ## 当前目录
 
 ```text
-Xingrun-MiniProgram/
+miniprogram/
 ├── backend/
 ├── miniprogram/
 ├── handoff.md

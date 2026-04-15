@@ -13,7 +13,7 @@ main（稳定） -> develop（日常集成） -> feature/xxx（功能开发） -
 
 ## Cross-Repo Collaboration
 
-- 本项目（`Xingrun-MiniProgram`）负责微信小程序前端、桥接后端（`backend/`）和微信侧上传/转发；`Xingrun-Website` 负责家长微信账号、班级邀请码、学生绑定、错题记录等 canonical 业务数据与 API。
+- 本项目（`miniprogram`）负责微信小程序前端、桥接后端（`backend/`）和微信侧上传/转发；`Xingrun-Website` 负责家长微信账号、班级邀请码、学生绑定、错题记录等 canonical 业务数据与 API。
 - 两边联动开发默认走 `develop` 对 `develop`：本项目最终进 `main`，`Xingrun-Website` 最终进 `master`。小改动可各自直接进 `develop`，中高风险改动各自从 `develop` 拉 `feature/*` 再回 `develop`。
 - 涉及微信家长链路时，以 `Xingrun-Website` 的 API 契约为准；本项目只做 bridge 和适配，不在本地重新定义业务主键、绑定关系或状态语义。
 - 当前跨项目关键接口：`/api/wechat/login`、`/api/wechat/bind-class`、`/api/wechat/bind-student`、`/api/wechat/bindings`、`/api/wechat/wrong-questions`。
