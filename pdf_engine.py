@@ -30,6 +30,7 @@ from reportlab.platypus import (
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+from review_plan_templates.generate_review_pdfs import normalize_portable_text
 
 # ─── 字体注册（跨平台）────────────────────────────────────────────────────────────
 _FONT_REGISTERED = False
@@ -203,6 +204,9 @@ _SUB = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅',
         '6':'₆','7':'₇','8':'₈','9':'₉',
         'a':'ₐ','e':'ₑ','o':'ₒ','x':'ₓ','h':'ₕ',
         'k':'ₖ','l':'ₗ','m':'ₘ','n':'ₙ','p':'ₚ','s':'ₛ','t':'ₜ'}
+_BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
+    r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
+)
 
 
 def _latex_to_readable(text: str) -> str:
@@ -391,6 +395,29 @@ def _guess_wrong_question_image_mime_type(image_url: str) -> str:
     return "image/png"
 
 
+def _repair_wrong_question_latex_transport(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return str(text or "")
+
+    repaired = text.replace("\r\n", "\n")
+    repaired = repaired.replace("\t", "\\t")
+    repaired = repaired.replace("\f", "\\f")
+    repaired = repaired.replace("\b", "\\b")
+    repaired = repaired.replace("\r", "\\r")
+    repaired = _BROKEN_NEWLINE_LATEX_COMMAND_PATTERN.sub(r"\\n", repaired)
+    return repaired
+
+
+def _build_portable_wrong_question_text(value: str) -> str:
+    repaired = _repair_wrong_question_latex_transport(str(value or ""))
+    repaired = re.sub(r"\\text\{([^{}]+)\}", r"\1", repaired)
+    repaired = repaired.replace(r"\to", "XRARROWTOKEN")
+    portable = normalize_portable_text(repaired)
+    portable = portable.replace("XRARROWTOKEN", "→")
+    portable = portable.replace("lim_(", "lim(")
+    return portable
+
+
 def _build_browser_wrong_question_library_records(records: list[dict]) -> list[dict]:
     browser_records: list[dict] = []
 
@@ -398,7 +425,7 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
         normalized_record = {
             "created_at": str(record.get("created_at") or ""),
             "is_geometry": bool(record.get("is_geometry")),
-            "question_text": str(record.get("question_text") or ""),
+            "question_text": _repair_wrong_question_latex_transport(str(record.get("question_text") or "")),
             "child_reason_text": str(
                 record.get("child_raw_reason_text")
                 or record.get("child_reason_text")
@@ -527,7 +554,7 @@ def _generate_student_wrong_question_library_pdf_via_reportlab(
         else:
             story.append(
                 Paragraph(
-                    f"题目内容：{_normalize_blanks(str(record.get('question_text') or ''))}",
+                    f"题目内容：{html.escape(_build_portable_wrong_question_text(str(record.get('question_text') or '')))}",
                     styles["body"],
                 )
             )

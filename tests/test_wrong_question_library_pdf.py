@@ -286,6 +286,30 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
 
         self.assertEqual(normalized["question_text"], "解方程：\n$$x^2 + 1 = 0$$\n求 x 的值。")
 
+    def test_recognize_wrong_question_image_repairs_json_consumed_latex_backslashes(self):
+        normalized = ai_processor._normalize_wrong_question_recognition_result(
+            {
+                "is_geometry": False,
+                "question_text": "The function $f$ is continuous at $x = 3$.\n$$f(3) = 1 + \text{lim}_{x \to 3^-} f(x) + \frac{1}{2}$$\n(C) $f(3) \neq \text{lim}_{x \to 3} f(x)$",
+                "confidence": "high",
+                "notes": "",
+            }
+        )
+
+        self.assertIn("\\text{lim}_{x \\to 3^-}", normalized["question_text"])
+        self.assertIn("\\frac{1}{2}", normalized["question_text"])
+        self.assertIn("\\neq \\text{lim}_{x \\to 3}", normalized["question_text"])
+
+    def test_build_portable_wrong_question_text_repairs_broken_latex_for_reportlab_fallback(self):
+        portable = pdf_engine._build_portable_wrong_question_text(
+            "The function $f$ is continuous at $x = 3$.\n$$f(3) = 1 + \text{lim}_{x \to 3^-} f(x)$$\n(C) $f(3) \neq \text{lim}_{x \to 3} f(x)$"
+        )
+
+        self.assertNotIn("\t", portable)
+        self.assertNotIn("ext{", portable)
+        self.assertIn("lim(x → 3⁻)", portable)
+        self.assertIn("f(3)≠lim(x → 3)", portable)
+
 
 if __name__ == "__main__":
     unittest.main()

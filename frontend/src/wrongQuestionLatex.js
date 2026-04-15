@@ -25,8 +25,21 @@ function renderTextSegmentHtml(value) {
   return escapeHtml(String(value).replaceAll('\\$', '$')).replaceAll('\n', '<br />');
 }
 
+const BROKEN_NEWLINE_LATEX_COMMAND_PATTERN =
+  /(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))/g;
+
+function repairWrongQuestionLatexTransport(value) {
+  return String(value ?? '')
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\t', '\\t')
+    .replaceAll('\f', '\\f')
+    .replaceAll('\b', '\\b')
+    .replaceAll('\r', '\\r')
+    .replace(BROKEN_NEWLINE_LATEX_COMMAND_PATTERN, '\\n');
+}
+
 export function parseWrongQuestionLatexSegments(input) {
-  const text = String(input ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  const text = repairWrongQuestionLatexTransport(input).replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   const segments = [];
   const errors = [];
   let buffer = '';

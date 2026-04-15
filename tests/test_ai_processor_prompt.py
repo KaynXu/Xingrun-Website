@@ -74,6 +74,7 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("$...$", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("$$...$$", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("不要把整道题都改写成纯 LaTeX", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("反斜杠必须写成双反斜杠", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
 
     def test_parse_and_generate_plan_uses_configured_model_for_n1n(self):
         fake_client = _FakeClient(
