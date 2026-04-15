@@ -3,10 +3,12 @@ const test = require('node:test');
 
 const {
   buildUploadJobs,
+  buildImageRotationPlan,
   appendLocalImages,
   applyAiBoxesToImage,
   addManualBoxToImage,
   getSubmitBlockers,
+  rotateImageBoxesClockwise,
 } = require('./model');
 
 test('appendLocalImages keeps existing images and appends new ones', () => {
@@ -99,4 +101,56 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
   assert.equal(jobs[2].boxId, 'box_3');
   assert.equal(jobs[2].localPath, 'b.jpg');
   assert.equal(jobs[1].childRawReasonText, '第二题是我算错了');
+});
+
+test('buildImageRotationPlan swaps canvas bounds for clockwise quarter turns', () => {
+  const plan = buildImageRotationPlan({
+    width: 1200,
+    height: 900,
+    quarterTurns: 1,
+  });
+
+  assert.deepEqual(plan, {
+    canvasWidth: 900,
+    canvasHeight: 1200,
+    translateX: 900,
+    translateY: 0,
+    rotationRadians: Math.PI / 2,
+    backgroundColor: '#ffffff',
+  });
+});
+
+test('buildImageRotationPlan normalizes repeated clockwise turns', () => {
+  const plan = buildImageRotationPlan({
+    width: 1200,
+    height: 900,
+    quarterTurns: 5,
+  });
+
+  assert.deepEqual(plan, {
+    canvasWidth: 900,
+    canvasHeight: 1200,
+    translateX: 900,
+    translateY: 0,
+    rotationRadians: Math.PI / 2,
+    backgroundColor: '#ffffff',
+  });
+});
+
+test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate system', () => {
+  const next = rotateImageBoxesClockwise({
+    id: 'img_1',
+    localPath: 'a.jpg',
+    boxes: [
+      { id: 'box_1', x: 0.1, y: 0.2, width: 0.4, height: 0.3 },
+      { id: 'box_2', x: 0.55, y: 0.1, width: 0.2, height: 0.25 },
+    ],
+    activeBoxId: 'box_2',
+  });
+
+  assert.deepEqual(next.boxes, [
+    { id: 'box_1', x: 0.5, y: 0.1, width: 0.3, height: 0.4 },
+    { id: 'box_2', x: 0.65, y: 0.55, width: 0.25, height: 0.2 },
+  ]);
+  assert.equal(next.activeBoxId, 'box_2');
 });

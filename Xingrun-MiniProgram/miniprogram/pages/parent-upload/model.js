@@ -1,6 +1,11 @@
 let imageCounter = 0;
 let boxCounter = 0;
 
+function normalizeQuarterTurns(value) {
+  const turns = Math.round(Number(value) || 0);
+  return ((turns % 4) + 4) % 4;
+}
+
 function createDefaultBox(source) {
   boxCounter += 1;
   return {
@@ -15,6 +20,54 @@ function createDefaultBox(source) {
     voiceFilePath: '',
     voiceFileName: '',
     reasonStatusText: '',
+  };
+}
+
+function buildImageRotationPlan(options) {
+  const width = Math.max(1, Math.round(Number(options && options.width) || 0));
+  const height = Math.max(1, Math.round(Number(options && options.height) || 0));
+  const quarterTurns = normalizeQuarterTurns(options && options.quarterTurns);
+
+  if (quarterTurns === 1) {
+    return {
+      canvasWidth: height,
+      canvasHeight: width,
+      translateX: height,
+      translateY: 0,
+      rotationRadians: Math.PI / 2,
+      backgroundColor: '#ffffff',
+    };
+  }
+
+  if (quarterTurns === 2) {
+    return {
+      canvasWidth: width,
+      canvasHeight: height,
+      translateX: width,
+      translateY: height,
+      rotationRadians: Math.PI,
+      backgroundColor: '#ffffff',
+    };
+  }
+
+  if (quarterTurns === 3) {
+    return {
+      canvasWidth: height,
+      canvasHeight: width,
+      translateX: 0,
+      translateY: width,
+      rotationRadians: Math.PI * 1.5,
+      backgroundColor: '#ffffff',
+    };
+  }
+
+  return {
+    canvasWidth: width,
+    canvasHeight: height,
+    translateX: 0,
+    translateY: 0,
+    rotationRadians: 0,
+    backgroundColor: '#ffffff',
   };
 }
 
@@ -98,10 +151,31 @@ function buildUploadJobs(imageItems) {
   }, []);
 }
 
+function rotateImageBoxesClockwise(imageItem) {
+  if (!imageItem) {
+    return imageItem;
+  }
+
+  return {
+    ...imageItem,
+    boxes: (imageItem.boxes || []).map((box) => {
+      return {
+        ...box,
+        x: Math.max(0, Math.min(1, 1 - (Number(box.y) || 0) - (Number(box.height) || 0))),
+        y: Math.max(0, Math.min(1, Number(box.x) || 0)),
+        width: Math.max(0.08, Math.min(1, Number(box.height) || 0)),
+        height: Math.max(0.08, Math.min(1, Number(box.width) || 0)),
+      };
+    }),
+  };
+}
+
 module.exports = {
   appendLocalImages,
   applyAiBoxesToImage,
   addManualBoxToImage,
+  buildImageRotationPlan,
   getSubmitBlockers,
   buildUploadJobs,
+  rotateImageBoxesClockwise,
 };

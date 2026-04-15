@@ -12,8 +12,10 @@ const {
   addManualBoxToImage,
   appendLocalImages,
   applyAiBoxesToImage,
+  buildImageRotationPlan,
   buildUploadJobs,
   getSubmitBlockers,
+  rotateImageBoxesClockwise,
 } = require('./model');
 
 Page({
@@ -130,6 +132,12 @@ Page({
   setDataAsync(data) {
     return new Promise((resolve) => {
       this.setData(data, resolve);
+    });
+  },
+
+  wait(ms) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
     });
   },
 
@@ -279,14 +287,85 @@ Page({
     });
   },
 
+  async exportCanvasImage(filePath, options) {
+    const canvasWidth = Math.max(1, Math.round(Number(options && options.canvasWidth) || 0));
+    const canvasHeight = Math.max(1, Math.round(Number(options && options.canvasHeight) || 0));
+    const drawWidth = Math.max(1, Math.round(Number(options && options.drawWidth) || canvasWidth));
+    const drawHeight = Math.max(1, Math.round(Number(options && options.drawHeight) || canvasHeight));
+    const translateX = Math.round(Number(options && options.translateX) || 0);
+    const translateY = Math.round(Number(options && options.translateY) || 0);
+    const rotationRadians = Number(options && options.rotationRadians) || 0;
+    const backgroundColor = String((options && options.backgroundColor) || '#ffffff');
+    const sourceRect = options && options.sourceRect ? options.sourceRect : null;
+
+    await this.setDataAsync({
+      canvasWidth,
+      canvasHeight,
+    });
+    await this.wait(60);
+
+    return new Promise((resolve, reject) => {
+      const ctx = wx.createCanvasContext('cropCanvas', this);
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx.setFillStyle(backgroundColor);
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+      ctx.save();
+
+      if (translateX || translateY) {
+        ctx.translate(translateX, translateY);
+      }
+      if (rotationRadians) {
+        ctx.rotate(rotationRadians);
+      }
+
+      if (sourceRect) {
+        ctx.drawImage(
+          filePath,
+          sourceRect.x,
+          sourceRect.y,
+          sourceRect.width,
+          sourceRect.height,
+          0,
+          0,
+          drawWidth,
+          drawHeight
+        );
+      } else {
+        ctx.drawImage(filePath, 0, 0, drawWidth, drawHeight);
+      }
+
+      ctx.restore();
+      ctx.draw(false, () => {
+        setTimeout(() => {
+          wx.canvasToTempFilePath({
+            canvasId: 'cropCanvas',
+            x: 0,
+            y: 0,
+            width: canvasWidth,
+            height: canvasHeight,
+            destWidth: canvasWidth,
+            destHeight: canvasHeight,
+            fileType: 'jpg',
+            quality: 1,
+            success: (response) => resolve(response.tempFilePath),
+            fail: reject,
+          }, this);
+        }, 60);
+      });
+    });
+  },
+
   chooseImages() {
     wx.chooseImage({
       count: 9,
-      sizeType: ['compressed'],
+      sizeType: ['original'],
       sourceType: ['camera', 'album'],
       success: async (response) => {
-        const imageItems = appendLocalImages(this.data.imageItems, response.tempFilePaths || []);
-        const selectedImageId = this.data.selectedImageId || (imageItems[0] && imageItems[0].id) || '';
+        const nextPaths = response.tempFilePaths || [];
+        const imageItems = appendLocalImages(this.data.imageItems, nextPaths);
+        const selectedImageId = nextPaths.length
+          ? ((imageItems[imageItems.length - 1] && imageItems[imageItems.length - 1].id) || '')
+          : (this.data.selectedImageId || (imageItems[0] && imageItems[0].id) || '');
         await this.commitImageItems(imageItems, selectedImageId, true);
         this.setData({
           errorMessage: '',
@@ -667,6 +746,54 @@ Page({
     }));
   },
 
+  async rotateCurrentImageClockwise() {
+    const currentImage = this.data.currentImage;
+    let imageInfo;
+    let rotationPlan;
+    let rotatedPath;
+    let imageItems;
+    if (!currentImage || !currentImage.localPath) {
+      return;
+    }
+
+    this.setData({
+      errorMessage: '',
+    });
+
+    try {
+      imageInfo = await this.getImageInfo(currentImage.localPath);
+      rotationPlan = buildImageRotationPlan({
+        width: imageInfo.width,
+        height: imageInfo.height,
+        quarterTurns: 1,
+      });
+      rotatedPath = await this.exportCanvasImage(currentImage.localPath, {
+        canvasWidth: rotationPlan.canvasWidth,
+        canvasHeight: rotationPlan.canvasHeight,
+        drawWidth: imageInfo.width,
+        drawHeight: imageInfo.height,
+        translateX: rotationPlan.translateX,
+        translateY: rotationPlan.translateY,
+        rotationRadians: rotationPlan.rotationRadians,
+        backgroundColor: rotationPlan.backgroundColor,
+      });
+      imageItems = this.data.imageItems.map((item) => {
+        if (item.id !== currentImage.id) {
+          return item;
+        }
+        return rotateImageBoxesClockwise({
+          ...item,
+          localPath: rotatedPath,
+        });
+      });
+      await this.commitImageItems(imageItems, currentImage.id, true);
+    } catch (error) {
+      this.setData({
+        errorMessage: error instanceof Error ? error.message : '旋转图片失败，请稍后重试。',
+      });
+    }
+  },
+
   async exportBoxCrop(imageItem, box) {
     const imageInfo = await this.getImageInfo(imageItem.localPath);
     const cropX = Math.max(0, Math.round(box.x * imageInfo.width));
@@ -676,30 +803,18 @@ Page({
     const outputWidth = Math.min(cropWidth, 1800);
     const outputHeight = Math.max(1, Math.round((cropHeight / cropWidth) * outputWidth));
 
-    await this.setDataAsync({
+    return this.exportCanvasImage(imageItem.localPath, {
       canvasWidth: outputWidth,
       canvasHeight: outputHeight,
-    });
-
-    return new Promise((resolve, reject) => {
-      const ctx = wx.createCanvasContext('cropCanvas', this);
-      ctx.clearRect(0, 0, outputWidth, outputHeight);
-      ctx.drawImage(imageItem.localPath, cropX, cropY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
-      ctx.draw(false, () => {
-        wx.canvasToTempFilePath({
-          canvasId: 'cropCanvas',
-          x: 0,
-          y: 0,
-          width: outputWidth,
-          height: outputHeight,
-          destWidth: outputWidth,
-          destHeight: outputHeight,
-          fileType: 'jpg',
-          quality: 1,
-          success: (response) => resolve(response.tempFilePath),
-          fail: reject,
-        }, this);
-      });
+      drawWidth: outputWidth,
+      drawHeight: outputHeight,
+      backgroundColor: '#ffffff',
+      sourceRect: {
+        x: cropX,
+        y: cropY,
+        width: cropWidth,
+        height: cropHeight,
+      },
     });
   },
 
