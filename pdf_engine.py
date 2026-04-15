@@ -531,6 +531,22 @@ def _generate_student_wrong_question_library_pdf_via_reportlab(
                     styles["body"],
                 )
             )
+        child_reason_text = str(record.get("child_raw_reason_text") or "").strip()
+        cause_note = str(record.get("secondary_error_summary") or "").strip()
+        if child_reason_text:
+            story.append(
+                Paragraph(
+                    f"孩子自述错因：{html.escape(child_reason_text)}",
+                    styles["body"],
+                )
+            )
+        if cause_note:
+            story.append(
+                Paragraph(
+                    f"补充备注：{html.escape(cause_note)}",
+                    styles["body"],
+                )
+            )
 
     doc.build(story)
     return str(destination)
@@ -550,13 +566,26 @@ def generate_student_wrong_question_library_pdf(
     ]
     teacher_title = "、".join(dict.fromkeys(teacher_names)) or "未分配老师"
 
-    return _render_student_wrong_question_library_pdf_via_browser(
-        student_name=student_name,
-        class_name=class_name,
-        teacher_title=teacher_title,
-        records=records,
-        output_path=output_path,
-    )
+    try:
+        return _render_student_wrong_question_library_pdf_via_browser(
+            student_name=student_name,
+            class_name=class_name,
+            teacher_title=teacher_title,
+            records=records,
+            output_path=output_path,
+        )
+    except Exception as browser_error:
+        try:
+            return _generate_student_wrong_question_library_pdf_via_reportlab(
+                student_name=student_name,
+                class_name=class_name,
+                records=records,
+                output_path=output_path,
+            )
+        except Exception as reportlab_error:
+            raise RuntimeError(
+                "学生错题库 PDF 生成失败：浏览器渲染与 ReportLab 回退都未成功"
+            ) from reportlab_error
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────
