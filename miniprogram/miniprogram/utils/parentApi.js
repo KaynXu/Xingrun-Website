@@ -1,5 +1,8 @@
 const PARENT_SESSION_KEY = 'xr_parent_session';
 const PARENT_BINDINGS_KEY = 'xr_parent_bindings';
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
+const DEFAULT_LOGIN_TIMEOUT_MS = 10000;
 
 function safeGetStorage(wxApi, key, fallbackValue) {
   try {
@@ -56,11 +59,45 @@ function extractRequestErrorMessage(response, fallbackMessage) {
   return fallbackMessage;
 }
 
+function normalizeAsyncFailureMessage(rawMessage, fallbackMessage, timeoutMessage) {
+  const message = String(rawMessage || '').trim();
+  if (!message) {
+    return fallbackMessage;
+  }
+  if (/timeout/i.test(message)) {
+    return timeoutMessage;
+  }
+  return message;
+}
+
 function requestJson(wxApi, options) {
+  const requestOptions = options && typeof options === 'object' ? { ...options } : {};
+  const timeoutMs = Number(requestOptions.timeoutMs || 0) > 0
+    ? Number(requestOptions.timeoutMs)
+    : DEFAULT_REQUEST_TIMEOUT_MS;
+  delete requestOptions.timeoutMs;
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('请求超时，请检查网络后重试'));
+    }, timeoutMs);
+
     wxApi.request({
-      ...options,
+      ...requestOptions,
+      timeout: Number(requestOptions.timeout || 0) > 0
+        ? Number(requestOptions.timeout)
+        : timeoutMs,
       success: (response) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
         const statusCode = Number(response.statusCode || 0);
         if (statusCode >= 200 && statusCode < 300) {
           resolve(response.data || {});
@@ -70,16 +107,43 @@ function requestJson(wxApi, options) {
         reject(new Error(extractRequestErrorMessage(response, '请求失败')));
       },
       fail: (error) => {
-        reject(new Error((error && error.errMsg) || '请求失败'));
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(normalizeAsyncFailureMessage(
+          error && error.errMsg,
+          '请求失败',
+          '请求超时，请检查网络后重试',
+        )));
       },
     });
   });
 }
 
-function ensureLoginCode(wxApi) {
+function ensureLoginCode(wxApi, options = {}) {
+  const timeoutMs = Number(options.loginTimeoutMs || 0) > 0
+    ? Number(options.loginTimeoutMs)
+    : DEFAULT_LOGIN_TIMEOUT_MS;
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('微信登录超时，请检查网络后重试'));
+    }, timeoutMs);
+
     wxApi.login({
       success: (response) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
         if (response.code) {
           resolve(response.code);
           return;
@@ -87,17 +151,49 @@ function ensureLoginCode(wxApi) {
         reject(new Error('微信登录失败'));
       },
       fail: (error) => {
-        reject(new Error((error && error.errMsg) || '微信登录失败'));
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(normalizeAsyncFailureMessage(
+          error && error.errMsg,
+          '微信登录失败',
+          '微信登录超时，请检查网络后重试',
+        )));
       },
     });
   });
 }
 
 function uploadFile(wxApi, options) {
+  const uploadOptions = options && typeof options === 'object' ? { ...options } : {};
+  const timeoutMs = Number(uploadOptions.timeoutMs || 0) > 0
+    ? Number(uploadOptions.timeoutMs)
+    : DEFAULT_UPLOAD_TIMEOUT_MS;
+  delete uploadOptions.timeoutMs;
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('上传超时，请检查网络后重试'));
+    }, timeoutMs);
+
     wxApi.uploadFile({
-      ...options,
+      ...uploadOptions,
+      timeout: Number(uploadOptions.timeout || 0) > 0
+        ? Number(uploadOptions.timeout)
+        : timeoutMs,
       success: (response) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
         const statusCode = Number(response.statusCode || 0);
         let payload = {};
         const responseData = response ? response.data : undefined;
@@ -124,7 +220,16 @@ function uploadFile(wxApi, options) {
         }, '上传失败')));
       },
       fail: (error) => {
-        reject(new Error((error && error.errMsg) || '上传失败'));
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(normalizeAsyncFailureMessage(
+          error && error.errMsg,
+          '上传失败',
+          '上传超时，请检查网络后重试',
+        )));
       },
     });
   });
@@ -204,10 +309,11 @@ async function ensureParentSession(wxApi, serverUrl, options = {}) {
     return currentSession;
   }
 
-  const code = await ensureLoginCode(wxApi);
+  const code = await ensureLoginCode(wxApi, options);
   const payload = await requestJson(wxApi, {
     url: `${serverUrl}/wechat/parent/login`,
     method: 'POST',
+    timeoutMs: options.requestTimeoutMs,
     data: {
       code,
       nicknameSnapshot: options.nicknameSnapshot || '',
@@ -265,6 +371,7 @@ async function fetchParentBindings(wxApi, serverUrl, params) {
   const payload = await requestJson(wxApi, {
     url: `${serverUrl}/wechat/parent/bindings`,
     method: 'GET',
+    timeoutMs: params.requestTimeoutMs,
     data: {
       openId: params.openId,
     },

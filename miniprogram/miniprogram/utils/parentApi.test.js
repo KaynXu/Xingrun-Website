@@ -6,6 +6,7 @@ const {
   cacheParentBinding,
   classifyParentReason,
   detectParentWrongQuestionBoxes,
+  ensureParentSession,
   fetchParentBindings,
   getParentBindings,
   normalizeParentBinding,
@@ -182,6 +183,51 @@ test('fetchParentBindings refreshes cached bindings from the server', async () =
   assert.equal(bindings[0].id, 21);
   assert.equal(bindings[0].studentName, 'Alice');
   assert.deepEqual(getParentBindings(wxApi), bindings);
+});
+
+test('fetchParentBindings rejects when the bindings request never settles', async () => {
+  const wxApi = {
+    request() {},
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  const outcome = await Promise.race([
+    fetchParentBindings(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      requestTimeoutMs: 20,
+    }).then(
+      () => 'resolved',
+      (error) => error.message,
+    ),
+    new Promise((resolve) => setTimeout(() => resolve('pending'), 80)),
+  ]);
+
+  assert.equal(outcome, '请求超时，请检查网络后重试');
+});
+
+test('ensureParentSession rejects when wx.login never settles', async () => {
+  const wxApi = {
+    login() {},
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  const outcome = await Promise.race([
+    ensureParentSession(wxApi, 'https://example.com', {
+      loginTimeoutMs: 20,
+    }).then(
+      () => 'resolved',
+      (error) => error.message,
+    ),
+    new Promise((resolve) => setTimeout(() => resolve('pending'), 80)),
+  ]);
+
+  assert.equal(outcome, '微信登录超时，请检查网络后重试');
 });
 
 test('fetchParentBindings maps missing parent routes to a useful error message', async () => {

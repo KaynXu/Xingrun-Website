@@ -1,5 +1,20 @@
 # Handover - Source-Aligned Pencil Design
 
+## 2026-04-15 Parent Bind Timeout Guard Added
+- 用户反馈：微信开发者工具打开 `pages/parent-bind/index` 时控制台报通用 `Error: timeout`，页面能先显示本地缓存的已绑定孩子，但刷新链路没有落到页面错误态。
+- 根因确认：
+  - `miniprogram/utils/parentApi.js` 里封装的 `wx.request` / `wx.login` / `wx.uploadFile` Promise 之前没有主动超时兜底。
+  - 一旦微信运行时出现“API 长时间不回调”的情况，页面侧 Promise 会一直 pending，`catch` 拿不到错误，只剩 DevTools 内部抛一个通用 `timeout`。
+- 已完成：
+  - 给 `requestJson()` 补了默认请求超时，超时后统一转成 `请求超时，请检查网络后重试`
+  - 给 `ensureLoginCode()` 补了登录超时兜底，超时后统一转成 `微信登录超时，请检查网络后重试`
+  - 给 `uploadFile()` 同步补了上传超时兜底，避免上传页出现同类悬空
+  - 在 `miniprogram/utils/parentApi.test.js` 新增 2 条回归测试，专门卡 `wx.request` / `wx.login` 永不回调时必须 reject
+- proof：
+  - `node --test miniprogram/miniprogram/utils/parentApi.test.js` -> `pass 14 / fail 0`
+- 下一步：
+  - 在微信开发者工具里重新打开绑定页做一次人工 smoke，确认弱网或异常网络下页面会显示明确错误文案，而不是只在控制台看到通用 `Error: timeout`
+
 ## 2026-04-10 Parent Upload Voice Reason Merged Into Current Branch
 - 用户当前打开的是 `feature/wrong-question-error-cause`，不是之前已完成语音功能的 worktree，所以本轮改为把语音错因能力直接并入当前分支的多图多框上传页。
 - 已完成：
