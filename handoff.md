@@ -1,11 +1,13 @@
 ## Handoff
 
-最后更新：2026-04-15
+最后更新：2026-04-16
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”的根因修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；现有历史错题记录即使库里已经存成坏文本，网页预览、浏览器 PDF 和 ReportLab 回退文本也都会在渲染时补修，不必先做库迁移。
+- 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `7b0ba1c`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
 - 2026-04-15 提交 `3ac1b4a Merge branch 'develop'` 已部署到生产机：本地 temp script 已确认 `local master == origin/master == production HEAD == 3ac1b4a`，生产机 `pm2 restart xingrun` 后根路由健康检查返回 `302 FOUND`。
 - 2026-04-15 网站端学生错题库 PDF 已补回每题 `孩子自述错因 / 补充备注`：`pdf_engine.py` 现在会把 `child_raw_reason_text` 和 `secondary_error_summary` 透传给浏览器渲染脚本，`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 已在每题题目块下显示这两段内容；当前不恢复旧的 `家长备注 / 老师备注`，只展示现行微信错题链路里的孩子错因与补充备注。
@@ -94,7 +96,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
-- 这轮错题公式渲染默认仍依赖前端侧 `katex` 和浏览器脚本；虽然现在浏览器渲染失败时会自动回退到 `ReportLab`，不再直接把 PDF 生成打挂，但回退链路的公式能力明显更弱，复杂公式在没有浏览器的部署环境里仍会退化显示。
+- 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
 - 这轮学生错题库 PDF 补字目前 proof 主要是 `pdf_engine` payload 回归、浏览器脚本 HTML 回归和临时脚本检查标签/值是否进入最终文档，还没有手工打开实际生成的 PDF 看分页和长文本换行。
 - 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
 - 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
