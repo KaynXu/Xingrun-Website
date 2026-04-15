@@ -2542,6 +2542,46 @@ def api_wechat_wrong_question_boxes():
         return jsonify({"error": str(exc)}), exc.status_code
 
 
+@app.route("/api/wechat/reason-transcriptions", methods=["POST"])
+def api_wechat_reason_transcriptions_create():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    audio_url = (data.get("audio_url") or "").strip()
+    if not audio_url:
+        return jsonify({"error": "audio_url is required"}), 400
+
+    try:
+        return jsonify(ai_processor.transcribe_child_reason_audio(audio_url))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc), "retryable": True}), 502
+
+
+@app.route("/api/wechat/wrong-question-boxes", methods=["POST"])
+def api_wechat_wrong_question_boxes():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    image_url = (data.get("image_url") or "").strip()
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    try:
+        return jsonify(smart_wrong_questions.detect_wechat_wrong_question_boxes({"image_url": image_url}))
+    except smart_wrong_questions.WrongQuestionProxyError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+
 def _student_wrong_question_library_path(student_id: int) -> Path:
     library_dir = PDF_DIR / "wrong_question_libraries"
     library_dir.mkdir(parents=True, exist_ok=True)
@@ -2575,10 +2615,16 @@ def api_wechat_wrong_questions_create():
     image_url = (data.get("image_url") or "").strip()
     child_raw_reason_text = (data.get("child_raw_reason_text") or "").strip()
     child_reason_input_mode = (data.get("child_reason_input_mode") or "text").strip() or "text"
+    primary_error_type = (data.get("primary_error_type") or "").strip()
+    secondary_error_summary = (data.get("secondary_error_summary") or "").strip()
     if not open_id or not binding_id or not image_url:
         return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
     if not child_raw_reason_text:
         return jsonify({"error": "child_raw_reason_text is required"}), 400
+    if primary_error_type not in ai_processor.WRONG_QUESTION_ERROR_TYPE_OPTIONS:
+        return jsonify({"error": "primary_error_type is invalid"}), 400
+    if not secondary_error_summary:
+        return jsonify({"error": "secondary_error_summary is required"}), 400
 
     account = _get_parent_wechat_account_by_openid(open_id)
     if not account:
@@ -2596,24 +2642,13 @@ def api_wechat_wrong_questions_create():
         return jsonify({"error": str(exc), "retryable": True}), 502
 
     try:
-        reason_classification = ai_processor.classify_wrong_question_reason(
-            child_raw_reason_text,
-            question_text=str(recognition.get("question_text") or ""),
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc), "retryable": True}), 422
-    except Exception as exc:
-        return jsonify({"error": str(exc), "retryable": True}), 502
-
-    try:
         record = create_wechat_wrong_question_submission(
             binding_id=binding_id,
             image_url=image_url,
-            parent_note="",
             child_raw_reason_text=child_raw_reason_text,
             child_reason_input_mode=child_reason_input_mode,
-            primary_error_type=reason_classification["primary_error_type"],
-            secondary_error_summary=reason_classification["secondary_error_summary"],
+            primary_error_type=primary_error_type,
+            secondary_error_summary=secondary_error_summary,
             recognition_status="recognized",
             is_geometry=bool(recognition.get("is_geometry")),
             question_text=str(recognition.get("question_text") or ""),

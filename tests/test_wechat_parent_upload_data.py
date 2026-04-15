@@ -63,7 +63,6 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         submission = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=binding["id"],
             image_url="https://files.example.com/wrong-question.png",
-            parent_note="请老师看一下这题",
         )
 
         self.assertEqual(binding["teacher_user_id"], self.owner_id)
@@ -72,6 +71,16 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(submission["teacher_user_id"], self.owner_id)
         self.assertEqual(submission["source"], "wechat_mp")
         self.assertEqual(submission["status"], "pending")
+
+    def test_wrong_question_submission_table_removes_legacy_feedback_columns(self):
+        with lesson_manager.get_conn() as conn:
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()
+            }
+
+        self.assertNotIn("parent_note", columns)
+        self.assertNotIn("teacher_comment", columns)
 
     def test_wrong_question_submission_stores_reason_and_archive_fields(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
@@ -84,7 +93,6 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         submission = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=binding["id"],
             image_url="https://files.example.com/wrong-question.png",
-            parent_note="这题又错了",
             child_raw_reason_text="我忘了等式两边同时乘一样的数字",
             child_reason_input_mode="voice",
             primary_error_type="计算问题",
@@ -123,7 +131,7 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
 
         self.assertEqual(saved["archive_status"], "archived")
         self.assertNotEqual(saved["archived_at"], "")
-        self.assertEqual(saved["teacher_comment"], "")
+        self.assertNotIn("teacher_comment", saved)
         self.assertEqual(saved["status"], "pending")
 
     def test_wrong_question_submission_rejects_unknown_child_reason_input_mode(self):
@@ -285,6 +293,8 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertIn("secondary_error_summary", columns)
         self.assertIn("archive_status", columns)
         self.assertIn("archived_at", columns)
+        self.assertNotIn("parent_note", columns)
+        self.assertNotIn("teacher_comment", columns)
         self.assertEqual(row["child_raw_reason_text"], "")
         self.assertEqual(row["child_reason_input_mode"], "text")
         self.assertEqual(row["primary_error_type"], "")
@@ -303,7 +313,6 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         submission = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=binding["id"],
             image_url="https://files.example.com/wrong-question.png",
-            parent_note="这题又错了",
             recognition_status="recognized",
             is_geometry=False,
             question_text="计算 $2+3\\times4$ 的结果。",

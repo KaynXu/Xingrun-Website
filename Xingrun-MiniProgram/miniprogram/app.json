@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/parent-home/index",
+    "pages/parent-bind/index",
+    "pages/parent-upload/index",
+    "pages/parent-wrongbook/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#1a1a2e",
+    "navigationBarTitleText": "星润错题助手",
+    "navigationBarTextStyle": "white"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

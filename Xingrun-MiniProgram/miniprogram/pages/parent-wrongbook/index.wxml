@@ -1,0 +1,30 @@
+<view class="wrongbook-page">
+  <view wx:if="{{loading}}" class="state-card">
+    <text class="state-title">加载中</text>
+    <text class="state-desc">正在拉取错题记录</text>
+  </view>
+
+  <view wx:elif="{{errorMessage}}" class="state-card error-card">
+    <text class="state-title">加载失败</text>
+    <text class="state-desc">{{errorMessage}}</text>
+  </view>
+
+  <view wx:elif="{{!items.length}}" class="state-card">
+    <text class="state-title">还没有错题记录</text>
+    <text class="state-desc">上传第一道错题后就会在这里显示。</text>
+  </view>
+
+  <view wx:else class="item-list">
+    <view wx:for="{{items}}" wx:key="id" class="item-card">
+      <image wx:if="{{item.imageUrl}}" class="item-img" src="{{item.imageUrl}}" mode="aspectFill" />
+      <view class="item-body">
+        <view class="item-top">
+          <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
+          <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
+        </view>
+        <text wx:if="{{item.errorSummary}}" class="item-summary">{{item.errorSummary}}</text>
+        <text class="item-date">{{item.dateStr}}</text>
+      </view>
+    </view>
+  </view>
+</view>

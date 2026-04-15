@@ -10,6 +10,9 @@ AI 处理模块：
 import json
 import os
 import re
+import tempfile
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from datetime import date
 from config_runtime import get_runtime_config
@@ -201,6 +204,36 @@ def recognize_wrong_question_image(image_url: str) -> dict:
     return _normalize_wrong_question_recognition_result(payload)
 
 
+def transcribe_child_reason_audio(audio_url: str) -> dict:
+    normalized_audio_url = str(audio_url or "").strip()
+    if not normalized_audio_url:
+        raise ValueError("audio_url is required")
+
+    client = _get_whisper_client()
+    audio_path = urllib.parse.urlparse(normalized_audio_url).path
+    audio_suffix = Path(audio_path).suffix or ".m4a"
+
+    with urllib.request.urlopen(normalized_audio_url, timeout=20) as response:
+        audio_bytes = response.read()
+
+    with tempfile.NamedTemporaryFile(suffix=audio_suffix) as temp_file:
+        temp_file.write(audio_bytes)
+        temp_file.flush()
+        temp_file.seek(0)
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=temp_file,
+        )
+
+    transcript_text = str(getattr(transcription, "text", "") or "").strip()
+    if not transcript_text and isinstance(transcription, dict):
+        transcript_text = str(transcription.get("text") or "").strip()
+    if not transcript_text:
+        raise ValueError("audio transcription failed")
+
+    return {"transcript_text": transcript_text}
+
+
 def classify_wrong_question_reason(child_reason_text: str, *, question_text: str = "") -> dict:
     normalized_reason_text = str(child_reason_text or "").strip()
     if not normalized_reason_text:
@@ -237,7 +270,7 @@ def classify_wrong_question_reason(child_reason_text: str, *, question_text: str
         raise ValueError("wrong question reason classification failed")
 
     return {
-        "display_text": display_text or normalized_reason_text,
+        "display_text": display_text or f"{primary_error_type}｜{secondary_error_summary}",
         "primary_error_type": primary_error_type,
         "secondary_error_summary": secondary_error_summary,
     }

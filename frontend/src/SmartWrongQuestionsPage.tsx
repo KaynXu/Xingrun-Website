@@ -61,17 +61,10 @@ type WrongQuestionStudentFilterOption = {
 };
 
 const WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
-  '审题不清',
-  '概念不清',
-  '方法错误',
-  '计算粗心',
-  '步骤遗漏',
-  '书写不规范',
-  '计算错误',
-  '审题错误',
-  '图形理解错误',
-  '定位错误',
-  '模型错误',
+  '知识点问题',
+  '细节问题',
+  '方法问题',
+  '审题问题',
 ];
 
 const initialFilters: WrongQuestionFilters = {
@@ -726,7 +719,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div>
             <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传记录</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，孩子上传时会先写清自己为什么错，系统再归类固定错因并生成备注。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，孩子上传时会先写清自己为什么错，系统会整理成老师可读的说明，归到四类问题，并补充备注。</p>
           </div>
           {selectedRecordLibraryPdfPath ? (
             <div className="flex flex-wrap gap-3">
@@ -767,15 +760,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.childReasonText || '孩子还没有填写错因描述。'}</p>
             </div>
             <div className={`${workspaceCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 归类错因</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">问题归类</p>
               {selectedDraft ? (
                 <select
-                  aria-label="AI 归类错因"
+                  aria-label="问题归类"
                   value={selectedDraft.selectedErrorType}
                   onChange={(event) => handleDraftChange('selectedErrorType', event.target.value)}
                   className={`${workspaceFieldClass} mt-2`}
                 >
-                  <option value="">请选择错因</option>
+                  <option value="">请选择问题归类</option>
                   {finalErrorTypeOptions.map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
@@ -785,7 +778,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               )}
             </div>
             <div className={`${workspaceCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 备注</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">补充备注</p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{selectedRecord.causeNote || selectedRecord.analysis.studentNote || '暂无备注'}</p>
             </div>
           </div>
@@ -916,14 +909,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm sm:col-span-2">
-              <span className="text-slate-500 dark:text-slate-400">最终错误类型</span>
+              <span className="text-slate-500 dark:text-slate-400">最终问题归类</span>
               <select
-                aria-label="最终错误类型"
+                aria-label="最终问题归类"
                 value={selectedDraft.selectedErrorType}
                 onChange={(event) => handleDraftChange('selectedErrorType', event.target.value)}
                 className={workspaceFieldClass}
               >
-                <option value="">请选择错误类型</option>
+                <option value="">请选择问题归类</option>
                 {finalErrorTypeOptions.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
@@ -1114,14 +1107,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </select>
             </label>
             <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">错误类型</span>
+              <span className="text-slate-500 dark:text-slate-400">问题归类</span>
               <select
-                aria-label="错误类型"
+                aria-label="问题归类筛选"
                 value={filters.errorType ?? ''}
                 onChange={(event) => handleFilterChange('errorType', event.target.value)}
                 className={workspaceFieldClass}
               >
-                <option value="">全部错误类型</option>
+                <option value="">全部问题归类</option>
                 {WRONG_QUESTION_ERROR_TYPE_OPTIONS.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}

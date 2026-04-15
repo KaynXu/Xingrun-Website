@@ -22,6 +22,8 @@ data/consultations.csv
 
 # Local asset candidates (not wired into the product)
 Assets/
+!Xingrun-MiniProgram/backend/assets/
+!Xingrun-MiniProgram/backend/assets/**
 
 review_plan_templates/pdf_output/*.pdf
 review_plan_templates/pdf_output/.DS_Store

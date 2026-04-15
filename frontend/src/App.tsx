@@ -2870,136 +2870,138 @@ const ClassFeedbackGenerationPage = ({
       : []),
   ];
   const classFeedbackControlBar = (
-    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] 2xl:min-w-[44rem]">
-        <select
-          value={selectedClassId ?? ''}
-          onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
-          className={workspaceFieldClass}
-          disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
-        >
-          <option value="">选择班级</option>
-          {classes.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={classFeedbackPeriodMode}
-          onChange={(event) => setClassFeedbackPeriodMode(event.target.value as ClassFeedbackPeriodGranularity)}
+    <div className="grid gap-3 sm:grid-cols-2 xl:max-w-[43rem] xl:grid-cols-4">
+      <select
+        value={selectedClassId ?? ''}
+        onChange={(event) => void handleClassChange(event.target.value ? Number(event.target.value) : null)}
+        className={workspaceFieldClass}
+        disabled={classesLoading || isRefreshingTask || isSavingClassFeedback}
+      >
+        <option value="">选择班级</option>
+        {classes.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+      <select
+        value={classFeedbackPeriodMode}
+        onChange={(event) => setClassFeedbackPeriodMode(event.target.value as ClassFeedbackPeriodGranularity)}
+        className={workspaceFieldClass}
+        disabled={isRefreshingTask || isSavingClassFeedback}
+      >
+        <option value="daily">按日</option>
+        <option value="weekly">按周</option>
+        <option value="monthly">按月</option>
+        <option value="stage">按阶段</option>
+      </select>
+      {classFeedbackPeriodMode === 'daily' ? (
+        <input
+          type="date"
+          value={classFeedbackAnchorDate}
+          onChange={(event) => setClassFeedbackAnchorDate(event.target.value)}
           className={workspaceFieldClass}
           disabled={isRefreshingTask || isSavingClassFeedback}
-        >
-          <option value="daily">按日</option>
-          <option value="weekly">按周</option>
-          <option value="monthly">按月</option>
-          <option value="stage">按阶段</option>
-        </select>
-        {classFeedbackPeriodMode === 'daily' ? (
-          <input
-            type="date"
-            value={classFeedbackAnchorDate}
-            onChange={(event) => setClassFeedbackAnchorDate(event.target.value)}
+        />
+      ) : classFeedbackPeriodMode === 'weekly' ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">
+          <select
+            value={classFeedbackPeriodYear}
+            onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
             className={workspaceFieldClass}
             disabled={isRefreshingTask || isSavingClassFeedback}
-          />
-        ) : classFeedbackPeriodMode === 'weekly' ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <select
-              value={classFeedbackPeriodYear}
-              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            >
-              {classFeedbackPeriodYearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year} 年
-                </option>
-              ))}
-            </select>
-            <select
-              value={classFeedbackPeriodWeek}
-              onChange={(event) => setClassFeedbackPeriodWeek(Number(event.target.value))}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            >
-              {Array.from({ length: 53 }, (_, index) => index + 1).map((week) => (
-                <option key={week} value={week}>
-                  第 {week} 周
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : classFeedbackPeriodMode === 'monthly' ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <select
-              value={classFeedbackPeriodYear}
-              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            >
-              {classFeedbackPeriodYearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year} 年
-                </option>
-              ))}
-            </select>
-            <select
-              value={classFeedbackPeriodMonth}
-              onChange={(event) => setClassFeedbackPeriodMonth(Number(event.target.value))}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            >
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-                <option key={month} value={month}>
-                  {month} 月
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <select
-              value={classFeedbackPeriodYear}
-              onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            >
-              {classFeedbackPeriodYearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year} 年
-                </option>
-              ))}
-            </select>
-            <select
-              value={classFeedbackStageName}
-              onChange={(event) => setClassFeedbackStageName(event.target.value as ClassFeedbackStageName)}
-              className={workspaceFieldClass}
-              disabled={isRefreshingTask || isSavingClassFeedback}
-            >
-              {(['春季', '暑假', '秋季', '寒假'] as ClassFeedbackStageName[]).map((stageName) => (
-                <option key={stageName} value={stageName}>
-                  {stageName}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-      <div className="grid gap-3 sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-stretch 2xl:justify-self-end">
-        <div className="min-w-[11rem] rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {classFeedbackPeriodPreview.startDate} 至 {classFeedbackPeriodPreview.endDate}
-          </div>
+          >
+            {classFeedbackPeriodYearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year} 年
+              </option>
+            ))}
+          </select>
+          <select
+            value={classFeedbackPeriodWeek}
+            onChange={(event) => setClassFeedbackPeriodWeek(Number(event.target.value))}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          >
+            {Array.from({ length: 53 }, (_, index) => index + 1).map((week) => (
+              <option key={week} value={week}>
+                第 {week} 周
+              </option>
+            ))}
+          </select>
         </div>
+      ) : classFeedbackPeriodMode === 'monthly' ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">
+          <select
+            value={classFeedbackPeriodYear}
+            onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          >
+            {classFeedbackPeriodYearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year} 年
+              </option>
+            ))}
+          </select>
+          <select
+            value={classFeedbackPeriodMonth}
+            onChange={(event) => setClassFeedbackPeriodMonth(Number(event.target.value))}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          >
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+              <option key={month} value={month}>
+                {month} 月
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">
+          <select
+            value={classFeedbackPeriodYear}
+            onChange={(event) => setClassFeedbackPeriodYear(Number(event.target.value))}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          >
+            {classFeedbackPeriodYearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year} 年
+              </option>
+            ))}
+          </select>
+          <select
+            value={classFeedbackStageName}
+            onChange={(event) => setClassFeedbackStageName(event.target.value as ClassFeedbackStageName)}
+            className={workspaceFieldClass}
+            disabled={isRefreshingTask || isSavingClassFeedback}
+          >
+            {(['春季', '暑假', '秋季', '寒假'] as ClassFeedbackStageName[]).map((stageName) => (
+              <option key={stageName} value={stageName}>
+                {stageName}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+  const classFeedbackHeaderAside = (
+    <div className="flex flex-col gap-3 xl:min-h-[10.5rem] xl:justify-between">
+      <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
+        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
+        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          {classFeedbackPeriodPreview.startDate} 至 {classFeedbackPeriodPreview.endDate}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <button
           type="button"
           onClick={() => void handleCreateClassFeedbackTask()}
           disabled={!selectedClassId || isSavingClassFeedback}
-          className={`${workspacePrimaryButtonClass} justify-center`}
+          className={`${workspacePrimaryButtonClass} w-full justify-center`}
         >
           <PlusCircle size={18} />
           创建反馈任务
@@ -3008,7 +3010,7 @@ const ClassFeedbackGenerationPage = ({
           type="button"
           onClick={() => void handleRefreshClassFeedbackTask()}
           disabled={!activeClassFeedbackTaskId || isRefreshingTask}
-          className={`${workspaceSecondaryButtonClass} justify-center`}
+          className={`${workspaceSecondaryButtonClass} w-full justify-center`}
         >
           <RefreshCw size={18} />
           刷新任务
@@ -3018,11 +3020,12 @@ const ClassFeedbackGenerationPage = ({
   );
 
   return (
-    <div className={`${workspacePageClass} mx-auto max-w-7xl space-y-6`}>
+    <div className={`${workspacePageClass} space-y-6`}>
       <ClassFeedbackGenerationWorkspace
         classNameLabel={selectedClass?.name ?? '未选择班级'}
         teacherNameLabel={teacherNameLabel}
         controlBar={classFeedbackControlBar}
+        headerAside={classFeedbackHeaderAside}
         sourceSummaryItems={sourceSummaryItems}
         labelGroups={labelGroups}
         classStatusTags={classFeedbackStatusTags}

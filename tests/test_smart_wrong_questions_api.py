@@ -126,7 +126,6 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         return lesson_manager.create_wechat_wrong_question_submission(
             binding_id=binding["id"],
             image_url="https://files.example.com/local-record.png",
-            parent_note="本地微信错题",
         )
 
     def test_summary_export_route_is_removed(self):
@@ -651,9 +650,13 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
 
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.get_json()["id"], record["id"])
+        self.assertNotIn("parent_note", detail.get_json())
+        self.assertNotIn("teacher_comment", detail.get_json())
         self.assertEqual(review.status_code, 200)
         self.assertEqual(review.get_json()["record"]["archive_status"], "archived")
         self.assertTrue(review.get_json()["record"]["is_mastered"])
+        self.assertNotIn("parent_note", review.get_json()["record"])
+        self.assertNotIn("teacher_comment", review.get_json()["record"])
         fetch_wrong_question_record.assert_not_called()
         save_wrong_question_review.assert_not_called()
 
