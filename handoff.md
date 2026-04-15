@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-15 网站端学生错题库 PDF 已补回每题 `孩子自述错因 / 补充备注`：`pdf_engine.py` 现在会把 `child_raw_reason_text` 和 `secondary_error_summary` 透传给浏览器渲染脚本，`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 已在每题题目块下显示这两段内容；当前不恢复旧的 `家长备注 / 老师备注`，只展示现行微信错题链路里的孩子错因与补充备注。
 - 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
 - 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
 - 2026-04-15 小程序子项目目录已收口：仓库根目录现在只保留一个小写 `miniprogram/`，原 `Xingrun-MiniProgram/` 已整体并入该目录；当前小程序子项目入口是 `miniprogram/`，微信工程代码位于 `miniprogram/miniprogram/`，课堂随机点名 HTML 工具也已统一移动到 `miniprogram/classroom-random-score*.html`。
@@ -90,6 +91,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮学生错题库 PDF 补字目前 proof 主要是 `pdf_engine` payload 回归、浏览器脚本 HTML 回归和临时脚本检查标签/值是否进入最终文档，还没有手工打开实际生成的 PDF 看分页和长文本换行。
 - 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
 - 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
 - 历史计划文档和旧对话里仍可能残留 `Xingrun-MiniProgram` 旧目录名；本轮已更新权威 handoff 和关键活文档，但后续如果继续照旧路径执行命令，仍可能误跳到不存在的位置。
