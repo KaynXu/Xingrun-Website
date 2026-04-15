@@ -1,0 +1,58 @@
+<view class="parent-page">
+  <view class="hero-card">
+    <text class="hero-badge">家长绑定</text>
+    <text class="hero-title">先绑定孩子，再上传错题</text>
+    <text class="hero-subtitle">老师把班级邀请码发给家长，家长输入后就能从网站已有学生名单里选择孩子。</text>
+  </view>
+
+  <view class="panel-card">
+    <text class="field-label">班级邀请码</text>
+    <input
+      class="field-input"
+      placeholder="请输入老师发来的邀请码"
+      value="{{inviteCode}}"
+      bindinput="handleInviteInput"
+    />
+    <button class="primary-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生</button>
+  </view>
+
+  <view wx:if="{{errorMessage}}" class="state-card error-card">
+    <text class="state-title">暂时无法继续</text>
+    <text class="state-desc">{{errorMessage}}</text>
+  </view>
+
+  <view wx:if="{{existingBindings.length}}" class="panel-card">
+    <view class="section-head">
+      <text class="section-title">已绑定孩子</text>
+      <button class="ghost-btn" size="mini" bindtap="goHome">去上传</button>
+    </view>
+    <view class="binding-list">
+      <view wx:for="{{existingBindings}}" wx:key="id" class="binding-chip">
+        <text>{{item.studentName || '未命名学生'}} · {{item.className || '未命名班级'}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{preview}}" class="panel-card">
+    <text class="section-title">{{preview.class_name || '已找到班级'}}</text>
+    <text class="section-subtitle">请选择这次要绑定的孩子，一位家长可以重复绑定多个孩子。</text>
+
+    <view class="student-list">
+      <view wx:for="{{preview.students}}" wx:key="id" class="student-card">
+        <view>
+          <text class="student-name">{{item.name}}</text>
+          <text class="student-meta">学生 ID {{item.id}}</text>
+        </view>
+        <button
+          class="primary-btn mini-btn"
+          loading="{{savingStudentId === item.id}}"
+          data-student-id="{{item.id}}"
+          data-student-name="{{item.name}}"
+          bindtap="bindStudent"
+        >
+          绑定这个孩子
+        </button>
+      </view>
+    </view>
+  </view>
+</view>

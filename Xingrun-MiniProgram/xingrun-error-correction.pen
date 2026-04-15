@@ -1,0 +1,1894 @@
+{
+  "id": "document",
+  "type": "document",
+  "version": "2.9",
+  "children": [
+    {
+      "id": "GF8wL",
+      "name": "Screen 1: Entry",
+      "type": "frame",
+      "x": 0,
+      "y": 0,
+      "width": 375,
+      "height": 812,
+      "layout": "vertical",
+      "gap": 12,
+      "padding": [20, 16, 20, 16],
+      "fill": "#F5F5F5",
+      "children": [
+        {
+          "id": "entryHero",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 20,
+          "cornerRadius": 24,
+          "fill": "#FFFFFF",
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "entryBrandChip",
+              "type": "frame",
+              "layout": "horizontal",
+              "gap": 8,
+              "padding": [6, 12],
+              "cornerRadius": 999,
+              "fill": "#E8F9EF",
+              "width": "fit_content",
+              "children": [
+                {
+                  "id": "entryBrandDot",
+                  "type": "ellipse",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "#07C160"
+                },
+                {
+                  "id": "entryBrandText",
+                  "type": "text",
+                  "content": "星润错题助手",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "600",
+                  "fill": "#07C160"
+                }
+              ]
+            },
+            {
+              "id": "entryTitle",
+              "type": "text",
+              "content": "先选择孩子，再进入错题流",
+              "fontFamily": "PingFang SC",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "fill": "#111111",
+              "textGrowth": "fixed-width",
+              "width": "fill_container"
+            },
+            {
+              "id": "entrySubtitle",
+              "type": "text",
+              "content": "首次进入先登记孩子信息；之后可以直接切换孩子并进入对话、传图和错题诊断页面。",
+              "fontFamily": "PingFang SC",
+              "fontSize": 14,
+              "fontWeight": "normal",
+              "lineHeight": 1.5,
+              "fill": "#666666",
+              "textGrowth": "fixed-width",
+              "width": "fill_container"
+            }
+          ]
+        },
+        {
+          "id": "savedSection",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 20,
+          "cornerRadius": 24,
+          "fill": "#FFFFFF",
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "savedHeader",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "savedTitle",
+                  "type": "text",
+                  "content": "已保存的孩子",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 17,
+                  "fontWeight": "600",
+                  "fill": "#111111"
+                },
+                {
+                  "id": "savedCount",
+                  "type": "text",
+                  "content": "2 个资料",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#999999"
+                }
+              ]
+            },
+            {
+              "id": "savedCard1",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "padding": 16,
+              "cornerRadius": 18,
+              "fill": "#F7FAF8",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "savedCard1Main",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "savedCard1Name",
+                      "type": "text",
+                      "content": "张小明",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 16,
+                      "fontWeight": "600",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "savedCard1Meta",
+                      "type": "text",
+                      "content": "王老师 · 初二（1）班",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    },
+                    {
+                      "id": "savedCard1Submeta",
+                      "type": "text",
+                      "content": "复习提醒 20:00 · 本周授权已开启",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    }
+                  ]
+                },
+                {
+                  "id": "savedCard1Action",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "padding": [10, 14],
+                  "cornerRadius": 999,
+                  "fill": "#07C160",
+                  "width": "fit_content",
+                  "children": [
+                    {
+                      "id": "savedCard1ActionText",
+                      "type": "text",
+                      "content": "切换",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13,
+                      "fontWeight": "600",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "savedCard2",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "padding": 16,
+              "cornerRadius": 18,
+              "fill": "#FAFAFA",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "savedCard2Main",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "savedCard2Name",
+                      "type": "text",
+                      "content": "李小雨",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 16,
+                      "fontWeight": "600",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "savedCard2Meta",
+                      "type": "text",
+                      "content": "赵老师 · 初一（3）班",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    },
+                    {
+                      "id": "savedCard2Submeta",
+                      "type": "text",
+                      "content": "复习提醒 19:30 · 本周待授权",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    }
+                  ]
+                },
+                {
+                  "id": "savedCard2Action",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "padding": [10, 14],
+                  "cornerRadius": 999,
+                  "fill": "#EFEFEF",
+                  "width": "fit_content",
+                  "children": [
+                    {
+                      "id": "savedCard2ActionText",
+                      "type": "text",
+                      "content": "切换",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13,
+                      "fontWeight": "600",
+                      "fill": "#111111"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "formSection",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 20,
+          "cornerRadius": 24,
+          "fill": "#FFFFFF",
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "formTitle",
+              "type": "text",
+              "content": "登记新孩子",
+              "fontFamily": "PingFang SC",
+              "fontSize": 17,
+              "fontWeight": "600",
+              "fill": "#111111"
+            },
+            {
+              "id": "fieldName",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 8,
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "fieldNameLabel",
+                  "type": "text",
+                  "content": "孩子姓名",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal",
+                  "fill": "#666666"
+                },
+                {
+                  "id": "fieldNameInput",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "alignItems": "center",
+                  "padding": [14, 16],
+                  "cornerRadius": 14,
+                  "fill": "#F2F2F2",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "fieldNameValue",
+                      "type": "text",
+                      "content": "例如：张小明",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 15,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "fieldTeacher",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 8,
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "fieldTeacherLabel",
+                  "type": "text",
+                  "content": "老师姓名",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal",
+                  "fill": "#666666"
+                },
+                {
+                  "id": "fieldTeacherInput",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "padding": [14, 16],
+                  "cornerRadius": 14,
+                  "fill": "#F2F2F2",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "fieldTeacherValue",
+                      "type": "text",
+                      "content": "请选择老师",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 15,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "fieldTeacherArrow",
+                      "type": "text",
+                      "content": ">",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 16,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "fieldClass",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 8,
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "fieldClassLabel",
+                  "type": "text",
+                  "content": "所在班级",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal",
+                  "fill": "#666666"
+                },
+                {
+                  "id": "fieldClassInput",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "padding": [14, 16],
+                  "cornerRadius": 14,
+                  "fill": "#F2F2F2",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "fieldClassValue",
+                      "type": "text",
+                      "content": "请先选择老师",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 15,
+                      "fontWeight": "normal",
+                      "fill": "#BBBBBB"
+                    },
+                    {
+                      "id": "fieldClassArrow",
+                      "type": "text",
+                      "content": ">",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 16,
+                      "fontWeight": "normal",
+                      "fill": "#BBBBBB"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "fieldReminder",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 8,
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "fieldReminderLabel",
+                  "type": "text",
+                  "content": "复习提醒时间",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal",
+                  "fill": "#666666"
+                },
+                {
+                  "id": "fieldReminderInput",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "padding": [14, 16],
+                  "cornerRadius": 14,
+                  "fill": "#F2F2F2",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "fieldReminderValue",
+                      "type": "text",
+                      "content": "20:00",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 15,
+                      "fontWeight": "normal",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "fieldReminderIcon",
+                      "type": "text",
+                      "content": "修改",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "entryButton",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "padding": [16, 18],
+              "cornerRadius": 16,
+              "fill": "#07C160",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "entryButtonText",
+                  "type": "text",
+                  "content": "进入错题本",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 16,
+                  "fontWeight": "600",
+                  "fill": "#FFFFFF"
+                }
+              ]
+            },
+            {
+              "id": "entryTip",
+              "type": "text",
+              "content": "一个家长可以保存多个孩子。每周第一次进入某个孩子时，系统会申请微信服务通知授权，用于发送本周复习计划。",
+              "fontFamily": "PingFang SC",
+              "fontSize": 12,
+              "fontWeight": "normal",
+              "lineHeight": 1.6,
+              "fill": "#999999",
+              "textGrowth": "fixed-width",
+              "width": "fill_container"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fN5yF",
+      "name": "Screen 2: Chat",
+      "type": "frame",
+      "x": 450,
+      "y": 0,
+      "width": 375,
+      "height": 812,
+      "layout": "vertical",
+      "fill": "#F2F2F2",
+      "children": [
+        {
+          "id": "chatHeader",
+          "type": "frame",
+          "layout": "horizontal",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "padding": [20, 16, 16, 16],
+          "fill": "#FFFFFF",
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "chatHeaderLeft",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 4,
+              "children": [
+                {
+                  "id": "chatTitle",
+                  "type": "text",
+                  "content": "张小明的错题对话",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 18,
+                  "fontWeight": "600",
+                  "fill": "#111111"
+                },
+                {
+                  "id": "chatSubtitle",
+                  "type": "text",
+                  "content": "王老师 · 初二（1）班",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#999999"
+                }
+              ]
+            },
+            {
+              "id": "chatSwitchPill",
+              "type": "frame",
+              "layout": "horizontal",
+              "padding": [8, 12],
+              "cornerRadius": 999,
+              "fill": "#F2F2F2",
+              "width": "fit_content",
+              "children": [
+                {
+                  "id": "chatSwitchPillText",
+                  "type": "text",
+                  "content": "切换用户",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#111111"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "chatBody",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": [12, 12, 12, 12],
+          "fill": "#F2F2F2",
+          "width": "fill_container",
+          "height": 598,
+          "children": [
+            {
+              "id": "systemTip",
+              "type": "text",
+              "content": "上传图片后，AI 会生成错题诊断卡，学生可直接在卡片里补填。",
+              "fontFamily": "PingFang SC",
+              "fontSize": 12,
+              "fontWeight": "normal",
+              "fill": "#999999",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "textAlign": "center"
+            },
+            {
+              "id": "userBubbleWrap",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "end",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "userBubble",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "cornerRadius": [18, 18, 8, 18],
+                  "fill": "#07C160",
+                  "width": 248,
+                  "children": [
+                    {
+                      "id": "userBubbleFrom",
+                      "type": "text",
+                      "content": "张小明",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "600",
+                      "fill": "#EFFFF5"
+                    },
+                    {
+                      "id": "userBubbleText",
+                      "type": "text",
+                      "content": "我把今天数学作业里做错的题发上来了，帮我看看我卡在哪一步。",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal",
+                      "lineHeight": 1.5,
+                      "fill": "#FFFFFF",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "imageBubbleWrap",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "end",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "imageBubble",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 12,
+                  "cornerRadius": 18,
+                  "fill": "#FFFFFF",
+                  "width": 204,
+                  "children": [
+                    {
+                      "id": "imagePreview",
+                      "type": "frame",
+                      "cornerRadius": 14,
+                      "fill": {
+                        "type": "gradient",
+                        "gradientType": "linear",
+                        "rotation": 180,
+                        "colors": [
+                          { "color": "#FFFFFF", "position": 0 },
+                          { "color": "#D9D9D9", "position": 1 }
+                        ]
+                      },
+                      "width": "fill_container",
+                      "height": 132
+                    },
+                    {
+                      "id": "imageName",
+                      "type": "text",
+                      "content": "作业照片 1.jpg",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "analysisCard",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 14,
+              "padding": 18,
+              "cornerRadius": 22,
+              "fill": "#FFFFFF",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "analysisHead",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisTitle",
+                      "type": "text",
+                      "content": "错题诊断卡",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 18,
+                      "fontWeight": "700",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "analysisBadge",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "padding": [6, 10],
+                      "cornerRadius": 999,
+                      "fill": "#F2F2F2",
+                      "width": "fit_content",
+                      "children": [
+                        {
+                          "id": "analysisBadgeText",
+                          "type": "text",
+                          "content": "第 3 天复习",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 11,
+                          "fontWeight": "600",
+                          "fill": "#666666"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisMeta",
+                  "type": "text",
+                  "content": "学生：张小明   科目：数学   状态：待补填",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container"
+                },
+                {
+                  "id": "analysisCategorySection",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisCategoryLabel",
+                      "type": "text",
+                      "content": "学科分类",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisCategoryChip",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "padding": [7, 12],
+                      "cornerRadius": 999,
+                      "fill": "#FFF5E8",
+                      "width": "fit_content",
+                      "children": [
+                        {
+                          "id": "analysisCategoryChipText",
+                          "type": "text",
+                          "content": "计算题",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 12,
+                          "fontWeight": "600",
+                          "fill": "#C87400"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisErrorSection",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisErrorLabel",
+                      "type": "text",
+                      "content": "错误类型",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisErrorRow",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "gap": 8,
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "analysisErrorChecked",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "gap": 8,
+                          "padding": [10, 12],
+                          "cornerRadius": 999,
+                          "fill": "#E8F9EF",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "analysisErrorCheckedDot",
+                              "type": "ellipse",
+                              "width": 18,
+                              "height": 18,
+                              "fill": "#07C160"
+                            },
+                            {
+                              "id": "analysisErrorCheckedText",
+                              "type": "text",
+                              "content": "计算问题",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "600",
+                              "fill": "#0A8F4D"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "analysisErrorUnchecked",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "gap": 8,
+                          "padding": [10, 12],
+                          "cornerRadius": 999,
+                          "fill": "#F5F5F5",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "analysisErrorUncheckedDot",
+                              "type": "ellipse",
+                              "width": 18,
+                              "height": 18,
+                              "fill": "#DDDDDD"
+                            },
+                            {
+                              "id": "analysisErrorUncheckedText",
+                              "type": "text",
+                              "content": "审题偏差",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal",
+                              "fill": "#666666"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisKnowledgeSection",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisKnowledgeLabel",
+                      "type": "text",
+                      "content": "知识点",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisKnowledgeRow",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "gap": 8,
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "knowledgeChip1",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "padding": [7, 12],
+                          "cornerRadius": 999,
+                          "fill": "#F2F2F2",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "knowledgeChip1Text",
+                              "type": "text",
+                              "content": "竖式计算",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal",
+                              "fill": "#111111"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "knowledgeChip2",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "padding": [7, 12],
+                          "cornerRadius": 999,
+                          "fill": "#F2F2F2",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "knowledgeChip2Text",
+                              "type": "text",
+                              "content": "进位规则",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal",
+                              "fill": "#111111"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "knowledgeConfirm",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "padding": [7, 12],
+                          "cornerRadius": 999,
+                          "fill": "#FFF5E8",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "knowledgeConfirmText",
+                              "type": "text",
+                              "content": "👍 判断对了",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal",
+                              "fill": "#C87400"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisInlineInfo",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "gap": 12,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "repeatedInfo",
+                      "type": "frame",
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": 12,
+                      "cornerRadius": 14,
+                      "fill": "#F8F8F8",
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "repeatedInfoLabel",
+                          "type": "text",
+                          "content": "是否重复错",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 11,
+                          "fontWeight": "normal",
+                          "fill": "#999999"
+                        },
+                        {
+                          "id": "repeatedInfoValue",
+                          "type": "text",
+                          "content": "是，本周第 2 次",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 13,
+                          "fontWeight": "600",
+                          "fill": "#111111"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "priorityInfo",
+                      "type": "frame",
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": 12,
+                      "cornerRadius": 14,
+                      "fill": "#FFF1F0",
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "priorityInfoLabel",
+                          "type": "text",
+                          "content": "老师关注等级",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 11,
+                          "fontWeight": "normal",
+                          "fill": "#999999"
+                        },
+                        {
+                          "id": "priorityInfoValue",
+                          "type": "text",
+                          "content": "高",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 13,
+                          "fontWeight": "600",
+                          "fill": "#D93025"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisActionSection",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisActionLabel",
+                      "type": "text",
+                      "content": "这题怎么处理",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisActionText",
+                      "type": "text",
+                      "content": "先自己重做一遍，再把进位步骤口头讲给家长听。",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal",
+                      "lineHeight": 1.5,
+                      "fill": "#111111",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container"
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisReasonSection",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisReasonLabel",
+                      "type": "text",
+                      "content": "我卡在哪一步",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisReasonRow",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "gap": 8,
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "reason1",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "padding": [10, 12],
+                          "cornerRadius": 999,
+                          "fill": "#E8F9EF",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "reason1Text",
+                              "type": "text",
+                              "content": "第二步忘了进位",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal",
+                              "fill": "#0A8F4D"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "reason2",
+                          "type": "frame",
+                          "layout": "horizontal",
+                          "padding": [10, 12],
+                          "cornerRadius": 999,
+                          "fill": "#F5F5F5",
+                          "width": "fit_content",
+                          "children": [
+                            {
+                              "id": "reason2Text",
+                              "type": "text",
+                              "content": "列式时抄错数字",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal",
+                              "fill": "#666666"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisNoteSection",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisNoteLabel",
+                      "type": "text",
+                      "content": "自己补充",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisNoteBox",
+                      "type": "frame",
+                      "layout": "vertical",
+                      "padding": 14,
+                      "cornerRadius": 16,
+                      "fill": "#F8F8F8",
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "analysisNoteText",
+                          "type": "text",
+                          "content": "我知道怎么列式，但做到第二步就忘了要把个位的 1 进到十位。",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 13,
+                          "fontWeight": "normal",
+                          "lineHeight": 1.5,
+                          "fill": "#666666",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "analysisFooter",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "analysisCopyHint",
+                      "type": "text",
+                      "content": "长按复制整张卡片",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    },
+                    {
+                      "id": "analysisSubmit",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "padding": [10, 16],
+                      "cornerRadius": 999,
+                      "fill": "#07C160",
+                      "width": "fit_content",
+                      "children": [
+                        {
+                          "id": "analysisSubmitText",
+                          "type": "text",
+                          "content": "提交补填",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 13,
+                          "fontWeight": "600",
+                          "fill": "#FFFFFF"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewCard",
+              "type": "frame",
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "cornerRadius": 20,
+              "fill": "#FFFFFF",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "reviewHead",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "reviewTitle",
+                      "type": "text",
+                      "content": "错题复习确认",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 16,
+                      "fontWeight": "600",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "reviewDayBadge",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "padding": [6, 10],
+                      "cornerRadius": 999,
+                      "fill": "#E8F9EF",
+                      "width": "fit_content",
+                      "children": [
+                        {
+                          "id": "reviewDayBadgeText",
+                          "type": "text",
+                          "content": "第 7 天",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 11,
+                          "fontWeight": "600",
+                          "fill": "#0A8F4D"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "reviewMeta",
+                  "type": "text",
+                  "content": "学生：张小明   科目：数学",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#666666"
+                },
+                {
+                  "id": "reviewPromptText",
+                  "type": "text",
+                  "content": "这道题你现在真的会了吗？如果已经彻底搞清楚，后续提醒会停止；如果还没有，系统会继续安排回看。",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 14,
+                  "fontWeight": "normal",
+                  "lineHeight": 1.5,
+                  "fill": "#111111",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container"
+                },
+                {
+                  "id": "reviewActions",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "gap": 10,
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "reviewYes",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "padding": [14, 12],
+                      "cornerRadius": 14,
+                      "fill": "#07C160",
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "reviewYesText",
+                          "type": "text",
+                          "content": "已经彻底搞清楚",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 13,
+                          "fontWeight": "600",
+                          "fill": "#FFFFFF"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "reviewNo",
+                      "type": "frame",
+                      "layout": "horizontal",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "padding": [14, 12],
+                      "cornerRadius": 14,
+                      "fill": "#F2F2F2",
+                      "width": "fill_container",
+                      "children": [
+                        {
+                          "id": "reviewNoText",
+                          "type": "text",
+                          "content": "还没有",
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 13,
+                          "fontWeight": "600",
+                          "fill": "#111111"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "composerArea",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 10,
+          "padding": [12, 12, 14, 12],
+          "fill": "#FFFFFF",
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "composerInputRow",
+              "type": "frame",
+              "layout": "horizontal",
+              "gap": 10,
+              "alignItems": "center",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "composerInput",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "alignItems": "center",
+                  "padding": [14, 16],
+                  "cornerRadius": 999,
+                  "fill": "#F2F2F2",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "composerPlaceholder",
+                      "type": "text",
+                      "content": "发送消息...",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal",
+                      "fill": "#999999"
+                    }
+                  ]
+                },
+                {
+                  "id": "composerSend",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "padding": [12, 18],
+                  "cornerRadius": 999,
+                  "fill": "#07C160",
+                  "width": "fit_content",
+                  "children": [
+                    {
+                      "id": "composerSendText",
+                      "type": "text",
+                      "content": "发送",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 14,
+                      "fontWeight": "600",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "toolbarRow",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "toolImage",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "toolImageIcon",
+                      "type": "text",
+                      "content": "🖼️",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 18,
+                      "fontWeight": "normal",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "toolImageText",
+                      "type": "text",
+                      "content": "图片",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    }
+                  ]
+                },
+                {
+                  "id": "toolBook",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "toolBookIcon",
+                      "type": "text",
+                      "content": "📘",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 18,
+                      "fontWeight": "normal",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "toolBookText",
+                      "type": "text",
+                      "content": "查看错题本",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    }
+                  ]
+                },
+                {
+                  "id": "toolSwitch",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "toolSwitchIcon",
+                      "type": "text",
+                      "content": "👦",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 18,
+                      "fontWeight": "normal",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "toolSwitchText",
+                      "type": "text",
+                      "content": "切换用户",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    }
+                  ]
+                },
+                {
+                  "id": "toolFile",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "toolFileIcon",
+                      "type": "text",
+                      "content": "📎",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 18,
+                      "fontWeight": "normal",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "toolFileText",
+                      "type": "text",
+                      "content": "文件",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    }
+                  ]
+                },
+                {
+                  "id": "toolReset",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "toolResetIcon",
+                      "type": "text",
+                      "content": "↺",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 18,
+                      "fontWeight": "normal",
+                      "fill": "#111111"
+                    },
+                    {
+                      "id": "toolResetText",
+                      "type": "text",
+                      "content": "重置",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "fill": "#666666"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cncsF",
+      "name": "Screen 3: Crop",
+      "type": "frame",
+      "x": 900,
+      "y": 0,
+      "width": 375,
+      "height": 812,
+      "layout": "vertical",
+      "gap": 16,
+      "padding": [20, 16, 20, 16],
+      "fill": "#0F172A",
+      "children": [
+        {
+          "id": "cropHeader",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 10,
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "cropTitle",
+              "type": "text",
+              "content": "框出错题区域",
+              "fontFamily": "PingFang SC",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "fill": "#FFFFFF"
+            },
+            {
+              "id": "cropSubtitle",
+              "type": "text",
+              "content": "先手动框出错题区域，再继续上传。支持多张图片逐张处理。",
+              "fontFamily": "PingFang SC",
+              "fontSize": 14,
+              "fontWeight": "normal",
+              "lineHeight": 1.5,
+              "fill": "#CBD5E1",
+              "textGrowth": "fixed-width",
+              "width": "fill_container"
+            }
+          ]
+        },
+        {
+          "id": "cropStage",
+          "type": "frame",
+          "layout": "none",
+          "width": "fill_container",
+          "height": 520,
+          "cornerRadius": 28,
+          "clip": true,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "rotation": 180,
+            "colors": [
+              { "color": "#1E293B", "position": 0 },
+              { "color": "#334155", "position": 1 }
+            ]
+          },
+          "children": [
+            {
+              "id": "stagePhoto",
+              "type": "frame",
+              "x": 24,
+              "y": 28,
+              "width": 303,
+              "height": 420,
+              "cornerRadius": 22,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "rotation": 180,
+                "colors": [
+                  { "color": "#F8FAFC", "position": 0 },
+                  { "color": "#CBD5E1", "position": 1 }
+                ]
+              }
+            },
+            {
+              "id": "maskTop",
+              "type": "frame",
+              "x": 24,
+              "y": 28,
+              "width": 303,
+              "height": 76,
+              "fill": "#00000066"
+            },
+            {
+              "id": "maskLeft",
+              "type": "frame",
+              "x": 24,
+              "y": 104,
+              "width": 46,
+              "height": 214,
+              "fill": "#00000066"
+            },
+            {
+              "id": "maskRight",
+              "type": "frame",
+              "x": 258,
+              "y": 104,
+              "width": 69,
+              "height": 214,
+              "fill": "#00000066"
+            },
+            {
+              "id": "maskBottom",
+              "type": "frame",
+              "x": 24,
+              "y": 318,
+              "width": 303,
+              "height": 130,
+              "fill": "#00000066"
+            },
+            {
+              "id": "cropBox",
+              "type": "frame",
+              "layout": "none",
+              "x": 70,
+              "y": 104,
+              "width": 188,
+              "height": 214,
+              "stroke": {
+                "thickness": 2,
+                "fill": "#FFFFFF"
+              },
+              "children": [
+                {
+                  "id": "cropGridV1",
+                  "type": "frame",
+                  "x": 62,
+                  "y": 0,
+                  "width": 1,
+                  "height": 214,
+                  "fill": "#FFFFFF55"
+                },
+                {
+                  "id": "cropGridV2",
+                  "type": "frame",
+                  "x": 125,
+                  "y": 0,
+                  "width": 1,
+                  "height": 214,
+                  "fill": "#FFFFFF55"
+                },
+                {
+                  "id": "cropGridH1",
+                  "type": "frame",
+                  "x": 0,
+                  "y": 71,
+                  "width": 188,
+                  "height": 1,
+                  "fill": "#FFFFFF55"
+                },
+                {
+                  "id": "cropGridH2",
+                  "type": "frame",
+                  "x": 0,
+                  "y": 142,
+                  "width": 188,
+                  "height": 1,
+                  "fill": "#FFFFFF55"
+                },
+                {
+                  "id": "cornerNWv",
+                  "type": "frame",
+                  "x": -2,
+                  "y": -2,
+                  "width": 4,
+                  "height": 24,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerNWh",
+                  "type": "frame",
+                  "x": -2,
+                  "y": -2,
+                  "width": 24,
+                  "height": 4,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerNEv",
+                  "type": "frame",
+                  "x": 186,
+                  "y": -2,
+                  "width": 4,
+                  "height": 24,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerNEh",
+                  "type": "frame",
+                  "x": 166,
+                  "y": -2,
+                  "width": 24,
+                  "height": 4,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerSWv",
+                  "type": "frame",
+                  "x": -2,
+                  "y": 192,
+                  "width": 4,
+                  "height": 24,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerSWh",
+                  "type": "frame",
+                  "x": -2,
+                  "y": 212,
+                  "width": 24,
+                  "height": 4,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerSEv",
+                  "type": "frame",
+                  "x": 186,
+                  "y": 192,
+                  "width": 4,
+                  "height": 24,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cornerSEh",
+                  "type": "frame",
+                  "x": 166,
+                  "y": 212,
+                  "width": 24,
+                  "height": 4,
+                  "fill": "#FFFFFF"
+                }
+              ]
+            },
+            {
+              "id": "cropHelper",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "x": 54,
+              "y": 470,
+              "width": 267,
+              "height": 34,
+              "cornerRadius": 999,
+              "fill": "#111827CC",
+              "children": [
+                {
+                  "id": "cropHelperText",
+                  "type": "text",
+                  "content": "拖动四角，框出错题区域",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#E5E7EB"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cropFooter",
+          "type": "frame",
+          "layout": "vertical",
+          "gap": 14,
+          "padding": 16,
+          "cornerRadius": 24,
+          "fill": "#111827",
+          "width": "fill_container",
+          "children": [
+            {
+              "id": "cropProgress",
+              "type": "frame",
+              "layout": "horizontal",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "cropProgressText",
+                  "type": "text",
+                  "content": "2 / 5",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 13,
+                  "fontWeight": "600",
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "cropProgressHint",
+                  "type": "text",
+                  "content": "当前是第 2 张，最后一张会变为“裁剪并上传”",
+                  "fontFamily": "PingFang SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal",
+                  "fill": "#94A3B8"
+                }
+              ]
+            },
+            {
+              "id": "cropButtons",
+              "type": "frame",
+              "layout": "horizontal",
+              "gap": 10,
+              "width": "fill_container",
+              "children": [
+                {
+                  "id": "cropButtonLight",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "padding": [16, 12],
+                  "cornerRadius": 16,
+                  "fill": "#F2F2F2",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "cropButtonLightText",
+                      "type": "text",
+                      "content": "使用原图",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 15,
+                      "fontWeight": "600",
+                      "fill": "#111111"
+                    }
+                  ]
+                },
+                {
+                  "id": "cropButtonPrimary",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "padding": [16, 12],
+                  "cornerRadius": 16,
+                  "fill": "#07C160",
+                  "width": "fill_container",
+                  "children": [
+                    {
+                      "id": "cropButtonPrimaryText",
+                      "type": "text",
+                      "content": "裁剪并继续",
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 15,
+                      "fontWeight": "600",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

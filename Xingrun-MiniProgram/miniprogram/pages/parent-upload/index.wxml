@@ -1,0 +1,131 @@
+<view class="parent-page">
+  <view class="hero-card">
+    <text class="hero-badge">错题上传</text>
+    <text class="hero-title">{{binding ? binding.studentName + ' · ' + binding.className : '上传孩子错题'}}</text>
+    <text class="hero-subtitle">拍照、连续追加或从相册多选，再框出每一道错题后统一提交给老师。</text>
+  </view>
+
+  <view wx:if="{{errorMessage}}" class="state-card error-card">
+    <text class="state-title">这次上传没成功</text>
+    <text class="state-desc">{{errorMessage}}</text>
+  </view>
+
+  <view wx:if="{{binding}}" class="panel-card">
+    <text class="field-label">错题图片</text>
+    <button class="ghost-btn" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
+
+    <scroll-view wx:if="{{imageItems.length}}" class="thumb-strip" scroll-x="true" show-scrollbar="false">
+      <view
+        wx:for="{{imageItems}}"
+        wx:key="id"
+        class="thumb-item {{item.id === selectedImageId ? 'thumb-item-active' : ''}}"
+        data-image-id="{{item.id}}"
+        bindtap="selectImage"
+      >
+        <image class="thumb-image" src="{{item.localPath}}" mode="aspectFill" />
+        <view class="thumb-dot thumb-dot-{{item.aiStatus || 'idle'}}"></view>
+      </view>
+    </scroll-view>
+
+    <view wx:if="{{currentImage}}" class="crop-stage-shell">
+      <view class="crop-stage" style="width: {{stageWidth}}px; height: {{stageHeight}}px;">
+        <image
+          wx:if="{{imagePath}}"
+          class="crop-image"
+          src="{{imagePath}}"
+          mode="aspectFit"
+          style="left: {{imageLeft}}px; top: {{imageTop}}px; width: {{imageWidth}}px; height: {{imageHeight}}px;"
+        />
+
+        <view wx:if="{{!imageReady && !loadError}}" class="crop-status">
+          <text class="crop-status-title">图片加载中</text>
+          <text class="crop-status-subtitle">请稍等一下，马上就能开始框题。</text>
+        </view>
+
+        <view wx:if="{{loadError}}" class="crop-status">
+          <text class="crop-status-title">图片没有正确显示</text>
+          <text class="crop-status-subtitle">可以重新选择这张图片后再继续。</text>
+        </view>
+
+        <view
+          wx:for="{{displayBoxes}}"
+          wx:key="id"
+          class="crop-box {{item.active ? 'crop-box-active' : ''}}"
+          style="left: {{item.left}}px; top: {{item.top}}px; width: {{item.width}}px; height: {{item.height}}px;"
+          data-box-id="{{item.id}}"
+          data-mode="move"
+          catchtap="selectBox"
+          catchtouchstart="onBoxTouchStart"
+          catchtouchmove="onBoxTouchMove"
+          catchtouchend="onBoxTouchEnd"
+        >
+          <text class="crop-box-label">{{item.label}}</text>
+          <view wx:if="{{item.active}}" class="corner corner-nw" data-box-id="{{item.id}}" data-mode="resize-nw" catchtouchstart="onBoxTouchStart" catchtouchmove="onBoxTouchMove" catchtouchend="onBoxTouchEnd"></view>
+          <view wx:if="{{item.active}}" class="corner corner-ne" data-box-id="{{item.id}}" data-mode="resize-ne" catchtouchstart="onBoxTouchStart" catchtouchmove="onBoxTouchMove" catchtouchend="onBoxTouchEnd"></view>
+          <view wx:if="{{item.active}}" class="corner corner-sw" data-box-id="{{item.id}}" data-mode="resize-sw" catchtouchstart="onBoxTouchStart" catchtouchmove="onBoxTouchMove" catchtouchend="onBoxTouchEnd"></view>
+          <view wx:if="{{item.active}}" class="corner corner-se" data-box-id="{{item.id}}" data-mode="resize-se" catchtouchstart="onBoxTouchStart" catchtouchmove="onBoxTouchMove" catchtouchend="onBoxTouchEnd"></view>
+          <view wx:if="{{item.active}}" class="crop-grid crop-grid-v1"></view>
+          <view wx:if="{{item.active}}" class="crop-grid crop-grid-v2"></view>
+          <view wx:if="{{item.active}}" class="crop-grid crop-grid-h1"></view>
+          <view wx:if="{{item.active}}" class="crop-grid crop-grid-h2"></view>
+        </view>
+      </view>
+
+      <text class="status-hint">{{currentStatusText}}</text>
+
+      <view class="action-row">
+        <button class="ghost-btn compact-btn" bindtap="addManualBox">补加框</button>
+        <button class="ghost-btn compact-btn" bindtap="removeActiveBox">删除当前</button>
+        <button class="ghost-btn compact-btn" bindtap="runAiBoxes">AI 框选</button>
+      </view>
+    </view>
+
+    <view wx:if="{{activeBox}}" class="reason-card">
+      <text class="field-label textarea-label">当前题目怎么说自己为什么错了</text>
+      <view class="mode-switch-row">
+        <button
+          class="{{activeBox.childReasonInputMode === 'text' ? 'mode-btn mode-btn-active' : 'mode-btn'}}"
+          data-mode="text"
+          bindtap="switchActiveBoxReasonMode"
+        >
+          文字输入
+        </button>
+        <button
+          class="{{activeBox.childReasonInputMode === 'voice' ? 'mode-btn mode-btn-active' : 'mode-btn'}}"
+          data-mode="voice"
+          bindtap="switchActiveBoxReasonMode"
+        >
+          语音说明
+        </button>
+      </view>
+
+      <textarea
+        wx:if="{{activeBox.childReasonInputMode !== 'voice'}}"
+        class="field-textarea"
+        placeholder="让孩子自己写：这题为什么会错，错在看题、概念、方法还是计算哪一步"
+        value="{{activeBox.childReasonText}}"
+        bindinput="handleActiveBoxReasonInput"
+      />
+
+      <view wx:else class="voice-card">
+        <button class="ghost-btn voice-btn" bindtap="toggleActiveBoxVoiceRecording">{{recordingBoxId === activeBox.id ? '结束录音' : '开始录音'}}</button>
+        <text wx:if="{{activeBox.voiceFilePath}}" class="voice-status">{{activeBox.voiceFileName || '已录制语音，提交时会自动转文字'}}</text>
+        <text wx:if="{{activeBox.reasonStatusText}}" class="voice-hint">{{activeBox.reasonStatusText}}</text>
+      </view>
+    </view>
+
+    <button class="primary-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题</button>
+  </view>
+
+  <view wx:if="{{successRecordIds.length}}" class="state-card success-card">
+    <text class="state-title">上传成功</text>
+    <text class="state-desc">本次共提交 {{successRecordIds.length}} 条记录，已进入网站端老师工作区。</text>
+    <button class="ghost-btn" bindtap="backHome">返回家长主页</button>
+  </view>
+
+  <canvas
+    canvas-id="cropCanvas"
+    class="hidden-canvas"
+    style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"
+  />
+</view>

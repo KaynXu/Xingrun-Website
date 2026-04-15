@@ -1,0 +1,12 @@
+.entry-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f7ff;
+}
+
+.entry-text {
+  color: #6b7280;
+  font-size: 28rpx;
+}
