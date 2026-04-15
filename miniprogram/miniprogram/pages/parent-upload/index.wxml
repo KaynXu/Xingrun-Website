@@ -76,6 +76,7 @@
       <view class="action-row">
         <button class="ghost-btn compact-btn" bindtap="addManualBox">补加框</button>
         <button class="ghost-btn compact-btn" bindtap="removeActiveBox">删除当前</button>
+        <button class="ghost-btn compact-btn" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
         <button class="ghost-btn compact-btn" bindtap="runAiBoxes">AI 框选</button>
       </view>
     </view>
@@ -125,6 +126,8 @@
 
   <canvas
     canvas-id="cropCanvas"
+    width="{{canvasWidth}}"
+    height="{{canvasHeight}}"
     class="hidden-canvas"
     style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"
   />

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
@@ -74,4 +75,41 @@ html.dark ::-webkit-scrollbar-thumb {
 
 html.dark ::-webkit-scrollbar-thumb:hover {
   background: #475569;
+}
+
+.xr-latex-preview {
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+.xr-latex-preview .katex {
+  font-size: 1.05em;
+}
+
+.xr-latex-preview .xr-latex-display {
+  margin: 0.85rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.1rem;
+}
+
+.xr-latex-preview .xr-latex-error-source {
+  border-radius: 0.5rem;
+  background: rgba(248, 113, 113, 0.12);
+  color: #b91c1c;
+  padding: 0.1rem 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.xr-latex-preview .xr-latex-empty {
+  color: #64748b;
+}
+
+html.dark .xr-latex-preview .xr-latex-error-source {
+  background: rgba(248, 113, 113, 0.16);
+  color: #fda4af;
+}
+
+html.dark .xr-latex-preview .xr-latex-empty {
+  color: #94a3b8;
 }

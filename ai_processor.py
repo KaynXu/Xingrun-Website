@@ -108,6 +108,12 @@ def _get_whisper_client():
 
 WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 你需要判断上传图片是否属于几何题或几何体题，并为非几何题提取可直接进入错题库的题目文本。
+题目文本允许“正文 + LaTeX 公式”混合输出：
+- 普通中文、英文和题干说明直接输出为普通文本
+- 行内公式使用 $...$
+- 独立成行的公式使用 $$...$$
+- 不要把整道题都改写成纯 LaTeX，只把公式片段转成 LaTeX
+如果能明确识别公式结构，优先输出可渲染的 LaTeX；如果某个符号拿不准，宁可保留原始可读文本，也不要编造错误公式。
 只返回 JSON，不要输出额外解释。
 返回字段必须包含：
 - is_geometry: boolean
@@ -167,8 +173,11 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
             "notes": notes,
         }
 
-    normalized_text = re.sub(r"\s+", " ", question_text)
-    if normalized_text in _WRONG_QUESTION_TEXT_FAILURE_MARKERS or len(normalized_text) < 6:
+    normalized_text = question_text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized_text = "\n".join(line.strip() for line in normalized_text.split("\n")).strip()
+    normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
+    compact_text = re.sub(r"\s+", "", normalized_text)
+    if normalized_text in _WRONG_QUESTION_TEXT_FAILURE_MARKERS or len(compact_text) < 6:
         raise ValueError("题目识别失败，请重新识别")
 
     return {

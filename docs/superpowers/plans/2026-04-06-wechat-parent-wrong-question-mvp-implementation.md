@@ -13,10 +13,10 @@
 ## Working Context
 
 - Website repo: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary`
-- Mini-program repo: `/Users/ark.mini/Desktop/Xingrun-MiniProgram`
-- These are separate git repositories and must be committed independently.
+- Mini-program repo: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`
+- These now live in the same git repository under separate folders and should still be changed with focused commits.
 - Existing website student APIs already live in [app.py](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/app.py) and [lesson_manager.py](/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/lesson_manager.py).
-- Existing mini backend already exposes WeChat login helpers in `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/wechat.ts`.
+- Existing mini backend already exposes WeChat login helpers in `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/wechat.ts`.
 
 ## File Map
 
@@ -51,33 +51,33 @@
 
 ### Mini-Program Repo
 
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/website-client.ts`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/website-client.ts`
   - Shared HTTP client for calling website WeChat APIs.
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/index.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/index.ts`
   - Add parent login, bind, list bindings, and upload bridge endpoints.
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`
   - Integration tests for the new mini backend bridge routes.
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.json`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.json`
   - Register the new lightweight pages.
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.js`
   - Store parent session and binding cache in `globalData`.
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.js`
   - Shared request helpers for new parent flow.
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`
   - Node tests for parent request/normalization helpers.
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.wxml`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.wxss`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.wxml`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.wxss`
   - Bind class invite and choose students.
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.wxml`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.wxss`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.wxml`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.wxss`
   - Show bound students and entry to upload.
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxml`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxss`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxml`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxss`
   - Choose image, preview, submit, and render success state.
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/index/index.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/index/index.js`
   - Redirect into the new parent flow instead of the old roster-first flow.
 
 ### Runtime Config
@@ -651,9 +651,9 @@ git commit -m "feat: add class invite and wechat source ui"
 ### Task 5: Add Mini Backend Website Bridge Routes
 
 **Files:**
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/website-client.ts`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/index.ts`
-- Test: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/parent-wechat-bridge.test.ts`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/website-client.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/index.ts`
+- Test: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/parent-wechat-bridge.test.ts`
 
 - [ ] **Step 1: Write the failing mini backend bridge tests**
 
@@ -699,7 +699,7 @@ test('wechat parent login exchanges code and proxies to website', async (t) => {
 
 - [ ] **Step 2: Run the mini backend tests to verify they fail**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && node --import tsx --test src/parent-wechat-bridge.test.ts`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && node --import tsx --test src/parent-wechat-bridge.test.ts`
 
 Expected: FAIL because the new bridge routes and website client do not exist.
 
@@ -758,14 +758,14 @@ app.post('/wechat/parent-login', async (req, res) => {
 
 - [ ] **Step 4: Re-run the mini backend tests**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && node --import tsx --test src/teacher-records.test.ts src/parent-wechat-bridge.test.ts`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && node --import tsx --test src/teacher-records.test.ts src/parent-wechat-bridge.test.ts`
 
 Expected: PASS for both the existing teacher-record tests and the new parent bridge tests.
 
 - [ ] **Step 5: Commit the mini backend bridge**
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add backend/src/website-client.ts backend/src/index.ts backend/src/parent-wechat-bridge.test.ts
 git commit -m "feat: add website bridge for parent wechat flow"
 ```
@@ -773,20 +773,20 @@ git commit -m "feat: add website bridge for parent wechat flow"
 ### Task 6: Build The Lightweight WeChat Mini Program Parent Flow
 
 **Files:**
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.json`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.js`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/index/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.test.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.wxml`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.wxss`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.wxml`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.wxss`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.js`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxml`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.wxss`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.json`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.js`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/index/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.test.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.wxml`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.wxss`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.wxml`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.wxss`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.js`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxml`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.wxss`
 
 - [ ] **Step 1: Write the failing miniprogram utility tests**
 
@@ -831,7 +831,7 @@ test('buildUploadRequest sends binding id and optional parent note', () => {
 
 - [ ] **Step 2: Run the miniprogram utility tests to verify they fail**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram && node utils/parentApi.test.js`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram && node utils/parentApi.test.js`
 
 Expected: FAIL because `parentApi.js` does not exist yet.
 
@@ -889,7 +889,7 @@ Page({
 
 - [ ] **Step 4: Re-run the miniprogram utility tests**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram && node utils/parentApi.test.js`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram && node utils/parentApi.test.js`
 
 Expected: PASS for binding normalization and upload request shaping.
 
@@ -898,7 +898,7 @@ Expected: PASS for binding normalization and upload request shaping.
 Run:
 
 ```text
-1. Open /Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram in WeChat DevTools
+1. Open /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram in WeChat DevTools
 2. Launch the app and confirm pages/index redirects into the new parent flow
 3. Enter a valid class invite code and choose a student
 4. Confirm the home page lists the bound students
@@ -910,7 +910,7 @@ Expected: The UI completes bind -> home -> upload without using the old roster/c
 - [ ] **Step 6: Commit the mini program UI**
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/app.json miniprogram/app.js miniprogram/pages/index/index.js miniprogram/utils/parentApi.js miniprogram/utils/parentApi.test.js miniprogram/pages/parent-bind miniprogram/pages/parent-home miniprogram/pages/parent-upload
 git commit -m "feat: add lightweight parent upload miniprogram flow"
 ```
@@ -919,7 +919,7 @@ git commit -m "feat: add lightweight parent upload miniprogram flow"
 
 **Files:**
 - Modify: `/Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/README.md`
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/README.md`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/README.md`
 
 - [ ] **Step 1: Add failing doc assertions as a checklist in the READMEs**
 
@@ -941,9 +941,9 @@ cd /Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary
 /Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/.venv/bin/python -m unittest tests.test_wechat_parent_upload_data tests.test_wechat_parent_upload_api tests.test_smart_wrong_questions_api -v
 cd /Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/frontend
 npm test
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/teacher-records.test.ts src/parent-wechat-bridge.test.ts
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram
 node utils/parentApi.test.js
 ```
 
@@ -968,7 +968,7 @@ Run:
 ```bash
 cd /Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary
 /Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary/.venv/bin/python -m unittest tests.test_wechat_parent_upload_api -v
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/parent-wechat-bridge.test.ts
 ```
 
@@ -981,7 +981,7 @@ cd /Users/ark.mini/Desktop/Xingrun-Website/Xingrun-Summary
 git add README.md
 git commit -m "docs: document parent upload mvp rollout"
 
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add README.md
 git commit -m "docs: document parent upload bridge setup"
 ```
@@ -1009,4 +1009,3 @@ git commit -m "docs: document parent upload bridge setup"
 - Canonical identity fields use one naming family throughout: `class_id`, `student_id`, `teacher_user_id`, `binding_id`, `source`.
 - Website service auth uses one header name throughout: `X-Wechat-Service-Token`.
 - Mini-program bridge consistently forwards `open_id` to website and `binding_id` for uploads.
-

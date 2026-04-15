@@ -7,10 +7,15 @@ PDF 生成引擎（数据驱动版）
   - 月度综合复习讲义
 """
 
+import base64
 import html
 import io
+import json
+import mimetypes
 import os
 import re
+import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -379,7 +384,100 @@ def _build_wrong_question_geometry_image_card(image_url: str, styles: dict):
     return table
 
 
-def generate_student_wrong_question_library_pdf(
+def _guess_wrong_question_image_mime_type(image_url: str) -> str:
+    guessed_type, _ = mimetypes.guess_type(image_url or "")
+    if guessed_type and guessed_type.startswith("image/"):
+        return guessed_type
+    return "image/png"
+
+
+def _build_browser_wrong_question_library_records(records: list[dict]) -> list[dict]:
+    browser_records: list[dict] = []
+
+    for record in records:
+        normalized_record = {
+            "created_at": str(record.get("created_at") or ""),
+            "is_geometry": bool(record.get("is_geometry")),
+            "question_text": str(record.get("question_text") or ""),
+            "child_reason_text": str(
+                record.get("child_raw_reason_text")
+                or record.get("child_reason_text")
+                or ""
+            ),
+            "cause_note": str(
+                record.get("secondary_error_summary")
+                or record.get("cause_note")
+                or ""
+            ),
+            "image_data_url": "",
+        }
+
+        if normalized_record["is_geometry"]:
+            image_url = str(record.get("image_url") or "")
+            image_bytes = _fetch_wrong_question_image_bytes(image_url)
+            if image_bytes:
+                encoded_bytes = base64.b64encode(image_bytes).decode("ascii")
+                normalized_record["image_data_url"] = (
+                    f"data:{_guess_wrong_question_image_mime_type(image_url)};base64,{encoded_bytes}"
+                )
+
+        browser_records.append(normalized_record)
+
+    return browser_records
+
+
+def _render_student_wrong_question_library_pdf_via_browser(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_title: str,
+    records: list[dict],
+    output_path: str,
+) -> str:
+    project_root = Path(__file__).resolve().parent
+    renderer_script = project_root / "frontend" / "scripts" / "renderWrongQuestionLibraryPdf.mjs"
+
+    payload = {
+        "studentName": student_name,
+        "className": class_name,
+        "teacherTitle": teacher_title,
+        "records": _build_browser_wrong_question_library_records(records),
+    }
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as temp_file:
+        json.dump(payload, temp_file, ensure_ascii=False)
+        temp_file_path = temp_file.name
+
+    try:
+        result = subprocess.run(
+            ["node", str(renderer_script), temp_file_path, output_path],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        try:
+            os.unlink(temp_file_path)
+        except FileNotFoundError:
+            pass
+
+    if result.returncode != 0:
+        error_message = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or "学生错题库 PDF 浏览器渲染失败"
+        )
+        raise RuntimeError(error_message)
+
+    destination = Path(output_path).resolve()
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("学生错题库 PDF 浏览器渲染失败：输出文件为空")
+
+    return str(destination)
+
+
+def _generate_student_wrong_question_library_pdf_via_reportlab(
     *,
     student_name: str,
     class_name: str,
@@ -436,6 +534,29 @@ def generate_student_wrong_question_library_pdf(
 
     doc.build(story)
     return str(destination)
+
+
+def generate_student_wrong_question_library_pdf(
+    *,
+    student_name: str,
+    class_name: str,
+    records: list[dict],
+    output_path: str,
+) -> str:
+    teacher_names = [
+        str(record.get("teacher_display_name") or "").strip()
+        for record in records
+        if str(record.get("teacher_display_name") or "").strip()
+    ]
+    teacher_title = "、".join(dict.fromkeys(teacher_names)) or "未分配老师"
+
+    return _render_student_wrong_question_library_pdf_via_browser(
+        student_name=student_name,
+        class_name=class_name,
+        teacher_title=teacher_title,
+        records=records,
+        output_path=output_path,
+    )
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────

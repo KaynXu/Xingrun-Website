@@ -1,5 +1,42 @@
 # Handover - Source-Aligned Pencil Design
 
+## 2026-04-15 Wrongbook PDF Entry Restored After Snapshot Regression
+- 用户反馈：目录收口后，小程序错题本页看不到页头 `查看 PDF`。
+- 根因确认：
+  - 当前 `miniprogram/pages/parent-wrongbook/index.*` 仍停在旧快照，只拉 `/wrong-questions` 列表。
+  - 缺失的不只是模板按钮，还包括：
+    - `miniprogram/utils/parentApi.js` 里的 `wrong-question-library` helper
+    - `backend/src/index.ts` 里的 `GET /wechat/parent/children/:studentId/wrong-question-library`
+    - `backend/src/website-client.ts` 对网站 `wrong-question-library` 的代理函数
+  - 所以这次是“整条 PDF metadata 链路未并进当前快照”，不是单纯样式隐藏。
+- 已完成：
+  - 在 `miniprogram/utils/parentApi.js` 补回 `fetchChildWrongQuestionLibrary(...)`
+  - 在 bridge 补回 `GET /wechat/parent/children/:studentId/wrong-question-library`
+  - `pages/parent-wrongbook/index.*` 已恢复：
+    - 页头 `查看 PDF`
+    - `wx.downloadFile + wx.openDocument` 打开 PDF
+    - 每张卡片显示 `question_text`
+  - 新增回归测试覆盖 helper、bridge 和错题本页模板断言
+- proof：
+  - `node --test miniprogram/miniprogram/utils/parentApi.test.js` -> `pass 15 / fail 0`
+  - `node miniprogram/miniprogram/parent-only-scope.test.js` -> `pass 8 / fail 0`
+  - `cd miniprogram/backend && npm ci --no-audit --no-fund --loglevel=error && node --import tsx --test src/parent-wechat-bridge.test.ts` -> `pass 9 / fail 0`
+- 下一步：
+  - 重新在微信开发者工具 / 真机进入错题本页，实际点一次 `查看 PDF`，确认运行时 `downloadFile/openDocument` 没有域名、文件类型或权限问题
+
+## 2026-04-15 Mini Program Folder Unified Under Root `miniprogram`
+- 用户要求：仓库根目录不要再同时保留 `Xingrun-MiniProgram/` 和 `miniprogram/` 两套小程序目录，只保留一个小写 `miniprogram/`。
+- 已完成：
+  - 原根目录 `Xingrun-MiniProgram/` 已整体并入当前子项目 `miniprogram/`
+  - 当前子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`
+  - 微信工程代码位于 `miniprogram/miniprogram/`
+  - bridge 位于 `miniprogram/backend/`
+  - `classroom-random-score.html` 与 `classroom-random-score-ipad.html` 已统一移动到 `miniprogram/`
+  - 权威 handoff、README、部署说明和关键计划文档已同步到新路径
+- 下一步：
+  - 如果继续在微信开发者工具里打开项目，项目根目录改用 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`
+  - 后续新增文档和 proof 不要再写回旧的 `Xingrun-MiniProgram` 路径
+
 ## 2026-04-15 Parent Bind Timeout Guard Added
 - 用户反馈：微信开发者工具打开 `pages/parent-bind/index` 时控制台报通用 `Error: timeout`，页面能先显示本地缓存的已绑定孩子，但刷新链路没有落到页面错误态。
 - 根因确认：
@@ -31,17 +68,17 @@
     - `secondaryErrorSummary`
 - 这轮额外修正了一个真实运行时缺口：小程序语音 helper 已经调用 `/upload`，但当前 bridge 源码原本没有这个路由；现已补上并加入回归测试。
 - proof：
-  - `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram && node miniprogram/utils/parentApi.test.js`
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram && node miniprogram/utils/parentApi.test.js`
     - `pass 12 / fail 0`
-  - `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram && node miniprogram/pages/parent-upload/model.test.js`
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram && node miniprogram/pages/parent-upload/model.test.js`
     - `pass 6 / fail 0`
-  - `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram && node miniprogram/parent-only-scope.test.js`
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram && node miniprogram/parent-only-scope.test.js`
     - `pass 7 / fail 0`
-  - `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && node --import tsx --test src/parent-wechat-bridge.test.ts`
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && node --import tsx --test src/parent-wechat-bridge.test.ts`
     - `pass 8 / fail 0`
-  - `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && npm run build`
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && npm run build`
     - `tsc` 通过，`dist` 已同步到最新 bridge 路由与提交流程
-  - 清理结果：旧 worktree `/Users/ark.mini/Desktop/Xingrun-MiniProgram/.worktrees/parent-voice-reason` 已移除，旧分支 `feature/parent-voice-reason` 已删除，仓库当前只保留用户正在工作的 `feature/wrong-question-error-cause`
+  - 清理结果：旧 worktree `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/.worktrees/parent-voice-reason` 已移除，旧分支 `feature/parent-voice-reason` 已删除，仓库当前只保留用户正在工作的 `feature/wrong-question-error-cause`
 
 ## 2026-04-10 Parent Upload childRawReasonText Runtime Fix
 - 用户反馈：小程序上传时报错 `child_raw_reason_text is required`。
@@ -53,7 +90,7 @@
   - 执行 `cd backend && npm run build`，把 `backend/dist/*.js` 同步到当前 `src`。
   - 确认编译后的 `dist/index.js` 已读取并校验 `childRawReasonText`，再转发为 `child_raw_reason_text`。
 - proof：
-  - `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && node --import tsx --test src/parent-wechat-bridge.test.ts`
+  - `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && node --import tsx --test src/parent-wechat-bridge.test.ts`
     - `pass 5 / fail 0`
   - 编译产物 smoke：直接启动 `dist` 入口并发送 `POST /wechat/parent/wrong-questions`
     - 返回 `201`
@@ -196,7 +233,7 @@
 ## 2026-04-09 Real Device Domain Whitelist Fix
 - 用户反馈：真机测试时报错 `request:fail url not in domain list`
 - 根因确认：
-  - 小程序 [miniprogram/app.js](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.js) 里的 `serverUrl` 仍指向 `http://49.234.185.86:3001`
+  - 小程序 [miniprogram/app.js](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.js) 里的 `serverUrl` 仍指向 `http://49.234.185.86:3001`
   - 开发者工具里 `urlCheck: false` 可放行，但真机不会放行 `http` + IP 请求
   - 已验证 `https://xingrun.online/wechat/parent/*` 可通，适合作为真机请求域名
 - 已完成：
@@ -386,9 +423,9 @@
 - 已完成：
   - 新增回归测试，要求活动链路文件不再包含 `?.` / `??`
   - 将以下文件中的可选链改为兼容写法：
-    - `[miniprogram/utils/parentApi.js](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/utils/parentApi.js)`
-    - `[miniprogram/pages/parent-bind/index.js](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.js)`
-    - `[miniprogram/pages/parent-upload/index.js](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-upload/index.js)`
+    - `[miniprogram/utils/parentApi.js](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/utils/parentApi.js)`
+    - `[miniprogram/pages/parent-bind/index.js](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.js)`
+    - `[miniprogram/pages/parent-upload/index.js](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-upload/index.js)`
 - proof：
   - red：
     - `node miniprogram/parent-only-scope.test.js` -> `3 pass / 1 fail`
@@ -419,11 +456,11 @@
 ## 2026-04-09 Parent Home Wording Investigation
 - 用户反馈即使重新编译，模拟器家长首页仍显示 `已绑定孩子`。
 - 本地排查结论：
-  - 当前仓库家长首页源码 `[miniprogram/pages/parent-home/index.wxml](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.wxml)` 第 25 行实际内容已是 `选择孩子上传`
+  - 当前仓库家长首页源码 `[miniprogram/pages/parent-home/index.wxml](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.wxml)` 第 25 行实际内容已是 `选择孩子上传`
   - 桌面范围全文检索结果显示：
     - `选择孩子上传` 只存在这一份家长首页模板
     - `已绑定孩子` 只剩：
-      - `[miniprogram/pages/parent-bind/index.wxml](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-bind/index.wxml)` 绑定页
+      - `[miniprogram/pages/parent-bind/index.wxml](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-bind/index.wxml)` 绑定页
       - `README.md`
       - `handoff.md`
   - 因此，用户截图中的家长首页文案不是当前这份 `parent-home/index.wxml` 渲染出来的，更像是微信开发者工具仍在使用旧缓存或另一实例
@@ -435,7 +472,7 @@
 ## 2026-04-09 Parent Home Continue-Bind Entry Removed
 - 用户反馈家长首页在已有绑定后，仍显示“继续绑定”按钮。
 - 根因：
-  - `[miniprogram/pages/parent-home/index.wxml](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/pages/parent-home/index.wxml)` 在 `bindings.length > 0` 的分支里直接渲染了 `继续绑定` 按钮。
+  - `[miniprogram/pages/parent-home/index.wxml](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/pages/parent-home/index.wxml)` 在 `bindings.length > 0` 的分支里直接渲染了 `继续绑定` 按钮。
   - 这不是缓存问题，也不是后端返回异常，而是前端模板当前行为。
 - 已完成：
   - 删除首页“已绑定孩子”区域中的 `继续绑定` 按钮
@@ -651,7 +688,7 @@
 - 用户反馈家长绑定页出现“暂时无法继续 / request:ok”。
 - 根因已确认：
   - 正式服务器为 `49.234.185.86:3001`
-  - 本地 [miniprogram/app.js](/Users/ark.mini/Desktop/Xingrun-MiniProgram/miniprogram/app.js) 当时仍残留旧的云托管域名配置
+  - 本地 [miniprogram/app.js](/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/miniprogram/app.js) 当时仍残留旧的云托管域名配置
   - `GET /wechat/parent/bindings` 与 `POST /wechat/parent/bind-class` 在线上均返回 `404 Cannot GET/POST ...`
   - 前端 `miniprogram/utils/parentApi.js` 在收到非 JSON 404 HTML 响应时回退成了 `response.errMsg`
   - 微信请求成功时 `response.errMsg` 恰好是 `request:ok`，所以页面错误文案被误显示成了 `request:ok`
@@ -696,7 +733,7 @@
   - `main` 已对齐 `origin/main` 到 `c18240b`
   - 当时主仓仅保留 `.worktrees/` 未跟踪目录
 - 当时新建的开发 worktree：
-  - 路径：`/Users/ark.mini/Desktop/Xingrun-MiniProgram/.worktrees/parent-invite-dev`
+  - 路径：`/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/.worktrees/parent-invite-dev`
   - 分支：`feature/parent-invite-dev`
 - 在新分支实装并验证了家长邀请码/上传链路：
   - `722c97e feat: add wechat parent upload flow`
@@ -1250,14 +1287,14 @@ Matches `miniprogram/pages/crop/`
 - proof（临时脚本执行）：
   - 临时脚本：`/tmp/tmp_proof_agent_collab_20260409.sh`
   - fresh 输出：
-    - `AGENT_TARGET=/Users/ark.mini/Desktop/Xingrun-MiniProgram/agent.md`
+    - `AGENT_TARGET=/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/agent.md`
     - `HAS_CROSS_REPO_SECTION=OK`
     - `HAS_ROLE_SPLIT=OK`
     - `HAS_DEVELOP_TO_DEVELOP_RULE=OK`
     - `HAS_CANONICAL_FIELDS=OK`
     - `HAS_BRIDGE_TEST_RULE=OK`
     - `HAS_HANDOFF_SYNC_RULE=OK`
-    - `HANDOFF_TARGET=/Users/ark.mini/Desktop/Xingrun-MiniProgram/handoff.md`
+    - `HANDOFF_TARGET=/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/handoff.md`
     - `HANDOFF_HAS_SECTION=OK`
     - `HANDOFF_HAS_PROOF_SCRIPT=OK`
     - `HANDOFF_HAS_NEXT_STEP=OK`

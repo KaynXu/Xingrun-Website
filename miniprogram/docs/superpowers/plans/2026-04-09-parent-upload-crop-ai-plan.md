@@ -113,7 +113,7 @@ test('parent AI box bridge stores the file and forwards its image url to the web
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/parent-wechat-bridge.test.ts
 ```
 
@@ -171,7 +171,7 @@ Update the imports in `backend/src/index.ts` and add this route next to the exis
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/parent-wechat-bridge.test.ts
 ```
 
@@ -182,7 +182,7 @@ Expected: PASS with 5 passing tests, including the new AI box bridge case.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add backend/src/index.ts backend/src/website-client.ts backend/src/parent-wechat-bridge.test.ts
 git commit -m "feat: add parent wrong-question box bridge"
 ```
@@ -239,7 +239,7 @@ Also update the import list at the top:
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/utils/parentApi.test.js
 ```
 
@@ -285,7 +285,7 @@ Export the helper:
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/utils/parentApi.test.js
 ```
 
@@ -296,7 +296,7 @@ Expected: PASS with 6 passing tests.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/utils/parentApi.js miniprogram/utils/parentApi.test.js
 git commit -m "feat: add parent AI box api helper"
 ```
@@ -374,7 +374,7 @@ test('addManualBoxToImage appends a manual box and selects it', () => {
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/pages/parent-upload/model.test.js
 ```
 
@@ -460,7 +460,7 @@ module.exports = {
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/pages/parent-upload/model.test.js
 ```
 
@@ -471,7 +471,7 @@ Expected: PASS with 4 passing tests.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/pages/parent-upload/model.js miniprogram/pages/parent-upload/model.test.js
 git commit -m "feat: add parent upload image box model"
 ```
@@ -505,7 +505,7 @@ test('parent upload page exposes crop-first multi-image controls', () => {
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/parent-only-scope.test.js
 ```
 
@@ -666,7 +666,7 @@ Update `miniprogram/pages/parent-upload/index.wxss` with the new mobile classes:
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/parent-only-scope.test.js
 ```
 
@@ -677,7 +677,7 @@ Expected: PASS with 6 passing tests.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/pages/parent-upload/index.js miniprogram/pages/parent-upload/index.wxml miniprogram/pages/parent-upload/index.wxss miniprogram/parent-only-scope.test.js
 git commit -m "feat: add parent upload multi-image crop ui"
 ```
@@ -748,7 +748,7 @@ test('submitParentWrongQuestion sends parent note per cropped file submission', 
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/pages/parent-upload/model.test.js
 node --test miniprogram/utils/parentApi.test.js
 ```
@@ -918,7 +918,7 @@ async exportBoxCrop(imageItem, box) {
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/pages/parent-upload/model.test.js
 node --test miniprogram/utils/parentApi.test.js
 node --test miniprogram/parent-only-scope.test.js
@@ -931,7 +931,7 @@ Expected: PASS on all three mini program test files.
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add miniprogram/pages/parent-upload/index.js miniprogram/pages/parent-upload/model.test.js miniprogram/utils/parentApi.test.js miniprogram/utils/parentApi.js miniprogram/parent-only-scope.test.js
 git commit -m "feat: add parent upload ai box submit flow"
 ```
@@ -946,11 +946,11 @@ git commit -m "feat: add parent upload ai box submit flow"
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 node --test miniprogram/utils/parentApi.test.js
 node --test miniprogram/pages/parent-upload/model.test.js
 node --test miniprogram/parent-only-scope.test.js
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend
 node --import tsx --test src/parent-wechat-bridge.test.ts
 ```
 
@@ -984,7 +984,7 @@ Append a new entry in `handoff.md` that includes:
 Run:
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add handoff.md
 git commit -m "docs: record parent upload crop ai verification"
 ```

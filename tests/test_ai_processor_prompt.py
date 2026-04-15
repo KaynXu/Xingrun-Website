@@ -69,6 +69,12 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("不得超过 30%", ai_processor.PLAN_SYSTEM_PROMPT)
         self.assertIn("至少 70% 的填空题", ai_processor.PLAN_SYSTEM_PROMPT)
 
+    def test_wrong_question_recognition_prompt_requests_mixed_latex_output(self):
+        self.assertIn("正文 + LaTeX 公式", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("$...$", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("$$...$$", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("不要把整道题都改写成纯 LaTeX", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+
     def test_parse_and_generate_plan_uses_configured_model_for_n1n(self):
         fake_client = _FakeClient(
             {

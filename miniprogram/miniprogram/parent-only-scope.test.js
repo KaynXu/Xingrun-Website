@@ -14,6 +14,7 @@ test('mini program keeps only the parent upload flow pages and deletes legacy pa
     'pages/parent-home/index',
     'pages/parent-bind/index',
     'pages/parent-upload/index',
+    'pages/parent-wrongbook/index',
   ]);
 
   for (const page of [
@@ -76,4 +77,13 @@ test('parent upload action buttons keep a stable single-row layout on narrow scr
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*height:\s*72rpx;/s);
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*line-height:\s*72rpx;/s);
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+});
+
+test('parent wrongbook page exposes question text and a pdf entry button', () => {
+  const wrongbookSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.js'), 'utf8');
+  const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
+
+  assert.equal(wrongbookSource.includes('fetchChildWrongQuestionLibrary'), true);
+  assert.equal(wrongbookTemplate.includes('查看 PDF'), true);
+  assert.equal(wrongbookTemplate.includes('item.questionText'), true);
 });

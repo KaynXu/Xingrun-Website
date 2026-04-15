@@ -33,7 +33,7 @@
 - Modify: `frontend/src/workspace-navigation.test.ts`
   - Locks the new tab into the workspace shell and verifies role-based visibility wiring.
 
-### Mini Program Repo: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend`
+### Mini Program Repo: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend`
 
 - Modify: `src/index.ts`
   - Exports `createApp()`, keeps the current runtime startup, and adds one teacher-review save route.
@@ -45,8 +45,8 @@ These boundaries keep the proxy logic, UI logic, and downstream service logic se
 ### Task 1: Add The Missing Downstream Teacher-Review Route In The Mini Program Backend
 
 **Files:**
-- Modify: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/index.ts`
-- Create: `/Users/ark.mini/Desktop/Xingrun-MiniProgram/backend/src/teacher-records.test.ts`
+- Modify: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/index.ts`
+- Create: `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend/src/teacher-records.test.ts`
 
 - [ ] **Step 1: Write a failing downstream test that proves teachers can update review selections through HTTP**
 
@@ -117,7 +117,7 @@ test('teacher selections endpoint updates a saved record', async () => {
 
 - [ ] **Step 2: Run the downstream Node test and confirm it fails because `createApp()` and the new route do not exist yet**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && node --test --import tsx src/teacher-records.test.ts`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && node --test --import tsx src/teacher-records.test.ts`
 
 Expected: FAIL with import or 404 errors for `createApp` and `/api/teacher/records/:recordId/selections`.
 
@@ -183,14 +183,14 @@ app.put('/api/teacher/records/:recordId/selections', (req, res) => {
 
 - [ ] **Step 5: Re-run the downstream Node test and confirm it passes**
 
-Run: `cd /Users/ark.mini/Desktop/Xingrun-MiniProgram/backend && node --test --import tsx src/teacher-records.test.ts`
+Run: `cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram/backend && node --test --import tsx src/teacher-records.test.ts`
 
 Expected: PASS with the new teacher-review save route returning the updated record payload.
 
 - [ ] **Step 6: Commit the downstream backend contract**
 
 ```bash
-cd /Users/ark.mini/Desktop/Xingrun-MiniProgram
+cd /Users/ark.mini/Desktop/Xingrun-Website/miniprogram
 git add backend/src/index.ts backend/src/teacher-records.test.ts
 git commit -m "feat: add teacher wrong question review api"
 ```

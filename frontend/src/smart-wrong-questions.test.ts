@@ -82,6 +82,20 @@ async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promi
   throw lastError instanceof Error ? lastError : new Error('Timed out waiting for assertion');
 }
 
+function findLastFetchCall(
+  calls: Array<{ input: RequestInfo | URL; init?: RequestInit }>,
+  predicate: (call: { input: RequestInfo | URL; init?: RequestInit }) => boolean,
+): { input: RequestInfo | URL; init?: RequestInit } | undefined {
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index];
+    if (predicate(call)) {
+      return call;
+    }
+  }
+
+  return undefined;
+}
+
 function getNotebookClassSelect(container: ParentNode): HTMLSelectElement | null {
   const classSelects = Array.from(container.querySelectorAll('select[aria-label="班级"]'));
   const notebookClassSelect = classSelects[classSelects.length - 1];
@@ -787,6 +801,8 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
 
   assert.match(pageSource, /题目文本/);
   assert.match(pageSource, /填写可直接进入错题库 PDF 的题目文本/);
+  assert.match(pageSource, /公式预览/);
+  assert.match(pageSource, /公式片段用/);
   assert.match(pageSource, /预览 PDF/);
   assert.match(pageSource, /下载 PDF/);
   assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
@@ -1053,7 +1069,7 @@ test('SmartWrongQuestionsPage rebuilds empty review fields from a successful sav
     });
 
     await waitForAssertion(() => {
-      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-1/review');
+      const saveCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/record-1/review');
       assert.ok(saveCall);
       assert.equal(saveCall?.input, '/api/wrong-questions/record-1/review');
       assert.equal(saveCall?.init?.method, 'PUT');
@@ -1224,7 +1240,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
     });
 
     await waitForAssertion(() => {
-      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-save-legacy/review');
+      const saveCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/record-save-legacy/review');
       assert.ok(saveCall);
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /老师与班级归属待确认/);
@@ -1284,7 +1300,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
               created_at: '2026-03-29T09:00:00Z',
               recognition_status: 'recognized',
               is_geometry: 0,
-              question_text: '原始 AI 文本',
+              question_text: '计算 $2+3\\\\times4$ 的结果。',
               question_text_source: 'ai',
               student_library_pdf_path: '/api/wechat/student-libraries/1',
               parent_note: '孩子订正后还是不会',
@@ -1314,7 +1330,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
           created_at: '2026-03-29T08:00:00Z',
           recognition_status: 'recognized',
           is_geometry: 0,
-          question_text: '原始 AI 文本',
+          question_text: '计算 $2+3\\\\times4$ 的结果。',
           question_text_source: 'ai',
           student_library_pdf_path: '/api/wechat/student-libraries/1',
           child_raw_reason_text: '我把乘法优先级看漏了',
@@ -1341,7 +1357,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
             created_at: '2026-03-29T08:00:00Z',
             recognition_status: 'recognized',
             is_geometry: 0,
-            question_text: '老师修正后的题目文本',
+            question_text: '老师修正后的题目文本：$2+3\\\\times4$',
             question_text_source: 'teacher',
             student_library_pdf_path: '/api/wechat/student-libraries/1',
             child_raw_reason_text: '我把乘法优先级看漏了',
@@ -1378,6 +1394,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /题目文本/);
+      assert.match(pageText, /公式预览/);
       assert.match(pageText, /预览 PDF/);
       assert.match(pageText, /下载 PDF/);
       assert.match(pageText, /孩子自述错因/);
@@ -1394,7 +1411,8 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       assert.equal(previewLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
       assert.equal(downloadLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
       assert.equal(downloadLink?.getAttribute('download'), 'student-library.pdf');
-      assert.equal(textarea.value, '原始 AI 文本');
+      assert.equal(textarea.value, '计算 $2+3\\\\times4$ 的结果。');
+      assert.ok(domEnvironment.container.querySelector('.xr-latex-preview .katex'));
     });
 
     const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
@@ -1422,25 +1440,31 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       studentNote: '',
       teacherComment: '',
       reviewStatus: '',
-      questionText: '老师修正后的题目文本',
+      questionText: '老师修正后的题目文本：$2+3\\\\times4$',
       isMastered: true,
     });
 
-    assert.equal(payload.question_text, '老师修正后的题目文本');
+    assert.equal(payload.question_text, '老师修正后的题目文本：$2+3\\\\times4$');
     assert.equal(payload.selectedErrorType, '方法问题');
     assert.equal(payload.is_mastered, true);
 
     await act(async () => {
+      questionTextarea.value = '老师修正后的题目文本：$2+3\\\\times4$';
+      questionTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+      questionTextarea.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
     await waitForAssertion(() => {
-      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/wechat-record-edit/review');
+      const saveCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/wechat-record-edit/review');
       assert.ok(saveCall);
       const requestPayload = JSON.parse(String(saveCall?.init?.body));
       assert.equal(requestPayload.selectedErrorType, '方法问题');
+      assert.equal(requestPayload.question_text, '老师修正后的题目文本：$2+3\\\\times4$');
     });
   } finally {
     if (root) {
@@ -1624,7 +1648,7 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
     });
 
     await waitForAssertion(() => {
-      const deleteCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/wechat-delete-a' && call.init?.method === 'DELETE');
+      const deleteCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/wechat-delete-a' && call.init?.method === 'DELETE');
       assert.ok(deleteCall);
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /第二题/);
@@ -1773,7 +1797,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
     });
 
     await waitForAssertion(() => {
-      const saveCall = fetchCalls.findLast((call) => call.input === '/api/wrong-questions/record-save-top-level/review');
+      const saveCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/record-save-top-level/review');
       assert.ok(saveCall);
       const pageText = domEnvironment.container.textContent || '';
       const selectedErrorTypeInput = domEnvironment.container.querySelector('select[aria-label="最终问题归类"]') as HTMLSelectElement | null;

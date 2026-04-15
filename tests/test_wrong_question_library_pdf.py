@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -44,17 +46,30 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             }
         ]
         output_path = self.base / "student-1.pdf"
+        captured_payloads = []
 
-        result = pdf_engine.generate_student_wrong_question_library_pdf(
-            student_name="Alice",
-            class_name="六年级 1 班",
-            records=records,
-            output_path=str(output_path),
-        )
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake wrong question pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            result = pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                records=records,
+                output_path=str(output_path),
+            )
 
         self.assertEqual(result, str(output_path.resolve()))
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
+        self.assertEqual(captured_payloads[0]["studentName"], "Alice")
+        self.assertEqual(captured_payloads[0]["className"], "六年级 1 班")
+        self.assertEqual(captured_payloads[0]["teacherTitle"], "平台管理员")
+        self.assertEqual(captured_payloads[0]["records"][0]["question_text"], "计算 $2+3\\times4$ 的结果。")
+        self.assertEqual(captured_payloads[0]["records"][0]["image_data_url"], "")
 
     def test_generate_student_wrong_question_library_pdf_fetches_geometry_image(self):
         records = [
@@ -69,8 +84,15 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             }
         ]
         output_path = self.base / "geometry-student-1.pdf"
+        captured_payloads = []
 
-        with patch("urllib.request.urlopen") as urlopen:
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake geometry pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("urllib.request.urlopen") as urlopen, patch("pdf_engine.subprocess.run", side_effect=fake_run):
             urlopen.return_value.__enter__.return_value.read.return_value = SAMPLE_PNG_BYTES
 
             result = pdf_engine.generate_student_wrong_question_library_pdf(
@@ -84,6 +106,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
         urlopen.assert_called_once_with("https://files.example.com/geometry-1.png", timeout=10)
+        self.assertRegex(captured_payloads[0]["records"][0]["image_data_url"], r"^data:image/png;base64,")
 
     def test_generate_student_wrong_question_library_pdf_skips_image_fetch_for_non_geometry(self):
         records = [
@@ -98,8 +121,15 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             }
         ]
         output_path = self.base / "non-geometry-student-1.pdf"
+        captured_payloads = []
 
-        with patch("urllib.request.urlopen") as urlopen:
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake non-geometry pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("urllib.request.urlopen") as urlopen, patch("pdf_engine.subprocess.run", side_effect=fake_run):
             result = pdf_engine.generate_student_wrong_question_library_pdf(
                 student_name="Alice",
                 class_name="六年级 1 班",
@@ -111,8 +141,9 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
         urlopen.assert_not_called()
+        self.assertEqual(captured_payloads[0]["records"][0]["image_data_url"], "")
 
-    def test_generate_student_wrong_question_library_pdf_puts_teacher_only_in_document_title(self):
+    def test_generate_student_wrong_question_library_pdf_passes_teacher_title_once_to_browser_renderer(self):
         records = [
             {
                 "student_name": "Alice",
@@ -125,12 +156,15 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             }
         ]
         output_path = self.base / "teacher-in-title-student-1.pdf"
-        captured_story = []
+        captured_payloads = []
 
-        def capture_build(_doc, story, *args, **kwargs):
-            captured_story.extend(story)
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake teacher title pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
 
-        with patch.object(pdf_engine.SimpleDocTemplate, "build", autospec=True, side_effect=capture_build):
+        with patch("pdf_engine.subprocess.run", side_effect=fake_run):
             pdf_engine.generate_student_wrong_question_library_pdf(
                 student_name="Alice",
                 class_name="六年级 1 班",
@@ -138,17 +172,41 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
                 output_path=str(output_path),
             )
 
-        paragraph_texts = [
-            item.getPlainText()
-            for item in captured_story
-            if isinstance(item, Paragraph)
-        ]
+        self.assertEqual(captured_payloads[0]["teacherTitle"], "平台管理员")
+        self.assertEqual(captured_payloads[0]["records"][0]["question_text"], "计算 18÷3×2 的结果。")
 
-        self.assertIn("Alice 错题库｜任课老师：平台管理员", paragraph_texts)
-        self.assertIn("第 1 题", paragraph_texts)
-        self.assertFalse(any(text.startswith("老师：") for text in paragraph_texts))
-        self.assertFalse(any(text.startswith("家长备注：") for text in paragraph_texts))
-        self.assertFalse(any(text.startswith("老师备注：") for text in paragraph_texts))
+    def test_generate_student_wrong_question_library_pdf_passes_child_reason_and_note_to_browser_renderer(self):
+        records = [
+            {
+                "student_name": "Alice",
+                "class_display_name": "六年级 1 班",
+                "teacher_display_name": "平台管理员",
+                "created_at": "2026-04-09 10:00:00",
+                "is_geometry": 0,
+                "question_text": "计算 18÷3×2 的结果。",
+                "child_raw_reason_text": "我把乘法放到最后算了",
+                "secondary_error_summary": "运算顺序放错了位置",
+            }
+        ]
+        output_path = self.base / "reason-and-note-student-1.pdf"
+        captured_payloads = []
+
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake reason and note pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                records=records,
+                output_path=str(output_path),
+            )
+
+        self.assertEqual(captured_payloads[0]["records"][0]["child_reason_text"], "我把乘法放到最后算了")
+        self.assertEqual(captured_payloads[0]["records"][0]["cause_note"], "运算顺序放错了位置")
 
     def test_build_wrong_question_geometry_image_card_uses_fixed_box_and_caption(self):
         with patch("urllib.request.urlopen") as urlopen:
@@ -187,6 +245,18 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
                     "notes": "图片模糊",
                 }
             )
+
+    def test_recognize_wrong_question_image_preserves_line_breaks_for_mixed_latex_text(self):
+        normalized = ai_processor._normalize_wrong_question_recognition_result(
+            {
+                "is_geometry": False,
+                "question_text": "解方程：\r\n$$x^2 + 1 = 0$$\r\n求 x 的值。",
+                "confidence": "high",
+                "notes": "",
+            }
+        )
+
+        self.assertEqual(normalized["question_text"], "解方程：\n$$x^2 + 1 = 0$$\n求 x 的值。")
 
 
 if __name__ == "__main__":

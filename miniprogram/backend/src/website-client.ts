@@ -226,6 +226,13 @@ export interface WebsiteWrongQuestionItem {
   };
 }
 
+export interface WebsiteWrongQuestionLibrarySummary {
+  student_id: number;
+  pdf_url: string;
+  updated_at?: string;
+  total_items: number;
+}
+
 export async function listWrongQuestionsForChildOnWebsite(input: {
   openId: string;
   studentId: number;
@@ -233,5 +240,15 @@ export async function listWrongQuestionsForChildOnWebsite(input: {
   const query = new URLSearchParams({ open_id: input.openId });
   return requestWebsite<{ items: WebsiteWrongQuestionItem[]; total: number }>(
     `/api/wechat/children/${input.studentId}/wrong-questions?${query.toString()}`
+  );
+}
+
+export async function getWrongQuestionLibraryForChildOnWebsite(input: {
+  openId: string;
+  studentId: number;
+}) {
+  const query = new URLSearchParams({ open_id: input.openId });
+  return requestWebsite<WebsiteWrongQuestionLibrarySummary>(
+    `/api/wechat/children/${input.studentId}/wrong-question-library?${query.toString()}`
   );
 }

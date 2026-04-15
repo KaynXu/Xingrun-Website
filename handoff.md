@@ -6,7 +6,13 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-15 已按 `develop -> master -> 部署` 再走完一轮：生产机 `/home/ubuntu/Xingrun-Website` 当前 `HEAD` 已到 `f42b91f fix: dedupe wechat wrong question box route`；这次 `master` merge 提交是 `574b945 Merge branch 'develop'`，合并后暴露出的重复 `/api/wechat/wrong-question-boxes` 路由已在 `master` 上删掉重复定义；生产机延时健康检查已恢复到本机根路由 `302`、公网 `https://xingrun.online/` 返回 `200 OK`。
+- 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 这轮不再继续扩 `ReportLab` 公式替换，而是改由 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs`，用浏览器 + KaTeX 输出 PDF，当前 payload 已继续保留 `孩子自述错因 / 补充备注` 两块。
+- 2026-04-15 网站端学生错题库 PDF 已补回每题 `孩子自述错因 / 补充备注`：`pdf_engine.py` 现在会把 `child_raw_reason_text` 和 `secondary_error_summary` 透传给浏览器渲染脚本，`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 已在每题题目块下显示这两段内容；当前不恢复旧的 `家长备注 / 老师备注`，只展示现行微信错题链路里的孩子错因与补充备注。
+- 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
+- 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
+- 2026-04-15 小程序子项目目录已收口：仓库根目录现在只保留一个小写 `miniprogram/`，原 `Xingrun-MiniProgram/` 已整体并入该目录；当前小程序子项目入口是 `miniprogram/`，微信工程代码位于 `miniprogram/miniprogram/`，课堂随机点名 HTML 工具也已统一移动到 `miniprogram/classroom-random-score*.html`。
+- 2026-04-15 内嵌小程序快照 `miniprogram/miniprogram/pages/parent-upload/index.*` 已继续收口“AI 框选慢 + 旋转后回位错乱”：当前 AI 框选不再直接把 `original` 原图整张发给后端，而是先在本地把超大图缩到最长边 `1600` 的临时 JPG 再送 AI，减轻上传与识别耗时；同时每张图现在带 `contentVersion`，如果用户在 AI 返回前又点了 `顺时针旋转`，旧方向那次请求回来的题框/失败状态会被直接丢弃，不再覆盖旋转后的新图位置。隐藏 `cropCanvas` 的导出也已串行化，避免多张图并发 AI 时互相踩画布。
+- 2026-04-15 内嵌小程序快照 `miniprogram/miniprogram/pages/parent-upload/index.*` 已补一版更稳的本地旋转导出：选图改拿 `original` 原图、页内新增 `顺时针旋转` 兜底按钮、隐藏 canvas 现在显式带 `width/height` 实体尺寸，并在旋转/裁切导出前统一先铺白底再导出 JPG；当前手动顺时针旋转还会同步把现有题框坐标一起转过去，避免图片转了但框留在旧位置。当前目标是先止住“旋转后整张发黑/导出黑底”的问题。
 - 2026-04-15 本地学生错题库 PDF 已收口旧备注残留：`wrong_question_submissions` 新库与旧库迁移都不再保留 `parent_note / teacher_comment` 两列；本地微信错题 detail/review 序列化也不再输出这两个字段；PDF 顶部标题现在改成 `学生名 错题库｜任课老师：...`，每题正文已删除单独的老师行，以及 `家长备注 / 老师备注` 两段。
 - 2026-04-15 小程序错题本页已接上学生级 PDF 预览：`miniprogram/miniprogram/pages/parent-wrongbook/index.*` 现在会在页头展示 `查看 PDF`，并在每张错题卡上显示 `question_text`；同时 bridge 已补发 `GET /wechat/parent/children/<student_id>/wrong-question-library`，当前公网探测已不再返回 `Cannot GET ...`，而是正常转成 JSON 业务响应。
 - 2026-04-15 本地网站端已补回家长上传 `AI 框选` 路由 `/api/wechat/wrong-question-boxes`，并在 `smart_wrong_questions.detect_wechat_wrong_question_boxes()` 里固定服务端提示词：当前会明确要求“只框题目区域，忽略孩子手写字迹、演算、答案、批改痕迹”，不改小程序请求协议；本地回归已覆盖 route 与 N1N prompt 组装。
@@ -19,12 +25,10 @@
 - 首页 hero 已去掉外部 HLS 视频背景，改为本地可控的 `Grainient` 风格动态背景；当前配色按 Starain 现有主题收口为亮色 `sky/cyan` 渐变、暗色深蓝底，并已换成更容易直接看出在流动的 `flow bands` 版本。
 - landing 断言测试已同步改成检查 `data-background="grainient"` 和 `data-grainient-palette="sky-cyan"`，不再依赖旧视频流地址。
 - 生产发布流程文档已经单独收口到 `docs/deploy-release.md`；下一位 AI 如果要执行 `push / merge master / 部署`，优先直接照这份文档走，不要再现场猜步骤。
-- `docs/deploy-release.md` 已进一步明确“发布闭环四步”：先验证并推 `develop`，再 merge + 重验 `master`，部署成功后补 docs commit，最后轻量同步生产机仓库 `HEAD` 并用 temp script 一次校验本地 / 远端 / 线上状态。
-- 2026-04-15 这次生产机仍然走的是 GitHub SSH over 443 直拉，不是 `bundle`；但因为这轮 `master` 首次带上了 `Xingrun-MiniProgram/backend/assets/ArialUnicode.ttf` 这类大二进制资源，服务器 `git fetch origin` 明显变慢，现场确认慢点主要来自拉取大文件，不是部署脚本卡死。
-- `develop -> master -> 部署` 已在 2026-04-14 再走完一轮；这次生产机直接通过 GitHub SSH over 443 拉取最新 `master`，没有再走 `bundle + scp` 兜底。
+- `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
-- 本轮现场 proof 已确认生产机 `git fetch origin`、`git pull --ff-only origin master`、前端 build、`pm2 restart xingrun` 和延时健康检查都已跑通；如果后续 release 再夹带大二进制资源，不要再用“几秒就能拉完”的旧经验判断卡顿。
-- 本次已部署生产的 `master` 头提交是 `f42b91f fix: dedupe wechat wrong question box route`；它承接的是 `574b945 Merge branch 'develop'`，已包含这轮错题库 PDF 收口、小程序错题本 PDF 入口、家长上传拍照/框选修复等 develop 改动。
+- 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
+- 本次已部署生产的最新提交是 `5ff8adb Merge branch 'develop'`；其中包含微信错题 `删除本题`、学生错题库旧 PDF 清理与自动跳下一题。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -59,14 +63,19 @@
 - `teacher_comment` 和 `status='reviewed'` 在本地微信错题链路里只剩兼容旧列含义，不再作为主流程判断依据。
 - staff / owner / admin / super_owner 已统一到按班级或学生打开错题本的 notebook 流程。
 - `member` 端已改成学生卡片 -> 弹窗错题本，不再走旧的页面下半区详情布局。
-- 最近一次相关发布 merge 提交并已部署生产的是 `770b128 Merge branch 'develop'`。
+- 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
-- 最值得继续做的是拿 3 到 5 张带明显孩子手写痕迹的真实作业图在真机上跑一次 `AI 框选` smoke check，确认这次固定系统提示词之后，误框是否明显下降、是否出现“宁可少框”的漏框副作用。
+- 最值得继续做的是拿一条真实含公式的微信错题，在网站错题详情里手工改一次 `题目文本`，确认 KaTeX 预览、渲染失败提示、保存后回显，以及重新打开 `预览 PDF` 时三处内容一致。
+- 最值得继续做的是在微信开发者工具或真机打开一次家长首页，确认新的首屏标题、副标题和空态文案在 iPhone 宽度下换行自然，没有被按钮区挤坏。
+- 最值得继续做的是把这版小程序包重新上传到微信开发者工具 / 真机，实际进入某个孩子的错题本页点一次页头 `查看 PDF`，确认 bridge 返回的 `pdf_url` 在真机里能顺利走完 `wx.downloadFile + wx.openDocument`。
+- 如果继续处理小程序，直接从仓库根目录进入 `miniprogram/` 子项目即可；微信开发者工具项目根目录也应改看 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，不要再按旧的 `Xingrun-MiniProgram/` 路径找。
+- 最值得继续做的是拿一张 12MP 左右的大图在真机上直接测一次 `AI 框选 -> 旋转 -> 等待旧请求返回`，确认两件事都成立：这轮缩图后体感耗时明显下降，且旧请求回包不会再把题框盖回错误方向。
 - 最值得继续做的是拿一个真实学生错题库 PDF 手工看一遍，确认顶部标题里的老师名、每题正文节奏、分页和几何题图片在真实浏览器/打印预览里都符合老师预期。
 - 最值得继续做的是把新的小程序包上传到微信开发者工具 / 真机，实际点一次错题本页顶部 `查看 PDF`，确认 `wx.downloadFile + wx.openDocument` 在真机里能正常打开网站 PDF。
-- 最值得继续做的是直接用线上环境拿一张“有孩子手写痕迹的整页作业”实测一次 `AI 框选`，确认这次已经发到生产的固定 prompt 是否明显减少误框答案区和草稿区。
+- 最值得继续做的是把这轮本地恢复的 `/api/wechat/wrong-question-boxes` 和固定 prompt 按正常 release 流程发到线上，再用真机拿一张“有孩子手写痕迹的整页作业”实测一次 AI 框选，看是否明显减少误框答案区和草稿区。
 - 最值得继续做的是拿真机在家长上传页拍一张横屏照片和一张竖屏照片各走一遍，再追加拍一张新图，确认四件事都成立：控制台里的 orientation 返回值合理、预览方向正确、框选区默认切到新拍那张、最终提交到老师端的图片方向一致；如果某些真机仍回 `orientation='up'` 但画面横着，优先走页面里的 `顺时针旋转` 兜底。
+- 如果继续跟这条小程序旋转问题，最值得做的是在微信开发者工具和真机上各拿一张大图手工点一次 `顺时针旋转`，确认页面预览、后续裁切导出和最终提交到老师端都不再出现整张黑图或黑底。
 - 最值得继续做的是拿一个真实已绑定家长账号在小程序里手工点一次 `查看错题本`，确认现在展示的是孩子错题列表或业务空态，而不是路由缺失兜底文案。
 - 如果继续咨询记录这一项，最值得做的是用一段真实批量整理文案在页面里手工跑一次 `AI 批量整理`，确认非法状态会被 warning 掉、草稿里只保留合法字段，避免只靠单测判断 UI 呈现。
 - 最值得继续做的是打开真实咨询记录页做一次人工 smoke check，确认有备注和无备注的记录在桌面端、移动端下都保持统一节奏，并确认备注没有把操作区和状态 badge 挤乱。
@@ -74,9 +83,9 @@
 - 最值得继续做的是打开真实首页做一次手工 smoke check，确认新的 grainient 背景在桌面端、移动端和夜间模式下都不会压低首屏文案与按钮可读性。
 - 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
 - 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
-- 当前最值得继续做的是按新 spec 实现本地微信错题“删除本题”，并补齐“删除后清理旧 PDF、自动跳下一题”的前后端测试。
-- 当前最值得继续做的是打开真实页面做一次手工 smoke check，确认删除本题后二次确认文案、跳下一题和“最后一题删完后右侧详情收起”都符合预期。
+- 当前最值得继续做的是打开真实页面做一次手工 smoke check，确认生产环境下删除本题后二次确认文案、跳下一题、最后一题删完后右侧详情收起，以及 PDF 入口都符合预期。
 - 最值得继续做的是打开真实页面做一轮人工 smoke check，确认 staff 视角下“老师 -> 班级 -> 学生”联动和 notebook 区交互符合预期，然后再决定是否跟随下一次 release 一起部署。
+- 这 3 条后端失败修完后，下一步就是按 release 流程重新做一次 `develop -> push -> merge master -> 部署`，不需要再先卡在这 3 条上。
 - 最适合继续做的是确认这轮命名收口是否要继续扩到更多历史文档文件名，当前先只改了内容和活代码命名，没有批量重命名 `docs/superpowers/*` 的历史文件路径。
 - 优先处理：
   - 如果还要继续收口，可以单独决定是否把 `teacher_comment` / `status='reviewed'` 这类兼容旧列也进一步包到更显式的 legacy helper 里
@@ -84,14 +93,18 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
-- 这次已经确认并修掉的是“网站端路由缺失导致 404”；但完整 `AI 框选` 仍依赖上游视觉模型响应速度和输出质量，真机外网场景下如果上游超时，用户侧仍可能看到慢或失败，所以需要用真实图片继续做一次端到端 smoke check。
+- 这轮错题公式渲染现在依赖前端侧 `katex` 和浏览器脚本；本地已用系统 Chrome 跑通过一次真实 PDF 生成，但如果后续部署环境没有可用浏览器，需继续通过 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 或预装 Chromium 保证错题库 PDF 能正常生成。
+- 这轮学生错题库 PDF 补字目前 proof 主要是 `pdf_engine` payload 回归、浏览器脚本 HTML 回归和临时脚本检查标签/值是否进入最终文档，还没有手工打开实际生成的 PDF 看分页和长文本换行。
+- 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
+- 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
+- 历史计划文档和旧对话里仍可能残留 `Xingrun-MiniProgram` 旧目录名；本轮已更新权威 handoff 和关键活文档，但后续如果继续照旧路径执行命令，仍可能误跳到不存在的位置。
 - 这轮 `AI 框选` 提示词优化目前只在本地代码和单测里验证过，还没在线上真机图片上确认收益；如果 provider 实际对提示词不敏感，后续仍可能需要继续叠加坐标过滤或示例图策略。
-- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致，且原图会让 AI 框选阶段的单张本地图片更大。
+- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，且 AI 框选前会先本地缩图，不再直接把原图整张发给后端，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致。
+- 内嵌小程序快照这轮是按“白底 canvas + 显式画布尺寸 + 导出前等待一拍”来止黑图；这在微信 canvas 常见问题里通常有效，但还没有拿真机长图/超大图把旋转和裁切都走完一遍。
 - 当前这次只收口了咨询 `AI 批量整理` 链路；常规 `/api/consultations` create/update 仍没有在后端对白名单状态做硬校验，现阶段还是主要依赖前端下拉不让人手工写出非法状态。
 - 咨询记录页备注展示方案当前成立的前提是“备注通常不会太长”；如果后续真实数据出现长段落，仍需要单独决定是否加录入约束或二级查看。
 - 当前 grainient 背景是本地复刻版，不是直接复用 reactbits 原实现；视觉方向已经对齐，但如果后面要追求更接近原站的 shader 波纹细节，还需要再单独设计一轮。
 - 生产机虽然已经改成 GitHub SSH over 443，但这条链路仍依赖服务器里的 deploy key 和 `~/.ssh/config` alias；如果后续被误删，部署会重新退化成 bundle 场景。
-- 这次已经确认 GitHub SSH over 443 直拉在功能上可用，但如果 release 首次带入大字体、图片等二进制资源，服务器 `git fetch` 仍可能非常慢；不要把“拉得慢”误判成脚本卡死。
 - 旧的零散部署口径已经开始收口，但历史对话、旧提交和个别旧文档里仍可能残留“直接发 develop”或“先看 master 再说”的过期说法；下一轮如果有人只看旧记录，不看 `docs/deploy-release.md`，仍可能误判流程。
 - 当前错误类型下拉为了兼容现有错题记录，同时保留了固定错因和已出现过的 legacy downstream 分类；在真正统一错题后端分类口径前，这里仍是“固定列表 + 兼容旧值”的过渡态。
 - 当前最大风险不是功能坏掉，而是“语义看起来像统一了，其实没有”。
@@ -110,13 +123,8 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
-- `f42b91f` `fix: dedupe wechat wrong question box route`
-- `574b945` `Merge branch 'develop'`
-- `1e03ce6` `fix: clean wrongbook pdf feedback remnants`
-- `591370d` `Merge branch 'hotfix/wechat-ai-box-route'`
-- `a314b25` `fix: restore wechat ai box route prompt`
-- `fab4f2e` `Merge branch 'develop'`
-- `5b1831d` `Merge branch 'master' into develop`
+- `5ff8adb` `Merge branch 'develop'`
+- `d6aedf9` `feat: add hard delete for local wrong questions`
 - `72e0aa5` `fix: remove stale smart wrong question filters`
 - `5627f20` `fix: remove stale wrong question export flow`
 - `14ac9b4` `fix: allow notebook search before class selection`
@@ -125,7 +133,8 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`master`
+- 当前分支：`develop`
+- 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
 - 后续更新这份文件时，只写：
   - 当前状态有没有变化

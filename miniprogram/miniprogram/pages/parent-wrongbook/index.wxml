@@ -1,4 +1,12 @@
 <view class="wrongbook-page">
+  <view wx:if="{{libraryPdfUrl && items.length}}" class="library-card">
+    <view class="library-copy">
+      <text class="library-title">学生错题库 PDF</text>
+      <text class="library-desc">按当前孩子的错题记录生成，可直接预览。</text>
+    </view>
+    <button class="library-btn" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">查看 PDF</button>
+  </view>
+
   <view wx:if="{{loading}}" class="state-card">
     <text class="state-title">加载中</text>
     <text class="state-desc">正在拉取错题记录</text>
@@ -22,6 +30,7 @@
           <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
           <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
         </view>
+        <text wx:if="{{item.questionText}}" class="item-question">{{item.questionText}}</text>
         <text wx:if="{{item.errorSummary}}" class="item-summary">{{item.errorSummary}}</text>
         <text class="item-date">{{item.dateStr}}</text>
       </view>
