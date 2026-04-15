@@ -887,5 +887,56 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.get_json(), {"error": "下游服务返回了无效响应"})
 
+    @patch("smart_wrong_questions.request.urlopen")
+    def test_detect_wechat_wrong_question_boxes_falls_back_to_n1n_with_fixed_prompt(self, urlopen):
+        config_runtime.write_file_config(
+            {
+                "wrong_question_service_url": "",
+                "wrong_question_service_token": "",
+                "n1n_api_key": "n1n-test-key",
+                "n1n_base_url": "https://api.n1n.ai/v1",
+                "n1n_model": "gpt-5.4",
+            }
+        )
+        urlopen.return_value = FakeResponse(
+            json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "boxes": [
+                                            {"x": 0.12, "y": 0.18, "width": 0.58, "height": 0.26}
+                                        ]
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+        )
+
+        payload = smart_wrong_questions.detect_wechat_wrong_question_boxes(
+            {"image_url": "https://files.example.com/worksheet.png"}
+        )
+
+        self.assertEqual(
+            payload,
+            {"boxes": [{"x": 0.12, "y": 0.18, "width": 0.58, "height": 0.26}]},
+        )
+        request_obj = urlopen.call_args.args[0]
+        self.assertEqual(request_obj.full_url, "https://api.n1n.ai/v1/chat/completions")
+        self.assertEqual(request_obj.get_method(), "POST")
+        self.assertEqual(request_obj.get_header("Authorization"), "Bearer n1n-test-key")
+        self.assertEqual(request_obj.get_header("Accept"), "application/json")
+        body = json.loads(request_obj.data.decode("utf-8"))
+        self.assertEqual(body["model"], "gpt-5.4")
+        self.assertEqual(body["response_format"], {"type": "json_object"})
+        self.assertIn("忽略孩子手写字迹", body["messages"][0]["content"])
+        self.assertIn("只框出题目区域", body["messages"][1]["content"][0]["text"])
+
 if __name__ == "__main__":
     unittest.main()
