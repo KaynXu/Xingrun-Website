@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
 - 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
 - 2026-04-15 小程序子项目目录已收口：仓库根目录现在只保留一个小写 `miniprogram/`，原 `Xingrun-MiniProgram/` 已整体并入该目录；当前小程序子项目入口是 `miniprogram/`，微信工程代码位于 `miniprogram/miniprogram/`，课堂随机点名 HTML 工具也已统一移动到 `miniprogram/classroom-random-score*.html`。
 - 2026-04-15 内嵌小程序快照 `miniprogram/miniprogram/pages/parent-upload/index.*` 已继续收口“AI 框选慢 + 旋转后回位错乱”：当前 AI 框选不再直接把 `original` 原图整张发给后端，而是先在本地把超大图缩到最长边 `1600` 的临时 JPG 再送 AI，减轻上传与识别耗时；同时每张图现在带 `contentVersion`，如果用户在 AI 返回前又点了 `顺时针旋转`，旧方向那次请求回来的题框/失败状态会被直接丢弃，不再覆盖旋转后的新图位置。隐藏 `cropCanvas` 的导出也已串行化，避免多张图并发 AI 时互相踩画布。
@@ -63,6 +64,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是在微信开发者工具或真机打开一次家长首页，确认新的首屏标题、副标题和空态文案在 iPhone 宽度下换行自然，没有被按钮区挤坏。
 - 最值得继续做的是把这版小程序包重新上传到微信开发者工具 / 真机，实际进入某个孩子的错题本页点一次页头 `查看 PDF`，确认 bridge 返回的 `pdf_url` 在真机里能顺利走完 `wx.downloadFile + wx.openDocument`。
 - 如果继续处理小程序，直接从仓库根目录进入 `miniprogram/` 子项目即可；微信开发者工具项目根目录也应改看 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，不要再按旧的 `Xingrun-MiniProgram/` 路径找。
 - 最值得继续做的是拿一张 12MP 左右的大图在真机上直接测一次 `AI 框选 -> 旋转 -> 等待旧请求返回`，确认两件事都成立：这轮缩图后体感耗时明显下降，且旧请求回包不会再把题框盖回错误方向。
@@ -88,6 +90,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
 - 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
 - 历史计划文档和旧对话里仍可能残留 `Xingrun-MiniProgram` 旧目录名；本轮已更新权威 handoff 和关键活文档，但后续如果继续照旧路径执行命令，仍可能误跳到不存在的位置。
 - 这轮 `AI 框选` 提示词优化目前只在本地代码和单测里验证过，还没在线上真机图片上确认收益；如果 provider 实际对提示词不敏感，后续仍可能需要继续叠加坐标过滤或示例图策略。

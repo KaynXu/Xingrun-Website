@@ -1,28 +1,28 @@
 <view class="parent-page">
   <view class="hero-card">
     <text class="hero-badge">家长主页</text>
-    <text class="hero-title">上传入口只保留最需要的三步</text>
-    <text class="hero-subtitle">先选孩子，再拍照上传，老师就能在网站错题工作区里看到这条记录。</text>
+    <text class="hero-title">查看错题本或上传新的错题</text>
+    <text class="hero-subtitle">请选择需要操作的孩子，进入后可以查看已有错题，也可以继续上传新的错题图片。</text>
   </view>
 
   <view wx:if="{{loading}}" class="state-card">
-    <text class="state-title">正在同步绑定关系</text>
-    <text class="state-desc">把当前微信号下已绑定的孩子整理出来。</text>
+    <text class="state-title">正在加载孩子信息</text>
+    <text class="state-desc">请稍候，已绑定的孩子会显示在这里。</text>
   </view>
 
   <view wx:elif="{{errorMessage}}" class="state-card error-card">
-    <text class="state-title">家长主页暂时打不开</text>
+    <text class="state-title">页面暂时无法打开</text>
     <text class="state-desc">{{errorMessage}}</text>
   </view>
 
   <view wx:elif="{{!bindings.length}}" class="state-card">
     <text class="state-title">还没有绑定孩子</text>
-    <text class="state-desc">先输入老师发来的班级邀请码，再从网站学生名单中选择孩子。</text>
+    <text class="state-desc">请输入老师提供的班级邀请码，完成绑定后即可上传错题。</text>
     <button class="primary-btn" bindtap="goBindMore">去绑定孩子</button>
   </view>
 
   <view wx:else class="binding-list">
-    <text class="panel-title">选择孩子上传</text>
+    <text class="panel-title">选择孩子</text>
 
     <view wx:for="{{bindings}}" wx:key="id" class="binding-card">
       <view>
