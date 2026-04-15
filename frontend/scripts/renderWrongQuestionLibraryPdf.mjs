@@ -1,4 +1,5 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { access, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -9,6 +10,24 @@ import { buildWrongQuestionLatexPreviewModel } from '../src/wrongQuestionLatex.j
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = dirname(currentFilePath);
 const katexCssPath = resolve(currentDir, '../node_modules/katex/dist/katex.min.css');
+const COMMON_CHROMIUM_EXECUTABLE_PATHS = {
+  darwin: [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ],
+  linux: [
+    '/snap/bin/chromium',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+  ],
+  win32: [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Chromium\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  ],
+};
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -326,6 +345,36 @@ export async function buildDocumentMarkup(payload) {
   `;
 }
 
+export async function resolveChromiumLaunchOptions({
+  env = process.env,
+  platform = process.platform,
+  pathExists = async (candidate) => {
+    try {
+      await access(candidate, fsConstants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+} = {}) {
+  const explicitExecutablePath = String(
+    env.XR_PLAYWRIGHT_EXECUTABLE_PATH || env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '',
+  ).trim();
+
+  if (explicitExecutablePath) {
+    return { executablePath: explicitExecutablePath };
+  }
+
+  const candidates = COMMON_CHROMIUM_EXECUTABLE_PATHS[platform] || [];
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      return { executablePath: candidate };
+    }
+  }
+
+  return undefined;
+}
+
 async function main() {
   const [, , inputPath, outputPath] = process.argv;
 
@@ -335,8 +384,7 @@ async function main() {
 
   const payload = JSON.parse(await readFile(inputPath, 'utf8'));
   const documentMarkup = await buildDocumentMarkup(payload);
-  const executablePath = process.env.XR_PLAYWRIGHT_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
-  const browser = await chromium.launch(executablePath ? { executablePath } : undefined);
+  const browser = await chromium.launch(await resolveChromiumLaunchOptions());
 
   try {
     const page = await browser.newPage();

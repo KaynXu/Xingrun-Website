@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDocumentMarkup } from '../scripts/renderWrongQuestionLibraryPdf.mjs';
+import {
+  buildDocumentMarkup,
+  resolveChromiumLaunchOptions,
+} from '../scripts/renderWrongQuestionLibraryPdf.mjs';
 
 test('buildDocumentMarkup renders child reason and note blocks for each wrong question record', async () => {
   const markup = await buildDocumentMarkup({
@@ -23,4 +26,26 @@ test('buildDocumentMarkup renders child reason and note blocks for each wrong qu
   assert.match(markup, /我把乘法放到最后算了/);
   assert.match(markup, /补充备注/);
   assert.match(markup, /运算顺序放错了位置/);
+});
+
+test('resolveChromiumLaunchOptions prefers explicit environment paths', async () => {
+  const launchOptions = await resolveChromiumLaunchOptions({
+    env: {
+      XR_PLAYWRIGHT_EXECUTABLE_PATH: '/custom/chrome',
+    },
+    platform: 'linux',
+    pathExists: async () => false,
+  });
+
+  assert.deepEqual(launchOptions, { executablePath: '/custom/chrome' });
+});
+
+test('resolveChromiumLaunchOptions falls back to common linux chromium paths', async () => {
+  const launchOptions = await resolveChromiumLaunchOptions({
+    env: {},
+    platform: 'linux',
+    pathExists: async (candidate) => candidate === '/snap/bin/chromium',
+  });
+
+  assert.deepEqual(launchOptions, { executablePath: '/snap/bin/chromium' });
 });

@@ -53,3 +53,19 @@ test('buildWrongQuestionLatexPreviewModel flags unmatched delimiters as parse er
   assert.match(preview.errors[0]?.message ?? '', /未闭合/);
   assert.match(preview.html, /\$x\^2 \+ 1 的结果。/);
 });
+
+test('parseWrongQuestionLatexSegments repairs latex commands eaten by json escaping', () => {
+  const parsed = parseWrongQuestionLatexSegments('计算 $$f(3)=1+\text{lim}_{x \to 3^-}f(x)+\frac{1}{2}$$，并判断 $f(3) \neq \text{lim}_{x \to 3} f(x)$');
+
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.segments[1]?.type, 'math');
+  assert.equal(
+    parsed.segments[1]?.type === 'math' ? parsed.segments[1].value : '',
+    'f(3)=1+\\text{lim}_{x \\to 3^-}f(x)+\\frac{1}{2}',
+  );
+  assert.equal(parsed.segments[3]?.type, 'math');
+  assert.equal(
+    parsed.segments[3]?.type === 'math' ? parsed.segments[3].value : '',
+    'f(3) \\neq \\text{lim}_{x \\to 3} f(x)',
+  );
+});

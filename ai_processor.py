@@ -112,6 +112,7 @@ WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 - 普通中文、英文和题干说明直接输出为普通文本
 - 行内公式使用 $...$
 - 独立成行的公式使用 $$...$$
+- 在 JSON 字符串里，LaTeX 命令的反斜杠必须写成双反斜杠，例如 \\frac、\\text、\\to
 - 不要把整道题都改写成纯 LaTeX，只把公式片段转成 LaTeX
 如果能明确识别公式结构，优先输出可渲染的 LaTeX；如果某个符号拿不准，宁可保留原始可读文本，也不要编造错误公式。
 只返回 JSON，不要输出额外解释。
@@ -158,6 +159,23 @@ _WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
     "识别失败",
 }
 
+_BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
+    r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
+)
+
+
+def _repair_wrong_question_latex_transport(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return str(text or "")
+
+    repaired = text.replace("\r\n", "\n")
+    repaired = repaired.replace("\t", "\\t")
+    repaired = repaired.replace("\f", "\\f")
+    repaired = repaired.replace("\b", "\\b")
+    repaired = repaired.replace("\r", "\\r")
+    repaired = _BROKEN_NEWLINE_LATEX_COMMAND_PATTERN.sub(r"\\n", repaired)
+    return repaired
+
 
 def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
     is_geometry = bool(payload.get("is_geometry"))
@@ -173,7 +191,8 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
             "notes": notes,
         }
 
-    normalized_text = question_text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized_text = _repair_wrong_question_latex_transport(question_text)
+    normalized_text = normalized_text.replace("\r\n", "\n").replace("\r", "\n")
     normalized_text = "\n".join(line.strip() for line in normalized_text.split("\n")).strip()
     normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
     compact_text = re.sub(r"\s+", "", normalized_text)
