@@ -10,6 +10,7 @@ import {
   bindParentStudentOnWebsite,
   classifyParentReasonOnWebsite,
   detectWechatWrongQuestionBoxesOnWebsite,
+  getWrongQuestionLibraryForChildOnWebsite,
   listParentBindingsOnWebsite,
   listWrongQuestionsForChildOnWebsite,
   loginParentWechatAccount,
@@ -269,6 +270,29 @@ export function createApp() {
 
     try {
       const payload = await listWrongQuestionsForChildOnWebsite({ openId, studentId });
+      res.json(payload);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/wechat/parent/children/:studentId/wrong-question-library', async (req, res) => {
+    const studentId = Number(req.params.studentId);
+    const openId = String(req.query?.openId ?? req.query?.open_id ?? '').trim();
+
+    if (!Number.isFinite(studentId) || studentId <= 0) {
+      res.status(400).json({ error: 'studentId required' });
+      return;
+    }
+    if (!openId) {
+      res.status(400).json({ error: 'openId required' });
+      return;
+    }
+
+    try {
+      const payload = await getWrongQuestionLibraryForChildOnWebsite({ openId, studentId });
       res.json(payload);
     } catch (error) {
       res.status(500).json({

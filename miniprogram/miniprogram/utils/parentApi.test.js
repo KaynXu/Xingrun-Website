@@ -8,6 +8,7 @@ const {
   detectParentWrongQuestionBoxes,
   ensureParentSession,
   fetchParentBindings,
+  fetchChildWrongQuestionLibrary,
   getParentBindings,
   normalizeParentBinding,
   resolveParentEntryPath,
@@ -393,6 +394,39 @@ test('classifyParentReason posts the normalized child reason text', async () => 
     },
   });
   assert.equal(payload.primary_error_type, '细节问题');
+});
+
+test('fetchChildWrongQuestionLibrary loads the shared student pdf metadata', async () => {
+  let capturedRequest = null;
+  const wxApi = {
+    request({ url, method, data, success }) {
+      capturedRequest = { url, method, data };
+      success({
+        statusCode: 200,
+        data: {
+          student_id: 101,
+          pdf_url: '/api/wechat/student-libraries/101',
+          updated_at: '2026-04-15 12:00:00',
+          total_items: 2,
+        },
+      });
+    },
+  };
+
+  const payload = await fetchChildWrongQuestionLibrary(wxApi, 'https://example.com', {
+    openId: 'openid-parent-1',
+    studentId: 101,
+  });
+
+  assert.deepEqual(capturedRequest, {
+    url: 'https://example.com/wechat/parent/children/101/wrong-question-library',
+    method: 'GET',
+    data: {
+      openId: 'openid-parent-1',
+    },
+  });
+  assert.equal(payload.pdf_url, '/api/wechat/student-libraries/101');
+  assert.equal(payload.total_items, 2);
 });
 
 test('detectParentWrongQuestionBoxes parses the AI box bridge response', async () => {

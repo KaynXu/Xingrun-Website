@@ -1,5 +1,29 @@
 # Handover - Source-Aligned Pencil Design
 
+## 2026-04-15 Wrongbook PDF Entry Restored After Snapshot Regression
+- 用户反馈：目录收口后，小程序错题本页看不到页头 `查看 PDF`。
+- 根因确认：
+  - 当前 `miniprogram/pages/parent-wrongbook/index.*` 仍停在旧快照，只拉 `/wrong-questions` 列表。
+  - 缺失的不只是模板按钮，还包括：
+    - `miniprogram/utils/parentApi.js` 里的 `wrong-question-library` helper
+    - `backend/src/index.ts` 里的 `GET /wechat/parent/children/:studentId/wrong-question-library`
+    - `backend/src/website-client.ts` 对网站 `wrong-question-library` 的代理函数
+  - 所以这次是“整条 PDF metadata 链路未并进当前快照”，不是单纯样式隐藏。
+- 已完成：
+  - 在 `miniprogram/utils/parentApi.js` 补回 `fetchChildWrongQuestionLibrary(...)`
+  - 在 bridge 补回 `GET /wechat/parent/children/:studentId/wrong-question-library`
+  - `pages/parent-wrongbook/index.*` 已恢复：
+    - 页头 `查看 PDF`
+    - `wx.downloadFile + wx.openDocument` 打开 PDF
+    - 每张卡片显示 `question_text`
+  - 新增回归测试覆盖 helper、bridge 和错题本页模板断言
+- proof：
+  - `node --test miniprogram/miniprogram/utils/parentApi.test.js` -> `pass 15 / fail 0`
+  - `node miniprogram/miniprogram/parent-only-scope.test.js` -> `pass 8 / fail 0`
+  - `cd miniprogram/backend && npm ci --no-audit --no-fund --loglevel=error && node --import tsx --test src/parent-wechat-bridge.test.ts` -> `pass 9 / fail 0`
+- 下一步：
+  - 重新在微信开发者工具 / 真机进入错题本页，实际点一次 `查看 PDF`，确认运行时 `downloadFile/openDocument` 没有域名、文件类型或权限问题
+
 ## 2026-04-15 Mini Program Folder Unified Under Root `miniprogram`
 - 用户要求：仓库根目录不要再同时保留 `Xingrun-MiniProgram/` 和 `miniprogram/` 两套小程序目录，只保留一个小写 `miniprogram/`。
 - 已完成：

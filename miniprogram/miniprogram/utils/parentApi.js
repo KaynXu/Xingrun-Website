@@ -440,6 +440,16 @@ async function fetchChildWrongQuestions(wxApi, serverUrl, params) {
   });
 }
 
+async function fetchChildWrongQuestionLibrary(wxApi, serverUrl, params) {
+  return requestJson(wxApi, {
+    url: `${serverUrl}/wechat/parent/children/${params.studentId}/wrong-question-library`,
+    method: 'GET',
+    data: {
+      openId: params.openId,
+    },
+  });
+}
+
 async function detectParentWrongQuestionBoxes(wxApi, serverUrl, params) {
   const payload = await uploadFile(wxApi, {
     url: `${serverUrl}/wechat/parent/wrong-question-boxes`,
@@ -475,4 +485,5 @@ module.exports = {
   submitParentWrongQuestion,
   detectParentWrongQuestionBoxes,
   fetchChildWrongQuestions,
+  fetchChildWrongQuestionLibrary,
 };

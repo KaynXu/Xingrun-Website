@@ -191,6 +191,46 @@ test('parent bindings bridge forwards the canonical openid to the website and re
   }
 });
 
+test('parent wrong-question-library bridge forwards the canonical openid to the website', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const websiteCalls: Array<{ url: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.startsWith('https://website.example')) {
+      websiteCalls.push({ url, init });
+      if (url.includes('/api/wechat/children/101/wrong-question-library?')) {
+        return createJsonResponse({
+          student_id: 101,
+          pdf_url: '/api/wechat/student-libraries/101',
+          updated_at: '2026-04-15 12:00:00',
+          total_items: 2,
+        });
+      }
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/children/101/wrong-question-library?openId=openid-parent-1`);
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.pdf_url, '/api/wechat/student-libraries/101');
+    assert.equal(payload.total_items, 2);
+    assert.equal(websiteCalls.length, 1);
+    assert.equal(websiteCalls[0]?.url, 'https://website.example/api/wechat/children/101/wrong-question-library?open_id=openid-parent-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('parent upload bridge stores the file locally and forwards the generated image url to the website', async (t) => {
   const originalFetch = globalThis.fetch;
   const uploadedFiles: string[] = [];
