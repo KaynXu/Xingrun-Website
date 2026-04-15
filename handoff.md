@@ -6,8 +6,10 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-15 本地学生错题库 PDF 已收口旧备注残留：`wrong_question_submissions` 新库与旧库迁移都不再保留 `parent_note / teacher_comment` 两列；本地微信错题 detail/review 序列化也不再输出这两个字段；PDF 顶部标题现在改成 `学生名 错题库｜任课老师：...`，每题正文已删除单独的老师行，以及 `家长备注 / 老师备注` 两段。
+- 2026-04-15 小程序错题本页已接上学生级 PDF 预览：`miniprogram/miniprogram/pages/parent-wrongbook/index.*` 现在会在页头展示 `查看 PDF`，并在每张错题卡上显示 `question_text`；同时 bridge 已补发 `GET /wechat/parent/children/<student_id>/wrong-question-library`，当前公网探测已不再返回 `Cannot GET ...`，而是正常转成 JSON 业务响应。
 - 2026-04-15 本地网站端已补回家长上传 `AI 框选` 路由 `/api/wechat/wrong-question-boxes`，并在 `smart_wrong_questions.detect_wechat_wrong_question_boxes()` 里固定服务端提示词：当前会明确要求“只框题目区域，忽略孩子手写字迹、演算、答案、批改痕迹”，不改小程序请求协议；本地回归已覆盖 route 与 N1N prompt 组装。
-- 2026-04-15 家长错题上传页已补上拍照方向预处理：`miniprogram/miniprogram/pages/parent-upload/index.js` 现在会在选图后先读 `wx.getImageInfo().orientation`，对 `left / right / down` 等非 `up` 图片先用隐藏 canvas 旋正，再进入后续框选、裁切和统一提交；对应 orientation 计算已下沉到 `miniprogram/miniprogram/pages/parent-upload/model.js`，并补了回归测试。
+- 2026-04-15 家长错题上传页已继续补修拍照链路：`miniprogram/miniprogram/pages/parent-upload/index.js` 现在拍照改为请求 `original` 原图，避免压缩图吞掉 EXIF 方向信息；选图后仍会先读 `wx.getImageInfo().orientation`，对 `left / right / down` 等非 `up` 图片先用隐藏 canvas 旋正，再进入后续框选、裁切和统一提交；这轮还补了“继续拍照 / 继续选图”后自动切到新加那张图，避免框选区还停在旧图，并新增了页面级 `顺时针旋转` 兜底按钮。自动判别现在还会在控制台打印 `orientation / width / height / needsNormalization`，方便继续核对真机返回值。对应 orientation/选图辅助逻辑已下沉到 `miniprogram/miniprogram/pages/parent-upload/model.js`，并补了回归测试。
 - 2026-04-15 已补发小程序家长错题本 bridge：正式环境 `https://xingrun.online/wechat/parent/children/<student_id>/wrong-questions` 不再返回 `Cannot GET ...`，当前公网已能命中 bridge 并转发到网站端；用 `test-openid` 探测时现返回 JSON 业务错误 `parent wechat account not found`，说明“查看错题本”此前的 blocker 是线上 bridge 漏发了这条 GET 路由，不是网站 `/api/wechat/children/<student_id>/wrong-questions` 缺失。
 - 2026-04-14 已收口咨询批量整理的跟进状态越界问题：`ai_processor.py` 里的咨询助手提示词已明确锁定 `待邀约 / 跟进中 / 已报班 / 已劝退` 4 个可用状态，并明确禁止输出 `待开课缴费`、`已试听` 这类自造状态；`lesson_manager.normalize_consultation_batch_parse_result()` 现在也会自动丢弃非法 `follow_up_status` 并返回 warning，避免脏草稿继续进入前端确认流。
 - 2026-04-14 已落地“咨询记录”页备注展示：`follow_up_note` 不单独开列，直接并入现有“咨询科目 / 来源渠道”信息块；桌面端与移动端都按统一信息高度预算展示，并且明确禁止横向滚动、悬浮展开或不等高列表。
@@ -57,8 +59,10 @@
 - 最近一次相关产品代码提交并已部署生产的是 `5ff8adb Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是拿一个真实学生错题库 PDF 手工看一遍，确认顶部标题里的老师名、每题正文节奏、分页和几何题图片在真实浏览器/打印预览里都符合老师预期。
+- 最值得继续做的是把新的小程序包上传到微信开发者工具 / 真机，实际点一次错题本页顶部 `查看 PDF`，确认 `wx.downloadFile + wx.openDocument` 在真机里能正常打开网站 PDF。
 - 最值得继续做的是把这轮本地恢复的 `/api/wechat/wrong-question-boxes` 和固定 prompt 按正常 release 流程发到线上，再用真机拿一张“有孩子手写痕迹的整页作业”实测一次 AI 框选，看是否明显减少误框答案区和草稿区。
-- 最值得继续做的是拿真机在家长上传页拍一张横屏照片和一张竖屏照片各走一遍，确认预览、框选和最终提交到老师端的图片方向一致，不会出现“预览已转正、裁切仍然 sideways”。
+- 最值得继续做的是拿真机在家长上传页拍一张横屏照片和一张竖屏照片各走一遍，再追加拍一张新图，确认四件事都成立：控制台里的 orientation 返回值合理、预览方向正确、框选区默认切到新拍那张、最终提交到老师端的图片方向一致；如果某些真机仍回 `orientation='up'` 但画面横着，优先走页面里的 `顺时针旋转` 兜底。
 - 最值得继续做的是拿一个真实已绑定家长账号在小程序里手工点一次 `查看错题本`，确认现在展示的是孩子错题列表或业务空态，而不是路由缺失兜底文案。
 - 如果继续咨询记录这一项，最值得做的是用一段真实批量整理文案在页面里手工跑一次 `AI 批量整理`，确认非法状态会被 warning 掉、草稿里只保留合法字段，避免只靠单测判断 UI 呈现。
 - 最值得继续做的是打开真实咨询记录页做一次人工 smoke check，确认有备注和无备注的记录在桌面端、移动端下都保持统一节奏，并确认备注没有把操作区和状态 badge 挤乱。
@@ -77,7 +81,7 @@
 
 ### 风险
 - 这轮 `AI 框选` 提示词优化目前只在本地代码和单测里验证过，还没在线上真机图片上确认收益；如果 provider 实际对提示词不敏感，后续仍可能需要继续叠加坐标过滤或示例图策略。
-- 当前拍照旋正依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；单测已覆盖主路径，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致。
+- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致，且原图会让 AI 框选阶段的单张本地图片更大。
 - 当前这次只收口了咨询 `AI 批量整理` 链路；常规 `/api/consultations` create/update 仍没有在后端对白名单状态做硬校验，现阶段还是主要依赖前端下拉不让人手工写出非法状态。
 - 咨询记录页备注展示方案当前成立的前提是“备注通常不会太长”；如果后续真实数据出现长段落，仍需要单独决定是否加录入约束或二级查看。
 - 当前 grainient 背景是本地复刻版，不是直接复用 reactbits 原实现；视觉方向已经对齐，但如果后面要追求更接近原站的 shader 波纹细节，还需要再单独设计一轮。
@@ -87,7 +91,7 @@
 - 当前最大风险不是功能坏掉，而是“语义看起来像统一了，其实没有”。
 - `monthly` 现在已经改成“PDF 成功后再扣费”，但单节 `review plan` worker 仍是 AI 成功后立即扣费；如果后面也要求单节 PDF 失败不扣费，这一块语义还没有跟上。
 - `wechat_mp` 和 `downstream` 仍是两套字段语义；在真正统一后端契约前，不要只在共享前端类型上继续顺手收口字段。
-- `wrong_question_submissions` 表里的兼容列 `teacher_comment` / `status` 还在，所以后续维护时仍有误写回旧字段的风险。
+- `wrong_question_submissions` 里这轮已经清掉 `parent_note / teacher_comment` 两个旧备注列，但 `wechat_mp` 和 `downstream` 仍是双语义模型；后续如果继续收口共享前端类型或代理 payload，仍要先确认不要误伤 downstream 契约。
 - `smart_wrong_questions.py` 下游代理链还在，运行时仍是“本地微信错题 + downstream 服务”双来源模型。
 - “删除本题” 这一轮如果前端没严格限制到 `wechat_mp`，就有误删 downstream 语义或误调用本地删除接口的风险。
 - 当前 `删除本题` 仍是网站本地微信错题专属能力；如果后续要给 downstream 或微信端接同名按钮，必须继续保持“本地真删 / 下游自实现”边界，不要共用错误接口。

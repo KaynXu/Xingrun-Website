@@ -401,9 +401,16 @@ def generate_student_wrong_question_library_pdf(
         title=f"{student_name} 错题库",
     )
 
+    teacher_names = [
+        str(record.get("teacher_display_name") or "").strip()
+        for record in records
+        if str(record.get("teacher_display_name") or "").strip()
+    ]
+    teacher_title = "、".join(dict.fromkeys(teacher_names)) or "未分配老师"
+
     story = [
         _spacer(0.4),
-        Paragraph(f"{html.escape(student_name)} 错题库", styles["title"]),
+        Paragraph(f"{html.escape(student_name)} 错题库｜任课老师：{html.escape(teacher_title)}", styles["title"]),
         Paragraph(f"班级：{html.escape(class_name)}", styles["meta"]),
         Paragraph(f"错题总数：{len(records)}", styles["meta"]),
         HRFlowable(width=CONTENT_W, thickness=1.2, color=C_DAY1, spaceAfter=10),
@@ -414,7 +421,6 @@ def generate_student_wrong_question_library_pdf(
             story.append(PageBreak())
         story.append(Paragraph(f"第 {index} 题", styles["section"]))
         story.append(Paragraph(f"上传时间：{html.escape(str(record.get('created_at') or ''))}", styles["body"]))
-        story.append(Paragraph(f"老师：{html.escape(str(record.get('teacher_display_name') or ''))}", styles["body"]))
         if record.get("is_geometry"):
             story.append(Paragraph("题目内容：几何题按图片入库", styles["body"]))
             story.append(_spacer(0.15))
@@ -427,8 +433,6 @@ def generate_student_wrong_question_library_pdf(
                     styles["body"],
                 )
             )
-        story.append(Paragraph(f"家长备注：{html.escape(str(record.get('parent_note') or '无'))}", styles["body"]))
-        story.append(Paragraph(f"老师备注：{html.escape(str(record.get('teacher_comment') or '无'))}", styles["body"]))
 
     doc.build(story)
     return str(destination)
@@ -959,4 +963,3 @@ def generate_weekly_pdf(lessons: list, class_info: dict,
 
     doc.build(story)
     return str(Path(output_path).resolve())
-

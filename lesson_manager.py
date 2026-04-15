@@ -1096,6 +1096,89 @@ def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
         conn.execute(f"DROP TABLE {table}")
 
 
+def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sqlite3.Connection) -> None:
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()]
+    if "parent_note" not in columns and "teacher_comment" not in columns:
+        return
+
+    copy_columns = [
+        column
+        for column in [
+            "id",
+            "organization_id",
+            "source",
+            "parent_wechat_account_id",
+            "binding_id",
+            "class_id",
+            "student_id",
+            "teacher_user_id",
+            "image_url",
+            "child_raw_reason_text",
+            "child_reason_input_mode",
+            "primary_error_type",
+            "secondary_error_summary",
+            "archive_status",
+            "archived_at",
+            "status",
+            "recognition_status",
+            "is_geometry",
+            "question_text",
+            "question_text_edited",
+            "question_text_source",
+            "recognition_error",
+            "student_library_pdf_path",
+            "created_at",
+            "updated_at",
+        ]
+        if column in columns
+    ]
+
+    conn.execute(
+        """
+        ALTER TABLE wrong_question_submissions
+        RENAME TO wrong_question_submissions__legacy_feedback
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE wrong_question_submissions (
+            id                        TEXT PRIMARY KEY,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            source                    TEXT NOT NULL DEFAULT 'wechat_mp',
+            parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            binding_id                INTEGER NOT NULL REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
+            class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER NOT NULL REFERENCES students(id),
+            teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
+            image_url                 TEXT NOT NULL,
+            child_raw_reason_text     TEXT NOT NULL DEFAULT '',
+            child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
+            primary_error_type        TEXT NOT NULL DEFAULT '',
+            secondary_error_summary   TEXT NOT NULL DEFAULT '',
+            archive_status            TEXT NOT NULL DEFAULT 'active',
+            archived_at               TEXT DEFAULT '',
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            recognition_status        TEXT NOT NULL DEFAULT 'pending',
+            is_geometry               INTEGER NOT NULL DEFAULT 0,
+            question_text             TEXT NOT NULL DEFAULT '',
+            question_text_edited      INTEGER NOT NULL DEFAULT 0,
+            question_text_source      TEXT NOT NULL DEFAULT 'ai',
+            recognition_error         TEXT NOT NULL DEFAULT '',
+            student_library_pdf_path  TEXT NOT NULL DEFAULT '',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        )
+        """
+    )
+    if copy_columns:
+        quoted_columns = ", ".join(f'"{column}"' for column in copy_columns)
+        conn.execute(
+            f'INSERT INTO wrong_question_submissions ({quoted_columns}) '
+            f'SELECT {quoted_columns} FROM "wrong_question_submissions__legacy_feedback"'
+        )
+    conn.execute("DROP TABLE wrong_question_submissions__legacy_feedback")
+
+
 def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, str | int]:
     teacher_directory = _get_consultation_teacher_directory()
     serialized = _serialize_consultation_row(row, teacher_directory)
@@ -1611,14 +1694,12 @@ def init_db():
             student_id                INTEGER NOT NULL REFERENCES students(id),
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
             image_url                 TEXT NOT NULL,
-            parent_note               TEXT NOT NULL DEFAULT '',
             child_raw_reason_text     TEXT NOT NULL DEFAULT '',
             child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
             primary_error_type        TEXT NOT NULL DEFAULT '',
             secondary_error_summary   TEXT NOT NULL DEFAULT '',
             archive_status            TEXT NOT NULL DEFAULT 'active',
             archived_at               TEXT DEFAULT '',
-            teacher_comment           TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
             recognition_status        TEXT NOT NULL DEFAULT 'pending',
             is_geometry               INTEGER NOT NULL DEFAULT 0,
@@ -1850,6 +1931,20 @@ def init_db():
         _backfill_student_organization_scope(conn, default_org["id"])
         _backfill_class_feedback_task_organization_scope(conn, default_org["id"])
         _ensure_class_feedback_task_integrity_guards(conn)
+        _ensure_column(conn, "wrong_question_submissions", "child_raw_reason_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
+        _ensure_column(conn, "wrong_question_submissions", "primary_error_type", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
+        _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "recognition_status", "TEXT NOT NULL DEFAULT 'pending'")
+        _ensure_column(conn, "wrong_question_submissions", "is_geometry", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "question_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "question_text_edited", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
+        _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn)
         conn.executescript(
             """
             CREATE INDEX IF NOT EXISTS idx_students_organization_name
@@ -1874,19 +1969,6 @@ def init_db():
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
-        _ensure_column(conn, "wrong_question_submissions", "child_raw_reason_text", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
-        _ensure_column(conn, "wrong_question_submissions", "primary_error_type", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
-        _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
-        _ensure_column(conn, "wrong_question_submissions", "recognition_status", "TEXT NOT NULL DEFAULT 'pending'")
-        _ensure_column(conn, "wrong_question_submissions", "is_geometry", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "wrong_question_submissions", "question_text", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "wrong_question_submissions", "question_text_edited", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
-        _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
         _drop_legacy_table_if_exists(conn, "questions")
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -4835,7 +4917,6 @@ def create_wechat_wrong_question_submission(
     *,
     binding_id: int,
     image_url: str,
-    parent_note: str = "",
     child_raw_reason_text: str = "",
     child_reason_input_mode: str = "text",
     primary_error_type: str = "",
@@ -4871,12 +4952,12 @@ def create_wechat_wrong_question_submission(
             """
             INSERT INTO wrong_question_submissions (
                 id, organization_id, source, parent_wechat_account_id, binding_id,
-                class_id, student_id, teacher_user_id, image_url, parent_note,
+                class_id, student_id, teacher_user_id, image_url,
                 child_raw_reason_text, child_reason_input_mode,
                 primary_error_type, secondary_error_summary, archive_status, status,
                 recognition_status, is_geometry, question_text, question_text_edited,
                 question_text_source, recognition_error, student_library_pdf_path
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 record_id,
@@ -4887,7 +4968,6 @@ def create_wechat_wrong_question_submission(
                 binding_row["student_id"],
                 binding_row["teacher_user_id"],
                 normalized_image_url,
-                (parent_note or "").strip(),
                 (child_raw_reason_text or "").strip(),
                 normalized_reason_input_mode,
                 (primary_error_type or "").strip(),
@@ -4942,6 +5022,8 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         return None
 
     payload = dict(row)
+    payload.pop("parent_note", None)
+    payload.pop("teacher_comment", None)
     payload["class_display_name"] = row["class_display_name"]
     payload["class_name_snapshot"] = row["class_display_name"]
     payload["student_name"] = row["student_name"]

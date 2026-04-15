@@ -2627,7 +2627,6 @@ def api_wechat_wrong_questions_create():
         record = create_wechat_wrong_question_submission(
             binding_id=binding_id,
             image_url=image_url,
-            parent_note="",
             child_raw_reason_text=child_raw_reason_text,
             child_reason_input_mode=child_reason_input_mode,
             primary_error_type=primary_error_type,

@@ -41,8 +41,6 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
                 "is_geometry": 0,
                 "question_text": "计算 $2+3\\times4$ 的结果。",
                 "image_url": "https://files.example.com/question-1.png",
-                "parent_note": "总是忘记先乘后加",
-                "teacher_comment": "下节课先复盘运算顺序",
             }
         ]
         output_path = self.base / "student-1.pdf"
@@ -68,8 +66,6 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
                 "is_geometry": 1,
                 "question_text": "",
                 "image_url": "https://files.example.com/geometry-1.png",
-                "parent_note": "辅助线总画错",
-                "teacher_comment": "先看图再讲角度关系",
             }
         ]
         output_path = self.base / "geometry-student-1.pdf"
@@ -99,8 +95,6 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
                 "is_geometry": 0,
                 "question_text": "计算 18÷3×2 的结果。",
                 "image_url": "https://files.example.com/non-geometry-1.png",
-                "parent_note": "总把顺序算反",
-                "teacher_comment": "先做同级运算复盘",
             }
         ]
         output_path = self.base / "non-geometry-student-1.pdf"
@@ -117,6 +111,44 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
         urlopen.assert_not_called()
+
+    def test_generate_student_wrong_question_library_pdf_puts_teacher_only_in_document_title(self):
+        records = [
+            {
+                "student_name": "Alice",
+                "class_display_name": "六年级 1 班",
+                "teacher_display_name": "平台管理员",
+                "created_at": "2026-04-09 10:00:00",
+                "is_geometry": 0,
+                "question_text": "计算 18÷3×2 的结果。",
+                "image_url": "https://files.example.com/non-geometry-1.png",
+            }
+        ]
+        output_path = self.base / "teacher-in-title-student-1.pdf"
+        captured_story = []
+
+        def capture_build(_doc, story, *args, **kwargs):
+            captured_story.extend(story)
+
+        with patch.object(pdf_engine.SimpleDocTemplate, "build", autospec=True, side_effect=capture_build):
+            pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                records=records,
+                output_path=str(output_path),
+            )
+
+        paragraph_texts = [
+            item.getPlainText()
+            for item in captured_story
+            if isinstance(item, Paragraph)
+        ]
+
+        self.assertIn("Alice 错题库｜任课老师：平台管理员", paragraph_texts)
+        self.assertIn("第 1 题", paragraph_texts)
+        self.assertFalse(any(text.startswith("老师：") for text in paragraph_texts))
+        self.assertFalse(any(text.startswith("家长备注：") for text in paragraph_texts))
+        self.assertFalse(any(text.startswith("老师备注：") for text in paragraph_texts))
 
     def test_build_wrong_question_geometry_image_card_uses_fixed_box_and_caption(self):
         with patch("urllib.request.urlopen") as urlopen:
