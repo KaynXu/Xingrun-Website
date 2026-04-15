@@ -335,7 +335,8 @@ async function main() {
 
   const payload = JSON.parse(await readFile(inputPath, 'utf8'));
   const documentMarkup = await buildDocumentMarkup(payload);
-  const browser = await chromium.launch();
+  const executablePath = process.env.XR_PLAYWRIGHT_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
+  const browser = await chromium.launch(executablePath ? { executablePath } : undefined);
 
   try {
     const page = await browser.newPage();

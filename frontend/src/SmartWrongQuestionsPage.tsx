@@ -34,6 +34,7 @@ import {
   type WrongQuestionReviewDraft,
   type WrongQuestionSummary,
 } from './smartWrongQuestions';
+import { buildWrongQuestionLatexPreviewModel } from './wrongQuestionLatex.js';
 
 type SmartWrongQuestionsPageProps = {
   currentUser: {
@@ -246,6 +247,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [activeNotebookClassId, records, selectedStudentName, usesStudentNotebook]);
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
+  const selectedQuestionTextPreview = useMemo(() => {
+    if (!selectedRecord || !selectedDraft || selectedRecord.source !== 'wechat_mp' || selectedRecord.isGeometry) {
+      return null;
+    }
+
+    return buildWrongQuestionLatexPreviewModel(selectedDraft.questionText ?? '');
+  }, [selectedDraft, selectedRecord]);
   const finalErrorTypeOptions = useMemo(() => {
     return Array.from(new Set([
       ...WRONG_QUESTION_ERROR_TYPE_OPTIONS,
@@ -315,7 +323,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     void (async () => {
       try {
         const [classItems, userItems] = await Promise.all([
-          apiFetch<Array<{ id: number; name: string; subject?: string }>>('/api/classes'),
+          apiFetch<Array<{ id: number; name: string; subject?: string; teacher_user_id?: number | null }>>('/api/classes'),
           hasStaffScope ? apiFetch<Array<{ id: number; name: string }>>('/api/admin/users') : Promise.resolve([]),
         ]);
 
@@ -866,16 +874,50 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           </div>
 
           {selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
-            <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">题目文本</span>
-              <textarea
-                value={selectedDraft.questionText ?? ''}
-                onChange={(event) => handleDraftChange('questionText', event.target.value)}
-                onInput={(event) => handleDraftChange('questionText', (event.target as HTMLTextAreaElement).value)}
-                className={`${workspaceFieldClass} min-h-28 resize-y`}
-                placeholder="填写可直接进入错题库 PDF 的题目文本"
-              />
-            </label>
+            <div className="space-y-3 text-sm">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">题目文本</span>
+                <textarea
+                  value={selectedDraft.questionText ?? ''}
+                  onChange={(event) => handleDraftChange('questionText', event.target.value)}
+                  onInput={(event) => handleDraftChange('questionText', (event.target as HTMLTextAreaElement).value)}
+                  className={`${workspaceFieldClass} min-h-28 resize-y`}
+                  placeholder="填写可直接进入错题库 PDF 的题目文本"
+                />
+              </label>
+              <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">
+                正文直接写，公式片段用 <code>$...$</code> 或 <code>$$...$$</code>。保存不会拦截公式错误，但下面会提示渲染失败的位置。
+              </p>
+              <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">公式预览</span>
+                  {selectedQuestionTextPreview && selectedQuestionTextPreview.errors.length > 0 ? (
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
+                      {selectedQuestionTextPreview.errors.length} 处渲染失败
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                      预览正常
+                    </span>
+                  )}
+                </div>
+                <div
+                  className="xr-latex-preview mt-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-[15px] text-slate-700 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100"
+                  dangerouslySetInnerHTML={{
+                    __html: selectedQuestionTextPreview?.html || '<span class="xr-latex-empty">暂无题目文本</span>',
+                  }}
+                />
+                {selectedQuestionTextPreview && selectedQuestionTextPreview.errors.length > 0 ? (
+                  <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs leading-6 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
+                    {selectedQuestionTextPreview.errors.map((error) => (
+                      <div key={`${error.type}-${error.source}`}>
+                        {error.message}：{error.source}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           )}
 
           <label className="flex items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-200">
