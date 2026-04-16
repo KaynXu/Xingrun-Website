@@ -30,7 +30,7 @@
           <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
           <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
         </view>
-        <text wx:if="{{item.questionText}}" class="item-question">{{item.questionText}}</text>
+        <text wx:if="{{item.questionPreviewText}}" class="item-question">{{item.questionPreviewText}}</text>
         <text wx:if="{{item.errorSummary}}" class="item-summary">{{item.errorSummary}}</text>
         <text class="item-date">{{item.dateStr}}</text>
       </view>

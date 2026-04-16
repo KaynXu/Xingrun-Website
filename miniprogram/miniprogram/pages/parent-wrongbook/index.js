@@ -4,6 +4,7 @@ const {
   fetchChildWrongQuestionLibrary,
   fetchChildWrongQuestions,
 } = require('../../utils/parentApi');
+const { normalizeWrongQuestionLatexPreviewText } = require('./latex-preview');
 
 Page({
   data: {
@@ -86,7 +87,7 @@ function normalizeItem(item) {
   return {
     id: String(raw.id || ''),
     imageUrl: String(raw.image_url || ''),
-    questionText: String(raw.question_text || '').trim(),
+    questionPreviewText: normalizeWrongQuestionLatexPreviewText(String(raw.question_text || '').trim()),
     errorType: String(analysis.selected_error_type || raw.primary_error_type || ''),
     errorSummary: String(analysis.student_note || raw.secondary_error_summary || ''),
     isMastered: raw.is_mastered === true || raw.archive_status === 'archived',

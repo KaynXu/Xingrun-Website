@@ -1,7 +1,9 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import ai_processor
@@ -47,7 +49,61 @@ class _FakeClient:
         )()
 
 
+class _FakeUrlopenResponse:
+    def __init__(self, payload: bytes):
+        self.payload = payload
+
+    def read(self):
+        return self.payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeSegment:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _FakeWhisperModel:
+    init_calls: list[dict] = []
+    transcribe_calls: list[dict] = []
+    transcribe_results: list[tuple[object, object]] = []
+
+    def __init__(self, model_size_or_path: str, device: str, compute_type: str):
+        self.__class__.init_calls.append(
+            {
+                "model_size_or_path": model_size_or_path,
+                "device": device,
+                "compute_type": compute_type,
+            }
+        )
+
+    def transcribe(self, audio_path: str, **kwargs):
+        self.__class__.transcribe_calls.append(
+            {
+                "audio_path": audio_path,
+                "kwargs": kwargs,
+            }
+        )
+        if self.__class__.transcribe_results:
+            return self.__class__.transcribe_results.pop(0)
+        return [_FakeSegment(" 我把单位换算漏掉了 "), _FakeSegment(" ")], type("Info", (), {})()
+
+
 class AiProcessorPromptTestCase(unittest.TestCase):
+    def setUp(self):
+        ai_processor._LOCAL_WHISPER_MODEL = None
+        _FakeWhisperModel.init_calls = []
+        _FakeWhisperModel.transcribe_calls = []
+        _FakeWhisperModel.transcribe_results = []
+
+    def tearDown(self):
+        ai_processor._LOCAL_WHISPER_MODEL = None
+
     def test_ai_processor_imports_without_syntaxwarning(self):
         result = subprocess.run(
             [
@@ -120,6 +176,70 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             )
 
         self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
+
+    def test_transcribe_child_reason_audio_uses_local_faster_whisper_auto_detect_first(self):
+        fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
+
+        with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
+            "urllib.request.urlopen",
+            return_value=_FakeUrlopenResponse(b"fake-audio"),
+        ):
+            payload = ai_processor.transcribe_child_reason_audio("https://files.example.com/reason.m4a")
+
+        self.assertEqual(payload, {"transcript_text": "我把单位换算漏掉了"})
+        self.assertEqual(
+            _FakeWhisperModel.init_calls,
+            [
+                {
+                    "model_size_or_path": "base",
+                    "device": "cpu",
+                    "compute_type": "int8",
+                }
+            ],
+        )
+        self.assertEqual(len(_FakeWhisperModel.transcribe_calls), 1)
+        self.assertNotIn("language", _FakeWhisperModel.transcribe_calls[0]["kwargs"])
+        self.assertEqual(_FakeWhisperModel.transcribe_calls[0]["kwargs"]["task"], "transcribe")
+        self.assertTrue(_FakeWhisperModel.transcribe_calls[0]["audio_path"].endswith(".m4a"))
+
+    def test_transcribe_child_reason_audio_falls_back_to_chinese_when_auto_detect_is_empty(self):
+        fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
+        _FakeWhisperModel.transcribe_results = [
+            ([_FakeSegment("   ")], type("Info", (), {})()),
+            ([_FakeSegment("题目里有 x 加 y")], type("Info", (), {})()),
+        ]
+
+        with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
+            "urllib.request.urlopen",
+            return_value=_FakeUrlopenResponse(b"fake-audio"),
+        ):
+            payload = ai_processor.transcribe_child_reason_audio("https://files.example.com/reason.m4a")
+
+        self.assertEqual(payload, {"transcript_text": "题目里有 x 加 y"})
+        self.assertEqual(len(_FakeWhisperModel.transcribe_calls), 2)
+        self.assertNotIn("language", _FakeWhisperModel.transcribe_calls[0]["kwargs"])
+        self.assertEqual(_FakeWhisperModel.transcribe_calls[1]["kwargs"]["language"], "zh")
+        self.assertEqual(_FakeWhisperModel.transcribe_calls[1]["kwargs"]["task"], "transcribe")
+
+    def test_transcribe_audio_returns_local_usage_payload(self):
+        fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "lesson.m4a"
+            audio_path.write_bytes(b"fake-audio")
+
+            with patch.dict(sys.modules, {"faster_whisper": fake_module}):
+                transcription, usage = ai_processor.transcribe_audio(str(audio_path), include_usage=True)
+
+        self.assertEqual(transcription, "我把单位换算漏掉了")
+        self.assertEqual(
+            usage,
+            {
+                "provider": "local",
+                "model": "faster-whisper-base",
+                "input_tokens": 0,
+                "output_tokens": 0,
+            },
+        )
 
 
 if __name__ == "__main__":

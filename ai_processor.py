@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 AI 处理模块：
-  - 音频转录（OpenAI Whisper）
+  - 音频转录（faster-whisper）
   - 课堂总结解析 → 结构化复习计划 JSON（GPT-4o）
   - 月度复习计划聚合
 """
@@ -11,6 +11,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -93,17 +94,65 @@ def _get_structured_generation_model() -> str:
     return str(_get_chat_model() or "gpt-4o")
 
 
-def _get_whisper_client():
-    """音频转录专用客户端（仅支持 OpenAI Whisper）。"""
-    from openai import OpenAI
-    cfg = _load_config()
-    key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
-    if not key:
-        raise RuntimeError(
-            "音频转录功能需要 OpenAI API Key（Whisper）。\n"
-            "请在设置页面配置 OpenAI API Key。"
+_LOCAL_WHISPER_MODEL = None
+_LOCAL_WHISPER_MODEL_LOCK = threading.Lock()
+_LOCAL_WHISPER_MODEL_NAME = "base"
+
+
+def _get_local_whisper_model():
+    global _LOCAL_WHISPER_MODEL
+    if _LOCAL_WHISPER_MODEL is not None:
+        return _LOCAL_WHISPER_MODEL
+
+    with _LOCAL_WHISPER_MODEL_LOCK:
+        if _LOCAL_WHISPER_MODEL is not None:
+            return _LOCAL_WHISPER_MODEL
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
+            raise RuntimeError("未安装 faster-whisper，请先安装最新依赖。") from exc
+        _LOCAL_WHISPER_MODEL = WhisperModel(
+            _LOCAL_WHISPER_MODEL_NAME,
+            device="cpu",
+            compute_type="int8",
         )
-    return OpenAI(api_key=key)
+        return _LOCAL_WHISPER_MODEL
+
+
+def _local_whisper_usage_dict() -> dict:
+    return {
+        "provider": "local",
+        "model": f"faster-whisper-{_LOCAL_WHISPER_MODEL_NAME}",
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
+
+
+def _collect_local_transcript_text(segments) -> str:
+    return "".join(str(getattr(segment, "text", "") or "") for segment in segments).strip()
+
+
+def _transcribe_audio_path_locally(audio_path: str) -> str:
+    model = _get_local_whisper_model()
+    segments, _ = model.transcribe(
+        str(audio_path),
+        task="transcribe",
+        vad_filter=True,
+    )
+    transcript_text = _collect_local_transcript_text(segments)
+    if transcript_text:
+        return transcript_text
+
+    segments, _ = model.transcribe(
+        str(audio_path),
+        language="zh",
+        task="transcribe",
+        vad_filter=True,
+    )
+    transcript_text = _collect_local_transcript_text(segments)
+    if not transcript_text:
+        raise ValueError("audio transcription failed")
+    return transcript_text
 
 
 WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
@@ -237,7 +286,6 @@ def transcribe_child_reason_audio(audio_url: str) -> dict:
     if not normalized_audio_url:
         raise ValueError("audio_url is required")
 
-    client = _get_whisper_client()
     audio_path = urllib.parse.urlparse(normalized_audio_url).path
     audio_suffix = Path(audio_path).suffix or ".m4a"
 
@@ -247,17 +295,7 @@ def transcribe_child_reason_audio(audio_url: str) -> dict:
     with tempfile.NamedTemporaryFile(suffix=audio_suffix) as temp_file:
         temp_file.write(audio_bytes)
         temp_file.flush()
-        temp_file.seek(0)
-        transcription = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=temp_file,
-        )
-
-    transcript_text = str(getattr(transcription, "text", "") or "").strip()
-    if not transcript_text and isinstance(transcription, dict):
-        transcript_text = str(transcription.get("text") or "").strip()
-    if not transcript_text:
-        raise ValueError("audio transcription failed")
+        transcript_text = _transcribe_audio_path_locally(temp_file.name)
 
     return {"transcript_text": transcript_text}
 
@@ -520,8 +558,7 @@ CONSULTATION_BATCH_SYSTEM_PROMPT = f"""你是咨询记录整理助手。
 
 # ─── 音频转录 ──────────────────────────────────────────────────────────────────
 def transcribe_audio(audio_path: str, *, include_usage: bool = False):
-    """使用 OpenAI Whisper 转录音频文件，返回转录文本。"""
-    client = _get_whisper_client()
+    """使用本地 faster-whisper 转录音频文件，返回转录文本。"""
     audio_path = Path(audio_path)
     if not audio_path.exists():
         raise FileNotFoundError(f"音频文件不存在：{audio_path}")
@@ -531,21 +568,10 @@ def transcribe_audio(audio_path: str, *, include_usage: bool = False):
         raise ValueError(f"不支持的音频格式：{audio_path.suffix}（支持：{', '.join(supported)}）")
     
     print(f"正在转录音频：{audio_path.name} ...")
-    with open(audio_path, "rb") as f:
-        response = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=f,
-            language="zh",
-            response_format="text",
-        )
+    transcription = _transcribe_audio_path_locally(str(audio_path))
     print("转录完成。")
-    transcription = str(response)
     if include_usage:
-        return transcription, _usage_dict(
-            response,
-            provider="openai",
-            model_fallback="whisper-1",
-        )
+        return transcription, _local_whisper_usage_dict()
     return transcription
 
 

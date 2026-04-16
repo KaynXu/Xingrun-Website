@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-16 小程序家长上传录音转文字已不再依赖 OpenAI Whisper：`ai_processor.py` 的 `transcribe_child_reason_audio()` 和通用 `transcribe_audio()` 现统一改为本地 `faster-whisper`，当前固定 `base + cpu + int8`，先自动识别语言，只有自动识别没出有效文本时才回退 `zh`，`app.py` 的音频转录 usage fallback 也已改成 `local / faster-whisper-base`；这次只替换转录层，不改后续错因归类 provider 逻辑，因此当前仍需要现有聊天类 AI provider key 来做错因归类和复习计划生成。
 - 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
 - 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”和“题干里混入裸 LaTeX 片段”的修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；同时网页预览与学生错题库 PDF 的浏览器渲染现在也会把未包进 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 这类裸公式片段转成可读文本，避免导出里继续漏成 `mathbbR / ldots / frac` 之类坏形态。现有历史错题记录即使库里已经存成这类文本，渲染时也会补修，不必先做库迁移。
@@ -39,7 +40,7 @@
 - notebook 弹窗右侧顶部重复的 `错题档案` 区和下面两块切换小卡片已删除，只保留真正的详情与编辑区。
 - 微信错题详情区已补上错题库 PDF 入口；当记录带有 `student_library_pdf_path` 时，会直接显示 `预览 PDF / 下载 PDF`，并自动带当前登录 token。
 - 本轮已再次确认：错题库 PDF 不是占位入口，当前后端已实现学生错题库 PDF 重建与下载接口，前端也已接通 `预览 PDF / 下载 PDF`。
-- 本轮排查补充确认：前端 PDF 按钮不是全局常驻入口，当前仅在 `source='wechat_mp'` 且记录带有 `student_library_pdf_path` 的错题详情卡片里显示。
+- 2026-04-16 网站端智能错题 notebook 弹窗已继续收口：左侧目录现在按上传时间正序显示，题号与上传顺序一致；右侧头部已删掉 `映射状态 / 未标注科目`，并把 `预览 PDF / 下载 PDF` 上提到标题旁边，打开后先看到题目文本编辑区，不再先压一整块“孩子上传记录”卡片。
 - 本轮已完成 `删除本题` 设计收口：网站端将只对本地 `wechat_mp` 错题开放真删除，删除后必须先删旧学生错题库 PDF，再按剩余有效题决定重建或清空，避免磁盘残留。
 - 本轮已落地：网站端微信错题详情支持 `删除本题`；点击后会真删除本地 `wechat_mp` 记录，先删旧学生错题库 PDF，再按剩余有效题决定重建或清空，前端会自动跳到同学生下一题；若没有下一题则收起右侧详情区。
 - 微信错题里的 `AI 归类错因` 已改成老师可编辑下拉；打开记录时默认带入当前 AI 分类，老师调整后会随现有保存接口一起提交。
@@ -86,7 +87,7 @@
 - 如果继续发版，当前可以直接按 `docs/deploy-release.md` 的标准路径做 `develop -> master -> 部署`；这轮之前卡住的微信错题上传 release blocker 已经修掉。
 - 最值得继续做的是打开真实首页做一次手工 smoke check，确认新的 grainient 背景在桌面端、移动端和夜间模式下都不会压低首屏文案与按钮可读性。
 - 如果下次再做 release，直接按 `docs/deploy-release.md` 执行；重点是正常路径只走 `develop -> master -> 部署`，先走服务器 SSH 直拉，只有 SSH over 443 也失败时才切 `bundle`。
-- 如果继续收智能错题 notebook 体验，可以再决定是否把 PDF 入口上提到弹窗头部，或在学生卡片层显示“已生成错题库 PDF”状态；当前仅在右侧详情区显示入口。
+- 如果继续收智能错题 notebook 体验，可以再决定是否在学生卡片层显示“已生成错题库 PDF”状态；当前 PDF 入口已经上提到右侧详情头部。
 - 当前最值得继续做的是打开真实页面做一次手工 smoke check，确认生产环境下删除本题后二次确认文案、跳下一题、最后一题删完后右侧详情收起，以及 PDF 入口都符合预期。
 - 最值得继续做的是打开真实页面做一轮人工 smoke check，确认 staff 视角下“老师 -> 班级 -> 学生”联动和 notebook 区交互符合预期，然后再决定是否跟随下一次 release 一起部署。
 - 这 3 条后端失败修完后，下一步就是按 release 流程重新做一次 `develop -> push -> merge master -> 部署`，不需要再先卡在这 3 条上。
@@ -97,6 +98,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮本地 `faster-whisper` 只用 mocked 单测和依赖安装 smoke 验证过，还没有在 4 核 + 4GB 的真实服务器上拿一段“中文为主但可能夹英文字母/公式”的录音实跑过；首个请求会触发模型下载/加载，后续请求也会吃 CPU，真实延迟、峰值内存和自动识别命中率仍需上线前单独 smoke。
 - 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
 - 这轮学生错题库 PDF 公式补修目前 proof 已包含 `frontend/src/wrong-question-latex.test.ts` 定向回归和临时脚本检查最终 HTML 片段，不再只停留在 payload 透传；但仍没有手工打开实际生成的 PDF 看分页、长文本换行和复杂公式的真实视觉效果。
