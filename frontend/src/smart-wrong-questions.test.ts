@@ -314,16 +314,17 @@ test('buildMemberStudentNotebookSummaries groups current-class records by studen
   ]);
 });
 
-test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records', () => {
+test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records in upload order', () => {
   const records = [
     makeWrongQuestionRecord({ id: 'a', classId: 101, studentName: 'Alice', createdAt: '2026-03-29T09:00:00Z' }),
     makeWrongQuestionRecord({ id: 'b', classId: 101, studentName: 'Bob', createdAt: '2026-03-29T08:00:00Z' }),
-    makeWrongQuestionRecord({ id: 'c', classId: 202, studentName: 'Alice', createdAt: '2026-03-29T10:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'c', classId: 101, studentName: 'Alice', createdAt: '2026-03-27T10:00:00Z' }),
+    makeWrongQuestionRecord({ id: 'd', classId: 202, studentName: 'Alice', createdAt: '2026-03-29T10:00:00Z' }),
   ];
 
   assert.deepEqual(
     filterWrongQuestionRecordsForMemberNotebook(records, 101, 'Alice').map((item) => item.id),
-    ['a'],
+    ['c', 'a'],
   );
 });
 
@@ -770,7 +771,7 @@ test('SmartWrongQuestionsPage guards against stale list responses with a request
 test('smart wrong question page shows wechat mini-program source badge and local review copy', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
-  assert.match(pageSource, /selectedRecord\?\.source === 'wechat_mp'/);
+  assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
   assert.match(pageSource, /微信小程序/);
   assert.match(pageSource, /孩子自述错因/);
   assert.match(pageSource, /问题归类/);
@@ -1248,7 +1249,7 @@ test('SmartWrongQuestionsPage keeps unresolved mapping banner and snapshot ident
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /班级：六年级 1 班/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
-      assert.match(pageText, /映射状态：待确认映射/);
+      assert.doesNotMatch(pageText, /映射状态：/);
     });
   } finally {
     if (root) {
@@ -1532,7 +1533,7 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
               class_id: 42,
               subject: '数学',
               teacher_display_name: 'Kayn',
-              created_at: '2026-03-29T08:00:00Z',
+              created_at: '2026-03-29T09:00:00Z',
               recognition_status: 'recognized',
               is_geometry: 0,
               question_text: '第二题',
@@ -1560,7 +1561,7 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
           class_id: 42,
           subject: '数学',
           teacher_display_name: 'Kayn',
-          created_at: '2026-03-29T09:00:00Z',
+          created_at: '2026-03-29T08:00:00Z',
           recognition_status: 'recognized',
           is_geometry: 0,
           question_text: '第一题',
@@ -1586,7 +1587,7 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
           class_id: 42,
           subject: '数学',
           teacher_display_name: 'Kayn',
-          created_at: '2026-03-29T08:00:00Z',
+          created_at: '2026-03-29T09:00:00Z',
           recognition_status: 'recognized',
           is_geometry: 0,
           question_text: '第二题',
@@ -1808,7 +1809,7 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
       assert.match(pageText, /原始老师：Kayn 老师（代课）/);
       assert.match(pageText, /班级：六年级 1 班/);
       assert.match(pageText, /原始班级：六年级一班（临时）/);
-      assert.match(pageText, /映射状态：待确认映射/);
+      assert.doesNotMatch(pageText, /映射状态：/);
     });
   } finally {
     if (root) {
@@ -2860,12 +2861,18 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
+      const questionButtons = Array.from(domEnvironment.container.querySelectorAll('button')).filter((button) => button.textContent?.includes('第 ') && button.textContent?.includes('2026-03-'));
+
       assert.match(pageText, /第 1 题/);
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
+      assert.match(pageText, /按上传时间顺序查看/);
       assert.match(pageText, /2026-03-27T09:00:00Z/);
       assert.match(pageText, /已掌握/);
+      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
       assert.doesNotMatch(pageText, /第二题还是错/);
+      assert.doesNotMatch(pageText, /按时间倒序查看/);
       assert.doesNotMatch(pageText, /左侧是紧凑错题目录/);
     });
   } finally {
@@ -2902,11 +2909,13 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
               student_name: 'Alice',
               class_name: '六年级 1 班',
               class_id: 101,
-              subject: '数学',
+              subject: '',
               teacher_name: '成员老师',
               teacher_user_id: 7,
               created_at: '2026-03-29T09:00:00Z',
               parent_note: '第一题又错了',
+              question_text: '计算 2+3×4 的结果。',
+              child_raw_reason_text: '我把乘法优先级看漏了',
               status: 'pending',
               analysis: {
                 question_category: '计算',
@@ -2933,11 +2942,13 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
           student_name: 'Alice',
           class_name: '六年级 1 班',
           class_id: 101,
-          subject: '数学',
+          subject: '',
           teacher_name: '成员老师',
           teacher_user_id: 7,
           created_at: '2026-03-29T09:00:00Z',
           parent_note: '第一题又错了',
+          question_text: '计算 2+3×4 的结果。',
+          child_raw_reason_text: '我把乘法优先级看漏了',
           status: 'pending',
           analysis: {
             question_category: '计算',
@@ -2985,7 +2996,13 @@ test('SmartWrongQuestionsPage presents the modal detail pane like a notebook doc
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /错题详情/);
+      assert.match(pageText, /题目文本/);
+      assert.match(pageText, /孩子自述错因/);
+      assert.ok(pageText.indexOf('题目文本') < pageText.indexOf('孩子自述错因'));
+      assert.doesNotMatch(pageText, /孩子上传记录/);
       assert.doesNotMatch(pageText, /错题档案/);
+      assert.doesNotMatch(pageText, /映射状态：/);
+      assert.doesNotMatch(pageText, /未标注科目/);
       assert.doesNotMatch(pageText, /题目记录/);
       assert.doesNotMatch(pageText, /教师跟进区/);
     });

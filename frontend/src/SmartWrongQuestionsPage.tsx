@@ -28,7 +28,6 @@ import {
   summarizeWrongQuestionRecords,
   type MemberStudentNotebookSummary,
   type WrongQuestionFilters,
-  type WrongQuestionMappingStatus,
   type WrongQuestionListApiResponse,
   type WrongQuestionRecord,
   type WrongQuestionReviewDraft,
@@ -76,28 +75,10 @@ const initialFilters: WrongQuestionFilters = {
   errorType: '',
 };
 
-function formatWrongQuestionMappingStatus(status: WrongQuestionMappingStatus): string {
-  switch (status) {
-    case 'mapped':
-      return '已映射';
-    case 'ambiguous':
-      return '映射有歧义';
-    case 'needs_review':
-      return '待确认映射';
-    case 'unmapped':
-    default:
-      return '未映射';
-  }
-}
-
 function hasSnapshotDifference(canonicalValue: string, snapshotValue: string): boolean {
   const canonical = canonicalValue.trim();
   const snapshot = snapshotValue.trim();
   return Boolean(snapshot) && snapshot !== canonical;
-}
-
-function isMappedWrongQuestionRecord(status: WrongQuestionMappingStatus): boolean {
-  return status === 'mapped';
 }
 
 function getWrongQuestionSourceBadgeClass(source: string): string {
@@ -669,6 +650,62 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedRecordLibraryPdfPath = selectedRecord?.studentLibraryPdfPath
     ? buildWrongQuestionAuthedPath(selectedRecord.studentLibraryPdfPath)
     : '';
+  const detailHeader = selectedRecord ? (
+    <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
+            <span className="text-base font-medium text-slate-900 dark:text-white">{selectedRecord.studentName}</span>
+            {selectedRecord.source === 'wechat_mp' ? (
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                微信小程序
+              </span>
+            ) : (
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getWrongQuestionSourceBadgeClass(selectedRecord.source)}`}>
+                {getWrongQuestionSourceLabel(selectedRecord.source)}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+            <span>班级：{selectedRecord.className || '未标注班级'}</span>
+            <span>老师：{selectedRecord.teacherName || '未标注老师'}</span>
+            <span>记录时间：{selectedRecord.createdAt}</span>
+          </div>
+          {hasSnapshotDifference(selectedRecord.className, selectedRecord.classNameSnapshot) && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">原始班级：{selectedRecord.classNameSnapshot}</p>
+          )}
+          {hasSnapshotDifference(selectedRecord.teacherName, selectedRecord.teacherNameSnapshot) && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">原始老师：{selectedRecord.teacherNameSnapshot}</p>
+          )}
+        </div>
+        {selectedRecord.source === 'wechat_mp' && selectedRecordLibraryPdfPath ? (
+          <div className="flex flex-wrap gap-3">
+            <a
+              href={selectedRecordLibraryPdfPath}
+              target="_blank"
+              rel="noreferrer"
+              className={workspaceSecondaryButtonClass}
+            >
+              预览 PDF
+            </a>
+            <a
+              href={selectedRecordLibraryPdfPath}
+              download="student-library.pdf"
+              className={workspacePrimaryButtonClass}
+            >
+              下载 PDF
+            </a>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  ) : (
+    <div className="mb-5">
+      <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看当前题目并保存跟进内容。</p>
+    </div>
+  );
   const handleMemberClassChange = (value: string) => {
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
@@ -695,59 +732,55 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   };
   const detailPanel = selectedRecord ? (
     <>
-      <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-lg font-semibold text-slate-900 dark:text-white">{selectedRecord.studentName}</span>
-          {selectedRecord?.source === 'wechat_mp' ? (
-            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-              微信小程序
-            </span>
-          ) : (
-            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getWrongQuestionSourceBadgeClass(selectedRecord.source)}`}>
-              {getWrongQuestionSourceLabel(selectedRecord.source)}
-            </span>
-          )}
-          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-            {selectedRecord.subject || '未标注科目'}
-          </span>
+      {selectedDraft && selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
+        <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+          <label className="space-y-2 text-sm">
+            <span className="text-slate-500 dark:text-slate-400">题目文本</span>
+            <textarea
+              value={selectedDraft.questionText ?? ''}
+              onChange={(event) => handleDraftChange('questionText', event.target.value)}
+              onInput={(event) => handleDraftChange('questionText', (event.target as HTMLTextAreaElement).value)}
+              className={`${workspaceFieldClass} min-h-28 resize-y`}
+              placeholder="填写可直接进入错题库 PDF 的题目文本"
+            />
+          </label>
+          <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">
+            正文直接写，公式片段用 <code>$...$</code> 或 <code>$$...$$</code>。保存不会拦截公式错误，但下面会提示渲染失败的位置。
+          </p>
+          <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">公式预览</span>
+              {selectedQuestionTextPreview && selectedQuestionTextPreview.errors.length > 0 ? (
+                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  {selectedQuestionTextPreview.errors.length} 处渲染失败
+                </span>
+              ) : (
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                  预览正常
+                </span>
+              )}
+            </div>
+            <div
+              className="xr-latex-preview mt-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-[15px] text-slate-700 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100"
+              dangerouslySetInnerHTML={{
+                __html: selectedQuestionTextPreview?.html || '<span class="xr-latex-empty">暂无题目文本</span>',
+              }}
+            />
+            {selectedQuestionTextPreview && selectedQuestionTextPreview.errors.length > 0 ? (
+              <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs leading-6 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
+                {selectedQuestionTextPreview.errors.map((error) => (
+                  <div key={`${error.type}-${error.source}`}>
+                    {error.message}：{error.source}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400">班级：{selectedRecord.className || '未标注班级'}</p>
-        {hasSnapshotDifference(selectedRecord.className, selectedRecord.classNameSnapshot) && (
-          <p className="text-sm text-amber-700 dark:text-amber-300">原始班级：{selectedRecord.classNameSnapshot}</p>
-        )}
-        <p className="text-sm text-slate-500 dark:text-slate-400">老师：{selectedRecord.teacherName || '未标注老师'}</p>
-        {hasSnapshotDifference(selectedRecord.teacherName, selectedRecord.teacherNameSnapshot) && (
-          <p className="text-sm text-amber-700 dark:text-amber-300">原始老师：{selectedRecord.teacherNameSnapshot}</p>
-        )}
-        <p className="text-sm text-slate-500 dark:text-slate-400">映射状态：{formatWrongQuestionMappingStatus(selectedRecord.mappingStatus)}</p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">记录时间：{selectedRecord.createdAt}</p>
-      </div>
+      )}
 
       {selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
-          <div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">孩子上传记录</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这条记录来自微信小程序，孩子上传时会先写清自己为什么错，系统会整理成老师可读的说明，归到四类问题，并补充备注。</p>
-          </div>
-          {selectedRecordLibraryPdfPath ? (
-            <div className="flex flex-wrap gap-3">
-              <a
-                href={selectedRecordLibraryPdfPath}
-                target="_blank"
-                rel="noreferrer"
-                className={workspaceSecondaryButtonClass}
-              >
-                预览 PDF
-              </a>
-              <a
-                href={selectedRecordLibraryPdfPath}
-                download="student-library.pdf"
-                className={workspacePrimaryButtonClass}
-              >
-                下载 PDF
-              </a>
-            </div>
-          ) : null}
           {selectedRecord.imageUrl ? (
             <a
               href={selectedRecord.imageUrl}
@@ -793,7 +826,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
 
-      {!isMappedWrongQuestionRecord(selectedRecord.mappingStatus) && (
+      {selectedRecord.mappingStatus !== 'mapped' && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
           <div className="flex items-start gap-2">
             <AlertCircle size={16} className="mt-0.5" />
@@ -872,53 +905,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </button>
             </div>
           </div>
-
-          {selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
-            <div className="space-y-3 text-sm">
-              <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">题目文本</span>
-                <textarea
-                  value={selectedDraft.questionText ?? ''}
-                  onChange={(event) => handleDraftChange('questionText', event.target.value)}
-                  onInput={(event) => handleDraftChange('questionText', (event.target as HTMLTextAreaElement).value)}
-                  className={`${workspaceFieldClass} min-h-28 resize-y`}
-                  placeholder="填写可直接进入错题库 PDF 的题目文本"
-                />
-              </label>
-              <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">
-                正文直接写，公式片段用 <code>$...$</code> 或 <code>$$...$$</code>。保存不会拦截公式错误，但下面会提示渲染失败的位置。
-              </p>
-              <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">公式预览</span>
-                  {selectedQuestionTextPreview && selectedQuestionTextPreview.errors.length > 0 ? (
-                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
-                      {selectedQuestionTextPreview.errors.length} 处渲染失败
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                      预览正常
-                    </span>
-                  )}
-                </div>
-                <div
-                  className="xr-latex-preview mt-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-[15px] text-slate-700 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100"
-                  dangerouslySetInnerHTML={{
-                    __html: selectedQuestionTextPreview?.html || '<span class="xr-latex-empty">暂无题目文本</span>',
-                  }}
-                />
-                {selectedQuestionTextPreview && selectedQuestionTextPreview.errors.length > 0 ? (
-                  <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs leading-6 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
-                    {selectedQuestionTextPreview.errors.map((error) => (
-                      <div key={`${error.type}-${error.source}`}>
-                        {error.message}：{error.source}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
 
           <label className="flex items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-200">
             <input
@@ -1254,7 +1240,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-white/10">
               <div>
                 <h4 className="text-2xl font-semibold text-slate-900 dark:text-white">{selectedStudentName} 的错题库</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按时间查看题目列表，右侧保留当前题目的详情与编辑区。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按上传时间查看题目列表，右侧直接打开当前题目。</p>
               </div>
               <button
                 type="button"
@@ -1272,7 +1258,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按时间倒序查看，点击左侧条目切换当前题目。</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按上传时间顺序查看，点击左侧条目切换当前题目。</p>
                   </div>
                   <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                     {memberNotebookRecords.length} 题
@@ -1303,10 +1289,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </div>
 
               <div className="min-h-0 overflow-y-auto p-5">
-                <div className="mb-5">
-                  <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题详情</h4>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">查看当前记录并保存跟进内容。</p>
-                </div>
+                {detailHeader}
 
                 {detailError && (
                   <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
