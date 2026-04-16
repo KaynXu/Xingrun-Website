@@ -9,10 +9,10 @@
 - 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
 - 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”和“题干里混入裸 LaTeX 片段”的修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；同时网页预览与学生错题库 PDF 的浏览器渲染现在也会把未包进 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 这类裸公式片段转成可读文本，避免导出里继续漏成 `mathbbR / ldots / frac` 之类坏形态。现有历史错题记录即使库里已经存成这类文本，渲染时也会补修，不必先做库迁移。
-- 2026-04-16 学生错题库 PDF 下载接口已改成“打开前实时重建”：`/api/wechat/student-libraries/<student_id>` 不再只把磁盘上的旧 `student-<id>.pdf` 直接 `send_file()` 回去，而是会先按当前记录重建一遍再返回，避免出现“网站里的题目预览已经正常，但导出的 PDF 还是修复前旧缓存”的情况。
-- 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `ad07658`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
+- 2026-04-16 学生错题库 PDF 下载接口已改成“fresh 直发缓存、stale 才重建”：`/api/wechat/student-libraries/<student_id>` 现在默认直接返回已有 `student-<id>.pdf`，只有在文件缺失或 PDF 早于当前错题库记录更新时间时才会重建；同时删除、归档和本地错题保存也会主动刷新这份缓存，避免再次出现“网站里的题目预览已经正常，但导出的 PDF 还是修复前旧缓存”的情况。
+- 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `c93e12d`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
-- 2026-04-16 提交 `ad07658 Merge branch 'develop'` 已部署到生产机：本地 temp script 已确认 `local master == origin/master == production HEAD == ad07658`，生产机本轮仍出现“重启后第一次即时健康检查短暂失败”的已知现象，但 8 秒后重试已恢复到根路由 `302 FOUND`。
+- 2026-04-16 提交 `c93e12d Merge branch 'develop'` 已部署到生产机：本地 temp script 已确认 `local master == origin/master == production HEAD == c93e12d`，生产机本轮仍出现“重启后第一次即时健康检查短暂失败”的已知现象，但 8 秒后重试已恢复到根路由 `302 FOUND`。这次发布包含“学生错题库 PDF 打开前实时重建”修复，用来消除网页预览已正常、但下载到的还是旧缓存 PDF 的问题。
 - 2026-04-15 网站端学生错题库 PDF 已补回每题 `孩子自述错因 / 补充备注`：`pdf_engine.py` 现在会把 `child_raw_reason_text` 和 `secondary_error_summary` 透传给浏览器渲染脚本，`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 已在每题题目块下显示这两段内容；当前不恢复旧的 `家长备注 / 老师备注`，只展示现行微信错题链路里的孩子错因与补充备注。
 - 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
 - 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
@@ -32,7 +32,7 @@
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `ad07658 Merge branch 'develop'`；其中包含错题库 PDF 裸 LaTeX 文本归一化修复，以及这轮 `develop` 上已合入的家长上传/绑定态更新。
+- 本次已部署生产的最新提交是 `c93e12d Merge branch 'develop'`；其中包含错题库 PDF 裸 LaTeX 文本归一化修复，以及“学生错题库 PDF 打开前实时重建”热修。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -67,7 +67,7 @@
 - `teacher_comment` 和 `status='reviewed'` 在本地微信错题链路里只剩兼容旧列含义，不再作为主流程判断依据。
 - staff / owner / admin / super_owner 已统一到按班级或学生打开错题本的 notebook 流程。
 - `member` 端已改成学生卡片 -> 弹窗错题本，不再走旧的页面下半区详情布局。
-- 最近一次相关产品代码提交并已部署生产的是 `ad07658 Merge branch 'develop'`。
+- 最近一次相关产品代码提交并已部署生产的是 `c93e12d Merge branch 'develop'`。
 
 ### 下一步
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
@@ -100,7 +100,7 @@
 - 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
 - 这轮学生错题库 PDF 公式补修目前 proof 已包含 `frontend/src/wrong-question-latex.test.ts` 定向回归和临时脚本检查最终 HTML 片段，不再只停留在 payload 透传；但仍没有手工打开实际生成的 PDF 看分页、长文本换行和复杂公式的真实视觉效果。
-- 这轮学生错题库 PDF 打开链路虽然已经改成下载前实时重建，但目前 proof 仍主要是后端定向用例和临时脚本校验，还没有拿真实线上学生记录手工点一次 `预览 PDF / 下载 PDF` 看最终文档视觉效果。
+- 这轮学生错题库 PDF 缓存链路虽然已经改成“fresh 直发、stale 重建”，但目前 proof 仍主要是后端定向用例和临时脚本校验，还没有拿真实线上学生记录手工点一次 `预览 PDF / 下载 PDF` 看最终文档视觉效果与响应速度。
 - 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
 - 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
 - 历史计划文档和旧对话里仍可能残留 `Xingrun-MiniProgram` 旧目录名；本轮已更新权威 handoff 和关键活文档，但后续如果继续照旧路径执行命令，仍可能误跳到不存在的位置。
@@ -129,6 +129,8 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `c93e12d` `Merge branch 'develop'`
+- `8d32e28` `fix: rebuild wrong-question pdf before download`
 - `ad07658` `Merge branch 'develop'`
 - `f163ee7` `fix: normalize bare latex in wrong question pdf preview`
 - `3ac1b4a` `Merge branch 'develop'`

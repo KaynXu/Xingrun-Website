@@ -1987,10 +1987,9 @@ def api_wrong_question_delete(record_id):
     remaining_records = list_student_wrong_question_library_records(student_id)
     next_pdf_path = ""
     if remaining_records:
-        next_pdf_path = str(_rebuild_student_wrong_question_library(student_id) or "").strip()
-        set_student_wrong_question_library_pdf_path(student_id, next_pdf_path)
+        next_pdf_path = _refresh_student_wrong_question_library_cache(student_id)
     else:
-        set_student_wrong_question_library_pdf_path(student_id, "")
+        _refresh_student_wrong_question_library_cache(student_id)
 
     return jsonify(
         {
@@ -2021,8 +2020,8 @@ def api_wrong_question_review_save(record_id):
                 question_text=question_text,
                 student_library_pdf_path=str(local_record.get("student_library_pdf_path") or ""),
             )
-            pdf_path = _rebuild_student_wrong_question_library(local_record["student_id"])
-            saved_record = attach_student_library_pdf_path(record_id, pdf_path)
+        pdf_path = _refresh_student_wrong_question_library_cache(local_record["student_id"])
+        saved_record = attach_student_library_pdf_path(record_id, pdf_path)
         return jsonify({"ok": True, "record": saved_record})
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
@@ -2058,6 +2057,8 @@ def api_wrong_question_archive_save(record_id):
 
     if not saved_record:
         return jsonify({"error": "not found"}), 404
+    _refresh_student_wrong_question_library_cache(local_record["student_id"])
+    saved_record = get_wechat_wrong_question_submission(record_id)
     return jsonify({"ok": True, "record": saved_record})
 
 
@@ -2550,6 +2551,34 @@ def _student_wrong_question_library_path(student_id: int) -> Path:
     return library_dir / f"student-{student_id}.pdf"
 
 
+def _parse_student_wrong_question_library_updated_at(value: str) -> Optional[datetime]:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _student_wrong_question_library_pdf_is_stale(records: list[dict], pdf_path: Path) -> bool:
+    if not pdf_path.exists():
+        return True
+
+    latest_updated_at = None
+    for record in records:
+        parsed_updated_at = _parse_student_wrong_question_library_updated_at(record.get("updated_at") or "")
+        if parsed_updated_at is None:
+            continue
+        if latest_updated_at is None or parsed_updated_at > latest_updated_at:
+            latest_updated_at = parsed_updated_at
+
+    if latest_updated_at is None:
+        return True
+
+    return latest_updated_at > datetime.fromtimestamp(pdf_path.stat().st_mtime)
+
+
 def _rebuild_student_wrong_question_library(student_id: int) -> str:
     records = list_student_wrong_question_library_records(student_id)
     if not records:
@@ -2561,6 +2590,19 @@ def _rebuild_student_wrong_question_library(student_id: int) -> str:
         records=records,
         output_path=str(output_path),
     )
+
+
+def _refresh_student_wrong_question_library_cache(student_id: int) -> str:
+    records = list_student_wrong_question_library_records(student_id)
+    output_path = _student_wrong_question_library_path(student_id)
+    if not records:
+        output_path.unlink(missing_ok=True)
+        set_student_wrong_question_library_pdf_path(student_id, "")
+        return ""
+
+    pdf_path = str(_rebuild_student_wrong_question_library(student_id) or "").strip()
+    set_student_wrong_question_library_pdf_path(student_id, pdf_path)
+    return pdf_path
 
 
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
@@ -2724,7 +2766,10 @@ def api_wechat_student_library_pdf(student_id):
     records = list_student_wrong_question_library_records(student_id)
     if not records:
         return jsonify({"error": "student library pdf not found"}), 404
-    pdf_path = Path(_rebuild_student_wrong_question_library(student_id))
+    pdf_path = _student_wrong_question_library_path(student_id)
+    if _student_wrong_question_library_pdf_is_stale(records, pdf_path):
+        rebuilt_pdf_path = _refresh_student_wrong_question_library_cache(student_id)
+        pdf_path = Path(rebuilt_pdf_path) if rebuilt_pdf_path else pdf_path
     if not pdf_path.exists():
         return jsonify({"error": "student library pdf not found"}), 404
     return send_file(pdf_path, mimetype="application/pdf", download_name=pdf_path.name)
