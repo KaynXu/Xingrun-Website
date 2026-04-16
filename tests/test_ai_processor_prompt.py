@@ -71,6 +71,7 @@ class _FakeSegment:
 class _FakeWhisperModel:
     init_calls: list[dict] = []
     transcribe_calls: list[dict] = []
+    transcribe_results: list[tuple[object, object]] = []
 
     def __init__(self, model_size_or_path: str, device: str, compute_type: str):
         self.__class__.init_calls.append(
@@ -88,6 +89,8 @@ class _FakeWhisperModel:
                 "kwargs": kwargs,
             }
         )
+        if self.__class__.transcribe_results:
+            return self.__class__.transcribe_results.pop(0)
         return [_FakeSegment(" 我把单位换算漏掉了 "), _FakeSegment(" ")], type("Info", (), {})()
 
 
@@ -96,6 +99,7 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         ai_processor._LOCAL_WHISPER_MODEL = None
         _FakeWhisperModel.init_calls = []
         _FakeWhisperModel.transcribe_calls = []
+        _FakeWhisperModel.transcribe_results = []
 
     def tearDown(self):
         ai_processor._LOCAL_WHISPER_MODEL = None
@@ -173,7 +177,7 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
 
-    def test_transcribe_child_reason_audio_uses_local_faster_whisper_with_fixed_chinese(self):
+    def test_transcribe_child_reason_audio_uses_local_faster_whisper_auto_detect_first(self):
         fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
 
         with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
@@ -194,9 +198,28 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             ],
         )
         self.assertEqual(len(_FakeWhisperModel.transcribe_calls), 1)
-        self.assertEqual(_FakeWhisperModel.transcribe_calls[0]["kwargs"]["language"], "zh")
+        self.assertNotIn("language", _FakeWhisperModel.transcribe_calls[0]["kwargs"])
         self.assertEqual(_FakeWhisperModel.transcribe_calls[0]["kwargs"]["task"], "transcribe")
         self.assertTrue(_FakeWhisperModel.transcribe_calls[0]["audio_path"].endswith(".m4a"))
+
+    def test_transcribe_child_reason_audio_falls_back_to_chinese_when_auto_detect_is_empty(self):
+        fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
+        _FakeWhisperModel.transcribe_results = [
+            ([_FakeSegment("   ")], type("Info", (), {})()),
+            ([_FakeSegment("题目里有 x 加 y")], type("Info", (), {})()),
+        ]
+
+        with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
+            "urllib.request.urlopen",
+            return_value=_FakeUrlopenResponse(b"fake-audio"),
+        ):
+            payload = ai_processor.transcribe_child_reason_audio("https://files.example.com/reason.m4a")
+
+        self.assertEqual(payload, {"transcript_text": "题目里有 x 加 y"})
+        self.assertEqual(len(_FakeWhisperModel.transcribe_calls), 2)
+        self.assertNotIn("language", _FakeWhisperModel.transcribe_calls[0]["kwargs"])
+        self.assertEqual(_FakeWhisperModel.transcribe_calls[1]["kwargs"]["language"], "zh")
+        self.assertEqual(_FakeWhisperModel.transcribe_calls[1]["kwargs"]["task"], "transcribe")
 
     def test_transcribe_audio_returns_local_usage_payload(self):
         fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})

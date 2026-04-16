@@ -128,15 +128,28 @@ def _local_whisper_usage_dict() -> dict:
     }
 
 
+def _collect_local_transcript_text(segments) -> str:
+    return "".join(str(getattr(segment, "text", "") or "") for segment in segments).strip()
+
+
 def _transcribe_audio_path_locally(audio_path: str) -> str:
     model = _get_local_whisper_model()
+    segments, _ = model.transcribe(
+        str(audio_path),
+        task="transcribe",
+        vad_filter=True,
+    )
+    transcript_text = _collect_local_transcript_text(segments)
+    if transcript_text:
+        return transcript_text
+
     segments, _ = model.transcribe(
         str(audio_path),
         language="zh",
         task="transcribe",
         vad_filter=True,
     )
-    transcript_text = "".join(str(getattr(segment, "text", "") or "") for segment in segments).strip()
+    transcript_text = _collect_local_transcript_text(segments)
     if not transcript_text:
         raise ValueError("audio transcription failed")
     return transcript_text
