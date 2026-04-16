@@ -23,7 +23,6 @@
         bindtap="selectImage"
       >
         <image class="thumb-image" src="{{item.localPath}}" mode="aspectFill" />
-        <view class="thumb-dot thumb-dot-{{item.aiStatus || 'idle'}}"></view>
       </view>
     </scroll-view>
 
@@ -77,7 +76,6 @@
         <button class="ghost-btn compact-btn" bindtap="addManualBox">补加框</button>
         <button class="ghost-btn compact-btn" bindtap="removeActiveBox">删除当前</button>
         <button class="ghost-btn compact-btn" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
-        <button class="ghost-btn compact-btn" bindtap="runAiBoxes">AI 框选</button>
       </view>
     </view>
 

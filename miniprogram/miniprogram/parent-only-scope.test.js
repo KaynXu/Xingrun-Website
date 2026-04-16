@@ -63,9 +63,10 @@ test('mini program serverUrl uses the production HTTPS domain instead of a raw I
 test('parent upload page exposes crop-first multi-image controls', () => {
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
 
-  assert.equal(uploadTemplate.includes('AI 框选'), true);
+  assert.equal(uploadTemplate.includes('AI 框选'), false);
   assert.equal(uploadTemplate.includes('补加框'), true);
   assert.equal(uploadTemplate.includes('删除当前'), true);
+  assert.equal(uploadTemplate.includes('顺时针旋转'), true);
   assert.equal(uploadTemplate.includes('拍照或从相册里选一张图片'), false);
 });
 

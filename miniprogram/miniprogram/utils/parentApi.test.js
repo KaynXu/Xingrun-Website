@@ -5,7 +5,6 @@ const {
   bindParentStudent,
   cacheParentBinding,
   classifyParentReason,
-  detectParentWrongQuestionBoxes,
   ensureParentSession,
   fetchParentBindings,
   fetchChildWrongQuestionLibrary,
@@ -429,72 +428,8 @@ test('fetchChildWrongQuestionLibrary loads the shared student pdf metadata', asy
   assert.equal(payload.total_items, 2);
 });
 
-test('detectParentWrongQuestionBoxes parses the AI box bridge response', async () => {
-  const wxApi = {
-    uploadFile({ url, success }) {
-      if (url.endsWith('/wechat/parent/wrong-question-boxes')) {
-        success({
-          statusCode: 200,
-          data: JSON.stringify({
-            boxes: [
-              { x: 0.1, y: 0.2, width: 0.4, height: 0.3 },
-              { x: 0.55, y: 0.5, width: 0.3, height: 0.22 },
-            ],
-          }),
-        });
-        return;
-      }
+test('parentApi no longer exports an AI box detection helper', () => {
+  const parentApi = require('./parentApi');
 
-      throw new Error(`Unexpected upload url: ${url}`);
-    },
-  };
-
-  const payload = await detectParentWrongQuestionBoxes(wxApi, 'https://example.com', {
-    filePath: '/tmp/mock-image.png',
-  });
-
-  assert.equal(payload.boxes.length, 2);
-  assert.deepEqual(payload.boxes[1], { x: 0.55, y: 0.5, width: 0.3, height: 0.22 });
-});
-
-test('detectParentWrongQuestionBoxes maps missing AI route to a manual-fallback message', async () => {
-  const wxApi = {
-    uploadFile({ success }) {
-      success({
-        statusCode: 404,
-        errMsg: 'request:ok',
-        data: '<html><body><pre>Cannot POST /wechat/parent/wrong-question-boxes</pre></body></html>',
-      });
-    },
-  };
-
-  await assert.rejects(
-    () => detectParentWrongQuestionBoxes(wxApi, 'https://example.com', {
-      filePath: '/tmp/mock-image.png',
-    }),
-    {
-      message: 'AI 框选服务暂未部署，请先手动补框继续上传',
-    },
-  );
-});
-
-test('detectParentWrongQuestionBoxes maps missing upload routes to a useful error message', async () => {
-  const wxApi = {
-    uploadFile({ success }) {
-      success({
-        statusCode: 404,
-        errMsg: 'uploadFile:ok',
-        data: '<html><body><pre>Cannot POST /wechat/parent/wrong-question-boxes</pre></body></html>',
-      });
-    },
-  };
-
-  await assert.rejects(
-    () => detectParentWrongQuestionBoxes(wxApi, 'https://example.com', {
-      filePath: '/tmp/mock-image.png',
-    }),
-    {
-      message: 'AI 框选服务暂未部署，请先手动补框继续上传',
-    },
-  );
+  assert.equal('detectParentWrongQuestionBoxes' in parentApi, false);
 });

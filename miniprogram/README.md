@@ -6,14 +6,13 @@
   - 家长绑定孩子
   - 家长首页查看已绑定孩子
   - 上传错题图片
-  - 多图框题、AI 框选、统一提交
+  - 多图框题、统一提交
 - 后端 bridge：
   - `/wechat/parent/login`
   - `/wechat/parent/bind-class`
   - `/wechat/parent/bind-student`
   - `/wechat/parent/bindings`
   - `/wechat/parent/wrong-questions`
-  - `/wechat/parent/wrong-question-boxes`
 
 ## 当前目录
 
@@ -34,7 +33,6 @@ miniprogram/
 - 家长上传页支持：
   - 多图追加
   - 每张图多个题框
-  - `AI 框选`
   - 统一提交所有确认后的错题
 
 ## 正式服务器

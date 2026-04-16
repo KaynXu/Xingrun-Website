@@ -2545,25 +2545,6 @@ def api_wechat_reason_transcriptions_create():
         return jsonify({"error": str(exc), "retryable": True}), 502
 
 
-@app.route("/api/wechat/wrong-question-boxes", methods=["POST"])
-def api_wechat_wrong_question_boxes():
-    _, error = _require_wechat_service()
-    if error:
-        return error
-    data, error = _get_json_object_payload()
-    if error:
-        return error
-
-    image_url = (data.get("image_url") or "").strip()
-    if not image_url:
-        return jsonify({"error": "image_url is required"}), 400
-
-    try:
-        return jsonify(smart_wrong_questions.detect_wechat_wrong_question_boxes({"image_url": image_url}))
-    except smart_wrong_questions.WrongQuestionProxyError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
-
-
 def _student_wrong_question_library_path(student_id: int) -> Path:
     library_dir = PDF_DIR / "wrong_question_libraries"
     library_dir.mkdir(parents=True, exist_ok=True)

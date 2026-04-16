@@ -417,60 +417,20 @@ test('generic upload route stores the file and returns a public file url', async
   });
 });
 
-test('parent AI box bridge stores the file and forwards its image url to the website detector', async (t) => {
-  const originalFetch = globalThis.fetch;
-  const uploadedFiles: string[] = [];
+test('parent bridge no longer exposes the AI box route', async (t) => {
+  const server = await startTestServer(t);
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const formData = new FormData();
+  formData.set('file', new Blob(['mock-image']), 'wrong-question-box.txt');
 
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-    if (url === 'https://website.example/api/wechat/wrong-question-boxes') {
-      const body = JSON.parse(String(init?.body || '{}'));
-      assert.match(body.image_url, /^http:\/\/127\.0\.0\.1:\d+\/files\/.+/);
+  const response = await fetch(`${baseUrl}/wechat/parent/wrong-question-boxes`, {
+    method: 'POST',
+    body: formData,
+  });
 
-      const fileName = String(body.image_url).split('/files/')[1];
-      uploadedFiles.push(fileName);
-
-      return createJsonResponse({
-        boxes: [
-          { x: 0.1, y: 0.2, width: 0.4, height: 0.3 },
-          { x: 0.55, y: 0.5, width: 0.3, height: 0.22 },
-        ],
-      });
-    }
-
-    return originalFetch(input as RequestInfo | URL, init);
-  }) as typeof fetch;
-
-  try {
-    const server = await startTestServer(t);
-    const address = server.address();
-    assert.ok(address && typeof address === 'object');
-    const baseUrl = `http://127.0.0.1:${address.port}`;
-    const formData = new FormData();
-    formData.set('file', new Blob(['mock-image']), 'wrong-question-box.txt');
-
-    const response = await fetch(`${baseUrl}/wechat/parent/wrong-question-boxes`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.boxes.length, 2);
-    assert.deepEqual(payload.boxes[0], { x: 0.1, y: 0.2, width: 0.4, height: 0.3 });
-
-    const uploadedPath = uploadedFiles[0] ? path.join(UPLOADS_DIR, uploadedFiles[0]) : '';
-    assert.ok(uploadedPath);
-    assert.equal(fs.existsSync(uploadedPath), true);
-
-    t.after(() => {
-      if (uploadedPath) {
-        fs.rmSync(uploadedPath, { force: true });
-      }
-    });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert.equal(response.status, 404);
 });
 
 test('legacy chat and roster routes are no longer exposed by the parent-only bridge', async (t) => {

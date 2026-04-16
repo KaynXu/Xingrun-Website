@@ -103,29 +103,6 @@
   height: 100%;
 }
 
-.thumb-dot {
-  position: absolute;
-  top: 8rpx;
-  right: 8rpx;
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.thumb-dot-running {
-  background: #f59e0b;
-}
-
-.thumb-dot-done {
-  background: #16a34a;
-}
-
-.thumb-dot-empty,
-.thumb-dot-failed {
-  background: #dc2626;
-}
-
 .crop-stage-shell {
   margin-top: 18rpx;
   padding: 20rpx;

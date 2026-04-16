@@ -35,13 +35,6 @@ function extractRequestErrorMessage(response, fallbackMessage) {
   const responseText = typeof payload === 'string' ? payload.trim() : '';
   if (
     Number((response && response.statusCode) || 0) === 404
-    && /Cannot (GET|POST|PUT|DELETE|PATCH) \/wechat\/parent\/wrong-question-boxes/i.test(responseText)
-  ) {
-    return 'AI 框选服务暂未部署，请先手动补框继续上传';
-  }
-
-  if (
-    Number((response && response.statusCode) || 0) === 404
     && /Cannot (GET|POST|PUT|DELETE|PATCH) \/wechat\/parent\//i.test(responseText)
   ) {
     return '家长绑定服务暂未部署，请联系老师稍后再试';
@@ -258,16 +251,6 @@ function normalizeParentBinding(binding) {
   };
 }
 
-function normalizeWrongQuestionBox(box) {
-  const source = box && typeof box === 'object' ? box : {};
-  return {
-    x: Number(source.x || 0) || 0,
-    y: Number(source.y || 0) || 0,
-    width: Number(source.width || 0) || 0,
-    height: Number(source.height || 0) || 0,
-  };
-}
-
 function getParentSession(wxApi) {
   return normalizeParentSession(safeGetStorage(wxApi, PARENT_SESSION_KEY, {}));
 }
@@ -450,19 +433,6 @@ async function fetchChildWrongQuestionLibrary(wxApi, serverUrl, params) {
   });
 }
 
-async function detectParentWrongQuestionBoxes(wxApi, serverUrl, params) {
-  const payload = await uploadFile(wxApi, {
-    url: `${serverUrl}/wechat/parent/wrong-question-boxes`,
-    filePath: params.filePath,
-    name: 'file',
-    formData: {},
-  });
-
-  return {
-    boxes: Array.isArray(payload.boxes) ? payload.boxes.map(normalizeWrongQuestionBox) : [],
-  };
-}
-
 module.exports = {
   PARENT_SESSION_KEY,
   PARENT_BINDINGS_KEY,
@@ -483,7 +453,6 @@ module.exports = {
   classifyParentReason,
   uploadParentReasonAudio,
   submitParentWrongQuestion,
-  detectParentWrongQuestionBoxes,
   fetchChildWrongQuestions,
   fetchChildWrongQuestionLibrary,
 };
