@@ -42,8 +42,7 @@
 - `POST /wechat/parent/bind-class`
 - `POST /wechat/parent/bind-student`
 - `POST /wechat/parent/wrong-questions`
-- `POST /wechat/parent/wrong-question-boxes`
 
 ## 当前已确认的问题
 
-`2026-04-09` 起当前正式服务器已切到“家长绑定 -> 家长首页 -> 上传错题”链路，旧聊天式 `/rooms`、`/wechat/config` 等接口已从 bridge 中删除；上传页当前也已包含 `AI 框选` 能力，走 `POST /wechat/parent/wrong-question-boxes`。
+`2026-04-09` 起当前正式服务器已切到“家长绑定 -> 家长首页 -> 上传错题”链路，旧聊天式 `/rooms`、`/wechat/config` 等接口已从 bridge 中删除；上传页当前走手动补框 + 统一提交。

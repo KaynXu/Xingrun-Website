@@ -92,13 +92,6 @@ export interface WebsiteReasonClassification {
   secondary_error_summary: string;
 }
 
-export interface WebsiteWrongQuestionBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 export async function loginParentWechatAccount(input: {
   openId: string;
   nicknameSnapshot?: string;
@@ -191,17 +184,6 @@ export async function submitWechatWrongQuestionToWebsite(input: {
       child_reason_input_mode: input.childReasonInputMode || 'text',
       primary_error_type: input.primaryErrorType,
       secondary_error_summary: input.secondaryErrorSummary,
-    },
-  });
-}
-
-export async function detectWechatWrongQuestionBoxesOnWebsite(input: {
-  imageUrl: string;
-}) {
-  return requestWebsite<{ boxes: WebsiteWrongQuestionBox[] }>('/api/wechat/wrong-question-boxes', {
-    method: 'POST',
-    body: {
-      image_url: input.imageUrl,
     },
   });
 }

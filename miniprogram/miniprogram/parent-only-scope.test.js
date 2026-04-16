@@ -26,10 +26,11 @@ test('mini program keeps only the parent upload flow pages and deletes legacy pa
   }
 });
 
-test('parent home does not show a continue binding entry once children are already bound', () => {
+test('parent home keeps an entry for binding more children after at least one child is already bound', () => {
   const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
 
-  assert.equal(homeTemplate.includes('继续绑定'), false);
+  assert.equal(homeTemplate.includes('绑定更多孩子'), true);
+  assert.match(homeTemplate, /bindtap="goBindMore"/);
 });
 
 test('parent home uses upload-only wording after children are already available', () => {
@@ -62,9 +63,10 @@ test('mini program serverUrl uses the production HTTPS domain instead of a raw I
 test('parent upload page exposes crop-first multi-image controls', () => {
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
 
-  assert.equal(uploadTemplate.includes('AI 框选'), true);
+  assert.equal(uploadTemplate.includes('AI 框选'), false);
   assert.equal(uploadTemplate.includes('补加框'), true);
   assert.equal(uploadTemplate.includes('删除当前'), true);
+  assert.equal(uploadTemplate.includes('顺时针旋转'), true);
   assert.equal(uploadTemplate.includes('拍照或从相册里选一张图片'), false);
 });
 
@@ -77,6 +79,26 @@ test('parent upload action buttons keep a stable single-row layout on narrow scr
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*height:\s*72rpx;/s);
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*line-height:\s*72rpx;/s);
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+});
+
+test('parent upload image picker button stays readable on narrow screens', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
+
+  assert.match(uploadTemplate, /<button class="ghost-btn picker-btn" bindtap="chooseImages">/);
+  assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*width:\s*100%;/s);
+  assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
+});
+
+test('parent upload submit button stays on one line on narrow screens', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
+
+  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*width:\s*100%;/s);
+  assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
 });
 
 test('parent wrongbook page exposes question text and a pdf entry button', () => {

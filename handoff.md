@@ -6,7 +6,9 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”的根因修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；现有历史错题记录即使库里已经存成坏文本，网页预览、浏览器 PDF 和 ReportLab 回退文本也都会在渲染时补修，不必先做库迁移。
+- 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
+- 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
+- 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”和“题干里混入裸 LaTeX 片段”的修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；同时网页预览与学生错题库 PDF 的浏览器渲染现在也会把未包进 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 这类裸公式片段转成可读文本，避免导出里继续漏成 `mathbbR / ldots / frac` 之类坏形态。现有历史错题记录即使库里已经存成这类文本，渲染时也会补修，不必先做库迁移。
 - 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `7b0ba1c`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
 - 2026-04-15 提交 `3ac1b4a Merge branch 'develop'` 已部署到生产机：本地 temp script 已确认 `local master == origin/master == production HEAD == 3ac1b4a`，生产机 `pm2 restart xingrun` 后根路由健康检查返回 `302 FOUND`。
@@ -14,11 +16,9 @@
 - 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
 - 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
 - 2026-04-15 小程序子项目目录已收口：仓库根目录现在只保留一个小写 `miniprogram/`，原 `Xingrun-MiniProgram/` 已整体并入该目录；当前小程序子项目入口是 `miniprogram/`，微信工程代码位于 `miniprogram/miniprogram/`，课堂随机点名 HTML 工具也已统一移动到 `miniprogram/classroom-random-score*.html`。
-- 2026-04-15 内嵌小程序快照 `miniprogram/miniprogram/pages/parent-upload/index.*` 已继续收口“AI 框选慢 + 旋转后回位错乱”：当前 AI 框选不再直接把 `original` 原图整张发给后端，而是先在本地把超大图缩到最长边 `1600` 的临时 JPG 再送 AI，减轻上传与识别耗时；同时每张图现在带 `contentVersion`，如果用户在 AI 返回前又点了 `顺时针旋转`，旧方向那次请求回来的题框/失败状态会被直接丢弃，不再覆盖旋转后的新图位置。隐藏 `cropCanvas` 的导出也已串行化，避免多张图并发 AI 时互相踩画布。
 - 2026-04-15 内嵌小程序快照 `miniprogram/miniprogram/pages/parent-upload/index.*` 已补一版更稳的本地旋转导出：选图改拿 `original` 原图、页内新增 `顺时针旋转` 兜底按钮、隐藏 canvas 现在显式带 `width/height` 实体尺寸，并在旋转/裁切导出前统一先铺白底再导出 JPG；当前手动顺时针旋转还会同步把现有题框坐标一起转过去，避免图片转了但框留在旧位置。当前目标是先止住“旋转后整张发黑/导出黑底”的问题。
 - 2026-04-15 本地学生错题库 PDF 已收口旧备注残留：`wrong_question_submissions` 新库与旧库迁移都不再保留 `parent_note / teacher_comment` 两列；本地微信错题 detail/review 序列化也不再输出这两个字段；PDF 顶部标题现在改成 `学生名 错题库｜任课老师：...`，每题正文已删除单独的老师行，以及 `家长备注 / 老师备注` 两段。
 - 2026-04-15 小程序错题本页已接上学生级 PDF 预览：`miniprogram/miniprogram/pages/parent-wrongbook/index.*` 现在会在页头展示 `查看 PDF`，并在每张错题卡上显示 `question_text`；同时 bridge 已补发 `GET /wechat/parent/children/<student_id>/wrong-question-library`，当前公网探测已不再返回 `Cannot GET ...`，而是正常转成 JSON 业务响应。
-- 2026-04-15 本地网站端已补回家长上传 `AI 框选` 路由 `/api/wechat/wrong-question-boxes`，并在 `smart_wrong_questions.detect_wechat_wrong_question_boxes()` 里固定服务端提示词：当前会明确要求“只框题目区域，忽略孩子手写字迹、演算、答案、批改痕迹”，不改小程序请求协议；本地回归已覆盖 route 与 N1N prompt 组装。
 - 2026-04-15 家长错题上传页已继续补修拍照链路：`miniprogram/miniprogram/pages/parent-upload/index.js` 现在拍照改为请求 `original` 原图，避免压缩图吞掉 EXIF 方向信息；选图后仍会先读 `wx.getImageInfo().orientation`，对 `left / right / down` 等非 `up` 图片先用隐藏 canvas 旋正，再进入后续框选、裁切和统一提交；这轮还补了“继续拍照 / 继续选图”后自动切到新加那张图，避免框选区还停在旧图，并新增了页面级 `顺时针旋转` 兜底按钮。自动判别现在还会在控制台打印 `orientation / width / height / needsNormalization`，方便继续核对真机返回值。对应 orientation/选图辅助逻辑已下沉到 `miniprogram/miniprogram/pages/parent-upload/model.js`，并补了回归测试。
 - 2026-04-15 已补发小程序家长错题本 bridge：正式环境 `https://xingrun.online/wechat/parent/children/<student_id>/wrong-questions` 不再返回 `Cannot GET ...`，当前公网已能命中 bridge 并转发到网站端；用 `test-openid` 探测时现返回 JSON 业务错误 `parent wechat account not found`，说明“查看错题本”此前的 blocker 是线上 bridge 漏发了这条 GET 路由，不是网站 `/api/wechat/children/<student_id>/wrong-questions` 缺失。
 - 2026-04-14 已收口咨询批量整理的跟进状态越界问题：`ai_processor.py` 里的咨询助手提示词已明确锁定 `待邀约 / 跟进中 / 已报班 / 已劝退` 4 个可用状态，并明确禁止输出 `待开课缴费`、`已试听` 这类自造状态；`lesson_manager.normalize_consultation_batch_parse_result()` 现在也会自动丢弃非法 `follow_up_status` 并返回 warning，避免脏草稿继续进入前端确认流。
@@ -69,14 +69,14 @@
 - 最近一次相关产品代码提交并已部署生产的是 `3ac1b4a Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
 - 最值得继续做的是拿一条真实含公式的微信错题，在网站错题详情里手工改一次 `题目文本`，确认 KaTeX 预览、渲染失败提示、保存后回显，以及重新打开 `预览 PDF` 时三处内容一致。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页，确认新的首屏标题、副标题和空态文案在 iPhone 宽度下换行自然，没有被按钮区挤坏。
 - 最值得继续做的是把这版小程序包重新上传到微信开发者工具 / 真机，实际进入某个孩子的错题本页点一次页头 `查看 PDF`，确认 bridge 返回的 `pdf_url` 在真机里能顺利走完 `wx.downloadFile + wx.openDocument`。
 - 如果继续处理小程序，直接从仓库根目录进入 `miniprogram/` 子项目即可；微信开发者工具项目根目录也应改看 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，不要再按旧的 `Xingrun-MiniProgram/` 路径找。
-- 最值得继续做的是拿一张 12MP 左右的大图在真机上直接测一次 `AI 框选 -> 旋转 -> 等待旧请求返回`，确认两件事都成立：这轮缩图后体感耗时明显下降，且旧请求回包不会再把题框盖回错误方向。
+- 最值得继续做的是在微信开发者工具或真机手工走一次家长上传页：选图、手动补框、删除框、顺时针旋转、填写文字/语音错因、统一提交，确认 AI 框选移除后整条人工链路稳定。
 - 最值得继续做的是拿一个真实学生错题库 PDF 手工看一遍，确认顶部标题里的老师名、每题正文节奏、分页和几何题图片在真实浏览器/打印预览里都符合老师预期。
 - 最值得继续做的是把新的小程序包上传到微信开发者工具 / 真机，实际点一次错题本页顶部 `查看 PDF`，确认 `wx.downloadFile + wx.openDocument` 在真机里能正常打开网站 PDF。
-- 最值得继续做的是把这轮本地恢复的 `/api/wechat/wrong-question-boxes` 和固定 prompt 按正常 release 流程发到线上，再用真机拿一张“有孩子手写痕迹的整页作业”实测一次 AI 框选，看是否明显减少误框答案区和草稿区。
 - 最值得继续做的是拿真机在家长上传页拍一张横屏照片和一张竖屏照片各走一遍，再追加拍一张新图，确认四件事都成立：控制台里的 orientation 返回值合理、预览方向正确、框选区默认切到新拍那张、最终提交到老师端的图片方向一致；如果某些真机仍回 `orientation='up'` 但画面横着，优先走页面里的 `顺时针旋转` 兜底。
 - 如果继续跟这条小程序旋转问题，最值得做的是在微信开发者工具和真机上各拿一张大图手工点一次 `顺时针旋转`，确认页面预览、后续裁切导出和最终提交到老师端都不再出现整张黑图或黑底。
 - 最值得继续做的是拿一个真实已绑定家长账号在小程序里手工点一次 `查看错题本`，确认现在展示的是孩子错题列表或业务空态，而不是路由缺失兜底文案。
@@ -96,13 +96,13 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
-- 这轮学生错题库 PDF 补字目前 proof 主要是 `pdf_engine` payload 回归、浏览器脚本 HTML 回归和临时脚本检查标签/值是否进入最终文档，还没有手工打开实际生成的 PDF 看分页和长文本换行。
+- 这轮学生错题库 PDF 公式补修目前 proof 已包含 `frontend/src/wrong-question-latex.test.ts` 定向回归和临时脚本检查最终 HTML 片段，不再只停留在 payload 透传；但仍没有手工打开实际生成的 PDF 看分页、长文本换行和复杂公式的真实视觉效果。
 - 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
 - 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
 - 历史计划文档和旧对话里仍可能残留 `Xingrun-MiniProgram` 旧目录名；本轮已更新权威 handoff 和关键活文档，但后续如果继续照旧路径执行命令，仍可能误跳到不存在的位置。
-- 这轮 `AI 框选` 提示词优化目前只在本地代码和单测里验证过，还没在线上真机图片上确认收益；如果 provider 实际对提示词不敏感，后续仍可能需要继续叠加坐标过滤或示例图策略。
-- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，且 AI 框选前会先本地缩图，不再直接把原图整张发给后端，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致。
+- 当前拍照自动旋正仍依赖 `wx.getImageInfo().orientation` 和小程序 canvas 预处理；这轮虽然改成优先拿 `original` 原图来保留方向信息，并补了手动旋转兜底，但还没有在真实 iPhone / Android 真机上逐台确认所有相机输出都一致。
 - 内嵌小程序快照这轮是按“白底 canvas + 显式画布尺寸 + 导出前等待一拍”来止黑图；这在微信 canvas 常见问题里通常有效，但还没有拿真机长图/超大图把旋转和裁切都走完一遍。
 - 当前这次只收口了咨询 `AI 批量整理` 链路；常规 `/api/consultations` create/update 仍没有在后端对白名单状态做硬校验，现阶段还是主要依赖前端下拉不让人手工写出非法状态。
 - 咨询记录页备注展示方案当前成立的前提是“备注通常不会太长”；如果后续真实数据出现长段落，仍需要单独决定是否加录入约束或二级查看。

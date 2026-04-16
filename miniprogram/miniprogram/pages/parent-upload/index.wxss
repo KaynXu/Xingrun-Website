@@ -103,29 +103,6 @@
   height: 100%;
 }
 
-.thumb-dot {
-  position: absolute;
-  top: 8rpx;
-  right: 8rpx;
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.thumb-dot-running {
-  background: #f59e0b;
-}
-
-.thumb-dot-done {
-  background: #16a34a;
-}
-
-.thumb-dot-empty,
-.thumb-dot-failed {
-  background: #dc2626;
-}
-
 .crop-stage-shell {
   margin-top: 18rpx;
   padding: 20rpx;
@@ -294,6 +271,22 @@
   border-radius: 22rpx;
   font-size: 28rpx;
   font-weight: 600;
+}
+
+.picker-btn {
+  width: 100%;
+  padding: 0 24rpx;
+  line-height: 84rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 0 24rpx;
+  line-height: 84rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .compact-btn {

@@ -9,7 +9,6 @@ import { upload } from './upload.js';
 import {
   bindParentStudentOnWebsite,
   classifyParentReasonOnWebsite,
-  detectWechatWrongQuestionBoxesOnWebsite,
   getWrongQuestionLibraryForChildOnWebsite,
   listParentBindingsOnWebsite,
   listWrongQuestionsForChildOnWebsite,
@@ -293,25 +292,6 @@ export function createApp() {
 
     try {
       const payload = await getWrongQuestionLibraryForChildOnWebsite({ openId, studentId });
-      res.json(payload);
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  app.post('/wechat/parent/wrong-question-boxes', upload.single('file'), async (req, res) => {
-    const uploadedImageUrl = req.file ? `${getBaseUrl(req.get('host'))}/files/${req.file.filename}` : '';
-    const imageUrl = uploadedImageUrl || String(req.body?.imageUrl ?? req.body?.image_url ?? '').trim();
-
-    if (!imageUrl) {
-      res.status(400).json({ error: 'file required' });
-      return;
-    }
-
-    try {
-      const payload = await detectWechatWrongQuestionBoxesOnWebsite({ imageUrl });
       res.json(payload);
     } catch (error) {
       res.status(500).json({

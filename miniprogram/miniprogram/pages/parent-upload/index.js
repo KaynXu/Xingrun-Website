@@ -1,7 +1,6 @@
 const app = getApp();
 const {
   classifyParentReason,
-  detectParentWrongQuestionBoxes,
   ensureParentSession,
   fetchParentBindings,
   submitParentWrongQuestion,
@@ -11,12 +10,9 @@ const {
 const {
   addManualBoxToImage,
   appendLocalImages,
-  applyAiBoxesToImage,
-  buildAiDetectionImagePlan,
   buildImageRotationPlan,
   buildUploadJobs,
   getSubmitBlockers,
-  markAiDetectionFailure,
   rotateImageBoxesClockwise,
 } = require('./model');
 
@@ -152,19 +148,10 @@ Page({
     if (!image) {
       return '';
     }
-    if (image.aiStatus === 'running') {
-      return 'AI 正在处理中，你也可以先手动补框。';
-    }
-    if (image.aiStatus === 'failed') {
-      return image.aiErrorMessage || 'AI 框选失败，可手动补框或稍后重试。';
-    }
-    if (image.aiStatus === 'empty') {
-      return 'AI 没有返回题框，请先手动补框后再提交。';
-    }
     if ((image.boxes || []).length) {
       return `当前已框 ${(image.boxes || []).length} 题，可直接拖动框和四角调整。`;
     }
-    return '先补加题框，或点击 AI 框选。';
+    return '先补加题框后再提交。';
   },
 
   buildLayout(sourceWidth, sourceHeight) {
@@ -424,10 +411,7 @@ Page({
         return item;
       }
       return {
-        id: item.id,
-        localPath: item.localPath,
-        aiStatus: item.aiStatus,
-        aiErrorMessage: item.aiErrorMessage || '',
+        ...item,
         boxes: item.boxes || [],
         activeBoxId: boxId,
       };
@@ -567,10 +551,7 @@ Page({
       }
       boxes = (item.boxes || []).filter((box) => box.id !== item.activeBoxId);
       return {
-        id: item.id,
-        localPath: item.localPath,
-        aiStatus: boxes.length ? item.aiStatus : 'empty',
-        aiErrorMessage: item.aiErrorMessage || '',
+        ...item,
         boxes,
         activeBoxId: boxes[0] ? boxes[0].id : '',
       };
@@ -600,10 +581,7 @@ Page({
         return item;
       }
       return {
-        id: item.id,
-        localPath: item.localPath,
-        aiStatus: item.aiStatus,
-        aiErrorMessage: item.aiErrorMessage || '',
+        ...item,
         boxes: (item.boxes || []).map((box) => {
           if (box.id !== boxId) {
             return box;
@@ -701,82 +679,6 @@ Page({
     await this.commitImageItems(imageItems, this.data.selectedImageId, false);
   },
 
-  async prepareAiDetectionFile(imageItem) {
-    let imageInfo;
-    let exportPlan;
-    if (!imageItem || !imageItem.localPath) {
-      return '';
-    }
-
-    imageInfo = await this.getImageInfo(imageItem.localPath);
-    exportPlan = buildAiDetectionImagePlan({
-      width: imageInfo.width,
-      height: imageInfo.height,
-    });
-    if (!exportPlan) {
-      return imageItem.localPath;
-    }
-
-    return this.exportCanvasImage(imageItem.localPath, exportPlan);
-  },
-
-  async runAiBoxes() {
-    if (!(this.data.imageItems || []).length) {
-      wx.showToast({ title: '请先选择图片', icon: 'none' });
-      return;
-    }
-
-    const pendingItems = this.data.imageItems.map((item) => {
-      return {
-        ...item,
-        aiStatus: 'running',
-        aiErrorMessage: '',
-      };
-    });
-    await this.commitImageItems(pendingItems, this.data.selectedImageId, false);
-
-    const queue = pendingItems.map((item) => {
-      return {
-        id: item.id,
-        localPath: item.localPath,
-        contentVersion: Number(item.contentVersion) || 0,
-      };
-    });
-    const workerCount = Math.min(3, queue.length);
-
-    await Promise.all(new Array(workerCount).fill(0).map(async () => {
-      let currentJob;
-      let aiFilePath;
-      while (queue.length) {
-        currentJob = queue.shift();
-        if (!currentJob) {
-          return;
-        }
-        try {
-          aiFilePath = await this.prepareAiDetectionFile(currentJob);
-          const payload = await detectParentWrongQuestionBoxes(wx, app.globalData.serverUrl, {
-            filePath: aiFilePath,
-          });
-          await this.updateImageItem(currentJob.id, (item) => {
-            return applyAiBoxesToImage(item, payload.boxes, {
-              requestVersion: currentJob.contentVersion,
-            });
-          });
-        } catch (error) {
-          await this.updateImageItem(currentJob.id, (item) => {
-            return markAiDetectionFailure(
-              item,
-              error instanceof Error ? error.message : 'AI 框选失败',
-              {
-                requestVersion: currentJob.contentVersion,
-              }
-            );
-          });
-        }
-      }
-    }));
-  },
-
   async rotateCurrentImageClockwise() {
     const currentImage = this.data.currentImage;
     let imageInfo;
@@ -864,10 +766,6 @@ Page({
     }
 
     const blockers = getSubmitBlockers(this.data.imageItems);
-    if (blockers.runningImageIds.length) {
-      wx.showToast({ title: 'AI 还在处理中', icon: 'none' });
-      return;
-    }
     if (blockers.emptyImageIds.length) {
       wx.showToast({ title: '还有图片未补框', icon: 'none' });
       return;

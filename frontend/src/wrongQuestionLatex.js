@@ -21,8 +21,179 @@ function isEscaped(text, index) {
   return backslashCount % 2 === 1;
 }
 
-function renderTextSegmentHtml(value) {
-  return escapeHtml(String(value).replaceAll('\\$', '$')).replaceAll('\n', '<br />');
+const SUPERSCRIPT_TRANSLATION = {
+  0: '⁰',
+  1: '¹',
+  2: '²',
+  3: '³',
+  4: '⁴',
+  5: '⁵',
+  6: '⁶',
+  7: '⁷',
+  8: '⁸',
+  9: '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  '=': '⁼',
+  '(': '⁽',
+  ')': '⁾',
+  n: 'ⁿ',
+  i: 'ⁱ',
+};
+
+const SUPERSCRIPT_LETTER_MAP = {
+  a: 'ᵃ',
+  b: 'ᵇ',
+  c: 'ᶜ',
+  d: 'ᵈ',
+  e: 'ᵉ',
+  f: 'ᶠ',
+  g: 'ᵍ',
+  h: 'ʰ',
+  j: 'ʲ',
+  k: 'ᵏ',
+  l: 'ˡ',
+  m: 'ᵐ',
+  o: 'ᵒ',
+  p: 'ᵖ',
+  r: 'ʳ',
+  s: 'ˢ',
+  t: 'ᵗ',
+  u: 'ᵘ',
+  v: 'ᵛ',
+  w: 'ʷ',
+  x: 'ˣ',
+  y: 'ʸ',
+};
+
+const SUBSCRIPT_DIGIT_MAP = {
+  0: '₀',
+  1: '₁',
+  2: '₂',
+  3: '₃',
+  4: '₄',
+  5: '₅',
+  6: '₆',
+  7: '₇',
+  8: '₈',
+  9: '₉',
+};
+
+const SUBSCRIPT_LETTER_MAP = {
+  a: 'ₐ',
+  e: 'ₑ',
+  h: 'ₕ',
+  k: 'ₖ',
+  l: 'ₗ',
+  m: 'ₘ',
+  n: 'ₙ',
+  o: 'ₒ',
+  p: 'ₚ',
+  s: 'ₛ',
+  t: 'ₜ',
+  x: 'ₓ',
+};
+
+const MATHBB_SET_MAP = {
+  C: 'ℂ',
+  N: 'ℕ',
+  Q: 'ℚ',
+  R: 'ℝ',
+  Z: 'ℤ',
+};
+
+const BARE_LATEX_TEXT_REPLACEMENTS = [
+  ['\\infty', '∞'],
+  ['\\Rightarrow', '⇒'],
+  ['\\Leftarrow', '⇐'],
+  ['\\rightarrow', '→'],
+  ['\\leftarrow', '←'],
+  ['\\subseteq', '⊆'],
+  ['\\supseteq', '⊇'],
+  ['\\subset', '⊂'],
+  ['\\supset', '⊃'],
+  ['\\notin', '∉'],
+  ['\\approx', '≈'],
+  ['\\geq', '≥'],
+  ['\\ge', '≥'],
+  ['\\leq', '≤'],
+  ['\\le', '≤'],
+  ['\\neq', '≠'],
+  ['\\times', '×'],
+  ['\\cdot', '·'],
+  ['\\ldots', '...'],
+  ['\\cdots', '...'],
+  ['\\dots', '...'],
+  ['\\div', '÷'],
+  ['\\pm', '±'],
+  ['\\in', '∈'],
+  ['\\to', '→'],
+  ['\\left', ''],
+  ['\\right', ''],
+];
+
+function renderSuperscript(content) {
+  return Array.from(content).map((character) => {
+    if (SUPERSCRIPT_TRANSLATION[character]) {
+      return SUPERSCRIPT_TRANSLATION[character];
+    }
+
+    return SUPERSCRIPT_LETTER_MAP[character.toLowerCase()] || character;
+  }).join('');
+}
+
+function renderSubscript(content) {
+  const rendered = [];
+
+  for (const character of Array.from(content)) {
+    if (SUBSCRIPT_DIGIT_MAP[character]) {
+      rendered.push(SUBSCRIPT_DIGIT_MAP[character]);
+      continue;
+    }
+
+    const mappedLetter = SUBSCRIPT_LETTER_MAP[character.toLowerCase()];
+    if (mappedLetter) {
+      rendered.push(mappedLetter);
+      continue;
+    }
+
+    return `_(${content})`;
+  }
+
+  return rendered.join('');
+}
+
+function normalizeBareLatexText(value) {
+  let normalized = String(value ?? '').replaceAll('\\$', '$');
+
+  for (let loop = 0; loop < 5; loop += 1) {
+    const next = normalized
+      .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
+      .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
+    if (next === normalized) {
+      break;
+    }
+    normalized = next;
+  }
+
+  normalized = normalized.replace(/\\text\{([^{}]+)\}/g, '$1');
+  normalized = normalized.replace(/\\mathbb\s*\{?([A-Za-z])\}?/g, (_, letter) => MATHBB_SET_MAP[letter] || letter);
+  normalized = normalized.replace(/\^\{([^{}]+)\}/g, (_, content) => renderSuperscript(content));
+  normalized = normalized.replace(/\^([0-9n()+\-=i])/g, (_, content) => renderSuperscript(content));
+  normalized = normalized.replace(/\^([a-zA-Z])/g, (_, content) => renderSuperscript(content));
+  normalized = normalized.replace(/_\{([^{}]+)\}/g, (_, content) => renderSubscript(content));
+  normalized = normalized.replace(/_([a-zA-Z0-9])/g, (_, content) => renderSubscript(content));
+
+  for (const [source, target] of BARE_LATEX_TEXT_REPLACEMENTS) {
+    normalized = normalized.replaceAll(source, target);
+  }
+
+  return normalized;
+}
+
+function renderTextSegmentHtml(value, { preserveRaw = false } = {}) {
+  const renderedValue = preserveRaw ? String(value).replaceAll('\\$', '$') : normalizeBareLatexText(value);
+  return escapeHtml(renderedValue).replaceAll('\n', '<br />');
 }
 
 const BROKEN_NEWLINE_LATEX_COMMAND_PATTERN =
@@ -92,7 +263,7 @@ export function parseWrongQuestionLatexSegments(input) {
         source: rawValue,
         message: `未闭合的${isDisplay ? '块级' : '行内'}公式分隔符`,
       });
-      segments.push({ type: 'text', value: rawValue });
+      segments.push({ type: 'text', value: rawValue, preserveRaw: true });
       break;
     }
 
@@ -117,7 +288,7 @@ export function buildWrongQuestionLatexPreviewModel(input) {
   const errors = [...parsed.errors];
   const htmlParts = parsed.segments.map((segment) => {
     if (segment.type === 'text') {
-      return renderTextSegmentHtml(segment.value);
+      return renderTextSegmentHtml(segment.value, { preserveRaw: Boolean(segment.preserveRaw) });
     }
 
     try {
