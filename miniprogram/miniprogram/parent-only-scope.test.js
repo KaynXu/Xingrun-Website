@@ -81,6 +81,16 @@ test('parent upload action buttons keep a stable single-row layout on narrow scr
   assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 
+test('parent upload image picker button stays readable on narrow screens', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
+
+  assert.match(uploadTemplate, /<button class="ghost-btn picker-btn" bindtap="chooseImages">/);
+  assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*width:\s*100%;/s);
+  assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
+});
+
 test('parent wrongbook page exposes question text and a pdf entry button', () => {
   const wrongbookSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.js'), 'utf8');
   const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');

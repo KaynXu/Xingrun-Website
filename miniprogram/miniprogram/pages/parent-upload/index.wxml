@@ -12,7 +12,7 @@
 
   <view wx:if="{{binding}}" class="panel-card">
     <text class="field-label">错题图片</text>
-    <button class="ghost-btn" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
+    <button class="ghost-btn picker-btn" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
 
     <scroll-view wx:if="{{imageItems.length}}" class="thumb-strip" scroll-x="true" show-scrollbar="false">
       <view
