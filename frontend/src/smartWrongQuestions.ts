@@ -599,7 +599,7 @@ export function filterWrongQuestionRecordsForMemberNotebook(
   return records
     .filter((item) => classId === null || item.classId === classId)
     .filter((item) => !studentName || item.studentName === studentName)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 export function buildMemberStudentNotebookSummaries(

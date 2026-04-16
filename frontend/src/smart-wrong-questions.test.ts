@@ -314,7 +314,7 @@ test('buildMemberStudentNotebookSummaries groups current-class records by studen
   ]);
 });
 
-test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records in upload order', () => {
+test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records in reverse upload order for display', () => {
   const records = [
     makeWrongQuestionRecord({ id: 'a', classId: 101, studentName: 'Alice', createdAt: '2026-03-29T09:00:00Z' }),
     makeWrongQuestionRecord({ id: 'b', classId: 101, studentName: 'Bob', createdAt: '2026-03-29T08:00:00Z' }),
@@ -324,7 +324,7 @@ test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class 
 
   assert.deepEqual(
     filterWrongQuestionRecordsForMemberNotebook(records, 101, 'Alice').map((item) => item.id),
-    ['c', 'a'],
+    ['a', 'c'],
   );
 });
 
@@ -1604,10 +1604,10 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
         });
       }
 
-      if (input === '/api/wrong-questions/wechat-delete-a' && init?.method === 'DELETE') {
+      if (input === '/api/wrong-questions/wechat-delete-b' && init?.method === 'DELETE') {
         return createJsonResponse({
           ok: true,
-          deleted_record_id: 'wechat-delete-a',
+          deleted_record_id: 'wechat-delete-b',
           student_id: 1,
           next_student_library_pdf_path: '/api/wechat/student-libraries/1',
         });
@@ -1634,7 +1634,7 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /第一题/);
+      assert.match(pageText, /第二题/);
       const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除本题'));
       assert.ok(deleteButton instanceof HTMLButtonElement);
     });
@@ -1649,11 +1649,11 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
     });
 
     await waitForAssertion(() => {
-      const deleteCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/wechat-delete-a' && call.init?.method === 'DELETE');
+      const deleteCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/wechat-delete-b' && call.init?.method === 'DELETE');
       assert.ok(deleteCall);
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /第二题/);
-      assert.doesNotMatch(pageText, /第一题原因/);
+      assert.match(pageText, /第一题/);
+      assert.doesNotMatch(pageText, /第二题原因/);
     });
   } finally {
     window.confirm = originalConfirm;
@@ -2866,13 +2866,15 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
       assert.match(pageText, /第 1 题/);
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
-      assert.match(pageText, /按上传时间顺序查看/);
+      assert.match(pageText, /按上传时间倒序查看/);
       assert.match(pageText, /2026-03-27T09:00:00Z/);
       assert.match(pageText, /已掌握/);
-      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
-      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
+      assert.equal(questionButtons[0]?.textContent?.includes('第 2 题'), true);
+      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('第 1 题'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
       assert.doesNotMatch(pageText, /第二题还是错/);
-      assert.doesNotMatch(pageText, /按时间倒序查看/);
+      assert.doesNotMatch(pageText, /按上传时间顺序查看/);
       assert.doesNotMatch(pageText, /左侧是紧凑错题目录/);
     });
   } finally {
