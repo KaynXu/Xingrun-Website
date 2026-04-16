@@ -116,17 +116,25 @@ function replaceAll(value, search, replacement) {
 }
 
 function renderSuperscript(content) {
-  return Array.from(String(content || '')).map((character) => {
+  const characters = String(content || '');
+  const rendered = [];
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
     if (SUPERSCRIPT_TRANSLATION[character]) {
-      return SUPERSCRIPT_TRANSLATION[character];
+      rendered.push(SUPERSCRIPT_TRANSLATION[character]);
+      continue;
     }
-    return SUPERSCRIPT_LETTER_MAP[String(character).toLowerCase()] || character;
-  }).join('');
+
+    rendered.push(SUPERSCRIPT_LETTER_MAP[String(character).toLowerCase()] || character);
+  }
+
+  return rendered.join('');
 }
 
 function renderSubscript(content) {
   const rendered = [];
-  const characters = Array.from(String(content || ''));
+  const characters = String(content || '');
 
   for (let index = 0; index < characters.length; index += 1) {
     const character = characters[index];
@@ -154,7 +162,7 @@ function repairWrongQuestionLatexTransport(value) {
     .replace(/\t/g, '\\t')
     .replace(/\f/g, '\\f');
 
-  repaired = replaceAll(repaired, String.fromCharCode(8), '\\b');
+  repaired = replaceAll(repaired, '\u0008', '\\b');
   return repaired;
 }
 

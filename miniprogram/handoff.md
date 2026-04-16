@@ -10,6 +10,7 @@
 - 家长首页绑定态已恢复 `绑定更多孩子` 入口，继续复用 `goBindMore()` 返回 `pages/parent-bind/index`。
 - 家长错题本页已恢复学生级 `查看 PDF`，bridge 仍保留 `GET /wechat/parent/children/:studentId/wrong-question-library`。
 - 家长错题本页的题目卡片现在已补上轻量 LaTeX 可读化：`pages/parent-wrongbook/latex-preview.js` 会把 `$...$`、`\frac`、`\sqrt`、`\mathbb{R}`、上下标等源码转成普通文本预览，避免小程序列表里直接显示公式源码；顶部 `查看 PDF` 仍是服务器上的正式版排版。
+- 家长错题本页的 LaTeX 预处理 helper 这一版已改成更保守的小程序兼容写法，不再依赖 `Array.from` 或 `String.fromCharCode` 这类本项目此前未在小程序侧使用过的 API，优先避免微信运行时白屏。
 - 家长上传页当前是手动补框模式：`补加框 / 删除当前 / 顺时针旋转`，每个题框单独填写文字或语音错因，再统一提交。
 - 家长上传页顶部“拍照 / 继续选图”和底部“统一提交所有错题”按钮都已改为独立窄屏样式，避免被系统默认按钮宽度挤成两行。
 - `AI 框选` 已从小程序页面、`parentApi.js`、bridge、website API 和 `smart_wrong_questions.py` 活代码里删除；`POST /wechat/parent/wrong-question-boxes` 与 `/api/wechat/wrong-question-boxes` 已不再是当前能力。
@@ -19,6 +20,7 @@
 - 小程序范围测试新增这两个按钮的布局约束校验，覆盖 class、宽度和不换行规则。
 - 家长错题本页新增 `pages/parent-wrongbook/latex-preview.js`，现在会先把题干里的 LaTeX 源码做轻量可读化，再显示到列表卡片里。
 - 新增 `pages/parent-wrongbook/latex-preview.test.js`，并更新 `parent-only-scope.test.js`，覆盖“题目卡片接入 LaTeX 预处理”和“`$...$ / \\frac / \\mathbb{R}` 转可读文本”的回归。
+- LaTeX 预处理 helper 已进一步回退到更保守的 ES 运行时用法，去掉了 `Array.from` / `String.fromCharCode`，用于降低小程序真机或开发者工具白屏风险。
 
 ## 剩余问题
 - 这轮上传页布局修复目前主要用本地自动测试验证过，还没有在微信开发者工具或真机上实际看一次“继续拍照 / 继续选图”和“统一提交所有错题”在不同机型上的展示。
