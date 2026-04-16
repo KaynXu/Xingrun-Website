@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-16 已新增公开卷页面结构化抓取 demo：`frontend/scripts/scrapeJyeooPaper.mjs` 现在可以直接抓公开 `jyeoo.com/pp/...` 试卷页，输出整卷 `JSON`，按题保留 `question_no / question_type / html_raw / math_blocks_raw / image_urls / image_local_paths / text_plain / options / latex_segments`；本地定向测试 `frontend/src/scrape-jyeoo-paper.test.ts` 已覆盖“切题、提题图、MathJye -> LaTeX”最小链路，临时脚本也已对公开试卷 `dea193e9-f656-43af-b44a-5037ee38faf7` 实跑通过，当前能抓出 22 题，并把第 17 题不等式还原成 `a < m < a(\\frac{a+e}{\\sqrt{ae}}-1)`。
 - 2026-04-16 小程序家长上传录音转文字已不再依赖 OpenAI Whisper：`ai_processor.py` 的 `transcribe_child_reason_audio()` 和通用 `transcribe_audio()` 现统一改为本地 `faster-whisper`，当前固定 `base + cpu + int8`，先自动识别语言，只有自动识别没出有效文本时才回退 `zh`，`app.py` 的音频转录 usage fallback 也已改成 `local / faster-whisper-base`；这次只替换转录层，不改后续错因归类 provider 逻辑，因此当前仍需要现有聊天类 AI provider key 来做错因归类和复习计划生成。
 - 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
@@ -71,6 +72,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `72493fc Merge branch 'develop'`。
 
 ### 下一步
+- 如果继续扩这条公开卷抓取 demo，最值得先做的是把 `MathJye` 反推覆盖面从当前已验证的分式、根号、上下标、向量箭头，继续补到更多几何/解析题里常见的组合结构，并单独决定是否要抓公开解析页。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
 - 最值得继续做的是拿一条真实含公式的微信错题，在网站错题详情里手工改一次 `题目文本`，确认 KaTeX 预览、渲染失败提示、保存后回显，以及重新打开 `预览 PDF` 时三处内容一致。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页，确认新的首屏标题、副标题和空态文案在 iPhone 宽度下换行自然，没有被按钮区挤坏。
@@ -98,6 +100,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮 `scrapeJyeooPaper.mjs` 只验证了公开试卷页题面，不包含登录后内容、VIP 内容或解析页异步接口；`latex_segments` 目前是对 `MathJye` 的 best-effort 反推，已能覆盖本次公开卷 proof 里的关键公式，但对更复杂的嵌套结构仍可能需要继续补规则。
 - 这轮本地 `faster-whisper` 只用 mocked 单测和依赖安装 smoke 验证过，还没有在 4 核 + 4GB 的真实服务器上拿一段“中文为主但可能夹英文字母/公式”的录音实跑过；首个请求会触发模型下载/加载，后续请求也会吃 CPU，真实延迟、峰值内存和自动识别命中率仍需上线前单独 smoke。
 - 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
