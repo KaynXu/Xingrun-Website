@@ -281,6 +281,14 @@
   box-sizing: border-box;
 }
 
+.submit-btn {
+  width: 100%;
+  padding: 0 24rpx;
+  line-height: 84rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
 .compact-btn {
   flex: 1;
   margin-top: 0;

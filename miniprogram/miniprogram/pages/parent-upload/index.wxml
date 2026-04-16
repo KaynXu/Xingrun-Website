@@ -113,7 +113,7 @@
       </view>
     </view>
 
-    <button class="primary-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题</button>
+    <button class="primary-btn submit-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题</button>
   </view>
 
   <view wx:if="{{successRecordIds.length}}" class="state-card success-card">

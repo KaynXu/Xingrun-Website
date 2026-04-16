@@ -91,6 +91,16 @@ test('parent upload image picker button stays readable on narrow screens', () =>
   assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
 });
 
+test('parent upload submit button stays on one line on narrow screens', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
+
+  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*width:\s*100%;/s);
+  assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
+});
+
 test('parent wrongbook page exposes question text and a pdf entry button', () => {
   const wrongbookSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.js'), 'utf8');
   const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
