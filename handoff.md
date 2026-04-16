@@ -11,9 +11,9 @@
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
 - 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”和“题干里混入裸 LaTeX 片段”的修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；同时网页预览与学生错题库 PDF 的浏览器渲染现在也会把未包进 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 这类裸公式片段转成可读文本，避免导出里继续漏成 `mathbbR / ldots / frac` 之类坏形态。现有历史错题记录即使库里已经存成这类文本，渲染时也会补修，不必先做库迁移。
 - 2026-04-16 学生错题库 PDF 下载接口已改成“fresh 直发缓存、stale 才重建”：`/api/wechat/student-libraries/<student_id>` 现在默认直接返回已有 `student-<id>.pdf`，只有在文件缺失或 PDF 早于当前错题库记录更新时间时才会重建；同时删除、归档和本地错题保存也会主动刷新这份缓存，避免再次出现“网站里的题目预览已经正常，但导出的 PDF 还是修复前旧缓存”的情况。
-- 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `72493fc`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
+- 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `61d49e5`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
-- 2026-04-16 提交 `72493fc Merge branch 'develop'` 已部署到生产机：本地 temp script 已确认 `local master == origin/master == production HEAD == 72493fc`，生产机本轮仍出现“重启后第一次即时健康检查短暂失败”的已知现象，但数秒后重试已恢复到根路由 `302 FOUND`。这次发布把学生错题库 PDF 下载策略正式收口为“fresh 直发缓存、stale 才重建”，不再保留“每次打开都实时重建”的重型热修行为。
+- 2026-04-16 提交 `61d49e5 test: drop stale master box detection coverage` 已部署到生产机：这次按 `docs/deploy-release.md` 走完 `develop(c4386ac) -> master(03738e2 / 61d49e5) -> 生产`，当前已确认 `local master == origin/master == production HEAD == 61d49e5`，`pm2` 服务 `xingrun` 在线，根路由健康检查返回 `302 FOUND`；生产机仍保留“重启后第一下即时健康检查偶发失败、稍后重试恢复”的已知现象。
 - 2026-04-15 网站端学生错题库 PDF 已补回每题 `孩子自述错因 / 补充备注`：`pdf_engine.py` 现在会把 `child_raw_reason_text` 和 `secondary_error_summary` 透传给浏览器渲染脚本，`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 已在每题题目块下显示这两段内容；当前不恢复旧的 `家长备注 / 老师备注`，只展示现行微信错题链路里的孩子错因与补充备注。
 - 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
 - 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
@@ -33,11 +33,12 @@
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `72493fc Merge branch 'develop'`；其中包含错题库 PDF “fresh 直发缓存、stale 才重建”正式策略，以及此前的裸 LaTeX 文本归一化修复。
+- 本次已部署生产的最新提交是 `61d49e5 test: drop stale master box detection coverage`；当前生产结果已同时包含错题库 PDF “fresh 直发缓存、stale 才重建”、裸 LaTeX 文本归一化修复，以及网站端 notebook 详情窗收口。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
 - notebook 弹窗右侧顶部重复的 `错题档案` 区和下面两块切换小卡片已删除，只保留真正的详情与编辑区。
+- notebook 详情头已去掉 `已映射` / `未标注科目` 一类无效状态字样，`预览 PDF / 下载 PDF` 已上提到标题旁边，默认打开就是题目编辑区；左列 `第 1 / 2 / 3 / 4 题` 现在按上传时间正序命名和显示，不再出现“名称按上传顺序、列表却倒序”的反向感。
 - 微信错题详情区已补上错题库 PDF 入口；当记录带有 `student_library_pdf_path` 时，会直接显示 `预览 PDF / 下载 PDF`，并自动带当前登录 token。
 - 本轮已再次确认：错题库 PDF 不是占位入口，当前后端已实现学生错题库 PDF 重建与下载接口，前端也已接通 `预览 PDF / 下载 PDF`。
 - 2026-04-16 网站端智能错题 notebook 弹窗已继续收口：左侧目录现在按上传时间正序显示，题号与上传顺序一致；右侧头部已删掉 `映射状态 / 未标注科目`，并把 `预览 PDF / 下载 PDF` 上提到标题旁边，打开后先看到题目文本编辑区，不再先压一整块“孩子上传记录”卡片。
@@ -68,7 +69,7 @@
 - `teacher_comment` 和 `status='reviewed'` 在本地微信错题链路里只剩兼容旧列含义，不再作为主流程判断依据。
 - staff / owner / admin / super_owner 已统一到按班级或学生打开错题本的 notebook 流程。
 - `member` 端已改成学生卡片 -> 弹窗错题本，不再走旧的页面下半区详情布局。
-- 最近一次相关产品代码提交并已部署生产的是 `72493fc Merge branch 'develop'`。
+- 最近一次相关产品代码提交并已部署生产的是 `61d49e5 test: drop stale master box detection coverage`。
 
 ### 下一步
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
@@ -131,7 +132,10 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
-- `72493fc` `Merge branch 'develop'`
+- `61d49e5` `test: drop stale master box detection coverage`
+- `03738e2` `Merge branch 'develop'`
+- `c4386ac` `test: remove stale wrong-question box coverage`
+- `8b41eb6` `fix: simplify smart wrong question notebook detail`
 - `ebee54c` `fix: serve cached wrong-question pdf when fresh`
 - `c93e12d` `Merge branch 'develop'`
 - `8d32e28` `fix: rebuild wrong-question pdf before download`
@@ -149,7 +153,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`develop`
+- 当前分支：`master`
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
 - 后续更新这份文件时，只写：
