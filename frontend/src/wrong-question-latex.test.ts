@@ -69,3 +69,16 @@ test('parseWrongQuestionLatexSegments repairs latex commands eaten by json escap
     'f(3) \\neq \\text{lim}_{x \\to 3} f(x)',
   );
 });
+
+test('buildWrongQuestionLatexPreviewModel normalizes bare latex fragments inside prose', () => {
+  const preview = buildWrongQuestionLatexPreviewModel(
+    '已知函数 f(x)=(x-1)e^{-ax}（a \\in \\mathbbR），e=2.71828\\ldots，且 a<m<a\\frac{a+e}{ae}-1。',
+  );
+
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /\\in|\\mathbb|\\ldots|\\frac/);
+  assert.match(preview.html, /∈/);
+  assert.match(preview.html, /ℝ|R/);
+  assert.match(preview.html, /\.\.\./);
+  assert.match(preview.html, /\/\(/);
+});
