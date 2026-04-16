@@ -2926,8 +2926,8 @@ def api_lesson_create():
                     source_record_type="lesson_upload",
                     source_record_id=f"upload:{_request_payload_fingerprint(include_file_content=True)}",
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
-                    provider="openai",
-                    model="whisper-1",
+                    provider="local",
+                    model="faster-whisper-base",
                     request_key=_current_audio_upload_request_key(),
                 )
             except DuplicateAiRequestError as exc:

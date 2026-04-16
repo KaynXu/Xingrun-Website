@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-16 小程序家长上传录音转文字已不再依赖 OpenAI Whisper：`ai_processor.py` 的 `transcribe_child_reason_audio()` 和通用 `transcribe_audio()` 现统一改为本地 `faster-whisper`，固定走 `base + cpu + int8 + language='zh'`，`app.py` 的音频转录 usage fallback 也已改成 `local / faster-whisper-base`；这次只替换转录层，不改后续错因归类 provider 逻辑，因此当前仍需要现有聊天类 AI provider key 来做错因归类和复习计划生成。
 - 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
 - 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”和“题干里混入裸 LaTeX 片段”的修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；同时网页预览与学生错题库 PDF 的浏览器渲染现在也会把未包进 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 这类裸公式片段转成可读文本，避免导出里继续漏成 `mathbbR / ldots / frac` 之类坏形态。现有历史错题记录即使库里已经存成这类文本，渲染时也会补修，不必先做库迁移。
@@ -97,6 +98,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮本地 `faster-whisper` 只用 mocked 单测和依赖安装 smoke 验证过，还没有在 4 核 + 4GB 的真实服务器上拿一段中文录音实跑过；首个请求会触发模型下载/加载，后续请求也会吃 CPU，真实延迟和峰值内存仍需上线前单独 smoke。
 - 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
 - 这轮学生错题库 PDF 公式补修目前 proof 已包含 `frontend/src/wrong-question-latex.test.ts` 定向回归和临时脚本检查最终 HTML 片段，不再只停留在 payload 透传；但仍没有手工打开实际生成的 PDF 看分页、长文本换行和复杂公式的真实视觉效果。
