@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -269,6 +271,13 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
                 """,
                 (str(pdf_path), self.record_id),
             )
+        os.utime(
+            pdf_path,
+            (
+                datetime(2026, 4, 16, 13, 14, 0).timestamp(),
+                datetime(2026, 4, 16, 13, 14, 0).timestamp(),
+            ),
+        )
 
         def rebuild_library(student_id: int) -> str:
             self.assertEqual(student_id, self.student["id"])
@@ -282,6 +291,41 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.assertEqual(response.mimetype, "application/pdf")
         self.assertEqual(response.data, b"%PDF-1.4\nrebuilt pdf\n")
         rebuild.assert_called_once_with(self.student["id"])
+
+    def test_student_library_pdf_endpoint_serves_cached_file_when_pdf_is_fresh(self):
+        library_dir = app_module.PDF_DIR / "wrong_question_libraries"
+        library_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = library_dir / f"student-{self.student['id']}.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\nfresh cached pdf\n")
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='已知函数 $f(x)=x^2$',
+                    question_text_source='ai',
+                    student_library_pdf_path=?,
+                    updated_at='2026-04-16 13:14:23'
+                WHERE id=?
+                """,
+                (str(pdf_path), self.record_id),
+            )
+        os.utime(
+            pdf_path,
+            (
+                datetime(2026, 4, 16, 13, 15, 0).timestamp(),
+                datetime(2026, 4, 16, 13, 15, 0).timestamp(),
+            ),
+        )
+
+        with patch("app._rebuild_student_wrong_question_library") as rebuild:
+            response = self.client.get(f"/api/wechat/student-libraries/{self.student['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF-1.4\nfresh cached pdf\n")
+        rebuild.assert_not_called()
 
     def test_visible_member_can_delete_local_wrong_question(self):
         with lesson_manager.get_conn() as conn:

@@ -9,7 +9,7 @@
 - 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
 - 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”和“题干里混入裸 LaTeX 片段”的修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；同时网页预览与学生错题库 PDF 的浏览器渲染现在也会把未包进 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 这类裸公式片段转成可读文本，避免导出里继续漏成 `mathbbR / ldots / frac` 之类坏形态。现有历史错题记录即使库里已经存成这类文本，渲染时也会补修，不必先做库迁移。
-- 2026-04-16 学生错题库 PDF 下载接口已改成“打开前实时重建”：`/api/wechat/student-libraries/<student_id>` 不再只把磁盘上的旧 `student-<id>.pdf` 直接 `send_file()` 回去，而是会先按当前记录重建一遍再返回，避免出现“网站里的题目预览已经正常，但导出的 PDF 还是修复前旧缓存”的情况。
+- 2026-04-16 学生错题库 PDF 下载接口已改成“fresh 直发缓存、stale 才重建”：`/api/wechat/student-libraries/<student_id>` 现在默认直接返回已有 `student-<id>.pdf`，只有在文件缺失或 PDF 早于当前错题库记录更新时间时才会重建；同时删除、归档和本地错题保存也会主动刷新这份缓存，避免再次出现“网站里的题目预览已经正常，但导出的 PDF 还是修复前旧缓存”的情况。
 - 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `c93e12d`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
 - 2026-04-16 提交 `c93e12d Merge branch 'develop'` 已部署到生产机：本地 temp script 已确认 `local master == origin/master == production HEAD == c93e12d`，生产机本轮仍出现“重启后第一次即时健康检查短暂失败”的已知现象，但 8 秒后重试已恢复到根路由 `302 FOUND`。这次发布包含“学生错题库 PDF 打开前实时重建”修复，用来消除网页预览已正常、但下载到的还是旧缓存 PDF 的问题。
@@ -100,7 +100,7 @@
 - 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
 - 这轮学生错题库 PDF 公式补修目前 proof 已包含 `frontend/src/wrong-question-latex.test.ts` 定向回归和临时脚本检查最终 HTML 片段，不再只停留在 payload 透传；但仍没有手工打开实际生成的 PDF 看分页、长文本换行和复杂公式的真实视觉效果。
-- 这轮学生错题库 PDF 打开链路虽然已经改成下载前实时重建，但目前 proof 仍主要是后端定向用例和临时脚本校验，还没有拿真实线上学生记录手工点一次 `预览 PDF / 下载 PDF` 看最终文档视觉效果。
+- 这轮学生错题库 PDF 缓存链路虽然已经改成“fresh 直发、stale 重建”，但目前 proof 仍主要是后端定向用例和临时脚本校验，还没有拿真实线上学生记录手工点一次 `预览 PDF / 下载 PDF` 看最终文档视觉效果与响应速度。
 - 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。
 - 小程序错题本页这轮已补回 `查看 PDF` 入口，但目前 proof 仍是本地 helper / scope / bridge 自动测试，还没有重新在微信开发者工具或真机上点开实际 PDF 文档确认运行时行为。
 - 历史计划文档和旧对话里仍可能残留 `Xingrun-MiniProgram` 旧目录名；本轮已更新权威 handoff 和关键活文档，但后续如果继续照旧路径执行命令，仍可能误跳到不存在的位置。
