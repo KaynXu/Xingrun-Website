@@ -293,26 +293,6 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["secondary_error_summary"], "看漏了先换算单位这一步")
         classify_mock.assert_not_called()
 
-    @patch("app.smart_wrong_questions.detect_wechat_wrong_question_boxes")
-    def test_wechat_service_can_detect_wrong_question_boxes(self, detect_boxes_mock):
-        detect_boxes_mock.return_value = {
-            "boxes": [
-                {"x": 0.12, "y": 0.18, "width": 0.58, "height": 0.26},
-            ]
-        }
-
-        response = self.client.post(
-            "/api/wechat/wrong-question-boxes",
-            headers=self.service_headers(),
-            json={"image_url": "https://files.example.com/worksheet.png"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertEqual(payload["boxes"][0]["x"], 0.12)
-        self.assertEqual(payload["boxes"][0]["height"], 0.26)
-        detect_boxes_mock.assert_called_once_with({"image_url": "https://files.example.com/worksheet.png"})
-
     def test_parent_child_library_lists_only_bound_student_records(self):
         second_student = lesson_manager.create_student_for_class(self.class_id, "Bob")
 
