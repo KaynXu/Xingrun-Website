@@ -251,6 +251,38 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.assertIsNone(lesson_manager.get_wechat_wrong_question_submission(self.record_id))
         rebuild.assert_not_called()
 
+    def test_student_library_pdf_endpoint_rebuilds_before_serving_cached_file(self):
+        library_dir = app_module.PDF_DIR / "wrong_question_libraries"
+        library_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = library_dir / f"student-{self.student['id']}.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\nold pdf\n")
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='已知函数 $f(x)=x^2$',
+                    question_text_source='ai',
+                    student_library_pdf_path=?
+                WHERE id=?
+                """,
+                (str(pdf_path), self.record_id),
+            )
+
+        def rebuild_library(student_id: int) -> str:
+            self.assertEqual(student_id, self.student["id"])
+            pdf_path.write_bytes(b"%PDF-1.4\nrebuilt pdf\n")
+            return str(pdf_path)
+
+        with patch("app._rebuild_student_wrong_question_library", side_effect=rebuild_library) as rebuild:
+            response = self.client.get(f"/api/wechat/student-libraries/{self.student['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertEqual(response.data, b"%PDF-1.4\nrebuilt pdf\n")
+        rebuild.assert_called_once_with(self.student["id"])
+
     def test_visible_member_can_delete_local_wrong_question(self):
         with lesson_manager.get_conn() as conn:
             cur = conn.execute(
