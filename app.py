@@ -2722,7 +2722,10 @@ def api_wechat_child_wrong_question_library(student_id):
 
 @app.route("/api/wechat/student-libraries/<int:student_id>", methods=["GET"])
 def api_wechat_student_library_pdf(student_id):
-    pdf_path = _student_wrong_question_library_path(student_id)
+    records = list_student_wrong_question_library_records(student_id)
+    if not records:
+        return jsonify({"error": "student library pdf not found"}), 404
+    pdf_path = Path(_rebuild_student_wrong_question_library(student_id))
     if not pdf_path.exists():
         return jsonify({"error": "student library pdf not found"}), 404
     return send_file(pdf_path, mimetype="application/pdf", download_name=pdf_path.name)
