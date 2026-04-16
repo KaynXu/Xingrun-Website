@@ -1,5 +1,19 @@
 # Handover - Source-Aligned Pencil Design
 
+## 2026-04-16 Parent Home Bind-More Entry Restored
+- 用户反馈：小程序里当前已绑定一个孩子后，没有回到绑定页继续绑定更多孩子的按钮。
+- 根因确认：
+  - `miniprogram/miniprogram/pages/parent-home/index.wxml` 绑定态分支此前已经移除了 `继续绑定` 入口。
+  - `pages/parent-home/index.js` 的 `goBindMore()` 仍然存在，所以当前缺的是模板入口，不是跳转逻辑或接口。
+- 已完成：
+  - 在家长首页绑定态标题行恢复 `绑定更多孩子` 按钮，继续复用现有 `goBindMore()` 跳转到 `pages/parent-bind/index`
+  - 将 `miniprogram/miniprogram/parent-only-scope.test.js` 改成正向断言，要求绑定态模板必须保留这个入口
+- proof：
+  - red：`node miniprogram/miniprogram/parent-only-scope.test.js` -> `pass 7 / fail 1`
+  - green：`node miniprogram/miniprogram/parent-only-scope.test.js` -> `pass 8 / fail 0`
+- 下一步：
+  - 在微信开发者工具或真机进入家长首页，确认已绑定态现在能点 `绑定更多孩子` 返回绑定页，并且标题行在窄屏下不挤坏
+
 ## 2026-04-15 Wrongbook PDF Entry Restored After Snapshot Regression
 - 用户反馈：目录收口后，小程序错题本页看不到页头 `查看 PDF`。
 - 根因确认：

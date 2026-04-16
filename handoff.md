@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 错题公式链路已继续补上“JSON 合法但 LaTeX 被吞坏”的根因修复：`ai_processor.py`、`pdf_engine.py`、`frontend/src/wrongQuestionLatex.js` 现在都会把 `\text / \to / \frac / \neq` 这类在 JSON 字符串里被吃成 `\t / \f / \n / \r / \b` 控制字符的公式片段修回正常 LaTeX；现有历史错题记录即使库里已经存成坏文本，网页预览、浏览器 PDF 和 ReportLab 回退文本也都会在渲染时补修，不必先做库迁移。
 - 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `7b0ba1c`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
@@ -69,6 +70,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `3ac1b4a Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
 - 最值得继续做的是拿一条真实含公式的微信错题，在网站错题详情里手工改一次 `题目文本`，确认 KaTeX 预览、渲染失败提示、保存后回显，以及重新打开 `预览 PDF` 时三处内容一致。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页，确认新的首屏标题、副标题和空态文案在 iPhone 宽度下换行自然，没有被按钮区挤坏。
 - 最值得继续做的是把这版小程序包重新上传到微信开发者工具 / 真机，实际进入某个孩子的错题本页点一次页头 `查看 PDF`，确认 bridge 返回的 `pdf_url` 在真机里能顺利走完 `wx.downloadFile + wx.openDocument`。
@@ -96,6 +98,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。
 - 这轮学生错题库 PDF 补字目前 proof 主要是 `pdf_engine` payload 回归、浏览器脚本 HTML 回归和临时脚本检查标签/值是否进入最终文档，还没有手工打开实际生成的 PDF 看分页和长文本换行。
 - 这轮家长首页文案收口目前 proof 还是静态字符串校验，还没有在微信开发者工具或真机里看过真实换行和视觉节奏。

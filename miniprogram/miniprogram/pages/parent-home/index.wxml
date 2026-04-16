@@ -22,7 +22,10 @@
   </view>
 
   <view wx:else class="binding-list">
-    <text class="panel-title">选择孩子</text>
+    <view class="panel-head">
+      <text class="panel-title">选择孩子</text>
+      <button class="ghost-btn mini-btn" bindtap="goBindMore">绑定更多孩子</button>
+    </view>
 
     <view wx:for="{{bindings}}" wx:key="id" class="binding-card">
       <view>

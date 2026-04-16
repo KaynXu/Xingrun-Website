@@ -26,10 +26,11 @@ test('mini program keeps only the parent upload flow pages and deletes legacy pa
   }
 });
 
-test('parent home does not show a continue binding entry once children are already bound', () => {
+test('parent home keeps an entry for binding more children after at least one child is already bound', () => {
   const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
 
-  assert.equal(homeTemplate.includes('继续绑定'), false);
+  assert.equal(homeTemplate.includes('绑定更多孩子'), true);
+  assert.match(homeTemplate, /bindtap="goBindMore"/);
 });
 
 test('parent home uses upload-only wording after children are already available', () => {
