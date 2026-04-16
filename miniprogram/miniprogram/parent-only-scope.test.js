@@ -106,6 +106,7 @@ test('parent wrongbook page exposes question text and a pdf entry button', () =>
   const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
 
   assert.equal(wrongbookSource.includes('fetchChildWrongQuestionLibrary'), true);
+  assert.equal(wrongbookSource.includes('normalizeWrongQuestionLatexPreviewText'), true);
   assert.equal(wrongbookTemplate.includes('查看 PDF'), true);
-  assert.equal(wrongbookTemplate.includes('item.questionText'), true);
+  assert.equal(wrongbookTemplate.includes('item.questionPreviewText'), true);
 });
