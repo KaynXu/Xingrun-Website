@@ -132,6 +132,18 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("不要把整道题都改写成纯 LaTeX", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("反斜杠必须写成双反斜杠", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
 
+    def test_wrong_question_practice_prompt_focuses_on_reflection_not_solution(self):
+        self.assertIn("给学生的一句预防提醒", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要提示孩子该怎样把这道题一步一步做对", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("题目内容只用于确认错因语境", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+
+    def test_wrong_question_practice_reportlab_copy_avoids_ai_label(self):
+        source = (Path(ai_processor.__file__).resolve().parent / "pdf_engine.py").read_text(encoding="utf-8")
+        self.assertIn('Paragraph("把错因补完整"', source)
+        self.assertIn('Paragraph("下次提醒"', source)
+        self.assertIn('Paragraph("写一写以后怎么做"', source)
+        self.assertNotIn('Paragraph("AI 提示"', source)
+
     def test_parse_and_generate_plan_uses_configured_model_for_n1n(self):
         fake_client = _FakeClient(
             {
