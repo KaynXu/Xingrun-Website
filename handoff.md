@@ -6,10 +6,11 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-20 已按标准 release 流程把本地 `develop(d5d0cdd)` 合到 `master(cb01975)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == cb01975`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次部署过程中，生产机仓库因为历史残留的 `ai_processor.py` 和 `frontend/package-lock.json` 本地改动阻塞了 `git pull`，现已先安全收进远端仓库本地 stash `pre-release-20260420-master-deploy` 后完成拉取和发布；未跟踪的备份文件与数据库快照仍保留在服务器上，没有清理。
+- 2026-04-20 已按标准 release 流程把本地 `develop(67edf47)` 合到 `master(776b534)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 776b534`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这轮已顺手清理生产机仓库：删除了根目录历史备份文件与 `frontend/dist.prev/`，把运行时 `data/` 和备份模式收进服务器本地 `.git/info/exclude`，并移除了上轮部署临时 stash `pre-release-20260420-master-deploy`；当前仍保留更早的历史 stash，后续如需深清应单独做维护窗口。
+- 2026-04-20 网站端智能错题 notebook 左侧目录已改为按上传时间正序展示，并新增 `全部 / 未掌握 / 已掌握` 掌握状态筛选；打开学生 notebook 时默认定位到最新一题，删除当前题后会优先跳到相邻题，方便老师顺着一份学生错题本逐题看。
 - 2026-04-20 网站端“智能错题”已补上老师端 `错题练习` 首版闭环，当前入口在学生 notebook 弹窗内：左侧题目目录可勾选本地 `wechat_mp` 且 `recognized + active` 的错题，点击 `生成错题练习` 后会为该学生创建一份独立练习单任务，并把记录持久化到本地服务器 SQLite。前端同一弹窗已新增 `错题练习记录` 页签，可查看历史生成记录、状态，以及 `预览 PDF / 下载 PDF` 入口；后端也已补齐 `/api/wrong-question-practice-sheets` 创建/列表/详情链路和 `/api/wrong-question-practice-sheets/<id>/pdf(/download)` PDF 访问路由。
 - 2026-04-20 错题练习生成链路当前已按业务要求收口：几何题在 PDF 里保留原题图片，非几何题走真实题目文本；每题下方固定生成 `AI 提示`、`错题挖空` 填写区，以及“如何改正 / 以后如何避免”总结区。AI 提示词、浏览器版 PDF 渲染脚本、ReportLab fallback、异步 worker、存储表结构和前端交互测试都已接上，当前 proof 已覆盖 store / API / async worker / PDF renderer / notebook UI。
-- 2026-04-20 网站端学生错题库顺序已统一收口为倒序：`lesson_manager.list_student_wrong_question_library_records()` 现在按 `created_at DESC, id DESC` 返回，本地网站 notebook 左侧目录会把最新上传题排最上面，题号也按当前展示顺序从上到下重新编号；同时 `/api/wechat/children/<student_id>/wrong-question-library` 的 `updated_at` 已改成取最新一条记录，避免倒序后元数据反而退回最旧时间。因为学生错题库 PDF 也直接吃这份记录顺序，所以 PDF 现在也会按最新题在前生成。
+- 2026-04-20 学生错题库导出链路仍按最新题在前：`lesson_manager.list_student_wrong_question_library_records()` 现在按 `created_at DESC, id DESC` 返回，供学生错题库 PDF 和库内记录汇总使用；同时 `/api/wechat/children/<student_id>/wrong-question-library` 的 `updated_at` 已改成取最新一条记录，避免元数据退回最旧时间。网站端老师 notebook 则在前端单独按上传时间正序展示，方便顺着学生做题顺序回看。
 - 2026-04-20 已确认学生错题库 PDF 线上确实存在两套生成路径：`pdf_engine.py` 会先走 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，失败时再静默回退到 `ReportLab` 纯文本链路。当前生产机 `49.234.185.86` 上的 `node / playwright / /snap/bin/chromium` 都正常，拿真实学生错题库连续 7 次重建都稳定命中浏览器链路，没有复现“当前环境随机掉回 ReportLab”。这次用户体感里“有时公式正常、有时像 LaTeX 编码坏掉”的根因更像是历史缓存混用：线上旧缓存 `student-276.pdf` 曾是 `221846` 字节、`student-277.pdf` 曾是 `212868` 字节，强制重建后分别变成浏览器版 `309508` 和 `294710` 字节；说明之前留在 `data/pdfs/wrong_question_libraries/` 里的部分 PDF 是浏览器链路修好前生成的旧回退版，只有学生记录再次更新或手动刷新缓存时才会被替换成新版浏览器 PDF。
 - 2026-04-20 已继续修复小程序语音转录线上 `502`：根因不是音频 URL 失效，而是生产机无法访问 `huggingface.co`，导致 `WhisperModel("base")` 首次初始化卡在联网下载模型。当前 `ai_processor.py` 已改为优先读取本地 Hugging Face 缓存快照目录；并已从本机把 `faster-whisper-base` 模型缓存同步到生产机 `~/.cache/huggingface/hub/models--Systran--faster-whisper-base`。线上复验通过：生产机 `_get_local_whisper_model()` 初始化耗时约 `0.57s`，`POST http://127.0.0.1:3001/wechat/parent/reason-transcriptions` 已对真实 mp3 返回 `200 {"transcript_text": ...}`，当前小程序语音转文字链路已可用。
 - 2026-04-19 已直接在生产机 `49.234.185.86` 的 `/home/ubuntu/Xingrun-Website/.venv` 补装 `requirements.txt`，确认 `faster-whisper 1.2.1` 可导入后已执行 `pm2 restart xingrun`；线上当前再次确认 `pm2 xingrun` 实际运行的是仓库内 `.venv/bin/python app.py`，根路由健康检查恢复为 `HTTP/1.1 302 FOUND`。这次修复的是“生产机环境没装包”，不是代码版本缺依赖；小程序前端仍指向 `https://xingrun.online`，因此这次不需要重传小程序包。
@@ -41,7 +42,7 @@
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `cb01975 Merge branch 'develop'`；当前生产结果已同时包含错题练习 PDF、whisper 本地缓存修复、Jyeoo 公开卷抓取 demo、错题库顺序调整，以及此前的 PDF / LaTeX 修复。
+- 本次已部署生产的最新提交是 `776b534 Merge branch 'develop'`；当前生产结果已同时包含错题练习 PDF、notebook 正序展示与掌握状态筛选、whisper 本地缓存修复、Jyeoo 公开卷抓取 demo，以及此前的 PDF / LaTeX 修复。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -77,13 +78,12 @@
 - `teacher_comment` 和 `status='reviewed'` 在本地微信错题链路里只剩兼容旧列含义，不再作为主流程判断依据。
 - staff / owner / admin / super_owner 已统一到按班级或学生打开错题本的 notebook 流程。
 - `member` 端已改成学生卡片 -> 弹窗错题本，不再走旧的页面下半区详情布局。
-<<<<<<< HEAD
-- 最近一次相关产品代码提交并已部署生产的是 `cb01975 Merge branch 'develop'`。
+- 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
 - 最值得继续做的是在真实老师账号下手工开一个学生 notebook，分别勾选“1 道题”和“多道题”各生成一次错题练习，确认等待中、完成后历史列表刷新、PDF 打开速度和下载命名都符合预期。
 - 最值得继续做的是拿一份包含几何题和公式题的真实练习单手工看 PDF 视觉效果，重点确认图片尺寸、题间分页、挖空书写区留白和总结区高度是否够老师实际发给学生使用。
-- 最值得继续做的是登录生产机看一眼 `git stash list` 和仓库未跟踪文件，决定是否要在单独维护窗口里清理那批历史备份 / 数据库快照；这一步不要混进功能发布。
+- 如果继续做生产机维护，最值得先做的是逐条判断剩余历史 `git stash` 是否还能删除；这一步不要混进功能发布。
 - 最值得继续做的是拿小程序真机再录一段中文语音手工点一次提交，确认页面端不再长时间挂在 `reason-transcriptions`，并观察首个请求后的实际用户体感时延。
 - 最值得继续做的是拿一段真实家长语音在真机或线上接口手工跑一次转文字，确认生产机当前不再报 `未安装 faster-whisper`，并观察首次模型初始化的真实时延。
 - 如果继续扩这条公开卷抓取 demo，最值得先做的是把 `MathJye` 反推覆盖面从当前已验证的分式、根号、上下标、向量箭头，继续补到更多几何/解析题里常见的组合结构，并单独决定是否要抓公开解析页。
@@ -114,7 +114,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
-- 生产机这次虽然已成功发布，但仓库本身仍不是干净树：除了大量历史未跟踪备份文件外，现在还多保留了一个 `git stash` 条目 `pre-release-20260420-master-deploy`。它能保证这次部署不丢现场改动，但如果后续有人忘记这层现场状态，下一次发布仍可能再次误判。
+- 生产机仓库这轮已经删掉根目录历史备份文件、清掉 `pre-release-20260420-master-deploy`，并把运行时 `data/` 收进服务器本地 exclude；但仓库里仍保留更早的历史 `git stash` 条目，如果后续要继续深清，必须先逐条确认来源，不要直接批量 drop。
 - 这轮错题练习目前只做到“老师端生成 -> PDF 导出发送”，还没有学生在线回填答案或老师回看学生填写结果；数据库里虽然已保存生成记录和每题 AI 材料，但学生作答态、提交态和二次点评链路还不存在。
 - 当前 notebook 左侧在“这个学生只有 1 道可用于练习的题”时会默认选中它，目的是减少老师多点一步；如果后续用户明确希望“必须手动勾选后才能生成”，这里需要再单独改交互。
 - 这次线上通过的是“已有本地缓存模型”路径；如果后续更换服务器、清理 `~/.cache/huggingface` 或切别的 whisper 模型名，生产机仍会因为无法直连 `huggingface.co` 而重新卡在模型拉取，届时需要再次预置缓存或提供可用镜像。
@@ -153,6 +153,8 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `776b534` `Merge branch 'develop'`
+- `67edf47` `智能错题：错题库按上传时间正序展示，新增掌握状态筛选`
 - `cb01975` `Merge branch 'develop'`
 - `d5d0cdd` `Merge branch 'feat/wrong-question-practice-sheet' into develop`
 - `42e451b` `feat: add wrong question practice sheet generation`
@@ -177,7 +179,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`master`
+- 当前分支：`develop`
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
 - 后续更新这份文件时，只写：
