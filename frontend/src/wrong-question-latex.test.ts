@@ -91,3 +91,14 @@ test('buildWrongQuestionLatexPreviewModel normalizes bare latex fragments inside
   assert.match(preview.html, /\.\.\./);
   assert.match(preview.html, /\/\(/);
 });
+
+test('buildWrongQuestionLatexPreviewModel turns literal newline escapes back into line breaks without breaking latex commands', () => {
+  const preview = buildWrongQuestionLatexPreviewModel(
+    '第一步先看条件\\n\\n(2) 若 a > e，证明 $f(3) \\neq 1$。',
+  );
+
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /\\n/);
+  assert.match(preview.html, /<br \/><br \/>/);
+  assert.match(preview.html, /katex/);
+});

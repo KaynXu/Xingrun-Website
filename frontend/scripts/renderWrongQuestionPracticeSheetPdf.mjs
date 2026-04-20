@@ -53,6 +53,20 @@ function buildErrorList(errors) {
   `;
 }
 
+function buildLatexStatus(preview) {
+  if (Array.isArray(preview?.errors) && preview.errors.length > 0) {
+    return `
+      <span class="question-latex-card-status question-latex-card-status-error">
+        ${escapeHtml(`${preview.errors.length} 处渲染失败`)}
+      </span>
+    `;
+  }
+
+  return `
+    <span class="question-latex-card-status question-latex-card-status-ok">预览正常</span>
+  `;
+}
+
 function buildQuestionBlock(item) {
   if (item.is_geometry) {
     if (item.image_data_url) {
@@ -74,15 +88,30 @@ function buildQuestionBlock(item) {
 
   const preview = buildWrongQuestionLatexPreviewModel(item.question_text_snapshot || '');
   return `
-    <div class="question-text-block">
-      <div class="question-text-preview">${preview.html || '<span class="question-empty">暂无题目文本</span>'}</div>
+    <div class="question-latex-card">
+      <div class="question-latex-card-header">
+        <span class="question-latex-card-title">公式预览</span>
+        ${buildLatexStatus(preview)}
+      </div>
+      <div class="xr-latex-preview question-latex-preview-frame">
+        ${preview.html || '<span class="question-empty xr-latex-empty">暂无题目文本</span>'}
+      </div>
       ${buildErrorList(preview.errors)}
     </div>
   `;
 }
 
+function normalizePromptText(prompt) {
+  return String(prompt ?? '')
+    .replaceAll('\\r\\n', '\n')
+    .replaceAll('\\r', '\n')
+    .replaceAll('\\n', '\n')
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n');
+}
+
 function splitWritingSection(prompt, fallbackLabel) {
-  const normalized = String(prompt ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+  const normalized = normalizePromptText(prompt).trim();
   const lines = normalized
     .split('\n')
     .map((line) => line.trim())
@@ -102,7 +131,7 @@ function splitWritingSection(prompt, fallbackLabel) {
 }
 
 function renderPromptHtml(prompt) {
-  return escapeHtml(String(prompt ?? ''))
+  return escapeHtml(normalizePromptText(prompt))
     .replace(/[_＿]{4,}/g, '<span class="blank-gap"></span>')
     .replaceAll('\n', '<br />');
 }
@@ -229,13 +258,62 @@ export async function buildDocumentMarkup(payload) {
             color: #334155;
           }
 
-          .question-text-block,
           .geometry-card,
           .writing-card {
             border: 1px solid #dbe2ea;
             border-radius: 10px;
             padding: 16px;
             background: #ffffff;
+          }
+
+          .question-latex-card {
+            border: 1px solid #dbeafe;
+            border-radius: 18px;
+            padding: 16px;
+            background: #f4fbff;
+          }
+
+          .question-latex-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+          }
+
+          .question-latex-card-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #94a3b8;
+          }
+
+          .question-latex-card-status {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 700;
+          }
+
+          .question-latex-card-status-ok {
+            border: 1px solid #bbf7d0;
+            background: #f0fdf4;
+            color: #16a34a;
+          }
+
+          .question-latex-card-status-error {
+            border: 1px solid #fecaca;
+            background: #fff1f2;
+            color: #be123c;
+          }
+
+          .question-latex-preview-frame {
+            border: 1px solid #dbeafe;
+            border-radius: 18px;
+            background: #ffffff;
+            padding: 14px 16px;
           }
 
           .writing-card {
@@ -292,29 +370,33 @@ export async function buildDocumentMarkup(payload) {
             font-size: 14px;
           }
 
-          .question-text-preview {
+          .xr-latex-preview {
             font-size: 16px;
             line-height: 1.8;
             word-break: break-word;
           }
 
-          .question-text-preview .katex {
+          .xr-latex-preview .katex {
             font-size: 1.05em;
           }
 
-          .question-text-preview .xr-latex-display {
+          .xr-latex-preview .xr-latex-display {
             margin: 14px 0;
             overflow-x: auto;
             overflow-y: hidden;
             padding: 4px 0;
           }
 
-          .question-text-preview .xr-latex-error-source {
+          .xr-latex-preview .xr-latex-error-source {
             color: #b91c1c;
             background: #fee2e2;
             border-radius: 6px;
             padding: 2px 6px;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+          }
+
+          .xr-latex-preview .xr-latex-empty {
+            color: #64748b;
           }
 
           .latex-error-box {
