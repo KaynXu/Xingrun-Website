@@ -954,29 +954,14 @@ def generate_wrong_question_practice_sheet_pdf(
     items: list[dict],
     output_path: str,
 ) -> str:
-    try:
-        return _render_wrong_question_practice_sheet_pdf_via_browser(
-            student_name=student_name,
-            class_name=class_name,
-            teacher_name=teacher_name,
-            title=title,
-            items=items,
-            output_path=output_path,
-        )
-    except Exception:
-        try:
-            return _generate_wrong_question_practice_sheet_pdf_via_reportlab(
-                student_name=student_name,
-                class_name=class_name,
-                teacher_name=teacher_name,
-                title=title,
-                items=items,
-                output_path=output_path,
-            )
-        except Exception as reportlab_error:
-            raise RuntimeError(
-                "错题练习 PDF 生成失败：浏览器渲染与 ReportLab 回退都未成功"
-            ) from reportlab_error
+    return _render_wrong_question_practice_sheet_pdf_via_browser(
+        student_name=student_name,
+        class_name=class_name,
+        teacher_name=teacher_name,
+        title=title,
+        items=items,
+        output_path=output_path,
+    )
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────
