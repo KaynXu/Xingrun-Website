@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-04-16
+最后更新：2026-04-20
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 已按标准 release 流程把本地 `develop(d5d0cdd)` 合到 `master(cb01975)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == cb01975`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次部署过程中，生产机仓库因为历史残留的 `ai_processor.py` 和 `frontend/package-lock.json` 本地改动阻塞了 `git pull`，现已先安全收进远端仓库本地 stash `pre-release-20260420-master-deploy` 后完成拉取和发布；未跟踪的备份文件与数据库快照仍保留在服务器上，没有清理。
 - 2026-04-20 网站端“智能错题”已补上老师端 `错题练习` 首版闭环，当前入口在学生 notebook 弹窗内：左侧题目目录可勾选本地 `wechat_mp` 且 `recognized + active` 的错题，点击 `生成错题练习` 后会为该学生创建一份独立练习单任务，并把记录持久化到本地服务器 SQLite。前端同一弹窗已新增 `错题练习记录` 页签，可查看历史生成记录、状态，以及 `预览 PDF / 下载 PDF` 入口；后端也已补齐 `/api/wrong-question-practice-sheets` 创建/列表/详情链路和 `/api/wrong-question-practice-sheets/<id>/pdf(/download)` PDF 访问路由。
 - 2026-04-20 错题练习生成链路当前已按业务要求收口：几何题在 PDF 里保留原题图片，非几何题走真实题目文本；每题下方固定生成 `AI 提示`、`错题挖空` 填写区，以及“如何改正 / 以后如何避免”总结区。AI 提示词、浏览器版 PDF 渲染脚本、ReportLab fallback、异步 worker、存储表结构和前端交互测试都已接上，当前 proof 已覆盖 store / API / async worker / PDF renderer / notebook UI。
 - 2026-04-20 网站端学生错题库顺序已统一收口为倒序：`lesson_manager.list_student_wrong_question_library_records()` 现在按 `created_at DESC, id DESC` 返回，本地网站 notebook 左侧目录会把最新上传题排最上面，题号也按当前展示顺序从上到下重新编号；同时 `/api/wechat/children/<student_id>/wrong-question-library` 的 `updated_at` 已改成取最新一条记录，避免倒序后元数据反而退回最旧时间。因为学生错题库 PDF 也直接吃这份记录顺序，所以 PDF 现在也会按最新题在前生成。
@@ -20,7 +21,7 @@
 - 2026-04-16 学生错题库 PDF 下载接口已改成“fresh 直发缓存、stale 才重建”：`/api/wechat/student-libraries/<student_id>` 现在默认直接返回已有 `student-<id>.pdf`，只有在文件缺失或 PDF 早于当前错题库记录更新时间时才会重建；同时删除、归档和本地错题保存也会主动刷新这份缓存，避免再次出现“网站里的题目预览已经正常，但导出的 PDF 还是修复前旧缓存”的情况。
 - 2026-04-16 学生错题库 PDF 浏览器链路已补上系统浏览器自动探测：`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 现在会在未配置 `XR_PLAYWRIGHT_EXECUTABLE_PATH` 时自动探测常见 Chrome / Chromium 路径，生产机已确认可直接命中 `/snap/bin/chromium`；本次发布后，线上 `master` 已更新到 `61d49e5`，并已为截图涉及的学生 `276` 重建错题库 PDF `data/pdfs/wrong_question_libraries/student-276.pdf`。
 - 2026-04-15 网站端错题公式链路已开始走混合 LaTeX：`ai_processor.py` 的错题识别提示词现在会要求“正文 + `$...$` / `$$...$$` 公式片段”混合输出，并保留多行结构；`frontend/src/SmartWrongQuestionsPage.tsx` 已在老师编辑 `题目文本` 时新增 KaTeX 预览区与渲染失败提示，仍允许保存原文；学生错题库 PDF 默认仍优先走 `pdf_engine.py` 调起 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，但如果浏览器链路失败，现在会自动回退到现有 `ReportLab` 生成器，不再因为部署环境缺浏览器而直接报错。
-- 2026-04-16 提交 `61d49e5 test: drop stale master box detection coverage` 已部署到生产机：这次按 `docs/deploy-release.md` 走完 `develop(c4386ac) -> master(03738e2 / 61d49e5) -> 生产`，当前已确认 `local master == origin/master == production HEAD == 61d49e5`，`pm2` 服务 `xingrun` 在线，根路由健康检查返回 `302 FOUND`；生产机仍保留“重启后第一下即时健康检查偶发失败、稍后重试恢复”的已知现象。
+- 2026-04-16 提交 `61d49e5 test: drop stale master box detection coverage` 已部署到生产机：这次按 `docs/deploy-release.md` 走完 `develop(c4386ac) -> master(03738e2 / 61d49e5) -> 生产`；该版本现已被 2026-04-20 的 `cb01975` 正式替代。
 - 2026-04-15 网站端学生错题库 PDF 已补回每题 `孩子自述错因 / 补充备注`：`pdf_engine.py` 现在会把 `child_raw_reason_text` 和 `secondary_error_summary` 透传给浏览器渲染脚本，`frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 已在每题题目块下显示这两段内容；当前不恢复旧的 `家长备注 / 老师备注`，只展示现行微信错题链路里的孩子错因与补充备注。
 - 2026-04-15 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 的首屏文案已收口成用户口吻：当前不再出现 `上传入口`、`网站错题工作区`、`同步绑定关系` 这类偏内部协作的表述，已统一改成家长能直接理解的 `查看错题本或上传新的错题`、`正在加载孩子信息`、`请输入老师提供的班级邀请码...` 等页面文案。
 - 2026-04-15 小程序错题本页的 `查看 PDF` 回归已补回：这次排查确认不是目录 rename 本身把活代码覆盖，而是此前并入的 `parent-wrongbook` 仍停在旧快照，只保留了错题列表，没有接上学生级 `wrong-question-library` metadata、页头 `查看 PDF` 入口和 `question_text` 展示。当前 `miniprogram/miniprogram/pages/parent-wrongbook/index.*` 已重新接回 PDF metadata 拉取、`wx.downloadFile + wx.openDocument` 打开链路，并在每张卡片恢复题目文本展示；`miniprogram/backend/src/index.ts` 与 `website-client.ts` 也已补回 `GET /wechat/parent/children/<student_id>/wrong-question-library` bridge。
@@ -40,7 +41,7 @@
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `61d49e5 test: drop stale master box detection coverage`；当前生产结果已同时包含错题库 PDF “fresh 直发缓存、stale 才重建”、裸 LaTeX 文本归一化修复，以及网站端 notebook 详情窗收口。
+- 本次已部署生产的最新提交是 `cb01975 Merge branch 'develop'`；当前生产结果已同时包含错题练习 PDF、whisper 本地缓存修复、Jyeoo 公开卷抓取 demo、错题库顺序调整，以及此前的 PDF / LaTeX 修复。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -81,6 +82,7 @@
 ### 下一步
 - 最值得继续做的是在真实老师账号下手工开一个学生 notebook，分别勾选“1 道题”和“多道题”各生成一次错题练习，确认等待中、完成后历史列表刷新、PDF 打开速度和下载命名都符合预期。
 - 最值得继续做的是拿一份包含几何题和公式题的真实练习单手工看 PDF 视觉效果，重点确认图片尺寸、题间分页、挖空书写区留白和总结区高度是否够老师实际发给学生使用。
+- 最值得继续做的是登录生产机看一眼 `git stash list` 和仓库未跟踪文件，决定是否要在单独维护窗口里清理那批历史备份 / 数据库快照；这一步不要混进功能发布。
 - 最值得继续做的是拿小程序真机再录一段中文语音手工点一次提交，确认页面端不再长时间挂在 `reason-transcriptions`，并观察首个请求后的实际用户体感时延。
 - 最值得继续做的是拿一段真实家长语音在真机或线上接口手工跑一次转文字，确认生产机当前不再报 `未安装 faster-whisper`，并观察首次模型初始化的真实时延。
 - 如果继续扩这条公开卷抓取 demo，最值得先做的是把 `MathJye` 反推覆盖面从当前已验证的分式、根号、上下标、向量箭头，继续补到更多几何/解析题里常见的组合结构，并单独决定是否要抓公开解析页。
@@ -111,6 +113,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 生产机这次虽然已成功发布，但仓库本身仍不是干净树：除了大量历史未跟踪备份文件外，现在还多保留了一个 `git stash` 条目 `pre-release-20260420-master-deploy`。它能保证这次部署不丢现场改动，但如果后续有人忘记这层现场状态，下一次发布仍可能再次误判。
 - 这轮错题练习目前只做到“老师端生成 -> PDF 导出发送”，还没有学生在线回填答案或老师回看学生填写结果；数据库里虽然已保存生成记录和每题 AI 材料，但学生作答态、提交态和二次点评链路还不存在。
 - 当前 notebook 左侧在“这个学生只有 1 道可用于练习的题”时会默认选中它，目的是减少老师多点一步；如果后续用户明确希望“必须手动勾选后才能生成”，这里需要再单独改交互。
 - 这次线上通过的是“已有本地缓存模型”路径；如果后续更换服务器、清理 `~/.cache/huggingface` 或切别的 whisper 模型名，生产机仍会因为无法直连 `huggingface.co` 而重新卡在模型拉取，届时需要再次预置缓存或提供可用镜像。
@@ -149,6 +152,9 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `cb01975` `Merge branch 'develop'`
+- `d5d0cdd` `Merge branch 'feat/wrong-question-practice-sheet' into develop`
+- `42e451b` `feat: add wrong question practice sheet generation`
 - `61d49e5` `test: drop stale master box detection coverage`
 - `03738e2` `Merge branch 'develop'`
 - `c4386ac` `test: remove stale wrong-question box coverage`
