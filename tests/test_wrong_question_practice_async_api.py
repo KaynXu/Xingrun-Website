@@ -164,6 +164,44 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["generation_error"], "PDF 生成失败，请稍后重试")
 
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
+    @patch(
+        "pdf_engine.generate_wrong_question_practice_sheet_pdf",
+        side_effect=[RuntimeError("pdf boom"), "/tmp/practice-sheet.pdf"],
+    )
+    @patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_retries_pdf_generation_once_before_marking_sheet_failed(
+        self,
+        mock_generate_material,
+        mock_generate_pdf,
+        _mock_credits,
+        mock_finalize,
+    ):
+        mock_generate_material.return_value = {
+            "title": "Alice 错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": self.record["id"],
+                    "reason_blank_prompt": "先把错因写出来\n这题我错在 ______，因为 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么避免\n如果下次再做，我会先提醒自己注意什么？",
+                }
+            ],
+        }
+
+        app_module._run_wrong_question_practice_generation_job(
+            sheet_id=self.sheet["id"],
+            user={"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+        )
+
+        saved = lesson_manager.get_wrong_question_practice_sheet(self.sheet["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["status"], "ready")
+        self.assertEqual(saved["pdf_path"], "/tmp/practice-sheet.pdf")
+        self.assertEqual(saved["generation_error"], "")
+        self.assertEqual(mock_generate_pdf.call_count, 2)
+        mock_finalize.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
