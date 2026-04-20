@@ -137,6 +137,10 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("第一行是这个书写区的小标题", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("不要提示孩子该怎样把这道题一步一步做对", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("题目内容只用于确认错因语境", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("两个书写区都要以挖空题为主", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("每个书写区至少包含 3 个 ______ 空格", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要在挖空题后面再追加纯写字线", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("明确点出孩子缺的是哪个知识点", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertNotIn("ai_hint", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
 
     def test_wrong_question_practice_reportlab_copy_avoids_fixed_section_labels(self):

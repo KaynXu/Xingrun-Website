@@ -101,16 +101,28 @@ function splitWritingSection(prompt, fallbackLabel) {
   };
 }
 
+function renderPromptHtml(prompt) {
+  return escapeHtml(String(prompt ?? ''))
+    .replace(/[_＿]{4,}/g, '<span class="blank-gap"></span>')
+    .replaceAll('\n', '<br />');
+}
+
 function buildWritingSection(prompt, fallbackLabel) {
   const section = splitWritingSection(prompt, fallbackLabel);
   return `
     <section class="writing-card">
       <div class="writing-label">${escapeHtml(section.label)}</div>
-      <div class="writing-prompt">${escapeHtml(section.prompt)}</div>
-      <div class="writing-lines">
-        <div class="writing-line"></div>
-        <div class="writing-line"></div>
-        <div class="writing-line"></div>
+      <div class="writing-prompt">${renderPromptHtml(section.prompt)}</div>
+    </section>
+  `;
+}
+
+function buildRedoWorkArea() {
+  return `
+    <section class="redo-work-area">
+      <div class="redo-work-label">重做这题（可选）</div>
+      <div class="redo-lines">
+        ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
       </div>
     </section>
   `;
@@ -127,6 +139,7 @@ function buildItemMarkup(item) {
 
       ${buildWritingSection(item.reason_blank_prompt || '', '先梳理错因')}
       ${buildWritingSection(item.improvement_summary_prompt || '', '再写你的想法')}
+      ${buildRedoWorkArea()}
     </section>
   `;
 }
@@ -185,6 +198,9 @@ export async function buildDocumentMarkup(payload) {
 
           .record-page {
             page-break-before: always;
+            min-height: 265mm;
+            display: flex;
+            flex-direction: column;
           }
 
           .record-page:first-of-type {
@@ -234,14 +250,40 @@ export async function buildDocumentMarkup(payload) {
             word-break: break-word;
           }
 
-          .writing-lines {
-            margin-top: 16px;
+          .blank-gap {
+            display: inline-block;
+            min-width: 10.5em;
+            height: 1.2em;
+            margin: 0 0.2em;
+            vertical-align: -0.2em;
+            border-bottom: 1.5px solid #334155;
           }
 
-          .writing-line {
-            height: 28px;
-            border-bottom: 1px dashed #94a3b8;
-            margin-bottom: 8px;
+          .redo-work-area {
+            flex: 1;
+            min-height: 88mm;
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+          }
+
+          .redo-work-label {
+            margin-bottom: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #64748b;
+          }
+
+          .redo-lines {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
+
+          .redo-line {
+            min-height: 16px;
+            border-bottom: 1px solid #cbd5e1;
           }
 
           .question-empty,

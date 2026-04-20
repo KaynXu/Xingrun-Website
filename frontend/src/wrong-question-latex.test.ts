@@ -35,6 +35,15 @@ test('buildWrongQuestionLatexPreviewModel renders katex markup for valid formula
   assert.equal(hasWrongQuestionLatexErrors('计算 $x^2 + 1$'), false);
 });
 
+test('buildWrongQuestionLatexPreviewModel supports bracket-style latex delimiters', () => {
+  const preview = buildWrongQuestionLatexPreviewModel('计算 \\(x^2 + 1\\)，并化简：\\[\\frac{x^2+1}{2}\\]');
+
+  assert.match(preview.html, /katex/);
+  assert.doesNotMatch(preview.html, /\\\(|\\\)|\\\[|\\\]/);
+  assert.doesNotMatch(preview.html, /\\frac/);
+  assert.equal(preview.errors.length, 0);
+});
+
 test('buildWrongQuestionLatexPreviewModel reports invalid latex but keeps the raw source visible', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 $\\frac{1}{ $ 的结果。');
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildDocumentMarkup } from '../scripts/renderWrongQuestionPracticeSheetPdf.mjs';
 
-test('buildDocumentMarkup uses ai-generated section titles and avoids a separate reminder block', async () => {
+test('buildDocumentMarkup renders practice sections as fill-in only and leaves redo lines at the bottom', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
     className: '六年级 1 班',
@@ -14,11 +14,11 @@ test('buildDocumentMarkup uses ai-generated section titles and avoids a separate
         question_order: 1,
         wrong_question_record_id: 'wechat-1',
         is_geometry: false,
-        question_text_snapshot: '计算 $2+3\\times4$ 的结果。',
+        question_text_snapshot: '计算 \\(x^2 + 1\\) 并化简：\\[\\frac{x^2+1}{2}\\]。',
         child_reason_text_snapshot: '我把乘法放到了最后',
         ai_hint: '',
-        reason_blank_prompt: '先把真正错因写出来\n我这题错在 ______，因为我当时把 ______ 忽略了。',
-        improvement_summary_prompt: '再想想下次怎么避免\n这次如果重来，我会先关注什么？以后我准备怎么提醒自己？',
+        reason_blank_prompt: '先把缺的知识点补出来\n这题我没做好，是因为我漏掉了 ______、没有想清 ______，相关知识点其实是 ______。',
+        improvement_summary_prompt: '再想想怎么把知识点补上\n接下来我准备先补 ______，再练 ______，做题前还要提醒自己 ______。',
       },
     ],
   });
@@ -27,8 +27,12 @@ test('buildDocumentMarkup uses ai-generated section titles and avoids a separate
   assert.doesNotMatch(markup, /下次提醒/);
   assert.doesNotMatch(markup, /把错因补完整/);
   assert.doesNotMatch(markup, /写一写以后怎么做/);
-  assert.match(markup, /先把真正错因写出来/);
-  assert.match(markup, /我这题错在/);
-  assert.match(markup, /再想想下次怎么避免/);
-  assert.match(markup, /这次如果重来，我会先关注什么/);
+  assert.match(markup, /先把缺的知识点补出来/);
+  assert.match(markup, /再想想怎么把知识点补上/);
+  assert.match(markup, /blank-gap/);
+  assert.doesNotMatch(markup, /writing-lines/);
+  assert.match(markup, /redo-work-area/);
+  assert.match(markup, /redo-line/);
+  assert.match(markup, /katex/);
+  assert.doesNotMatch(markup, /\\frac/);
 });
