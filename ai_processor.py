@@ -219,6 +219,29 @@ WRONG_QUESTION_REASON_CLASSIFICATION_PROMPT = """你是错因归类助手。
 - 如果孩子描述太模糊，也要根据最可能原因给出最稳妥的归类
 - display_text 不得使用清洗后、原始转写等工程词汇"""
 
+WRONG_QUESTION_PRACTICE_SHEET_PROMPT = """你是错题练习设计助手。
+你会收到某个学生的一组错题快照，请为每道错题生成一份可直接印到 PDF 上的反思练习材料。
+
+只返回 JSON，不要输出额外解释。
+返回字段必须包含：
+- title: string，整份练习单标题
+- items: array，长度必须与输入题目数量一致，顺序必须与输入一致
+
+items 中每一项必须包含：
+- wrong_question_record_id: string，必须与输入题目里的 wrong_question_record_id 完全一致
+- ai_hint: string，给学生的简短提示，不直接给答案，12 到 50 个字
+- reason_blank_prompt: string，给“错题挖空”区域使用，必须包含至少两个 ______ 空格，引导学生填写自己出错的原因
+- improvement_summary_prompt: string，引导学生写“如何改正以及以后如何避免同类错误”的总结，必须包含至少两个 ______ 空格
+
+严格规则：
+1. 不要直接给出原题答案。
+2. 提示要结合题目内容、孩子自述错因、顶层错因分类和补充备注来写。
+3. 几何题要优先提示“图形关系、已知条件、辅助线、角或线段关系”等观察方向。
+4. 非几何题要优先提示“运算顺序、条件判断、方法选择、步骤检查”等思路。
+5. reason_blank_prompt 聚焦“这题为什么错”；improvement_summary_prompt 聚焦“以后怎么改、怎么避免再错”。
+6. 句子要自然，适合小学/初中学生抄写和填写，不要出现工程术语。
+7. title 控制在 8 到 24 个字。"""
+
 _WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
     "",
     "无法识别",
@@ -360,6 +383,111 @@ def classify_wrong_question_reason(child_reason_text: str, *, question_text: str
         "primary_error_type": primary_error_type,
         "secondary_error_summary": secondary_error_summary,
     }
+
+
+def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected_record_ids: list[str]) -> dict:
+    title = str(payload.get("title") or "").strip()
+    raw_items = payload.get("items")
+    if not title:
+        title = "错题练习"
+    if not isinstance(raw_items, list) or not raw_items:
+        raise ValueError("wrong question practice sheet generation failed")
+
+    normalized_items = []
+    for index, raw_item in enumerate(raw_items):
+        source = raw_item if isinstance(raw_item, dict) else {}
+        wrong_question_record_id = str(source.get("wrong_question_record_id") or "").strip()
+        if not wrong_question_record_id and index < len(expected_record_ids):
+            wrong_question_record_id = expected_record_ids[index]
+        ai_hint = str(source.get("ai_hint") or "").strip()
+        reason_blank_prompt = str(source.get("reason_blank_prompt") or "").strip()
+        improvement_summary_prompt = str(source.get("improvement_summary_prompt") or "").strip()
+
+        if reason_blank_prompt and "______" not in reason_blank_prompt:
+            reason_blank_prompt = f"{reason_blank_prompt.rstrip('。')} ______。"
+        if improvement_summary_prompt and "______" not in improvement_summary_prompt:
+            improvement_summary_prompt = f"{improvement_summary_prompt.rstrip('。')} ______。"
+
+        if not wrong_question_record_id or not ai_hint or not reason_blank_prompt or not improvement_summary_prompt:
+            raise ValueError("wrong question practice sheet generation failed")
+
+        normalized_items.append(
+            {
+                "wrong_question_record_id": wrong_question_record_id,
+                "ai_hint": ai_hint,
+                "reason_blank_prompt": reason_blank_prompt,
+                "improvement_summary_prompt": improvement_summary_prompt,
+            }
+        )
+
+    normalized_record_ids = [item["wrong_question_record_id"] for item in normalized_items]
+    if normalized_record_ids != expected_record_ids:
+        raise ValueError("wrong question practice sheet generation failed")
+
+    return {
+        "title": title,
+        "items": normalized_items,
+    }
+
+
+def generate_wrong_question_practice_sheet_material(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_name: str,
+    items: list[dict],
+    include_usage: bool = False,
+):
+    if not items:
+        raise ValueError("wrong question practice sheet items are required")
+
+    expected_record_ids = [str(item.get("wrong_question_record_id") or "").strip() for item in items]
+    if any(not record_id for record_id in expected_record_ids):
+        raise ValueError("wrong question practice sheet items are invalid")
+
+    normalized_items = []
+    for item in items:
+        normalized_items.append(
+            {
+                "wrong_question_record_id": str(item.get("wrong_question_record_id") or "").strip(),
+                "question_order": int(item.get("question_order") or 0),
+                "is_geometry": bool(item.get("is_geometry")),
+                "question_text": str(item.get("question_text_snapshot") or "").strip(),
+                "child_reason_text": str(item.get("child_reason_text_snapshot") or "").strip(),
+                "primary_error_type": str(item.get("primary_error_type_snapshot") or "").strip(),
+                "cause_note": str(item.get("cause_note_snapshot") or "").strip(),
+            }
+        )
+
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_PRACTICE_SHEET_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "student_name": str(student_name or "").strip(),
+                        "class_name": str(class_name or "").strip(),
+                        "teacher_name": str(teacher_name or "").strip(),
+                        "items": normalized_items,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    payload = json.loads(response.choices[0].message.content or "{}")
+    normalized = _normalize_wrong_question_practice_sheet_material(
+        payload,
+        expected_record_ids=expected_record_ids,
+    )
+    if include_usage:
+        return normalized, _usage_dict(response)
+    return normalized
 
 
 # ─── 生成复习计划的提示词 ───────────────────────────────────────────────────────

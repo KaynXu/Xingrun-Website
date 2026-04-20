@@ -6,6 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 网站端“智能错题”已补上老师端 `错题练习` 首版闭环，当前入口在学生 notebook 弹窗内：左侧题目目录可勾选本地 `wechat_mp` 且 `recognized + active` 的错题，点击 `生成错题练习` 后会为该学生创建一份独立练习单任务，并把记录持久化到本地服务器 SQLite。前端同一弹窗已新增 `错题练习记录` 页签，可查看历史生成记录、状态，以及 `预览 PDF / 下载 PDF` 入口；后端也已补齐 `/api/wrong-question-practice-sheets` 创建/列表/详情链路和 `/api/wrong-question-practice-sheets/<id>/pdf(/download)` PDF 访问路由。
+- 2026-04-20 错题练习生成链路当前已按业务要求收口：几何题在 PDF 里保留原题图片，非几何题走真实题目文本；每题下方固定生成 `AI 提示`、`错题挖空` 填写区，以及“如何改正 / 以后如何避免”总结区。AI 提示词、浏览器版 PDF 渲染脚本、ReportLab fallback、异步 worker、存储表结构和前端交互测试都已接上，当前 proof 已覆盖 store / API / async worker / PDF renderer / notebook UI。
 - 2026-04-20 网站端学生错题库顺序已统一收口为倒序：`lesson_manager.list_student_wrong_question_library_records()` 现在按 `created_at DESC, id DESC` 返回，本地网站 notebook 左侧目录会把最新上传题排最上面，题号也按当前展示顺序从上到下重新编号；同时 `/api/wechat/children/<student_id>/wrong-question-library` 的 `updated_at` 已改成取最新一条记录，避免倒序后元数据反而退回最旧时间。因为学生错题库 PDF 也直接吃这份记录顺序，所以 PDF 现在也会按最新题在前生成。
 - 2026-04-20 已确认学生错题库 PDF 线上确实存在两套生成路径：`pdf_engine.py` 会先走 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，失败时再静默回退到 `ReportLab` 纯文本链路。当前生产机 `49.234.185.86` 上的 `node / playwright / /snap/bin/chromium` 都正常，拿真实学生错题库连续 7 次重建都稳定命中浏览器链路，没有复现“当前环境随机掉回 ReportLab”。这次用户体感里“有时公式正常、有时像 LaTeX 编码坏掉”的根因更像是历史缓存混用：线上旧缓存 `student-276.pdf` 曾是 `221846` 字节、`student-277.pdf` 曾是 `212868` 字节，强制重建后分别变成浏览器版 `309508` 和 `294710` 字节；说明之前留在 `data/pdfs/wrong_question_libraries/` 里的部分 PDF 是浏览器链路修好前生成的旧回退版，只有学生记录再次更新或手动刷新缓存时才会被替换成新版浏览器 PDF。
 - 2026-04-20 已继续修复小程序语音转录线上 `502`：根因不是音频 URL 失效，而是生产机无法访问 `huggingface.co`，导致 `WhisperModel("base")` 首次初始化卡在联网下载模型。当前 `ai_processor.py` 已改为优先读取本地 Hugging Face 缓存快照目录；并已从本机把 `faster-whisper-base` 模型缓存同步到生产机 `~/.cache/huggingface/hub/models--Systran--faster-whisper-base`。线上复验通过：生产机 `_get_local_whisper_model()` 初始化耗时约 `0.57s`，`POST http://127.0.0.1:3001/wechat/parent/reason-transcriptions` 已对真实 mp3 返回 `200 {"transcript_text": ...}`，当前小程序语音转文字链路已可用。
@@ -76,6 +78,8 @@
 - 最近一次相关产品代码提交并已部署生产的是 `72493fc Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是在真实老师账号下手工开一个学生 notebook，分别勾选“1 道题”和“多道题”各生成一次错题练习，确认等待中、完成后历史列表刷新、PDF 打开速度和下载命名都符合预期。
+- 最值得继续做的是拿一份包含几何题和公式题的真实练习单手工看 PDF 视觉效果，重点确认图片尺寸、题间分页、挖空书写区留白和总结区高度是否够老师实际发给学生使用。
 - 最值得继续做的是拿小程序真机再录一段中文语音手工点一次提交，确认页面端不再长时间挂在 `reason-transcriptions`，并观察首个请求后的实际用户体感时延。
 - 最值得继续做的是拿一段真实家长语音在真机或线上接口手工跑一次转文字，确认生产机当前不再报 `未安装 faster-whisper`，并观察首次模型初始化的真实时延。
 - 如果继续扩这条公开卷抓取 demo，最值得先做的是把 `MathJye` 反推覆盖面从当前已验证的分式、根号、上下标、向量箭头，继续补到更多几何/解析题里常见的组合结构，并单独决定是否要抓公开解析页。
@@ -106,6 +110,8 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮错题练习目前只做到“老师端生成 -> PDF 导出发送”，还没有学生在线回填答案或老师回看学生填写结果；数据库里虽然已保存生成记录和每题 AI 材料，但学生作答态、提交态和二次点评链路还不存在。
+- 当前 notebook 左侧在“这个学生只有 1 道可用于练习的题”时会默认选中它，目的是减少老师多点一步；如果后续用户明确希望“必须手动勾选后才能生成”，这里需要再单独改交互。
 - 这次线上通过的是“已有本地缓存模型”路径；如果后续更换服务器、清理 `~/.cache/huggingface` 或切别的 whisper 模型名，生产机仍会因为无法直连 `huggingface.co` 而重新卡在模型拉取，届时需要再次预置缓存或提供可用镜像。
 - 这次线上只验证到“包已装好、服务已重启、根路由健康、`faster_whisper` 可导入”；首次真实转录时仍可能触发模型下载或初始化延迟，语音接口的首个请求耗时和服务器 CPU 峰值还没有用真实录音跑过。
 - 这轮 `scrapeJyeooPaper.mjs` 只验证了公开试卷页题面，不包含登录后内容、VIP 内容或解析页异步接口；`latex_segments` 目前是对 `MathJye` 的 best-effort 反推，已能覆盖本次公开卷 proof 里的关键公式，但对更复杂的嵌套结构仍可能需要继续补规则。
@@ -160,7 +166,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`develop`
+- 当前分支：`feat/wrong-question-practice-sheet`
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
 - 后续更新这份文件时，只写：
