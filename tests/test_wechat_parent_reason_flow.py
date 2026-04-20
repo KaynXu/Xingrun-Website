@@ -71,6 +71,58 @@ class WeChatParentReasonFlowTestCase(unittest.TestCase):
         self.assertEqual(reactivated["archived_at"], "")
         self.assertTrue(archived_at)
 
+    def test_list_student_wrong_question_library_records_orders_newest_first(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        older = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question-1.png",
+            child_raw_reason_text="第一题",
+            primary_error_type="计算问题",
+            secondary_error_summary="第一题备注",
+            recognition_status="recognized",
+            question_text="第一题题干",
+            question_text_source="ai",
+        )
+        newer = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question-2.png",
+            child_raw_reason_text="第二题",
+            primary_error_type="计算问题",
+            secondary_error_summary="第二题备注",
+            recognition_status="recognized",
+            question_text="第二题题干",
+            question_text_source="ai",
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET created_at='2026-04-15 22:37:24',
+                    updated_at='2026-04-15 22:37:24'
+                WHERE id=?
+                """,
+                (older["id"],),
+            )
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET created_at='2026-04-20 12:38:31',
+                    updated_at='2026-04-20 12:38:31'
+                WHERE id=?
+                """,
+                (newer["id"],),
+            )
+
+        items = lesson_manager.list_student_wrong_question_library_records(self.student["id"])
+
+        self.assertEqual([item["id"] for item in items], [newer["id"], older["id"]])
+
 
 class WeChatParentArchiveApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -78,6 +130,7 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.base = Path(self.temp_dir.name)
         lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({"wechat_service_token": "wechat-service-token"})
         self.original_pdf_dir = app_module.PDF_DIR
         app_module.PDF_DIR = self.base / "pdfs"
         app_module.PDF_DIR.mkdir(parents=True, exist_ok=True)
@@ -115,6 +168,10 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
     @staticmethod
     def auth_headers(token: str) -> dict[str, str]:
         return {"X-Auth-Token": token}
+
+    @staticmethod
+    def service_headers() -> dict[str, str]:
+        return {"X-Wechat-Service-Token": "wechat-service-token"}
 
     def login_owner(self) -> dict:
         response = self.client.post(
@@ -326,6 +383,51 @@ class WeChatParentArchiveApiTestCase(unittest.TestCase):
         self.assertEqual(response.mimetype, "application/pdf")
         self.assertEqual(response.data, b"%PDF-1.4\nfresh cached pdf\n")
         rebuild.assert_not_called()
+
+    def test_child_wrong_question_library_metadata_returns_latest_updated_at(self):
+        second = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=self.binding_id,
+            image_url="https://files.example.com/wrong-question-2.png",
+            child_raw_reason_text="第二题",
+            primary_error_type="计算问题",
+            secondary_error_summary="第二题备注",
+            recognition_status="recognized",
+            question_text="第二题题干",
+            question_text_source="ai",
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET recognition_status='recognized',
+                    question_text='第一题',
+                    question_text_source='ai',
+                    created_at='2026-04-15 22:37:24',
+                    updated_at='2026-04-15 22:37:24'
+                WHERE id=?
+                """,
+                (self.record_id,),
+            )
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET created_at='2026-04-20 12:38:31',
+                    updated_at='2026-04-20 12:38:31'
+                WHERE id=?
+                """,
+                (second["id"],),
+            )
+
+        response = self.client.get(
+            f"/api/wechat/children/{self.student['id']}/wrong-question-library?open_id=openid-parent-1",
+            headers=self.service_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["updated_at"], "2026-04-20 12:38:31")
 
     def test_visible_member_can_delete_local_wrong_question(self):
         with lesson_manager.get_conn() as conn:

@@ -5141,7 +5141,7 @@ def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
               AND wqs.source='wechat_mp'
               AND wqs.recognition_status='recognized'
               AND wqs.archive_status='active'
-            ORDER BY wqs.created_at ASC, wqs.id ASC
+            ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
             (student_id,),
         ).fetchall()

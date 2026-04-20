@@ -228,9 +228,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [activeNotebookClassId, records, selectedStudentName, usesStudentNotebook]);
   const memberNotebookQuestionNumberById = useMemo(() => {
     return new Map(
-      [...memberNotebookRecords]
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-        .map((item, index) => [item.id, index + 1]),
+      memberNotebookRecords.map((item, index) => [item.id, index + 1]),
     );
   }, [memberNotebookRecords]);
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;

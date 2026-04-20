@@ -2751,7 +2751,7 @@ def api_wechat_child_wrong_question_library(student_id):
         return jsonify({"error": "binding not found"}), 404
 
     items = list_student_wrong_question_library_records(student_id)
-    latest_updated_at = str(items[-1].get("updated_at") or "") if items else ""
+    latest_updated_at = str(items[0].get("updated_at") or "") if items else ""
     return jsonify(
         {
             "student_id": student_id,
