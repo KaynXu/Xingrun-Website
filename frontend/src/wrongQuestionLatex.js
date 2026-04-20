@@ -206,7 +206,11 @@ function repairWrongQuestionLatexTransport(value) {
     .replaceAll('\f', '\\f')
     .replaceAll('\b', '\\b')
     .replaceAll('\r', '\\r')
-    .replace(BROKEN_NEWLINE_LATEX_COMMAND_PATTERN, '\\n');
+    .replace(BROKEN_NEWLINE_LATEX_COMMAND_PATTERN, '\\n')
+    .replace(/(?<!\\)\\\[/g, '$$')
+    .replace(/(?<!\\)\\\]/g, '$$')
+    .replace(/(?<!\\)\\\(/g, '$')
+    .replace(/(?<!\\)\\\)/g, '$');
 }
 
 export function parseWrongQuestionLatexSegments(input) {

@@ -113,6 +113,7 @@ C_WARN     = colors.HexColor('#c0392b')
 C_GREY     = colors.HexColor('#666666')
 
 BLANK      = '＿＿＿＿＿'  # 标准空格（5个全角下划线）
+PRACTICE_BLANK = BLANK * 2
 
 PAGE_W, PAGE_H = A4
 LM = RM = 1.8 * cm
@@ -273,6 +274,12 @@ def _normalize_blanks(text: str) -> str:
     return html.escape(text)
 
 
+def _normalize_wrong_question_practice_prompt(text: str) -> str:
+    normalized = _latex_to_readable(text)
+    normalized = re.sub(r"[＿_]{4,}", PRACTICE_BLANK, normalized)
+    return html.escape(normalized)
+
+
 def _split_wrong_question_practice_section(text: str, fallback_title: str) -> tuple[str, str]:
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     lines = [line.strip() for line in normalized.split("\n") if line.strip()]
@@ -281,6 +288,24 @@ def _split_wrong_question_practice_section(text: str, fallback_title: str) -> tu
     if len(lines) == 1:
         return fallback_title, lines[0]
     return fallback_title, ""
+
+
+def _build_wrong_question_practice_redo_lines():
+    rows = [[""]] * 10
+    table = Table(rows, colWidths=[CONTENT_W], rowHeights=[0.78 * cm] * len(rows))
+    table.setStyle(
+        TableStyle(
+            [
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('LINEBELOW', (0, 0), (-1, -2), 0.6, colors.HexColor('#cbd5e1')),
+                ('LINEBELOW', (0, -1), (-1, -1), 0.6, colors.HexColor('#cbd5e1')),
+            ]
+        )
+    )
+    return table
 
 
 def _day_header(label: str, time_note: str, color, styles: dict):
@@ -739,9 +764,7 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
             _box(
                 [
                     Paragraph(html.escape(reason_title), styles["section"]),
-                    Paragraph(_normalize_blanks(reason_prompt), styles["fill"]),
-                    Paragraph(BLANK * 3, styles["fill"]),
-                    Paragraph(BLANK * 3, styles["fill"]),
+                    Paragraph(_normalize_wrong_question_practice_prompt(reason_prompt), styles["fill"]),
                 ],
                 colors.white,
                 C_BORDER,
@@ -752,15 +775,16 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
             _box(
                 [
                     Paragraph(html.escape(improvement_title), styles["section"]),
-                    Paragraph(_normalize_blanks(improvement_prompt), styles["fill"]),
-                    Paragraph(BLANK * 3, styles["fill"]),
-                    Paragraph(BLANK * 3, styles["fill"]),
-                    Paragraph(BLANK * 3, styles["fill"]),
+                    Paragraph(_normalize_wrong_question_practice_prompt(improvement_prompt), styles["fill"]),
                 ],
                 colors.white,
                 C_BORDER,
             )
         )
+        story.append(_spacer(0.15))
+        story.append(Paragraph("重做这题（可选）", styles["tip"]))
+        story.append(_spacer(0.05))
+        story.append(_build_wrong_question_practice_redo_lines())
 
     doc.build(story)
     return str(destination)
