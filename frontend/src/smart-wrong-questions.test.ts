@@ -2866,13 +2866,13 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
       assert.match(pageText, /第 1 题/);
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
-      assert.match(pageText, /按上传时间顺序查看/);
+      assert.match(pageText, /最新上传的题目排在最上方/);
       assert.match(pageText, /2026-03-27T09:00:00Z/);
       assert.match(pageText, /已掌握/);
-      assert.equal(questionButtons[0]?.textContent?.includes('第 1 题'), true);
-      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
-      assert.equal(questionButtons[1]?.textContent?.includes('第 2 题'), true);
-      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
+      assert.equal(questionButtons[0]?.textContent?.includes('第 2 题'), true);
+      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('第 1 题'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
       assert.doesNotMatch(pageText, /第二题还是错/);
       assert.doesNotMatch(pageText, /按上传时间倒序查看/);
       assert.doesNotMatch(pageText, /左侧是紧凑错题目录/);
