@@ -28,6 +28,7 @@ const COMMON_CHROMIUM_EXECUTABLE_PATHS = {
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   ],
 };
+const LINUX_CHROMIUM_STABILITY_ARGS = ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'];
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -391,22 +392,23 @@ export async function resolveChromiumLaunchOptions({
     }
   },
 } = {}) {
+  const args = platform === 'linux' ? LINUX_CHROMIUM_STABILITY_ARGS : undefined;
   const explicitExecutablePath = String(
     env.XR_PLAYWRIGHT_EXECUTABLE_PATH || env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '',
   ).trim();
 
   if (explicitExecutablePath) {
-    return { executablePath: explicitExecutablePath };
+    return args ? { executablePath: explicitExecutablePath, args } : { executablePath: explicitExecutablePath };
   }
 
   const candidates = COMMON_CHROMIUM_EXECUTABLE_PATHS[platform] || [];
   for (const candidate of candidates) {
     if (await pathExists(candidate)) {
-      return { executablePath: candidate };
+      return args ? { executablePath: candidate, args } : { executablePath: candidate };
     }
   }
 
-  return undefined;
+  return args ? { args } : undefined;
 }
 
 async function main() {
