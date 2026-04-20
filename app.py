@@ -70,6 +70,7 @@ from lesson_manager import (
     create_consultation,
     create_registration_request,
     delete_wechat_wrong_question_submission,
+    delete_wrong_question_practice_sheet,
     delete_user_for_actor,
     delete_consultation,
     delete_class as db_delete_class,
@@ -2380,6 +2381,26 @@ def api_wrong_question_practice_sheet_detail(sheet_id: int):
     if serialized is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(serialized)
+
+
+@app.route("/api/wrong-question-practice-sheets/<int:sheet_id>", methods=["DELETE"])
+def api_wrong_question_practice_sheet_delete(sheet_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    sheet = get_wrong_question_practice_sheet(sheet_id)
+    if not sheet or not _can_access_wrong_question_practice_sheet(user, sheet):
+        return jsonify({"error": "not found"}), 404
+
+    pdf_path_value = str(sheet.get("pdf_path") or "").strip()
+    pdf_path = Path(pdf_path_value) if pdf_path_value else None
+    deleted_sheet = delete_wrong_question_practice_sheet(sheet_id)
+    if not deleted_sheet:
+        return jsonify({"error": "not found"}), 404
+
+    if pdf_path:
+        pdf_path.unlink(missing_ok=True)
+    return jsonify({"ok": True, "deleted_sheet_id": sheet_id})
 
 
 @app.route("/api/wrong-question-practice-sheets/<int:sheet_id>/pdf", methods=["GET"])

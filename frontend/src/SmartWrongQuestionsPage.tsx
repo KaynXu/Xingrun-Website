@@ -794,6 +794,25 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleDeletePracticeSheet = async (sheet: WrongQuestionPracticeSheetSummary) => {
+    if (!globalThis.window?.confirm?.('确定删除这份错题练习吗？删除后将无法再预览或下载这份 PDF。')) {
+      return;
+    }
+
+    setPracticeActionError('');
+    setPracticeActionNotice('');
+
+    try {
+      await apiFetch(`/api/wrong-question-practice-sheets/${encodeURIComponent(String(sheet.id))}`, {
+        method: 'DELETE',
+      });
+      setPracticeSheets((current) => current.filter((item) => item.id !== sheet.id));
+      setPracticeActionNotice('已删除这份错题练习。');
+    } catch (deleteError) {
+      setPracticeActionError(deleteError instanceof Error ? deleteError.message : '删除错题练习失败');
+    }
+  };
+
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -930,25 +949,34 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <p className="text-sm text-rose-600 dark:text-rose-300">{sheet.generationError}</p>
                     ) : null}
                   </div>
-                  {previewUrl ? (
-                    <div className="flex flex-wrap gap-3">
-                      <a
-                        href={previewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={workspaceSecondaryButtonClass}
-                      >
-                        预览 PDF
-                      </a>
-                      <a
-                        href={downloadUrl}
-                        download={`wrong-question-practice-sheet-${sheet.id}.pdf`}
-                        className={workspacePrimaryButtonClass}
-                      >
-                        下载 PDF
-                      </a>
-                    </div>
-                  ) : null}
+                  <div className="flex flex-wrap gap-3">
+                    {previewUrl ? (
+                      <>
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          预览 PDF
+                        </a>
+                        <a
+                          href={downloadUrl}
+                          download={`wrong-question-practice-sheet-${sheet.id}.pdf`}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          下载 PDF
+                        </a>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePracticeSheet(sheet)}
+                      className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-400/30 dark:bg-slate-950/70 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                    >
+                      删除练习
+                    </button>
+                  </div>
                 </div>
               </article>
             );
