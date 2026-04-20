@@ -77,7 +77,8 @@
 - `teacher_comment` 和 `status='reviewed'` 在本地微信错题链路里只剩兼容旧列含义，不再作为主流程判断依据。
 - staff / owner / admin / super_owner 已统一到按班级或学生打开错题本的 notebook 流程。
 - `member` 端已改成学生卡片 -> 弹窗错题本，不再走旧的页面下半区详情布局。
-- 最近一次相关产品代码提交并已部署生产的是 `61d49e5 test: drop stale master box detection coverage`。
+<<<<<<< HEAD
+- 最近一次相关产品代码提交并已部署生产的是 `cb01975 Merge branch 'develop'`。
 
 ### 下一步
 - 最值得继续做的是在真实老师账号下手工开一个学生 notebook，分别勾选“1 道题”和“多道题”各生成一次错题练习，确认等待中、完成后历史列表刷新、PDF 打开速度和下载命名都符合预期。
