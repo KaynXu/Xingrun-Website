@@ -10,6 +10,11 @@ CREDIT_PRICING_RULES = {
     "lesson_plan_generate": {"base_credits": 8, "extra_token_threshold": 5000, "extra_credits": 2},
     "audio_transcription": {"base_credits": 4, "extra_token_threshold": 0, "extra_credits": 0},
     "monthly_plan_generate": {"base_credits": 10, "extra_token_threshold": 6000, "extra_credits": 2},
+    "wrong_question_practice_generate": {"base_credits": 8, "extra_token_threshold": 5000, "extra_credits": 2},
+    "wrong_question_recognize": {"base_credits": 2, "extra_token_threshold": 0, "extra_credits": 0},
+    "wrong_question_classify_reason": {"base_credits": 1, "extra_token_threshold": 0, "extra_credits": 0},
+    "child_reason_audio_transcribe": {"base_credits": 3, "extra_token_threshold": 0, "extra_credits": 0},
+    "class_feedback_generate": {"base_credits": 8, "extra_token_threshold": 5000, "extra_credits": 2},
 }
 
 

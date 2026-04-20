@@ -127,8 +127,10 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         self.assertEqual(payload["period_label"], "2026-07-12")
 
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
     @patch("app.generate_class_feedback_bundle")
-    def test_generate_route_returns_class_summary_and_student_entries(self, generate_class_feedback_bundle):
+    def test_generate_route_returns_class_summary_and_student_entries(self, generate_class_feedback_bundle, _mock_credits, _mock_finalize):
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         student = lesson_manager.create_student_for_class(class_id, "张三")
         older_task = lesson_manager.create_class_feedback_task(
@@ -346,8 +348,10 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(refreshed["class_summary_final_text"], "正式班级反馈")
         self.assertEqual(refreshed["student_entries"][0]["final_text"], "正式学生反馈")
 
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
     @patch("app.generate_class_feedback_bundle")
-    def test_generate_rejects_ai_bundle_missing_roster_student(self, generate_class_feedback_bundle):
+    def test_generate_rejects_ai_bundle_missing_roster_student(self, generate_class_feedback_bundle, _mock_credits, _mock_finalize):
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         first_student = lesson_manager.create_student_for_class(class_id, "张三")
         second_student = lesson_manager.create_student_for_class(class_id, "李四")
@@ -438,8 +442,10 @@ class ClassFeedbackApiTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "当前班级还没有学生，无法生成课堂反馈")
         generate_class_feedback_bundle.assert_not_called()
 
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
     @patch("app.generate_class_feedback_bundle")
-    def test_generate_round_trips_notes_and_highlights_via_get_task(self, generate_class_feedback_bundle):
+    def test_generate_round_trips_notes_and_highlights_via_get_task(self, generate_class_feedback_bundle, _mock_credits, _mock_finalize):
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")
         student = lesson_manager.create_student_for_class(class_id, "张三")
         self._create_lesson(
