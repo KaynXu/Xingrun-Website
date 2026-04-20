@@ -636,6 +636,18 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
     return browser_items
 
 
+def _build_browser_renderer_failure_message(*, default_message: str, result: subprocess.CompletedProcess) -> str:
+    stderr = str(result.stderr or "").strip()
+    if stderr:
+        return stderr
+    stdout = str(result.stdout or "").strip()
+    if stdout:
+        return stdout
+    if int(result.returncode or 0) < 0:
+        return f"{default_message}（signal {-int(result.returncode)}）"
+    return f"{default_message}（exit code {int(result.returncode or 0)}）"
+
+
 def _render_student_wrong_question_library_pdf_via_browser(
     *,
     student_name: str,
@@ -673,10 +685,9 @@ def _render_student_wrong_question_library_pdf_via_browser(
             pass
 
     if result.returncode != 0:
-        error_message = (
-            result.stderr.strip()
-            or result.stdout.strip()
-            or "学生错题库 PDF 浏览器渲染失败"
+        error_message = _build_browser_renderer_failure_message(
+            default_message="学生错题库 PDF 浏览器渲染失败",
+            result=result,
         )
         raise RuntimeError(error_message)
 
@@ -726,10 +737,9 @@ def _render_wrong_question_practice_sheet_pdf_via_browser(
             pass
 
     if result.returncode != 0:
-        error_message = (
-            result.stderr.strip()
-            or result.stdout.strip()
-            or "错题练习 PDF 浏览器渲染失败"
+        error_message = _build_browser_renderer_failure_message(
+            default_message="错题练习 PDF 浏览器渲染失败",
+            result=result,
         )
         raise RuntimeError(error_message)
 
