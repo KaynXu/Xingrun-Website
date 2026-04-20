@@ -6,7 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-20 已再次按标准 release 流程把本地 `develop(0c3278d)` 合到 `master(4c6e90b)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 4c6e90b`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布已把错题练习文案收口、错题练习记录删除按钮，以及前一轮积分/异步错题练习链路调整一起带上生产；生产机仍沿用 GitHub SSH over 443 直拉 `master` + 前端 build + `pm2 restart xingrun` 的标准路径。
+- 2026-04-20 已再次按标准 release 流程把本地 `develop(6d2582b)` 合到 `master(6104c4d)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 6104c4d`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布除了一并带上 AIPPT 页面高度收口外，也把错题练习的动态书写区提示词调整发到生产：当前不再单独生成“下次提醒”框，也不再把“错因补完整 / 写一写以后怎么做”写死成固定模板，而是由 AI 按题目错因直接生成两段书写区标题和引导内容；生产机仍沿用 GitHub SSH over 443 直拉 `master` + 前端 build + `pm2 restart xingrun` 的标准路径。
 - 2026-04-20 网站端智能错题 notebook 左侧目录已改为按上传时间正序展示，并新增 `全部 / 未掌握 / 已掌握` 掌握状态筛选；打开学生 notebook 时默认定位到最新一题，删除当前题后会优先跳到相邻题，方便老师顺着一份学生错题本逐题看。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `案例一` 页已继续按 Windows 浏览器高度压缩一轮：当前在原有 `case-study-slide` 基础上，再把该页上下 padding、左右列占比、标题字号、正文行高、来源卡片 padding / 标题字号 / 正文字号，以及右侧研究动画卡最小高度一起收紧，目标是让普通浏览器窗口里也能完整看到“标题 + 正文 + 两张来源卡 + 右侧视频”整页内容。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `案例一` 页已做单页局部版式收口：当前通过新增 `case-study-slide` 专属样式，把该页 `slide-inner` 可用高度略微放大、标题字号轻微下调，并把标题区与两张来源卡片之间的纵向间距拉开，避免在普通浏览器窗口里出现标题贴顶、下方卡片过挤的观感；本轮只动这一个 slide，不影响其他 AIPPT 页面。
@@ -46,7 +46,7 @@
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新提交是 `776b534 Merge branch 'develop'`；当前生产结果已同时包含错题练习 PDF、notebook 正序展示与掌握状态筛选、whisper 本地缓存修复、Jyeoo 公开卷抓取 demo，以及此前的 PDF / LaTeX 修复。
+- 本次已部署生产的最新代码提交是 `6104c4d Merge branch 'develop'`；当前生产结果已同时包含 AIPPT 页面高度收口、错题练习动态书写区提示词、错题练习 PDF / 删除能力、notebook 正序展示与掌握状态筛选、whisper 本地缓存修复、Jyeoo 公开卷抓取 demo，以及此前的 PDF / LaTeX 修复。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
