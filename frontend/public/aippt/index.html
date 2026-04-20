@@ -541,6 +541,12 @@
       padding: 7px 0;
     }
 
+    .feature-story-slide .system-step.reveal {
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 420ms cubic-bezier(0.2, 0.7, 0.2, 1), transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
     .feature-story-slide .system-step span {
       font-size: 14px;
       line-height: 1.42;
@@ -548,6 +554,11 @@
 
     .feature-story-slide .system-card.feature-card h3 {
       font-size: clamp(19px, 1.62vw, 28px);
+    }
+
+    .slide.feature-story-slide.active .system-step.reveal.revealed {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .animated-grid {
@@ -1147,7 +1158,7 @@
     <section class="slide" data-title="破冰·提问">
       <div class="slide-inner center-layout">
         <div class="eyebrow reveal">互动破冰</div>
-        <h2 class="title compact reveal delay-1">叶子在<span class="gradient-text">左边</span>还是<span class="gradient-text">右边</span>？</h2>
+        <h2 class="title compact reveal delay-1">最外面的那个叶子在<span class="gradient-text">左边</span>还是<span class="gradient-text">右边</span>？</h2>
         <p class="subtitle reveal delay-2">为什么我们<strong style="color:var(--text);">一眼就能认出苹果</strong>，<br />却<strong style="color:var(--pink);">记不住叶子在哪一边</strong>？</p>
         <div class="glass-panel reveal delay-3" style="padding:24px 32px;max-width:680px;text-align:left;">
           <p class="body">这就是<strong style="color:var(--cyan);">记忆的选择性加工</strong>——大脑只保留它认为「重要」的信息，其余的会被快速遗忘。</p>
@@ -1175,8 +1186,8 @@
             <div style="margin-top:12px;font-size:42px;text-align:center;opacity:0.3;">🧩</div>
           </div>
           <div class="metric-card reveal delay-5">
-            <strong style="color:var(--amber);">关键差异</strong>
-            <span>加工深度决定<br />记忆持久度</span>
+            <strong style="color:var(--amber);">所谓天赋怪</strong>
+            <span>就是浅层加工的<br />记忆点停留时间长</span>
             <div style="margin-top:12px;font-size:42px;text-align:center;opacity:0.3;">⚡</div>
           </div>
         </div>
@@ -1231,17 +1242,19 @@
     <!--  SLIDE 8 — 实验解释：联想记忆                                 -->
     <!-- ============================================================ -->
     <section class="slide" data-title="联想记忆">
-      <div class="slide-inner center-layout">
-        <div class="eyebrow reveal">实验回看</div>
-        <h2 class="title compact reveal delay-1" style="font-size:clamp(30px,4.3vw,64px);max-width:13em;">真正难忘的，是<span class="gradient-text">有连接</span>的信息</h2>
-        <div class="quote-card reveal delay-2" style="max-width:980px;text-align:left;">
+      <div class="slide-inner center-layout" style="grid-template-areas:'headline' 'quote' 'pills';">
+        <div class="quote-card reveal" style="grid-area:quote;max-width:980px;text-align:left;">
           <div class="quote-mark">"</div>
           <p>各位家长，刚才您记住了几个公式？又记住了几个电器？</p>
           <p style="margin-top:12px;">这恰恰说明，艾宾浩斯遗忘曲线描述的是<strong style="color:var(--text);">孤立、无意义的材料</strong>；而真实学习更像是<strong style="color:var(--cyan);">联想记忆</strong>。</p>
           <p style="margin-top:12px;">生活中常用的电器，能立刻和我们的经验、画面、用途连在一起，所以会比抽象公式更容易留下痕迹。</p>
           <cite style="margin-top:14px;">所以真正学习的记忆曲线，应该是下面这样。</cite>
         </div>
-        <div class="pill-list" style="justify-content:center;max-width:980px;">
+        <div class="headline-cluster reveal delay-1" style="grid-area:headline;justify-items:center;text-align:center;">
+          <div class="eyebrow">实验回看</div>
+          <h2 class="title compact" style="font-size:clamp(30px,4.3vw,64px);max-width:13em;">真正难忘的，是<span class="gradient-text">有连接</span>的信息</h2>
+        </div>
+        <div class="pill-list" style="grid-area:pills;justify-content:center;max-width:980px;">
           <div class="pill reveal delay-3">孤立符号，最容易滑走</div>
           <div class="pill reveal delay-4">生活经验，更容易挂钩</div>
           <div class="pill reveal delay-5">联想越丰富，遗忘越慢</div>
@@ -1406,19 +1419,19 @@
                     <div class="compare-badge">Manual</div>
                   </div>
                   <div class="system-steps">
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-1">
                       <strong>Step 1</strong>
                       <span>喵喵机打印。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-2">
                       <strong>Step 2</strong>
                       <span>错题二刷。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-3">
                       <strong>Step 3</strong>
                       <span>错题三刷。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-4">
                       <strong>Step 4</strong>
                       <span>想起了就复习一下。</span>
                     </div>
@@ -1430,19 +1443,19 @@
                     <div class="compare-badge">AI</div>
                   </div>
                   <div class="system-steps">
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-1">
                       <strong>Step 1</strong>
                       <span>上传错题。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-2">
                       <strong>Step 2</strong>
                       <span>找到错因，并把错因告诉 AI。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-3">
                       <strong>Step 3</strong>
                       <span>Agent 帮你生成周内每天 3 到 4 分钟就能完成的错因回顾。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-4">
                       <strong>Step 4</strong>
                       <span>每周固定 30 分钟错题时间，再根据你的错因匹配对应题目做练习。</span>
                     </div>
@@ -1510,11 +1523,6 @@
           <h2 class="title compact">把责任变成使命，<br />把成长变成根本进步。</h2>
           <p class="body">家长把孩子交给我们，不只是托付一段时间，更是托付一份期待。星润每一位老师的目标，都是让学生从根本得到进步，真正掌握学习的真谛。</p>
         </div>
-        <div class="step-row">
-          <article class="step-card reveal delay-1"><div class="step-index">1</div><h3>家长赋予我们的责任</h3><p>每一份信任背后，都是一个家庭对孩子未来的期待。星润不仅要帮助学生提分，更要对得起这份托付，陪孩子建立长期向上的学习能力。</p></article>
-          <article class="step-card reveal delay-2"><div class="step-index">2</div><h3>让进步发生在根上</h3><p>我们希望学生获得的，不只是某一道题的答案，而是更清晰的思考、更扎实的方法、更稳定的习惯，真正理解什么是学习，怎样把知识变成自己的能力。</p></article>
-          <article class="step-card reveal delay-3"><div class="step-index">3</div><h3>用终生学习感染学生</h3><p>星润老师自己也要保持终生学习、无限进步的劲头。因为只有老师始终向前，学生才会感受到成长的力量，并愿意把这种力量带进自己的人生。</p></article>
-        </div>
         <div class="pill-list reveal delay-3">
           <div class="pill">建议现场讲法: “星润想做的，不只是教会孩子一题，而是教会孩子一生怎么学。”</div>
           <div class="pill">建议补一句: “老师的不断成长，本身就是给学生最有力的示范。”</div>
@@ -1557,8 +1565,17 @@
         this.revealsBySlide = this.slides.map((slide) =>
           Array.from(slide.querySelectorAll(".reveal"))
         );
-        this.stepRevealsBySlide = this.revealsBySlide.map((nodes) =>
-          nodes.filter((node) => !node.classList.contains("auto-show"))
+        this.revealGroupIndexBySlide = this.revealsBySlide.map((nodes) => {
+          const groupIndex = new Map();
+          nodes.forEach((node, nodeIndex) => {
+            if (node.classList.contains("auto-show")) return;
+            const key = node.dataset.revealGroup || `__node_${nodeIndex}`;
+            if (!groupIndex.has(key)) { groupIndex.set(key, groupIndex.size); }
+          });
+          return groupIndex;
+        });
+        this.stepRevealCountBySlide = this.revealGroupIndexBySlide.map((groupIndex) =>
+          groupIndex.size
         );
         this.bindDots();
         this.bindEvents();
@@ -1601,7 +1618,7 @@
       syncFullscreenUi() { this.fullscreenDot?.classList.toggle("active", Boolean(document.fullscreenElement)); }
 
       ensureInitialStep() {
-        const revealCount = this.stepRevealsBySlide[this.current].length;
+        const revealCount = this.stepRevealCountBySlide[this.current];
         this.stepState[this.current] = revealCount > 0 ? 1 : 0;
       }
 
@@ -1609,19 +1626,19 @@
         this.clearAutoAdvance();
         this.current = index;
         if (this.stepState[this.current] === 0) {
-          this.stepState[this.current] = this.stepRevealsBySlide[this.current].length > 0 ? 1 : 0;
+          this.stepState[this.current] = this.stepRevealCountBySlide[this.current] > 0 ? 1 : 0;
         }
         this.update();
       }
 
       next() {
         this.clearAutoAdvance();
-        const revealCount = this.stepRevealsBySlide[this.current].length;
+        const revealCount = this.stepRevealCountBySlide[this.current];
         if (this.stepState[this.current] < revealCount) { this.stepState[this.current] += 1; this.update(); return; }
         if (this.current < this.slides.length - 1) {
           this.current += 1;
           if (this.stepState[this.current] === 0) {
-            this.stepState[this.current] = this.stepRevealsBySlide[this.current].length > 0 ? 1 : 0;
+            this.stepState[this.current] = this.stepRevealCountBySlide[this.current] > 0 ? 1 : 0;
           }
           this.update();
         }
@@ -1630,7 +1647,7 @@
       prev() {
         this.clearAutoAdvance();
         if (this.stepState[this.current] > 1) { this.stepState[this.current] -= 1; this.update(); return; }
-        if (this.current > 0) { this.current -= 1; this.stepState[this.current] = this.stepRevealsBySlide[this.current].length; this.update(); }
+        if (this.current > 0) { this.current -= 1; this.stepState[this.current] = this.stepRevealCountBySlide[this.current]; this.update(); }
       }
 
       clearAutoAdvance() { if (this.autoAdvanceTimer) { clearTimeout(this.autoAdvanceTimer); this.autoAdvanceTimer = null; } }
@@ -1648,11 +1665,11 @@
         this.slides.forEach((slide, index) => {
           slide.classList.toggle("active", index === this.current);
           const revealLimit = this.stepState[index];
-          let steppedIndex = 0;
-          this.revealsBySlide[index].forEach((node) => {
+          const groupIndex = this.revealGroupIndexBySlide[index];
+          this.revealsBySlide[index].forEach((node, nodeIndex) => {
             if (node.classList.contains("auto-show")) { node.classList.toggle("revealed", true); return; }
-            node.classList.toggle("revealed", steppedIndex < revealLimit);
-            steppedIndex += 1;
+            const key = node.dataset.revealGroup || `__node_${nodeIndex}`;
+            node.classList.toggle("revealed", (groupIndex.get(key) ?? Number.MAX_SAFE_INTEGER) < revealLimit);
           });
         });
         Array.from(this.dotsRoot.children).forEach((dot, index) => { dot.classList.toggle("active", index === this.current); });

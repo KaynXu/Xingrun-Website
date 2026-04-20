@@ -6,6 +6,12 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `加工深度` 页里，右侧第三张卡片文案已改成“所谓天赋怪，就是浅层加工的记忆点停留时间长”：当前不再使用原来的 `关键差异 / 加工深度决定记忆持久度` 表达，改为更贴近现场讲法的结论式文案，同时保留原卡片位置、配色和节奏。
+- 2026-04-20 `frontend/public/aippt/index.html` 里的“叶子在左边还是右边”实验标题已改成更具体的提问：当前文案更新为 `最外面的那个叶子在左边还是右边？`，以便现场口播时把家长注意力更明确地拉到最外侧叶片的位置判断上。
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `联想记忆` 页已改成“中间卡片先出现、上方标题后出现”：当前通过把 `quote-card` 提前到 reveal 顺序前面，并用 grid area 保持原有视觉排布，进入这页时会先显示中间解释卡片，再在下一步显示上方 `实验回看 / 真正难忘的，是有连接的信息` 标题。
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `家长能做什么` 页已删除原先 3 张使命卡片：当前这一页只保留标题文案和下方两条建议 pills，不再显示 `家长赋予我们的责任 / 让进步发生在根上 / 用终生学习感染学生` 三张大卡片，方便现场直接从这一页过渡到后面的感谢页。
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页里，`AI 错题助手` 对比卡逐排 reveal 的 selector 已修正：上一轮把 `.feature-story-slide` 错写成了 `.slide.active` 的后代，导致 `STEP` 行默认被隐藏后无法恢复显示；当前已改成直接命中当前 slide 本体的 `.slide.feature-story-slide.active ...` 选择器，步骤文案会重新正常出现并按行错峰显示。
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页里，`AI 错题助手` 对比卡的两列步骤文案已改成点击步进：当前卡片本体按原节奏进入后，每点击一次会同步放出左右两列同一排 `STEP 1 ~ STEP 4`，实现真正的“点一下，出一排”，不再依赖自动时间差。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已再次针对 Windows 浏览器继续压缩一轮：当前在原有 `feature-story-slide` 基础上，进一步减少该页上下 padding、行间 gap、标题与说明字号、右侧新闻视频框最小高度，以及底部 `AI 错题助手` 对比卡的最小高度、卡片 padding、步骤列宽和行距，目标是让普通 Windows 浏览器里更容易完整看到“标题 + 新闻视频 + 底部双栏对比卡”整页内容。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `系统延展` 页已把 `System 02 / System 03` 双卡改成分步出现：当前标题区先显示，随后 `AI 复习助理` 与 `AI 题目可视化模型` 两张卡会按顺序逐张 reveal，方便现场讲解时一张一张带家长进入，不再两张卡同时弹出。
 - 2026-04-20 已再次按标准 release 流程把本地 `develop(6d2582b)` 合到 `master(6104c4d)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 6104c4d`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布除了一并带上 AIPPT 页面高度收口外，也把错题练习的动态书写区提示词调整发到生产：当前不再单独生成“下次提醒”框，也不再把“错因补完整 / 写一写以后怎么做”写死成固定模板，而是由 AI 按题目错因直接生成两段书写区标题和引导内容；生产机仍沿用 GitHub SSH over 443 直拉 `master` + 前端 build + `pm2 restart xingrun` 的标准路径。
