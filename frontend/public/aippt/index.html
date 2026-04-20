@@ -397,6 +397,26 @@
       letter-spacing: 0.06em;
     }
 
+    .case-study-slide .slide-inner {
+      height: min(848px, calc(100vh - 2 * var(--slide-pad-y)));
+      height: min(848px, calc(100dvh - 2 * var(--slide-pad-y)));
+      gap: clamp(20px, 2.4vh, 30px);
+    }
+
+    .case-study-slide .headline-cluster {
+      gap: 24px;
+    }
+
+    .case-study-slide .title.compact {
+      font-size: clamp(30px, 4.6vw, 64px);
+      line-height: 1;
+    }
+
+    .case-study-slide .link-row {
+      gap: 18px;
+      margin-top: 4px;
+    }
+
     .animated-grid {
       position: relative;
       min-height: 340px;
@@ -1196,7 +1216,7 @@
       </div>
     </section>
 
-    <section class="slide" data-title="案例一">
+    <section class="slide case-study-slide" data-title="案例一">
       <div class="slide-inner two-col">
         <div class="headline-cluster">
           <div class="eyebrow reveal">Part 2 · 案例 1</div>
