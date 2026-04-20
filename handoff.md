@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `系统延展` 页已把 `System 02 / System 03` 双卡改成分步出现：当前标题区先显示，随后 `AI 复习助理` 与 `AI 题目可视化模型` 两张卡会按顺序逐张 reveal，方便现场讲解时一张一张带家长进入，不再两张卡同时弹出。
 - 2026-04-20 已再次按标准 release 流程把本地 `develop(6d2582b)` 合到 `master(6104c4d)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 6104c4d`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布除了一并带上 AIPPT 页面高度收口外，也把错题练习的动态书写区提示词调整发到生产：当前不再单独生成“下次提醒”框，也不再把“错因补完整 / 写一写以后怎么做”写死成固定模板，而是由 AI 按题目错因直接生成两段书写区标题和引导内容；生产机仍沿用 GitHub SSH over 443 直拉 `master` + 前端 build + `pm2 restart xingrun` 的标准路径。
 - 2026-04-20 网站端智能错题 notebook 左侧目录已改为按上传时间正序展示，并新增 `全部 / 未掌握 / 已掌握` 掌握状态筛选；打开学生 notebook 时默认定位到最新一题，删除当前题后会优先跳到相邻题，方便老师顺着一份学生错题本逐题看。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `案例一` 页已继续按 Windows 浏览器高度压缩一轮：当前在原有 `case-study-slide` 基础上，再把该页上下 padding、左右列占比、标题字号、正文行高、来源卡片 padding / 标题字号 / 正文字号，以及右侧研究动画卡最小高度一起收紧，目标是让普通浏览器窗口里也能完整看到“标题 + 正文 + 两张来源卡 + 右侧视频”整页内容。
