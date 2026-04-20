@@ -35,4 +35,7 @@ test('buildDocumentMarkup renders practice sections as fill-in only and leaves r
   assert.match(markup, /redo-line/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
+  assert.match(markup, /公式预览/);
+  assert.match(markup, /预览正常/);
+  assert.match(markup, /xr-latex-preview/);
 });
