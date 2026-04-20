@@ -229,22 +229,22 @@ WRONG_QUESTION_PRACTICE_SHEET_PROMPT = """你是错题练习设计助手。
 
 items 中每一项必须包含：
 - wrong_question_record_id: string，必须与输入题目里的 wrong_question_record_id 完全一致
-- ai_hint: string，给学生的一句预防提醒，不写解题步骤，不直接给答案，12 到 36 个字
-- reason_blank_prompt: string，给“错题挖空”区域使用，必须包含至少两个 ______ 空格，引导学生填写自己出错的原因
-- improvement_summary_prompt: string，引导学生写“如何改正以及以后如何避免同类错误”的总结，必须包含至少两个 ______ 空格
+- reason_blank_prompt: string，用于第一个书写区。请写成多行字符串：第一行是这个书写区的小标题；后续内容是给孩子的挖空或提示正文。正文必须包含至少两个 ______ 空格，引导孩子把具体错因补出来
+- improvement_summary_prompt: string，用于第二个书写区。请写成多行字符串：第一行是这个书写区的小标题；后续内容是引导孩子写“以后怎么做”的正文。可以是句首、问题、半句引导或少量挖空，但不要直接替孩子写结论
 
 严格规则：
 1. 不要直接给出原题答案，不要提示孩子该怎样把这道题一步一步做对。
 2. 生成内容主要依据孩子自述错因、顶层错因分类和补充备注；题目内容只用于确认错因语境，不要把重点放在讲题上。
-3. ai_hint 只写“下次为了避免再错，可以怎么提醒自己或检查哪里”，不要写解题思路、列式过程或观察步骤。
-4. reason_blank_prompt 聚焦“这题为什么错”，要让孩子补出具体错因、漏掉的条件、看错的符号、顺序或关系。
-5. improvement_summary_prompt 聚焦“以后怎么改、怎么避免再错”，适合孩子接着写一段简短总结，不要变成解题教学。
-6. 如果是细节问题，优先提醒检查顺序、符号、单位、小数点、抄写和验算。
-7. 如果是审题问题，优先提醒圈条件、看清关键词、对应图形或已知信息。
-8. 如果是方法问题，优先提醒先判断方法是否合适，再开始动笔。
-9. 如果是知识点问题，优先提醒先回忆规则、定义或常用判断依据。
-10. 句子要自然，适合小学/初中学生抄写和填写，不要出现工程术语。
-11. title 控制在 8 到 24 个字。"""
+3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
+4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
+5. reason_blank_prompt 聚焦“这题为什么错”，要让孩子补出具体错因、漏掉的条件、看错的符号、顺序或关系。
+6. improvement_summary_prompt 聚焦“以后怎么改、怎么避免再错”，适合孩子接着写一段简短总结，不要变成解题教学。
+7. 如果是细节问题，优先围绕检查顺序、符号、单位、小数点、抄写和验算来组织提示。
+8. 如果是审题问题，优先围绕圈条件、看清关键词、对应图形或已知信息来组织提示。
+9. 如果是方法问题，优先围绕先判断方法是否合适、为什么会选错方法来组织提示。
+10. 如果是知识点问题，优先围绕先回忆规则、定义或常用判断依据来组织提示。
+11. 句子要自然，适合小学/初中学生抄写和填写，不要出现工程术语。
+12. title 控制在 8 到 24 个字。"""
 
 _WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
     "",
@@ -407,12 +407,36 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
         reason_blank_prompt = str(source.get("reason_blank_prompt") or "").strip()
         improvement_summary_prompt = str(source.get("improvement_summary_prompt") or "").strip()
 
-        if reason_blank_prompt and "______" not in reason_blank_prompt:
-            reason_blank_prompt = f"{reason_blank_prompt.rstrip('。')} ______。"
-        if improvement_summary_prompt and "______" not in improvement_summary_prompt:
-            improvement_summary_prompt = f"{improvement_summary_prompt.rstrip('。')} ______。"
+        reason_blank_prompt = reason_blank_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
+        improvement_summary_prompt = improvement_summary_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
 
-        if not wrong_question_record_id or not ai_hint or not reason_blank_prompt or not improvement_summary_prompt:
+        reason_lines = [line.strip() for line in reason_blank_prompt.split("\n") if line.strip()]
+        improvement_lines = [line.strip() for line in improvement_summary_prompt.split("\n") if line.strip()]
+
+        if reason_lines:
+            if len(reason_lines) >= 2:
+                reason_title = reason_lines[0]
+                reason_body = "\n".join(reason_lines[1:])
+            else:
+                reason_title = ""
+                reason_body = reason_lines[0]
+            while reason_body.count("______") < 2:
+                reason_body = f"{reason_body.rstrip('。')} ______。"
+            reason_blank_prompt = (
+                f"{reason_title}\n{reason_body}".strip()
+                if reason_title
+                else reason_body
+            )
+
+        if improvement_lines:
+            if len(improvement_lines) >= 2:
+                improvement_title = improvement_lines[0]
+                improvement_body = "\n".join(improvement_lines[1:])
+                improvement_summary_prompt = f"{improvement_title}\n{improvement_body}".strip()
+            else:
+                improvement_summary_prompt = improvement_lines[0]
+
+        if not wrong_question_record_id or not reason_blank_prompt or not improvement_summary_prompt:
             raise ValueError("wrong question practice sheet generation failed")
 
         normalized_items.append(

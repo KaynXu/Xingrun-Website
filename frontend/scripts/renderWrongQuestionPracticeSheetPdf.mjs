@@ -81,11 +81,32 @@ function buildQuestionBlock(item) {
   `;
 }
 
-function buildWritingSection(label, prompt) {
+function splitWritingSection(prompt, fallbackLabel) {
+  const normalized = String(prompt ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length >= 2) {
+    return {
+      label: lines[0],
+      prompt: lines.slice(1).join('\n'),
+    };
+  }
+
+  return {
+    label: fallbackLabel,
+    prompt: lines[0] || '',
+  };
+}
+
+function buildWritingSection(prompt, fallbackLabel) {
+  const section = splitWritingSection(prompt, fallbackLabel);
   return `
     <section class="writing-card">
-      <div class="writing-label">${escapeHtml(label)}</div>
-      <div class="writing-prompt">${escapeHtml(prompt || '')}</div>
+      <div class="writing-label">${escapeHtml(section.label)}</div>
+      <div class="writing-prompt">${escapeHtml(section.prompt)}</div>
       <div class="writing-lines">
         <div class="writing-line"></div>
         <div class="writing-line"></div>
@@ -104,14 +125,8 @@ function buildItemMarkup(item) {
       <div class="record-label">题目内容</div>
       ${buildQuestionBlock(item)}
 
-      ${buildWritingSection('把错因补完整', item.reason_blank_prompt || '')}
-
-      <section class="hint-card">
-        <div class="hint-label">下次提醒</div>
-        <div class="hint-value">${escapeHtml(item.ai_hint || '')}</div>
-      </section>
-
-      ${buildWritingSection('写一写以后怎么做', item.improvement_summary_prompt || '')}
+      ${buildWritingSection(item.reason_blank_prompt || '', '先梳理错因')}
+      ${buildWritingSection(item.improvement_summary_prompt || '', '再写你的想法')}
     </section>
   `;
 }
@@ -191,7 +206,6 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-label,
-          .hint-label,
           .writing-label {
             margin-bottom: 10px;
             font-size: 13px;
@@ -201,7 +215,6 @@ export async function buildDocumentMarkup(payload) {
 
           .question-text-block,
           .geometry-card,
-          .hint-card,
           .writing-card {
             border: 1px solid #dbe2ea;
             border-radius: 10px;
@@ -209,21 +222,8 @@ export async function buildDocumentMarkup(payload) {
             background: #ffffff;
           }
 
-          .hint-card,
           .writing-card {
             margin-top: 14px;
-          }
-
-          .hint-card {
-            border-left: 4px solid #cbd5e1;
-            padding-left: 14px;
-          }
-
-          .hint-value {
-            font-size: 14px;
-            line-height: 1.75;
-            color: #334155;
-            white-space: pre-wrap;
           }
 
           .writing-prompt {

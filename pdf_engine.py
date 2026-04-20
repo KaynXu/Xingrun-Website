@@ -273,6 +273,16 @@ def _normalize_blanks(text: str) -> str:
     return html.escape(text)
 
 
+def _split_wrong_question_practice_section(text: str, fallback_title: str) -> tuple[str, str]:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    lines = [line.strip() for line in normalized.split("\n") if line.strip()]
+    if len(lines) >= 2:
+        return lines[0], "\n".join(lines[1:])
+    if len(lines) == 1:
+        return fallback_title, lines[0]
+    return fallback_title, ""
+
+
 def _day_header(label: str, time_note: str, color, styles: dict):
     text = f"{label}　　<font size='9'>{time_note}</font>"
     p = Paragraph(text, styles['day_title'])
@@ -697,6 +707,14 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
 
     for index, item in enumerate(items, start=1):
         question_order = int(item.get("question_order") or index)
+        reason_title, reason_prompt = _split_wrong_question_practice_section(
+            str(item.get("reason_blank_prompt") or ""),
+            "先梳理错因",
+        )
+        improvement_title, improvement_prompt = _split_wrong_question_practice_section(
+            str(item.get("improvement_summary_prompt") or ""),
+            "再写你的想法",
+        )
         if index > 1:
             story.append(PageBreak())
         story.append(Paragraph(f"第 {question_order} 题", styles["section"]))
@@ -720,8 +738,8 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
         story.append(
             _box(
                 [
-                    Paragraph("把错因补完整", styles["section"]),
-                    Paragraph(_normalize_blanks(str(item.get("reason_blank_prompt") or "")), styles["fill"]),
+                    Paragraph(html.escape(reason_title), styles["section"]),
+                    Paragraph(_normalize_blanks(reason_prompt), styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                 ],
@@ -733,19 +751,8 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
         story.append(
             _box(
                 [
-                    Paragraph("下次提醒", styles["section"]),
-                    Paragraph(html.escape(str(item.get("ai_hint") or "")), styles["body"]),
-                ],
-                colors.white,
-                C_BORDER,
-            )
-        )
-        story.append(_spacer(0.12))
-        story.append(
-            _box(
-                [
-                    Paragraph("写一写以后怎么做", styles["section"]),
-                    Paragraph(_normalize_blanks(str(item.get("improvement_summary_prompt") or "")), styles["fill"]),
+                    Paragraph(html.escape(improvement_title), styles["section"]),
+                    Paragraph(_normalize_blanks(improvement_prompt), styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
