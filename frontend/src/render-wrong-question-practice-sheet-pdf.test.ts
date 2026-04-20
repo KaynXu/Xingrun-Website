@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDocumentMarkup } from '../scripts/renderWrongQuestionPracticeSheetPdf.mjs';
+import {
+  buildDocumentMarkup,
+  resolveChromiumLaunchOptions,
+} from '../scripts/renderWrongQuestionPracticeSheetPdf.mjs';
 
 test('buildDocumentMarkup renders one merged writing card without extra preview labels', async () => {
   const markup = await buildDocumentMarkup({
@@ -62,4 +65,17 @@ test('buildDocumentMarkup normalizes literal newline escapes in question and pro
   assert.match(markup, /\(2\) 若/);
   assert.match(markup, /这道题涉及/);
   assert.match(markup, /接下来我准备先补/);
+});
+
+test('resolveChromiumLaunchOptions adds hardened chromium flags on linux', async () => {
+  const launchOptions = await resolveChromiumLaunchOptions({
+    env: {},
+    platform: 'linux',
+    pathExists: async (candidate) => candidate === '/snap/bin/chromium',
+  });
+
+  assert.deepEqual(launchOptions, {
+    executablePath: '/snap/bin/chromium',
+    args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'],
+  });
 });

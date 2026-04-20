@@ -37,7 +37,10 @@ test('resolveChromiumLaunchOptions prefers explicit environment paths', async ()
     pathExists: async () => false,
   });
 
-  assert.deepEqual(launchOptions, { executablePath: '/custom/chrome' });
+  assert.deepEqual(launchOptions, {
+    executablePath: '/custom/chrome',
+    args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'],
+  });
 });
 
 test('resolveChromiumLaunchOptions falls back to common linux chromium paths', async () => {
@@ -47,5 +50,8 @@ test('resolveChromiumLaunchOptions falls back to common linux chromium paths', a
     pathExists: async (candidate) => candidate === '/snap/bin/chromium',
   });
 
-  assert.deepEqual(launchOptions, { executablePath: '/snap/bin/chromium' });
+  assert.deepEqual(launchOptions, {
+    executablePath: '/snap/bin/chromium',
+    args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'],
+  });
 });
