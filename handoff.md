@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 已继续修复小程序语音转录线上 `502`：根因不是音频 URL 失效，而是生产机无法访问 `huggingface.co`，导致 `WhisperModel("base")` 首次初始化卡在联网下载模型。当前 `ai_processor.py` 已改为优先读取本地 Hugging Face 缓存快照目录；并已从本机把 `faster-whisper-base` 模型缓存同步到生产机 `~/.cache/huggingface/hub/models--Systran--faster-whisper-base`。线上复验通过：生产机 `_get_local_whisper_model()` 初始化耗时约 `0.57s`，`POST http://127.0.0.1:3001/wechat/parent/reason-transcriptions` 已对真实 mp3 返回 `200 {"transcript_text": ...}`，当前小程序语音转文字链路已可用。
 - 2026-04-19 已直接在生产机 `49.234.185.86` 的 `/home/ubuntu/Xingrun-Website/.venv` 补装 `requirements.txt`，确认 `faster-whisper 1.2.1` 可导入后已执行 `pm2 restart xingrun`；线上当前再次确认 `pm2 xingrun` 实际运行的是仓库内 `.venv/bin/python app.py`，根路由健康检查恢复为 `HTTP/1.1 302 FOUND`。这次修复的是“生产机环境没装包”，不是代码版本缺依赖；小程序前端仍指向 `https://xingrun.online`，因此这次不需要重传小程序包。
 - 2026-04-16 已新增公开卷页面结构化抓取 demo：`frontend/scripts/scrapeJyeooPaper.mjs` 现在可以直接抓公开 `jyeoo.com/pp/...` 试卷页，输出整卷 `JSON`，按题保留 `question_no / question_type / html_raw / math_blocks_raw / image_urls / image_local_paths / text_plain / options / latex_segments`；本地定向测试 `frontend/src/scrape-jyeoo-paper.test.ts` 已覆盖“切题、提题图、MathJye -> LaTeX”最小链路，临时脚本也已对公开试卷 `dea193e9-f656-43af-b44a-5037ee38faf7` 实跑通过，当前能抓出 22 题，并把第 17 题不等式还原成 `a < m < a(\\frac{a+e}{\\sqrt{ae}}-1)`。
 - 2026-04-16 小程序家长上传录音转文字已不再依赖 OpenAI Whisper：`ai_processor.py` 的 `transcribe_child_reason_audio()` 和通用 `transcribe_audio()` 现统一改为本地 `faster-whisper`，当前固定 `base + cpu + int8`，先自动识别语言，只有自动识别没出有效文本时才回退 `zh`，`app.py` 的音频转录 usage fallback 也已改成 `local / faster-whisper-base`；这次只替换转录层，不改后续错因归类 provider 逻辑，因此当前仍需要现有聊天类 AI provider key 来做错因归类和复习计划生成。
@@ -73,6 +74,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `72493fc Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是拿小程序真机再录一段中文语音手工点一次提交，确认页面端不再长时间挂在 `reason-transcriptions`，并观察首个请求后的实际用户体感时延。
 - 最值得继续做的是拿一段真实家长语音在真机或线上接口手工跑一次转文字，确认生产机当前不再报 `未安装 faster-whisper`，并观察首次模型初始化的真实时延。
 - 如果继续扩这条公开卷抓取 demo，最值得先做的是把 `MathJye` 反推覆盖面从当前已验证的分式、根号、上下标、向量箭头，继续补到更多几何/解析题里常见的组合结构，并单独决定是否要抓公开解析页。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
@@ -102,6 +104,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这次线上通过的是“已有本地缓存模型”路径；如果后续更换服务器、清理 `~/.cache/huggingface` 或切别的 whisper 模型名，生产机仍会因为无法直连 `huggingface.co` 而重新卡在模型拉取，届时需要再次预置缓存或提供可用镜像。
 - 这次线上只验证到“包已装好、服务已重启、根路由健康、`faster_whisper` 可导入”；首次真实转录时仍可能触发模型下载或初始化延迟，语音接口的首个请求耗时和服务器 CPU 峰值还没有用真实录音跑过。
 - 这轮 `scrapeJyeooPaper.mjs` 只验证了公开试卷页题面，不包含登录后内容、VIP 内容或解析页异步接口；`latex_segments` 目前是对 `MathJye` 的 best-effort 反推，已能覆盖本次公开卷 proof 里的关键公式，但对更复杂的嵌套结构仍可能需要继续补规则。
 - 这轮本地 `faster-whisper` 只用 mocked 单测和依赖安装 smoke 验证过，还没有在 4 核 + 4GB 的真实服务器上拿一段“中文为主但可能夹英文字母/公式”的录音实跑过；首个请求会触发模型下载/加载，后续请求也会吃 CPU，真实延迟、峰值内存和自动识别命中率仍需上线前单独 smoke。

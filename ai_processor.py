@@ -99,6 +99,26 @@ _LOCAL_WHISPER_MODEL_LOCK = threading.Lock()
 _LOCAL_WHISPER_MODEL_NAME = "base"
 
 
+def _get_local_whisper_model_source() -> str:
+    repo_dir = (
+        Path.home()
+        / ".cache"
+        / "huggingface"
+        / "hub"
+        / f"models--Systran--faster-whisper-{_LOCAL_WHISPER_MODEL_NAME}"
+    )
+    ref_path = repo_dir / "refs" / "main"
+    if not ref_path.exists():
+        return _LOCAL_WHISPER_MODEL_NAME
+    revision = ref_path.read_text(encoding="utf-8").strip()
+    if not revision:
+        return _LOCAL_WHISPER_MODEL_NAME
+    snapshot_dir = repo_dir / "snapshots" / revision
+    if not snapshot_dir.exists():
+        return _LOCAL_WHISPER_MODEL_NAME
+    return str(snapshot_dir)
+
+
 def _get_local_whisper_model():
     global _LOCAL_WHISPER_MODEL
     if _LOCAL_WHISPER_MODEL is not None:
@@ -112,7 +132,7 @@ def _get_local_whisper_model():
         except ImportError as exc:
             raise RuntimeError("未安装 faster-whisper，请先安装最新依赖。") from exc
         _LOCAL_WHISPER_MODEL = WhisperModel(
-            _LOCAL_WHISPER_MODEL_NAME,
+            _get_local_whisper_model_source(),
             device="cpu",
             compute_type="int8",
         )
