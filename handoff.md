@@ -6,7 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-20 已按标准 release 流程把本地 `develop(b67df6f)` 合到 `master(5395593)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 5395593`，同时 `local develop == origin/develop == b67df6f`；生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布把错题练习 PDF 的 LaTeX fallback 继续收口到更接近错题库现有逻辑：当浏览器渲染不可用而回退到 ReportLab 时，裸 `\\in / \\mathbbR / \\ldots / \\frac{...}{...}` 片段也会被转成可读文本，不再残留成 `mathbbR / fraca` 这类坏字串。
+- 2026-04-20 已按标准 release 流程把本地 `develop(92e3e12)` 合到 `master(edd6ceb)` 并部署到生产机 `49.234.185.86`，随后把 release 状态 docs commit 同步回最新 `master / develop / production HEAD`；生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布继续收口老师端错题练习 PDF：非几何题题目区现在改成更接近错题库的独立 `公式预览` 卡片样式，且 `question_text_snapshot / reason_blank_prompt / improvement_summary_prompt` 里残留的字面量 `\\n` 已统一还原成真实换行，不会再印在题面上。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `加工深度` 页里，右侧第三张卡片文案已改成“所谓天赋怪，就是浅层加工的记忆点停留时间长”：当前不再使用原来的 `关键差异 / 加工深度决定记忆持久度` 表达，改为更贴近现场讲法的结论式文案，同时保留原卡片位置、配色和节奏。
 - 2026-04-20 `frontend/public/aippt/index.html` 里的“叶子在左边还是右边”实验标题已改成更具体的提问：当前文案更新为 `最外面的那个叶子在左边还是右边？`，以便现场口播时把家长注意力更明确地拉到最外侧叶片的位置判断上。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `联想记忆` 页已改成“中间卡片先出现、上方标题后出现”：当前通过把 `quote-card` 提前到 reveal 顺序前面，并用 grid area 保持原有视觉排布，进入这页时会先显示中间解释卡片，再在下一步显示上方 `实验回看 / 真正难忘的，是有连接的信息` 标题。
