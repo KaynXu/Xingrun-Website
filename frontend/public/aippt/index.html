@@ -539,6 +539,9 @@
       grid-template-columns: 68px 1fr;
       gap: 10px;
       padding: 7px 0;
+    }
+
+    .feature-story-slide .system-step.reveal {
       opacity: 0;
       transform: translateY(12px);
       transition: opacity 420ms cubic-bezier(0.2, 0.7, 0.2, 1), transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -553,15 +556,10 @@
       font-size: clamp(19px, 1.62vw, 28px);
     }
 
-    .slide.feature-story-slide.active .system-card.feature-card.compare-card.revealed .system-step {
+    .slide.feature-story-slide.active .system-step.reveal.revealed {
       opacity: 1;
       transform: translateY(0);
     }
-
-    .slide.feature-story-slide.active .system-card.feature-card.compare-card.revealed .system-steps .system-step:nth-child(1) { transition-delay: 110ms; }
-    .slide.feature-story-slide.active .system-card.feature-card.compare-card.revealed .system-steps .system-step:nth-child(2) { transition-delay: 210ms; }
-    .slide.feature-story-slide.active .system-card.feature-card.compare-card.revealed .system-steps .system-step:nth-child(3) { transition-delay: 310ms; }
-    .slide.feature-story-slide.active .system-card.feature-card.compare-card.revealed .system-steps .system-step:nth-child(4) { transition-delay: 410ms; }
 
     .animated-grid {
       position: relative;
@@ -1419,19 +1417,19 @@
                     <div class="compare-badge">Manual</div>
                   </div>
                   <div class="system-steps">
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-1">
                       <strong>Step 1</strong>
                       <span>喵喵机打印。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-2">
                       <strong>Step 2</strong>
                       <span>错题二刷。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-3">
                       <strong>Step 3</strong>
                       <span>错题三刷。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-4">
                       <strong>Step 4</strong>
                       <span>想起了就复习一下。</span>
                     </div>
@@ -1443,19 +1441,19 @@
                     <div class="compare-badge">AI</div>
                   </div>
                   <div class="system-steps">
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-1">
                       <strong>Step 1</strong>
                       <span>上传错题。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-2">
                       <strong>Step 2</strong>
                       <span>找到错因，并把错因告诉 AI。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-3">
                       <strong>Step 3</strong>
                       <span>Agent 帮你生成周内每天 3 到 4 分钟就能完成的错因回顾。</span>
                     </div>
-                    <div class="system-step">
+                    <div class="system-step reveal" data-reveal-group="feature-compare-row-4">
                       <strong>Step 4</strong>
                       <span>每周固定 30 分钟错题时间，再根据你的错因匹配对应题目做练习。</span>
                     </div>
@@ -1570,8 +1568,17 @@
         this.revealsBySlide = this.slides.map((slide) =>
           Array.from(slide.querySelectorAll(".reveal"))
         );
-        this.stepRevealsBySlide = this.revealsBySlide.map((nodes) =>
-          nodes.filter((node) => !node.classList.contains("auto-show"))
+        this.revealGroupIndexBySlide = this.revealsBySlide.map((nodes) => {
+          const groupIndex = new Map();
+          nodes.forEach((node, nodeIndex) => {
+            if (node.classList.contains("auto-show")) return;
+            const key = node.dataset.revealGroup || `__node_${nodeIndex}`;
+            if (!groupIndex.has(key)) { groupIndex.set(key, groupIndex.size); }
+          });
+          return groupIndex;
+        });
+        this.stepRevealCountBySlide = this.revealGroupIndexBySlide.map((groupIndex) =>
+          groupIndex.size
         );
         this.bindDots();
         this.bindEvents();
@@ -1614,7 +1621,7 @@
       syncFullscreenUi() { this.fullscreenDot?.classList.toggle("active", Boolean(document.fullscreenElement)); }
 
       ensureInitialStep() {
-        const revealCount = this.stepRevealsBySlide[this.current].length;
+        const revealCount = this.stepRevealCountBySlide[this.current];
         this.stepState[this.current] = revealCount > 0 ? 1 : 0;
       }
 
@@ -1622,19 +1629,19 @@
         this.clearAutoAdvance();
         this.current = index;
         if (this.stepState[this.current] === 0) {
-          this.stepState[this.current] = this.stepRevealsBySlide[this.current].length > 0 ? 1 : 0;
+          this.stepState[this.current] = this.stepRevealCountBySlide[this.current] > 0 ? 1 : 0;
         }
         this.update();
       }
 
       next() {
         this.clearAutoAdvance();
-        const revealCount = this.stepRevealsBySlide[this.current].length;
+        const revealCount = this.stepRevealCountBySlide[this.current];
         if (this.stepState[this.current] < revealCount) { this.stepState[this.current] += 1; this.update(); return; }
         if (this.current < this.slides.length - 1) {
           this.current += 1;
           if (this.stepState[this.current] === 0) {
-            this.stepState[this.current] = this.stepRevealsBySlide[this.current].length > 0 ? 1 : 0;
+            this.stepState[this.current] = this.stepRevealCountBySlide[this.current] > 0 ? 1 : 0;
           }
           this.update();
         }
@@ -1643,7 +1650,7 @@
       prev() {
         this.clearAutoAdvance();
         if (this.stepState[this.current] > 1) { this.stepState[this.current] -= 1; this.update(); return; }
-        if (this.current > 0) { this.current -= 1; this.stepState[this.current] = this.stepRevealsBySlide[this.current].length; this.update(); }
+        if (this.current > 0) { this.current -= 1; this.stepState[this.current] = this.stepRevealCountBySlide[this.current]; this.update(); }
       }
 
       clearAutoAdvance() { if (this.autoAdvanceTimer) { clearTimeout(this.autoAdvanceTimer); this.autoAdvanceTimer = null; } }
@@ -1661,11 +1668,11 @@
         this.slides.forEach((slide, index) => {
           slide.classList.toggle("active", index === this.current);
           const revealLimit = this.stepState[index];
-          let steppedIndex = 0;
-          this.revealsBySlide[index].forEach((node) => {
+          const groupIndex = this.revealGroupIndexBySlide[index];
+          this.revealsBySlide[index].forEach((node, nodeIndex) => {
             if (node.classList.contains("auto-show")) { node.classList.toggle("revealed", true); return; }
-            node.classList.toggle("revealed", steppedIndex < revealLimit);
-            steppedIndex += 1;
+            const key = node.dataset.revealGroup || `__node_${nodeIndex}`;
+            node.classList.toggle("revealed", (groupIndex.get(key) ?? Number.MAX_SAFE_INTEGER) < revealLimit);
           });
         });
         Array.from(this.dotsRoot.children).forEach((dot, index) => { dot.classList.toggle("active", index === this.current); });
