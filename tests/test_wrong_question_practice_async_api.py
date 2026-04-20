@@ -68,9 +68,8 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
             "items": [
                 {
                     "wrong_question_record_id": self.record["id"],
-                    "ai_hint": "先回忆乘法和加法的先后顺序，再看自己是不是少检查了一步。",
-                    "reason_blank_prompt": "这题我错在 ______，因为我忽略了 ______。",
-                    "improvement_summary_prompt": "以后遇到同类题，我会先 ______，再 ______，避免 ______。",
+                    "reason_blank_prompt": "先把真正错因写出来\n这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么做\n下次再碰到这种题时，你准备先检查哪里？",
                 }
             ],
         }
@@ -85,7 +84,11 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "ready")
         self.assertEqual(saved["pdf_path"], "/tmp/practice-sheet.pdf")
         self.assertEqual(saved["generation_error"], "")
-        self.assertEqual(saved["items"][0]["ai_hint"], "先回忆乘法和加法的先后顺序，再看自己是不是少检查了一步。")
+        self.assertEqual(saved["items"][0]["ai_hint"], "")
+        self.assertEqual(
+            saved["items"][0]["improvement_summary_prompt"],
+            "再想想以后怎么做\n下次再碰到这种题时，你准备先检查哪里？",
+        )
         mock_generate_material.assert_called_once()
         material_kwargs = mock_generate_material.call_args.kwargs
         self.assertEqual(material_kwargs["student_name"], "Alice")
@@ -146,9 +149,8 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
             "items": [
                 {
                     "wrong_question_record_id": self.record["id"],
-                    "ai_hint": "提示",
-                    "reason_blank_prompt": "挖空",
-                    "improvement_summary_prompt": "总结",
+                    "reason_blank_prompt": "先把错因写出来\n这题我错在 ______，因为 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么避免\n如果下次再做，我会先提醒自己注意什么？",
                 }
             ],
         }
