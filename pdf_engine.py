@@ -205,9 +205,122 @@ _SUB = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅',
         '6':'₆','7':'₇','8':'₈','9':'₉',
         'a':'ₐ','e':'ₑ','o':'ₒ','x':'ₓ','h':'ₕ',
         'k':'ₖ','l':'ₗ','m':'ₘ','n':'ₙ','p':'ₚ','s':'ₛ','t':'ₜ'}
+_MATHBB_SET_MAP = {
+    'C': 'ℂ',
+    'N': 'ℕ',
+    'Q': 'ℚ',
+    'R': 'ℝ',
+    'Z': 'ℤ',
+}
+_BARE_LATEX_TEXT_REPLACEMENTS = (
+    (r'\infty', '∞'),
+    (r'\Rightarrow', '⇒'),
+    (r'\Leftarrow', '⇐'),
+    (r'\rightarrow', '→'),
+    (r'\leftarrow', '←'),
+    (r'\subseteq', '⊆'),
+    (r'\supseteq', '⊇'),
+    (r'\subset', '⊂'),
+    (r'\supset', '⊃'),
+    (r'\notin', '∉'),
+    (r'\approx', '≈'),
+    (r'\geq', '≥'),
+    (r'\ge', '≥'),
+    (r'\leq', '≤'),
+    (r'\le', '≤'),
+    (r'\neq', '≠'),
+    (r'\times', '×'),
+    (r'\cdot', '·'),
+    (r'\ldots', '...'),
+    (r'\cdots', '...'),
+    (r'\dots', '...'),
+    (r'\div', '÷'),
+    (r'\pm', '±'),
+    (r'\in', '∈'),
+    (r'\to', '→'),
+    (r'\left', ''),
+    (r'\right', ''),
+)
 _BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
     r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
 )
+
+
+def _render_bare_latex_superscript(content: str) -> str:
+    result = []
+    for character in content:
+        if character in _SUP:
+            result.append(_SUP[character])
+            continue
+        lowered = character.lower()
+        if lowered in _SUP:
+            result.append(_SUP[lowered])
+            continue
+        result.append(character)
+    return ''.join(result)
+
+
+def _render_bare_latex_subscript(content: str) -> str:
+    result = []
+    for character in content:
+        if character in _SUB:
+            result.append(_SUB[character])
+            continue
+        lowered = character.lower()
+        if lowered in _SUB:
+            result.append(_SUB[lowered])
+            continue
+        return f'_({content})'
+    return ''.join(result)
+
+
+def _normalize_bare_latex_text(text: str) -> str:
+    normalized = str(text or "").replace(r'\$', '$')
+
+    for _ in range(5):
+        next_value = normalized
+        next_value = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1)/(\2)', next_value)
+        next_value = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', next_value)
+        if next_value == normalized:
+            break
+        normalized = next_value
+
+    normalized = re.sub(r'\\text\{([^{}]+)\}', r'\1', normalized)
+    normalized = re.sub(
+        r'\\mathbb\s*\{?([A-Za-z])\}?',
+        lambda match: _MATHBB_SET_MAP.get(match.group(1), match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r'\^\{([^{}]+)\}',
+        lambda match: _render_bare_latex_superscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r'\^([0-9n()+\-=i])',
+        lambda match: _render_bare_latex_superscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r'\^([a-zA-Z])',
+        lambda match: _render_bare_latex_superscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r'_\{([^{}]+)\}',
+        lambda match: _render_bare_latex_subscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r'_([a-zA-Z0-9])',
+        lambda match: _render_bare_latex_subscript(match.group(1)),
+        normalized,
+    )
+
+    for source, target in _BARE_LATEX_TEXT_REPLACEMENTS:
+        normalized = normalized.replace(source, target)
+
+    return normalized
 
 
 def _latex_to_readable(text: str) -> str:
@@ -263,8 +376,10 @@ def _latex_to_readable(text: str) -> str:
         s = s.replace('{', '').replace('}', '')
         return s.strip()
 
-    return re.sub(r'\$\$([^$]+)\$\$', _conv,
-           re.sub(r'\$([^$]+)\$', _conv, text))
+    return _normalize_bare_latex_text(
+        re.sub(r'\$\$([^$]+)\$\$', _conv,
+               re.sub(r'\$([^$]+)\$', _conv, text))
+    )
 
 
 def _normalize_blanks(text: str) -> str:
@@ -446,8 +561,12 @@ def _repair_wrong_question_latex_transport(text: str) -> str:
 def _build_portable_wrong_question_text(value: str) -> str:
     repaired = _repair_wrong_question_latex_transport(str(value or ""))
     repaired = re.sub(r"\\text\{([^{}]+)\}", r"\1", repaired)
+    repaired = repaired.replace(r"\rightarrow", "XRRIGHTARROWTOKEN")
+    repaired = repaired.replace(r"\leftarrow", "XRLEFTARROWTOKEN")
     repaired = repaired.replace(r"\to", "XRARROWTOKEN")
-    portable = normalize_portable_text(repaired)
+    portable = normalize_portable_text(_normalize_bare_latex_text(repaired))
+    portable = portable.replace("XRRIGHTARROWTOKEN", "→")
+    portable = portable.replace("XRLEFTARROWTOKEN", "←")
     portable = portable.replace("XRARROWTOKEN", "→")
     portable = portable.replace("lim_(", "lim(")
     return portable
