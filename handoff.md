@@ -8,6 +8,7 @@
 ### 当前状态
 - 2026-04-20 已再次按标准 release 流程把本地 `develop(0c3278d)` 合到 `master(4c6e90b)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 4c6e90b`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布已把错题练习文案收口、错题练习记录删除按钮，以及前一轮积分/异步错题练习链路调整一起带上生产；生产机仍沿用 GitHub SSH over 443 直拉 `master` + 前端 build + `pm2 restart xingrun` 的标准路径。
 - 2026-04-20 网站端智能错题 notebook 左侧目录已改为按上传时间正序展示，并新增 `全部 / 未掌握 / 已掌握` 掌握状态筛选；打开学生 notebook 时默认定位到最新一题，删除当前题后会优先跳到相邻题，方便老师顺着一份学生错题本逐题看。
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `案例一` 页已继续按 Windows 浏览器高度压缩一轮：当前在原有 `case-study-slide` 基础上，再把该页上下 padding、左右列占比、标题字号、正文行高、来源卡片 padding / 标题字号 / 正文字号，以及右侧研究动画卡最小高度一起收紧，目标是让普通浏览器窗口里也能完整看到“标题 + 正文 + 两张来源卡 + 右侧视频”整页内容。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `案例一` 页已做单页局部版式收口：当前通过新增 `case-study-slide` 专属样式，把该页 `slide-inner` 可用高度略微放大、标题字号轻微下调，并把标题区与两张来源卡片之间的纵向间距拉开，避免在普通浏览器窗口里出现标题贴顶、下方卡片过挤的观感；本轮只动这一个 slide，不影响其他 AIPPT 页面。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已继续按普通浏览器高度收口：当前通过新增 `feature-story-slide` 专属样式，把这页顶部/底部 padding、两行主区之间的 row gap、标题与正文字号、右侧视频卡最小高度，以及底部双栏对比卡的最小高度和步骤行距一起压缩，目标是让 Windows 浏览器里也能完整看到“标题 + 视频 + AI 错题助手对比卡”整页内容，不再被底部截断。
 - 2026-04-20 网站端“智能错题”已补上老师端 `错题练习` 首版闭环，当前入口在学生 notebook 弹窗内：左侧题目目录可勾选本地 `wechat_mp` 且 `recognized + active` 的错题，点击 `生成错题练习` 后会为该学生创建一份独立练习单任务，并把记录持久化到本地服务器 SQLite。前端同一弹窗已新增 `错题练习记录` 页签，可查看历史生成记录、状态，以及 `预览 PDF / 下载 PDF` 入口；后端也已补齐 `/api/wrong-question-practice-sheets` 创建/列表/详情链路和 `/api/wrong-question-practice-sheets/<id>/pdf(/download)` PDF 访问路由。
