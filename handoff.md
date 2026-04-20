@@ -1,12 +1,12 @@
 ## Handoff
 
-最后更新：2026-04-20
+最后更新：2026-04-21
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-20 本地 `develop` 已补上错题练习异步生成的浏览器 PDF 一次自动重试：这次是针对线上 `sheet #9 / 2026-04-20 22:52:01 / student_id=276` 那类“同份数据手工重跑可成功、任务线程却瞬时失败”的情况收口。当前已确认生产机同一份 `sheet #9` 数据直接手工执行 `node frontend/scripts/renderWrongQuestionPracticeSheetPdf.mjs ...` 可以稳定生成 PDF，说明问题更像浏览器渲染偶发抖动，不是题目内容本身必现打挂；因此本地代码现在会在第一次 `generate_wrong_question_practice_sheet_pdf()` 抛错后自动再试一次，只有连续两次失败才落库成 `PDF 生成失败，请稍后重试`。对应回归已补在 `tests/test_wrong_question_practice_async_api.py`，当前只在本地 `develop`，还没 push / 部署。
+- 2026-04-21 已按标准 release 流程把本地 `develop(56b59f2)` 合到 `master(4fe9ad1)` 并部署到生产机 `49.234.185.86`；这次收的是错题练习异步生成里浏览器 PDF 的偶发瞬时失败：线上 `sheet #9 / 2026-04-20 22:52:01 / student_id=276` 同一份数据手工重跑可以稳定生成，说明更像浏览器渲染抖动而不是题目内容本身必现打挂。当前后端已改成第一次 `generate_wrong_question_practice_sheet_pdf()` 抛错后自动再试一次，只有连续两次失败才落库成 `PDF 生成失败，请稍后重试`；对应回归已补在 `tests/test_wrong_question_practice_async_api.py`。生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-20 已按标准 release 流程把本地 `develop(7ce75b8)` 合到 `master(33402f4)` 并部署到生产机 `49.234.185.86`；当前错题练习 PDF 的非几何题题目区已经去掉 `公式预览 / 预览正常` 等学生无感标签，只保留题目卡片本体；两段 AI 挖空提示也已合并成单个大书写区，并在渲染时自动剥离历史数据里的 `小标题：...` 前缀、加宽挖空留白。错题练习记录列表标题不再直接显示数据库 `id`，而是按当前列表顺序显示连续 `练习单 #N`，删除历史练习后不会再出现号码被旧记录占坑；学生错题本和练习记录里的题数/份数文案也已统一改成无空格紧凑写法，避免在卡片里被硬换行成 `6 / 题` 这种断行。生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-20 已按标准 release 流程把本地 `develop(be312b4)` 合到 `master(b56bfdf)` 并部署到生产机 `49.234.185.86`，随后把 release 状态 docs commit 同步回最新 `master / develop / production HEAD`；生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次继续收口老师端错题练习 PDF：浏览器渲染现在是唯一正式输出路径，生成失败会直接报错，不再静默回退到旧的 ReportLab 版式；非几何题题目区保持独立 `公式预览` 卡片，题面和书写区里残留的字面量 `\\n` 也已统一还原成真实换行。线上已把用户反馈的 `sheet #7` 按当前浏览器链路重生成，当前 `producer` 已从旧的 `ReportLab PDF Library` 替换为 `Skia/PDF`。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `加工深度` 页里，右侧第三张卡片文案已改成“所谓天赋怪，就是浅层加工的记忆点停留时间长”：当前不再使用原来的 `关键差异 / 加工深度决定记忆持久度` 表达，改为更贴近现场讲法的结论式文案，同时保留原卡片位置、配色和节奏。
