@@ -201,6 +201,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   recordsRef.current = records;
   reviewDraftByRecordIdRef.current = reviewDraftByRecordId;
   const [notebookModalView, setNotebookModalView] = useState<NotebookModalView>('questions');
+  const [notebookMasteryFilter, setNotebookMasteryFilter] = useState<'all' | 'pending' | 'mastered'>('all');
   const [selectedPracticeRecordIds, setSelectedPracticeRecordIds] = useState<string[]>([]);
   const [practiceSelectionTouched, setPracticeSelectionTouched] = useState(false);
   const [practiceSheets, setPracticeSheets] = useState<WrongQuestionPracticeSheetSummary[]>([]);
@@ -264,6 +265,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       memberNotebookRecords.map((item, index) => [item.id, index + 1]),
     );
   }, [memberNotebookRecords]);
+  const displayedNotebookRecords = useMemo(() => {
+    if (notebookMasteryFilter === 'mastered') {
+      return memberNotebookRecords.filter((item) => item.isMastered === true);
+    }
+    if (notebookMasteryFilter === 'pending') {
+      return memberNotebookRecords.filter((item) => item.isMastered !== true);
+    }
+    return memberNotebookRecords;
+  }, [memberNotebookRecords, notebookMasteryFilter]);
   const selectedNotebookStudentId = useMemo(() => {
     const matchedRecord = memberNotebookRecords.find((item) => typeof item.studentId === 'number' && item.studentId > 0);
     return matchedRecord?.studentId ?? null;
@@ -712,7 +722,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     try {
       const selectedIndex = memberNotebookRecords.findIndex((item) => item.id === selectedRecord.id);
-      const nextSelectedRecord = selectedIndex >= 0 ? memberNotebookRecords[selectedIndex + 1] ?? null : null;
+      const nextSelectedRecord = selectedIndex >= 0
+        ? memberNotebookRecords[selectedIndex + 1] ?? memberNotebookRecords[selectedIndex - 1] ?? null
+        : null;
 
       await apiFetch(`/api/wrong-questions/${encodeURIComponent(selectedRecord.id)}`, {
         method: 'DELETE',
@@ -875,7 +887,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const handleOpenMemberNotebook = (studentName: string) => {
     const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, activeNotebookClassId, studentName);
     setSelectedStudentName(studentName);
-    setSelectedId(nextRecords[0]?.id ?? null);
+    setSelectedId(nextRecords.length > 0 ? nextRecords[nextRecords.length - 1].id : null);
     setNotebookModalView('questions');
     setSelectedPracticeRecordIds([]);
     setPracticeSelectionTouched(false);
@@ -1456,7 +1468,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-white/10">
               <div>
                 <h4 className="text-2xl font-semibold text-slate-900 dark:text-white">{selectedStudentName} 的错题库</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按上传时间倒序查看题目列表，右侧直接打开当前题目。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按上传时间顺序查看题目列表，右侧直接打开当前题目。</p>
               </div>
               <button
                 type="button"
@@ -1494,10 +1506,33 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按上传时间倒序查看，勾选后可直接生成一份错题练习。</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按上传时间顺序查看，勾选后可直接生成一份错题练习。</p>
                         </div>
                         <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                           {memberNotebookRecords.length} 题
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="掌握状态筛选">
+                        {([
+                          { value: 'all', label: '全部' },
+                          { value: 'pending', label: '未掌握' },
+                          { value: 'mastered', label: '已掌握' },
+                        ] as const).map((option) => {
+                          const active = notebookMasteryFilter === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => setNotebookMasteryFilter(option.value)}
+                              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:text-white'}`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                        <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
+                          当前显示 {displayedNotebookRecords.length} 题
                         </span>
                       </div>
                       <div className="flex flex-col gap-3">
@@ -1514,7 +1549,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     </div>
 
                     <div className="space-y-2">
-                      {memberNotebookRecords.map((item) => {
+                      {displayedNotebookRecords.length === 0 ? (
+                        <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">
+                          当前筛选下没有匹配的错题。
+                        </p>
+                      ) : null}
+                      {displayedNotebookRecords.map((item) => {
                         const active = item.id === selectedRecord?.id;
                         const questionNumber = memberNotebookQuestionNumberById.get(item.id) ?? 0;
                         const canSelect = canGenerateWrongQuestionPractice(item);
