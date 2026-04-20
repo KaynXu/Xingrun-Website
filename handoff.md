@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页里，`AI 错题助手` 对比卡逐排 reveal 的 selector 已修正：上一轮把 `.feature-story-slide` 错写成了 `.slide.active` 的后代，导致 `STEP` 行默认被隐藏后无法恢复显示；当前已改成直接命中当前 slide 本体的 `.slide.feature-story-slide.active ...` 选择器，步骤文案会重新正常出现并按行错峰显示。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页里，`AI 错题助手` 对比卡的两列步骤文案已补成逐排出现：当前卡片本体按原节奏进入后，左右两列 `STEP 1 ~ STEP 4` 会按同一行同步错峰 reveal，讲解时能更自然地一排一排带过去，而不是整块文字一次性全部出现。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已再次针对 Windows 浏览器继续压缩一轮：当前在原有 `feature-story-slide` 基础上，进一步减少该页上下 padding、行间 gap、标题与说明字号、右侧新闻视频框最小高度，以及底部 `AI 错题助手` 对比卡的最小高度、卡片 padding、步骤列宽和行距，目标是让普通 Windows 浏览器里更容易完整看到“标题 + 新闻视频 + 底部双栏对比卡”整页内容。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `系统延展` 页已把 `System 02 / System 03` 双卡改成分步出现：当前标题区先显示，随后 `AI 复习助理` 与 `AI 题目可视化模型` 两张卡会按顺序逐张 reveal，方便现场讲解时一张一张带家长进入，不再两张卡同时弹出。
