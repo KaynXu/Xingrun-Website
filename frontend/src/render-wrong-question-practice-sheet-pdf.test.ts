@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildDocumentMarkup } from '../scripts/renderWrongQuestionPracticeSheetPdf.mjs';
 
-test('buildDocumentMarkup renders practice sections as fill-in only and leaves redo lines at the bottom', async () => {
+test('buildDocumentMarkup renders one merged writing card without extra preview labels', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
     className: '六年级 1 班',
@@ -17,26 +17,24 @@ test('buildDocumentMarkup renders practice sections as fill-in only and leaves r
         question_text_snapshot: '计算 \\(x^2 + 1\\) 并化简：\\[\\frac{x^2+1}{2}\\]。',
         child_reason_text_snapshot: '我把乘法放到了最后',
         ai_hint: '',
-        reason_blank_prompt: '先把缺的知识点补出来\n这题我没做好，是因为我漏掉了 ______、没有想清 ______，相关知识点其实是 ______。',
-        improvement_summary_prompt: '再想想怎么把知识点补上\n接下来我准备先补 ______，再练 ______，做题前还要提醒自己 ______。',
+        reason_blank_prompt: '小标题：为什么会漏掉关键知识点？\n这题我没做好，是因为我漏掉了 ______、没有想清 ______，相关知识点其实是 ______。',
+        improvement_summary_prompt: '小标题：接下来怎么补这块知识点？\n接下来我准备先补 ______，再练 ______，做题前还要提醒自己 ______。',
       },
     ],
   });
 
   assert.doesNotMatch(markup, /AI 提示/);
-  assert.doesNotMatch(markup, /下次提醒/);
-  assert.doesNotMatch(markup, /把错因补完整/);
-  assert.doesNotMatch(markup, /写一写以后怎么做/);
-  assert.match(markup, /先把缺的知识点补出来/);
-  assert.match(markup, /再想想怎么把知识点补上/);
+  assert.doesNotMatch(markup, /公式预览/);
+  assert.doesNotMatch(markup, /预览正常/);
+  assert.doesNotMatch(markup, /小标题/);
+  assert.match(markup, /这题我没做好，是因为我漏掉了/);
+  assert.match(markup, /接下来我准备先补/);
   assert.match(markup, /blank-gap/);
-  assert.doesNotMatch(markup, /writing-lines/);
+  assert.equal((markup.match(/class="writing-card"/g) || []).length, 1);
   assert.match(markup, /redo-work-area/);
   assert.match(markup, /redo-line/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
-  assert.match(markup, /公式预览/);
-  assert.match(markup, /预览正常/);
   assert.match(markup, /xr-latex-preview/);
 });
 

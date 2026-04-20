@@ -38,35 +38,6 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function buildErrorList(errors) {
-  if (!Array.isArray(errors) || errors.length === 0) {
-    return '';
-  }
-
-  return `
-    <div class="latex-error-box">
-      <div class="latex-error-title">检测到公式渲染失败，已保留原文</div>
-      <ul>
-        ${errors.map((error) => `<li>${escapeHtml(error.message || '公式渲染失败')}：${escapeHtml(error.source || '')}</li>`).join('')}
-      </ul>
-    </div>
-  `;
-}
-
-function buildLatexStatus(preview) {
-  if (Array.isArray(preview?.errors) && preview.errors.length > 0) {
-    return `
-      <span class="question-latex-card-status question-latex-card-status-error">
-        ${escapeHtml(`${preview.errors.length} 处渲染失败`)}
-      </span>
-    `;
-  }
-
-  return `
-    <span class="question-latex-card-status question-latex-card-status-ok">预览正常</span>
-  `;
-}
-
 function buildQuestionBlock(item) {
   if (item.is_geometry) {
     if (item.image_data_url) {
@@ -89,14 +60,9 @@ function buildQuestionBlock(item) {
   const preview = buildWrongQuestionLatexPreviewModel(item.question_text_snapshot || '');
   return `
     <div class="question-latex-card">
-      <div class="question-latex-card-header">
-        <span class="question-latex-card-title">公式预览</span>
-        ${buildLatexStatus(preview)}
-      </div>
       <div class="xr-latex-preview question-latex-preview-frame">
         ${preview.html || '<span class="question-empty xr-latex-empty">暂无题目文本</span>'}
       </div>
-      ${buildErrorList(preview.errors)}
     </div>
   `;
 }
@@ -110,24 +76,23 @@ function normalizePromptText(prompt) {
     .replaceAll('\r', '\n');
 }
 
-function splitWritingSection(prompt, fallbackLabel) {
+function stripPromptHeading(value) {
+  return String(value ?? '').replace(/^\s*小标题\s*[:：]\s*/, '').trim();
+}
+
+function extractWritingPromptBody(prompt) {
   const normalized = normalizePromptText(prompt).trim();
   const lines = normalized
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
 
-  if (lines.length >= 2) {
-    return {
-      label: lines[0],
-      prompt: lines.slice(1).join('\n'),
-    };
-  }
-
-  return {
-    label: fallbackLabel,
-    prompt: lines[0] || '',
-  };
+  const bodyLines = lines.length >= 2 ? lines.slice(1) : lines;
+  return bodyLines
+    .map((line) => stripPromptHeading(line))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 function renderPromptHtml(prompt) {
@@ -136,12 +101,27 @@ function renderPromptHtml(prompt) {
     .replaceAll('\n', '<br />');
 }
 
-function buildWritingSection(prompt, fallbackLabel) {
-  const section = splitWritingSection(prompt, fallbackLabel);
+function buildWritingSection(reasonPrompt, improvementPrompt) {
+  const sections = [
+    extractWritingPromptBody(reasonPrompt),
+    extractWritingPromptBody(improvementPrompt),
+  ].filter(Boolean);
+
+  if (sections.length === 0) {
+    return '';
+  }
+
   return `
     <section class="writing-card">
-      <div class="writing-label">${escapeHtml(section.label)}</div>
-      <div class="writing-prompt">${renderPromptHtml(section.prompt)}</div>
+      ${sections
+        .map(
+          (section) => `
+            <div class="writing-prompt-block">
+              <div class="writing-prompt">${renderPromptHtml(section)}</div>
+            </div>
+          `,
+        )
+        .join('')}
     </section>
   `;
 }
@@ -166,8 +146,7 @@ function buildItemMarkup(item) {
       <div class="record-label">题目内容</div>
       ${buildQuestionBlock(item)}
 
-      ${buildWritingSection(item.reason_blank_prompt || '', '先梳理错因')}
-      ${buildWritingSection(item.improvement_summary_prompt || '', '再写你的想法')}
+      ${buildWritingSection(item.reason_blank_prompt || '', item.improvement_summary_prompt || '')}
       ${buildRedoWorkArea()}
     </section>
   `;
@@ -250,8 +229,7 @@ export async function buildDocumentMarkup(payload) {
             color: #0f172a;
           }
 
-          .record-label,
-          .writing-label {
+          .record-label {
             margin-bottom: 10px;
             font-size: 13px;
             font-weight: 700;
@@ -273,42 +251,6 @@ export async function buildDocumentMarkup(payload) {
             background: #f4fbff;
           }
 
-          .question-latex-card-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 12px;
-          }
-
-          .question-latex-card-title {
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            color: #94a3b8;
-          }
-
-          .question-latex-card-status {
-            display: inline-flex;
-            align-items: center;
-            border-radius: 999px;
-            padding: 5px 12px;
-            font-size: 12px;
-            font-weight: 700;
-          }
-
-          .question-latex-card-status-ok {
-            border: 1px solid #bbf7d0;
-            background: #f0fdf4;
-            color: #16a34a;
-          }
-
-          .question-latex-card-status-error {
-            border: 1px solid #fecaca;
-            background: #fff1f2;
-            color: #be123c;
-          }
-
           .question-latex-preview-frame {
             border: 1px solid #dbeafe;
             border-radius: 18px;
@@ -318,6 +260,12 @@ export async function buildDocumentMarkup(payload) {
 
           .writing-card {
             margin-top: 14px;
+            min-height: 82mm;
+            padding-bottom: 22px;
+          }
+
+          .writing-prompt-block + .writing-prompt-block {
+            margin-top: 18px;
           }
 
           .writing-prompt {
@@ -330,7 +278,7 @@ export async function buildDocumentMarkup(payload) {
 
           .blank-gap {
             display: inline-block;
-            min-width: 10.5em;
+            min-width: 13em;
             height: 1.2em;
             margin: 0 0.2em;
             vertical-align: -0.2em;
@@ -397,27 +345,6 @@ export async function buildDocumentMarkup(payload) {
 
           .xr-latex-preview .xr-latex-empty {
             color: #64748b;
-          }
-
-          .latex-error-box {
-            margin-top: 14px;
-            padding: 10px 12px;
-            border: 1px solid #fecaca;
-            border-radius: 12px;
-            background: #fff1f2;
-            color: #9f1239;
-            font-size: 12px;
-            line-height: 1.6;
-          }
-
-          .latex-error-title {
-            font-weight: 700;
-            margin-bottom: 4px;
-          }
-
-          .latex-error-box ul {
-            margin: 0;
-            padding-left: 18px;
           }
 
           .geometry-title {

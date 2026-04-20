@@ -927,7 +927,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       ) : (
         <div className="space-y-4">
-          {practiceSheets.map((sheet) => {
+          {practiceSheets.map((sheet, index) => {
+            const displaySheetNumber = practiceSheets.length - index;
             const previewUrl = sheet.pdfUrl ? buildWrongQuestionAuthedPath(sheet.pdfUrl) : '';
             const downloadUrl = sheet.downloadUrl ? buildWrongQuestionAuthedPath(sheet.downloadUrl) : previewUrl;
             return (
@@ -935,14 +936,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-base font-semibold text-slate-900 dark:text-white">练习单 #{sheet.id}</span>
+                      <span className="text-base font-semibold text-slate-900 dark:text-white">练习单 #{displaySheetNumber}</span>
                       <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${sheet.status === 'ready' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : sheet.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300' : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'}`}>
                         {getWrongQuestionPracticeStatusLabel(sheet.status)}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
                       <span>{sheet.createdAt || '未记录时间'}</span>
-                      <span>{sheet.questionCount} 题</span>
+                      <span className="whitespace-nowrap">{sheet.questionCount}题</span>
                       <span>{sheet.teacherNameSnapshot || '未记录老师'}</span>
                     </div>
                     {sheet.generationError ? (
@@ -1476,8 +1477,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     ) : null}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
-                    <span>{item.totalCount} 题</span>
-                    <span>{item.pendingReviewCount} 未掌握</span>
+                    <span className="whitespace-nowrap">{item.totalCount}题</span>
+                    <span className="whitespace-nowrap">{item.pendingReviewCount}未掌握</span>
                   </div>
                 </button>
               );
@@ -1535,8 +1536,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">最新上传的题目排在最上方，题号沿用上传顺序。勾选后可直接生成一份错题练习。</p>
                         </div>
-                        <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                          {memberNotebookRecords.length} 题
+                        <span className="whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                          {memberNotebookRecords.length}题
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="掌握状态筛选">
@@ -1558,8 +1559,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                             </button>
                           );
                         })}
-                        <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
-                          当前显示 {displayedNotebookRecords.length} 题
+                        <span className="ml-auto whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
+                          当前显示 {displayedNotebookRecords.length}题
                         </span>
                       </div>
                       <div className="flex flex-col gap-3">
@@ -1627,8 +1628,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">错题练习记录</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">查看这个学生已经生成过的错题练习，生成完成后可直接打开 PDF。</p>
-                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                      {practiceSheets.length} 份记录
+                    <span className="whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                      {practiceSheets.length}份记录
                     </span>
                   </div>
                 )}
