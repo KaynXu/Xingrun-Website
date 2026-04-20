@@ -453,6 +453,35 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
     return browser_records
 
 
+def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict]:
+    browser_items: list[dict] = []
+
+    for item in items:
+        normalized_item = {
+            "question_order": int(item.get("question_order") or 0),
+            "wrong_question_record_id": str(item.get("wrong_question_record_id") or ""),
+            "is_geometry": bool(item.get("is_geometry")),
+            "question_text_snapshot": _repair_wrong_question_latex_transport(str(item.get("question_text_snapshot") or "")),
+            "ai_hint": str(item.get("ai_hint") or ""),
+            "reason_blank_prompt": str(item.get("reason_blank_prompt") or ""),
+            "improvement_summary_prompt": str(item.get("improvement_summary_prompt") or ""),
+            "image_data_url": "",
+        }
+
+        if normalized_item["is_geometry"]:
+            image_url = str(item.get("image_url_snapshot") or "")
+            image_bytes = _fetch_wrong_question_image_bytes(image_url)
+            if image_bytes:
+                encoded_bytes = base64.b64encode(image_bytes).decode("ascii")
+                normalized_item["image_data_url"] = (
+                    f"data:{_guess_wrong_question_image_mime_type(image_url)};base64,{encoded_bytes}"
+                )
+
+        browser_items.append(normalized_item)
+
+    return browser_items
+
+
 def _render_student_wrong_question_library_pdf_via_browser(
     *,
     student_name: str,
@@ -500,6 +529,59 @@ def _render_student_wrong_question_library_pdf_via_browser(
     destination = Path(output_path).resolve()
     if not destination.exists() or destination.stat().st_size <= 0:
         raise RuntimeError("学生错题库 PDF 浏览器渲染失败：输出文件为空")
+
+    return str(destination)
+
+
+def _render_wrong_question_practice_sheet_pdf_via_browser(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_name: str,
+    title: str,
+    items: list[dict],
+    output_path: str,
+) -> str:
+    project_root = Path(__file__).resolve().parent
+    renderer_script = project_root / "frontend" / "scripts" / "renderWrongQuestionPracticeSheetPdf.mjs"
+
+    payload = {
+        "studentName": student_name,
+        "className": class_name,
+        "teacherName": teacher_name,
+        "title": title,
+        "items": _build_browser_wrong_question_practice_items(items),
+    }
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as temp_file:
+        json.dump(payload, temp_file, ensure_ascii=False)
+        temp_file_path = temp_file.name
+
+    try:
+        result = subprocess.run(
+            ["node", str(renderer_script), temp_file_path, output_path],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        try:
+            os.unlink(temp_file_path)
+        except FileNotFoundError:
+            pass
+
+    if result.returncode != 0:
+        error_message = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or "错题练习 PDF 浏览器渲染失败"
+        )
+        raise RuntimeError(error_message)
+
+    destination = Path(output_path).resolve()
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("错题练习 PDF 浏览器渲染失败：输出文件为空")
 
     return str(destination)
 
@@ -579,6 +661,105 @@ def _generate_student_wrong_question_library_pdf_via_reportlab(
     return str(destination)
 
 
+def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_name: str,
+    title: str,
+    items: list[dict],
+    output_path: str,
+) -> str:
+    _ensure_fonts()
+    styles = _make_styles()
+    destination = Path(output_path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(destination),
+        pagesize=A4,
+        leftMargin=LM,
+        rightMargin=RM,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        title=title,
+    )
+
+    story = [
+        _spacer(0.4),
+        Paragraph(html.escape(title), styles["title"]),
+        Paragraph(f"学生：{html.escape(student_name)}", styles["meta"]),
+        Paragraph(f"班级：{html.escape(class_name)}", styles["meta"]),
+        Paragraph(f"老师：{html.escape(teacher_name)}", styles["meta"]),
+        Paragraph(f"题目数量：{len(items)}", styles["meta"]),
+        HRFlowable(width=CONTENT_W, thickness=1.2, color=C_DAY1, spaceAfter=10),
+    ]
+
+    for index, item in enumerate(items, start=1):
+        question_order = int(item.get("question_order") or index)
+        if index > 1:
+            story.append(PageBreak())
+        story.append(Paragraph(f"第 {question_order} 题", styles["section"]))
+        story.append(Paragraph("题目内容", styles["tip"]))
+        if item.get("is_geometry"):
+            story.append(_build_wrong_question_geometry_image_card(str(item.get("image_url_snapshot") or ""), styles))
+        else:
+            story.append(
+                _box(
+                    [
+                        Paragraph(
+                            html.escape(_build_portable_wrong_question_text(str(item.get("question_text_snapshot") or ""))),
+                            styles["body"],
+                        )
+                    ],
+                    C_LIGHT_BG,
+                    C_BORDER,
+                )
+            )
+
+        story.append(_spacer(0.1))
+        story.append(
+            _box(
+                [
+                    Paragraph("AI 提示", styles["section"]),
+                    Paragraph(html.escape(str(item.get("ai_hint") or "")), styles["body"]),
+                ],
+                colors.HexColor("#f8fbff"),
+                C_BORDER,
+            )
+        )
+        story.append(_spacer(0.12))
+        story.append(
+            _box(
+                [
+                    Paragraph("错题挖空", styles["section"]),
+                    Paragraph(_normalize_blanks(str(item.get("reason_blank_prompt") or "")), styles["fill"]),
+                    Paragraph(BLANK * 3, styles["fill"]),
+                    Paragraph(BLANK * 3, styles["fill"]),
+                ],
+                colors.HexColor("#f8fbff"),
+                C_BORDER,
+            )
+        )
+        story.append(_spacer(0.12))
+        story.append(
+            _box(
+                [
+                    Paragraph("改正与避免总结", styles["section"]),
+                    Paragraph(_normalize_blanks(str(item.get("improvement_summary_prompt") or "")), styles["fill"]),
+                    Paragraph(BLANK * 3, styles["fill"]),
+                    Paragraph(BLANK * 3, styles["fill"]),
+                    Paragraph(BLANK * 3, styles["fill"]),
+                ],
+                colors.HexColor("#f8fbff"),
+                C_BORDER,
+            )
+        )
+
+    doc.build(story)
+    return str(destination)
+
+
 def generate_student_wrong_question_library_pdf(
     *,
     student_name: str,
@@ -612,6 +793,40 @@ def generate_student_wrong_question_library_pdf(
         except Exception as reportlab_error:
             raise RuntimeError(
                 "学生错题库 PDF 生成失败：浏览器渲染与 ReportLab 回退都未成功"
+            ) from reportlab_error
+
+
+def generate_wrong_question_practice_sheet_pdf(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_name: str,
+    title: str,
+    items: list[dict],
+    output_path: str,
+) -> str:
+    try:
+        return _render_wrong_question_practice_sheet_pdf_via_browser(
+            student_name=student_name,
+            class_name=class_name,
+            teacher_name=teacher_name,
+            title=title,
+            items=items,
+            output_path=output_path,
+        )
+    except Exception:
+        try:
+            return _generate_wrong_question_practice_sheet_pdf_via_reportlab(
+                student_name=student_name,
+                class_name=class_name,
+                teacher_name=teacher_name,
+                title=title,
+                items=items,
+                output_path=output_path,
+            )
+        except Exception as reportlab_error:
+            raise RuntimeError(
+                "错题练习 PDF 生成失败：浏览器渲染与 ReportLab 回退都未成功"
             ) from reportlab_error
 
 

@@ -1712,6 +1712,43 @@ def init_db():
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS wrong_question_practice_sheets (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER NOT NULL REFERENCES students(id),
+            teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
+            created_by                INTEGER NOT NULL REFERENCES users(id),
+            student_name_snapshot     TEXT NOT NULL DEFAULT '',
+            class_name_snapshot       TEXT NOT NULL DEFAULT '',
+            teacher_name_snapshot     TEXT NOT NULL DEFAULT '',
+            question_count            INTEGER NOT NULL DEFAULT 0,
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            pdf_path                  TEXT NOT NULL DEFAULT '',
+            generation_error          TEXT NOT NULL DEFAULT '',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_practice_sheet_items (
+            id                            INTEGER PRIMARY KEY AUTOINCREMENT,
+            sheet_id                      INTEGER NOT NULL REFERENCES wrong_question_practice_sheets(id) ON DELETE CASCADE,
+            question_order                INTEGER NOT NULL,
+            wrong_question_record_id      TEXT NOT NULL DEFAULT '',
+            source                        TEXT NOT NULL DEFAULT 'wechat_mp',
+            is_geometry                   INTEGER NOT NULL DEFAULT 0,
+            question_text_snapshot        TEXT NOT NULL DEFAULT '',
+            image_url_snapshot            TEXT NOT NULL DEFAULT '',
+            child_reason_text_snapshot    TEXT NOT NULL DEFAULT '',
+            primary_error_type_snapshot   TEXT NOT NULL DEFAULT '',
+            cause_note_snapshot           TEXT NOT NULL DEFAULT '',
+            ai_hint                       TEXT NOT NULL DEFAULT '',
+            reason_blank_prompt           TEXT NOT NULL DEFAULT '',
+            improvement_summary_prompt    TEXT NOT NULL DEFAULT '',
+            created_at                    TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                    TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS organization_credit_accounts (
             organization_id INTEGER PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
             credit_balance INTEGER NOT NULL DEFAULT 0,
@@ -1964,6 +2001,12 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_organization_class_teacher_status
             ON wrong_question_submissions (organization_id, class_id, teacher_user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_practice_sheets_student_created
+            ON wrong_question_practice_sheets (student_id, created_at, id);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_practice_sheet_items_sheet_order
+            ON wrong_question_practice_sheet_items (sheet_id, question_order, id);
             """
         )
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
@@ -5234,6 +5277,260 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(refreshed)
+
+
+def _serialize_wrong_question_practice_sheet_row(row: sqlite3.Row | None) -> Optional[dict]:
+    if not row:
+        return None
+    payload = dict(row)
+    payload["question_count"] = int(payload.get("question_count") or 0)
+    return payload
+
+
+def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -> Optional[dict]:
+    if not row:
+        return None
+    payload = dict(row)
+    payload["question_order"] = int(payload.get("question_order") or 0)
+    payload["is_geometry"] = bool(payload.get("is_geometry"))
+    return payload
+
+
+def _fetch_wrong_question_practice_sheet_row_by_id(
+    conn: sqlite3.Connection,
+    sheet_id: int,
+) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT *
+        FROM wrong_question_practice_sheets
+        WHERE id=?
+        """,
+        (sheet_id,),
+    ).fetchone()
+
+
+def create_pending_wrong_question_practice_sheet(
+    *,
+    created_by: int,
+    selected_records: list[dict],
+) -> dict:
+    if not selected_records:
+        raise ValueError("selected_records is required")
+
+    first_record = selected_records[0]
+    organization_id = int(first_record.get("organization_id") or 0)
+    class_id = int(first_record.get("class_id") or 0)
+    student_id = int(first_record.get("student_id") or 0)
+    teacher_user_id = int(first_record.get("teacher_user_id") or 0)
+    student_name_snapshot = str(first_record.get("student_name") or "").strip()
+    class_name_snapshot = str(first_record.get("class_display_name") or "").strip()
+    teacher_name_snapshot = str(first_record.get("teacher_display_name") or "").strip()
+
+    if not organization_id or not class_id or not student_id or not teacher_user_id:
+        raise ValueError("selected wrong question records are incomplete")
+
+    for record in selected_records:
+        if int(record.get("organization_id") or 0) != organization_id:
+            raise ValueError("selected records must belong to the same organization")
+        if int(record.get("class_id") or 0) != class_id:
+            raise ValueError("selected records must belong to the same class")
+        if int(record.get("student_id") or 0) != student_id:
+            raise ValueError("selected records must belong to the same student")
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO wrong_question_practice_sheets (
+                organization_id,
+                class_id,
+                student_id,
+                teacher_user_id,
+                created_by,
+                student_name_snapshot,
+                class_name_snapshot,
+                teacher_name_snapshot,
+                question_count,
+                status,
+                pdf_path,
+                generation_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+            """,
+            (
+                organization_id,
+                class_id,
+                student_id,
+                teacher_user_id,
+                int(created_by),
+                student_name_snapshot,
+                class_name_snapshot,
+                teacher_name_snapshot,
+                len(selected_records),
+            ),
+        )
+        sheet_id = int(cursor.lastrowid)
+        for index, record in enumerate(selected_records, start=1):
+            conn.execute(
+                """
+                INSERT INTO wrong_question_practice_sheet_items (
+                    sheet_id,
+                    question_order,
+                    wrong_question_record_id,
+                    source,
+                    is_geometry,
+                    question_text_snapshot,
+                    image_url_snapshot,
+                    child_reason_text_snapshot,
+                    primary_error_type_snapshot,
+                    cause_note_snapshot
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    sheet_id,
+                    index,
+                    str(record.get("id") or "").strip(),
+                    str(record.get("source") or "wechat_mp").strip() or "wechat_mp",
+                    1 if bool(record.get("is_geometry")) else 0,
+                    str(record.get("question_text") or "").strip(),
+                    str(record.get("image_url") or "").strip(),
+                    str(record.get("child_raw_reason_text") or "").strip(),
+                    str(record.get("primary_error_type") or "").strip(),
+                    str(record.get("secondary_error_summary") or "").strip(),
+                ),
+            )
+        saved = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
+    serialized = _serialize_wrong_question_practice_sheet_row(saved)
+    return serialized if serialized is not None else {}
+
+
+def get_wrong_question_practice_sheet(sheet_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
+        if not sheet_row:
+            return None
+        item_rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_sheet_items
+            WHERE sheet_id=?
+            ORDER BY question_order ASC, id ASC
+            """,
+            (sheet_id,),
+        ).fetchall()
+    serialized = _serialize_wrong_question_practice_sheet_row(sheet_row)
+    if serialized is None:
+        return None
+    serialized["items"] = [
+        item
+        for item in (
+            _serialize_wrong_question_practice_sheet_item_row(row)
+            for row in item_rows
+        )
+        if item is not None
+    ]
+    return serialized
+
+
+def list_wrong_question_practice_sheets_for_student(student_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_sheets
+            WHERE student_id=?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (student_id,),
+        ).fetchall()
+    return [
+        item
+        for item in (
+            _serialize_wrong_question_practice_sheet_row(row)
+            for row in rows
+        )
+        if item is not None
+    ]
+
+
+def mark_wrong_question_practice_sheet_succeeded(
+    sheet_id: int,
+    *,
+    generated_items: list[dict],
+    pdf_path: str,
+) -> Optional[dict]:
+    generated_item_by_record_id = {
+        str(item.get("wrong_question_record_id") or "").strip(): item
+        for item in (generated_items or [])
+        if str(item.get("wrong_question_record_id") or "").strip()
+    }
+
+    with get_conn() as conn:
+        sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
+        if not sheet_row:
+            raise LookupError("wrong question practice sheet not found")
+        item_rows = conn.execute(
+            """
+            SELECT id, wrong_question_record_id
+            FROM wrong_question_practice_sheet_items
+            WHERE sheet_id=?
+            ORDER BY question_order ASC, id ASC
+            """,
+            (sheet_id,),
+        ).fetchall()
+        if len(generated_item_by_record_id) != len(item_rows):
+            raise ValueError("generated_items do not match selected records")
+        for row in item_rows:
+            wrong_question_record_id = str(row["wrong_question_record_id"] or "").strip()
+            generated = generated_item_by_record_id.get(wrong_question_record_id)
+            if not generated:
+                raise ValueError("generated_items do not match selected records")
+            conn.execute(
+                """
+                UPDATE wrong_question_practice_sheet_items
+                SET ai_hint=?,
+                    reason_blank_prompt=?,
+                    improvement_summary_prompt=?,
+                    updated_at=datetime('now','localtime')
+                WHERE id=?
+                """,
+                (
+                    str(generated.get("ai_hint") or "").strip(),
+                    str(generated.get("reason_blank_prompt") or "").strip(),
+                    str(generated.get("improvement_summary_prompt") or "").strip(),
+                    row["id"],
+                ),
+            )
+        conn.execute(
+            """
+            UPDATE wrong_question_practice_sheets
+            SET status='ready',
+                pdf_path=?,
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            ((pdf_path or "").strip(), sheet_id),
+        )
+    return get_wrong_question_practice_sheet(sheet_id)
+
+
+def mark_wrong_question_practice_sheet_failed(sheet_id: int, error_message: str) -> Optional[dict]:
+    with get_conn() as conn:
+        sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
+        if not sheet_row:
+            raise LookupError("wrong question practice sheet not found")
+        conn.execute(
+            """
+            UPDATE wrong_question_practice_sheets
+            SET status='failed',
+                pdf_path='',
+                generation_error=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (str(error_message or "").strip(), sheet_id),
+        )
+    return get_wrong_question_practice_sheet(sheet_id)
 
 
 def _create_member_from_invite_row(

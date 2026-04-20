@@ -128,6 +128,41 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             image_url="https://files.example.com/local-record.png",
         )
 
+    def create_local_wechat_binding(self, owner_id: int, organization_id: int | None = None, openid: str = "openid-local-practice") -> dict:
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=organization_id,
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_id)
+        student = lesson_manager.create_student_for_class(class_id, "Alice")
+        account = lesson_manager.upsert_parent_wechat_account(openid=openid)
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=class_id,
+            student_id=student["id"],
+        )
+        return {
+            "class_id": class_id,
+            "student": student,
+            "account": account,
+            "binding": binding,
+        }
+
+    def create_recognized_local_wechat_record(self, binding_id: int, *, image_url: str, question_text: str, is_geometry: bool) -> dict:
+        return lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding_id,
+            image_url=image_url,
+            child_raw_reason_text="我当时做题时有点急",
+            primary_error_type="细节问题",
+            secondary_error_summary="步骤检查不完整",
+            recognition_status="recognized",
+            is_geometry=is_geometry,
+            question_text=question_text,
+            question_text_source="teacher",
+        )
+
     def test_summary_export_route_is_removed(self):
         owner_payload = self.login_owner()
 
@@ -690,6 +725,138 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(saved["question_text"], "老师修正后的题目文本")
         self.assertEqual(saved["question_text_source"], "teacher")
         self.assertEqual(saved["student_library_pdf_path"], "/tmp/student-1.pdf")
+
+    @patch("app.has_api_key", return_value=True)
+    @patch("app._start_wrong_question_practice_generation_thread")
+    def test_staff_can_create_pending_wrong_question_practice_sheet(self, mock_start_thread, _mock_has_api_key):
+        owner_payload = self.login_owner()
+        bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])
+        record_one = self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/practice-1.png",
+            question_text="计算 $2+3\\times4$ 的结果。",
+            is_geometry=False,
+        )
+        record_two = self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/practice-2.png",
+            question_text="",
+            is_geometry=True,
+        )
+
+        response = self.client.post(
+            "/api/wrong-question-practice-sheets",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "student_id": bundle["student"]["id"],
+                "wrong_question_ids": [record_one["id"], record_two["id"]],
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "pending")
+
+        saved = lesson_manager.get_wrong_question_practice_sheet(payload["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["status"], "pending")
+        self.assertEqual(saved["question_count"], 2)
+        self.assertEqual(
+            [item["wrong_question_record_id"] for item in saved["items"]],
+            [record_one["id"], record_two["id"]],
+        )
+        mock_start_thread.assert_called_once()
+        self.assertEqual(mock_start_thread.call_args.kwargs["sheet_id"], payload["id"])
+
+    def test_staff_can_list_wrong_question_practice_sheets_for_student(self):
+        owner_payload = self.login_owner()
+        bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])
+        record = self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/practice-history.png",
+            question_text="计算 $7-3$ 的结果。",
+            is_geometry=False,
+        )
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=owner_payload["user"]["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(record["id"])],
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": record["id"],
+                    "ai_hint": "先看清运算符号，再回忆这一步该先做什么。",
+                    "reason_blank_prompt": "这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "以后遇到同类题，我会先 ______，再 ______。",
+                }
+            ],
+            pdf_path="/tmp/practice-history.pdf",
+        )
+
+        response = self.client.get(
+            f"/api/wrong-question-practice-sheets?student_id={bundle['student']['id']}",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["items"][0]["id"], sheet["id"])
+        self.assertEqual(payload["items"][0]["status"], "ready")
+        self.assertEqual(payload["items"][0]["pdf_path"], "/tmp/practice-history.pdf")
+        self.assertEqual(payload["items"][0]["question_count"], 1)
+
+    def test_staff_can_preview_and_download_wrong_question_practice_pdf(self):
+        owner_payload = self.login_owner()
+        bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])
+        record = self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/practice-pdf.png",
+            question_text="计算 $8+5$ 的结果。",
+            is_geometry=False,
+        )
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=owner_payload["user"]["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(record["id"])],
+        )
+        pdf_path = self.base / "practice-sheet.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": record["id"],
+                    "ai_hint": "先列式，再核对结果。",
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "以后我会先 ______。",
+                }
+            ],
+            pdf_path=str(pdf_path),
+        )
+
+        preview_response = self.client.get(
+            f"/api/wrong-question-practice-sheets/{sheet['id']}/pdf",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_response.mimetype, "application/pdf")
+        self.assertEqual(preview_response.data, pdf_path.read_bytes())
+        preview_response.close()
+
+        download_response = self.client.get(
+            f"/api/wrong-question-practice-sheets/{sheet['id']}/pdf/download",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.mimetype, "application/pdf")
+        self.assertIn("attachment;", download_response.headers.get("Content-Disposition", ""))
+        self.assertEqual(download_response.data, pdf_path.read_bytes())
+        download_response.close()
 
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_detail_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
