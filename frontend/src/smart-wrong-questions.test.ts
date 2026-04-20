@@ -2202,8 +2202,8 @@ test('SmartWrongQuestionsPage renders member student cards for the selected clas
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /Alice/);
       assert.match(pageText, /Bob/);
-      assert.match(pageText, /2 题/);
-      assert.match(pageText, /1 题/);
+      assert.match(pageText, /2题/);
+      assert.match(pageText, /1题/);
     });
   } finally {
     if (root) {
@@ -2369,7 +2369,7 @@ test('SmartWrongQuestionsPage renders class-based student notebooks for owner ac
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /Alice/);
       assert.match(pageText, /Bob/);
-      assert.match(pageText, /1 题/);
+      assert.match(pageText, /1题/);
     });
   } finally {
     if (root) {
@@ -3421,7 +3421,8 @@ test('SmartWrongQuestionsPage shows wrong-question practice history inside the n
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /错题练习记录/);
       assert.match(pageText, /2026-04-20 10:00:00/);
-      assert.match(pageText, /1 题/);
+      assert.match(pageText, /练习单 #1/);
+      assert.match(pageText, /1题/);
       assert.match(pageText, /预览 PDF/);
       assert.match(pageText, /下载 PDF/);
     });
@@ -3527,6 +3528,19 @@ test('SmartWrongQuestionsPage deletes a wrong-question practice sheet from pract
         return createJsonResponse({
           items: [
             {
+              id: 10,
+              student_id: 501,
+              class_id: 101,
+              student_name_snapshot: 'Alice',
+              class_name_snapshot: '六年级 1 班',
+              teacher_name_snapshot: '成员老师',
+              question_count: 2,
+              status: 'ready',
+              pdf_url: '/api/wrong-question-practice-sheets/10/pdf',
+              download_url: '/api/wrong-question-practice-sheets/10/pdf/download',
+              created_at: '2026-04-20 09:00:00',
+            },
+            {
               id: 12,
               student_id: 501,
               class_id: 101,
@@ -3581,7 +3595,9 @@ test('SmartWrongQuestionsPage deletes a wrong-question practice sheet from pract
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /练习单 #12/);
+      assert.match(pageText, /练习单 #2/);
+      assert.match(pageText, /练习单 #1/);
+      assert.doesNotMatch(pageText, /练习单 #12|练习单 #10/);
       const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除练习'));
       assert.ok(deleteButton instanceof HTMLButtonElement);
     });
@@ -3599,8 +3615,8 @@ test('SmartWrongQuestionsPage deletes a wrong-question practice sheet from pract
       const deleteCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-question-practice-sheets/12' && call.init?.method === 'DELETE');
       assert.ok(deleteCall);
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /还没有生成过错题练习/);
-      assert.doesNotMatch(pageText, /练习单 #12/);
+      assert.match(pageText, /练习单 #1/);
+      assert.doesNotMatch(pageText, /练习单 #2|练习单 #12|练习单 #10/);
     });
   } finally {
     window.confirm = originalConfirm;
