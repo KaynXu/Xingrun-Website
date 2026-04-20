@@ -101,8 +101,17 @@ function buildQuestionBlock(item) {
   `;
 }
 
+function normalizePromptText(prompt) {
+  return String(prompt ?? '')
+    .replaceAll('\\r\\n', '\n')
+    .replaceAll('\\r', '\n')
+    .replaceAll('\\n', '\n')
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n');
+}
+
 function splitWritingSection(prompt, fallbackLabel) {
-  const normalized = String(prompt ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+  const normalized = normalizePromptText(prompt).trim();
   const lines = normalized
     .split('\n')
     .map((line) => line.trim())
@@ -122,7 +131,7 @@ function splitWritingSection(prompt, fallbackLabel) {
 }
 
 function renderPromptHtml(prompt) {
-  return escapeHtml(String(prompt ?? ''))
+  return escapeHtml(normalizePromptText(prompt))
     .replace(/[_＿]{4,}/g, '<span class="blank-gap"></span>')
     .replaceAll('\n', '<br />');
 }

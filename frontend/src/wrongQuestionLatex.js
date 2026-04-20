@@ -198,15 +198,23 @@ function renderTextSegmentHtml(value, { preserveRaw = false } = {}) {
 
 const BROKEN_NEWLINE_LATEX_COMMAND_PATTERN =
   /(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))/g;
+const LITERAL_NEWLINE_LATEX_COMMAND_PATTERN =
+  /\\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))/g;
+const LITERAL_NEWLINE_LATEX_COMMAND_TOKEN = 'XR_LITERAL_NEWLINE_LATEX_COMMAND_TOKEN';
 
 function repairWrongQuestionLatexTransport(value) {
   return String(value ?? '')
     .replaceAll('\r\n', '\n')
+    .replaceAll('\\r\\n', '\n')
     .replaceAll('\t', '\\t')
     .replaceAll('\f', '\\f')
     .replaceAll('\b', '\\b')
     .replaceAll('\r', '\\r')
+    .replaceAll('\\r', '\n')
     .replace(BROKEN_NEWLINE_LATEX_COMMAND_PATTERN, '\\n')
+    .replace(LITERAL_NEWLINE_LATEX_COMMAND_PATTERN, LITERAL_NEWLINE_LATEX_COMMAND_TOKEN)
+    .replaceAll('\\n', '\n')
+    .replaceAll(LITERAL_NEWLINE_LATEX_COMMAND_TOKEN, '\\n')
     .replace(/(?<!\\)\\\[/g, '$$')
     .replace(/(?<!\\)\\\]/g, '$$')
     .replace(/(?<!\\)\\\(/g, '$')
