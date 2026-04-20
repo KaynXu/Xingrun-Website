@@ -397,6 +397,155 @@
       letter-spacing: 0.06em;
     }
 
+    .case-study-slide {
+      padding-top: clamp(18px, 2.8vh, 38px);
+      padding-bottom: clamp(18px, 2.8vh, 38px);
+    }
+
+    .case-study-slide .slide-inner.two-col {
+      grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
+      align-items: center;
+    }
+
+    .case-study-slide .slide-inner {
+      height: min(780px, calc(100vh - 56px));
+      height: min(780px, calc(100dvh - 56px));
+      gap: clamp(14px, 1.8vh, 22px);
+    }
+
+    .case-study-slide .headline-cluster {
+      gap: 16px;
+    }
+
+    .case-study-slide .title.compact {
+      font-size: clamp(25px, 4vw, 54px);
+      line-height: 0.96;
+      max-width: 9.4em;
+    }
+
+    .case-study-slide .body {
+      font-size: clamp(15px, 1.14vw, 18px);
+      line-height: 1.55;
+    }
+
+    .case-study-slide .link-row {
+      gap: 14px;
+      margin-top: 2px;
+    }
+
+    .case-study-slide .source-card {
+      gap: 12px;
+      padding: 20px 20px 16px;
+      border-radius: 24px;
+    }
+
+    .case-study-slide .source-card h3 {
+      margin: 0 0 8px;
+      font-size: clamp(18px, 1.75vw, 25px);
+      line-height: 1.28;
+    }
+
+    .case-study-slide .source-card span {
+      font-size: clamp(14px, 1vw, 16px);
+      line-height: 1.5;
+    }
+
+    .case-study-slide .source-link {
+      padding: 10px 16px;
+      font-size: 13px;
+    }
+
+    .case-study-slide .media-shell {
+      min-height: 338px;
+    }
+
+    .feature-story-slide {
+      padding-top: clamp(18px, 2.8vh, 38px);
+      padding-bottom: clamp(18px, 2.8vh, 38px);
+    }
+
+    .feature-story-slide .slide-inner {
+      height: min(760px, calc(100vh - 56px));
+      height: min(760px, calc(100dvh - 56px));
+      gap: clamp(12px, 1.6vh, 18px);
+    }
+
+    .feature-story-slide .system-layout.feature-layout {
+      row-gap: 14px;
+      column-gap: 24px;
+    }
+
+    .feature-story-slide .system-copy.feature-copy,
+    .feature-story-slide .system-copy.news-copy {
+      gap: 14px;
+    }
+
+    .feature-story-slide .system-title.feature-title {
+      font-size: clamp(26px, 3.8vw, 50px);
+      line-height: 0.98;
+      max-width: 9em;
+    }
+
+    .feature-story-slide .system-lead.feature-lead {
+      font-size: clamp(14px, 1.05vw, 17px);
+      line-height: 1.55;
+    }
+
+    .feature-story-slide .feature-actions {
+      gap: 10px;
+    }
+
+    .feature-story-slide .feature-note {
+      font-size: 12px;
+      line-height: 1.5;
+      max-width: 20em;
+    }
+
+    .feature-story-slide .system-visual.quote-focus.compact-quote {
+      min-height: 408px;
+      padding: 20px;
+    }
+
+    .feature-story-slide .feature-video-frame {
+      min-height: 366px;
+      border-radius: 24px;
+    }
+
+    .feature-story-slide .system-card.feature-card {
+      min-height: 286px;
+      padding: 20px 20px 16px;
+      gap: 14px;
+    }
+
+    .feature-story-slide .feature-card-copy {
+      gap: 12px;
+    }
+
+    .feature-story-slide .compare-columns {
+      gap: 16px;
+    }
+
+    .feature-story-slide .compare-block {
+      gap: 10px;
+      padding: 14px 16px;
+      border-radius: 20px;
+    }
+
+    .feature-story-slide .system-steps {
+      gap: 8px;
+    }
+
+    .feature-story-slide .system-step {
+      grid-template-columns: 74px 1fr;
+      gap: 12px;
+      padding: 8px 0;
+    }
+
+    .feature-story-slide .system-step span {
+      font-size: 15px;
+      line-height: 1.48;
+    }
+
     .animated-grid {
       position: relative;
       min-height: 340px;
@@ -1196,7 +1345,7 @@
       </div>
     </section>
 
-    <section class="slide" data-title="案例一">
+    <section class="slide case-study-slide" data-title="案例一">
       <div class="slide-inner two-col">
         <div class="headline-cluster">
           <div class="eyebrow reveal">Part 2 · 案例 1</div>
@@ -1223,7 +1372,7 @@
       </div>
     </section>
 
-    <section class="slide" data-title="星润建议">
+    <section class="slide feature-story-slide" data-title="星润建议">
       <div class="slide-inner system-layout feature-layout">
         <div class="system-copy feature-copy news-copy feature-intro">
           <div class="eyebrow reveal">把案例落回星润</div>
