@@ -13,6 +13,7 @@ import {
 import {
   buildMemberStudentNotebookSummaries,
   buildWrongQuestionDetailPath,
+  buildWrongQuestionPracticeSheetsPath,
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
@@ -22,11 +23,14 @@ import {
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
+  normalizeWrongQuestionPracticeSheetListResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type MemberStudentNotebookSummary,
+  type WrongQuestionPracticeSheetListApiResponse,
+  type WrongQuestionPracticeSheetSummary,
   type WrongQuestionFilters,
   type WrongQuestionListApiResponse,
   type WrongQuestionRecord,
@@ -60,6 +64,8 @@ type WrongQuestionStudentFilterOption = {
   name: string;
 };
 
+type NotebookModalView = 'questions' | 'practice_history';
+
 const WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
   '知识点问题',
   '细节问题',
@@ -89,6 +95,23 @@ function getWrongQuestionSourceBadgeClass(source: string): string {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function canGenerateWrongQuestionPractice(record: WrongQuestionRecord): boolean {
+  return record.source === 'wechat_mp'
+    && Boolean(record.studentId)
+    && record.recognitionStatus === 'recognized'
+    && !record.isMastered;
+}
+
+function getWrongQuestionPracticeStatusLabel(status: string): string {
+  if (status === 'ready') {
+    return '已完成';
+  }
+  if (status === 'failed') {
+    return '生成失败';
+  }
+  return '生成中';
 }
 
 function readWrongQuestionToken(): string {
@@ -171,11 +194,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [serverSummary, setServerSummary] = useState<WrongQuestionSummary | null>(null);
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
+  const practiceHistoryRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
   const reviewDraftByRecordIdRef = useRef<Record<string, WrongQuestionReviewDraft>>({});
   const recordsRef = useRef(records);
   recordsRef.current = records;
   reviewDraftByRecordIdRef.current = reviewDraftByRecordId;
+  const [notebookModalView, setNotebookModalView] = useState<NotebookModalView>('questions');
+  const [selectedPracticeRecordIds, setSelectedPracticeRecordIds] = useState<string[]>([]);
+  const [practiceSelectionTouched, setPracticeSelectionTouched] = useState(false);
+  const [practiceSheets, setPracticeSheets] = useState<WrongQuestionPracticeSheetSummary[]>([]);
+  const [practiceHistoryLoading, setPracticeHistoryLoading] = useState(false);
+  const [practiceHistoryError, setPracticeHistoryError] = useState('');
+  const [creatingPractice, setCreatingPractice] = useState(false);
+  const [practiceActionError, setPracticeActionError] = useState('');
+  const [practiceActionNotice, setPracticeActionNotice] = useState('');
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -226,6 +259,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
     return filterWrongQuestionRecordsForMemberNotebook(records, activeNotebookClassId, selectedStudentName);
   }, [activeNotebookClassId, records, selectedStudentName, usesStudentNotebook]);
+  const memberNotebookQuestionNumberById = useMemo(() => {
+    return new Map(
+      memberNotebookRecords.map((item, index) => [item.id, index + 1]),
+    );
+  }, [memberNotebookRecords]);
+  const selectedNotebookStudentId = useMemo(() => {
+    const matchedRecord = memberNotebookRecords.find((item) => typeof item.studentId === 'number' && item.studentId > 0);
+    return matchedRecord?.studentId ?? null;
+  }, [memberNotebookRecords]);
+  const defaultPracticeRecordIds = useMemo(() => {
+    const selectableRecords = memberNotebookRecords.filter((item) => canGenerateWrongQuestionPractice(item));
+    return selectableRecords.length === 1 ? [selectableRecords[0].id] : [];
+  }, [memberNotebookRecords]);
+  const effectiveSelectedPracticeRecordIds = practiceSelectionTouched ? selectedPracticeRecordIds : defaultPracticeRecordIds;
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
   const selectedQuestionTextPreview = useMemo(() => {
@@ -298,6 +345,33 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   }, []);
 
+  const loadPracticeHistory = useCallback(async (studentId: number) => {
+    const requestVersion = practiceHistoryRequestVersionRef.current + 1;
+    practiceHistoryRequestVersionRef.current = requestVersion;
+    setPracticeHistoryLoading(true);
+    setPracticeHistoryError('');
+
+    try {
+      const response = await apiFetch<WrongQuestionPracticeSheetListApiResponse>(buildWrongQuestionPracticeSheetsPath(studentId));
+      if (requestVersion !== practiceHistoryRequestVersionRef.current) {
+        return;
+      }
+
+      setPracticeSheets(normalizeWrongQuestionPracticeSheetListResponse(response));
+    } catch (loadError) {
+      if (requestVersion !== practiceHistoryRequestVersionRef.current) {
+        return;
+      }
+
+      setPracticeSheets([]);
+      setPracticeHistoryError(loadError instanceof Error ? loadError.message : '错题练习记录加载失败');
+    } finally {
+      if (requestVersion === practiceHistoryRequestVersionRef.current) {
+        setPracticeHistoryLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -354,6 +428,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       setSelectedId(null);
     }
   }, [memberNotebookSummaries, selectedStudentName, usesStudentNotebook]);
+
+  useEffect(() => {
+    setNotebookModalView('questions');
+    setPracticeActionError('');
+    setPracticeActionNotice('');
+  }, [selectedStudentName]);
 
   useEffect(() => {
     if (!selectedRecord) {
@@ -428,6 +508,25 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       }
     })();
   }, [selectedId]);
+
+  useEffect(() => {
+    setSelectedPracticeRecordIds((current) => current.filter((recordId) => {
+      const matchedRecord = memberNotebookRecords.find((item) => item.id === recordId);
+      return Boolean(matchedRecord && canGenerateWrongQuestionPractice(matchedRecord));
+    }));
+  }, [memberNotebookRecords]);
+
+  useEffect(() => {
+    if (!selectedStudentName || !selectedNotebookStudentId) {
+      practiceHistoryRequestVersionRef.current += 1;
+      setPracticeSheets([]);
+      setPracticeHistoryLoading(false);
+      setPracticeHistoryError('');
+      return;
+    }
+
+    void loadPracticeHistory(selectedNotebookStudentId);
+  }, [loadPracticeHistory, selectedNotebookStudentId, selectedStudentName]);
 
   useEffect(() => {
     if (!hasStaffScope) {
@@ -644,12 +743,53 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handlePracticeRecordCheckedChange = (recordId: string, checked: boolean) => {
+    setPracticeSelectionTouched(true);
+    setSelectedPracticeRecordIds((current) => {
+      if (checked) {
+        return current.includes(recordId) ? current : [...current, recordId];
+      }
+
+      return current.filter((item) => item !== recordId);
+    });
+  };
+
+  const handleCreatePracticeSheet = async () => {
+    if (!selectedNotebookStudentId || effectiveSelectedPracticeRecordIds.length === 0) {
+      return;
+    }
+
+    setCreatingPractice(true);
+    setPracticeActionError('');
+    setPracticeActionNotice('');
+
+    try {
+      await apiFetch('/api/wrong-question-practice-sheets', {
+        method: 'POST',
+        body: JSON.stringify({
+          student_id: selectedNotebookStudentId,
+          wrong_question_ids: effectiveSelectedPracticeRecordIds,
+        }),
+      });
+      setSelectedPracticeRecordIds([]);
+      setPracticeSelectionTouched(false);
+      setNotebookModalView('practice_history');
+      setPracticeActionNotice('已提交错题练习生成任务，可在错题练习记录里查看 PDF。');
+      await loadPracticeHistory(selectedNotebookStudentId);
+    } catch (createError) {
+      setPracticeActionError(createError instanceof Error ? createError.message : '错题练习生成失败');
+    } finally {
+      setCreatingPractice(false);
+    }
+  };
+
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
   const selectedRecordLibraryPdfPath = selectedRecord?.studentLibraryPdfPath
     ? buildWrongQuestionAuthedPath(selectedRecord.studentLibraryPdfPath)
     : '';
+  const selectedPracticeCount = effectiveSelectedPracticeRecordIds.length;
   const detailHeader = selectedRecord ? (
     <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -724,12 +864,88 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setSelectedId(null);
     setDetailError('');
     setSaveError('');
+    setNotebookModalView('questions');
+    setSelectedPracticeRecordIds([]);
+    setPracticeSelectionTouched(false);
+    setPracticeSheets([]);
+    setPracticeHistoryError('');
+    setPracticeActionError('');
+    setPracticeActionNotice('');
   };
   const handleOpenMemberNotebook = (studentName: string) => {
     const nextRecords = filterWrongQuestionRecordsForMemberNotebook(records, activeNotebookClassId, studentName);
     setSelectedStudentName(studentName);
     setSelectedId(nextRecords[0]?.id ?? null);
+    setNotebookModalView('questions');
+    setSelectedPracticeRecordIds([]);
+    setPracticeSelectionTouched(false);
   };
+  const practiceHistoryPanel = (
+    <>
+      <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
+        <h4 className="text-xl font-semibold text-slate-900 dark:text-white">错题练习记录</h4>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">老师生成后的练习单会保存在这里，生成完成后可直接预览或下载 PDF。</p>
+      </div>
+
+      {practiceHistoryLoading ? (
+        <div className="rounded-2xl border border-dashed border-sky-200 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+          正在加载错题练习记录...
+        </div>
+      ) : practiceSheets.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-sky-200 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+          还没有生成过错题练习。
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {practiceSheets.map((sheet) => {
+            const previewUrl = sheet.pdfUrl ? buildWrongQuestionAuthedPath(sheet.pdfUrl) : '';
+            const downloadUrl = sheet.downloadUrl ? buildWrongQuestionAuthedPath(sheet.downloadUrl) : previewUrl;
+            return (
+              <article key={sheet.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-base font-semibold text-slate-900 dark:text-white">练习单 #{sheet.id}</span>
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${sheet.status === 'ready' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : sheet.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300' : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300'}`}>
+                        {getWrongQuestionPracticeStatusLabel(sheet.status)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+                      <span>{sheet.createdAt || '未记录时间'}</span>
+                      <span>{sheet.questionCount} 题</span>
+                      <span>{sheet.teacherNameSnapshot || '未记录老师'}</span>
+                    </div>
+                    {sheet.generationError ? (
+                      <p className="text-sm text-rose-600 dark:text-rose-300">{sheet.generationError}</p>
+                    ) : null}
+                  </div>
+                  {previewUrl ? (
+                    <div className="flex flex-wrap gap-3">
+                      <a
+                        href={previewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={workspaceSecondaryButtonClass}
+                      >
+                        预览 PDF
+                      </a>
+                      <a
+                        href={downloadUrl}
+                        download={`wrong-question-practice-sheet-${sheet.id}.pdf`}
+                        className={workspacePrimaryButtonClass}
+                      >
+                        下载 PDF
+                      </a>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
   const detailPanel = selectedRecord ? (
     <>
       {selectedDraft && selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
@@ -1240,7 +1456,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-white/10">
               <div>
                 <h4 className="text-2xl font-semibold text-slate-900 dark:text-white">{selectedStudentName} 的错题库</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按上传时间查看题目列表，右侧直接打开当前题目。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按上传时间倒序查看题目列表，右侧直接打开当前题目。</p>
               </div>
               <button
                 type="button"
@@ -1255,57 +1471,146 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
             <div className="grid min-h-0 flex-1 gap-0 xl:grid-cols-[minmax(20rem,25rem)_minmax(0,1fr)]">
               <div className="min-h-0 overflow-y-auto border-b border-slate-200/80 p-5 dark:border-white/10 xl:border-b-0 xl:border-r">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按上传时间顺序查看，点击左侧条目切换当前题目。</p>
-                  </div>
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                    {memberNotebookRecords.length} 题
-                  </span>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotebookModalView('questions')}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${notebookModalView === 'questions' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:text-white'}`}
+                  >
+                    错题目录
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotebookModalView('practice_history')}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${notebookModalView === 'practice_history' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:text-white'}`}
+                  >
+                    错题练习记录
+                  </button>
                 </div>
 
-                <div className="space-y-1">
-                  {memberNotebookRecords.map((item, index) => {
-                    const active = item.id === selectedRecord?.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedId(item.id)}
-                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${active ? 'border-sky-400 bg-sky-50/70 dark:bg-sky-500/10' : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-white/20'}`}
-                      >
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-                          <span className="font-semibold text-slate-900 dark:text-white">第 {index + 1} 题</span>
-                          <span className="text-slate-500 dark:text-slate-400">{item.createdAt || '未记录时间'}</span>
-                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${item.isMastered ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border-slate-200 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300'}`}>
-                            {item.isMastered ? '已掌握' : '未掌握'}
-                          </span>
+                {notebookModalView === 'questions' ? (
+                  <>
+                    <div className={`${workspaceSoftCardClass} mb-4 space-y-3 p-4`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按上传时间倒序查看，勾选后可直接生成一份错题练习。</p>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                          {memberNotebookRecords.length} 题
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">已选择 {selectedPracticeCount} 题</p>
+                        <button
+                          type="button"
+                          onClick={() => void handleCreatePracticeSheet()}
+                          disabled={creatingPractice || selectedPracticeCount === 0}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          生成错题练习
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {memberNotebookRecords.map((item) => {
+                        const active = item.id === selectedRecord?.id;
+                        const questionNumber = memberNotebookQuestionNumberById.get(item.id) ?? 0;
+                        const canSelect = canGenerateWrongQuestionPractice(item);
+                        const checked = effectiveSelectedPracticeRecordIds.includes(item.id);
+                        return (
+                          <div
+                            key={item.id}
+                            className={`flex items-start gap-3 rounded-xl border px-3 py-3 transition ${active ? 'border-sky-400 bg-sky-50/70 dark:bg-sky-500/10' : 'border-slate-200/80 bg-white dark:border-white/10 dark:bg-slate-950/60'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={`选择第 ${questionNumber} 题`}
+                              checked={checked}
+                              disabled={!canSelect}
+                              onChange={(event) => handlePracticeRecordCheckedChange(item.id, (event.target as HTMLInputElement).checked)}
+                              onChangeCapture={(event) => handlePracticeRecordCheckedChange(item.id, (event.target as HTMLInputElement).checked)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSelectedId(item.id)}
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+                                <span className="font-semibold text-slate-900 dark:text-white">第 {questionNumber} 题</span>
+                                <span className="text-slate-500 dark:text-slate-400">{item.createdAt || '未记录时间'}</span>
+                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${item.isMastered ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border-slate-200 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300'}`}>
+                                  {item.isMastered ? '已掌握' : '未掌握'}
+                                </span>
+                              </div>
+                              {!canSelect ? (
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                  {item.isMastered ? '已掌握题目不会加入新的错题练习。' : '当前题目还不能加入错题练习。'}
+                                </p>
+                              ) : null}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">错题练习记录</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">查看这个学生已经生成过的错题练习，生成完成后可直接打开 PDF。</p>
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                      {practiceSheets.length} 份记录
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="min-h-0 overflow-y-auto p-5">
-                {detailHeader}
-
-                {detailError && (
-                  <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                    <AlertCircle size={16} />
-                    {detailError}
+                {practiceActionNotice && (
+                  <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    {practiceActionNotice}
                   </div>
                 )}
 
-                {saveError && (
+                {practiceActionError && (
                   <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
                     <AlertCircle size={16} />
-                    {saveError}
+                    {practiceActionError}
                   </div>
                 )}
 
-                <div className="space-y-5">{detailPanel}</div>
+                {practiceHistoryError && notebookModalView === 'practice_history' && (
+                  <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                    <AlertCircle size={16} />
+                    {practiceHistoryError}
+                  </div>
+                )}
+
+                {notebookModalView === 'questions' ? (
+                  <>
+                    {detailHeader}
+
+                    {detailError && (
+                      <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                        <AlertCircle size={16} />
+                        {detailError}
+                      </div>
+                    )}
+
+                    {saveError && (
+                      <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                        <AlertCircle size={16} />
+                        {saveError}
+                      </div>
+                    )}
+
+                    <div className="space-y-5">{detailPanel}</div>
+                  </>
+                ) : (
+                  practiceHistoryPanel
+                )}
               </div>
             </div>
           </div>

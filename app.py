@@ -62,6 +62,7 @@ from lesson_manager import (
     confirm_class_feedback_task,
     create_class_feedback_task,
     create_pending_lesson,
+    create_pending_wrong_question_practice_sheet,
     create_wechat_wrong_question_submission,
     create_organization_request,
     create_student_for_class,
@@ -85,6 +86,7 @@ from lesson_manager import (
     get_parent_student_binding_for_student,
     get_or_create_active_class_invite,
     get_lesson,
+    get_wrong_question_practice_sheet,
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
     get_registration_request,
@@ -101,6 +103,7 @@ from lesson_manager import (
     list_consultations_for_actor,
     list_lessons,
     list_lessons_for_actor,
+    list_wrong_question_practice_sheets_for_student,
     list_organizations,
     list_organization_requests,
     list_parent_student_bindings_for_openid,
@@ -125,6 +128,8 @@ from lesson_manager import (
     save_class,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
+    mark_wrong_question_practice_sheet_failed,
+    mark_wrong_question_practice_sheet_succeeded,
     create_monthly_plan_job,
     get_monthly_plan_job,
     mark_monthly_plan_job_failed,
@@ -654,6 +659,96 @@ def _run_review_plan_generation_job(
 def _start_review_plan_generation_thread(**job_kwargs) -> None:
     threading.Thread(
         target=_run_review_plan_generation_job,
+        kwargs=job_kwargs,
+        daemon=True,
+    ).start()
+
+
+def _run_wrong_question_practice_generation_job(
+    *,
+    sheet_id: int,
+    user: dict,
+) -> None:
+    try:
+        sheet = get_wrong_question_practice_sheet(sheet_id)
+        if not sheet or sheet.get("status") != "pending":
+            logger.info("Wrong question practice generation skipped for sheet %s", sheet_id)
+            return
+
+        try:
+            generated = ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name=str(sheet.get("student_name_snapshot") or ""),
+                class_name=str(sheet.get("class_name_snapshot") or ""),
+                teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
+                items=sheet.get("items") or [],
+                include_usage=False,
+            )
+        except Exception:
+            logger.exception("Wrong question practice AI generation failed for sheet %s", sheet_id)
+            mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+            return
+
+        generated_items = generated.get("items") if isinstance(generated, dict) else None
+        if not isinstance(generated_items, list) or not generated_items:
+            mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+            return
+
+        generated_item_by_record_id = {
+            str(item.get("wrong_question_record_id") or "").strip(): item
+            for item in generated_items
+            if isinstance(item, dict) and str(item.get("wrong_question_record_id") or "").strip()
+        }
+        merged_items = []
+        for item in sheet.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            record_id = str(item.get("wrong_question_record_id") or "").strip()
+            generated_item = generated_item_by_record_id.get(record_id)
+            if not generated_item:
+                mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+                return
+            merged_items.append(
+                {
+                    **item,
+                    "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
+                    "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
+                    "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                }
+            )
+
+        title = str((generated or {}).get("title") or "").strip() or f"{sheet.get('student_name_snapshot') or '学生'} 错题练习"
+        output_path = str(_wrong_question_practice_sheet_pdf_path(sheet_id))
+
+        try:
+            pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                student_name=str(sheet.get("student_name_snapshot") or ""),
+                class_name=str(sheet.get("class_name_snapshot") or ""),
+                teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
+                title=title,
+                items=merged_items,
+                output_path=output_path,
+            )
+        except Exception:
+            logger.exception("Wrong question practice PDF generation failed for sheet %s", sheet_id)
+            mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")
+            return
+
+        mark_wrong_question_practice_sheet_succeeded(
+            sheet_id,
+            generated_items=generated_items,
+            pdf_path=str(pdf_path or "").strip(),
+        )
+    except Exception:
+        logger.exception("Wrong question practice generation failed for sheet %s", sheet_id)
+        try:
+            mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+        except LookupError:
+            logger.exception("Failed to mark wrong question practice sheet %s as failed", sheet_id)
+
+
+def _start_wrong_question_practice_generation_thread(**job_kwargs) -> None:
+    threading.Thread(
+        target=_run_wrong_question_practice_generation_job,
         kwargs=job_kwargs,
         daemon=True,
     ).start()
@@ -1243,6 +1338,27 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
     return serialized_lessons
 
 
+def _serialize_wrong_question_practice_sheet_for_response(sheet: object) -> Optional[dict]:
+    if not isinstance(sheet, dict):
+        return None
+    serialized = dict(sheet)
+    if serialized.get("pdf_path"):
+        serialized["pdf_url"] = f"/api/wrong-question-practice-sheets/{serialized['id']}/pdf"
+        serialized["download_url"] = f"/api/wrong-question-practice-sheets/{serialized['id']}/pdf/download"
+    return serialized
+
+
+def _serialize_wrong_question_practice_sheets_for_response(items: object) -> list[dict]:
+    if not isinstance(items, list):
+        return []
+    serialized_items = []
+    for item in items:
+        serialized = _serialize_wrong_question_practice_sheet_for_response(item)
+        if serialized is not None:
+            serialized_items.append(serialized)
+    return serialized_items
+
+
 def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
     if user.get("role") == "super_owner":
         return True
@@ -1278,6 +1394,43 @@ def _filter_lessons_for_user(user, lessons: object) -> list[dict]:
         item
         for item in lessons
         if isinstance(item, dict) and _can_access_lesson(user, item, owned_class_ids)
+    ]
+
+
+def _can_access_wrong_question_practice_sheet(user, sheet: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
+    if user.get("role") == "super_owner":
+        return True
+    if not isinstance(sheet, dict):
+        return False
+    if user.get("role") in {"owner", "admin"}:
+        return sheet.get("organization_id") == user.get("organization_id")
+
+    class_id = sheet.get("class_id")
+    if not isinstance(class_id, int):
+        return False
+    member_class_ids = owned_class_ids
+    if member_class_ids is None:
+        member_class_ids = set(get_user_class_ids(user["id"]))
+    return class_id in member_class_ids
+
+
+def _filter_wrong_question_practice_sheets_for_user(user, sheets: object) -> list[dict]:
+    if not isinstance(sheets, list):
+        return []
+    if user.get("role") == "super_owner":
+        return [item for item in sheets if isinstance(item, dict)]
+    if user.get("role") in {"owner", "admin"}:
+        return [
+            item
+            for item in sheets
+            if isinstance(item, dict) and item.get("organization_id") == user.get("organization_id")
+        ]
+
+    owned_class_ids = set(get_user_class_ids(user["id"]))
+    return [
+        item
+        for item in sheets
+        if isinstance(item, dict) and _can_access_wrong_question_practice_sheet(user, item, owned_class_ids)
     ]
 
 
@@ -2062,6 +2215,125 @@ def api_wrong_question_archive_save(record_id):
     return jsonify({"ok": True, "record": saved_record})
 
 
+@app.route("/api/wrong-question-practice-sheets", methods=["POST"])
+def api_wrong_question_practice_sheet_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    if not has_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+
+    student_id = int(data.get("student_id") or 0)
+    wrong_question_ids = data.get("wrong_question_ids")
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    if not isinstance(wrong_question_ids, list) or not wrong_question_ids:
+        return jsonify({"error": "wrong_question_ids is required"}), 400
+
+    selected_records = []
+    for raw_record_id in wrong_question_ids:
+        record_id = str(raw_record_id or "").strip()
+        if not record_id:
+            return jsonify({"error": "wrong_question_ids contains an invalid record id"}), 400
+        record = get_wechat_wrong_question_submission(record_id)
+        if not record or not _can_access_wrong_question_record(user, record):
+            return jsonify({"error": "not found"}), 404
+        if int(record.get("student_id") or 0) != student_id:
+            return jsonify({"error": "selected records must belong to the same student"}), 400
+        if str(record.get("source") or "") != "wechat_mp":
+            return jsonify({"error": "selected records must be local wrong questions"}), 400
+        if str(record.get("recognition_status") or "") != "recognized":
+            return jsonify({"error": "selected records must be recognized before generating practice"}), 400
+        if str(record.get("archive_status") or "").strip() == "archived":
+            return jsonify({"error": "selected records must stay active before generating practice"}), 400
+        selected_records.append(record)
+
+    try:
+        sheet = create_pending_wrong_question_practice_sheet(
+            created_by=int(user["id"]),
+            selected_records=selected_records,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    _start_wrong_question_practice_generation_thread(
+        sheet_id=int(sheet["id"]),
+        user={
+            "id": int(user["id"]),
+            "organization_id": int(user["organization_id"]),
+        },
+    )
+    return jsonify({"id": sheet["id"], "status": "pending"}), 202
+
+
+@app.route("/api/wrong-question-practice-sheets", methods=["GET"])
+def api_wrong_question_practice_sheets_list():
+    user, error = _require_auth()
+    if error:
+        return error
+
+    student_id = request.args.get("student_id", 0, type=int)
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+
+    items = list_wrong_question_practice_sheets_for_student(student_id)
+    scoped_items = _filter_wrong_question_practice_sheets_for_user(user, items)
+    return jsonify({
+        "items": _serialize_wrong_question_practice_sheets_for_response(scoped_items),
+        "total": len(scoped_items),
+    })
+
+
+@app.route("/api/wrong-question-practice-sheets/<int:sheet_id>", methods=["GET"])
+def api_wrong_question_practice_sheet_detail(sheet_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    sheet = get_wrong_question_practice_sheet(sheet_id)
+    if not sheet or not _can_access_wrong_question_practice_sheet(user, sheet):
+        return jsonify({"error": "not found"}), 404
+    serialized = _serialize_wrong_question_practice_sheet_for_response(sheet)
+    if serialized is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(serialized)
+
+
+@app.route("/api/wrong-question-practice-sheets/<int:sheet_id>/pdf", methods=["GET"])
+def api_wrong_question_practice_sheet_pdf_preview(sheet_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    sheet = get_wrong_question_practice_sheet(sheet_id)
+    if not sheet or not _can_access_wrong_question_practice_sheet(user, sheet):
+        return jsonify({"error": "not found"}), 404
+    pdf_path = Path(str(sheet.get("pdf_path") or "").strip())
+    if not pdf_path or not pdf_path.exists():
+        return jsonify({"error": "pdf not found"}), 404
+    return send_file(pdf_path, mimetype="application/pdf", download_name=pdf_path.name)
+
+
+@app.route("/api/wrong-question-practice-sheets/<int:sheet_id>/pdf/download", methods=["GET"])
+def api_wrong_question_practice_sheet_pdf_download(sheet_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    sheet = get_wrong_question_practice_sheet(sheet_id)
+    if not sheet or not _can_access_wrong_question_practice_sheet(user, sheet):
+        return jsonify({"error": "not found"}), 404
+    pdf_path = Path(str(sheet.get("pdf_path") or "").strip())
+    if not pdf_path or not pdf_path.exists():
+        return jsonify({"error": "pdf not found"}), 404
+    return send_file(
+        pdf_path,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=pdf_path.name,
+    )
+
+
 @app.route("/api/consultations", methods=["GET"])
 def api_consultations_list():
     user, error = _require_auth()
@@ -2551,6 +2823,12 @@ def _student_wrong_question_library_path(student_id: int) -> Path:
     return library_dir / f"student-{student_id}.pdf"
 
 
+def _wrong_question_practice_sheet_pdf_path(sheet_id: int) -> Path:
+    practice_dir = PDF_DIR / "wrong_question_practice_sheets"
+    practice_dir.mkdir(parents=True, exist_ok=True)
+    return practice_dir / f"sheet-{sheet_id}.pdf"
+
+
 def _parse_student_wrong_question_library_updated_at(value: str) -> Optional[datetime]:
     raw_value = str(value or "").strip()
     if not raw_value:
@@ -2750,7 +3028,7 @@ def api_wechat_child_wrong_question_library(student_id):
         return jsonify({"error": "binding not found"}), 404
 
     items = list_student_wrong_question_library_records(student_id)
-    latest_updated_at = str(items[-1].get("updated_at") or "") if items else ""
+    latest_updated_at = str(items[0].get("updated_at") or "") if items else ""
     return jsonify(
         {
             "student_id": student_id,

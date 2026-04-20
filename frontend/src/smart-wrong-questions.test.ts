@@ -314,7 +314,7 @@ test('buildMemberStudentNotebookSummaries groups current-class records by studen
   ]);
 });
 
-test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records in upload order', () => {
+test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class and student records in reverse upload order for display', () => {
   const records = [
     makeWrongQuestionRecord({ id: 'a', classId: 101, studentName: 'Alice', createdAt: '2026-03-29T09:00:00Z' }),
     makeWrongQuestionRecord({ id: 'b', classId: 101, studentName: 'Bob', createdAt: '2026-03-29T08:00:00Z' }),
@@ -324,7 +324,7 @@ test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class 
 
   assert.deepEqual(
     filterWrongQuestionRecordsForMemberNotebook(records, 101, 'Alice').map((item) => item.id),
-    ['c', 'a'],
+    ['a', 'c'],
   );
 });
 
@@ -1604,10 +1604,10 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
         });
       }
 
-      if (input === '/api/wrong-questions/wechat-delete-a' && init?.method === 'DELETE') {
+      if (input === '/api/wrong-questions/wechat-delete-b' && init?.method === 'DELETE') {
         return createJsonResponse({
           ok: true,
-          deleted_record_id: 'wechat-delete-a',
+          deleted_record_id: 'wechat-delete-b',
           student_id: 1,
           next_student_library_pdf_path: '/api/wechat/student-libraries/1',
         });
@@ -1634,7 +1634,7 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /第一题/);
+      assert.match(pageText, /第二题/);
       const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除本题'));
       assert.ok(deleteButton instanceof HTMLButtonElement);
     });
@@ -1649,11 +1649,11 @@ test('SmartWrongQuestionsPage deletes a local wechat record and jumps to the nex
     });
 
     await waitForAssertion(() => {
-      const deleteCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/wechat-delete-a' && call.init?.method === 'DELETE');
+      const deleteCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-questions/wechat-delete-b' && call.init?.method === 'DELETE');
       assert.ok(deleteCall);
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /第二题/);
-      assert.doesNotMatch(pageText, /第一题原因/);
+      assert.match(pageText, /第一题/);
+      assert.doesNotMatch(pageText, /第二题原因/);
     });
   } finally {
     window.confirm = originalConfirm;
@@ -2866,13 +2866,15 @@ test('SmartWrongQuestionsPage renders member notebook records as compact rows in
       assert.match(pageText, /第 1 题/);
       assert.match(pageText, /第 2 题/);
       assert.match(pageText, /错题目录/);
-      assert.match(pageText, /按上传时间顺序查看/);
+      assert.match(pageText, /按上传时间倒序查看/);
       assert.match(pageText, /2026-03-27T09:00:00Z/);
       assert.match(pageText, /已掌握/);
-      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
-      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
+      assert.equal(questionButtons[0]?.textContent?.includes('第 1 题'), true);
+      assert.equal(questionButtons[0]?.textContent?.includes('2026-03-29T09:00:00Z'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('第 2 题'), true);
+      assert.equal(questionButtons[1]?.textContent?.includes('2026-03-27T09:00:00Z'), true);
       assert.doesNotMatch(pageText, /第二题还是错/);
-      assert.doesNotMatch(pageText, /按时间倒序查看/);
+      assert.doesNotMatch(pageText, /按上传时间顺序查看/);
       assert.doesNotMatch(pageText, /左侧是紧凑错题目录/);
     });
   } finally {
@@ -3117,6 +3119,311 @@ test('SmartWrongQuestionsPage member notebook keeps wechat records on error-caus
       assert.doesNotMatch(pageText, /核心知识点/);
       assert.doesNotMatch(pageText, /后续练习建议/);
       assert.doesNotMatch(pageText, /原因分析/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage creates a wrong-question practice sheet from selected notebook records', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 101, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-a',
+              source: 'wechat_mp',
+              student_id: 501,
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T09:00:00Z',
+              child_raw_reason_text: '我把乘法优先级看漏了',
+              primary_error_type: '细节问题',
+              secondary_error_summary: '步骤检查不完整',
+              recognition_status: 'recognized',
+              is_geometry: 0,
+              question_text: '计算 $2+3\\times4$ 的结果。',
+              archive_status: 'active',
+              status: 'pending',
+              analysis: {
+                question_category: '计算',
+                error_type: '细节问题',
+                knowledge_points: ['运算顺序'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-a',
+          source: 'wechat_mp',
+          student_id: 501,
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T09:00:00Z',
+          child_raw_reason_text: '我把乘法优先级看漏了',
+          primary_error_type: '细节问题',
+          secondary_error_summary: '步骤检查不完整',
+          recognition_status: 'recognized',
+          is_geometry: 0,
+          question_text: '计算 $2+3\\times4$ 的结果。',
+          archive_status: 'active',
+          status: 'pending',
+          analysis: {
+            question_category: '计算',
+            error_type: '细节问题',
+            knowledge_points: ['运算顺序'],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-practice-sheets?student_id=501' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({ items: [], total: 0 });
+      }
+
+      if (input === '/api/wrong-question-practice-sheets' && init?.method === 'POST') {
+        return createJsonResponse({ id: 12, status: 'pending' }, 202);
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '101');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
+    await waitForAssertion(() => {
+      const checkbox = domEnvironment.container.querySelector('input[aria-label="选择第 1 题"]');
+      assert.ok(checkbox instanceof HTMLInputElement);
+    });
+
+    const checkbox = domEnvironment.container.querySelector('input[aria-label="选择第 1 题"]') as HTMLInputElement | null;
+    assert.ok(checkbox instanceof HTMLInputElement);
+
+    await act(async () => {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const generateButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成错题练习'));
+    assert.ok(generateButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      generateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const practiceCreateCall = findLastFetchCall(
+      fetchCalls,
+      (call) => call.input === '/api/wrong-question-practice-sheets' && call.init?.method === 'POST',
+    );
+    assert.ok(practiceCreateCall);
+    assert.equal(practiceCreateCall?.init?.body, JSON.stringify({
+      student_id: 501,
+      wrong_question_ids: ['record-a'],
+    }));
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage shows wrong-question practice history inside the notebook modal', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 101, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'record-a',
+              source: 'wechat_mp',
+              student_id: 501,
+              student_name: 'Alice',
+              class_name: '六年级 1 班',
+              class_id: 101,
+              subject: '数学',
+              teacher_name: '成员老师',
+              teacher_user_id: 7,
+              created_at: '2026-03-29T09:00:00Z',
+              child_raw_reason_text: '我把乘法优先级看漏了',
+              primary_error_type: '细节问题',
+              secondary_error_summary: '步骤检查不完整',
+              recognition_status: 'recognized',
+              is_geometry: 0,
+              question_text: '计算 $2+3\\times4$ 的结果。',
+              archive_status: 'active',
+              status: 'pending',
+              analysis: {
+                question_category: '计算',
+                error_type: '细节问题',
+                knowledge_points: ['运算顺序'],
+              },
+            },
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          id: 'record-a',
+          source: 'wechat_mp',
+          student_id: 501,
+          student_name: 'Alice',
+          class_name: '六年级 1 班',
+          class_id: 101,
+          subject: '数学',
+          teacher_name: '成员老师',
+          teacher_user_id: 7,
+          created_at: '2026-03-29T09:00:00Z',
+          child_raw_reason_text: '我把乘法优先级看漏了',
+          primary_error_type: '细节问题',
+          secondary_error_summary: '步骤检查不完整',
+          recognition_status: 'recognized',
+          is_geometry: 0,
+          question_text: '计算 $2+3\\times4$ 的结果。',
+          archive_status: 'active',
+          status: 'pending',
+          analysis: {
+            question_category: '计算',
+            error_type: '细节问题',
+            knowledge_points: ['运算顺序'],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-practice-sheets?student_id=501' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse({
+          items: [
+            {
+              id: 12,
+              student_id: 501,
+              class_id: 101,
+              student_name_snapshot: 'Alice',
+              class_name_snapshot: '六年级 1 班',
+              teacher_name_snapshot: '成员老师',
+              question_count: 1,
+              status: 'ready',
+              pdf_url: '/api/wrong-question-practice-sheets/12/pdf',
+              download_url: '/api/wrong-question-practice-sheets/12/pdf/download',
+              created_at: '2026-04-20 10:00:00',
+            },
+          ],
+          total: 1,
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '成员老师',
+            organization_name: '星润Starain',
+            role: 'member',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '101');
+    await openNotebookStudent(domEnvironment.container, 'Alice');
+
+    const historyTab = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('错题练习记录'));
+    assert.ok(historyTab instanceof HTMLButtonElement);
+
+    await act(async () => {
+      historyTab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /错题练习记录/);
+      assert.match(pageText, /2026-04-20 10:00:00/);
+      assert.match(pageText, /1 题/);
+      assert.match(pageText, /预览 PDF/);
+      assert.match(pageText, /下载 PDF/);
     });
   } finally {
     if (root) {

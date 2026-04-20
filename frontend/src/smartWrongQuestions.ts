@@ -41,6 +41,7 @@ export interface WrongQuestionRecord {
   id: string;
   roomId: string;
   source: string;
+  studentId?: number | null;
   recognitionStatus?: string;
   isGeometry?: boolean;
   questionText?: string;
@@ -104,6 +105,27 @@ export interface MemberStudentNotebookSummary {
   pendingReviewCount: number;
   hasTeacherFollowUp: boolean;
   latestCreatedAt: string;
+}
+
+export interface WrongQuestionPracticeSheetSummary {
+  id: number;
+  studentId: number | null;
+  classId: number | null;
+  studentNameSnapshot: string;
+  classNameSnapshot: string;
+  teacherNameSnapshot: string;
+  questionCount: number;
+  status: string;
+  createdAt: string;
+  pdfPath?: string;
+  pdfUrl?: string;
+  downloadUrl?: string;
+  generationError?: string;
+}
+
+export interface WrongQuestionPracticeSheetListApiResponse {
+  items?: unknown[];
+  total?: unknown;
 }
 
 export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionRecord): boolean {
@@ -292,6 +314,11 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     reviewStatus: normalizedReviewStatus,
     analysis: normalizeWrongQuestionAnalysis(source.analysis),
   };
+
+  const studentId = pickNumberValue(source, ['studentId', 'student_id']);
+  if (studentId !== null) {
+    record.studentId = studentId;
+  }
 
   if (recognitionStatus) {
     record.recognitionStatus = recognitionStatus;
@@ -599,7 +626,7 @@ export function filterWrongQuestionRecordsForMemberNotebook(
   return records
     .filter((item) => classId === null || item.classId === classId)
     .filter((item) => !studentName || item.studentName === studentName)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 export function buildMemberStudentNotebookSummaries(
@@ -679,4 +706,57 @@ export function buildWrongQuestionDetailPath(recordId: string, roomId?: string):
 
 export function buildWrongQuestionReviewPath(recordId: string, roomId?: string): string {
   return `/api/wrong-questions/${encodeURIComponent(recordId)}/review${buildWrongQuestionRoomQuery(roomId)}`;
+}
+
+export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): WrongQuestionPracticeSheetSummary {
+  const source = isObjectRecord(rawSheet) ? rawSheet : {};
+  const pdfPath = pickStringValue(source, ['pdfPath', 'pdf_path']);
+  const pdfUrl = pickStringValue(source, ['pdfUrl', 'pdf_url']);
+  const downloadUrl = pickStringValue(source, ['downloadUrl', 'download_url']);
+  const generationError = pickStringValue(source, ['generationError', 'generation_error']);
+  const sheet: WrongQuestionPracticeSheetSummary = {
+    id: pickNumberValue(source, ['id']) ?? 0,
+    studentId: pickNumberValue(source, ['studentId', 'student_id']),
+    classId: pickNumberValue(source, ['classId', 'class_id']),
+    studentNameSnapshot: pickStringValue(source, ['studentNameSnapshot', 'student_name_snapshot']),
+    classNameSnapshot: pickStringValue(source, ['classNameSnapshot', 'class_name_snapshot']),
+    teacherNameSnapshot: pickStringValue(source, ['teacherNameSnapshot', 'teacher_name_snapshot']),
+    questionCount: pickNumberValue(source, ['questionCount', 'question_count']) ?? 0,
+    status: pickStringValue(source, ['status']) || 'pending',
+    createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+  };
+
+  if (pdfPath) {
+    sheet.pdfPath = pdfPath;
+  }
+
+  if (pdfUrl) {
+    sheet.pdfUrl = pdfUrl;
+  }
+
+  if (downloadUrl) {
+    sheet.downloadUrl = downloadUrl;
+  }
+
+  if (generationError) {
+    sheet.generationError = generationError;
+  }
+
+  return sheet;
+}
+
+export function normalizeWrongQuestionPracticeSheetListResponse(
+  payload: WrongQuestionPracticeSheetListApiResponse | WrongQuestionPracticeSheetSummary[],
+): WrongQuestionPracticeSheetSummary[] {
+  const source = Array.isArray(payload) ? { items: payload } : payload;
+  const rawItems = Array.isArray(source.items) ? source.items : [];
+
+  return rawItems
+    .map((item) => normalizeWrongQuestionPracticeSheetSummary(item))
+    .filter((item) => item.id > 0)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function buildWrongQuestionPracticeSheetsPath(studentId: number): string {
+  return `/api/wrong-question-practice-sheets?student_id=${encodeURIComponent(String(studentId))}`;
 }

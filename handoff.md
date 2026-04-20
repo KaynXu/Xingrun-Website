@@ -6,6 +6,13 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 网站端“智能错题”已补上老师端 `错题练习` 首版闭环，当前入口在学生 notebook 弹窗内：左侧题目目录可勾选本地 `wechat_mp` 且 `recognized + active` 的错题，点击 `生成错题练习` 后会为该学生创建一份独立练习单任务，并把记录持久化到本地服务器 SQLite。前端同一弹窗已新增 `错题练习记录` 页签，可查看历史生成记录、状态，以及 `预览 PDF / 下载 PDF` 入口；后端也已补齐 `/api/wrong-question-practice-sheets` 创建/列表/详情链路和 `/api/wrong-question-practice-sheets/<id>/pdf(/download)` PDF 访问路由。
+- 2026-04-20 错题练习生成链路当前已按业务要求收口：几何题在 PDF 里保留原题图片，非几何题走真实题目文本；每题下方固定生成 `AI 提示`、`错题挖空` 填写区，以及“如何改正 / 以后如何避免”总结区。AI 提示词、浏览器版 PDF 渲染脚本、ReportLab fallback、异步 worker、存储表结构和前端交互测试都已接上，当前 proof 已覆盖 store / API / async worker / PDF renderer / notebook UI。
+- 2026-04-20 网站端学生错题库顺序已统一收口为倒序：`lesson_manager.list_student_wrong_question_library_records()` 现在按 `created_at DESC, id DESC` 返回，本地网站 notebook 左侧目录会把最新上传题排最上面，题号也按当前展示顺序从上到下重新编号；同时 `/api/wechat/children/<student_id>/wrong-question-library` 的 `updated_at` 已改成取最新一条记录，避免倒序后元数据反而退回最旧时间。因为学生错题库 PDF 也直接吃这份记录顺序，所以 PDF 现在也会按最新题在前生成。
+- 2026-04-20 已确认学生错题库 PDF 线上确实存在两套生成路径：`pdf_engine.py` 会先走 `frontend/scripts/renderWrongQuestionLibraryPdf.mjs` 的浏览器 + KaTeX 渲染，失败时再静默回退到 `ReportLab` 纯文本链路。当前生产机 `49.234.185.86` 上的 `node / playwright / /snap/bin/chromium` 都正常，拿真实学生错题库连续 7 次重建都稳定命中浏览器链路，没有复现“当前环境随机掉回 ReportLab”。这次用户体感里“有时公式正常、有时像 LaTeX 编码坏掉”的根因更像是历史缓存混用：线上旧缓存 `student-276.pdf` 曾是 `221846` 字节、`student-277.pdf` 曾是 `212868` 字节，强制重建后分别变成浏览器版 `309508` 和 `294710` 字节；说明之前留在 `data/pdfs/wrong_question_libraries/` 里的部分 PDF 是浏览器链路修好前生成的旧回退版，只有学生记录再次更新或手动刷新缓存时才会被替换成新版浏览器 PDF。
+- 2026-04-20 已继续修复小程序语音转录线上 `502`：根因不是音频 URL 失效，而是生产机无法访问 `huggingface.co`，导致 `WhisperModel("base")` 首次初始化卡在联网下载模型。当前 `ai_processor.py` 已改为优先读取本地 Hugging Face 缓存快照目录；并已从本机把 `faster-whisper-base` 模型缓存同步到生产机 `~/.cache/huggingface/hub/models--Systran--faster-whisper-base`。线上复验通过：生产机 `_get_local_whisper_model()` 初始化耗时约 `0.57s`，`POST http://127.0.0.1:3001/wechat/parent/reason-transcriptions` 已对真实 mp3 返回 `200 {"transcript_text": ...}`，当前小程序语音转文字链路已可用。
+- 2026-04-19 已直接在生产机 `49.234.185.86` 的 `/home/ubuntu/Xingrun-Website/.venv` 补装 `requirements.txt`，确认 `faster-whisper 1.2.1` 可导入后已执行 `pm2 restart xingrun`；线上当前再次确认 `pm2 xingrun` 实际运行的是仓库内 `.venv/bin/python app.py`，根路由健康检查恢复为 `HTTP/1.1 302 FOUND`。这次修复的是“生产机环境没装包”，不是代码版本缺依赖；小程序前端仍指向 `https://xingrun.online`，因此这次不需要重传小程序包。
+- 2026-04-16 已新增公开卷页面结构化抓取 demo：`frontend/scripts/scrapeJyeooPaper.mjs` 现在可以直接抓公开 `jyeoo.com/pp/...` 试卷页，输出整卷 `JSON`，按题保留 `question_no / question_type / html_raw / math_blocks_raw / image_urls / image_local_paths / text_plain / options / latex_segments`；本地定向测试 `frontend/src/scrape-jyeoo-paper.test.ts` 已覆盖“切题、提题图、MathJye -> LaTeX”最小链路，临时脚本也已对公开试卷 `dea193e9-f656-43af-b44a-5037ee38faf7` 实跑通过，当前能抓出 22 题，并把第 17 题不等式还原成 `a < m < a(\\frac{a+e}{\\sqrt{ae}}-1)`。
 - 2026-04-16 小程序家长上传录音转文字已不再依赖 OpenAI Whisper：`ai_processor.py` 的 `transcribe_child_reason_audio()` 和通用 `transcribe_audio()` 现统一改为本地 `faster-whisper`，当前固定 `base + cpu + int8`，先自动识别语言，只有自动识别没出有效文本时才回退 `zh`，`app.py` 的音频转录 usage fallback 也已改成 `local / faster-whisper-base`；这次只替换转录层，不改后续错因归类 provider 逻辑，因此当前仍需要现有聊天类 AI provider key 来做错因归类和复习计划生成。
 - 2026-04-16 小程序家长首页 `miniprogram/miniprogram/pages/parent-home/index.wxml` 已补回绑定态入口：当前在已有孩子列表页头会显示 `绑定更多孩子`，直接复用现有 `goBindMore()` 返回 `pages/parent-bind/index`，不改接口和数据流；对应小程序回归测试 `miniprogram/miniprogram/parent-only-scope.test.js` 也已从“禁止继续绑定”改成“必须保留绑定更多孩子入口”。
 - 2026-04-16 小程序家长上传链路已彻底移除 `AI 框选`：`miniprogram/miniprogram/pages/parent-upload/index.*`、`model.js`、`utils/parentApi.js`、`miniprogram/backend/src/index.ts`、`website-client.ts`、`app.py`、`smart_wrong_questions.py` 活代码里已不再保留 `wrong-question-boxes` 路由、helper 或状态字段；当前上传页只保留手动 `补加框 / 删除当前 / 顺时针旋转`、逐题错因和统一提交。
@@ -41,7 +48,7 @@
 - notebook 详情头已去掉 `已映射` / `未标注科目` 一类无效状态字样，`预览 PDF / 下载 PDF` 已上提到标题旁边，默认打开就是题目编辑区；左列 `第 1 / 2 / 3 / 4 题` 现在按上传时间正序命名和显示，不再出现“名称按上传顺序、列表却倒序”的反向感。
 - 微信错题详情区已补上错题库 PDF 入口；当记录带有 `student_library_pdf_path` 时，会直接显示 `预览 PDF / 下载 PDF`，并自动带当前登录 token。
 - 本轮已再次确认：错题库 PDF 不是占位入口，当前后端已实现学生错题库 PDF 重建与下载接口，前端也已接通 `预览 PDF / 下载 PDF`。
-- 2026-04-16 网站端智能错题 notebook 弹窗已继续收口：左侧目录现在按上传时间正序显示，题号与上传顺序一致；右侧头部已删掉 `映射状态 / 未标注科目`，并把 `预览 PDF / 下载 PDF` 上提到标题旁边，打开后先看到题目文本编辑区，不再先压一整块“孩子上传记录”卡片。
+- 2026-04-16 网站端智能错题 notebook 弹窗已继续收口：左侧目录现在按上传时间倒序显示，最新题在上，但题号仍按真实上传顺序命名；右侧头部已删掉 `映射状态 / 未标注科目`，并把 `预览 PDF / 下载 PDF` 上提到标题旁边，打开后先看到题目文本编辑区，不再先压一整块“孩子上传记录”卡片。
 - 本轮已完成 `删除本题` 设计收口：网站端将只对本地 `wechat_mp` 错题开放真删除，删除后必须先删旧学生错题库 PDF，再按剩余有效题决定重建或清空，避免磁盘残留。
 - 本轮已落地：网站端微信错题详情支持 `删除本题`；点击后会真删除本地 `wechat_mp` 记录，先删旧学生错题库 PDF，再按剩余有效题决定重建或清空，前端会自动跳到同学生下一题；若没有下一题则收起右侧详情区。
 - 微信错题里的 `AI 归类错因` 已改成老师可编辑下拉；打开记录时默认带入当前 AI 分类，老师调整后会随现有保存接口一起提交。
@@ -72,6 +79,11 @@
 - 最近一次相关产品代码提交并已部署生产的是 `61d49e5 test: drop stale master box detection coverage`。
 
 ### 下一步
+- 最值得继续做的是在真实老师账号下手工开一个学生 notebook，分别勾选“1 道题”和“多道题”各生成一次错题练习，确认等待中、完成后历史列表刷新、PDF 打开速度和下载命名都符合预期。
+- 最值得继续做的是拿一份包含几何题和公式题的真实练习单手工看 PDF 视觉效果，重点确认图片尺寸、题间分页、挖空书写区留白和总结区高度是否够老师实际发给学生使用。
+- 最值得继续做的是拿小程序真机再录一段中文语音手工点一次提交，确认页面端不再长时间挂在 `reason-transcriptions`，并观察首个请求后的实际用户体感时延。
+- 最值得继续做的是拿一段真实家长语音在真机或线上接口手工跑一次转文字，确认生产机当前不再报 `未安装 faster-whisper`，并观察首次模型初始化的真实时延。
+- 如果继续扩这条公开卷抓取 demo，最值得先做的是把 `MathJye` 反推覆盖面从当前已验证的分式、根号、上下标、向量箭头，继续补到更多几何/解析题里常见的组合结构，并单独决定是否要抓公开解析页。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页绑定态，实际点 `绑定更多孩子`，确认能回到 `pages/parent-bind/index`，且标题行在窄屏下不会把两个按钮挤坏。
 - 最值得继续做的是拿一条真实含公式的微信错题，在网站错题详情里手工改一次 `题目文本`，确认 KaTeX 预览、渲染失败提示、保存后回显，以及重新打开 `预览 PDF` 时三处内容一致。
 - 最值得继续做的是在微信开发者工具或真机打开一次家长首页，确认新的首屏标题、副标题和空态文案在 iPhone 宽度下换行自然，没有被按钮区挤坏。
@@ -99,6 +111,11 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮错题练习目前只做到“老师端生成 -> PDF 导出发送”，还没有学生在线回填答案或老师回看学生填写结果；数据库里虽然已保存生成记录和每题 AI 材料，但学生作答态、提交态和二次点评链路还不存在。
+- 当前 notebook 左侧在“这个学生只有 1 道可用于练习的题”时会默认选中它，目的是减少老师多点一步；如果后续用户明确希望“必须手动勾选后才能生成”，这里需要再单独改交互。
+- 这次线上通过的是“已有本地缓存模型”路径；如果后续更换服务器、清理 `~/.cache/huggingface` 或切别的 whisper 模型名，生产机仍会因为无法直连 `huggingface.co` 而重新卡在模型拉取，届时需要再次预置缓存或提供可用镜像。
+- 这次线上只验证到“包已装好、服务已重启、根路由健康、`faster_whisper` 可导入”；首次真实转录时仍可能触发模型下载或初始化延迟，语音接口的首个请求耗时和服务器 CPU 峰值还没有用真实录音跑过。
+- 这轮 `scrapeJyeooPaper.mjs` 只验证了公开试卷页题面，不包含登录后内容、VIP 内容或解析页异步接口；`latex_segments` 目前是对 `MathJye` 的 best-effort 反推，已能覆盖本次公开卷 proof 里的关键公式，但对更复杂的嵌套结构仍可能需要继续补规则。
 - 这轮本地 `faster-whisper` 只用 mocked 单测和依赖安装 smoke 验证过，还没有在 4 核 + 4GB 的真实服务器上拿一段“中文为主但可能夹英文字母/公式”的录音实跑过；首个请求会触发模型下载/加载，后续请求也会吃 CPU，真实延迟、峰值内存和自动识别命中率仍需上线前单独 smoke。
 - 这轮家长首页补回 `绑定更多孩子` 目前 proof 只有模板回归测试，还没有在微信开发者工具或真机里实点一次，按钮点击后的真实导航和窄屏排版仍需人工 smoke。
 - 这轮错题公式渲染仍依赖前端侧 `katex` 和浏览器脚本；虽然浏览器脚本现在会自动探测常见系统 Chromium 路径，且浏览器失败时也会自动回退到 `ReportLab`，不再因为缺少 Playwright 自带浏览器就直接打挂，但在真正没有可用浏览器的部署环境里，复杂公式仍会退化成可读文本而不是排版公式。

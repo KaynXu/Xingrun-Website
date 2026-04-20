@@ -179,12 +179,12 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
     def test_transcribe_child_reason_audio_uses_local_faster_whisper_auto_detect_first(self):
         fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
-
-        with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
-            "urllib.request.urlopen",
-            return_value=_FakeUrlopenResponse(b"fake-audio"),
-        ):
-            payload = ai_processor.transcribe_child_reason_audio("https://files.example.com/reason.m4a")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
+                "urllib.request.urlopen",
+                return_value=_FakeUrlopenResponse(b"fake-audio"),
+            ), patch("ai_processor.Path.home", return_value=Path(temp_dir)):
+                payload = ai_processor.transcribe_child_reason_audio("https://files.example.com/reason.m4a")
 
         self.assertEqual(payload, {"transcript_text": "我把单位换算漏掉了"})
         self.assertEqual(
@@ -201,6 +201,39 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertNotIn("language", _FakeWhisperModel.transcribe_calls[0]["kwargs"])
         self.assertEqual(_FakeWhisperModel.transcribe_calls[0]["kwargs"]["task"], "transcribe")
         self.assertTrue(_FakeWhisperModel.transcribe_calls[0]["audio_path"].endswith(".m4a"))
+
+    def test_transcribe_child_reason_audio_prefers_local_cached_snapshot_path(self):
+        fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_root = Path(temp_dir) / ".cache" / "huggingface" / "hub"
+            snapshot_dir = (
+                cache_root
+                / "models--Systran--faster-whisper-base"
+                / "snapshots"
+                / "revision-123"
+            )
+            snapshot_dir.mkdir(parents=True)
+            refs_dir = snapshot_dir.parent.parent / "refs"
+            refs_dir.mkdir(parents=True)
+            (refs_dir / "main").write_text("revision-123", encoding="utf-8")
+
+            with patch.dict(sys.modules, {"faster_whisper": fake_module}), patch(
+                "urllib.request.urlopen",
+                return_value=_FakeUrlopenResponse(b"fake-audio"),
+            ), patch("ai_processor.Path.home", return_value=Path(temp_dir)):
+                payload = ai_processor.transcribe_child_reason_audio("https://files.example.com/reason.m4a")
+
+        self.assertEqual(payload, {"transcript_text": "我把单位换算漏掉了"})
+        self.assertEqual(
+            _FakeWhisperModel.init_calls,
+            [
+                {
+                    "model_size_or_path": str(snapshot_dir),
+                    "device": "cpu",
+                    "compute_type": "int8",
+                }
+            ],
+        )
 
     def test_transcribe_child_reason_audio_falls_back_to_chinese_when_auto_detect_is_empty(self):
         fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
