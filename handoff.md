@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `家长能做什么` 页已删除原先 3 张使命卡片：当前这一页只保留标题文案和下方两条建议 pills，不再显示 `家长赋予我们的责任 / 让进步发生在根上 / 用终生学习感染学生` 三张大卡片，方便现场直接从这一页过渡到后面的感谢页。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页里，`AI 错题助手` 对比卡逐排 reveal 的 selector 已修正：上一轮把 `.feature-story-slide` 错写成了 `.slide.active` 的后代，导致 `STEP` 行默认被隐藏后无法恢复显示；当前已改成直接命中当前 slide 本体的 `.slide.feature-story-slide.active ...` 选择器，步骤文案会重新正常出现并按行错峰显示。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页里，`AI 错题助手` 对比卡的两列步骤文案已改成点击步进：当前卡片本体按原节奏进入后，每点击一次会同步放出左右两列同一排 `STEP 1 ~ STEP 4`，实现真正的“点一下，出一排”，不再依赖自动时间差。
 - 2026-04-20 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已再次针对 Windows 浏览器继续压缩一轮：当前在原有 `feature-story-slide` 基础上，进一步减少该页上下 padding、行间 gap、标题与说明字号、右侧新闻视频框最小高度，以及底部 `AI 错题助手` 对比卡的最小高度、卡片 padding、步骤列宽和行距，目标是让普通 Windows 浏览器里更容易完整看到“标题 + 新闻视频 + 底部双栏对比卡”整页内容。
