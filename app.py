@@ -19,7 +19,7 @@ import urllib.request
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
-from time import monotonic
+from time import monotonic, sleep
 from typing import Optional, Set
 
 from flask import Flask, abort, redirect, request, send_file, jsonify
@@ -48,6 +48,8 @@ CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:3000", "http://127.0.0.1:3000",
 ]}})
 logger = logging.getLogger(__name__)
+
+_WRONG_QUESTION_PRACTICE_PDF_RETRY_DELAYS_SECONDS = (1, 3, 5)
 
 # ─── 内部模块 ──────────────────────────────────────────────────────────────────
 from lesson_manager import (
@@ -773,7 +775,8 @@ def _run_wrong_question_practice_generation_job(
 
             pdf_path = ""
             pdf_generation_succeeded = False
-            for attempt in range(2):
+            total_pdf_attempts = len(_WRONG_QUESTION_PRACTICE_PDF_RETRY_DELAYS_SECONDS) + 1
+            for attempt in range(total_pdf_attempts):
                 try:
                     pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
                         student_name=str(sheet.get("student_name_snapshot") or ""),
@@ -787,13 +790,22 @@ def _run_wrong_question_practice_generation_job(
                     break
                 except Exception:
                     logger.exception(
-                        "Wrong question practice PDF generation failed for sheet %s (attempt %s/2)",
+                        "Wrong question practice PDF generation failed for sheet %s (attempt %s/%s)",
                         sheet_id,
                         attempt + 1,
+                        total_pdf_attempts,
                     )
-                    if attempt == 1:
+                    if attempt >= total_pdf_attempts - 1:
                         mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")
                         return
+                    try:
+                        Path(output_path).unlink(missing_ok=True)
+                    except OSError:
+                        logger.exception(
+                            "Failed to remove partial wrong question practice PDF for sheet %s",
+                            sheet_id,
+                        )
+                    sleep(_WRONG_QUESTION_PRACTICE_PDF_RETRY_DELAYS_SECONDS[attempt])
 
             if not pdf_generation_succeeded:
                 mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")

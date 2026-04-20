@@ -349,6 +349,36 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertIn("browser unavailable", str(context.exception))
         self.assertFalse(output_path.exists())
 
+    def test_generate_wrong_question_practice_sheet_pdf_surfaces_exit_code_when_renderer_outputs_nothing(self):
+        items = [
+            {
+                "question_order": 1,
+                "wrong_question_record_id": "wechat-1",
+                "is_geometry": 0,
+                "question_text_snapshot": "计算 $2+3\\times4$ 的结果。",
+                "reason_blank_prompt": "先梳理错因\n这道题因为 ______ 所以做错了，还漏看了 ______，相关知识点是 ______。",
+                "improvement_summary_prompt": "再写你的想法\n接下来我准备先补 ______，再练 ______，做题时提醒自己注意 ______。",
+            }
+        ]
+        output_path = self.base / "practice-browser-exit-code.pdf"
+
+        with patch(
+            "pdf_engine.subprocess.run",
+            return_value=subprocess.CompletedProcess(["node"], 137, "", ""),
+        ):
+            with self.assertRaises(RuntimeError) as context:
+                pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                    student_name="Alice",
+                    class_name="六年级 1 班",
+                    teacher_name="平台管理员",
+                    title="Alice 错题练习",
+                    items=items,
+                    output_path=str(output_path),
+                )
+
+        self.assertIn("exit code 137", str(context.exception))
+        self.assertFalse(output_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

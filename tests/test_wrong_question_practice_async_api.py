@@ -133,6 +133,7 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
 
+    @patch("app.sleep")
     @patch("app.ensure_feature_credits_available")
     @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", side_effect=RuntimeError("pdf boom"))
     @patch(
@@ -143,6 +144,7 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         mock_generate_material,
         _mock_generate_pdf,
         _mock_credits,
+        _mock_sleep,
     ):
         mock_generate_material.return_value = {
             "title": "Alice 错题练习",
@@ -165,17 +167,19 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["generation_error"], "PDF 生成失败，请稍后重试")
 
     @patch("app.finalize_ai_charge")
+    @patch("app.sleep")
     @patch("app.ensure_feature_credits_available")
     @patch(
         "pdf_engine.generate_wrong_question_practice_sheet_pdf",
-        side_effect=[RuntimeError("pdf boom"), "/tmp/practice-sheet.pdf"],
+        side_effect=[RuntimeError("pdf boom"), RuntimeError("pdf boom"), "/tmp/practice-sheet.pdf"],
     )
     @patch("ai_processor.generate_wrong_question_practice_sheet_material")
-    def test_worker_retries_pdf_generation_once_before_marking_sheet_failed(
+    def test_worker_retries_pdf_generation_with_backoff_before_marking_sheet_failed(
         self,
         mock_generate_material,
         mock_generate_pdf,
         _mock_credits,
+        mock_sleep,
         mock_finalize,
     ):
         mock_generate_material.return_value = {
@@ -199,7 +203,8 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "ready")
         self.assertEqual(saved["pdf_path"], "/tmp/practice-sheet.pdf")
         self.assertEqual(saved["generation_error"], "")
-        self.assertEqual(mock_generate_pdf.call_count, 2)
+        self.assertEqual(mock_generate_pdf.call_count, 3)
+        self.assertEqual([call.args[0] for call in mock_sleep.call_args_list], [1, 3])
         mock_finalize.assert_called_once()
 
 
