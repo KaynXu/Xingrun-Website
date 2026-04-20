@@ -104,13 +104,14 @@ function buildItemMarkup(item) {
       <div class="record-label">题目内容</div>
       ${buildQuestionBlock(item)}
 
+      ${buildWritingSection('把错因补完整', item.reason_blank_prompt || '')}
+
       <section class="hint-card">
-        <div class="hint-label">AI 提示</div>
+        <div class="hint-label">下次提醒</div>
         <div class="hint-value">${escapeHtml(item.ai_hint || '')}</div>
       </section>
 
-      ${buildWritingSection('错题挖空', item.reason_blank_prompt || '')}
-      ${buildWritingSection('改正与避免总结', item.improvement_summary_prompt || '')}
+      ${buildWritingSection('写一写以后怎么做', item.improvement_summary_prompt || '')}
     </section>
   `;
 }
@@ -193,25 +194,29 @@ export async function buildDocumentMarkup(payload) {
           .hint-label,
           .writing-label {
             margin-bottom: 10px;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 700;
-            letter-spacing: 0.08em;
-            color: #475569;
+            color: #334155;
           }
 
           .question-text-block,
           .geometry-card,
           .hint-card,
           .writing-card {
-            border: 1px solid #dbeafe;
-            border-radius: 16px;
+            border: 1px solid #dbe2ea;
+            border-radius: 10px;
             padding: 16px;
-            background: #f8fbff;
+            background: #ffffff;
           }
 
           .hint-card,
           .writing-card {
             margin-top: 14px;
+          }
+
+          .hint-card {
+            border-left: 4px solid #cbd5e1;
+            padding-left: 14px;
           }
 
           .hint-value {

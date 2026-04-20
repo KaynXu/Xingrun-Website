@@ -858,6 +858,47 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(download_response.data, pdf_path.read_bytes())
         download_response.close()
 
+    def test_staff_can_delete_wrong_question_practice_sheet(self):
+        owner_payload = self.login_owner()
+        bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])
+        record = self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/practice-delete.png",
+            question_text="计算 $9-4$ 的结果。",
+            is_geometry=False,
+        )
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=owner_payload["user"]["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(record["id"])],
+        )
+        pdf_path = self.base / "practice-delete.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": record["id"],
+                    "ai_hint": "下次做这类题，先看清运算符号。",
+                    "reason_blank_prompt": "这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "以后遇到同类题，我会先 ______，做完再 ______。",
+                }
+            ],
+            pdf_path=str(pdf_path),
+        )
+
+        response = self.client.delete(
+            f"/api/wrong-question-practice-sheets/{sheet['id']}",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["ok"], True)
+        self.assertEqual(payload["deleted_sheet_id"], sheet["id"])
+        self.assertFalse(pdf_path.exists())
+        self.assertIsNone(lesson_manager.get_wrong_question_practice_sheet(sheet["id"]))
+
     @patch("smart_wrong_questions.request.urlopen")
     def test_staff_detail_payload_exposes_canonical_fields_after_backend_normalization(self, urlopen):
         owner_payload = self.login_owner()

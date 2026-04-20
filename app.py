@@ -70,6 +70,7 @@ from lesson_manager import (
     create_consultation,
     create_registration_request,
     delete_wechat_wrong_question_submission,
+    delete_wrong_question_practice_sheet,
     delete_user_for_actor,
     delete_consultation,
     delete_class as db_delete_class,
@@ -675,69 +676,150 @@ def _run_wrong_question_practice_generation_job(
             logger.info("Wrong question practice generation skipped for sheet %s", sheet_id)
             return
 
+        organization_id = int(user["organization_id"])
+        feature_key = "wrong_question_practice_generate"
+        provider = _default_ai_provider_name()
+        model = _default_chat_model_name()
+        request_id = _build_ai_charge_request_id(
+            user_id=int(user["id"]),
+            feature_key=feature_key,
+            source_record_type="wrong_question_practice_sheet",
+            source_record_id=sheet_id,
+            request_key=f"wrong-question-practice:{sheet_id}",
+        )
+        request_identity_claimed = False
+        organization_execution_claimed = False
         try:
-            generated = ai_processor.generate_wrong_question_practice_sheet_material(
-                student_name=str(sheet.get("student_name_snapshot") or ""),
-                class_name=str(sheet.get("class_name_snapshot") or ""),
-                teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
-                items=sheet.get("items") or [],
-                include_usage=False,
-            )
-        except Exception:
-            logger.exception("Wrong question practice AI generation failed for sheet %s", sheet_id)
-            mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
-            return
+            try:
+                _claim_ai_request_identity(
+                    organization_id=organization_id,
+                    request_id=request_id,
+                )
+                request_identity_claimed = True
+                _claim_ai_organization_execution(organization_id)
+                organization_execution_claimed = True
+                ensure_feature_credits_available(
+                    organization_id=organization_id,
+                    feature_key=feature_key,
+                )
+                generated_result = _call_ai_helper_with_usage(
+                    ai_processor.generate_wrong_question_practice_sheet_material,
+                    student_name=str(sheet.get("student_name_snapshot") or ""),
+                    class_name=str(sheet.get("class_name_snapshot") or ""),
+                    teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
+                    items=sheet.get("items") or [],
+                )
+                generated, usage = _split_ai_result_with_usage(
+                    generated_result,
+                    provider=provider,
+                    model=model,
+                )
+            except DuplicateAiRequestError as exc:
+                logger.exception("Wrong question practice AI request rejected for sheet %s", sheet_id)
+                try:
+                    mark_wrong_question_practice_sheet_failed(sheet_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark wrong question practice sheet %s as failed", sheet_id)
+                return
+            except CreditBalanceError as exc:
+                logger.exception("Wrong question practice credit preflight failed for sheet %s", sheet_id)
+                try:
+                    mark_wrong_question_practice_sheet_failed(sheet_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark wrong question practice sheet %s as failed", sheet_id)
+                return
+            except Exception:
+                logger.exception("Wrong question practice AI generation failed for sheet %s", sheet_id)
+                try:
+                    mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark wrong question practice sheet %s as failed", sheet_id)
+                return
+            finally:
+                if organization_execution_claimed:
+                    _release_ai_organization_execution(organization_id)
+                    organization_execution_claimed = False
 
-        generated_items = generated.get("items") if isinstance(generated, dict) else None
-        if not isinstance(generated_items, list) or not generated_items:
-            mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
-            return
-
-        generated_item_by_record_id = {
-            str(item.get("wrong_question_record_id") or "").strip(): item
-            for item in generated_items
-            if isinstance(item, dict) and str(item.get("wrong_question_record_id") or "").strip()
-        }
-        merged_items = []
-        for item in sheet.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            record_id = str(item.get("wrong_question_record_id") or "").strip()
-            generated_item = generated_item_by_record_id.get(record_id)
-            if not generated_item:
+            generated_items = generated.get("items") if isinstance(generated, dict) else None
+            if not isinstance(generated_items, list) or not generated_items:
                 mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
                 return
-            merged_items.append(
-                {
-                    **item,
-                    "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
-                    "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
-                    "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
-                }
+
+            generated_item_by_record_id = {
+                str(item.get("wrong_question_record_id") or "").strip(): item
+                for item in generated_items
+                if isinstance(item, dict) and str(item.get("wrong_question_record_id") or "").strip()
+            }
+            merged_items = []
+            for item in sheet.get("items") or []:
+                if not isinstance(item, dict):
+                    continue
+                record_id = str(item.get("wrong_question_record_id") or "").strip()
+                generated_item = generated_item_by_record_id.get(record_id)
+                if not generated_item:
+                    mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+                    return
+                merged_items.append(
+                    {
+                        **item,
+                        "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
+                        "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
+                        "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                    }
+                )
+
+            title = str((generated or {}).get("title") or "").strip() or f"{sheet.get('student_name_snapshot') or '学生'} 错题练习"
+            output_path = str(_wrong_question_practice_sheet_pdf_path(sheet_id))
+
+            try:
+                pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                    student_name=str(sheet.get("student_name_snapshot") or ""),
+                    class_name=str(sheet.get("class_name_snapshot") or ""),
+                    teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
+                    title=title,
+                    items=merged_items,
+                    output_path=output_path,
+                )
+            except Exception:
+                logger.exception("Wrong question practice PDF generation failed for sheet %s", sheet_id)
+                mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")
+                return
+
+            try:
+                finalize_ai_charge(
+                    organization_id=organization_id,
+                    user_id=int(user["id"]),
+                    feature_key=feature_key,
+                    usage=usage,
+                    source_record_type="wrong_question_practice_sheet",
+                    source_record_id=sheet_id,
+                    request_id=request_id,
+                )
+            except CreditBalanceError as exc:
+                logger.exception("Wrong question practice charge finalization failed for sheet %s", sheet_id)
+                try:
+                    mark_wrong_question_practice_sheet_failed(sheet_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark wrong question practice sheet %s as failed", sheet_id)
+                return
+            except Exception:
+                logger.exception("Wrong question practice charge finalization failed for sheet %s", sheet_id)
+                try:
+                    mark_wrong_question_practice_sheet_failed(sheet_id, "AI 生成失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark wrong question practice sheet %s as failed", sheet_id)
+                return
+
+            mark_wrong_question_practice_sheet_succeeded(
+                sheet_id,
+                generated_items=generated_items,
+                pdf_path=str(pdf_path or "").strip(),
             )
-
-        title = str((generated or {}).get("title") or "").strip() or f"{sheet.get('student_name_snapshot') or '学生'} 错题练习"
-        output_path = str(_wrong_question_practice_sheet_pdf_path(sheet_id))
-
-        try:
-            pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
-                student_name=str(sheet.get("student_name_snapshot") or ""),
-                class_name=str(sheet.get("class_name_snapshot") or ""),
-                teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
-                title=title,
-                items=merged_items,
-                output_path=output_path,
-            )
-        except Exception:
-            logger.exception("Wrong question practice PDF generation failed for sheet %s", sheet_id)
-            mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")
-            return
-
-        mark_wrong_question_practice_sheet_succeeded(
-            sheet_id,
-            generated_items=generated_items,
-            pdf_path=str(pdf_path or "").strip(),
-        )
+        finally:
+            if organization_execution_claimed:
+                _release_ai_organization_execution(organization_id)
+            if request_identity_claimed:
+                _release_ai_request_identity(request_id)
     except Exception:
         logger.exception("Wrong question practice generation failed for sheet %s", sheet_id)
         try:
@@ -2301,6 +2383,26 @@ def api_wrong_question_practice_sheet_detail(sheet_id: int):
     return jsonify(serialized)
 
 
+@app.route("/api/wrong-question-practice-sheets/<int:sheet_id>", methods=["DELETE"])
+def api_wrong_question_practice_sheet_delete(sheet_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    sheet = get_wrong_question_practice_sheet(sheet_id)
+    if not sheet or not _can_access_wrong_question_practice_sheet(user, sheet):
+        return jsonify({"error": "not found"}), 404
+
+    pdf_path_value = str(sheet.get("pdf_path") or "").strip()
+    pdf_path = Path(pdf_path_value) if pdf_path_value else None
+    deleted_sheet = delete_wrong_question_practice_sheet(sheet_id)
+    if not deleted_sheet:
+        return jsonify({"error": "not found"}), 404
+
+    if pdf_path:
+        pdf_path.unlink(missing_ok=True)
+    return jsonify({"ok": True, "deleted_sheet_id": sheet_id})
+
+
 @app.route("/api/wrong-question-practice-sheets/<int:sheet_id>/pdf", methods=["GET"])
 def api_wrong_question_practice_sheet_pdf_preview(sheet_id: int):
     user, error = _require_auth()
@@ -2916,8 +3018,30 @@ def api_wechat_wrong_questions_create():
     if not binding or binding.get("parent_wechat_account_id") != account["id"]:
         return jsonify({"error": "binding not found"}), 404
 
+    charge_user = {
+        "id": int(binding["teacher_user_id"]),
+        "organization_id": int(binding["organization_id"]),
+    }
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
+
     try:
-        recognition = ai_processor.recognize_wrong_question_image(image_url)
+        recognition = _run_ai_feature_with_charge(
+            user=charge_user,
+            feature_key="wrong_question_recognize",
+            source_record_type="wechat_wrong_question_image",
+            source_record_id=hashlib.sha256(image_url.encode("utf-8")).hexdigest()[:16],
+            producer=lambda: _call_ai_helper_with_usage(
+                ai_processor.recognize_wrong_question_image,
+                image_url,
+            ),
+            provider=provider,
+            model=model,
+        )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except ValueError as exc:
         return jsonify({"error": str(exc), "retryable": True}), 422
     except Exception as exc:
@@ -3392,11 +3516,25 @@ def api_class_feedback_generate(task_id: int):
     if task.get("status") == "confirmed":
         return jsonify({"error": "已确认任务不能重新生成，请先创建新任务"}), 409
 
+    provider = _default_ai_provider_name()
+    model = _default_chat_model_name()
+
     try:
         notes_payload = _normalize_class_feedback_notes_payload(task, data)
         task = save_class_feedback_task_notes(task_id, **notes_payload)
         context = _build_class_feedback_generation_context(task, user)
-        bundle = generate_class_feedback_bundle(**context)
+        bundle = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="class_feedback_generate",
+            source_record_type="class_feedback_task",
+            source_record_id=task_id,
+            producer=lambda: _call_ai_helper_with_usage(
+                generate_class_feedback_bundle,
+                **context,
+            ),
+            provider=provider,
+            model=model,
+        )
         student_entries = []
         for item in bundle.get("student_entries") or []:
             if not isinstance(item, dict):
@@ -3416,6 +3554,10 @@ def api_class_feedback_generate(task_id: int):
             class_summary_ai_draft=str(bundle.get("class_summary") or "").strip(),
             student_entries=student_entries,
         )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
     except LookupError:
         return jsonify({"error": "not found"}), 404
     except ValueError as exc:

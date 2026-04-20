@@ -5452,6 +5452,16 @@ def list_wrong_question_practice_sheets_for_student(student_id: int) -> list[dic
     ]
 
 
+def delete_wrong_question_practice_sheet(sheet_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
+        if not sheet_row:
+            return None
+        serialized = get_wrong_question_practice_sheet(sheet_id)
+        conn.execute("DELETE FROM wrong_question_practice_sheets WHERE id=?", (sheet_id,))
+    return serialized
+
+
 def mark_wrong_question_practice_sheet_succeeded(
     sheet_id: int,
     *,

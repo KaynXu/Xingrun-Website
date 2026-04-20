@@ -717,27 +717,15 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
                 )
             )
 
-        story.append(_spacer(0.1))
         story.append(
             _box(
                 [
-                    Paragraph("AI 提示", styles["section"]),
-                    Paragraph(html.escape(str(item.get("ai_hint") or "")), styles["body"]),
-                ],
-                colors.HexColor("#f8fbff"),
-                C_BORDER,
-            )
-        )
-        story.append(_spacer(0.12))
-        story.append(
-            _box(
-                [
-                    Paragraph("错题挖空", styles["section"]),
+                    Paragraph("把错因补完整", styles["section"]),
                     Paragraph(_normalize_blanks(str(item.get("reason_blank_prompt") or "")), styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                 ],
-                colors.HexColor("#f8fbff"),
+                colors.white,
                 C_BORDER,
             )
         )
@@ -745,13 +733,24 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
         story.append(
             _box(
                 [
-                    Paragraph("改正与避免总结", styles["section"]),
+                    Paragraph("下次提醒", styles["section"]),
+                    Paragraph(html.escape(str(item.get("ai_hint") or "")), styles["body"]),
+                ],
+                colors.white,
+                C_BORDER,
+            )
+        )
+        story.append(_spacer(0.12))
+        story.append(
+            _box(
+                [
+                    Paragraph("写一写以后怎么做", styles["section"]),
                     Paragraph(_normalize_blanks(str(item.get("improvement_summary_prompt") or "")), styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                     Paragraph(BLANK * 3, styles["fill"]),
                 ],
-                colors.HexColor("#f8fbff"),
+                colors.white,
                 C_BORDER,
             )
         )

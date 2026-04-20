@@ -52,12 +52,16 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         gc.collect()
         self.temp_dir.cleanup()
 
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
     @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", return_value="/tmp/practice-sheet.pdf")
     @patch("ai_processor.generate_wrong_question_practice_sheet_material")
     def test_worker_generates_pdf_and_marks_sheet_ready(
         self,
         mock_generate_material,
         mock_generate_pdf,
+        _mock_credits,
+        mock_finalize,
     ):
         mock_generate_material.return_value = {
             "title": "Alice 错题练习",
@@ -89,8 +93,9 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(material_kwargs["teacher_name"], self.owner["display_name"])
         self.assertEqual(material_kwargs["items"][0]["wrong_question_record_id"], self.record["id"])
         self.assertEqual(material_kwargs["items"][0]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
-        self.assertFalse(material_kwargs["include_usage"])
+        self.assertTrue(material_kwargs["include_usage"])
         mock_generate_pdf.assert_called_once()
+        mock_finalize.assert_called_once()
 
     @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
     @patch("ai_processor.generate_wrong_question_practice_sheet_material")
@@ -112,8 +117,9 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         mock_generate_material.assert_not_called()
         mock_generate_pdf.assert_not_called()
 
+    @patch("app.ensure_feature_credits_available")
     @patch("ai_processor.generate_wrong_question_practice_sheet_material", side_effect=RuntimeError("boom"))
-    def test_worker_writes_sanitized_ai_error_message(self, _mock_generate_material):
+    def test_worker_writes_sanitized_ai_error_message(self, _mock_generate_material, _mock_credits):
         app_module._run_wrong_question_practice_generation_job(
             sheet_id=self.sheet["id"],
             user={"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
@@ -124,6 +130,7 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
 
+    @patch("app.ensure_feature_credits_available")
     @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", side_effect=RuntimeError("pdf boom"))
     @patch(
         "ai_processor.generate_wrong_question_practice_sheet_material",
@@ -132,6 +139,7 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self,
         mock_generate_material,
         _mock_generate_pdf,
+        _mock_credits,
     ):
         mock_generate_material.return_value = {
             "title": "Alice 错题练习",

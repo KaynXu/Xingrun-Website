@@ -25,6 +25,13 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         lesson_manager.init_db()
         self.client = app.test_client()
 
+        self._credit_patchers = [
+            patch("app.ensure_feature_credits_available"),
+            patch("app.finalize_ai_charge"),
+        ]
+        for patcher in self._credit_patchers:
+            patcher.start()
+
         self.owner_payload = self.login_owner()
         self.owner_id = self.owner_payload["user"]["id"]
         self.class_id = lesson_manager.save_class(
@@ -38,6 +45,8 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.invite = lesson_manager.get_or_create_active_class_invite(self.class_id, self.owner_id)
 
     def tearDown(self):
+        for patcher in getattr(self, "_credit_patchers", []):
+            patcher.stop()
         self.temp_dir.cleanup()
 
     @staticmethod

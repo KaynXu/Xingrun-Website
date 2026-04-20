@@ -139,3 +139,34 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
         self.assertEqual(saved["pdf_path"], "")
+
+    def test_delete_wrong_question_practice_sheet_removes_sheet_and_items(self):
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=self._selected_records_in_order(self.record_one["id"], self.record_two["id"]),
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": self.record_one["id"],
+                    "ai_hint": "下次做这类题，先检查运算顺序。",
+                    "reason_blank_prompt": "这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "以后遇到同类题，我会先 ______，做完再 ______。",
+                },
+                {
+                    "wrong_question_record_id": self.record_two["id"],
+                    "ai_hint": "下次做几何题，先把图形关系看完整。",
+                    "reason_blank_prompt": "这题我漏看了 ______，所以判断成了 ______。",
+                    "improvement_summary_prompt": "以后碰到几何题，我会先 ______，再 ______。",
+                },
+            ],
+            pdf_path="/tmp/practice-delete.pdf",
+        )
+
+        deleted = lesson_manager.delete_wrong_question_practice_sheet(sheet["id"])
+
+        self.assertIsNotNone(deleted)
+        self.assertEqual(deleted["id"], sheet["id"])
+        self.assertIsNone(lesson_manager.get_wrong_question_practice_sheet(sheet["id"]))
+        self.assertEqual(lesson_manager.list_wrong_question_practice_sheets_for_student(self.student["id"]), [])

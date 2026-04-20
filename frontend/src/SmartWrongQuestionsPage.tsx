@@ -266,13 +266,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     );
   }, [memberNotebookRecords]);
   const displayedNotebookRecords = useMemo(() => {
-    if (notebookMasteryFilter === 'mastered') {
-      return memberNotebookRecords.filter((item) => item.isMastered === true);
-    }
-    if (notebookMasteryFilter === 'pending') {
-      return memberNotebookRecords.filter((item) => item.isMastered !== true);
-    }
-    return memberNotebookRecords;
+    const filtered = notebookMasteryFilter === 'mastered'
+      ? memberNotebookRecords.filter((item) => item.isMastered === true)
+      : notebookMasteryFilter === 'pending'
+        ? memberNotebookRecords.filter((item) => item.isMastered !== true)
+        : memberNotebookRecords;
+    return [...filtered].reverse();
   }, [memberNotebookRecords, notebookMasteryFilter]);
   const selectedNotebookStudentId = useMemo(() => {
     const matchedRecord = memberNotebookRecords.find((item) => typeof item.studentId === 'number' && item.studentId > 0);
@@ -795,6 +794,25 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleDeletePracticeSheet = async (sheet: WrongQuestionPracticeSheetSummary) => {
+    if (!globalThis.window?.confirm?.('确定删除这份错题练习吗？删除后将无法再预览或下载这份 PDF。')) {
+      return;
+    }
+
+    setPracticeActionError('');
+    setPracticeActionNotice('');
+
+    try {
+      await apiFetch(`/api/wrong-question-practice-sheets/${encodeURIComponent(String(sheet.id))}`, {
+        method: 'DELETE',
+      });
+      setPracticeSheets((current) => current.filter((item) => item.id !== sheet.id));
+      setPracticeActionNotice('已删除这份错题练习。');
+    } catch (deleteError) {
+      setPracticeActionError(deleteError instanceof Error ? deleteError.message : '删除错题练习失败');
+    }
+  };
+
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -931,25 +949,34 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <p className="text-sm text-rose-600 dark:text-rose-300">{sheet.generationError}</p>
                     ) : null}
                   </div>
-                  {previewUrl ? (
-                    <div className="flex flex-wrap gap-3">
-                      <a
-                        href={previewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={workspaceSecondaryButtonClass}
-                      >
-                        预览 PDF
-                      </a>
-                      <a
-                        href={downloadUrl}
-                        download={`wrong-question-practice-sheet-${sheet.id}.pdf`}
-                        className={workspacePrimaryButtonClass}
-                      >
-                        下载 PDF
-                      </a>
-                    </div>
-                  ) : null}
+                  <div className="flex flex-wrap gap-3">
+                    {previewUrl ? (
+                      <>
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          预览 PDF
+                        </a>
+                        <a
+                          href={downloadUrl}
+                          download={`wrong-question-practice-sheet-${sheet.id}.pdf`}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          下载 PDF
+                        </a>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePracticeSheet(sheet)}
+                      className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-400/30 dark:bg-slate-950/70 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                    >
+                      删除练习
+                    </button>
+                  </div>
                 </div>
               </article>
             );
@@ -1468,7 +1495,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-white/10">
               <div>
                 <h4 className="text-2xl font-semibold text-slate-900 dark:text-white">{selectedStudentName} 的错题库</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧按上传时间顺序查看题目列表，右侧直接打开当前题目。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">左侧最新上传的题目排在最上方，题号保持原始上传顺序。</p>
               </div>
               <button
                 type="button"
@@ -1506,7 +1533,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">错题目录</p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按上传时间顺序查看，勾选后可直接生成一份错题练习。</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">最新上传的题目排在最上方，题号沿用上传顺序。勾选后可直接生成一份错题练习。</p>
                         </div>
                         <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                           {memberNotebookRecords.length} 题
