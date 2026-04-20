@@ -310,6 +310,20 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertIn("lim(x → 3⁻)", portable)
         self.assertIn("f(3)≠lim(x → 3)", portable)
 
+    def test_build_portable_wrong_question_text_normalizes_bare_latex_fragments_outside_math_delimiters(self):
+        portable = pdf_engine._build_portable_wrong_question_text(
+            "已知函数 f(x)=(x-1)e^{-ax}（a \\in \\mathbbR），e=2.71828\\ldots (2) 若 a>e，证明：存在实数 m 使得方程 |f(x)|=m 恰有三个不同的根，且 a<m<a\\frac{a+e}{ae}-1。"
+        )
+
+        self.assertNotIn("\\in", portable)
+        self.assertNotIn("\\mathbb", portable)
+        self.assertNotIn("\\ldots", portable)
+        self.assertNotIn("\\frac", portable)
+        self.assertIn("∈", portable)
+        self.assertRegex(portable, "ℝ|R")
+        self.assertIn("...", portable)
+        self.assertIn("(a+e)/(ae)", portable)
+
 
 if __name__ == "__main__":
     unittest.main()
