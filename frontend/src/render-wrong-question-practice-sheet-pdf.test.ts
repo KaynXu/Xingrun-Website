@@ -33,6 +33,8 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.equal((markup.match(/class="writing-card"/g) || []).length, 1);
   assert.match(markup, /redo-work-area/);
   assert.match(markup, /redo-line/);
+  assert.match(markup, /重做这题/);
+  assert.doesNotMatch(markup, /可选/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
   assert.match(markup, /xr-latex-preview/);

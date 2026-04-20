@@ -129,7 +129,7 @@ function buildWritingSection(reasonPrompt, improvementPrompt) {
 function buildRedoWorkArea() {
   return `
     <section class="redo-work-area">
-      <div class="redo-work-label">重做这题（可选）</div>
+      <div class="redo-work-label">重做这题</div>
       <div class="redo-lines">
         ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
       </div>
