@@ -771,17 +771,31 @@ def _run_wrong_question_practice_generation_job(
             title = str((generated or {}).get("title") or "").strip() or f"{sheet.get('student_name_snapshot') or '学生'} 错题练习"
             output_path = str(_wrong_question_practice_sheet_pdf_path(sheet_id))
 
-            try:
-                pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
-                    student_name=str(sheet.get("student_name_snapshot") or ""),
-                    class_name=str(sheet.get("class_name_snapshot") or ""),
-                    teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
-                    title=title,
-                    items=merged_items,
-                    output_path=output_path,
-                )
-            except Exception:
-                logger.exception("Wrong question practice PDF generation failed for sheet %s", sheet_id)
+            pdf_path = ""
+            pdf_generation_succeeded = False
+            for attempt in range(2):
+                try:
+                    pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                        student_name=str(sheet.get("student_name_snapshot") or ""),
+                        class_name=str(sheet.get("class_name_snapshot") or ""),
+                        teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
+                        title=title,
+                        items=merged_items,
+                        output_path=output_path,
+                    )
+                    pdf_generation_succeeded = True
+                    break
+                except Exception:
+                    logger.exception(
+                        "Wrong question practice PDF generation failed for sheet %s (attempt %s/2)",
+                        sheet_id,
+                        attempt + 1,
+                    )
+                    if attempt == 1:
+                        mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")
+                        return
+
+            if not pdf_generation_succeeded:
                 mark_wrong_question_practice_sheet_failed(sheet_id, "PDF 生成失败，请稍后重试")
                 return
 
