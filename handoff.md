@@ -6,7 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-04-20 已按标准 release 流程把本地 `develop(67edf47)` 合到 `master(776b534)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 776b534`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这轮已顺手清理生产机仓库：删除了根目录历史备份文件与 `frontend/dist.prev/`，把运行时 `data/` 和备份模式收进服务器本地 `.git/info/exclude`，并移除了上轮部署临时 stash `pre-release-20260420-master-deploy`；当前仍保留更早的历史 stash，后续如需深清应单独做维护窗口。
+- 2026-04-20 已再次按标准 release 流程把本地 `develop(0c3278d)` 合到 `master(4c6e90b)` 并部署到生产机 `49.234.185.86`：当前已确认 `local master == origin/master == production HEAD == 4c6e90b`，生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。这次发布已把错题练习文案收口、错题练习记录删除按钮，以及前一轮积分/异步错题练习链路调整一起带上生产；生产机仍沿用 GitHub SSH over 443 直拉 `master` + 前端 build + `pm2 restart xingrun` 的标准路径。
 - 2026-04-20 网站端智能错题 notebook 左侧目录已改为按上传时间正序展示，并新增 `全部 / 未掌握 / 已掌握` 掌握状态筛选；打开学生 notebook 时默认定位到最新一题，删除当前题后会优先跳到相邻题，方便老师顺着一份学生错题本逐题看。
 - 2026-04-20 网站端“智能错题”已补上老师端 `错题练习` 首版闭环，当前入口在学生 notebook 弹窗内：左侧题目目录可勾选本地 `wechat_mp` 且 `recognized + active` 的错题，点击 `生成错题练习` 后会为该学生创建一份独立练习单任务，并把记录持久化到本地服务器 SQLite。前端同一弹窗已新增 `错题练习记录` 页签，可查看历史生成记录、状态，以及 `预览 PDF / 下载 PDF` 入口；后端也已补齐 `/api/wrong-question-practice-sheets` 创建/列表/详情链路和 `/api/wrong-question-practice-sheets/<id>/pdf(/download)` PDF 访问路由。
 - 2026-04-20 错题练习生成链路当前已按业务要求继续收口：几何题在 PDF 里保留原题图片，非几何题走真实题目文本；每题下方现在优先让孩子先“把错因补完整”，再给一句不喂解题步骤的“下次提醒”，最后写“以后怎么做”的总结，不再出现 `AI 提示` 这类标题。错题练习提示词、浏览器版 PDF 渲染脚本和 ReportLab fallback 都已同步改成这套文案与顺序；当前 proof 已覆盖提示词约束、PDF 文案和存储层。
@@ -114,6 +114,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 当前 release 文档口径的 targeted proof 已通过并用于本次发布，但仓库里 `./.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` 目前仍有 7 条失败，集中在 `test_account_flow`、`test_master_data_store` 和 `test_single_lesson_pdf_unification`，表现为 lesson create 从旧 `201` 语义变成异步 `202/402`、以及 teacher alias 断言仍写死 `Kayn`。这说明全量回归套件和当前积分/alias 语义存在历史漂移；下次如果要把“全量 discover 绿”当硬门槛，需要先单独收这批旧用例。
 - 生产机仓库这轮已经删掉根目录历史备份文件、清掉 `pre-release-20260420-master-deploy`，并把运行时 `data/` 收进服务器本地 exclude；但仓库里仍保留更早的历史 `git stash` 条目，如果后续要继续深清，必须先逐条确认来源，不要直接批量 drop。
 - 这轮错题练习目前只做到“老师端生成 -> PDF 导出发送”，还没有学生在线回填答案或老师回看学生填写结果；数据库里虽然已保存生成记录和每题 AI 材料，但学生作答态、提交态和二次点评链路还不存在。
 - 当前 notebook 左侧在“这个学生只有 1 道可用于练习的题”时会默认选中它，目的是减少老师多点一步；如果后续用户明确希望“必须手动勾选后才能生成”，这里需要再单独改交互。
@@ -153,6 +154,10 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `4c6e90b` `Merge branch 'develop'`
+- `0c3278d` `feat: add wrong question practice sheet deletion`
+- `898fc70` `积分系统：错题练习/微信图片识别/课堂反馈补充扣费`
+- `101b828` `fix: refine wrong question practice reflection copy`
 - `776b534` `Merge branch 'develop'`
 - `67edf47` `智能错题：错题库按上传时间正序展示，新增掌握状态筛选`
 - `cb01975` `Merge branch 'develop'`
