@@ -113,7 +113,6 @@ C_WARN     = colors.HexColor('#c0392b')
 C_GREY     = colors.HexColor('#666666')
 
 BLANK      = '＿＿＿＿＿'  # 标准空格（5个全角下划线）
-PRACTICE_BLANK = BLANK * 2
 
 PAGE_W, PAGE_H = A4
 LM = RM = 1.8 * cm
@@ -387,40 +386,6 @@ def _normalize_blanks(text: str) -> str:
     text = _latex_to_readable(text)
     text = text.replace('____', BLANK)
     return html.escape(text)
-
-
-def _normalize_wrong_question_practice_prompt(text: str) -> str:
-    normalized = _latex_to_readable(text)
-    normalized = re.sub(r"[＿_]{4,}", PRACTICE_BLANK, normalized)
-    return html.escape(normalized)
-
-
-def _split_wrong_question_practice_section(text: str, fallback_title: str) -> tuple[str, str]:
-    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    lines = [line.strip() for line in normalized.split("\n") if line.strip()]
-    if len(lines) >= 2:
-        return lines[0], "\n".join(lines[1:])
-    if len(lines) == 1:
-        return fallback_title, lines[0]
-    return fallback_title, ""
-
-
-def _build_wrong_question_practice_redo_lines():
-    rows = [[""]] * 10
-    table = Table(rows, colWidths=[CONTENT_W], rowHeights=[0.78 * cm] * len(rows))
-    table.setStyle(
-        TableStyle(
-            [
-                ('TOPPADDING', (0, 0), (-1, -1), 0),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-                ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-                ('LINEBELOW', (0, 0), (-1, -2), 0.6, colors.HexColor('#cbd5e1')),
-                ('LINEBELOW', (0, -1), (-1, -1), 0.6, colors.HexColor('#cbd5e1')),
-            ]
-        )
-    )
-    return table
 
 
 def _day_header(label: str, time_note: str, color, styles: dict):
@@ -825,100 +790,6 @@ def _generate_student_wrong_question_library_pdf_via_reportlab(
     return str(destination)
 
 
-def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
-    *,
-    student_name: str,
-    class_name: str,
-    teacher_name: str,
-    title: str,
-    items: list[dict],
-    output_path: str,
-) -> str:
-    _ensure_fonts()
-    styles = _make_styles()
-    destination = Path(output_path).resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-
-    doc = SimpleDocTemplate(
-        str(destination),
-        pagesize=A4,
-        leftMargin=LM,
-        rightMargin=RM,
-        topMargin=1.5 * cm,
-        bottomMargin=1.5 * cm,
-        title=title,
-    )
-
-    story = [
-        _spacer(0.4),
-        Paragraph(html.escape(title), styles["title"]),
-        Paragraph(f"学生：{html.escape(student_name)}", styles["meta"]),
-        Paragraph(f"班级：{html.escape(class_name)}", styles["meta"]),
-        Paragraph(f"老师：{html.escape(teacher_name)}", styles["meta"]),
-        Paragraph(f"题目数量：{len(items)}", styles["meta"]),
-        HRFlowable(width=CONTENT_W, thickness=1.2, color=C_DAY1, spaceAfter=10),
-    ]
-
-    for index, item in enumerate(items, start=1):
-        question_order = int(item.get("question_order") or index)
-        reason_title, reason_prompt = _split_wrong_question_practice_section(
-            str(item.get("reason_blank_prompt") or ""),
-            "先梳理错因",
-        )
-        improvement_title, improvement_prompt = _split_wrong_question_practice_section(
-            str(item.get("improvement_summary_prompt") or ""),
-            "再写你的想法",
-        )
-        if index > 1:
-            story.append(PageBreak())
-        story.append(Paragraph(f"第 {question_order} 题", styles["section"]))
-        story.append(Paragraph("题目内容", styles["tip"]))
-        if item.get("is_geometry"):
-            story.append(_build_wrong_question_geometry_image_card(str(item.get("image_url_snapshot") or ""), styles))
-        else:
-            story.append(
-                _box(
-                    [
-                        Paragraph(
-                            html.escape(_build_portable_wrong_question_text(str(item.get("question_text_snapshot") or ""))),
-                            styles["body"],
-                        )
-                    ],
-                    C_LIGHT_BG,
-                    C_BORDER,
-                )
-            )
-
-        story.append(
-            _box(
-                [
-                    Paragraph(html.escape(reason_title), styles["section"]),
-                    Paragraph(_normalize_wrong_question_practice_prompt(reason_prompt), styles["fill"]),
-                ],
-                colors.white,
-                C_BORDER,
-            )
-        )
-        story.append(_spacer(0.12))
-        story.append(
-            _box(
-                [
-                    Paragraph(html.escape(improvement_title), styles["section"]),
-                    Paragraph(_normalize_wrong_question_practice_prompt(improvement_prompt), styles["fill"]),
-                ],
-                colors.white,
-                C_BORDER,
-            )
-        )
-        story.append(_spacer(0.15))
-        story.append(Paragraph("重做这题", styles["tip"]))
-        story.append(_spacer(0.05))
-        story.append(_build_wrong_question_practice_redo_lines())
-
-    doc.build(story)
-    return str(destination)
-
-
 def generate_student_wrong_question_library_pdf(
     *,
     student_name: str,
@@ -964,31 +835,14 @@ def generate_wrong_question_practice_sheet_pdf(
     items: list[dict],
     output_path: str,
 ) -> str:
-    try:
-        return _render_wrong_question_practice_sheet_pdf_via_browser(
-            student_name=student_name,
-            class_name=class_name,
-            teacher_name=teacher_name,
-            title=title,
-            items=items,
-            output_path=output_path,
-        )
-    except Exception as browser_error:
-        try:
-            return _generate_wrong_question_practice_sheet_pdf_via_reportlab(
-                student_name=student_name,
-                class_name=class_name,
-                teacher_name=teacher_name,
-                title=title,
-                items=items,
-                output_path=output_path,
-            )
-        except Exception as reportlab_error:
-            raise RuntimeError(
-                "错题练习 PDF 生成失败："
-                f"浏览器渲染失败：{browser_error}；"
-                f"ReportLab 回退失败：{reportlab_error}"
-            ) from reportlab_error
+    return _render_wrong_question_practice_sheet_pdf_via_browser(
+        student_name=student_name,
+        class_name=class_name,
+        teacher_name=teacher_name,
+        title=title,
+        items=items,
+        output_path=output_path,
+    )
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────

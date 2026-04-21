@@ -319,7 +319,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertNotIn("\\mathbb", portable)
         self.assertNotIn("\\ldots", portable)
 
-    def test_generate_wrong_question_practice_sheet_pdf_falls_back_to_reportlab_when_browser_render_fails(self):
+    def test_generate_wrong_question_practice_sheet_pdf_requires_browser_render(self):
         items = [
             {
                 "question_order": 1,
@@ -336,20 +336,20 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             "pdf_engine.subprocess.run",
             return_value=subprocess.CompletedProcess(["node"], 1, "", "browser unavailable"),
         ):
-            result = pdf_engine.generate_wrong_question_practice_sheet_pdf(
-                student_name="Alice",
-                class_name="六年级 1 班",
-                teacher_name="平台管理员",
-                title="Alice 错题练习",
-                items=items,
-                output_path=str(output_path),
-            )
+            with self.assertRaises(RuntimeError) as context:
+                pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                    student_name="Alice",
+                    class_name="六年级 1 班",
+                    teacher_name="平台管理员",
+                    title="Alice 错题练习",
+                    items=items,
+                    output_path=str(output_path),
+                )
 
-        self.assertEqual(result, str(output_path.resolve()))
-        self.assertTrue(output_path.exists())
-        self.assertGreater(output_path.stat().st_size, 0)
+        self.assertIn("browser unavailable", str(context.exception))
+        self.assertFalse(output_path.exists())
 
-    def test_generate_wrong_question_practice_sheet_pdf_surfaces_exit_code_when_browser_and_reportlab_fail(self):
+    def test_generate_wrong_question_practice_sheet_pdf_surfaces_exit_code_when_renderer_outputs_nothing(self):
         items = [
             {
                 "question_order": 1,
@@ -365,9 +365,6 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         with patch(
             "pdf_engine.subprocess.run",
             return_value=subprocess.CompletedProcess(["node"], 137, "", ""),
-        ), patch(
-            "pdf_engine._generate_wrong_question_practice_sheet_pdf_via_reportlab",
-            side_effect=RuntimeError("reportlab boom"),
         ):
             with self.assertRaises(RuntimeError) as context:
                 pdf_engine.generate_wrong_question_practice_sheet_pdf(
@@ -380,7 +377,6 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
                 )
 
         self.assertIn("exit code 137", str(context.exception))
-        self.assertIn("reportlab boom", str(context.exception))
         self.assertFalse(output_path.exists())
 
 
