@@ -235,19 +235,24 @@ test('class management source guards selection and refresh during class save del
   assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
 });
 
-test('class management source adds a specific grade filter and reuses the shared fixed grade options', () => {
+test('class management source adds grade and subject filters and reuses the shared fixed grade options', () => {
   const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.match(classManagementBlock, /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
+  assert.match(classManagementBlock, /const \[selectedSubjectFilter, setSelectedSubjectFilter\] = useState<string>\('全部学科'\)/);
+  assert.match(classManagementBlock, /const classSubjectFilterOptions = \['全部学科',[\s\S]*new Set\(classes\.map\(\(item\) => item\.subject\.trim\(\)\)\.filter\(Boolean\)\)/);
   assert.match(appSource, sharedGradeOptionsPattern);
   assert.match(appSource, /const gradeFilterOptions\s*=\s*\['全部'\s*,\s*\.\.\.gradeOptions\s*,\s*'未绑定'\s*\];/);
   assert.match(classManagementBlock, /const filteredClasses = classes\.filter\(\(item\) => \{/);
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '全部'\) \{\s*return true;\s*\}/);
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '未绑定'\) \{\s*return item\.teacher_user_id == null;\s*\}/);
+  assert.match(classManagementBlock, /if \(selectedSubjectFilter !== '全部学科' && item\.subject !== selectedSubjectFilter\) \{\s*return false;\s*\}/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'grade', e\.target\.value\)\}/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{editingFormState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(editingClass\.id, 'grade', e\.target\.value\)\}/);
   assert.match(appSource, /gradeOptions\.includes\(\s*[^)]*grade[^)]*\)/);
   assert.match(appSource, /请选择年级/);
+  assert.match(appSource, /学科不能为空/);
+  assert.match(appSource, /placeholder="如：数学 3\.0"/);
 });
 
 test('class management source uses class-centric teacher binding instead of user checkbox matrices', () => {

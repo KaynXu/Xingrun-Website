@@ -2,16 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  assignLessonCardsToPeriods,
+  COURSE_CALENDAR_TIME_BLOCKS,
+  assignScheduleCardsToTimeBlocks,
   buildClassStatusRailData,
   getWeekDates,
   getWeekRangeLabel,
-  joinClassesAndLessons,
+  joinClassesAndSchedules,
   summarizePendingRecords,
   summarizeTeacherLoad,
 } from './courseCalendarData';
 
-test('course calendar data helpers build a weekly demo view from classes and lessons', () => {
+test('course calendar data helpers build an independent six-block schedule from classes', () => {
   const classes = [
     {
       id: 1,
@@ -33,48 +34,18 @@ test('course calendar data helpers build a weekly demo view from classes and les
     },
   ];
 
-  const lessons = [
+  const schedules = [
     {
       id: 101,
       class_id: 1,
       date: '2026-03-30',
-      subject: '数学',
-      grade: '高一',
-      topic: '函数入门',
-      summary: '函数概念',
-      weak_points: '',
-      pdf_path: '',
-      created_at: '2026-03-30 10:00:00',
-      session: '上午',
+      time_block: '08:00-10:00',
     },
     {
       id: 102,
       class_id: 2,
       date: '2026-03-31',
-      subject: '英语',
-      grade: '高一',
-      topic: '阅读理解',
-      summary: '篇章阅读',
-      weak_points: '',
-      pdf_path: '',
-      created_at: '2026-03-31 19:00:00',
-      session: '晚间',
-      record_status: 'pending',
-    },
-    {
-      id: 103,
-      class_id: 1,
-      date: '2026-04-01',
-      subject: '数学',
-      grade: '高一',
-      topic: '错题复盘',
-      summary: '整理失败重试',
-      weak_points: '',
-      pdf_path: '',
-      created_at: '2026-04-01 20:00:00',
-      session: '晚间',
-      record_status: 'failed',
-      generation_error: 'AI 生成失败，请稍后重试',
+      time_block: '19:00-21:00',
     },
   ];
 
@@ -83,32 +54,30 @@ test('course calendar data helpers build a weekly demo view from classes and les
   assert.equal(weekDates.length, 7);
   assert.equal(weekDates[0], '2026-03-30');
   assert.equal(getWeekRangeLabel('2026-04-01'), '2026.03.30 - 2026.04.05');
+  assert.equal(COURSE_CALENDAR_TIME_BLOCKS.length, 6);
 
-  const joined = joinClassesAndLessons(classes, lessons);
+  const joined = joinClassesAndSchedules(classes, schedules);
   const firstDayCards = joined.filter((card) => card.date === weekDates[0]);
   const secondDayCards = joined.filter((card) => card.date === weekDates[1]);
-  const failedCard = joined.find((card) => card.id === 103);
 
-  const firstDayPeriods = assignLessonCardsToPeriods(firstDayCards);
-  const secondDayPeriods = assignLessonCardsToPeriods(secondDayCards);
+  const firstDayBlocks = assignScheduleCardsToTimeBlocks(firstDayCards);
+  const secondDayBlocks = assignScheduleCardsToTimeBlocks(secondDayCards);
 
-  assert.equal(firstDayPeriods.上午.length, 1);
-  assert.equal(secondDayPeriods.晚间.length, 1);
-  assert.equal(failedCard?.failed, true);
-  assert.equal(failedCard?.pending, false);
+  assert.equal(firstDayBlocks['08:00-10:00'].length, 1);
+  assert.equal(secondDayBlocks['19:00-21:00'].length, 1);
+  assert.equal(firstDayCards[0].className, '高一数学A班');
 
   const teacherLoad = summarizeTeacherLoad(joined);
-  assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.count, 2);
+  assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.count, 1);
 
-  const pendingRecords = summarizePendingRecords(lessons);
-  assert.match(pendingRecords[0]?.label ?? '', /待补录/);
-  assert.equal(pendingRecords[0]?.count, 1);
+  const pendingRecords = summarizePendingRecords(schedules);
+  assert.equal(pendingRecords.length, 0);
 
-  const classStatus = buildClassStatusRailData(classes, lessons);
+  const classStatus = buildClassStatusRailData(classes, schedules);
   assert.equal(classStatus.length, 2);
 });
 
-test('teacher load summarizes scheduled lessons instead of teacher-owned classes', () => {
+test('teacher load summarizes scheduled classes instead of teacher-owned classes', () => {
   const classes = [
     {
       id: 1,
@@ -139,37 +108,22 @@ test('teacher load summarizes scheduled lessons instead of teacher-owned classes
     },
   ];
 
-  const lessons = [
+  const schedules = [
     {
       id: 101,
       class_id: 1,
       date: '2026-03-30',
-      subject: '数学',
-      grade: '高一',
-      topic: '函数入门',
-      summary: '函数概念',
-      weak_points: '',
-      pdf_path: '',
-      created_at: '2026-03-30 10:00:00',
-      session: '上午',
+      time_block: '08:00-10:00',
     },
     {
       id: 102,
       class_id: 2,
       date: '2026-03-31',
-      subject: '英语',
-      grade: '高一',
-      topic: '阅读理解',
-      summary: '篇章阅读',
-      weak_points: '',
-      pdf_path: '',
-      created_at: '2026-03-31 19:00:00',
-      session: '晚间',
-      record_status: 'pending',
+      time_block: '19:00-21:00',
     },
   ];
 
-  const joined = joinClassesAndLessons(classes, lessons);
+  const joined = joinClassesAndSchedules(classes, schedules);
   const teacherLoad = summarizeTeacherLoad(joined);
 
   assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.count, 1);

@@ -70,8 +70,10 @@ from lesson_manager import (
     create_student_for_class,
     create_auth_session,
     create_consultation,
+    create_course_calendar_schedule,
     create_registration_request,
     claim_classes_for_user,
+    delete_course_calendar_schedule,
     delete_wechat_wrong_question_submission,
     delete_wrong_question_practice_sheet,
     delete_user_for_actor,
@@ -85,6 +87,7 @@ from lesson_manager import (
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
+    get_course_calendar_schedule,
     get_current_user,
     get_parent_student_binding,
     get_parent_student_binding_for_student,
@@ -105,6 +108,7 @@ from lesson_manager import (
     list_recent_confirmed_class_feedback_summaries,
     list_consultation_teachers,
     list_consultations_for_actor,
+    list_course_calendar_schedules_for_actor,
     list_lessons,
     list_lessons_for_actor,
     list_wrong_question_practice_sheets_for_student,
@@ -2774,6 +2778,65 @@ def api_classes_list():
     return jsonify(list_classes_for_actor(user) if user.get("role") in {"super_owner", "owner", "admin"} else _filter_classes_for_user(user, list_classes()))
 
 
+@app.route("/api/course-calendar/schedules", methods=["GET"])
+def api_course_calendar_schedules_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        items = list_course_calendar_schedules_for_actor(
+            user,
+            start_date=(request.args.get("start_date") or "").strip(),
+            end_date=(request.args.get("end_date") or "").strip(),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"items": items})
+
+
+@app.route("/api/course-calendar/schedules", methods=["POST"])
+def api_course_calendar_schedule_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    class_id = data.get("class_id")
+    if isinstance(class_id, bool) or not isinstance(class_id, int):
+        return jsonify({"error": "class_id must be an integer"}), 400
+    _, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
+    try:
+        item = create_course_calendar_schedule(
+            class_id=class_id,
+            date_str=(data.get("date") or "").strip(),
+            time_block=(data.get("time_block") or "").strip(),
+            created_by=user["id"],
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"item": item}), 201
+
+
+@app.route("/api/course-calendar/schedules/<int:schedule_id>", methods=["DELETE"])
+def api_course_calendar_schedule_delete(schedule_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    item = get_course_calendar_schedule(schedule_id)
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    _, class_error = _get_accessible_class_or_error(user, item["class_id"])
+    if class_error:
+        return class_error
+    removed = delete_course_calendar_schedule(schedule_id)
+    return jsonify({"ok": True, "removed": removed})
+
+
 @app.route("/api/classes", methods=["POST"])
 def api_class_create():
     user, error = _require_staff()
@@ -2781,12 +2844,16 @@ def api_class_create():
         return error
     data = request.json or {}
     name = (data.get("name") or "").strip()
+    subject = (data.get("subject") or "").strip()
+    grade = (data.get("grade") or "").strip()
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
+    if not subject:
+        return jsonify({"error": "学科不能为空"}), 400
     cid = save_class(
         name=name,
-        subject=data.get("subject", "").strip(),
-        grade=data.get("grade", "").strip(),
+        subject=subject,
+        grade=grade,
         teacher_name=data.get("teacher_name", "").strip(),
         teacher_email=data.get("teacher_email", "").strip(),
         organization_id=user.get("organization_id"),
@@ -3311,8 +3378,12 @@ def api_class_update(class_id):
         return jsonify({"error": "forbidden"}), 403
     data = request.json or {}
     name = (data.get("name") or "").strip()
+    subject = (data.get("subject") or "").strip()
+    grade = (data.get("grade") or "").strip()
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
+    if not subject:
+        return jsonify({"error": "学科不能为空"}), 400
     teacher_name = None
     if "teacher_name" in data:
         teacher_name = (data.get("teacher_name") or "").strip()
@@ -3322,8 +3393,8 @@ def api_class_update(class_id):
     update_class(
         class_id=class_id,
         name=name,
-        subject=data.get("subject", "").strip(),
-        grade=data.get("grade", "").strip(),
+        subject=subject,
+        grade=grade,
         teacher_name=teacher_name,
         teacher_email=teacher_email,
     )

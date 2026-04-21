@@ -928,6 +928,82 @@ class AccountFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(deleted_login.status_code, 401)
 
+    def test_owner_can_delete_member_with_teacher_related_records(self):
+        owner_token, invite = self.create_approved_organization_with_invite(
+            organization_name="Delete Teacher Records School",
+            owner_username="delete_teacher_owner",
+            owner_display_name="Delete Teacher Owner",
+            owner_password="ownerpass123",
+        )
+        owner_me = self.client.get("/api/me", headers=self.auth_headers(owner_token))
+        self.assertEqual(owner_me.status_code, 200)
+        organization_id = owner_me.get_json()["organization_id"]
+
+        join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite["invite_code"],
+                "username": "teacher_with_records",
+                "display_name": "Teacher With Records",
+                "password": "memberpass123",
+                "recovery_phone": "13800000000",
+            },
+        )
+        self.assertEqual(join.status_code, 201)
+        member_id = join.get_json()["user"]["id"]
+
+        class_id = lesson_manager.save_class(
+            "六年级 1 班",
+            subject="数学 3.0",
+            grade="六年级",
+            organization_id=organization_id,
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, member_id)
+        student = lesson_manager.create_student_for_class(class_id, "小星")
+        parent = lesson_manager.upsert_parent_wechat_account(openid="openid-delete-teacher")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=parent["id"],
+            class_id=class_id,
+            student_id=student["id"],
+        )
+        wrong_question = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://example.com/question.jpg",
+            child_raw_reason_text="计算错",
+            question_text="1+1=?",
+        )
+        listed_records = lesson_manager.list_wechat_wrong_question_submissions()
+        selected_record = next(item for item in listed_records if item["id"] == wrong_question["id"])
+        practice_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=member_id,
+            selected_records=[selected_record],
+        )
+        class_invite = lesson_manager.get_or_create_active_class_invite(class_id, member_id)
+        self.assertTrue(class_invite["id"])
+        self.assertTrue(practice_sheet["id"])
+
+        delete_response = self.client.delete(
+            f"/api/admin/users/{member_id}",
+            headers=self.auth_headers(owner_token),
+        )
+
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(delete_response.get_json(), {"ok": True})
+        self.assertIsNone(lesson_manager.get_class_teacher_user_id(class_id))
+        with lesson_manager.get_conn() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM parent_student_bindings WHERE teacher_user_id=?", (member_id,)).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (member_id, member_id)).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT created_by_user_id FROM class_invite_codes WHERE id=?", (class_invite["id"],)).fetchone()["created_by_user_id"],
+                None,
+            )
+
     def test_owner_cannot_delete_member_in_other_organization(self):
         alpha_owner_token, _ = self.create_approved_organization_with_invite(
             organization_name="Alpha School",
@@ -2351,6 +2427,22 @@ class AccountFlowTestCase(unittest.TestCase):
 
         classes = self.client.get("/api/classes")
         self.assertEqual(classes.status_code, 401)
+
+    def test_class_create_requires_subject(self):
+        owner_token = self.login_as_kayn()
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(owner_token),
+            json={
+                "name": "六年级 1 班",
+                "subject": "",
+                "grade": "六年级",
+            },
+        )
+
+        self.assertEqual(create_class.status_code, 400)
+        self.assertEqual(create_class.get_json()["error"], "学科不能为空")
 
     def test_admin_can_manage_classes_and_assign_member_assignments(self):
         owner_login = self.client.post(

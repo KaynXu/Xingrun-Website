@@ -25,7 +25,7 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
 
         self.assertEqual(
             normalize_portable_text(text),
-            "a²+b²/c²+d²",
+            "(a²+b²)/(c²+d²)",
         )
 
     def test_normalize_portable_text_supports_double_escaped_bracket_math(self):
@@ -35,6 +35,38 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
             normalize_portable_text(text),
             "x²+y²≥1",
         )
+
+    def test_normalize_portable_text_repairs_json_consumed_latex_commands(self):
+        text = (
+            "The function $f$ is continuous at $x = 3$.\n"
+            "$$f(3) = 1 + \text{lim}_{x \to 3^-} f(x) + \frac{1}{2}$$\n"
+            "(C) $f(3) \neq \text{lim}_{x \to 3} f(x)$"
+        )
+
+        normalized = normalize_portable_text(text)
+
+        self.assertNotIn("\t", normalized)
+        self.assertNotIn("ext{", normalized)
+        self.assertIn("lim(x → 3⁻)", normalized)
+        self.assertIn("f(3)≠lim(x → 3)", normalized)
+
+    def test_normalize_portable_text_normalizes_bare_latex_fragments_like_wrong_question_text(self):
+        text = (
+            "已知函数 f(x)=(x-1)e^{-ax}（a \\in \\mathbbR），e=2.71828\\ldots，"
+            "且 a<m<a\\frac{a+e}{ae}-1。"
+        )
+
+        normalized = normalize_portable_text(text)
+
+        self.assertNotIn("\\in", normalized)
+        self.assertNotIn("\\mathbb", normalized)
+        self.assertNotIn("\\ldots", normalized)
+        self.assertNotIn("\\frac", normalized)
+        self.assertIn("e⁻ᵃˣ", normalized)
+        self.assertIn("∈", normalized)
+        self.assertIn("ℝ", normalized)
+        self.assertIn("2.71828...", normalized)
+        self.assertIn("(a+e)/(ae)", normalized)
 
 
 if __name__ == "__main__":
