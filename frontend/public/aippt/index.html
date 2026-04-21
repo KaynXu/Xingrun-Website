@@ -637,20 +637,62 @@
 
     .feature-writing-preview {
       grid-area: prompt;
-      align-self: end;
+      align-self: stretch;
+      display: grid;
+      gap: 10px;
       width: min(560px, 100%);
-      padding: 8px 12px 9px;
-      border-radius: 4px;
-      border: 1px solid rgba(10, 32, 56, 0.14);
-      background: #f8fbff;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(125, 190, 236, 0.32);
+      background: #edf7ff;
       color: #102842;
       box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
       font-size: clamp(9px, 0.72vw, 11px);
-      line-height: 1.62;
+      line-height: 1.55;
     }
 
-    .feature-writing-preview p {
+    .feature-writing-preview p,
+    .feature-writing-preview ol {
       margin: 0;
+    }
+
+    .preview-question-card,
+    .preview-writing-card {
+      background: #fbfdff;
+      border: 1px solid rgba(123, 180, 226, 0.32);
+      color: #17324f;
+      box-shadow: 0 8px 22px rgba(55, 111, 163, 0.1);
+    }
+
+    .preview-question-card {
+      min-height: 104px;
+      padding: 9px 12px 8px;
+      border-radius: 10px;
+    }
+
+    .preview-question-card strong {
+      color: #0f3358;
+      font-weight: 700;
+    }
+
+    .preview-question-card em {
+      font-style: italic;
+      font-weight: 650;
+    }
+
+    .preview-question-card ol {
+      display: grid;
+      gap: 2px;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .preview-writing-card {
+      display: grid;
+      gap: 4px;
+      min-height: 72px;
+      padding: 8px 10px;
+      border-radius: 2px;
     }
 
     .feature-writing-preview .blank {
@@ -664,6 +706,7 @@
 
     .feature-writing-preview .blank.short { width: 50px; }
     .feature-writing-preview .blank.long { width: 108px; }
+    .feature-writing-preview .blank.xlong { width: 142px; }
 
     .system-grid {
       display: grid;
@@ -1498,9 +1541,20 @@
           </article>
         </div>
         <article class="feature-writing-preview reveal" data-reveal-group="feature-final-writing-preview">
-          <p>我这题不是算错，而是对相关<span class="blank long"></span>完全不熟，连基本的<span class="blank"></span>都想不起来，所以没法继续<span class="blank"></span>和常见<span class="blank short"></span>上；再</p>
-          <p>接下来我要先回顾这个知识点的<span class="blank long"></span>和常见<span class="blank"></span>，先判断用的是哪一块内容。</p>
-          <p>遇到这类型，先判断用的是哪一块内容。</p>
+          <div class="preview-question-card">
+            <p><strong>例13:（2024年6月湖北省武汉市G联考 高二下 期末18）</strong></p>
+            <p>已知函数 <em>f(x)=e<sup>x</sup>+(a-1)x, a∈R</em>。</p>
+            <ol>
+              <li>① 若关于 <em>x</em> 的方程 <em>f(x)=ln x(x&gt;0)</em> 有两根 <em>x<sub>1</sub>, x<sub>2</sub></em>（其中 <em>x<sub>1</sub>&lt;x<sub>2</sub></em>），</li>
+              <li>求 <em>a</em> 的取值范围；</li>
+              <li>② 当 <em>x&lt;e<sup>a</sup></em> 时，求 <em>x<sub>1</sub></em> 的取值范围。</li>
+            </ol>
+          </div>
+          <div class="preview-writing-card">
+            <p>我这题不是算错，而是对相关<span class="blank xlong"></span>完全不熟，连基本的<span class="blank"></span>都想不起来，所以没法继续<span class="blank"></span>和常见<span class="blank short"></span>上；再</p>
+            <p>接下来我要先回顾这个知识点的<span class="blank long"></span>和常见<span class="blank"></span>；</p>
+            <p>遇到这类型，先判断用的是哪一块内容。</p>
+          </div>
         </article>
       </div>
     </section>
