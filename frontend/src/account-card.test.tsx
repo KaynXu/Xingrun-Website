@@ -554,6 +554,19 @@ test('approval page source loads and renders member teaching binding summaries',
   assert.match(approvalBlock[0], /mini_teacher_bound/);
 });
 
+test('teacher alias mapping source can prefill from website members', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /const teacherAliasMemberOptions = users\.filter/);
+  assert.match(approvalBlock[0], /const handleTeacherAliasMemberChange = \(userIdValue: string\) => \{/);
+  assert.match(approvalBlock[0], /setTaFormUserId\(selectedUser\.username \|\| ''\);/);
+  assert.match(approvalBlock[0], /setTaFormDisplayName\(selectedUser\.name\);/);
+  assert.match(approvalBlock[0], />从网站成员选择<\/label>/);
+  assert.match(approvalBlock[0], /onChange=\{\(e\) => handleTeacherAliasMemberChange\(e\.target\.value\)\}/);
+});
+
 test('approval page source removes the start binding action from member cards', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
@@ -697,6 +710,7 @@ test('class management source embeds teacher assignment inside each class card a
   assert.ok(classManagementBlock);
   assert.match(source, /const normalizeClassNameInput = \(value: string\): string =>/);
   assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
+  assert.match(source, /\['七年级三班', '七年级 3 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClassTeacherUserId == null \? '' : String\(newClassTeacherUserId\)\}/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{editingCurrentTeacherUserId == null \? '' : String\(editingCurrentTeacherUserId\)\}/);
@@ -725,14 +739,17 @@ test('class management source opens both existing and new class editors in a mod
   assert.doesNotMatch(classManagementBlock[0], /\{isExpanded && \(/);
 });
 
-test('class management source moves naming guidance to the page header and removes per-card guidance blocks', () => {
+test('class management source explains structured class naming without development examples', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。[\s\S]*命名统一规则/);
-  assert.match(classManagementBlock[0], /班级名称、年级、学科分开维护；学科需要单独输入，可填写“数学 3\.0”这类自定义学科。/);
-  assert.equal((classManagementBlock[0].match(/命名统一规则/g) || []).length, 1);
+  assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。[\s\S]*班级命名规则/);
+  assert.match(classManagementBlock[0], /按「学科 \+ 年级 \+ 班级」维护班级信息，例如：数学七年级三班、物理七年级二班。/);
+  assert.match(classManagementBlock[0], /请分别填写学科、年级和班级名称，系统按「学科 \+ 年级 \+ 班级」理解班级，例如：数学七年级三班。/);
+  assert.match(classManagementBlock[0], /placeholder="如：数学"/);
+  assert.doesNotMatch(classManagementBlock[0], /数学 3\.0/);
+  assert.equal((classManagementBlock[0].match(/班级命名规则/g) || []).length, 1);
 });
 
 test('class management source adds a side-by-side student editor card next to the teacher card', () => {

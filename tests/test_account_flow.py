@@ -852,6 +852,7 @@ class AccountFlowTestCase(unittest.TestCase):
         users = self.client.get("/api/admin/users", headers=self.auth_headers(owner_token))
         self.assertEqual(users.status_code, 200)
         renamed = next(item for item in users.get_json() if item["id"] == member_id)
+        self.assertEqual(renamed["username"], "alpha_member")
         self.assertEqual(renamed["name"], "Alpha Member Renamed")
 
     def test_owner_cannot_update_member_display_name_in_other_organization(self):
@@ -954,7 +955,7 @@ class AccountFlowTestCase(unittest.TestCase):
 
         class_id = lesson_manager.save_class(
             "六年级 1 班",
-            subject="数学 3.0",
+            subject="数学",
             grade="六年级",
             organization_id=organization_id,
         )
