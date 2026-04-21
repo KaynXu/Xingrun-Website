@@ -57,6 +57,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "display_name": display_name,
                 "password": password,
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(submit.status_code, 201)
@@ -509,6 +510,57 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(teacher_by_id["teacher_a"]["display_name"], "Teacher A")
         self.assertEqual(teacher_by_id["dXiaoDi"]["display_name"], "华奥鑫")
         self.assertIn("华老师", teacher_by_id["dXiaoDi"]["aliases"])
+
+    def test_teacher_alias_endpoint_links_external_id_to_website_member(self):
+        member_token = self.create_member_token(username="site_teacher_a", display_name="网站老师A")
+        member_user = self.user_for_token(member_token)
+
+        create_alias = self.client.post(
+            "/api/teacher-aliases",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "wecom_userid": "wecom_external_a",
+                "display_name": "企微老师A",
+                "linked_username": "site_teacher_a",
+                "aliases": ["A老师"],
+            },
+        )
+
+        self.assertEqual(create_alias.status_code, 201)
+        created_alias = create_alias.get_json()
+        self.assertEqual(created_alias["linked_username"], "site_teacher_a")
+
+        teacher_options = self.client.get(
+            "/api/consultation-teachers",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(teacher_options.status_code, 200)
+        teacher_by_id = {item["teacher_id"]: item for item in teacher_options.get_json()}
+        self.assertIn("site_teacher_a", teacher_by_id)
+        self.assertNotIn("wecom_external_a", teacher_by_id)
+        self.assertIn("wecom_external_a", teacher_by_id["site_teacher_a"]["aliases"])
+
+        consultation = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-22",
+                "parent_wechat_name": "张妈妈",
+                "child_name": "张小明",
+                "grade": "五年级",
+                "receiving_teacher": "企微老师A",
+                "teacher_id": "wecom_external_a",
+                "consultation_subject": "数学",
+                "need_detail": "想补基础",
+                "source_channel": "朋友介绍",
+                "follow_up_status": "待邀约",
+            },
+        )
+
+        self.assertEqual(consultation.status_code, 201)
+        payload = consultation.get_json()
+        self.assertEqual(payload["assigned_user_id"], member_user["id"])
+        self.assertEqual(payload["teacher_id"], "site_teacher_a")
 
     @patch("app.parse_consultation_batch_text")
     def test_ai_parse_endpoint_returns_create_and_explicit_id_update_drafts(self, mock_parse):

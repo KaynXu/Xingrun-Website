@@ -560,8 +560,16 @@ def clean_consultation_batch_input(raw_text: str) -> str:
     return "\n".join(cleaned_lines)
 
 
-def _load_consultation_teacher_aliases() -> dict[str, list[str]]:
-    alias_map: dict[str, list[str]] = {}
+def _normalize_alias_values(raw_aliases: object) -> list[str]:
+    if isinstance(raw_aliases, list):
+        return [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+    if isinstance(raw_aliases, str):
+        return [alias.strip() for alias in raw_aliases.split(",") if alias.strip()]
+    return []
+
+
+def _load_consultation_teacher_alias_records() -> dict[str, dict]:
+    alias_records: dict[str, dict] = {}
     for teacher_file in CONSULTATION_TEACHERS_JSON_CANDIDATES:
         if not teacher_file.exists():
             continue
@@ -573,18 +581,32 @@ def _load_consultation_teacher_aliases() -> dict[str, list[str]]:
             teacher_key = str(teacher_id).strip()
             if not teacher_key:
                 continue
-            normalized_aliases: list[str] = []
-            if isinstance(raw_aliases, list):
-                normalized_aliases = [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
-            elif isinstance(raw_aliases, str):
-                normalized_aliases = [alias.strip() for alias in raw_aliases.split(",") if alias.strip()]
+            linked_username = ""
+            if isinstance(raw_aliases, dict):
+                display_name = str(raw_aliases.get("display_name") or "").strip()
+                linked_username = str(raw_aliases.get("linked_username") or raw_aliases.get("username") or "").strip()
+                normalized_aliases = _normalize_alias_values(raw_aliases.get("aliases"))
+                if display_name and display_name not in normalized_aliases:
+                    normalized_aliases.insert(0, display_name)
+            else:
+                normalized_aliases = _normalize_alias_values(raw_aliases)
             if not normalized_aliases:
                 continue
-            existing = alias_map.setdefault(teacher_key, [])
+            existing = alias_records.setdefault(
+                teacher_key,
+                {
+                    "wecom_userid": teacher_key,
+                    "display_name": normalized_aliases[0],
+                    "aliases": [],
+                    "linked_username": "",
+                },
+            )
             for alias in normalized_aliases:
-                if alias not in existing:
-                    existing.append(alias)
-    return alias_map
+                if alias not in existing["aliases"]:
+                    existing["aliases"].append(alias)
+            if linked_username and not existing["linked_username"]:
+                existing["linked_username"] = linked_username
+    return alias_records
 
 
 def _get_teachers_json_path() -> Path:
@@ -595,57 +617,108 @@ def _get_teachers_json_path() -> Path:
     return CONSULTATION_TEACHERS_JSON_CANDIDATES[0]
 
 
-def _save_teacher_aliases(alias_map: dict[str, list[str]]) -> None:
+def _save_teacher_alias_records(alias_records: dict[str, dict]) -> None:
     path = _get_teachers_json_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(alias_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    serialized: dict[str, object] = {}
+    for teacher_id, record in sorted(alias_records.items(), key=lambda item: item[0].lower()):
+        aliases = _normalize_alias_values(record.get("aliases"))
+        display_name = str(record.get("display_name") or (aliases[0] if aliases else "")).strip()
+        linked_username = str(record.get("linked_username") or "").strip()
+        if display_name and display_name not in aliases:
+            aliases.insert(0, display_name)
+        if not aliases:
+            continue
+        if linked_username:
+            serialized[teacher_id] = {
+                "display_name": aliases[0],
+                "aliases": aliases,
+                "linked_username": linked_username,
+            }
+        else:
+            serialized[teacher_id] = aliases
+    path.write_text(json.dumps(serialized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def get_teacher_alias_entries() -> list[dict]:
     """Return raw alias entries from teachers.json as a list of dicts."""
-    alias_map = _load_consultation_teacher_aliases()
+    alias_records = _load_consultation_teacher_alias_records()
     entries = []
-    for teacher_id, aliases in sorted(alias_map.items(), key=lambda x: x[0].lower()):
+    for teacher_id, record in sorted(alias_records.items(), key=lambda x: x[0].lower()):
+        aliases = record["aliases"]
         entries.append({
             "wecom_userid": teacher_id,
-            "display_name": aliases[0] if aliases else teacher_id,
+            "display_name": record.get("display_name") or (aliases[0] if aliases else teacher_id),
             "aliases": aliases,
+            "linked_username": record.get("linked_username", ""),
         })
     return entries
 
 
-def upsert_teacher_alias(wecom_userid: str, display_name: str, aliases: list[str] | None = None) -> dict:
+def _resolve_active_username(username: str) -> str:
+    username = username.strip()
+    if not username:
+        return ""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT username FROM users WHERE lower(username)=lower(?) AND status='active'",
+            (username,),
+        ).fetchone()
+    return row["username"] if row else ""
+
+
+def upsert_teacher_alias(
+    wecom_userid: str,
+    display_name: str,
+    aliases: list[str] | None = None,
+    linked_username: str = "",
+) -> dict:
     """Create or update a teacher alias mapping. Returns the updated entry."""
     wecom_userid = wecom_userid.strip()
     display_name = display_name.strip()
+    linked_username = linked_username.strip()
     if not wecom_userid:
         raise ValueError("企微ID不能为空")
     if not display_name:
         raise ValueError("中文名不能为空")
-    alias_map = _load_consultation_teacher_aliases()
+    if linked_username:
+        linked_username = _resolve_active_username(linked_username)
+        if not linked_username:
+            raise ValueError("关联的网站成员不存在")
+    alias_records = _load_consultation_teacher_alias_records()
     merged = [display_name]
     for a in (aliases or []):
         a = a.strip()
         if a and a not in merged:
             merged.append(a)
-    alias_map[wecom_userid] = merged
-    _save_teacher_aliases(alias_map)
-    return {"wecom_userid": wecom_userid, "display_name": display_name, "aliases": merged}
+    alias_records[wecom_userid] = {
+        "wecom_userid": wecom_userid,
+        "display_name": display_name,
+        "aliases": merged,
+        "linked_username": linked_username,
+    }
+    _save_teacher_alias_records(alias_records)
+    return {
+        "wecom_userid": wecom_userid,
+        "display_name": display_name,
+        "aliases": merged,
+        "linked_username": linked_username,
+    }
 
 
 def delete_teacher_alias(wecom_userid: str) -> bool:
     """Delete a teacher alias mapping. Returns True if deleted, False if not found."""
     wecom_userid = wecom_userid.strip()
-    alias_map = _load_consultation_teacher_aliases()
-    if wecom_userid not in alias_map:
+    alias_records = _load_consultation_teacher_alias_records()
+    if wecom_userid not in alias_records:
         return False
-    del alias_map[wecom_userid]
-    _save_teacher_aliases(alias_map)
+    del alias_records[wecom_userid]
+    _save_teacher_alias_records(alias_records)
     return True
 
 
 def _get_consultation_teacher_directory() -> dict[str, str]:
-    alias_map = _load_consultation_teacher_aliases()
+    alias_records = _load_consultation_teacher_alias_records()
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -655,24 +728,32 @@ def _get_consultation_teacher_directory() -> dict[str, str]:
             """
         ).fetchall()
     directory: dict[str, str] = {}
+    display_by_username: dict[str, str] = {}
     for row in rows:
         username = (row["username"] or "").strip()
         display_name = (row["display_name"] or "").strip()
         if username and display_name:
+            display_by_username[username.lower()] = display_name
             directory[username.lower()] = display_name
         if display_name:
             directory[display_name.lower()] = display_name
-    for teacher_id, aliases in alias_map.items():
+    for teacher_id, record in alias_records.items():
         teacher_key = teacher_id.lower()
         if not teacher_key:
             continue
-        if aliases and teacher_key not in directory:
-            directory[teacher_key] = aliases[0]
-        if aliases:
-            for alias in aliases:
-                alias_key = alias.lower()
-                if alias_key and alias_key not in directory:
-                    directory[alias_key] = aliases[0]
+        linked_username = str(record.get("linked_username") or "").strip()
+        aliases = record.get("aliases") or []
+        display_name = (
+            display_by_username.get(linked_username.lower())
+            or str(record.get("display_name") or "").strip()
+            or (aliases[0] if aliases else "")
+        )
+        if not display_name:
+            continue
+        for alias in [teacher_id, linked_username, *aliases]:
+            alias_key = str(alias or "").strip().lower()
+            if alias_key and alias_key not in directory:
+                directory[alias_key] = display_name
     return directory
 
 
@@ -685,11 +766,21 @@ def resolve_teacher_username_to_user_id(username: str) -> Optional[int]:
             "SELECT id FROM users WHERE username=? AND status='active'",
             (username,),
         ).fetchone()
+    if row:
+        return row["id"]
+    _, resolved_username = _normalize_consultation_teacher_assignment("", username)
+    if not resolved_username or resolved_username == username:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM users WHERE username=? AND status='active'",
+            (resolved_username,),
+        ).fetchone()
     return row["id"] if row else None
 
 
 def list_consultation_teachers() -> list[dict]:
-    alias_map = _load_consultation_teacher_aliases()
+    alias_records = _load_consultation_teacher_alias_records()
     teacher_entries: dict[str, dict] = {}
 
     with get_conn() as conn:
@@ -715,12 +806,13 @@ def list_consultation_teachers() -> list[dict]:
         username_lower_map[teacher_id.lower()] = teacher_id
         if display_name:
             display_name_lower_map[display_name.lower()] = teacher_id
-        # Also try to pick up aliases from alias_map using case-insensitive key
         aliases: list[str] = []
-        for alias_key, alias_list in alias_map.items():
-            if alias_key.lower() == teacher_id.lower():
-                aliases = alias_list
-                break
+        for alias_key, record in alias_records.items():
+            linked_username = str(record.get("linked_username") or "").strip()
+            if alias_key.lower() == teacher_id.lower() or linked_username.lower() == teacher_id.lower():
+                aliases.extend(record.get("aliases") or [])
+                if alias_key.lower() != teacher_id.lower():
+                    aliases.append(alias_key)
         merged_aliases: list[str] = []
         for alias in [display_name, *aliases]:
             normalized = alias.strip()
@@ -732,7 +824,12 @@ def list_consultation_teachers() -> list[dict]:
             "aliases": merged_aliases,
         }
 
-    for teacher_id, aliases in alias_map.items():
+    for teacher_id, record in alias_records.items():
+        aliases = record.get("aliases") or []
+        linked_username = str(record.get("linked_username") or "").strip()
+        linked_canonical = username_lower_map.get(linked_username.lower()) if linked_username else None
+        if linked_canonical:
+            continue
         # Case-insensitive match against DB usernames
         canonical = username_lower_map.get(teacher_id.lower())
         if canonical:
@@ -751,14 +848,14 @@ def list_consultation_teachers() -> list[dict]:
                 break
         if matched_canonical:
             entry = teacher_entries[matched_canonical]
-            for alias in aliases:
+            for alias in [teacher_id, *aliases]:
                 if alias not in entry["aliases"]:
                     entry["aliases"].append(alias)
             continue
         # Truly new teacher only from JSON
         teacher_entries[teacher_id] = {
             "teacher_id": teacher_id,
-            "display_name": aliases[0],
+            "display_name": record.get("display_name") or aliases[0],
             "aliases": aliases[:],
         }
 

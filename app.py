@@ -2638,6 +2638,18 @@ def api_consultation_teachers():
 # ---------- Teacher Alias Mapping (teachers.json CRUD) ----------
 
 
+def _normalize_teacher_alias_linked_username(actor_user: dict, raw_username: str) -> str:
+    username = (raw_username or "").strip()
+    if not username:
+        return ""
+    allowed_users = list_users_for_actor(actor_user)
+    for candidate in allowed_users:
+        candidate_username = (candidate.get("username") or "").strip()
+        if candidate_username and candidate_username.lower() == username.lower() and candidate.get("role") != "super_owner":
+            return candidate_username
+    raise ValueError("关联的网站成员不存在")
+
+
 @app.route("/api/teacher-aliases", methods=["GET"])
 def api_teacher_aliases_list():
     _, error = _require_owner()
@@ -2648,7 +2660,7 @@ def api_teacher_aliases_list():
 
 @app.route("/api/teacher-aliases", methods=["POST"])
 def api_teacher_aliases_create():
-    _, error = _require_owner()
+    user, error = _require_owner()
     if error:
         return error
     body = request.json or {}
@@ -2658,7 +2670,8 @@ def api_teacher_aliases_create():
     if not wecom_userid or not display_name:
         return jsonify({"error": "企微ID和中文名为必填项"}), 400
     try:
-        entry = upsert_teacher_alias(wecom_userid, display_name, aliases)
+        linked_username = _normalize_teacher_alias_linked_username(user, body.get("linked_username") or "")
+        entry = upsert_teacher_alias(wecom_userid, display_name, aliases, linked_username=linked_username)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(entry), 201
@@ -2666,7 +2679,7 @@ def api_teacher_aliases_create():
 
 @app.route("/api/teacher-aliases/<path:wecom_userid>", methods=["PUT"])
 def api_teacher_aliases_update(wecom_userid):
-    _, error = _require_owner()
+    user, error = _require_owner()
     if error:
         return error
     body = request.json or {}
@@ -2675,7 +2688,8 @@ def api_teacher_aliases_update(wecom_userid):
     if not display_name:
         return jsonify({"error": "中文名为必填项"}), 400
     try:
-        entry = upsert_teacher_alias(wecom_userid, display_name, aliases)
+        linked_username = _normalize_teacher_alias_linked_username(user, body.get("linked_username") or "")
+        entry = upsert_teacher_alias(wecom_userid, display_name, aliases, linked_username=linked_username)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(entry)
