@@ -44,6 +44,14 @@ SUPER_OWNER_ROLE = "super_owner"
 OWNER_ROLE = "owner"
 ADMIN_ROLE = "admin"
 MEMBER_ROLE = "member"
+CONFIGURABLE_VISIBLE_PAGES = (
+    "review-generation",
+    "class-feedback-generation",
+    "consultation",
+    "calendar",
+    "smartWrongQuestions",
+    "classes",
+)
 WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
 ORGANIZATION_REQUEST_PENDING = "pending"
 ORGANIZATION_REQUEST_APPROVED = "approved"
@@ -203,6 +211,36 @@ def _is_owner_username(username: str) -> bool:
 
 def _is_super_owner_role(role: str) -> bool:
     return (role or "").strip() == SUPER_OWNER_ROLE
+
+
+def get_default_visible_pages_for_role(role: str) -> list[str]:
+    return list(CONFIGURABLE_VISIBLE_PAGES)
+
+
+def normalize_visible_pages(raw_pages: object) -> list[str]:
+    if not isinstance(raw_pages, list):
+        raise ValueError("visible_pages must be a list")
+    allowed = set(CONFIGURABLE_VISIBLE_PAGES)
+    normalized = []
+    seen = set()
+    for page in raw_pages:
+        if not isinstance(page, str) or page not in allowed:
+            raise ValueError("visible_pages contains invalid page")
+        if page not in seen:
+            seen.add(page)
+            normalized.append(page)
+    return normalized
+
+
+def _load_visible_pages_for_user(row) -> list[str]:
+    keys = row.keys() if hasattr(row, "keys") else []
+    if "visible_pages_json" not in keys or row["visible_pages_json"] in (None, ""):
+        return get_default_visible_pages_for_role(row["role"])
+    try:
+        raw_pages = json.loads(row["visible_pages_json"])
+        return normalize_visible_pages(raw_pages)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return get_default_visible_pages_for_role(row["role"])
 
 
 def _user_exists_with_username(conn: sqlite3.Connection, username: str, exclude_user_id: int = 0) -> bool:
@@ -1572,6 +1610,7 @@ def init_db():
             role            TEXT NOT NULL DEFAULT 'member',
             status          TEXT NOT NULL DEFAULT 'active',
             organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            visible_pages_json TEXT DEFAULT NULL,
             created_at      TEXT DEFAULT (datetime('now','localtime'))
         );
 
@@ -2012,6 +2051,8 @@ def init_db():
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
+        if "visible_pages_json" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN visible_pages_json TEXT DEFAULT NULL")
         _drop_legacy_table_if_exists(conn, "questions")
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -2350,6 +2391,7 @@ def _public_user_dict(row):
         "organization_name": row["organization_name"],
         "created_at": row["created_at"],
         "last_login": row["last_login"] if "last_login" in keys else None,
+        "visible_pages": _load_visible_pages_for_user(row),
     }
 
 
@@ -4253,6 +4295,22 @@ def actor_can_manage_user(actor_user: dict, target_user: dict) -> bool:
     return target_user.get("role") in {ADMIN_ROLE, MEMBER_ROLE}
 
 
+def actor_can_manage_user_visible_pages(actor_user: dict, target_user: dict) -> bool:
+    if not actor_user or not target_user:
+        return False
+    if actor_user.get("id") == target_user.get("id"):
+        return False
+    if actor_user.get("role") == SUPER_OWNER_ROLE:
+        return target_user.get("role") != SUPER_OWNER_ROLE
+    if actor_user.get("organization_id") != target_user.get("organization_id"):
+        return False
+    if actor_user.get("role") == OWNER_ROLE:
+        return target_user.get("role") in {ADMIN_ROLE, MEMBER_ROLE}
+    if actor_user.get("role") == ADMIN_ROLE:
+        return target_user.get("role") == MEMBER_ROLE
+    return False
+
+
 def list_classes_for_actor(actor_user: dict) -> list[dict]:
     if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
         return list_classes()
@@ -4414,6 +4472,23 @@ def update_user_display_name_for_actor(actor_user: dict, target_user_id: int, di
             (target_user_id,),
         ).fetchall()
         _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
+        updated = _fetch_user_row_by_id(conn, target_user_id)
+    return _public_user_dict(updated)
+
+
+def update_user_visible_pages_for_actor(actor_user: dict, target_user_id: int, visible_pages: object):
+    normalized_pages = normalize_visible_pages(visible_pages)
+    with get_conn() as conn:
+        target_row = _fetch_user_row_by_id(conn, target_user_id)
+        if not target_row:
+            raise LookupError("user not found")
+        target_user = _public_user_dict(target_row)
+        if not actor_can_manage_user_visible_pages(actor_user, target_user):
+            raise LookupError("user not found")
+        conn.execute(
+            "UPDATE users SET visible_pages_json=? WHERE id=?",
+            (json.dumps(normalized_pages, ensure_ascii=False), target_user_id),
+        )
         updated = _fetch_user_row_by_id(conn, target_user_id)
     return _public_user_dict(updated)
 

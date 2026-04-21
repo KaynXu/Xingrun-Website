@@ -563,6 +563,22 @@ test('approval page source removes the start binding action from member cards', 
   assert.doesNotMatch(approvalBlock[0], /onStartBinding\(user\.id\)/);
 });
 
+test('approval member cards link teacher class binding into class management', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(approvalBlock);
+  assert.ok(classManagementBlock);
+  assert.match(approvalBlock[0], /绑定班级/);
+  assert.match(approvalBlock[0], /onOpenClassBinding\(\{ teacherUserId: user\.id, teacherName: user\.name \}\)/);
+  assert.match(source, /const \[classBindingTarget, setClassBindingTarget\] = useState<ClassBindingTarget \| null>\(null\);/);
+  assert.match(source, /setClassBindingTarget\(target\);\s*setActivePage\('classes'\);/);
+  assert.match(source, /<ApprovalPage currentUser=\{currentUser\} onOpenClassBinding=\{handleOpenClassBinding\} \/>/);
+  assert.match(source, /<ClassManagementPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
+  assert.match(classManagementBlock[0], /classBindingTarget\?\.teacherName/);
+});
+
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);

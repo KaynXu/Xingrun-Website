@@ -45,6 +45,20 @@ test('approval page source refreshes member login info after decisions and when 
   assert.match(approvalBlock[0], /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/);
   assert.match(approvalBlock[0], /if \(document\.visibilityState === 'visible'\) \{\s*refreshApprovalMembers\(\)\.catch\(\(\) => undefined\);/);
 });
+
+test('approval page source lets managers edit member visible pages', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(source, /const configurableWorkspacePages/);
+  assert.match(approvalBlock[0], /const \[visiblePageSavingUserId, setVisiblePageSavingUserId\] = useState<number \| null>\(null\);/);
+  assert.match(approvalBlock[0], /const handleToggleVisiblePage = async \(targetUser: UserItem, page: Page\) => \{/);
+  assert.match(approvalBlock[0], /apiFetch<\{ ok: boolean; user: UserItem \}>\(`\/api\/admin\/users\/\$\{targetUser\.id\}\/visible-pages`/);
+  assert.match(approvalBlock[0], /可见页面/);
+  assert.match(approvalBlock[0], /configurableWorkspacePages\.map/);
+});
+
 test('organization application success copy stays neutral and does not mention a specific reviewer name', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 

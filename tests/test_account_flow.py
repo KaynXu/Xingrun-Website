@@ -49,6 +49,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "display_name": display_name,
                 "password": password,
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(submit.status_code, 201)
@@ -98,6 +99,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": username,
                 "display_name": display_name,
                 "password": password,
+                "recovery_phone": "13800000000",
             },
         )
 
@@ -379,6 +381,172 @@ class AccountFlowTestCase(unittest.TestCase):
             json={"username": "code_join_member", "password": "memberpass123"},
         )
         self.assertEqual(member_login.status_code, 200)
+
+    def test_backend_registration_requires_recovery_method(self):
+        _, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Recovery Required School",
+            owner_username="recovery_required_owner",
+            owner_display_name="Recovery Required Owner",
+            owner_password="ownerpass123",
+        )
+
+        missing_recovery = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "missing_recovery_member",
+                "display_name": "Missing Recovery Member",
+                "password": "memberpass123",
+            },
+        )
+
+        self.assertEqual(missing_recovery.status_code, 400)
+        payload = missing_recovery.get_json()
+        self.assertIsNotNone(payload)
+        self.assertIn("找回密码", payload["error"])
+
+    def test_backend_password_reset_accepts_phone_or_security_answer(self):
+        _, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Password Reset School",
+            owner_username="password_reset_owner",
+            owner_display_name="Password Reset Owner",
+            owner_password="ownerpass123",
+        )
+
+        phone_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "phone_reset_member",
+                "display_name": "Phone Reset Member",
+                "password": "oldpass123",
+                "recovery_phone": "13900000001",
+            },
+        )
+        self.assertEqual(phone_join.status_code, 201)
+
+        reset_by_phone = self.client.post(
+            "/api/password-reset",
+            json={
+                "username": "phone_reset_member",
+                "new_password": "newpass123",
+                "recovery_phone": "13900000001",
+            },
+        )
+        self.assertEqual(reset_by_phone.status_code, 200)
+
+        phone_login = self.client.post(
+            "/api/login",
+            json={"username": "phone_reset_member", "password": "newpass123"},
+        )
+        self.assertEqual(phone_login.status_code, 200)
+
+        security_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "security_reset_member",
+                "display_name": "Security Reset Member",
+                "password": "oldpass123",
+                "security_question": "我的入职年份？",
+                "security_answer": "2024",
+            },
+        )
+        self.assertEqual(security_join.status_code, 201)
+
+        reset_by_security = self.client.post(
+            "/api/password-reset",
+            json={
+                "username": "security_reset_member",
+                "new_password": "newpass123",
+                "security_question": "我的入职年份？",
+                "security_answer": "2024",
+            },
+        )
+        self.assertEqual(reset_by_security.status_code, 200)
+
+        security_login = self.client.post(
+            "/api/login",
+            json={"username": "security_reset_member", "password": "newpass123"},
+        )
+        self.assertEqual(security_login.status_code, 200)
+
+    def test_member_first_login_claims_unbound_classes(self):
+        owner_token, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Class Claim School",
+            owner_username="class_claim_owner",
+            owner_display_name="Class Claim Owner",
+            owner_password="ownerpass123",
+        )
+        owner_me = self.client.get("/api/me", headers=self.auth_headers(owner_token))
+        self.assertEqual(owner_me.status_code, 200)
+        organization_id = owner_me.get_json()["organization_id"]
+
+        unbound_class_id = lesson_manager.save_class(
+            "未绑定一班",
+            subject="数学",
+            grade="初一",
+            organization_id=organization_id,
+        )
+        bound_class_id = lesson_manager.save_class(
+            "已绑定一班",
+            subject="数学",
+            grade="初一",
+            organization_id=organization_id,
+        )
+
+        existing_member = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "already_bound_member",
+                "display_name": "Already Bound Member",
+                "password": "memberpass123",
+                "recovery_phone": "13900000002",
+            },
+        )
+        self.assertEqual(existing_member.status_code, 201)
+        existing_member_id = existing_member.get_json()["user"]["id"]
+        lesson_manager.set_class_teacher_user_id(bound_class_id, existing_member_id)
+
+        new_member = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "claim_member",
+                "display_name": "Claim Member",
+                "password": "memberpass123",
+                "recovery_phone": "13900000003",
+            },
+        )
+        self.assertEqual(new_member.status_code, 201)
+
+        member_login = self.client.post(
+            "/api/login",
+            json={"username": "claim_member", "password": "memberpass123"},
+        )
+        self.assertEqual(member_login.status_code, 200)
+        member_payload = member_login.get_json()
+        self.assertTrue(member_payload["user"]["requires_class_claim"])
+        member_token = member_payload["token"]
+
+        unbound = self.client.get(
+            "/api/me/unbound-classes",
+            headers=self.auth_headers(member_token),
+        )
+        self.assertEqual(unbound.status_code, 200)
+        unbound_payload = unbound.get_json()
+        self.assertIsNotNone(unbound_payload)
+        self.assertEqual([item["id"] for item in unbound_payload["items"]], [unbound_class_id])
+
+        claim = self.client.post(
+            "/api/me/claim-classes",
+            headers=self.auth_headers(member_token),
+            json={"class_ids": [unbound_class_id]},
+        )
+        self.assertEqual(claim.status_code, 200)
+        self.assertFalse(claim.get_json()["user"]["requires_class_claim"])
+        self.assertEqual(lesson_manager.get_class_teacher_user_id(unbound_class_id), member_payload["user"]["id"])
 
     def test_backend_join_by_invite_link_creates_active_member_in_target_org(self):
         _, invite_payload = self.create_approved_organization_with_invite(
@@ -2375,6 +2543,111 @@ class AccountFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(assign_classes.status_code, 404)
         self.assertEqual(assign_classes.get_json()["error"], "user not found")
+
+    def test_owner_can_update_member_visible_pages(self):
+        owner_token = self.login_as_kayn()
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="visible_pages_member",
+            display_name="Visible Pages Member",
+            password="visible123",
+        )
+        member_id = member_payload["user"]["id"]
+
+        default_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_payload["token"]),
+        )
+        self.assertEqual(default_me.status_code, 200)
+        self.assertIn("classes", default_me.get_json()["visible_pages"])
+
+        update = self.client.put(
+            f"/api/admin/users/{member_id}/visible-pages",
+            headers=self.auth_headers(owner_token),
+            json={"visible_pages": ["review-generation", "classes"]},
+        )
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.get_json()["user"]["visible_pages"], ["review-generation", "classes"])
+
+        users = self.client.get("/api/admin/users", headers=self.auth_headers(owner_token))
+        self.assertEqual(users.status_code, 200)
+        listed_member = next(item for item in users.get_json() if item["id"] == member_id)
+        self.assertEqual(listed_member["visible_pages"], ["review-generation", "classes"])
+
+        updated_me = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(member_payload["token"]),
+        )
+        self.assertEqual(updated_me.status_code, 200)
+        self.assertEqual(updated_me.get_json()["visible_pages"], ["review-generation", "classes"])
+
+    def test_admin_can_update_same_org_member_visible_pages(self):
+        owner_token = self.login_as_kayn()
+        admin_payload = self.approve_user(
+            owner_token=owner_token,
+            username="visible_pages_admin",
+            display_name="Visible Pages Admin",
+            password="visibleadmin123",
+        )
+        admin_token = admin_payload["token"]
+        admin_id = admin_payload["user"]["id"]
+        promote = self.client.put(
+            f"/api/admin/users/{admin_id}/role",
+            headers=self.auth_headers(owner_token),
+            json={"role": "admin"},
+        )
+        self.assertEqual(promote.status_code, 200)
+
+        member_payload = self.approve_user(
+            owner_token=owner_token,
+            username="visible_pages_admin_member",
+            display_name="Visible Pages Admin Member",
+            password="visiblemember123",
+        )
+        member_id = member_payload["user"]["id"]
+
+        update = self.client.put(
+            f"/api/admin/users/{member_id}/visible-pages",
+            headers=self.auth_headers(admin_token),
+            json={"visible_pages": ["classes", "smartWrongQuestions"]},
+        )
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.get_json()["user"]["visible_pages"], ["classes", "smartWrongQuestions"])
+
+    def test_member_class_management_reads_owned_classes_without_staff_endpoints(self):
+        owner_token = self.login_as_kayn()
+        target_member = self.approve_user(
+            owner_token=owner_token,
+            username="class_visible_member",
+            display_name="Class Visible Member",
+            password="classvisible123",
+        )
+        other_member = self.approve_user(
+            owner_token=owner_token,
+            username="class_visible_other",
+            display_name="Class Visible Other",
+            password="classother123",
+        )
+        target_member_id = target_member["user"]["id"]
+        other_member_id = other_member["user"]["id"]
+
+        owned_class_id = lesson_manager.save_class("Visible Owned Class", subject="Math", grade="六年级")
+        other_class_id = lesson_manager.save_class("Visible Other Class", subject="Math", grade="六年级")
+        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+
+        classes = self.client.get(
+            "/api/classes",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(classes.status_code, 200)
+        self.assertEqual([item["id"] for item in classes.get_json()], [owned_class_id])
+
+        staff_users = self.client.get(
+            "/api/admin/users",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(staff_users.status_code, 403)
 
     def test_delete_class_clears_assignments_and_unlinks_lessons(self):
         owner_login = self.client.post(

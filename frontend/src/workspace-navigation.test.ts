@@ -136,7 +136,7 @@ test('workspace navigation removes the master data mappings page and keeps accou
   assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
   assert.doesNotMatch(appSource, /masterDataMappings/);
   assert.doesNotMatch(sidebarBlock, /老师与班级匹配/);
-  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\}[\s\S]*\/>/);
   assert.doesNotMatch(appSource, /onStartBinding=\{handleStartMemberBinding\}/);
 });
 
@@ -196,17 +196,19 @@ test('credit center page source supports member drilldown and ledger filtering',
   assert.match(creditBlock, /下一页/);
 });
 
-test('workspace navigation source reserves classes management for owner and admin shells', () => {
-  const classManagementBlock = requireMatch(/const ClassManagementPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+test('workspace navigation source exposes classes management through configurable page visibility', () => {
+  const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
-  assert.match(appSource, /hasStaffAccess\(currentUser\.role\)/);
-  assert.match(sidebarBlock, /\.\.\.\(hasStaffAccess\(currentUser\.role\)[\s\S]*?\[\{ id: 'classes', icon: Home, label: '班级管理' \}\][\s\S]*?: \[\]\)/);
+  assert.match(appSource, /const configurableWorkspacePages/);
+  assert.match(appSource, /function canOpenWorkspacePage\(user: CurrentUser, page: Page\): boolean \{/);
+  assert.match(sidebarBlock, /canOpenWorkspacePage\(currentUser, item\.id as Page\)/);
   assert.match(appSource, /classes: '班级管理'/);
-  assert.match(appSource, /activePage === 'classes'[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
+  assert.match(appSource, /if \(page === 'classes' && !canOpenWorkspacePage\(user, 'classes'\)\)/);
+  assert.match(appSource, /activePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
   assert.match(classManagementBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
-  assert.match(classManagementBlock, /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(classManagementBlock, /hasStaffAccess\(currentUser\.role\)[\s\S]*apiFetch<UserItem\[]>\('\/api\/admin\/users'\)[\s\S]*Promise\.resolve\(\[] as UserItem\[]\)/);
   assert.match(classManagementBlock, /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。/);
   assert.match(classManagementBlock, /负责老师/);
   assert.doesNotMatch(classManagementBlock, /成员班级分配/);
@@ -218,7 +220,7 @@ test('workspace navigation source exposes explicit super owner hierarchy for acc
   assert.match(appSource, /if \(role === 'owner'\) return '机构负责人';/);
   assert.match(appSource, /function hasOwnerAccess\(role: Role\): boolean \{/);
   assert.match(appSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
-  assert.match(appSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限/);
+  assert.match(appSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
 });
 
 test('class management source guards selection and refresh during class save delete locks', () => {

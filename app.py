@@ -146,6 +146,7 @@ from lesson_manager import (
     save_wechat_wrong_question_review,
     update_wechat_wrong_question_question_text,
     update_user_display_name_for_actor,
+    update_user_visible_pages_for_actor,
     update_class,
     update_consultation,
     update_user_profile,
@@ -2050,7 +2051,13 @@ def api_admin_users():
     users = list_users_for_actor(user)
     is_super = user.get("role") == "super_owner"
     def _user_row(u):
-        row = {"id": u["id"], "name": u["display_name"], "org": u["organization_name"], "role": u["role"]}
+        row = {
+            "id": u["id"],
+            "name": u["display_name"],
+            "org": u["organization_name"],
+            "role": u["role"],
+            "visible_pages": u.get("visible_pages", []),
+        }
         if is_super:
             row["username"] = u.get("username")
             row["last_login"] = u.get("last_login")
@@ -2113,6 +2120,30 @@ def api_admin_user_role_set(user_id):
             return jsonify({"error": str(exc)}), 409
         return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:user_id>/visible-pages", methods=["PUT"])
+def api_admin_user_visible_pages_set(user_id):
+    user, error = _require_staff()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    try:
+        updated_user = update_user_visible_pages_for_actor(user, user_id, data.get("visible_pages"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({
+        "ok": True,
+        "user": {
+            "id": updated_user["id"],
+            "name": updated_user["display_name"],
+            "org": updated_user["organization_name"],
+            "role": updated_user["role"],
+            "visible_pages": updated_user.get("visible_pages", []),
+        },
+    })
 
 
 @app.route("/api/admin/users/<int:user_id>/classes", methods=["GET"])
