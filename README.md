@@ -90,8 +90,11 @@ start.bat
 
 配置来源按覆盖优先级：
 1. 代码默认值（`config_runtime.py`）
-2. `config.json`
+2. 本地运行时文件 `config.json`（不入库）
 3. 环境变量（优先级最高）
+
+推荐把线上和本机密钥放进 `.env.runtime` 或系统环境变量；仓库里的
+`.env.runtime.example` 只保留占位值。不要把真实 API key 写进 Git 跟踪文件。
 
 常用环境变量：
 - `XR_DB_PATH`
