@@ -21,8 +21,6 @@
     @apply bg-[#F6FBFF] text-slate-900 antialiased;
     font-family: var(--font-sans);
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain;
-    touch-action: pan-y pinch-zoom;
   }
   html {
     color-scheme: light;
@@ -37,16 +35,15 @@
 }
 
 @media (hover: none) and (pointer: coarse) {
-  /* Reduce scroll chain resistance and pull-to-refresh style interruptions on iPad/mobile. */
-  html,
-  body {
-    overscroll-behavior-y: none;
-  }
-
   /* Heavy backdrop blur can cause noticeable drag during fast scrolling on tablet GPUs. */
   [class*='backdrop-blur'] {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
+  }
+
+  [class^='blur-['],
+  [class*=' blur-['] {
+    filter: none !important;
   }
 }
 
