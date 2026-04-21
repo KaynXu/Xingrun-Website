@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
+import type { CourseCalendarScheduleRecord, CourseCalendarTimeBlock } from './courseCalendarData';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import { WorkspaceDashboard } from './WorkspaceDashboard';
@@ -797,12 +798,12 @@ function inferClassFeedbackStageName(dateString: string): ClassFeedbackStageName
   return '寒假';
 }
 
-function getLatestLessonDate(lessons: Lesson[]): string {
-  if (lessons.length === 0) {
+function getLatestScheduleDate(schedules: CourseCalendarScheduleRecord[]): string {
+  if (schedules.length === 0) {
     return getTodayIsoDate();
   }
 
-  return lessons.reduce((latest, lesson) => (lesson.date > latest ? lesson.date : latest), lessons[0].date);
+  return schedules.reduce((latest, schedule) => (schedule.date > latest ? schedule.date : latest), schedules[0].date);
 }
 
 function compactConsultationText(value: string): string {
@@ -9032,7 +9033,7 @@ export default function App() {
     typeof window === 'undefined' ? '' : window.location.hash,
   );
   const [calendarClasses, setCalendarClasses] = useState<ClassItem[]>([]);
-  const [calendarLessons, setCalendarLessons] = useState<Lesson[]>([]);
+  const [calendarSchedules, setCalendarSchedules] = useState<CourseCalendarScheduleRecord[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getTodayIsoDate());
 
@@ -9167,7 +9168,7 @@ export default function App() {
   useEffect(() => {
     if (!token || !currentUser) {
       setCalendarClasses([]);
-      setCalendarLessons([]);
+      setCalendarSchedules([]);
       setCalendarLoading(false);
       setCalendarAnchorDate(getTodayIsoDate());
       return;
@@ -9180,14 +9181,17 @@ export default function App() {
     let cancelled = false;
     setCalendarLoading(true);
 
-    Promise.all([apiFetch<ClassItem[]>('/api/classes'), apiFetch<Lesson[]>('/api/review-plans')])
-      .then(([classes, lessons]) => {
+    Promise.all([
+      apiFetch<ClassItem[]>('/api/classes'),
+      apiFetch<{ items: CourseCalendarScheduleRecord[] }>('/api/course-calendar/schedules'),
+    ])
+      .then(([classes, schedulePayload]) => {
         if (cancelled) {
           return;
         }
         setCalendarClasses(classes);
-        setCalendarLessons(lessons);
-        setCalendarAnchorDate(getLatestLessonDate(lessons));
+        setCalendarSchedules(schedulePayload.items);
+        setCalendarAnchorDate(getLatestScheduleDate(schedulePayload.items));
       })
       .catch(console.error)
       .finally(() => {
@@ -9263,6 +9267,39 @@ export default function App() {
 
   const handleNextCalendarWeek = () => {
     setCalendarAnchorDate((current) => shiftIsoDate(current, 7));
+  };
+
+  const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock) => {
+    apiFetch<{ item: CourseCalendarScheduleRecord }>('/api/course-calendar/schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        class_id: classId,
+        date,
+        time_block: timeBlock,
+      }),
+    })
+      .then(({ item }) => {
+        setCalendarSchedules((current) => [
+          ...current.filter(
+            (schedule) =>
+              schedule.id !== item.id
+              && !(schedule.class_id === item.class_id && schedule.date === item.date && schedule.time_block === item.time_block),
+          ),
+          item,
+        ]);
+        setCalendarAnchorDate(date);
+      })
+      .catch(console.error);
+  };
+
+  const handleDeleteCalendarSchedule = (scheduleId: number) => {
+    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/schedules/${scheduleId}`, {
+      method: 'DELETE',
+    })
+      .then(() => {
+        setCalendarSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
+      })
+      .catch(console.error);
   };
 
   const pageTitle: Record<Page, string> = {
@@ -9444,9 +9481,11 @@ export default function App() {
                     <CourseCalendarPage
                       anchorDate={calendarAnchorDate}
                       classes={calendarClasses}
-                      lessons={calendarLessons}
+                      schedules={calendarSchedules}
                       onPreviousWeek={handlePreviousCalendarWeek}
                       onNextWeek={handleNextCalendarWeek}
+                      onScheduleClass={handleScheduleCalendarClass}
+                      onDeleteSchedule={handleDeleteCalendarSchedule}
                     />
                   ))}
                 {activePage === 'smartWrongQuestions' &&

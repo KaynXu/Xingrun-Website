@@ -1,4 +1,13 @@
-export type CourseCalendarPeriod = '上午' | '下午' | '晚间';
+export const COURSE_CALENDAR_TIME_BLOCKS = [
+  '08:00-10:00',
+  '10:00-12:00',
+  '13:00-15:00',
+  '15:00-17:00',
+  '17:00-19:00',
+  '19:00-21:00',
+] as const;
+
+export type CourseCalendarTimeBlock = (typeof COURSE_CALENDAR_TIME_BLOCKS)[number];
 
 export interface CourseCalendarClassRecord {
   id: number;
@@ -10,52 +19,40 @@ export interface CourseCalendarClassRecord {
   lesson_count?: number;
 }
 
-export interface CourseCalendarLessonRecord {
+export interface CourseCalendarScheduleRecord {
   id: number;
-  class_id?: number | null;
+  class_id: number;
   date: string;
+  time_block: CourseCalendarTimeBlock | string;
+  created_by?: number | null;
+  created_at?: string;
+  class_name?: string;
   subject?: string;
   grade?: string;
-  topic?: string;
-  summary?: string;
-  weak_points?: string;
-  pdf_path?: string;
-  created_at?: string;
-  session?: CourseCalendarPeriod | string;
-  record_status?: string;
-  generation_error?: string;
+  teacher_name?: string;
+  teacher_email?: string;
 }
 
-export interface JoinedCourseCalendarLesson {
+export interface JoinedCourseCalendarSchedule {
   id: number;
-  classId: number | null;
+  classId: number;
   className: string;
   subject: string;
   grade: string;
   teacherName: string;
   teacherEmail: string;
-  lessonCount: number;
+  scheduleCount: number;
   date: string;
-  title: string;
-  summary: string;
-  weakPoints: string;
-  pdfPath: string;
-  period: CourseCalendarPeriod;
-  pending: boolean;
-  failed: boolean;
+  timeBlock: CourseCalendarTimeBlock;
 }
 
-export interface CourseCalendarPeriodBuckets {
-  上午: JoinedCourseCalendarLesson[];
-  下午: JoinedCourseCalendarLesson[];
-  晚间: JoinedCourseCalendarLesson[];
-}
+export type CourseCalendarTimeBlockBuckets = Record<CourseCalendarTimeBlock, JoinedCourseCalendarSchedule[]>;
 
 export interface TeacherLoadSummary {
   teacherName: string;
   count: number;
   classCount: number;
-  lessonCount: number;
+  scheduleCount: number;
   label: string;
 }
 
@@ -72,11 +69,9 @@ export interface ClassStatusRailItem {
   grade: string;
   teacherName: string;
   teacherEmail: string;
-  lessonCount: number;
+  scheduleCount: number;
   statusLabel: string;
 }
-
-const PERIOD_ORDER: CourseCalendarPeriod[] = ['上午', '下午', '晚间'];
 
 function parseIsoDate(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map((value) => Number(value));
@@ -102,55 +97,29 @@ function startOfIsoWeek(date: Date): Date {
   return addDays(date, -offset);
 }
 
-function normalizePeriod(period?: string): CourseCalendarPeriod {
-  if (period === '上午' || period === '下午' || period === '晚间') {
-    return period;
-  }
-  return '上午';
+function normalizeTimeBlock(timeBlock?: string): CourseCalendarTimeBlock {
+  return COURSE_CALENDAR_TIME_BLOCKS.includes(timeBlock as CourseCalendarTimeBlock)
+    ? timeBlock as CourseCalendarTimeBlock
+    : COURSE_CALENDAR_TIME_BLOCKS[0];
 }
 
-function resolvePeriod(lesson: CourseCalendarLessonRecord): CourseCalendarPeriod {
-  if (lesson.session) {
-    return normalizePeriod(lesson.session);
-  }
-
-  if (lesson.created_at) {
-    const timeMatch = lesson.created_at.match(/(?:\s|T)(\d{2}):(\d{2})/);
-    if (timeMatch) {
-      const hour = Number(timeMatch[1]);
-      if (hour < 12) {
-        return '上午';
-      }
-      if (hour < 18) {
-        return '下午';
-      }
-      return '晚间';
-    }
-  }
-
-  return '上午';
-}
-
-function countLessonsByClassId(lessons: CourseCalendarLessonRecord[]): Map<number, number> {
+function countSchedulesByClassId(schedules: CourseCalendarScheduleRecord[]): Map<number, number> {
   const counts = new Map<number, number>();
-  for (const lesson of lessons) {
-    if (typeof lesson.class_id !== 'number') {
-      continue;
-    }
-    counts.set(lesson.class_id, (counts.get(lesson.class_id) ?? 0) + 1);
+  for (const schedule of schedules) {
+    counts.set(schedule.class_id, (counts.get(schedule.class_id) ?? 0) + 1);
   }
   return counts;
 }
 
-function sortByPeriodAndDate(a: JoinedCourseCalendarLesson, b: JoinedCourseCalendarLesson): number {
+function sortByBlockAndDate(a: JoinedCourseCalendarSchedule, b: JoinedCourseCalendarSchedule): number {
   const dateCompare = a.date.localeCompare(b.date);
   if (dateCompare !== 0) {
     return dateCompare;
   }
 
-  const periodCompare = PERIOD_ORDER.indexOf(a.period) - PERIOD_ORDER.indexOf(b.period);
-  if (periodCompare !== 0) {
-    return periodCompare;
+  const blockCompare = COURSE_CALENDAR_TIME_BLOCKS.indexOf(a.timeBlock) - COURSE_CALENDAR_TIME_BLOCKS.indexOf(b.timeBlock);
+  if (blockCompare !== 0) {
+    return blockCompare;
   }
 
   return a.id - b.id;
@@ -170,84 +139,71 @@ export function getVisibleWeekLabel(anchorDate: string): string {
   return getWeekRangeLabel(anchorDate);
 }
 
-export function joinClassesAndLessons(
+export function joinClassesAndSchedules(
   classes: CourseCalendarClassRecord[],
-  lessons: CourseCalendarLessonRecord[],
-): JoinedCourseCalendarLesson[] {
+  schedules: CourseCalendarScheduleRecord[],
+): JoinedCourseCalendarSchedule[] {
   const classById = new Map<number, CourseCalendarClassRecord>();
   for (const courseClass of classes) {
     classById.set(courseClass.id, courseClass);
   }
 
-  const lessonCounts = countLessonsByClassId(lessons);
+  const scheduleCounts = countSchedulesByClassId(schedules);
 
-  return lessons
-    .map((lesson) => {
-      const courseClass = typeof lesson.class_id === 'number' ? classById.get(lesson.class_id) : undefined;
-      const lessonCount = typeof lesson.class_id === 'number'
-        ? lessonCounts.get(lesson.class_id) ?? courseClass?.lesson_count ?? 0
-        : courseClass?.lesson_count ?? 0;
+  return schedules
+    .map((schedule) => {
+      const courseClass = classById.get(schedule.class_id);
 
       return {
-        id: lesson.id,
-        classId: typeof lesson.class_id === 'number' ? lesson.class_id : null,
-        className: courseClass?.name ?? '',
-        subject: lesson.subject ?? courseClass?.subject ?? '',
-        grade: lesson.grade ?? courseClass?.grade ?? '',
-        teacherName: courseClass?.teacher_name ?? '',
-        teacherEmail: courseClass?.teacher_email ?? '',
-        lessonCount,
-        date: lesson.date,
-        title: lesson.topic ?? lesson.summary ?? courseClass?.name ?? '课程记录',
-        summary: lesson.summary ?? '',
-        weakPoints: lesson.weak_points ?? '',
-        pdfPath: lesson.pdf_path ?? '',
-        period: resolvePeriod(lesson),
-        failed: lesson.record_status === 'failed',
-        pending: lesson.record_status === 'pending' || (!lesson.pdf_path && !lesson.summary && !lesson.topic),
+        id: schedule.id,
+        classId: schedule.class_id,
+        className: courseClass?.name ?? schedule.class_name ?? '',
+        subject: courseClass?.subject ?? schedule.subject ?? '',
+        grade: courseClass?.grade ?? schedule.grade ?? '',
+        teacherName: courseClass?.teacher_name ?? schedule.teacher_name ?? '',
+        teacherEmail: courseClass?.teacher_email ?? schedule.teacher_email ?? '',
+        scheduleCount: scheduleCounts.get(schedule.class_id) ?? 0,
+        date: schedule.date,
+        timeBlock: normalizeTimeBlock(schedule.time_block),
       };
     })
-    .sort(sortByPeriodAndDate);
+    .sort(sortByBlockAndDate);
 }
 
-export function assignLessonCardsToPeriods(
-  lessonCards: JoinedCourseCalendarLesson[],
-): CourseCalendarPeriodBuckets {
-  const buckets: CourseCalendarPeriodBuckets = {
-    上午: [],
-    下午: [],
-    晚间: [],
-  };
+export function assignScheduleCardsToTimeBlocks(
+  scheduleCards: JoinedCourseCalendarSchedule[],
+): CourseCalendarTimeBlockBuckets {
+  const buckets = Object.fromEntries(
+    COURSE_CALENDAR_TIME_BLOCKS.map((timeBlock) => [timeBlock, []]),
+  ) as CourseCalendarTimeBlockBuckets;
 
-  for (const card of lessonCards) {
-    buckets[card.period].push(card);
+  for (const card of scheduleCards) {
+    buckets[card.timeBlock].push(card);
   }
 
-  for (const period of PERIOD_ORDER) {
-    buckets[period].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  for (const timeBlock of COURSE_CALENDAR_TIME_BLOCKS) {
+    buckets[timeBlock].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   }
 
   return buckets;
 }
 
 export function summarizeTeacherLoad(
-  lessonCards: JoinedCourseCalendarLesson[],
+  scheduleCards: JoinedCourseCalendarSchedule[],
 ): TeacherLoadSummary[] {
   const summary = new Map<string, TeacherLoadSummary>();
   const classIdsByTeacher = new Map<string, Set<number>>();
 
-  for (const lessonCard of lessonCards) {
-    const teacherName = lessonCard.teacherName.trim() || '未分配教师';
+  for (const scheduleCard of scheduleCards) {
+    const teacherName = scheduleCard.teacherName.trim() || '未分配教师';
     const classIds = classIdsByTeacher.get(teacherName) ?? new Set<number>();
-    if (lessonCard.classId !== null) {
-      classIds.add(lessonCard.classId);
-    }
+    classIds.add(scheduleCard.classId);
     classIdsByTeacher.set(teacherName, classIds);
 
     const existing = summary.get(teacherName);
     if (existing) {
       existing.count += 1;
-      existing.lessonCount += 1;
+      existing.scheduleCount += 1;
       existing.classCount = classIds.size;
       existing.label = `${teacherName} · ${existing.count}`;
       continue;
@@ -257,7 +213,7 @@ export function summarizeTeacherLoad(
       teacherName,
       count: 1,
       classCount: classIds.size,
-      lessonCount: 1,
+      scheduleCount: 1,
       label: `${teacherName} · 1`,
     });
   }
@@ -266,33 +222,20 @@ export function summarizeTeacherLoad(
 }
 
 export function summarizePendingRecords(
-  lessons: CourseCalendarLessonRecord[],
+  _schedules: CourseCalendarScheduleRecord[],
 ): PendingRecordSummary[] {
-  const pendingLessons = lessons.filter((lesson) => lesson.record_status === 'pending' || (!lesson.pdf_path && !lesson.summary && !lesson.topic));
-
-  if (pendingLessons.length === 0) {
-    return [];
-  }
-
-  return [
-    {
-      label: '待补录',
-      count: pendingLessons.length,
-      lessonIds: pendingLessons.map((lesson) => lesson.id),
-    },
-  ];
+  return [];
 }
 
 export function buildClassStatusRailData(
   classes: CourseCalendarClassRecord[],
-  lessons: CourseCalendarLessonRecord[] = [],
+  schedules: CourseCalendarScheduleRecord[] = [],
 ): ClassStatusRailItem[] {
-  const lessonCounts = countLessonsByClassId(lessons);
+  const scheduleCounts = countSchedulesByClassId(schedules);
 
   return classes
     .map((courseClass) => {
-      const derivedLessonCount = lessonCounts.get(courseClass.id);
-      const lessonCount = derivedLessonCount ?? courseClass.lesson_count ?? 0;
+      const scheduleCount = scheduleCounts.get(courseClass.id) ?? 0;
 
       return {
         id: courseClass.id,
@@ -301,8 +244,8 @@ export function buildClassStatusRailData(
         grade: courseClass.grade ?? '',
         teacherName: courseClass.teacher_name ?? '',
         teacherEmail: courseClass.teacher_email ?? '',
-        lessonCount,
-        statusLabel: lessonCount > 0 ? '已排课' : '待安排',
+        scheduleCount,
+        statusLabel: scheduleCount > 0 ? '已排课' : '待安排',
       };
     })
     .sort((a, b) => a.id - b.id);
