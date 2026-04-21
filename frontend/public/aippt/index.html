@@ -471,7 +471,7 @@
     }
 
     .feature-story-slide .system-layout.feature-layout {
-      row-gap: 10px;
+      row-gap: 6px;
       column-gap: 24px;
     }
 
@@ -481,9 +481,13 @@
     }
 
     .feature-story-slide .system-title.feature-title {
-      font-size: clamp(24px, 3.45vw, 46px);
-      line-height: 0.98;
-      max-width: 9em;
+      font-size: clamp(22px, 2.7vw, 34px);
+      line-height: 1.02;
+      max-width: 14em;
+    }
+
+    .feature-story-slide .feature-title .gradient-text {
+      white-space: nowrap;
     }
 
     .feature-story-slide .system-lead.feature-lead {
@@ -512,9 +516,9 @@
     }
 
     .feature-story-slide .system-card.feature-card {
-      min-height: 258px;
-      padding: 18px 18px 14px;
-      gap: 12px;
+      min-height: 224px;
+      padding: 12px 14px 10px;
+      gap: 10px;
     }
 
     .feature-story-slide .feature-card-copy {
@@ -526,19 +530,19 @@
     }
 
     .feature-story-slide .compare-block {
-      gap: 8px;
-      padding: 12px 14px;
+      gap: 6px;
+      padding: 8px 10px;
       border-radius: 18px;
     }
 
     .feature-story-slide .system-steps {
-      gap: 6px;
+      gap: 4px;
     }
 
     .feature-story-slide .system-step {
-      grid-template-columns: 68px 1fr;
-      gap: 10px;
-      padding: 7px 0;
+      grid-template-columns: 64px 1fr;
+      gap: 8px;
+      padding: 3px 0;
     }
 
     .feature-story-slide .system-step.reveal {
@@ -548,12 +552,12 @@
     }
 
     .feature-story-slide .system-step span {
-      font-size: 14px;
-      line-height: 1.42;
+      font-size: 12.5px;
+      line-height: 1.28;
     }
 
     .feature-story-slide .system-card.feature-card h3 {
-      font-size: clamp(19px, 1.62vw, 28px);
+      font-size: clamp(18px, 1.5vw, 24px);
     }
 
     .slide.feature-story-slide.active .system-step.reveal.revealed {
@@ -581,7 +585,9 @@
       grid-template-columns: minmax(320px,0.88fr) minmax(560px,1.12fr);
       grid-template-areas:
         "intro visual"
+        "prompt visual"
         "main main";
+      grid-template-rows: auto auto minmax(0, 1fr);
       column-gap: 28px;
       row-gap: 22px;
       align-items: start;
@@ -628,6 +634,79 @@
       color: var(--soft);
       max-width: 22em;
     }
+
+    .feature-writing-preview {
+      grid-area: prompt;
+      align-self: stretch;
+      display: grid;
+      gap: 10px;
+      width: min(560px, 100%);
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(125, 190, 236, 0.32);
+      background: #edf7ff;
+      color: #102842;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+      font-size: clamp(9px, 0.72vw, 11px);
+      line-height: 1.55;
+    }
+
+    .feature-writing-preview p,
+    .feature-writing-preview ol {
+      margin: 0;
+    }
+
+    .preview-question-card,
+    .preview-writing-card {
+      background: #fbfdff;
+      border: 1px solid rgba(123, 180, 226, 0.32);
+      color: #17324f;
+      box-shadow: 0 8px 22px rgba(55, 111, 163, 0.1);
+    }
+
+    .preview-question-card {
+      min-height: 104px;
+      padding: 9px 12px 8px;
+      border-radius: 10px;
+    }
+
+    .preview-question-card strong {
+      color: #0f3358;
+      font-weight: 700;
+    }
+
+    .preview-question-card em {
+      font-style: italic;
+      font-weight: 650;
+    }
+
+    .preview-question-card ol {
+      display: grid;
+      gap: 2px;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .preview-writing-card {
+      display: grid;
+      gap: 4px;
+      min-height: 72px;
+      padding: 8px 10px;
+      border-radius: 2px;
+    }
+
+    .feature-writing-preview .blank {
+      display: inline-block;
+      width: 76px;
+      height: 1em;
+      margin: 0 2px;
+      border-bottom: 1px solid #16304f;
+      transform: translateY(-0.16em);
+    }
+
+    .feature-writing-preview .blank.short { width: 50px; }
+    .feature-writing-preview .blank.long { width: 108px; }
+    .feature-writing-preview .blank.xlong { width: 142px; }
 
     .system-grid {
       display: grid;
@@ -1099,7 +1178,8 @@
         grid-template-areas:
           "intro"
           "visual"
-          "main";
+          "main"
+          "prompt";
       }
 
       .system-card.feature-card { grid-template-columns: 1fr; }
@@ -1394,11 +1474,6 @@
         <div class="system-copy feature-copy news-copy feature-intro">
           <div class="eyebrow reveal">把案例落回星润</div>
           <h2 class="title compact system-title feature-title reveal delay-1">星润不是只给孩子们讲 AI，<br />而是让他们<span class="gradient-text">亲手感受 AI 的进化</span>。</h2>
-          <p class="body system-lead feature-lead reveal delay-2">如果这一页你想先切进最贴近日常学习的系统，那就先讲错题助手。它不是替孩子直接给答案，而是把错题变成可追问、可反思、可再训练的入口。</p>
-          <div class="feature-actions reveal delay-3">
-            <a class="source-link" href="https://deepmind.google/blog/advanced-version-of-gemini-with-deep-think-officially-achieves-gold-medal-standard-at-the-international-mathematical-olympiad/" target="_blank" rel="noopener noreferrer">打开官方文章</a>
-            <div class="feature-note">右侧视频会直接用中文大字和动画，讲清这条新闻为什么值得家长关注。</div>
-          </div>
         </div>
         <article class="quote-card system-visual quote-focus compact-quote reveal auto-show">
           <div class="feature-video-frame">
@@ -1465,6 +1540,22 @@
             </div>
           </article>
         </div>
+        <article class="feature-writing-preview reveal" data-reveal-group="feature-final-writing-preview">
+          <div class="preview-question-card">
+            <p><strong>例13:（2024年6月湖北省武汉市G联考 高二下 期末18）</strong></p>
+            <p>已知函数 <em>f(x)=e<sup>x</sup>+(a-1)x, a∈R</em>。</p>
+            <ol>
+              <li>① 若关于 <em>x</em> 的方程 <em>f(x)=ln x(x&gt;0)</em> 有两根 <em>x<sub>1</sub>, x<sub>2</sub></em>（其中 <em>x<sub>1</sub>&lt;x<sub>2</sub></em>），</li>
+              <li>求 <em>a</em> 的取值范围；</li>
+              <li>② 当 <em>x&lt;e<sup>a</sup></em> 时，求 <em>x<sub>1</sub></em> 的取值范围。</li>
+            </ol>
+          </div>
+          <div class="preview-writing-card">
+            <p>我这题不是算错，而是对相关<span class="blank xlong"></span>完全不熟，连基本的<span class="blank"></span>都想不起来，所以没法继续<span class="blank"></span>和常见<span class="blank short"></span>上；再</p>
+            <p>接下来我要先回顾这个知识点的<span class="blank long"></span>和常见<span class="blank"></span>；</p>
+            <p>遇到这类型，先判断用的是哪一块内容。</p>
+          </div>
+        </article>
       </div>
     </section>
 
