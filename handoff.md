@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页 `AI 错题助手` 对比卡 reveal 顺序已从“左右两列按 Step 逐排同步出现”改成“左侧 `人工复习` 整栏先出现，右侧 `AI 错题助手` 整栏后出现”，最后的“题目卡 + 挖空卡”练习单预览仍保持最后出现。本机 Chrome Playwright 临时脚本已验证 reveal 组顺序、点击状态和最终预览顺序，`npm run build` 通过。
 - 2026-04-21 已按标准 release 流程把本地 `develop(afceed1)` 合到 `master(4499c97)` 并部署到生产机 `49.234.185.86`；这次发布包含 AIPPT `星润建议` 页最后出现的“题目卡 + 挖空卡”浅蓝练习单预览。生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页最后出现的白底错因预览已继续换成“题目卡 + 挖空卡”的浅蓝练习单样式：上方展示一张导数题题面卡，下方展示错因挖空引导卡，填满原先标题下方偏空的位置；这张组合预览仍保留为该页最后一个 reveal 组，会在 `AI 错题助手` 对比卡 `Step 4` 之后最后出现。本机 Chrome Playwright 临时脚本已验证 1280x720 最终态下预览高度、题目卡/挖空卡存在、最后 reveal 顺序和整页可见性，`npm run build` 通过。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已把左侧原来的“如果这一页你想先切进...”引导段、`打开官方文章` 按钮和右侧视频说明，替换成白底错因挖空预览卡；这张预览卡在 DOM 中排到该页最后一个 reveal 组，现场点击时会在 `AI 错题助手` 对比卡 `Step 4` 之后最后出现。为容纳新增白底预览，本页标题、对比卡和步骤行距也做了局部压缩；本机 Chrome Playwright 临时脚本已验证 1280x720 最终态下整页内容完整落在视口内，`npm run build` 通过。
