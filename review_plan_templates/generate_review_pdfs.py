@@ -687,6 +687,17 @@ LATEX_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(.+?)(?<!\\)\$(?!\$)")
 LATEX_PAREN_PATTERN = re.compile(r"\\{1,2}\((.+?)\\{1,2}\)")
 LATEX_BRACKET_PATTERN = re.compile(r"\\{1,2}\[(.+?)\\{1,2}\]", re.DOTALL)
 LATEX_COMMAND_REPLACEMENTS = (
+    (r"\infty", "∞"),
+    (r"\Rightarrow", "⇒"),
+    (r"\Leftarrow", "⇐"),
+    (r"\rightarrow", "XRRIGHTARROWTOKEN"),
+    (r"\leftarrow", "XRLEFTARROWTOKEN"),
+    (r"\subseteq", "⊆"),
+    (r"\supseteq", "⊇"),
+    (r"\subset", "⊂"),
+    (r"\supset", "⊃"),
+    (r"\notin", "∉"),
+    (r"\approx", "≈"),
     (r"\geq", "≥"),
     (r"\ge", "≥"),
     (r"\leq", "≤"),
@@ -694,11 +705,23 @@ LATEX_COMMAND_REPLACEMENTS = (
     (r"\neq", "≠"),
     (r"\times", "×"),
     (r"\cdot", "·"),
+    (r"\ldots", "..."),
+    (r"\cdots", "..."),
+    (r"\dots", "..."),
     (r"\pm", "±"),
     (r"\div", "÷"),
+    (r"\in", "∈"),
+    (r"\to", "XRRIGHTARROWTOKEN"),
     (r"\left", ""),
     (r"\right", ""),
 )
+MATHBB_SET_MAP = {
+    "C": "ℂ",
+    "N": "ℕ",
+    "Q": "ℚ",
+    "R": "ℝ",
+    "Z": "ℤ",
+}
 SUPERSCRIPT_TRANSLATION = str.maketrans({
     "0": "⁰",
     "1": "¹",
@@ -764,6 +787,76 @@ def _render_subscript(content: str) -> str:
     return "".join(result)
 
 
+BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
+    r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
+)
+
+
+def _repair_latex_transport_controls(text: str) -> str:
+    repaired = str(text or "").replace("\r\n", "\n")
+    repaired = repaired.replace("\t", "\\t")
+    repaired = repaired.replace("\f", "\\f")
+    repaired = repaired.replace("\b", "\\b")
+    repaired = repaired.replace("\r", "\\r")
+    return BROKEN_NEWLINE_LATEX_COMMAND_PATTERN.sub(r"\\n", repaired)
+
+
+def _normalize_bare_latex_text(text: str) -> str:
+    normalized = str(text or "").replace(r"\$", "$")
+
+    for _ in range(5):
+        next_value = re.sub(
+            r"\\frac\{([^{}]+)\}\{([^{}]+)\}",
+            r"(\1)/(\2)",
+            normalized,
+        )
+        next_value = re.sub(
+            r"\\sqrt\{([^{}]+)\}",
+            r"√(\1)",
+            next_value,
+        )
+        if next_value == normalized:
+            break
+        normalized = next_value
+
+    normalized = re.sub(r"\\text\{([^{}]+)\}", r"\1", normalized)
+    normalized = re.sub(
+        r"\\mathbb\s*\{?([A-Za-z])\}?",
+        lambda match: MATHBB_SET_MAP.get(match.group(1), match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r"\^\{([^{}]+)\}",
+        lambda match: _render_superscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r"\^([0-9n()+\-=i])",
+        lambda match: _render_superscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r"\^([a-zA-Z])",
+        lambda match: _render_superscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r"_\{([^{}]+)\}",
+        lambda match: _render_subscript(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r"_([a-zA-Z0-9])",
+        lambda match: _render_subscript(match.group(1)),
+        normalized,
+    )
+
+    for source, target in LATEX_COMMAND_REPLACEMENTS:
+        normalized = normalized.replace(source, target)
+
+    return normalized
+
+
 class TrackingCanvas(Canvas):
     def __init__(self, *args, char_space=0, **kwargs):
         self._char_space = char_space
@@ -778,62 +871,19 @@ class TrackingCanvas(Canvas):
 
 def _format_latex_math_segment(text):
     # Some inputs may contain double-escaped latex commands from JSON/text transport.
-    normalized = text.replace("\\\\", "\\")
-    for source, target in LATEX_COMMAND_REPLACEMENTS:
-        normalized = normalized.replace(source, target)
-
-    normalized = re.sub(
-        r"\\frac\{([^{}]+)\}\{([^{}]+)\}",
-        lambda match: f"{match.group(1)}/{match.group(2)}",
-        normalized,
-    )
-    normalized = re.sub(
-        r"\\sqrt\{([^{}]+)\}",
-        lambda match: f"√({match.group(1)})",
-        normalized,
-    )
-    normalized = re.sub(
-        r"\^\{([^{}]+)\}",
-        lambda match: _render_superscript(match.group(1)),
-        normalized,
-    )
-    normalized = re.sub(
-        r"\^([0-9n()+\-=i])",
-        lambda match: match.group(1).translate(SUPERSCRIPT_TRANSLATION),
-        normalized,
-    )
-    normalized = re.sub(
-        r"\^([a-zA-Z])",
-        lambda match: _render_superscript(match.group(1)),
-        normalized,
-    )
-    # Subscript _{...}
-    normalized = re.sub(
-        r"_\{([^{}]+)\}",
-        lambda match: _render_subscript(match.group(1)),
-        normalized,
-    )
-    # Bare subscript _x (single char)
-    normalized = re.sub(
-        r"_([a-zA-Z0-9])",
-        lambda match: _render_subscript(match.group(1)),
-        normalized,
-    )
+    normalized = _repair_latex_transport_controls(text).replace("\\\\", "\\")
+    normalized = _normalize_bare_latex_text(normalized)
     normalized = re.sub(r"\\([A-Za-z]+)", lambda match: match.group(1), normalized)
     normalized = re.sub(r"\\([{}()\[\]])", r"\1", normalized)
     normalized = normalized.replace("\\", "")
     normalized = normalized.replace("{", "").replace("}", "")
     normalized = re.sub(r"\s*([≥≤≠=<>])\s*", r"\1", normalized)
+    normalized = normalized.replace("lim_(", "lim(")
     return normalized.strip()
 
 
-# Bare LaTeX math commands written outside any delimiter (e.g. \frac{a}{b} without $)
-_BARE_LATEX_PATTERN = re.compile(
-    r"(\\(?:frac|sqrt|vec|overrightarrow|overset|hat|bar)\s*\{[^{}]*\}(?:\s*\{[^{}]*\})?|\\(?:sin|cos|tan|cot|log|lg|ln|lim|max|min|alpha|beta|gamma|delta|theta|lambda|pi|sigma|omega|mu|nu|epsilon|phi|psi|chi|rho|tau|xi|zeta)(?![a-zA-Z]))"
-)
-
-
 def _normalize_inline_latex(value):
+    value = _repair_latex_transport_controls(value)
     normalized = LATEX_BLOCK_DOLLAR_PATTERN.sub(
         lambda match: _format_latex_math_segment(match.group(1)),
         value,
@@ -853,12 +903,8 @@ def _normalize_inline_latex(value):
     # Strip markdown bold/italic wrappers that may surround math or text
     normalized = re.sub(r"\*\*(.+?)\*\*", r"\1", normalized)
     normalized = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", normalized)
-    # Handle bare LaTeX commands that were never wrapped in delimiters
-    normalized = _BARE_LATEX_PATTERN.sub(
-        lambda match: _format_latex_math_segment(match.group(0)),
-        normalized,
-    )
-    return normalized
+    normalized = _normalize_bare_latex_text(normalized)
+    return normalized.replace("lim_(", "lim(")
 
 
 def build_timestamped_output_path(output_dir, filename):
@@ -915,6 +961,8 @@ def normalize_portable_text(value):
     normalized = re.sub(r"([：:])\s+", r"\1", normalized)
     normalized = re.sub(r"\s{2,}", " ", normalized)
     normalized = re.sub(r"(^|\s)-\s*", r"\1- ", normalized)
+    normalized = normalized.replace("XRRIGHTARROWTOKEN", "→")
+    normalized = normalized.replace("XRLEFTARROWTOKEN", "←")
     return normalized.strip()
 
 
