@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 已按标准 release 流程把本地 `develop(151fbab)` 合到 `master(20dceec)` 并部署到生产机 `49.234.185.86`；这次发布包含账号审批页成员可见页面控制、老师类 `member` 账号按 `visible_pages` + `user_classes` 进入班级管理、账号找回密码、注册/加入账号找回方式、首次登录认领未绑定班级。发布前本机临时脚本已跑通后端账号流定向回归、前端 lint、相关前端测试和前端 build；生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已按标准 release 流程把本地 `develop(c4ba61f)` 合到 `master(2da1eab)` 并部署到生产机 `49.234.185.86`；这次发布包含 AIPPT `星润建议` 页 `AI 错题助手` 对比卡 reveal 顺序调整：左侧 `人工复习` 整栏先出现，右侧 `AI 错题助手` 整栏后出现，最后练习单预览仍保持最后出现。生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页 `AI 错题助手` 对比卡 reveal 顺序已从“左右两列按 Step 逐排同步出现”改成“左侧 `人工复习` 整栏先出现，右侧 `AI 错题助手` 整栏后出现”，最后的“题目卡 + 挖空卡”练习单预览仍保持最后出现。本机 Chrome Playwright 临时脚本已验证 reveal 组顺序、点击状态和最终预览顺序，`npm run build` 通过。
 - 2026-04-21 已按标准 release 流程把本地 `develop(afceed1)` 合到 `master(4499c97)` 并部署到生产机 `49.234.185.86`；这次发布包含 AIPPT `星润建议` 页最后出现的“题目卡 + 挖空卡”浅蓝练习单预览。生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
