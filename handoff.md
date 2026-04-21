@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 已按标准 release 流程把本地 `develop(a1cf061)` 合到 `master(8fe985e)` 并部署到生产机 `49.234.185.86`；这次发布包含课程日历独立排课、账号删除外键收口、班级学科结构化筛选、复习计划 PDF LaTeX 纯文本规范化，以及两份新版复习计划课程包。发布前本机临时脚本已分别在 `develop` 和 `master` 跑通后端 6 条定向 unittest、课程包 `py_compile`、前端 `npm test` 184 条、`tsc --noEmit` 和 `npm run build`；生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已完成账号删除 500 和班级学科结构化筛选修复：删除成员/老师账号前现在会先清理或置空其关联的咨询、课程日历、班级邀请码、课堂反馈、错题、错题练习、积分流水、会话和班级绑定等用户外键，不再因 teacher 相关历史记录触发 SQLite 外键 `INTERNAL SERVER ERROR`；班级创建/编辑现在要求学科必填，可手动输入 `数学 3.0` 这类自定义学科；首次登录认领班级页和班级管理卡片都已补上学科筛选，并与原有年级筛选组合生效。
 - 2026-04-21 已完成复习计划 PDF 的 LaTeX 纯文本规范化修复：`review_plan_templates/generate_review_pdfs.py` 现在沿用错题本那套更稳的处理方式，能修复 JSON 转义吞掉的 `\text / \to / \frac / \neq` 控制字符形态，也能处理未包 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 等裸公式片段；分式输出也改为带括号的 `(分子)/(分母)`，避免复习计划模板里继续出现 `ext / rac / mathbbR / ldots` 之类坏文本。定向 proof 已通过复习计划 LaTeX、单节 PDF 模板符号兼容和错题库 PDF fallback 相关 23 条用例。
 - 2026-04-21 已完成网站端课程日历首版实装：课程日历现在使用独立 `course_calendar_schedules` 表和 `/api/course-calendar/schedules` API，不再从 `/api/review-plans` 或 `lessons` 读取排课，因此当前复习计划里的历史/测试课不会再显示成已排课程。日历一天固定为 `08:00-10:00 / 10:00-12:00 / 13:00-15:00 / 15:00-17:00 / 17:00-19:00 / 19:00-21:00` 六个工作时间板块；前端支持把可排班级拖到对应日期和板块生成排课，并可删除已排记录。后端列表、创建、删除都复用现有班级可访问性判断，`member` 老师只会看到和排自己通过 `user_classes` 分配到的班级。
@@ -74,7 +75,7 @@
 - `develop -> master -> 部署` 已在 2026-04-10 走完一轮；本次服务器直拉 GitHub 仍会卡住，最终按 `bundle + scp` 兜底成功发布。
 - 2026-04-10 已补修生产机 GitHub 直拉链路：服务器仓库 `origin` 已从 HTTPS 改成 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`，通过专用 deploy key 走 `ssh.github.com:443`。
 - 本轮现场 proof 已确认生产机 `git ls-remote origin HEAD`、`git fetch origin`、`git pull --ff-only origin master` 都能直接在约 4 秒内完成，不再需要默认走 bundle。
-- 本次已部署生产的最新代码提交是 `5395593 Merge branch 'develop'`；当前生产结果已同时包含最近一批 AIPPT 页面与口播文案调整、错题练习动态书写区提示词与版式修正、错题练习 PDF / 删除能力、notebook 正序展示与掌握状态筛选、whisper 本地缓存修复、Jyeoo 公开卷抓取 demo，以及这轮练习单 ReportLab fallback 的裸 LaTeX 修复。
+- 本次已部署生产的最新功能代码提交是 `8fe985e Merge branch 'develop'`；当前生产结果已包含课程日历独立排课、账号删除外键收口、班级学科结构化筛选、复习计划 PDF LaTeX 纯文本规范化、两份新版复习计划课程包，以及此前已上线的 AIPPT 页面、错题练习、notebook、whisper 本地缓存和 Jyeoo 公开卷抓取相关能力。
 - 已将生产机仓库里未入库的微信错题热修回收到本地仓库：包括新的错因顶层分类、`display_text` 返回字段、可跳过重复分类的创建接口入参，以及 `/api/wechat/reason-classifications` 接口。
 - 当前主线是 `智能错题` 收口。
 - notebook 弹窗左列已改成紧凑行，不再用卡片堆叠；当前每行只保留 `第几题 / 时间 / 掌握状态`。
@@ -207,6 +208,13 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `8fe985e` `Merge branch 'develop'`
+- `a1cf061` `Merge remote-tracking branch 'origin/develop' into develop`
+- `1575cef` `fix: structure class subjects and account deletion`
+- `14e743f` `docs: add geometry review plan pack`
+- `fc18824` `docs: add solid geometry review plan pack`
+- `716db3e` `fix: normalize review plan latex text`
+- `785d07d` `feat: implement course calendar scheduling`
 - `4037f78` `Merge branch 'develop'`
 - `7a45ab4` `chore: keep runtime config secrets out of git`
 - `4c6e90b` `Merge branch 'develop'`
