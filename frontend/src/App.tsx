@@ -82,7 +82,7 @@ type Page =
   | 'credit'
   | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
-type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
+type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization' | 'password-reset';
 
 interface Lesson {
   id: number;
@@ -218,6 +218,7 @@ interface CurrentUser {
   organization_name: string;
   created_at: string;
   visible_pages?: Page[];
+  requires_class_claim?: boolean;
 }
 
 interface RegistrationRequestItem {
@@ -7281,16 +7282,260 @@ const ClassManagementPage = ({
 
 // --- Login Modal ---
 
+type RecoveryMethod = 'phone' | 'security';
+
+const authInputClass = 'w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors';
+
+function buildRecoveryPayload(
+  recoveryMethod: RecoveryMethod,
+  recoveryPhone: string,
+  securityQuestion: string,
+  securityAnswer: string,
+) {
+  if (recoveryMethod === 'phone') {
+    return { recovery_phone: recoveryPhone };
+  }
+  return { security_question: securityQuestion, security_answer: securityAnswer };
+}
+
+const RecoverySetupFields = ({
+  recoveryMethod,
+  setRecoveryMethod,
+  recoveryPhone,
+  setRecoveryPhone,
+  securityQuestion,
+  setSecurityQuestion,
+  securityAnswer,
+  setSecurityAnswer,
+}: {
+  recoveryMethod: RecoveryMethod;
+  setRecoveryMethod: (method: RecoveryMethod) => void;
+  recoveryPhone: string;
+  setRecoveryPhone: (value: string) => void;
+  securityQuestion: string;
+  setSecurityQuestion: (value: string) => void;
+  securityAnswer: string;
+  setSecurityAnswer: (value: string) => void;
+}) => (
+  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="grid grid-cols-2 gap-2 rounded-xl bg-black p-1">
+      <button
+        type="button"
+        onClick={() => setRecoveryMethod('phone')}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          recoveryMethod === 'phone' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+        }`}
+      >
+        电话号码
+      </button>
+      <button
+        type="button"
+        onClick={() => setRecoveryMethod('security')}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          recoveryMethod === 'security' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+        }`}
+      >
+        密保问题
+      </button>
+    </div>
+
+    {recoveryMethod === 'phone' ? (
+      <div className="space-y-1.5">
+        <label className="text-sm text-gray-400">找回密码电话</label>
+        <input
+          type="tel"
+          value={recoveryPhone}
+          onChange={(e) => setRecoveryPhone(e.target.value)}
+          required
+          placeholder="输入电话号码即可验证"
+          className={authInputClass}
+        />
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-sm text-gray-400">密保问题</label>
+          <input
+            type="text"
+            value={securityQuestion}
+            onChange={(e) => setSecurityQuestion(e.target.value)}
+            required
+            placeholder="例如：我的入职年份？"
+            className={authInputClass}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm text-gray-400">密保答案</label>
+          <input
+            type="text"
+            value={securityAnswer}
+            onChange={(e) => setSecurityAnswer(e.target.value)}
+            required
+            placeholder="请输入答案"
+            className={authInputClass}
+          />
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+const ClassClaimPage = ({
+  currentUser,
+  onClaimed,
+  onLogout,
+}: {
+  currentUser: CurrentUser;
+  onClaimed: (user: CurrentUser) => void;
+  onLogout: () => void;
+}) => {
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [selectedClassIds, setSelectedClassIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiFetch<{ items: ClassItem[] }>('/api/me/unbound-classes')
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setClasses(payload.items);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '班级加载失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleClass = (classId: number) => {
+    setSelectedClassIds((current) =>
+      current.includes(classId) ? current.filter((id) => id !== classId) : [...current, classId],
+    );
+  };
+
+  const handleClaim = async () => {
+    setError('');
+    if (classes.length > 0 && selectedClassIds.length === 0) {
+      setError('请选择需要绑定的班级');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = await apiFetch<{ ok: boolean; user: CurrentUser }>('/api/me/claim-classes', {
+        method: 'POST',
+        body: JSON.stringify({ class_ids: selectedClassIds }),
+      });
+      onClaimed(payload.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '班级认领失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-4 py-8 text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <div className={`${workspaceCardClass} relative w-full max-w-3xl p-6 md:p-8`}>
+        <div className="flex flex-col gap-3 border-b border-sky-100 pb-5 dark:border-white/10">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-sky-600 dark:text-sky-300">首次登录</p>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">认领你的班级</h1>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                {currentUser.display_name}，请选择需要绑定到你账号下的未绑定班级。
+              </p>
+            </div>
+            <button type="button" onClick={onLogout} className={workspaceSecondaryButtonClass}>
+              退出登录
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+            <AlertCircle size={16} />
+            {error}
+          </div>
+        )}
+
+        <div className="mt-5 space-y-3">
+          {loading ? (
+            <WorkspaceLoading label="正在加载未绑定班级..." />
+          ) : classes.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前没有未绑定班级。
+            </div>
+          ) : (
+            classes.map((item) => {
+              const checked = selectedClassIds.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => toggleClass(item.id)}
+                  className={`flex w-full items-center justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition ${
+                    checked
+                      ? 'border-sky-300 bg-sky-50 text-slate-900 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-white'
+                      : 'border-sky-100 bg-white/70 text-slate-700 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{item.name}</span>
+                    <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                      {[item.grade, item.subject].filter(Boolean).join(' · ') || '未设置年级科目'}
+                    </span>
+                  </span>
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                    checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 dark:border-slate-600'
+                  }`}>
+                    {checked ? <CheckCircle2 size={14} /> : null}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => void handleClaim()}
+            disabled={loading || saving}
+            className={workspacePrimaryButtonClass}
+          >
+            {saving ? '绑定中...' : classes.length === 0 ? '完成' : '绑定所选班级'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LoginModal = ({
   onLogin,
   onClose,
   onOpenApplyOrganization,
   onOpenJoinOrganization,
+  onOpenPasswordReset,
 }: {
   onLogin: (token: string) => void;
   onClose: () => void;
   onOpenApplyOrganization: () => void;
   onOpenJoinOrganization: () => void;
+  onOpenPasswordReset: () => void;
 }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -7374,7 +7619,16 @@ const LoginModal = ({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm text-gray-400">密码</label>
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-sm text-gray-400">密码</label>
+                <button
+                  type="button"
+                  onClick={onOpenPasswordReset}
+                  className="text-sm font-medium text-sky-300 transition-colors hover:text-sky-100"
+                >
+                  找回密码
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type={showPwd ? 'text' : 'password'}
@@ -7426,11 +7680,179 @@ const LoginModal = ({
 
 const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => <OrganizationApplyModal onClose={onClose} />;
 
+const PasswordResetModal = ({
+  onClose,
+  onBackToLogin,
+}: {
+  onClose: () => void;
+  onBackToLogin: () => void;
+}) => {
+  const [username, setUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (newPassword !== confirmPassword) {
+      setError('两次输入的新密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiFetch<{ ok: boolean }>('/api/password-reset', {
+        method: 'POST',
+        body: JSON.stringify({
+          username,
+          new_password: newPassword,
+          ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
+        }),
+      });
+      setSuccess('密码已重置，请使用新密码登录。');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '密码重置失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-lg"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">找回密码</h2>
+            <button onClick={onClose} className="text-2xl leading-none text-gray-500 transition-colors hover:text-white">×</button>
+          </div>
+
+          {error && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm text-green-300">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm text-gray-400">账号</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoFocus
+                placeholder="请输入账号"
+                className={authInputClass}
+              />
+            </div>
+
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">新密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认新密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入新密码"
+                  className={authInputClass}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-500 disabled:opacity-50"
+            >
+              {loading ? '重置中...' : '重置密码'}
+            </button>
+            <button
+              type="button"
+              onClick={onBackToLogin}
+              className="w-full rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium transition-colors hover:bg-white/10"
+            >
+              返回登录
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -7454,6 +7876,7 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
           username,
           display_name: displayName,
           password,
+          ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
         }),
       });
       const raw = await res.text();
@@ -7466,6 +7889,9 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
       setDisplayName('');
       setPassword('');
       setConfirmPassword('');
+      setRecoveryPhone('');
+      setSecurityQuestion('');
+      setSecurityAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册申请提交失败');
     } finally {
@@ -7580,6 +8006,17 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
               </div>
             </div>
 
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
             <button
               type="submit"
               disabled={loading}
@@ -7600,6 +8037,10 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -7622,6 +8063,7 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
           username,
           display_name: displayName,
           password,
+          ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
         }),
       });
       setSuccess('机构申请已提交，等待审核。');
@@ -7630,6 +8072,9 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
       setDisplayName('');
       setPassword('');
       setConfirmPassword('');
+      setRecoveryPhone('');
+      setSecurityQuestion('');
+      setSecurityAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '机构申请提交失败');
     } finally {
@@ -7745,6 +8190,18 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
                 />
               </div>
             </div>
+
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
             <button
               type="submit"
               disabled={loading}
@@ -7771,6 +8228,10 @@ const JoinOrganizationModal = ({
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [organizationName, setOrganizationName] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -7823,8 +8284,19 @@ const JoinOrganizationModal = ({
       const payload = await apiFetch<{ user: CurrentUser }>(path, {
         method: 'POST',
         body: inviteToken
-          ? JSON.stringify({ username, display_name: displayName, password })
-          : JSON.stringify({ invite_code: inviteCode, username, display_name: displayName, password }),
+          ? JSON.stringify({
+            username,
+            display_name: displayName,
+            password,
+            ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
+          })
+          : JSON.stringify({
+            invite_code: inviteCode,
+            username,
+            display_name: displayName,
+            password,
+            ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
+          }),
       });
       setSuccess(`已加入 ${payload.user.organization_name}，现在可以使用新账号登录。`);
       setInviteCode('');
@@ -7832,6 +8304,9 @@ const JoinOrganizationModal = ({
       setDisplayName('');
       setPassword('');
       setConfirmPassword('');
+      setRecoveryPhone('');
+      setSecurityQuestion('');
+      setSecurityAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '加入机构失败');
     } finally {
@@ -7958,6 +8433,18 @@ const JoinOrganizationModal = ({
                 />
               </div>
             </div>
+
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
             <button
               type="submit"
               disabled={loading || previewLoading || (Boolean(inviteToken) && !organizationName)}
@@ -8752,6 +9239,14 @@ export default function App() {
     setPublicAuthModal('join-organization');
   };
 
+  const openPasswordReset = () => {
+    setPublicAuthModal('password-reset');
+  };
+
+  const backToLogin = () => {
+    setPublicAuthModal('login');
+  };
+
   const handleReviewGenerationSuccess = () => {
     setActivePage('review-generation');
   };
@@ -8821,7 +9316,11 @@ export default function App() {
               onClose={closePublicAuthModal}
               onOpenApplyOrganization={openApplyOrganization}
               onOpenJoinOrganization={openJoinOrganization}
+              onOpenPasswordReset={openPasswordReset}
             />
+          )}
+          {publicAuthModal === 'password-reset' && (
+            <PasswordResetModal onClose={closePublicAuthModal} onBackToLogin={backToLogin} />
           )}
           {publicAuthModal === 'apply-organization' && (
             <OrganizationApplyModal onClose={closePublicAuthModal} />
@@ -8831,6 +9330,19 @@ export default function App() {
           )}
         </AnimatePresence>
       </>
+    );
+  }
+
+  if (currentUser.requires_class_claim) {
+    return (
+      <ClassClaimPage
+        currentUser={currentUser}
+        onClaimed={(user) => {
+          setCurrentUser(user);
+          setActivePage('dashboard');
+        }}
+        onLogout={handleLogout}
+      />
     );
   }
 

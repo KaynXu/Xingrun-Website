@@ -201,6 +201,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "display_name": "Teacher A",
                 "password": "secret123",
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(submit.status_code, 201)
@@ -252,6 +253,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "beichen_owner",
                 "display_name": "Beichen Principal",
                 "password": "secret123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(submit.status_code, 201)
@@ -367,6 +369,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "code_join_member",
                 "display_name": "Code Join Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -569,6 +572,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "link_join_member",
                 "display_name": "Link Join Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -737,6 +741,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "alpha_member",
                 "display_name": "Alpha Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(alpha_join.status_code, 201)
@@ -751,6 +756,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "beta_member",
                 "display_name": "Beta Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(beta_join.status_code, 201)
@@ -762,6 +768,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "display_name": "Starain Pending",
                 "password": "pending123",
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(starain_pending.status_code, 201)
@@ -828,6 +835,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "alpha_member",
                 "display_name": "Alpha Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -866,6 +874,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "beta_member",
                 "display_name": "Beta Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -897,6 +906,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "alpha_member",
                 "display_name": "Alpha Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -938,6 +948,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "beta_member",
                 "display_name": "Beta Member",
                 "password": "memberpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -995,6 +1006,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "teacher_joined",
                 "display_name": "Teacher Joined",
                 "password": "joinpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -1030,6 +1042,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "teacher_new_code",
                 "display_name": "Teacher New Code",
                 "password": "joinpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(next_join.status_code, 201)
@@ -1080,6 +1093,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "teacher_linked",
                 "display_name": "Teacher Linked",
                 "password": "joinpass123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(join.status_code, 201)
@@ -1172,6 +1186,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "display_name": "Pending Teacher",
                 "password": "pending123",
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(pending_submit.status_code, 201)
@@ -1439,6 +1454,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "username": "beichen_member",
                 "display_name": "Beichen Member",
                 "password": "member123",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(same_org_join.status_code, 201)
@@ -1451,6 +1467,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 "display_name": "Starain Pending",
                 "password": "pending123",
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(default_org_pending_submit.status_code, 201)

@@ -71,6 +71,7 @@ from lesson_manager import (
     create_auth_session,
     create_consultation,
     create_registration_request,
+    claim_classes_for_user,
     delete_wechat_wrong_question_submission,
     delete_wrong_question_practice_sheet,
     delete_user_for_actor,
@@ -115,6 +116,7 @@ from lesson_manager import (
     list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
     list_registration_requests_for_actor,
+    list_unbound_classes_for_user_claim,
     list_users_for_actor,
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
@@ -156,6 +158,7 @@ from lesson_manager import (
     get_teacher_alias_entries,
     upsert_teacher_alias,
     delete_teacher_alias,
+    reset_user_password_by_recovery,
 )
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
@@ -1118,6 +1121,28 @@ def api_login():
     return jsonify({"token": token, "user": user})
 
 
+def _is_recovery_setup_error(message: str) -> bool:
+    return "找回密码" in message or "电话号码" in message or "密保" in message
+
+
+@app.route("/api/password-reset", methods=["POST"])
+def api_password_reset():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    new_password = data.get("new_password", "").strip()
+    try:
+        reset_user_password_by_recovery(
+            username=username,
+            new_password=new_password,
+            recovery_phone=(data.get("recovery_phone") or "").strip(),
+            security_question=(data.get("security_question") or "").strip(),
+            security_answer=(data.get("security_answer") or "").strip(),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})
+
+
 @app.route("/api/register-request", methods=["POST"])
 def api_register_request():
     data = request.json or {}
@@ -1138,9 +1163,12 @@ def api_register_request():
             display_name=display_name,
             password=password,
             organization_name=organization_name,
+            recovery_phone=(data.get("recovery_phone") or "").strip(),
+            security_question=(data.get("security_question") or "").strip(),
+            security_answer=(data.get("security_answer") or "").strip(),
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 409
+        return jsonify({"error": str(exc)}), 400 if _is_recovery_setup_error(str(exc)) else 409
     return jsonify({"id": item["id"], "status": item["status"]}), 201
 
 
@@ -1162,9 +1190,12 @@ def api_organization_request_create():
             username=username,
             display_name=display_name,
             password=password,
+            recovery_phone=(data.get("recovery_phone") or "").strip(),
+            security_question=(data.get("security_question") or "").strip(),
+            security_answer=(data.get("security_answer") or "").strip(),
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 409
+        return jsonify({"error": str(exc)}), 400 if _is_recovery_setup_error(str(exc)) else 409
     return jsonify({"id": item["id"], "status": item["status"]}), 201
 
 
@@ -1193,11 +1224,14 @@ def api_join_by_invite_code():
             username=username,
             display_name=display_name,
             password=password,
+            recovery_phone=(data.get("recovery_phone") or "").strip(),
+            security_question=(data.get("security_question") or "").strip(),
+            security_answer=(data.get("security_answer") or "").strip(),
         )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 409
+        return jsonify({"error": str(exc)}), 400 if _is_recovery_setup_error(str(exc)) else 409
     return jsonify({"user": user}), 201
 
 
@@ -1217,11 +1251,14 @@ def api_join_by_invite_link(invite_token: str):
             username=username,
             display_name=display_name,
             password=password,
+            recovery_phone=(data.get("recovery_phone") or "").strip(),
+            security_question=(data.get("security_question") or "").strip(),
+            security_answer=(data.get("security_answer") or "").strip(),
         )
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 409
+        return jsonify({"error": str(exc)}), 400 if _is_recovery_setup_error(str(exc)) else 409
     return jsonify({"user": user}), 201
 
 
@@ -1900,6 +1937,34 @@ def api_me():
     if error:
         return error
     return jsonify(user)
+
+
+@app.route("/api/me/unbound-classes", methods=["GET"])
+def api_me_unbound_classes():
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        items = list_unbound_classes_for_user_claim(user["id"])
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"items": items})
+
+
+@app.route("/api/me/claim-classes", methods=["POST"])
+def api_me_claim_classes():
+    user, error = _require_auth()
+    if error:
+        return error
+    data = request.json or {}
+    class_ids = data.get("class_ids", [])
+    try:
+        updated_user = claim_classes_for_user(user["id"], class_ids)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True, "user": updated_user})
 
 
 @app.route("/api/profile", methods=["PUT"])

@@ -769,3 +769,14 @@ test('class management source keeps delete and save buttons inside the teacher c
   assert.match(classManagementBlock[0], /<div className=\{`\$\{workspaceCardClass\} space-y-5 p-5`\}>[\s\S]*删除当前班级[\s\S]*保存班级/);
   assert.doesNotMatch(classManagementBlock[0], /<div className="flex flex-col gap-3 border-t border-sky-100\/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white\/10">[\s\S]*删除当前班级[\s\S]*保存班级/);
 });
+
+test('login source includes password reset and first-login class claim entry points', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
+  assert.match(source, /\/api\/password-reset/);
+  assert.match(source, /recovery_phone/);
+  assert.match(source, /const ClassClaimPage = \(/);
+  assert.match(source, /\/api\/me\/unbound-classes/);
+  assert.match(source, /\/api\/me\/claim-classes/);
+});

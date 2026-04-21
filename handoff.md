@@ -9,6 +9,7 @@
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页 `AI 错题助手` 对比卡 reveal 顺序已从“左右两列按 Step 逐排同步出现”改成“左侧 `人工复习` 整栏先出现，右侧 `AI 错题助手` 整栏后出现”，最后的“题目卡 + 挖空卡”练习单预览仍保持最后出现。本机 Chrome Playwright 临时脚本已验证 reveal 组顺序、点击状态和最终预览顺序，`npm run build` 通过。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页最后出现的白底错因预览已继续换成“题目卡 + 挖空卡”的浅蓝练习单样式：上方展示一张导数题题面卡，下方展示错因挖空引导卡，填满原先标题下方偏空的位置；这张组合预览仍保留为该页最后一个 reveal 组，会在 `AI 错题助手` 对比卡 `Step 4` 之后最后出现。本机 Chrome Playwright 临时脚本已验证 1280x720 最终态下预览高度、题目卡/挖空卡存在、最后 reveal 顺序和整页可见性，`npm run build` 通过。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已把左侧原来的“如果这一页你想先切进...”引导段、`打开官方文章` 按钮和右侧视频说明，替换成白底错因挖空预览卡；这张预览卡在 DOM 中排到该页最后一个 reveal 组，现场点击时会在 `AI 错题助手` 对比卡 `Step 4` 之后最后出现。为容纳新增白底预览，本页标题、对比卡和步骤行距也做了局部压缩；本机 Chrome Playwright 临时脚本已验证 1280x720 最终态下整页内容完整落在视口内，`npm run build` 通过。
+- 2026-04-21 已直接完成账号登录页找回密码、注册/加入账号找回方式、首次登录认领班级：`users / registration_requests / organization_requests` 已新增 `recovery_phone / security_question / security_answer_hash`，注册申请、机构申请、邀请码加入都会要求“电话号码或密保问题”至少一种；新增 `POST /api/password-reset`，手机号只做本地匹配不发验证码，密保按问题+答案校验后重置密码。首次登录的 `member` 账号如果尚未完成认领、没有负责班级且机构内存在未绑定班级，`/api/me` 会返回 `requires_class_claim`，前端会引导到认领页，通过 `GET /api/me/unbound-classes` 列出未绑定班级，`POST /api/me/claim-classes` 后写入既有 `user_classes` 绑定并同步班级负责老师展示。登录弹窗已补 `找回密码` 入口，机构申请/加入机构表单已补电话号码/密保切换栏位。
 - 2026-04-21 `develop` 已完成账号审批页的成员可见页面控制，并继续补上老师卡片到班级绑定的入口：`/api/me` 与 `/api/admin/users` 会返回 `visible_pages`，staff 可通过 `PUT /api/admin/users/<id>/visible-pages` 更新；前端账号审批成员卡片已有 `可见页面` 开关，侧边栏和工作台快捷入口都会按该配置过滤。展开某个非超级管理员老师/成员卡片后，`教学绑定` 区现在会显示 `去绑定班级`，点击后跳到 `班级管理` 并带入目标老师；班级管理顶部会显示 `目标老师：...`，展开新建/编辑班级时会把老师搜索预填为该老师姓名。老师类 `member` 账号现在只要 `visible_pages` 包含 `classes`，即可在侧边栏进入 `班级管理`；班级页对 `member` 不再请求 staff-only 的 `/api/admin/users` 和 `/api/classes/teacher-bindings`，后端 `/api/classes` 仍按 `user_classes` 映射返回该老师负责班级。班级创建、删除和负责老师调整仍保持 staff-only。
 - 2026-04-21 已按标准 release 流程把本地 `develop(20c0dd2)` 合到 `master(59f8d85)` 并部署到生产机 `49.234.185.86`；这次继续收口错题练习浏览器 PDF 的稳定性：当前 Linux 服务器上的 Playwright Chromium 启动已补上 `--disable-dev-shm-usage / --no-sandbox / --disable-setuid-sandbox` 三个稳态参数，避免练习单或错题库 PDF 渲染偶发以 `signal 6` 直接崩掉。对应回归已补在 `frontend/src/render-wrong-question-practice-sheet-pdf.test.ts` 和 `frontend/src/render-wrong-question-library-pdf.test.ts`。生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`；线上原先失败的 `sheet #12 / 2026-04-21 01:32:59 / student_id=276` 也已在这版代码下重新生成成功，当前状态已回到 `ready`，PDF 位于 `data/pdfs/wrong_question_practice_sheets/sheet-12.pdf`。
 - 2026-04-21 已按标准 release 流程把本地 `develop(69766b1)` 合到 `master(02b3d5b)` 并部署到生产机 `49.234.185.86`；这次继续收口错题练习里的 AI 挖空引导：当前系统提示词已从“替学生写得很具体的错因反思”改成“围绕错因做轻引导”，每个书写区限制为 `1 到 2 句`、`2 到 3 个` 挖空，不再硬写题目里没有明确给出的细节；同时练习单 PDF 里的 `重做这题（可选）` 已改成 `重做这题`。对应定向回归已补在 `tests/test_ai_processor_prompt.py` 和 `frontend/src/render-wrong-question-practice-sheet-pdf.test.ts`。生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
@@ -103,6 +104,7 @@
 ### 下一步
 - 最值得继续做的是在真实演示机或投屏浏览器里打开 `frontend/public/aippt/index.html`，切到 `星润建议` 页并点击到最后一步，确认新的题目卡 + 挖空卡组合图在现场距离下字够不够大。
 - 最值得继续做的是在真实演示机或投屏浏览器里打开 `frontend/public/aippt/index.html`，切到 `星润建议` 页并从头点击到最后一步，确认白底错因挖空预览最后出现、字号在现场距离下仍可读。
+- 最值得继续做的是用真实新老师账号 smoke 一遍：注册/加入时分别选电话号码和密保，登录页用两种方式各重置一次密码，再首次登录认领一个未绑定班级，确认认领后能进入班级管理且只看到自己负责班级。
 - 最值得继续做的是用真实 `owner/admin/member` 账号手工 smoke 一遍账号审批页：给老师账号关闭/打开 `班级管理`，重新登录后确认侧边栏、工作台快捷入口、班级列表和学生维护入口都符合预期。
 - 最值得继续做的是在真实 Windows 浏览器里打开 `frontend/public/aippt/index.html`，至少切到 `案例一` 和 `星润建议` 两页各看一遍，确认前者的标题与来源卡节奏、后者的整页完整可见性，以及右侧视频卡在浏览器非全屏高度下都符合预期。
 - 最值得继续做的是在真实老师账号下手工开一个学生 notebook，分别勾选“1 道题”和“多道题”各生成一次错题练习，确认等待中、完成后历史列表刷新、PDF 打开速度和下载命名都符合预期。
@@ -138,6 +140,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 本轮最终 proof 已通过：8 条后端账号流定向测试、`frontend/src/account-card.test.tsx`、`npm run lint`。额外跑过全量 `tests.test_account_flow`，当前仍剩 3 个与本轮无关的历史失败：两个课程创建用例仍期待旧 `201` 但当前接口返回异步 `202`，一个错题汇总断言未包含当前返回的 `unique_class_count / unique_student_count`。
 - 本轮 proof 覆盖了后端定向权限/映射测试、前端类型检查和全量前端测试，但还没有在真实浏览器里用实际老师账号做人工 smoke；如果线上已有成员被手动写入非法 `visible_pages_json`，当前代码会回退到默认全可见页面。
 - 当前 release 文档口径的 targeted proof 已通过并用于本次发布，但仓库里 `./.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` 目前仍有 7 条失败，集中在 `test_account_flow`、`test_master_data_store` 和 `test_single_lesson_pdf_unification`，表现为 lesson create 从旧 `201` 语义变成异步 `202/402`、以及 teacher alias 断言仍写死 `Kayn`。这说明全量回归套件和当前积分/alias 语义存在历史漂移；下次如果要把“全量 discover 绿”当硬门槛，需要先单独收这批旧用例。
 - 生产机仓库这轮已经删掉根目录历史备份文件、清掉 `pre-release-20260420-master-deploy`，并把运行时 `data/` 收进服务器本地 exclude；但仓库里仍保留更早的历史 `git stash` 条目，如果后续要继续深清，必须先逐条确认来源，不要直接批量 drop。
