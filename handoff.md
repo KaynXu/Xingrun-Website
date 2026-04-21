@@ -6,15 +6,15 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 已按标准 release 流程把本地 `develop(601b4da)` 合到 `master(552a8fc)` 并部署到生产机 `49.234.185.86`；这次发布包含课程日历下午时间段改为 `14:00-16:00 / 16:00-18:00 / 18:00-20:00 / 20:00-22:00`、拖拽后直接弹出“微调启动时间”弹窗、快捷提前/延后 15 或 30 分钟、自定义提前/延后分钟数、卡片右上角显示实际开课时间，以及桌面 7 天紧凑视图和 iPad/手机 42 格自适应布局。后端会自动把旧 `13:00-15:00 / 15:00-17:00 / 17:00-19:00 / 19:00-21:00` 排课迁移到新时间段。发布前本地 `develop` 与合并后的 `master` 均已通过临时 proof 脚本：后端课程日历 API 4 条 unittest、前端 189 条测试、`tsc --noEmit`、production build、以及真 Chrome headless 在 `1440 / 1024 / 390` 视口下的拖拽微调与无横向溢出检查；生产机已完成 `git pull --ff-only origin master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`，远端 HEAD 为 `552a8fc5`。
 - 2026-04-21 已完成网站 iPad/iPhone 滚动稳定性收口：工作台、账号验证中、首次认领班级这些顶层移动容器已从会随浏览器地址栏实时变化的 `100dvh` 改为更稳定的 `100svh`；根级 `body/html` 不再强行设置 `overscroll-behavior-y` 和 `touch-action`，让移动浏览器原生滚动链路接管；触屏设备上会关闭独立 `filter: blur(...)` 的大面积背景模糊，降低快速滚动时的合成压力。前端 189 条测试、`tsc --noEmit`、production build、以及本机 Chrome 的 iPhone/iPad 触摸快速滚动 smoke 均已通过。
-- 当前工作区仍有本轮之外的未提交改动：`app.py`、课程日历相关前后端测试与实现文件、`lesson_manager.py`、以及若干 `__pycache__/` 未跟踪文件；本轮滚动修复提交不会包含这些既有改动。
 - 2026-04-21 已按标准 release 流程把本地 `develop(2bd3839)` 合到 `master(ab80cea)` 并部署到生产机 `49.234.185.86`；这次发布包含讲师映射可从网站成员下拉选择并自动填账号/中文名，以及班级管理结构化命名文案收口。发布前本机 `develop` 和合并后的 `master` 均已跑通后端目标 unittest、前端 `npm test` 185 条和 `npm run build`，`develop` 额外跑过 `npm run lint`；生产机已完成 `git pull --ff-only origin master`、前端 build 与 `pm2 restart xingrun`，`xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已完成讲师映射成员选择优化：账号审批页的“讲师映射”弹窗现在可从网站成员下拉选择，选择后自动把该成员的网站账号写入企微 ID 字段、把显示名写入中文名字段；后端 `/api/admin/users` 现在也会向 owner/admin 返回成员 `username`，供这个下拉使用。映射本身仍保存到原有 `teachers.json` 链路，仍保留手动填写入口。
 - 2026-04-21 已收口班级管理里的用户可见命名说明：页面现在按 `学科 + 年级 + 班级` 解释结构化班级名，示例改为 `数学七年级三班 / 物理七年级二班`；学科输入示例只保留 `数学`，不再出现旧的版本号式开发遗留口径。前端年级选项已补 `七年级 / 八年级 / 九年级`，同时保留原有 `初一 / 初二 / 初三` 兼容。
 - 2026-04-21 已按标准 release 流程把本地 `develop(a1cf061)` 合到 `master(8fe985e)` 并部署到生产机 `49.234.185.86`；这次发布包含课程日历独立排课、账号删除外键收口、班级学科结构化筛选、复习计划 PDF LaTeX 纯文本规范化，以及两份新版复习计划课程包。发布前本机临时脚本已分别在 `develop` 和 `master` 跑通后端 6 条定向 unittest、课程包 `py_compile`、前端 `npm test` 184 条、`tsc --noEmit` 和 `npm run build`；生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已完成账号删除 500 和班级学科结构化筛选修复：删除成员/老师账号前现在会先清理或置空其关联的咨询、课程日历、班级邀请码、课堂反馈、错题、错题练习、积分流水、会话和班级绑定等用户外键，不再因 teacher 相关历史记录触发 SQLite 外键 `INTERNAL SERVER ERROR`；班级创建/编辑现在要求学科必填，班级结构按学科、年级、班级分开维护；首次登录认领班级页和班级管理卡片都已补上学科筛选，并与原有年级筛选组合生效。
 - 2026-04-21 已完成复习计划 PDF 的 LaTeX 纯文本规范化修复：`review_plan_templates/generate_review_pdfs.py` 现在沿用错题本那套更稳的处理方式，能修复 JSON 转义吞掉的 `\text / \to / \frac / \neq` 控制字符形态，也能处理未包 `$...$` 的 `\in / \mathbbR / \ldots / \frac / ^{...}` 等裸公式片段；分式输出也改为带括号的 `(分子)/(分母)`，避免复习计划模板里继续出现 `ext / rac / mathbbR / ldots` 之类坏文本。定向 proof 已通过复习计划 LaTeX、单节 PDF 模板符号兼容和错题库 PDF fallback 相关 23 条用例。
-- 2026-04-21 已完成网站端课程日历首版实装：课程日历现在使用独立 `course_calendar_schedules` 表和 `/api/course-calendar/schedules` API，不再从 `/api/review-plans` 或 `lessons` 读取排课，因此当前复习计划里的历史/测试课不会再显示成已排课程。日历一天固定为 `08:00-10:00 / 10:00-12:00 / 13:00-15:00 / 15:00-17:00 / 17:00-19:00 / 19:00-21:00` 六个工作时间板块；前端支持把可排班级拖到对应日期和板块生成排课，并可删除已排记录。后端列表、创建、删除都复用现有班级可访问性判断，`member` 老师只会看到和排自己通过 `user_classes` 分配到的班级。
+- 2026-04-21 已完成网站端课程日历首版实装并在后续版本补齐微调启动时间：课程日历使用独立 `course_calendar_schedules` 表和 `/api/course-calendar/schedules` API，不再从 `/api/review-plans` 或 `lessons` 读取排课，因此当前复习计划里的历史/测试课不会再显示成已排课程。日历一天固定为 `08:00-10:00 / 10:00-12:00 / 14:00-16:00 / 16:00-18:00 / 18:00-20:00 / 20:00-22:00` 六个工作时间板块；前端支持把可排班级拖到对应日期和板块后直接微调实际开课时间，并可删除已排记录。后端列表、创建、删除都复用现有班级可访问性判断，`member` 老师只会看到和排自己通过 `user_classes` 分配到的班级。
 - 2026-04-21 已根据本地录音 `7631121683310742458_record_audio.m4a` 转写并按 `review_plan_templates/review-plan-workflow.md` 生成新版课后复习计划：新增转写源文件 `review_plan_templates/source_transcripts/7631121683310742458_record_audio_transcript.txt` 和课程包源文件 `review_plan_templates/lesson_pack_geometry_angle_similarity.py`，主题收口为“几何基础模型、外角定理、角平分线辅助线、凸/凹图形角关系、全等与相似”。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260421-212745.pdf`；临时验证脚本确认课程包 5 个复习节点为 `2026-04-22 / 2026-04-23 / 2026-04-28 / 2026-05-05 / 2026-05-21`，PDF 15 页、198405 bytes，并能提取到 `几何基础模型 / 外角定理 / 全等 / 相似` 关键词。
 - 2026-04-21 已按 `review_plan_templates/review-plan-workflow.md` 为录音《立体几何公式及题型讲解》生成新版课后复习计划：新增课程包源文件 `review_plan_templates/lesson_pack_solid_geometry_sphere.py`，覆盖棱台/圆台公式、球面大圆劣弧、外接球几何法、几何加代数建系、直/正三棱锥、正四面体和墙角/鳖臑/对棱相等秒杀模型；已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260421-210831.pdf`，并通过临时脚本 `/tmp/xingrun_solid_geometry_review_plan_proof.py` 校验 5 个复习节点、题量、知识点加练结构和 PDF 文件存在。
 - 2026-04-21 已完成一次全项目 review 后的运行时配置安全收口并部署到生产机 `49.234.185.86`：发现根目录 `config.json` 被 Git 跟踪且包含真实形态的 AI API key，已从仓库索引删除 `config.json`、把它加入 `.gitignore`、在 README 明确真实密钥只放 `.env.runtime` 或环境变量，并新增 `tests/test_runtime_config_hygiene.py` 防止回归。本轮代码提交 `7a45ab4` 已推到 `origin/develop`，并通过 `master(4037f78)` 部署；生产机部署前已把 `.env.runtime` 补成 `XR_PROVIDER=n1n`，随后服务器直拉 `master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
@@ -123,7 +123,7 @@
 - 最值得继续做的是用真实 owner/admin 账号打开账号审批页，新增一条讲师映射时从网站成员下拉选择一个新老师，确认企微 ID 和中文名自动填好、保存后咨询批量整理/接待老师识别仍能命中该账号。
 - 最值得继续做的是用真实 owner/admin/member 账号 smoke 一遍班级链路：创建一个 `数学七年级三班` 结构的班级，确认班级管理可按年级+学科组合筛选，首次登录老师认领页也能按学科筛到该班级；再删除一个有班级绑定、家长绑定或错题练习历史的老师账号，确认前端不再出现 `INTERNAL SERVER ERROR`。
 - 最值得继续做的是拿一份真实含 `\text{lim}`、`\mathbbR`、`\ldots` 和裸 `\frac` 的课堂反馈生成复习计划 PDF，人工看一遍页面换行和数学文本可读性。
-- 最值得继续做的是用真实老师账号在浏览器里打开课程日历，确认只出现自己分配的班级，并手工拖一个班级到六个时间板块之一、刷新后确认排课仍在、再删除该排课。
+- 最值得继续做的是用真实老师账号在浏览器里打开课程日历，确认只出现自己分配的班级，并手工拖一个班级到六个时间板块之一，选择一次“晚 15 分钟”或自定义微调，刷新后确认排课仍在、再删除该排课。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260421-212745.pdf` 快速扫一遍，确认“外角/角平分线/全等/相似”的课堂术语与老师板书一致；如果老师实际想要保留更多原题字母关系，再回到 `lesson_pack_geometry_angle_similarity.py` 微调题目。
 - 最值得继续做的是打开本地生成的立体几何复习计划 PDF，手工逐页看一遍版式、分页和公式显示，确认老师可直接发给学生。
 - 最值得继续做的是在密钥平台轮换这次已经进入 Git 历史的旧 AI API key；本轮只把它从当前仓库树和后续提交里移除，不能抹掉既有历史提交里的泄露痕迹。
@@ -169,7 +169,7 @@
 - 讲师映射下拉只把“网站成员账号 -> 企微 ID 字段”这一步从手填改成可选择，并不会自动给每个新成员创建一条映射；新老师加入网站后，仍需要在讲师映射里选择并保存一次，才能进入 `teachers.json` 并被咨询助手/批量整理识别链路使用。本轮已跑后端目标用例、前端测试、lint、build 和临时 proof，但还没有在真实浏览器里手工保存一条映射。
 - 本轮已用后端定向测试覆盖老师账号删除时的家长绑定、错题、错题练习和班级邀请码外键收口，也用前端源码测试和 build 覆盖两个学科筛选入口；但还没有在真实浏览器里用实际账号手工走创建、认领、筛选、删除的完整 smoke。
 - 复习计划 PDF 仍是 ReportLab 纯文本渲染，不是错题本浏览器 + KaTeX 渲染；本轮把常见 LaTeX 片段转为可读 Unicode 文本，但非常复杂的嵌套公式仍可能退化为近似文本，需要真实 PDF 人工验收。
-- 课程日历本轮已用后端 API、前端静态渲染、类型检查和 production build 验证，但还没有在真实浏览器里做人工拖拽 smoke；如果移动端也需要排课，HTML5 拖拽的触屏体验可能还需要单独补交互。
+- 课程日历本轮已用后端 API、前端测试、类型检查、production build，以及真 Chrome headless 覆盖桌面/iPad/手机视口和拖拽微调链路；但还没有用真实账号在生产浏览器里做人工保存/刷新/删除 smoke。如果移动端也需要排课，HTML5 拖拽的触屏体感仍可能需要单独补交互。
 - 本轮录音使用本地 `faster-whisper base` 转写，几何课堂里大量字母、角名和板书口述会被识别成噪声；复习计划已经按可稳定识别出的主线归纳，但若要做到完全贴合原题细节，仍建议老师对 PDF 里的题目字母和课堂原话做一次人工校对。
 - 本轮立体几何复习计划已通过脚本校验并成功生成 PDF，但还没有人工逐页视觉验收；如果实际打印或投屏查看时公式字号、分页或题量密度不合适，需要基于生成 PDF 再微调课程包内容。
 - 本轮安全修复已阻止 `config.json` 继续被 Git 跟踪，并用 `git grep` 扫描确认当前跟踪源码里没有新的 `sk-...` 形态密钥；但旧密钥仍存在于历史提交中，必须在对应平台手动轮换后才算真正解除风险。
@@ -217,7 +217,7 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
-- `8fe985e` `Merge branch 'develop'`
+- `552a8fc` `Merge branch 'develop'`
 - `a1cf061` `Merge remote-tracking branch 'origin/develop' into develop`
 - `1575cef` `fix: structure class subjects and account deletion`
 - `14e743f` `docs: add geometry review plan pack`
