@@ -322,6 +322,9 @@ const GRADE_NORMALIZATION_RULES: Array<[string, string]> = [
   ['四年级', '四年级'],
   ['五年级', '五年级'],
   ['六年级', '六年级'],
+  ['七年级', '七年级'],
+  ['八年级', '八年级'],
+  ['九年级', '九年级'],
   ['初一', '初一'],
   ['初二', '初二'],
   ['初三', '初三'],
@@ -334,9 +337,10 @@ const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
   ['6年级2班', '六年级 2 班'],
   ['六年级二班', '六年级 2 班'],
   ['六年2班', '六年级 2 班'],
+  ['七年级三班', '七年级 3 班'],
 ];
 
-const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
+const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
 const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
   { id: 'review-generation', label: '复习生成' },
@@ -457,12 +461,18 @@ const normalizeClassNameInput = (value: string): string => {
   const normalized = trimmed
     .replace(/\s+/g, '')
     .replace(/^6年级/, '六年级')
+    .replace(/^9年级/, '九年级')
+    .replace(/^8年级/, '八年级')
+    .replace(/^7年级/, '七年级')
     .replace(/^5年级/, '五年级')
     .replace(/^4年级/, '四年级')
     .replace(/^3年级/, '三年级')
     .replace(/^2年级/, '二年级')
     .replace(/^1年级/, '一年级')
     .replace(/^六年(?=\d+班$)/, '六年级')
+    .replace(/^九年(?=\d+班$)/, '九年级')
+    .replace(/^八年(?=\d+班$)/, '八年级')
+    .replace(/^七年(?=\d+班$)/, '七年级')
     .replace(/^五年(?=\d+班$)/, '五年级')
     .replace(/^四年(?=\d+班$)/, '四年级')
     .replace(/^三年(?=\d+班$)/, '三年级')
@@ -476,7 +486,7 @@ const normalizeClassNameInput = (value: string): string => {
     .replace(/六班$/, '6班');
 
   const gradePrefix = GRADE_NORMALIZATION_RULES.find(([alias]) => normalized.startsWith(alias))?.[1];
-  const match = normalized.match(/^(一年级|二年级|三年级|四年级|五年级|六年级|初一|初二|初三|高一|高二|高三)(\d+)班$/);
+  const match = normalized.match(/^(一年级|二年级|三年级|四年级|五年级|六年级|七年级|八年级|九年级|初一|初二|初三|高一|高二|高三)(\d+)班$/);
   if (!match || !gradePrefix) {
     return trimmed;
   }
@@ -6755,8 +6765,8 @@ const ClassManagementPage = ({
           </div>
         )}
         <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">班级名称、年级、学科分开维护；学科需要单独输入，可填写“数学 3.0”这类自定义学科。</p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">班级命名规则</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">按「学科 + 年级 + 班级」维护班级信息，例如：数学七年级三班、物理七年级二班。学科填写具体科目，班级名称填写“三班”这类班级序号。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -6981,7 +6991,7 @@ const ClassManagementPage = ({
                           value={newClassForm.name}
                           onChange={(e) => handleFieldChange('new', 'name', e.target.value)}
                           className={workspaceFieldClass}
-                          placeholder="如：六年级 2 班"
+                          placeholder="如：三班"
                         />
                       </label>
                       <label className="space-y-2 text-sm">
@@ -6991,7 +7001,7 @@ const ClassManagementPage = ({
                           value={newClassForm.subject}
                           onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
                           className={workspaceFieldClass}
-                          placeholder="如：数学 3.0"
+                          placeholder="如：数学"
                         />
                       </label>
                       <label className="space-y-2 text-sm md:col-span-2">
@@ -7110,7 +7120,7 @@ const ClassManagementPage = ({
                       <div className={`${workspaceCardClass} space-y-4 p-5`}>
                         <div>
                           <h4 className="text-xl font-semibold text-slate-900 dark:text-white">基础信息</h4>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这里维护班级名称、学科和年级；学科可手动输入“数学 3.0”。</p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">请分别填写学科、年级和班级名称，系统按「学科 + 年级 + 班级」理解班级，例如：数学七年级三班。</p>
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
@@ -7121,7 +7131,7 @@ const ClassManagementPage = ({
                               value={editingFormState.name}
                               onChange={(e) => handleFieldChange(editingClass.id, 'name', e.target.value)}
                               className={workspaceFieldClass}
-                              placeholder="如：六年级 2 班"
+                              placeholder="如：三班"
                             />
                           </label>
                           <label className="space-y-2 text-sm">
@@ -7131,7 +7141,7 @@ const ClassManagementPage = ({
                               value={editingFormState.subject}
                               onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
                               className={workspaceFieldClass}
-                              placeholder="如：数学 3.0"
+                              placeholder="如：数学"
                             />
                           </label>
                           <label className="space-y-2 text-sm md:col-span-2">

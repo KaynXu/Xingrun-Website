@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
-const fixedGradeValues = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
+const fixedGradeValues = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const sharedGradeOptionsPattern = new RegExp(
   `const gradeOptions\\s*=\\s*\\[\\s*${fixedGradeValues.map((value) => `'${value}'`).join('\\s*,\\s*')}\\s*\\];`,
 );
@@ -252,7 +252,8 @@ test('class management source adds grade and subject filters and reuses the shar
   assert.match(appSource, /gradeOptions\.includes\(\s*[^)]*grade[^)]*\)/);
   assert.match(appSource, /请选择年级/);
   assert.match(appSource, /学科不能为空/);
-  assert.match(appSource, /placeholder="如：数学 3\.0"/);
+  assert.match(appSource, /placeholder="如：数学"/);
+  assert.doesNotMatch(appSource, /数学 3\.0/);
 });
 
 test('class management source uses class-centric teacher binding instead of user checkbox matrices', () => {

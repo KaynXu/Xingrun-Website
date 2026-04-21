@@ -954,7 +954,7 @@ class AccountFlowTestCase(unittest.TestCase):
 
         class_id = lesson_manager.save_class(
             "六年级 1 班",
-            subject="数学 3.0",
+            subject="数学",
             grade="六年级",
             organization_id=organization_id,
         )
