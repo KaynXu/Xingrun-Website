@@ -9387,13 +9387,14 @@ export default function App() {
     setCalendarAnchorDate((current) => shiftIsoDate(current, 7));
   };
 
-  const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock) => {
+  const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
     apiFetch<{ item: CourseCalendarScheduleRecord }>('/api/course-calendar/schedules', {
       method: 'POST',
       body: JSON.stringify({
         class_id: classId,
         date,
         time_block: timeBlock,
+        start_offset_minutes: startOffsetMinutes,
       }),
     })
       .then(({ item }) => {

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   COURSE_CALENDAR_TIME_BLOCKS,
   assignScheduleCardsToTimeBlocks,
+  buildCourseScheduleTimeRange,
   buildClassStatusRailData,
   getWeekDates,
   getWeekRangeLabel,
@@ -45,7 +46,7 @@ test('course calendar data helpers build an independent six-block schedule from 
       id: 102,
       class_id: 2,
       date: '2026-03-31',
-      time_block: '19:00-21:00',
+      time_block: '20:00-22:00',
     },
   ];
 
@@ -55,6 +56,14 @@ test('course calendar data helpers build an independent six-block schedule from 
   assert.equal(weekDates[0], '2026-03-30');
   assert.equal(getWeekRangeLabel('2026-04-01'), '2026.03.30 - 2026.04.05');
   assert.equal(COURSE_CALENDAR_TIME_BLOCKS.length, 6);
+  assert.deepEqual(COURSE_CALENDAR_TIME_BLOCKS, [
+    '08:00-10:00',
+    '10:00-12:00',
+    '14:00-16:00',
+    '16:00-18:00',
+    '18:00-20:00',
+    '20:00-22:00',
+  ]);
 
   const joined = joinClassesAndSchedules(classes, schedules);
   const firstDayCards = joined.filter((card) => card.date === weekDates[0]);
@@ -64,7 +73,7 @@ test('course calendar data helpers build an independent six-block schedule from 
   const secondDayBlocks = assignScheduleCardsToTimeBlocks(secondDayCards);
 
   assert.equal(firstDayBlocks['08:00-10:00'].length, 1);
-  assert.equal(secondDayBlocks['19:00-21:00'].length, 1);
+  assert.equal(secondDayBlocks['20:00-22:00'].length, 1);
   assert.equal(firstDayCards[0].className, '高一数学A班');
 
   const teacherLoad = summarizeTeacherLoad(joined);
@@ -119,7 +128,7 @@ test('teacher load summarizes scheduled classes instead of teacher-owned classes
       id: 102,
       class_id: 2,
       date: '2026-03-31',
-      time_block: '19:00-21:00',
+      time_block: '20:00-22:00',
     },
   ];
 
@@ -128,4 +137,27 @@ test('teacher load summarizes scheduled classes instead of teacher-owned classes
 
   assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.count, 1);
   assert.equal(teacherLoad.find((item) => item.teacherName === 'Alice')?.classCount, 1);
+});
+
+test('course calendar data helpers calculate adjusted start and end times', () => {
+  assert.deepEqual(buildCourseScheduleTimeRange('08:00-10:00', 15), {
+    startLabel: '08:15',
+    endLabel: '10:15',
+    displayRange: '08:15-10:15',
+    startText: '08:15 开始',
+  });
+
+  assert.deepEqual(buildCourseScheduleTimeRange('08:00-10:00', -30), {
+    startLabel: '07:30',
+    endLabel: '09:30',
+    displayRange: '07:30-09:30',
+    startText: '07:30 开始',
+  });
+
+  assert.deepEqual(buildCourseScheduleTimeRange('13:00-15:00', 15), {
+    startLabel: '14:15',
+    endLabel: '16:15',
+    displayRange: '14:15-16:15',
+    startText: '14:15 开始',
+  });
 });
