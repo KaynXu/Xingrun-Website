@@ -6223,6 +6223,7 @@ const ClassManagementPage = ({
     new: createEmptyClassForm(),
   }));
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
   const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
   const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
   const [studentDraftNameByClassId, setStudentDraftNameByClassId] = useState<Record<number, string>>({});
@@ -6468,6 +6469,11 @@ const ClassManagementPage = ({
       return;
     }
 
+    if (!payload.subject) {
+      setFormError('学科不能为空');
+      return;
+    }
+
     if (!payload.grade || !gradeOptions.includes(payload.grade)) {
       setFormError('请选择年级');
       return;
@@ -6659,7 +6665,15 @@ const ClassManagementPage = ({
     }
   };
 
+  const classSubjectFilterOptions = ['全部学科', ...Array.from(new Set(classes.map((item) => item.subject.trim()).filter(Boolean))).map(String).sort((a, b) => a.localeCompare(b, 'zh-CN'))];
+  const activeClassFilterSummary = [
+    selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
+    selectedSubjectFilter !== '全部学科' ? selectedSubjectFilter : '',
+  ].filter(Boolean).join(' / ') || '全部';
   const filteredClasses = classes.filter((item) => {
+    if (selectedSubjectFilter !== '全部学科' && item.subject !== selectedSubjectFilter) {
+      return false;
+    }
     if (selectedGradeFilter === '全部') {
       return true;
     }
@@ -6742,7 +6756,7 @@ const ClassManagementPage = ({
         )}
         <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
           <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">班级名称、年级、学科分开维护；学科需要单独输入，可填写“数学 3.0”这类自定义学科。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${workspaceSoftCardClass} p-4`}>
@@ -6792,25 +6806,39 @@ const ClassManagementPage = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-t border-sky-100/80 pt-4 dark:border-white/10">
-          {gradeFilterOptions.map((option) => {
-            const active = option === selectedGradeFilter;
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setSelectedGradeFilter(option)}
-                className={cn(
-                  'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                  active
-                    ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
-                    : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-                )}
-              >
-                {option}
-              </button>
-            );
-          })}
+        <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-4 dark:border-white/10">
+          <div className="flex flex-wrap gap-2">
+            {gradeFilterOptions.map((option) => {
+              const active = option === selectedGradeFilter;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setSelectedGradeFilter(option)}
+                  className={cn(
+                    'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                    active
+                      ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                      : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                  )}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+          <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 sm:max-w-xs">
+            学科筛选
+            <select
+              value={selectedSubjectFilter}
+              onChange={(event) => setSelectedSubjectFilter(event.target.value)}
+              className={`${workspaceFieldClass} w-full`}
+            >
+              {classSubjectFilterOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {loading ? (
@@ -6821,7 +6849,7 @@ const ClassManagementPage = ({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredClasses.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                {classes.length === 0 ? '暂无班级，点击右上角“新建班级”开始创建。' : `当前筛选“${selectedGradeFilter}”下暂无班级。`}
+                {classes.length === 0 ? '暂无班级，点击右上角“新建班级”开始创建。' : `当前筛选“${activeClassFilterSummary}”下暂无班级。`}
               </div>
             ) : null}
 
@@ -6953,17 +6981,17 @@ const ClassManagementPage = ({
                           value={newClassForm.name}
                           onChange={(e) => handleFieldChange('new', 'name', e.target.value)}
                           className={workspaceFieldClass}
-                          placeholder="如：六年级数学冲刺班"
+                          placeholder="如：六年级 2 班"
                         />
                       </label>
                       <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">科目</span>
+                        <span className="text-slate-500 dark:text-slate-400">学科</span>
                         <input
                           type="text"
                           value={newClassForm.subject}
                           onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
                           className={workspaceFieldClass}
-                          placeholder="如：数学"
+                          placeholder="如：数学 3.0"
                         />
                       </label>
                       <label className="space-y-2 text-sm md:col-span-2">
@@ -7082,7 +7110,7 @@ const ClassManagementPage = ({
                       <div className={`${workspaceCardClass} space-y-4 p-5`}>
                         <div>
                           <h4 className="text-xl font-semibold text-slate-900 dark:text-white">基础信息</h4>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这里维护班级名称、科目和年级。</p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">这里维护班级名称、学科和年级；学科可手动输入“数学 3.0”。</p>
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
@@ -7093,17 +7121,17 @@ const ClassManagementPage = ({
                               value={editingFormState.name}
                               onChange={(e) => handleFieldChange(editingClass.id, 'name', e.target.value)}
                               className={workspaceFieldClass}
-                              placeholder="如：六年级数学冲刺班"
+                              placeholder="如：六年级 2 班"
                             />
                           </label>
                           <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">科目</span>
+                            <span className="text-slate-500 dark:text-slate-400">学科</span>
                             <input
                               type="text"
                               value={editingFormState.subject}
                               onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
                               className={workspaceFieldClass}
-                              placeholder="如：数学"
+                              placeholder="如：数学 3.0"
                             />
                           </label>
                           <label className="space-y-2 text-sm md:col-span-2">
@@ -7392,6 +7420,8 @@ const ClassClaimPage = ({
 }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassIds, setSelectedClassIds] = useState<number[]>([]);
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -7426,6 +7456,22 @@ const ClassClaimPage = ({
       current.includes(classId) ? current.filter((id) => id !== classId) : [...current, classId],
     );
   };
+
+  const claimGradeFilterOptions = ['全部', ...gradeOptions.filter((option) => classes.some((item) => item.grade === option))];
+  const claimSubjectFilterOptions = ['全部学科', ...Array.from(new Set(classes.map((item) => item.subject.trim()).filter(Boolean))).map(String).sort((a, b) => a.localeCompare(b, 'zh-CN'))];
+  const claimFilterSummary = [
+    selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
+    selectedSubjectFilter !== '全部学科' ? selectedSubjectFilter : '',
+  ].filter(Boolean).join(' / ') || '全部';
+  const filteredClasses = classes.filter((item) => {
+    if (selectedSubjectFilter !== '全部学科' && item.subject !== selectedSubjectFilter) {
+      return false;
+    }
+    if (selectedGradeFilter === '全部') {
+      return true;
+    }
+    return item.grade === selectedGradeFilter;
+  });
 
   const handleClaim = async () => {
     setError('');
@@ -7472,6 +7518,35 @@ const ClassClaimPage = ({
           </div>
         )}
 
+        {!loading && classes.length > 0 ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              年级筛选
+              <select
+                value={selectedGradeFilter}
+                onChange={(event) => setSelectedGradeFilter(event.target.value)}
+                className={`${workspaceFieldClass} w-full`}
+              >
+                {claimGradeFilterOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              学科筛选
+              <select
+                value={selectedSubjectFilter}
+                onChange={(event) => setSelectedSubjectFilter(event.target.value)}
+                className={`${workspaceFieldClass} w-full`}
+              >
+                {claimSubjectFilterOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+
         <div className="mt-5 space-y-3">
           {loading ? (
             <WorkspaceLoading label="正在加载未绑定班级..." />
@@ -7479,8 +7554,12 @@ const ClassClaimPage = ({
             <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
               当前没有未绑定班级。
             </div>
+          ) : filteredClasses.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+              {`当前筛选“${claimFilterSummary}”下暂无未绑定班级。`}
+            </div>
           ) : (
-            classes.map((item) => {
+            filteredClasses.map((item) => {
               const checked = selectedClassIds.includes(item.id);
               return (
                 <button

@@ -2844,12 +2844,16 @@ def api_class_create():
         return error
     data = request.json or {}
     name = (data.get("name") or "").strip()
+    subject = (data.get("subject") or "").strip()
+    grade = (data.get("grade") or "").strip()
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
+    if not subject:
+        return jsonify({"error": "学科不能为空"}), 400
     cid = save_class(
         name=name,
-        subject=data.get("subject", "").strip(),
-        grade=data.get("grade", "").strip(),
+        subject=subject,
+        grade=grade,
         teacher_name=data.get("teacher_name", "").strip(),
         teacher_email=data.get("teacher_email", "").strip(),
         organization_id=user.get("organization_id"),
@@ -3374,8 +3378,12 @@ def api_class_update(class_id):
         return jsonify({"error": "forbidden"}), 403
     data = request.json or {}
     name = (data.get("name") or "").strip()
+    subject = (data.get("subject") or "").strip()
+    grade = (data.get("grade") or "").strip()
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
+    if not subject:
+        return jsonify({"error": "学科不能为空"}), 400
     teacher_name = None
     if "teacher_name" in data:
         teacher_name = (data.get("teacher_name") or "").strip()
@@ -3385,8 +3393,8 @@ def api_class_update(class_id):
     update_class(
         class_id=class_id,
         name=name,
-        subject=data.get("subject", "").strip(),
-        grade=data.get("grade", "").strip(),
+        subject=subject,
+        grade=grade,
         teacher_name=teacher_name,
         teacher_email=teacher_email,
     )

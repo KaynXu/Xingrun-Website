@@ -731,7 +731,7 @@ test('class management source moves naming guidance to the page header and remov
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。[\s\S]*命名统一规则/);
-  assert.match(classManagementBlock[0], /新建或编辑班级时会优先统一成“六年级 2 班 \/ 初一 3 班 \/ 高二 1 班”的格式。/);
+  assert.match(classManagementBlock[0], /班级名称、年级、学科分开维护；学科需要单独输入，可填写“数学 3\.0”这类自定义学科。/);
   assert.equal((classManagementBlock[0].match(/命名统一规则/g) || []).length, 1);
 });
 
@@ -772,6 +772,7 @@ test('class management source keeps delete and save buttons inside the teacher c
 
 test('login source includes password reset and first-login class claim entry points', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classClaimBlock = source.match(/const ClassClaimPage = \([\s\S]*?const LoginModal = \(/);
 
   assert.match(source, /type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
   assert.match(source, /\/api\/password-reset/);
@@ -779,4 +780,9 @@ test('login source includes password reset and first-login class claim entry poi
   assert.match(source, /const ClassClaimPage = \(/);
   assert.match(source, /\/api\/me\/unbound-classes/);
   assert.match(source, /\/api\/me\/claim-classes/);
+  assert.ok(classClaimBlock);
+  assert.match(classClaimBlock[0], /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
+  assert.match(classClaimBlock[0], /const \[selectedSubjectFilter, setSelectedSubjectFilter\] = useState<string>\('全部学科'\)/);
+  assert.match(classClaimBlock[0], /const filteredClasses = classes\.filter\(\(item\) => \{/);
+  assert.match(classClaimBlock[0], /if \(selectedSubjectFilter !== '全部学科' && item\.subject !== selectedSubjectFilter\) \{\s*return false;\s*\}/);
 });
