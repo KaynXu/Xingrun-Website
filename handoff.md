@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 已完成一次全项目 review 后的运行时配置安全收口并部署到生产机 `49.234.185.86`：发现根目录 `config.json` 被 Git 跟踪且包含真实形态的 AI API key，已从仓库索引删除 `config.json`、把它加入 `.gitignore`、在 README 明确真实密钥只放 `.env.runtime` 或环境变量，并新增 `tests/test_runtime_config_hygiene.py` 防止回归。本轮代码提交 `7a45ab4` 已推到 `origin/develop`，并通过 `master(4037f78)` 部署；生产机部署前已把 `.env.runtime` 补成 `XR_PROVIDER=n1n`，随后服务器直拉 `master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已按用户确认把错题练习 PDF 的 ReportLab fallback 从活代码删除并部署到生产机 `49.234.185.86`：本地代码提交 `e2f630b` 已合入 `master(0ff8935)` 并推送，生产机已拉取 `master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`。当前 `pdf_engine.generate_wrong_question_practice_sheet_pdf()` 只调用浏览器/Skia 渲染，浏览器失败会直接抛错并让练习单生成失败，不再生成 ReportLab 版练习单 PDF。线上截图里的 `练习单 #5` 对应生产数据库 `sheet_id=15`，PDF producer 是 `ReportLab`，已按用户要求从生产数据库和文件系统删除；删除后 `test` 学生最新练习单回到 `sheet_id=14/13/12/10`，对应 PDF 文件均存在。发布前/合并后临时脚本 proof 已跑通后端 `tests.test_wrong_question_library_pdf` + `tests.test_wrong_question_practice_async_api`、前端 `npm test` 183 条、`npm run build`。
 - 2026-04-21 已按标准 release 流程把本地 `develop(151fbab)` 合到 `master(20dceec)` 并部署到生产机 `49.234.185.86`；这次发布包含账号审批页成员可见页面控制、老师类 `member` 账号按 `visible_pages` + `user_classes` 进入班级管理、账号找回密码、注册/加入账号找回方式、首次登录认领未绑定班级。发布前本机临时脚本已跑通后端账号流定向回归、前端 lint、相关前端测试和前端 build；生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已按标准 release 流程把本地 `develop(c4ba61f)` 合到 `master(2da1eab)` 并部署到生产机 `49.234.185.86`；这次发布包含 AIPPT `星润建议` 页 `AI 错题助手` 对比卡 reveal 顺序调整：左侧 `人工复习` 整栏先出现，右侧 `AI 错题助手` 整栏后出现，最后练习单预览仍保持最后出现。生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
@@ -107,6 +108,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是在密钥平台轮换这次已经进入 Git 历史的旧 AI API key；本轮只把它从当前仓库树和后续提交里移除，不能抹掉既有历史提交里的泄露痕迹。
 - 最值得继续做的是在真实演示机或投屏浏览器里打开 `frontend/public/aippt/index.html`，切到 `星润建议` 页并点击到最后一步，确认新的题目卡 + 挖空卡组合图在现场距离下字够不够大。
 - 最值得继续做的是在真实演示机或投屏浏览器里打开 `frontend/public/aippt/index.html`，切到 `星润建议` 页并从头点击到最后一步，确认白底错因挖空预览最后出现、字号在现场距离下仍可读。
 - 最值得继续做的是用真实新老师账号 smoke 一遍：注册/加入时分别选电话号码和密保，登录页用两种方式各重置一次密码，再首次登录认领一个未绑定班级，确认认领后能进入班级管理且只看到自己负责班级。
@@ -145,8 +147,10 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
-- 本轮最终 proof 已通过：8 条后端账号流定向测试、`frontend/src/account-card.test.tsx`、`npm run lint`。额外跑过全量 `tests.test_account_flow`，当前仍剩 3 个与本轮无关的历史失败：两个课程创建用例仍期待旧 `201` 但当前接口返回异步 `202`，一个错题汇总断言未包含当前返回的 `unique_class_count / unique_student_count`。
-- 本轮 proof 覆盖了后端定向权限/映射测试、前端类型检查和全量前端测试，但还没有在真实浏览器里用实际老师账号做人工 smoke；如果线上已有成员被手动写入非法 `visible_pages_json`，当前代码会回退到默认全可见页面。
+- 本轮安全修复已阻止 `config.json` 继续被 Git 跟踪，并用 `git grep` 扫描确认当前跟踪源码里没有新的 `sk-...` 形态密钥；但旧密钥仍存在于历史提交中，必须在对应平台手动轮换后才算真正解除风险。
+- 本轮全量 backend unittest review 跑出 `16 failures / 8 errors`，主要集中在旧测试仍未补注册找回密码字段、课程创建旧 `201` 预期与当前异步/积分语义不一致、以及老师别名旧断言；这些是既有测试漂移，本轮没有展开改业务语义。当前 shipping proof 覆盖的是本次安全修复、前端 lint/build 和小程序 bridge build。
+- 上一轮账号权限 proof 已通过：8 条后端账号流定向测试、`frontend/src/account-card.test.tsx`、`npm run lint`。额外跑过全量 `tests.test_account_flow`，当前仍剩 3 个与该轮无关的历史失败：两个课程创建用例仍期待旧 `201` 但当前接口返回异步 `202`，一个错题汇总断言未包含当前返回的 `unique_class_count / unique_student_count`。
+- 上一轮账号权限 proof 覆盖了后端定向权限/映射测试、前端类型检查和全量前端测试，但还没有在真实浏览器里用实际老师账号做人工 smoke；如果线上已有成员被手动写入非法 `visible_pages_json`，当前代码会回退到默认全可见页面。
 - 当前 release 文档口径的 targeted proof 已通过并用于本次发布，但仓库里 `./.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` 目前仍有 7 条失败，集中在 `test_account_flow`、`test_master_data_store` 和 `test_single_lesson_pdf_unification`，表现为 lesson create 从旧 `201` 语义变成异步 `202/402`、以及 teacher alias 断言仍写死 `Kayn`。这说明全量回归套件和当前积分/alias 语义存在历史漂移；下次如果要把“全量 discover 绿”当硬门槛，需要先单独收这批旧用例。
 - 生产机仓库这轮已经删掉根目录历史备份文件、清掉 `pre-release-20260420-master-deploy`，并把运行时 `data/` 收进服务器本地 exclude；但仓库里仍保留更早的历史 `git stash` 条目，如果后续要继续深清，必须先逐条确认来源，不要直接批量 drop。
 - AIPPT `星润建议` 页本轮已用本机 Chrome Playwright 做过 1280x720 最终态与 reveal 顺序验证，但还没有在真实 Windows 浏览器或投屏环境里做最终视觉验收；如果演示环境实际视口比 720px 更矮，或投屏距离下题目卡文字偏小，仍可能需要继续微调标题字号、视频卡高度、题目卡字号或底部步骤块的行距。
@@ -188,6 +192,8 @@
 - `docs/superpowers/*` 与本文件历史条目里的旧课堂反馈 / 已删除 helper 上下文已经同步改成 legacy 口径，避免下一轮把历史流水误判成当前实现。
 
 ### 最近相关提交
+- `4037f78` `Merge branch 'develop'`
+- `7a45ab4` `chore: keep runtime config secrets out of git`
 - `4c6e90b` `Merge branch 'develop'`
 - `0c3278d` `feat: add wrong question practice sheet deletion`
 - `898fc70` `积分系统：错题练习/微信图片识别/课堂反馈补充扣费`
@@ -219,7 +225,8 @@
 
 ### 当前工作区
 - 当前分支：`develop`
-- 当前工作区仍保留未跟踪运行库 `data/xingrun.db`，未纳入本轮提交。
+- `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
+- 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
 - 后续更新这份文件时，只写：
