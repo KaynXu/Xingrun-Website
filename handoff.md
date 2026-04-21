@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页 `AI 错题助手` 对比卡 reveal 顺序已从“左右两列按 Step 逐排同步出现”改成“左侧 `人工复习` 整栏先出现，右侧 `AI 错题助手` 整栏后出现”，最后的“题目卡 + 挖空卡”练习单预览仍保持最后出现。本机 Chrome Playwright 临时脚本已验证 reveal 组顺序、点击状态和最终预览顺序，`npm run build` 通过。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页最后出现的白底错因预览已继续换成“题目卡 + 挖空卡”的浅蓝练习单样式：上方展示一张导数题题面卡，下方展示错因挖空引导卡，填满原先标题下方偏空的位置；这张组合预览仍保留为该页最后一个 reveal 组，会在 `AI 错题助手` 对比卡 `Step 4` 之后最后出现。本机 Chrome Playwright 临时脚本已验证 1280x720 最终态下预览高度、题目卡/挖空卡存在、最后 reveal 顺序和整页可见性，`npm run build` 通过。
 - 2026-04-21 `frontend/public/aippt/index.html` 的 AIPPT `星润建议` 页已把左侧原来的“如果这一页你想先切进...”引导段、`打开官方文章` 按钮和右侧视频说明，替换成白底错因挖空预览卡；这张预览卡在 DOM 中排到该页最后一个 reveal 组，现场点击时会在 `AI 错题助手` 对比卡 `Step 4` 之后最后出现。为容纳新增白底预览，本页标题、对比卡和步骤行距也做了局部压缩；本机 Chrome Playwright 临时脚本已验证 1280x720 最终态下整页内容完整落在视口内，`npm run build` 通过。
 - 2026-04-21 已按标准 release 流程把本地 `develop(20c0dd2)` 合到 `master(59f8d85)` 并部署到生产机 `49.234.185.86`；这次继续收口错题练习浏览器 PDF 的稳定性：当前 Linux 服务器上的 Playwright Chromium 启动已补上 `--disable-dev-shm-usage / --no-sandbox / --disable-setuid-sandbox` 三个稳态参数，避免练习单或错题库 PDF 渲染偶发以 `signal 6` 直接崩掉。对应回归已补在 `frontend/src/render-wrong-question-practice-sheet-pdf.test.ts` 和 `frontend/src/render-wrong-question-library-pdf.test.ts`。生产机 `pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`；线上原先失败的 `sheet #12 / 2026-04-21 01:32:59 / student_id=276` 也已在这版代码下重新生成成功，当前状态已回到 `ready`，PDF 位于 `data/pdfs/wrong_question_practice_sheets/sheet-12.pdf`。
