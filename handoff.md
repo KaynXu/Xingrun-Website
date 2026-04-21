@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 已完成网站端课程日历首版实装：课程日历现在使用独立 `course_calendar_schedules` 表和 `/api/course-calendar/schedules` API，不再从 `/api/review-plans` 或 `lessons` 读取排课，因此当前复习计划里的历史/测试课不会再显示成已排课程。日历一天固定为 `08:00-10:00 / 10:00-12:00 / 13:00-15:00 / 15:00-17:00 / 17:00-19:00 / 19:00-21:00` 六个工作时间板块；前端支持把可排班级拖到对应日期和板块生成排课，并可删除已排记录。后端列表、创建、删除都复用现有班级可访问性判断，`member` 老师只会看到和排自己通过 `user_classes` 分配到的班级。当前本轮提交不包含工作区里既有的 `review_plan_templates/generate_review_pdfs.py` 与 `tests/test_review_plan_math_normalization.py` 修改。
 - 2026-04-21 已完成一次全项目 review 后的运行时配置安全收口并部署到生产机 `49.234.185.86`：发现根目录 `config.json` 被 Git 跟踪且包含真实形态的 AI API key，已从仓库索引删除 `config.json`、把它加入 `.gitignore`、在 README 明确真实密钥只放 `.env.runtime` 或环境变量，并新增 `tests/test_runtime_config_hygiene.py` 防止回归。本轮代码提交 `7a45ab4` 已推到 `origin/develop`，并通过 `master(4037f78)` 部署；生产机部署前已把 `.env.runtime` 补成 `XR_PROVIDER=n1n`，随后服务器直拉 `master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已按用户确认把错题练习 PDF 的 ReportLab fallback 从活代码删除并部署到生产机 `49.234.185.86`：本地代码提交 `e2f630b` 已合入 `master(0ff8935)` 并推送，生产机已拉取 `master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`。当前 `pdf_engine.generate_wrong_question_practice_sheet_pdf()` 只调用浏览器/Skia 渲染，浏览器失败会直接抛错并让练习单生成失败，不再生成 ReportLab 版练习单 PDF。线上截图里的 `练习单 #5` 对应生产数据库 `sheet_id=15`，PDF producer 是 `ReportLab`，已按用户要求从生产数据库和文件系统删除；删除后 `test` 学生最新练习单回到 `sheet_id=14/13/12/10`，对应 PDF 文件均存在。发布前/合并后临时脚本 proof 已跑通后端 `tests.test_wrong_question_library_pdf` + `tests.test_wrong_question_practice_async_api`、前端 `npm test` 183 条、`npm run build`。
 - 2026-04-21 已按标准 release 流程把本地 `develop(151fbab)` 合到 `master(20dceec)` 并部署到生产机 `49.234.185.86`；这次发布包含账号审批页成员可见页面控制、老师类 `member` 账号按 `visible_pages` + `user_classes` 进入班级管理、账号找回密码、注册/加入账号找回方式、首次登录认领未绑定班级。发布前本机临时脚本已跑通后端账号流定向回归、前端 lint、相关前端测试和前端 build；生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。
@@ -108,6 +109,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是用真实老师账号在浏览器里打开课程日历，确认只出现自己分配的班级，并手工拖一个班级到六个时间板块之一、刷新后确认排课仍在、再删除该排课。
 - 最值得继续做的是在密钥平台轮换这次已经进入 Git 历史的旧 AI API key；本轮只把它从当前仓库树和后续提交里移除，不能抹掉既有历史提交里的泄露痕迹。
 - 最值得继续做的是在真实演示机或投屏浏览器里打开 `frontend/public/aippt/index.html`，切到 `星润建议` 页并点击到最后一步，确认新的题目卡 + 挖空卡组合图在现场距离下字够不够大。
 - 最值得继续做的是在真实演示机或投屏浏览器里打开 `frontend/public/aippt/index.html`，切到 `星润建议` 页并从头点击到最后一步，确认白底错因挖空预览最后出现、字号在现场距离下仍可读。
@@ -147,6 +149,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 课程日历本轮已用后端 API、前端静态渲染、类型检查和 production build 验证，但还没有在真实浏览器里做人工拖拽 smoke；如果移动端也需要排课，HTML5 拖拽的触屏体验可能还需要单独补交互。
 - 本轮安全修复已阻止 `config.json` 继续被 Git 跟踪，并用 `git grep` 扫描确认当前跟踪源码里没有新的 `sk-...` 形态密钥；但旧密钥仍存在于历史提交中，必须在对应平台手动轮换后才算真正解除风险。
 - 本轮全量 backend unittest review 跑出 `16 failures / 8 errors`，主要集中在旧测试仍未补注册找回密码字段、课程创建旧 `201` 预期与当前异步/积分语义不一致、以及老师别名旧断言；这些是既有测试漂移，本轮没有展开改业务语义。当前 shipping proof 覆盖的是本次安全修复、前端 lint/build 和小程序 bridge build。
 - 上一轮账号权限 proof 已通过：8 条后端账号流定向测试、`frontend/src/account-card.test.tsx`、`npm run lint`。额外跑过全量 `tests.test_account_flow`，当前仍剩 3 个与该轮无关的历史失败：两个课程创建用例仍期待旧 `201` 但当前接口返回异步 `202`，一个错题汇总断言未包含当前返回的 `unique_class_count / unique_student_count`。

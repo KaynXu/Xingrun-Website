@@ -111,6 +111,14 @@ CONSULTATION_SOURCE_ALIASES = {
     "其他": {"其他"},
 }
 CONSULTATION_FOLLOW_UP_STATUS_OPTIONS = ("待邀约", "跟进中", "已报班", "已劝退")
+COURSE_CALENDAR_TIME_BLOCKS = (
+    "08:00-10:00",
+    "10:00-12:00",
+    "13:00-15:00",
+    "15:00-17:00",
+    "17:00-19:00",
+    "19:00-21:00",
+)
 
 CONSULTATION_FIELDNAMES = [
     "id",
@@ -1710,6 +1718,17 @@ def init_db():
             PRIMARY KEY (user_id, class_id)
         );
 
+        CREATE TABLE IF NOT EXISTS course_calendar_schedules (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            class_id        INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            date            TEXT NOT NULL,
+            time_block      TEXT NOT NULL,
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(class_id, date, time_block)
+        );
+
         CREATE TABLE IF NOT EXISTS students (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2068,6 +2087,9 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_lessons_organization_class_date
             ON lessons (organization_id, class_id, date);
+
+            CREATE INDEX IF NOT EXISTS idx_course_calendar_schedules_org_date
+            ON course_calendar_schedules (organization_id, date, time_block);
 
             CREATE INDEX IF NOT EXISTS idx_consultations_organization_assigned_updated
             ON consultations (organization_id, assigned_user_id, updated_at);
@@ -3073,6 +3095,140 @@ def delete_class(class_id: int):
         )
         conn.execute("DELETE FROM user_classes WHERE class_id=?", (class_id,))
         conn.execute("DELETE FROM classes WHERE id=?", (class_id,))
+
+
+def _normalize_course_calendar_date(date_str: str) -> str:
+    normalized = str(date_str or "").strip()
+    try:
+        datetime.strptime(normalized, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("date must use YYYY-MM-DD")
+    return normalized
+
+
+def _normalize_course_calendar_time_block(time_block: str) -> str:
+    normalized = str(time_block or "").strip()
+    if normalized not in COURSE_CALENDAR_TIME_BLOCKS:
+        raise ValueError("time_block is invalid")
+    return normalized
+
+
+def _serialize_course_calendar_schedule_row(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    return {
+        "id": item["id"],
+        "organization_id": item["organization_id"],
+        "class_id": item["class_id"],
+        "date": item["date"],
+        "time_block": item["time_block"],
+        "created_by": item["created_by"],
+        "created_at": item["created_at"],
+        "class_name": item.get("class_name", ""),
+        "subject": item.get("subject", ""),
+        "grade": item.get("grade", ""),
+        "teacher_name": item.get("teacher_name", ""),
+        "teacher_email": item.get("teacher_email", ""),
+        "teacher_user_id": item.get("teacher_user_id"),
+    }
+
+
+def _course_calendar_schedule_select_sql() -> str:
+    return """
+        SELECT s.*,
+               c.name AS class_name,
+               c.subject,
+               c.grade,
+               c.teacher_name,
+               c.teacher_email,
+               (
+                   SELECT uc.user_id
+                   FROM user_classes uc
+                   WHERE uc.class_id = c.id
+                   ORDER BY uc.user_id
+                   LIMIT 1
+               ) AS teacher_user_id
+        FROM course_calendar_schedules s
+        JOIN classes c ON c.id = s.class_id
+    """
+
+
+def get_course_calendar_schedule(schedule_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            f"{_course_calendar_schedule_select_sql()} WHERE s.id=?",
+            (schedule_id,),
+        ).fetchone()
+        return _serialize_course_calendar_schedule_row(row) if row else None
+
+
+def list_course_calendar_schedules_for_actor(actor_user: dict, start_date: str = "", end_date: str = "") -> list[dict]:
+    normalized_start = _normalize_course_calendar_date(start_date) if start_date else ""
+    normalized_end = _normalize_course_calendar_date(end_date) if end_date else ""
+    if normalized_start and normalized_end and normalized_start > normalized_end:
+        raise ValueError("start_date must be before or equal to end_date")
+
+    query_sql = _course_calendar_schedule_select_sql()
+    where_clauses = []
+    params: list[object] = []
+
+    if (actor_user or {}).get("role") != SUPER_OWNER_ROLE:
+        where_clauses.append("s.organization_id=?")
+        params.append(actor_user["organization_id"])
+
+    if (actor_user or {}).get("role") == MEMBER_ROLE:
+        class_ids = get_user_class_ids(actor_user["id"])
+        if not class_ids:
+            return []
+        placeholders = ", ".join("?" for _ in class_ids)
+        where_clauses.append(f"s.class_id IN ({placeholders})")
+        params.extend(class_ids)
+
+    if normalized_start:
+        where_clauses.append("s.date>=?")
+        params.append(normalized_start)
+    if normalized_end:
+        where_clauses.append("s.date<=?")
+        params.append(normalized_end)
+
+    if where_clauses:
+        query_sql += " WHERE " + " AND ".join(where_clauses)
+    query_sql += " ORDER BY s.date ASC, s.time_block ASC, s.id ASC"
+
+    with get_conn() as conn:
+        rows = conn.execute(query_sql, params).fetchall()
+        return [_serialize_course_calendar_schedule_row(row) for row in rows]
+
+
+def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block: str, created_by: Optional[int]):
+    normalized_date = _normalize_course_calendar_date(date_str)
+    normalized_time_block = _normalize_course_calendar_time_block(time_block)
+    with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT id, organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO course_calendar_schedules
+                (organization_id, class_id, date, time_block, created_by)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (class_row["organization_id"], class_id, normalized_date, normalized_time_block, created_by),
+        )
+        row = conn.execute(
+            f"{_course_calendar_schedule_select_sql()} WHERE s.class_id=? AND s.date=? AND s.time_block=?",
+            (class_id, normalized_date, normalized_time_block),
+        ).fetchone()
+        return _serialize_course_calendar_schedule_row(row)
+
+
+def delete_course_calendar_schedule(schedule_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM course_calendar_schedules WHERE id=?", (schedule_id,))
+        return cur.rowcount > 0
 
 
 def get_student(student_id: int):
