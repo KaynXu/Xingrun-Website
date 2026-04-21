@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-21 已按标准 release 流程把本地 `develop(2bd3839)` 合到 `master(ab80cea)` 并部署到生产机 `49.234.185.86`；这次发布包含讲师映射可从网站成员下拉选择并自动填账号/中文名，以及班级管理结构化命名文案收口。发布前本机 `develop` 和合并后的 `master` 均已跑通后端目标 unittest、前端 `npm test` 185 条和 `npm run build`，`develop` 额外跑过 `npm run lint`；生产机已完成 `git pull --ff-only origin master`、前端 build 与 `pm2 restart xingrun`，`xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
 - 2026-04-21 已完成讲师映射成员选择优化：账号审批页的“讲师映射”弹窗现在可从网站成员下拉选择，选择后自动把该成员的网站账号写入企微 ID 字段、把显示名写入中文名字段；后端 `/api/admin/users` 现在也会向 owner/admin 返回成员 `username`，供这个下拉使用。映射本身仍保存到原有 `teachers.json` 链路，仍保留手动填写入口。
 - 2026-04-21 已收口班级管理里的用户可见命名说明：页面现在按 `学科 + 年级 + 班级` 解释结构化班级名，示例改为 `数学七年级三班 / 物理七年级二班`；学科输入示例只保留 `数学`，不再出现旧的版本号式开发遗留口径。前端年级选项已补 `七年级 / 八年级 / 九年级`，同时保留原有 `初一 / 初二 / 初三` 兼容。
 - 2026-04-21 已按标准 release 流程把本地 `develop(a1cf061)` 合到 `master(8fe985e)` 并部署到生产机 `49.234.185.86`；这次发布包含课程日历独立排课、账号删除外键收口、班级学科结构化筛选、复习计划 PDF LaTeX 纯文本规范化，以及两份新版复习计划课程包。发布前本机临时脚本已分别在 `develop` 和 `master` 跑通后端 6 条定向 unittest、课程包 `py_compile`、前端 `npm test` 184 条、`tsc --noEmit` 和 `npm run build`；生产机已完成前端 build 与 `pm2 restart xingrun`，`pm2` 服务 `xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
