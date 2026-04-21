@@ -129,7 +129,7 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
 
   assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
   assert.match(source, /<main className="flex min-w-0 flex-1 flex-col lg:pl-72">/);
-  assert.match(source, /<div className="relative min-h-\[100dvh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
+  assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {

@@ -7533,7 +7533,7 @@ const ClassClaimPage = ({
   };
 
   return (
-    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-4 py-8 text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+    <div className="relative flex min-h-[100svh] items-center justify-center overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-4 py-8 text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className={`${workspaceCardClass} relative w-full max-w-3xl p-6 md:p-8`}>
         <div className="flex flex-col gap-3 border-b border-sky-100 pb-5 dark:border-white/10">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -9387,13 +9387,14 @@ export default function App() {
     setCalendarAnchorDate((current) => shiftIsoDate(current, 7));
   };
 
-  const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock) => {
+  const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
     apiFetch<{ item: CourseCalendarScheduleRecord }>('/api/course-calendar/schedules', {
       method: 'POST',
       body: JSON.stringify({
         class_id: classId,
         date,
         time_block: timeBlock,
+        start_offset_minutes: startOffsetMinutes,
       }),
     })
       .then(({ item }) => {
@@ -9435,7 +9436,7 @@ export default function App() {
 
   if (token && !authReady) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)]">
+      <div className="flex min-h-[100svh] items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)]">
         <p className="text-sm text-slate-400 dark:text-slate-500">正在验证账号权限...</p>
       </div>
     );
@@ -9502,13 +9503,13 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+    <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
         <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
         <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
       </div>
-      <div className="relative flex min-h-[100dvh] sm:min-h-screen">
+      <div className="relative flex min-h-[100svh] sm:min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
           <Sidebar
             activePage={activePage}

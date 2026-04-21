@@ -2813,6 +2813,7 @@ def api_course_calendar_schedule_create():
             class_id=class_id,
             date_str=(data.get("date") or "").strip(),
             time_block=(data.get("time_block") or "").strip(),
+            start_offset_minutes=data.get("start_offset_minutes"),
             created_by=user["id"],
         )
     except LookupError as exc:

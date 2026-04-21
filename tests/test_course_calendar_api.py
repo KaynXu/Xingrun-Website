@@ -107,14 +107,16 @@ class CourseCalendarApiTestCase(unittest.TestCase):
             json={
                 "class_id": class_id,
                 "date": "2026-04-20",
-                "time_block": "10:00-12:00",
+                "time_block": "14:00-16:00",
+                "start_offset_minutes": 15,
             },
         )
         self.assertEqual(created.status_code, 201)
         created_payload = created.get_json()
         self.assertIsNotNone(created_payload)
         self.assertEqual(created_payload["item"]["class_id"], class_id)
-        self.assertEqual(created_payload["item"]["time_block"], "10:00-12:00")
+        self.assertEqual(created_payload["item"]["time_block"], "14:00-16:00")
+        self.assertEqual(created_payload["item"]["start_offset_minutes"], 15)
 
         listed = self.client.get(
             "/api/course-calendar/schedules?start_date=2026-04-20&end_date=2026-04-26",
@@ -161,9 +163,50 @@ class CourseCalendarApiTestCase(unittest.TestCase):
         forbidden = self.client.post(
             "/api/course-calendar/schedules",
             headers=self.auth_headers(target_member["token"]),
-            json={"class_id": other_class_id, "date": "2026-04-22", "time_block": "13:00-15:00"},
+            json={"class_id": other_class_id, "date": "2026-04-22", "time_block": "14:00-16:00"},
         )
         self.assertEqual(forbidden.status_code, 403)
+
+    def test_course_calendar_rejects_out_of_range_start_offset(self):
+        class_id = lesson_manager.save_class("微调测试班", subject="数学", grade="六年级")
+
+        invalid = self.client.post(
+            "/api/course-calendar/schedules",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "class_id": class_id,
+                "date": "2026-04-20",
+                "time_block": "08:00-10:00",
+                "start_offset_minutes": 240,
+            },
+        )
+
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_course_calendar_migrates_legacy_afternoon_slots(self):
+        class_id = lesson_manager.save_class("旧时间段排课班", subject="数学", grade="六年级")
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
+            self.assertIsNotNone(class_row)
+            conn.execute(
+                """
+                INSERT INTO course_calendar_schedules
+                    (organization_id, class_id, date, time_block, created_by)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (class_row["organization_id"], class_id, "2026-04-20", "13:00-15:00", None),
+            )
+
+        lesson_manager.init_db()
+
+        listed = self.client.get(
+            "/api/course-calendar/schedules?start_date=2026-04-20&end_date=2026-04-26",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(listed.status_code, 200)
+        listed_payload = listed.get_json()
+        self.assertIsNotNone(listed_payload)
+        self.assertEqual([item["time_block"] for item in listed_payload["items"]], ["14:00-16:00"])
 
 
 if __name__ == "__main__":

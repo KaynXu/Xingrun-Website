@@ -1,13 +1,20 @@
 export const COURSE_CALENDAR_TIME_BLOCKS = [
   '08:00-10:00',
   '10:00-12:00',
-  '13:00-15:00',
-  '15:00-17:00',
-  '17:00-19:00',
-  '19:00-21:00',
+  '14:00-16:00',
+  '16:00-18:00',
+  '18:00-20:00',
+  '20:00-22:00',
 ] as const;
 
 export type CourseCalendarTimeBlock = (typeof COURSE_CALENDAR_TIME_BLOCKS)[number];
+
+const LEGACY_COURSE_CALENDAR_TIME_BLOCKS: Record<string, CourseCalendarTimeBlock> = {
+  '13:00-15:00': '14:00-16:00',
+  '15:00-17:00': '16:00-18:00',
+  '17:00-19:00': '18:00-20:00',
+  '19:00-21:00': '20:00-22:00',
+};
 
 export interface CourseCalendarClassRecord {
   id: number;
@@ -26,6 +33,7 @@ export interface CourseCalendarScheduleRecord {
   time_block: CourseCalendarTimeBlock | string;
   created_by?: number | null;
   created_at?: string;
+  start_offset_minutes?: number;
   class_name?: string;
   subject?: string;
   grade?: string;
@@ -44,6 +52,11 @@ export interface JoinedCourseCalendarSchedule {
   scheduleCount: number;
   date: string;
   timeBlock: CourseCalendarTimeBlock;
+  startOffsetMinutes: number;
+  startLabel: string;
+  endLabel: string;
+  displayRange: string;
+  startText: string;
 }
 
 export type CourseCalendarTimeBlockBuckets = Record<CourseCalendarTimeBlock, JoinedCourseCalendarSchedule[]>;
@@ -98,9 +111,42 @@ function startOfIsoWeek(date: Date): Date {
 }
 
 function normalizeTimeBlock(timeBlock?: string): CourseCalendarTimeBlock {
-  return COURSE_CALENDAR_TIME_BLOCKS.includes(timeBlock as CourseCalendarTimeBlock)
-    ? timeBlock as CourseCalendarTimeBlock
-    : COURSE_CALENDAR_TIME_BLOCKS[0];
+  const normalized = (timeBlock ?? '').trim();
+  if (COURSE_CALENDAR_TIME_BLOCKS.includes(normalized as CourseCalendarTimeBlock)) {
+    return normalized as CourseCalendarTimeBlock;
+  }
+  return LEGACY_COURSE_CALENDAR_TIME_BLOCKS[normalized] ?? COURSE_CALENDAR_TIME_BLOCKS[0];
+}
+
+function normalizeStartOffsetMinutes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0;
+}
+
+function parseClockMinutes(value: string): number {
+  const [hour, minute] = value.split(':').map((part) => Number(part));
+  return hour * 60 + minute;
+}
+
+function formatClockMinutes(value: number): string {
+  const normalized = ((value % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+export function buildCourseScheduleTimeRange(timeBlock: string, startOffsetMinutes = 0) {
+  const normalizedTimeBlock = normalizeTimeBlock(timeBlock);
+  const [baseStart, baseEnd] = normalizedTimeBlock.split('-');
+  const normalizedOffset = normalizeStartOffsetMinutes(startOffsetMinutes);
+  const startLabel = formatClockMinutes(parseClockMinutes(baseStart) + normalizedOffset);
+  const endLabel = formatClockMinutes(parseClockMinutes(baseEnd) + normalizedOffset);
+
+  return {
+    startLabel,
+    endLabel,
+    displayRange: `${startLabel}-${endLabel}`,
+    startText: `${startLabel} 开始`,
+  };
 }
 
 function countSchedulesByClassId(schedules: CourseCalendarScheduleRecord[]): Map<number, number> {
@@ -154,6 +200,9 @@ export function joinClassesAndSchedules(
     .map((schedule) => {
       const courseClass = classById.get(schedule.class_id);
 
+      const startOffsetMinutes = normalizeStartOffsetMinutes(schedule.start_offset_minutes);
+      const timeRange = buildCourseScheduleTimeRange(schedule.time_block, startOffsetMinutes);
+
       return {
         id: schedule.id,
         classId: schedule.class_id,
@@ -165,6 +214,8 @@ export function joinClassesAndSchedules(
         scheduleCount: scheduleCounts.get(schedule.class_id) ?? 0,
         date: schedule.date,
         timeBlock: normalizeTimeBlock(schedule.time_block),
+        startOffsetMinutes,
+        ...timeRange,
       };
     })
     .sort(sortByBlockAndDate);

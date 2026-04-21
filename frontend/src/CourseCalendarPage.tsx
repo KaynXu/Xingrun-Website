@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CalendarDays,
   ChevronDown,
+  Clock,
   Filter,
   GripVertical,
   Sparkles,
@@ -14,6 +15,7 @@ import {
 import {
   COURSE_CALENDAR_TIME_BLOCKS,
   assignScheduleCardsToTimeBlocks,
+  buildCourseScheduleTimeRange,
   buildClassStatusRailData,
   getWeekDates,
   getVisibleWeekLabel,
@@ -31,11 +33,25 @@ export interface CourseCalendarPageProps {
   schedules: CourseCalendarScheduleRecord[];
   onPreviousWeek: () => void;
   onNextWeek: () => void;
-  onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock) => void;
+  onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
   onDeleteSchedule: (scheduleId: number) => void;
 }
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const TIME_ADJUSTMENT_PRESETS = [
+  { label: '提前 15 分钟', minutes: -15 },
+  { label: '提前半小时', minutes: -30 },
+  { label: '晚 15 分钟', minutes: 15 },
+  { label: '晚半小时', minutes: 30 },
+] as const;
+
+type CustomOffsetDirection = 'early' | 'late';
+
+interface PendingDrop {
+  classId: number;
+  date: string;
+  timeBlock: CourseCalendarTimeBlock;
+}
 
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
@@ -82,24 +98,30 @@ interface ScheduleCardProps {
 
 function ScheduleCard({ schedule, onDeleteSchedule }: ScheduleCardProps): React.JSX.Element {
   return (
-    <div className="rounded-2xl border border-sky-100 bg-white/92 px-3 py-2.5 shadow-[0_10px_30px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)]">
+    <div className="rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2.5 shadow-[0_10px_30px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)]">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+        <div className="min-w-0">
+          <p className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">
             {schedule.className}
           </p>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             {[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || '未设置科目'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onDeleteSchedule(schedule.id)}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-          aria-label="删除排课"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex shrink-0 items-start gap-1">
+          <div className="rounded-xl border border-cyan-100 bg-cyan-50 px-2 py-1 text-right text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200">
+            <p className="text-[11px] font-black leading-none">{schedule.startText}</p>
+            <p className="mt-1 text-[10px] font-semibold leading-none">{schedule.displayRange}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onDeleteSchedule(schedule.id)}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-sky-100 bg-sky-50 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+            aria-label="删除排课"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
         <span>{schedule.teacherName || '未分配教师'}</span>
@@ -126,6 +148,14 @@ export function CourseCalendarPage({
   const classStatus = buildClassStatusRailData(classes, schedules);
   const teacherOptions = getTeacherOptions(classes);
   const classOptions = getClassOptions(classes);
+  const [pendingDrop, setPendingDrop] = React.useState<PendingDrop | null>(null);
+  const [selectedOffsetMinutes, setSelectedOffsetMinutes] = React.useState(0);
+  const [customOffsetDirection, setCustomOffsetDirection] = React.useState<CustomOffsetDirection>('late');
+  const [customOffsetMinutes, setCustomOffsetMinutes] = React.useState('');
+  const pendingDropClass = pendingDrop ? classes.find((courseClass) => courseClass.id === pendingDrop.classId) : undefined;
+  const pendingTimeRange = pendingDrop
+    ? buildCourseScheduleTimeRange(pendingDrop.timeBlock, selectedOffsetMinutes)
+    : null;
 
   const dailyBuckets = weekDates.map((date) => ({
     date,
@@ -145,7 +175,25 @@ export function CourseCalendarPage({
     if (!Number.isInteger(classId) || classId <= 0) {
       return;
     }
-    onScheduleClass(classId, date, timeBlock);
+    setPendingDrop({ classId, date, timeBlock });
+    setSelectedOffsetMinutes(0);
+    setCustomOffsetDirection('late');
+    setCustomOffsetMinutes('');
+  };
+
+  const handleCustomOffsetChange = (direction: CustomOffsetDirection, rawMinutes: string) => {
+    const numericMinutes = Math.max(0, Math.min(120, Math.trunc(Number(rawMinutes) || 0)));
+    setCustomOffsetDirection(direction);
+    setCustomOffsetMinutes(rawMinutes);
+    setSelectedOffsetMinutes(direction === 'early' ? -numericMinutes : numericMinutes);
+  };
+
+  const handleConfirmAdjustedSchedule = () => {
+    if (!pendingDrop) {
+      return;
+    }
+    onScheduleClass(pendingDrop.classId, pendingDrop.date, pendingDrop.timeBlock, selectedOffsetMinutes);
+    setPendingDrop(null);
   };
 
   return (
@@ -229,7 +277,7 @@ export function CourseCalendarPage({
             </div>
           </div>
 
-          <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:px-6 xl:py-6">
+          <div className="space-y-5 px-4 py-5 md:px-5 xl:px-6 xl:py-6">
             <div className="space-y-5">
               <div className="rounded-[1.75rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(239,248,255,0.9)_100%)] p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] md:p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.72)_100%)] dark:shadow-[0_20px_50px_rgba(2,6,23,0.35)]">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -244,17 +292,17 @@ export function CourseCalendarPage({
                   </span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <div className="min-w-[1180px]">
-                    <div className="grid grid-cols-[128px_repeat(7,minmax(132px,1fr))] gap-3 pb-3">
-                      <div className="rounded-2xl border border-sky-100 bg-white/90 px-4 py-4 text-sm font-bold text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                <div className="hidden lg:block">
+                  <div className="min-w-0">
+                    <div className="grid grid-cols-[92px_repeat(7,minmax(0,1fr))] gap-2 pb-2">
+                      <div className="rounded-xl border border-sky-100 bg-white/90 px-3 py-3 text-xs font-bold text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                         时间板块
                       </div>
                       {weekDates.map((date, index) => (
                         <div
                           key={date}
                           className={cn(
-                            'rounded-2xl border px-4 py-4 shadow-sm',
+                            'rounded-xl border px-3 py-3 shadow-sm',
                             index === 0
                               ? 'border-sky-200 bg-sky-50/80 dark:border-sky-500/30 dark:bg-sky-500/10'
                               : 'border-sky-100 bg-white/88 dark:border-white/10 dark:bg-white/5',
@@ -268,16 +316,16 @@ export function CourseCalendarPage({
                       ))}
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {COURSE_CALENDAR_TIME_BLOCKS.map((timeBlock) => (
                         <div
                           key={timeBlock}
-                          className="grid grid-cols-[128px_repeat(7,minmax(132px,1fr))] gap-3"
+                          className="grid grid-cols-[92px_repeat(7,minmax(0,1fr))] gap-2"
                         >
-                          <div className="rounded-3xl border border-sky-100 bg-white/92 px-4 py-5 dark:border-white/10 dark:bg-white/5">
-                            <p className="text-base font-black text-slate-900 dark:text-white">{timeBlock}</p>
-                            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">
-                              time block
+                          <div className="rounded-xl border border-sky-100 bg-white/92 px-2.5 py-3 dark:border-white/10 dark:bg-white/5">
+                            <p className="text-sm font-black leading-tight text-slate-900 dark:text-white">{timeBlock}</p>
+                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                              block
                             </p>
                           </div>
 
@@ -286,10 +334,11 @@ export function CourseCalendarPage({
                             return (
                               <div
                                 key={`${date}-${timeBlock}`}
+                                data-calendar-slot={`${date}-${timeBlock}`}
                                 onDragOver={(event) => event.preventDefault()}
                                 onDrop={(event) => handleDrop(event, date, timeBlock)}
                                 className={cn(
-                                  'min-h-[132px] rounded-3xl border px-3 py-3 transition',
+                                  'min-h-[108px] rounded-xl border px-2 py-2 transition',
                                   date === anchorDate
                                     ? 'border-sky-200 bg-sky-50/60 dark:border-sky-500/30 dark:bg-sky-500/10'
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
@@ -317,10 +366,69 @@ export function CourseCalendarPage({
                     </div>
                   </div>
                 </div>
+
+                <div className="space-y-4 lg:hidden">
+                  {dailyBuckets.map(({ date, blocks }) => (
+                    <section
+                      key={date}
+                      className="rounded-2xl border border-sky-100 bg-white/88 p-3 dark:border-white/10 dark:bg-white/5"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-500 dark:text-sky-300">
+                            {formatWeekdayLabel(date)}
+                          </p>
+                          <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{formatDayLabel(date)}</p>
+                        </div>
+                        <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                          6 个时段
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {COURSE_CALENDAR_TIME_BLOCKS.map((timeBlock) => {
+                          const blockCards = blocks[timeBlock];
+                          return (
+                            <div
+                              key={`${date}-${timeBlock}`}
+                              data-calendar-slot={`${date}-${timeBlock}`}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={(event) => handleDrop(event, date, timeBlock)}
+                              className={cn(
+                                'rounded-xl border px-3 py-3 transition',
+                                date === anchorDate
+                                  ? 'border-sky-200 bg-sky-50/70 dark:border-sky-500/30 dark:bg-sky-500/10'
+                                  : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
+                              )}
+                            >
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <p className="text-sm font-black text-slate-900 dark:text-white">{timeBlock}</p>
+                                <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">拖入排课</p>
+                              </div>
+                              <div className="space-y-2">
+                                {blockCards.length > 0 ? (
+                                  blockCards.map((schedule) => (
+                                    <React.Fragment key={schedule.id}>
+                                      <ScheduleCard
+                                        schedule={schedule}
+                                        onDeleteSchedule={onDeleteSchedule}
+                                      />
+                                    </React.Fragment>
+                                  ))
+                                ) : (
+                                  <EmptyDropZone />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <aside className="space-y-5">
+            <aside className="grid gap-5 lg:grid-cols-3">
               <section className="rounded-[1.75rem] border border-sky-100 bg-white/92 p-5 shadow-[0_18px_48px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_20px_45px_rgba(2,6,23,0.32)]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -336,6 +444,7 @@ export function CourseCalendarPage({
                     classOptions.map((courseClass) => (
                       <div
                         key={courseClass.id}
+                        data-course-class-id={courseClass.id}
                         draggable
                         onDragStart={(event) => handleDragStart(event, courseClass.id)}
                         className="cursor-grab rounded-2xl border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,248,255,0.88)_100%)] p-4 active:cursor-grabbing dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82)_0%,rgba(30,41,59,0.55)_100%)]"
@@ -458,6 +567,83 @@ export function CourseCalendarPage({
           </div>
         </div>
       </div>
+      {pendingDrop && pendingTimeRange && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-500 dark:text-sky-300">微调启动时间</p>
+                <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">
+                  {pendingDropClass?.name || '待排班级'}
+                </h2>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  基础时段 {pendingDrop.timeBlock}，当前实际时间 {pendingTimeRange.displayRange}
+                </p>
+              </div>
+              <Clock className="h-6 w-6 shrink-0 text-sky-500 dark:text-sky-300" />
+            </div>
+
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              {TIME_ADJUSTMENT_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setSelectedOffsetMinutes(preset.minutes)}
+                  className={cn(
+                    'rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition',
+                    selectedOffsetMinutes === preset.minutes
+                      ? 'border-sky-300 bg-sky-50 text-sky-700 ring-4 ring-sky-100 dark:border-sky-500/50 dark:bg-sky-500/15 dark:text-sky-200 dark:ring-sky-500/15'
+                      : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                  )}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="text-sm font-bold text-slate-900 dark:text-white">自定义微调</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-[128px_minmax(0,1fr)]">
+                <select
+                  value={customOffsetDirection}
+                  onChange={(event) => handleCustomOffsetChange(event.target.value as CustomOffsetDirection, customOffsetMinutes)}
+                  className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-500/15"
+                >
+                  <option value="early">提前</option>
+                  <option value="late">延后</option>
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={1}
+                  value={customOffsetMinutes}
+                  onChange={(event) => handleCustomOffsetChange(customOffsetDirection, event.target.value)}
+                  placeholder="输入分钟数"
+                  className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-sky-500/15"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingDrop(null)}
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-sky-100 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAdjustedSchedule}
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-sky-600 px-5 text-sm font-bold text-white shadow-[0_12px_30px_rgba(14,165,233,0.22)] transition hover:bg-sky-700"
+              >
+                按 {pendingTimeRange.startText} 排课
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

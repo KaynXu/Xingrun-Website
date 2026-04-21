@@ -114,11 +114,17 @@ CONSULTATION_FOLLOW_UP_STATUS_OPTIONS = ("待邀约", "跟进中", "已报班", 
 COURSE_CALENDAR_TIME_BLOCKS = (
     "08:00-10:00",
     "10:00-12:00",
-    "13:00-15:00",
-    "15:00-17:00",
-    "17:00-19:00",
-    "19:00-21:00",
+    "14:00-16:00",
+    "16:00-18:00",
+    "18:00-20:00",
+    "20:00-22:00",
 )
+LEGACY_COURSE_CALENDAR_TIME_BLOCKS = {
+    "13:00-15:00": "14:00-16:00",
+    "15:00-17:00": "16:00-18:00",
+    "17:00-19:00": "18:00-20:00",
+    "19:00-21:00": "20:00-22:00",
+}
 
 CONSULTATION_FIELDNAMES = [
     "id",
@@ -1160,6 +1166,15 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) 
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
+def _migrate_course_calendar_time_blocks(conn: sqlite3.Connection) -> None:
+    for legacy_block, current_block in LEGACY_COURSE_CALENDAR_TIME_BLOCKS.items():
+        conn.execute(
+            "UPDATE OR IGNORE course_calendar_schedules SET time_block=? WHERE time_block=?",
+            (current_block, legacy_block),
+        )
+        conn.execute("DELETE FROM course_calendar_schedules WHERE time_block=?", (legacy_block,))
+
+
 def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -1724,6 +1739,7 @@ def init_db():
             class_id        INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             date            TEXT NOT NULL,
             time_block      TEXT NOT NULL,
+            start_offset_minutes INTEGER NOT NULL DEFAULT 0,
             created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at      TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE(class_id, date, time_block)
@@ -2076,6 +2092,8 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
+        _migrate_course_calendar_time_blocks(conn)
         _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn)
         conn.executescript(
             """
@@ -3113,6 +3131,16 @@ def _normalize_course_calendar_time_block(time_block: str) -> str:
     return normalized
 
 
+def _normalize_course_calendar_start_offset_minutes(value: object) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("start_offset_minutes must be an integer")
+    if value < -120 or value > 120:
+        raise ValueError("start_offset_minutes must be between -120 and 120")
+    return value
+
+
 def _serialize_course_calendar_schedule_row(row: sqlite3.Row) -> dict:
     item = dict(row)
     return {
@@ -3121,6 +3149,7 @@ def _serialize_course_calendar_schedule_row(row: sqlite3.Row) -> dict:
         "class_id": item["class_id"],
         "date": item["date"],
         "time_block": item["time_block"],
+        "start_offset_minutes": item["start_offset_minutes"],
         "created_by": item["created_by"],
         "created_at": item["created_at"],
         "class_name": item.get("class_name", ""),
@@ -3199,9 +3228,10 @@ def list_course_calendar_schedules_for_actor(actor_user: dict, start_date: str =
         return [_serialize_course_calendar_schedule_row(row) for row in rows]
 
 
-def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block: str, created_by: Optional[int]):
+def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block: str, created_by: Optional[int], start_offset_minutes: object = None):
     normalized_date = _normalize_course_calendar_date(date_str)
     normalized_time_block = _normalize_course_calendar_time_block(time_block)
+    normalized_start_offset_minutes = _normalize_course_calendar_start_offset_minutes(start_offset_minutes)
     with get_conn() as conn:
         class_row = conn.execute(
             "SELECT id, organization_id FROM classes WHERE id=?",
@@ -3213,10 +3243,17 @@ def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block:
         conn.execute(
             """
             INSERT OR IGNORE INTO course_calendar_schedules
-                (organization_id, class_id, date, time_block, created_by)
-            VALUES (?, ?, ?, ?, ?)
+                (organization_id, class_id, date, time_block, start_offset_minutes, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (class_row["organization_id"], class_id, normalized_date, normalized_time_block, created_by),
+            (
+                class_row["organization_id"],
+                class_id,
+                normalized_date,
+                normalized_time_block,
+                normalized_start_offset_minutes,
+                created_by,
+            ),
         )
         row = conn.execute(
             f"{_course_calendar_schedule_select_sql()} WHERE s.class_id=? AND s.date=? AND s.time_block=?",
