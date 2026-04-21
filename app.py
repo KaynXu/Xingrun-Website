@@ -2122,13 +2122,13 @@ def api_admin_users():
     def _user_row(u):
         row = {
             "id": u["id"],
+            "username": u.get("username"),
             "name": u["display_name"],
             "org": u["organization_name"],
             "role": u["role"],
             "visible_pages": u.get("visible_pages", []),
         }
         if is_super:
-            row["username"] = u.get("username")
             row["last_login"] = u.get("last_login")
         return row
     return jsonify([_user_row(u) for u in users])

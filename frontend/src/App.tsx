@@ -4465,6 +4465,8 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   const [taFormAliases, setTaFormAliases] = useState('');
   const [taSubmitting, setTaSubmitting] = useState(false);
   const [taDeletingId, setTaDeletingId] = useState<string | null>(null);
+  const teacherAliasMemberOptions = users.filter((user) => user.username && user.role !== 'super_owner');
+  const selectedTeacherAliasMember = teacherAliasMemberOptions.find((user) => user.username === taFormUserId);
 
   const loadItems = useCallback(async () => {
     if (!hasOwnerAccess(currentUser.role)) {
@@ -4619,6 +4621,15 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
     setTaFormAliases(entry.aliases.slice(1).join(', '));
     setTeacherAliasModalMode('edit');
     setTeacherAliasModalOpen(true);
+  };
+
+  const handleTeacherAliasMemberChange = (userIdValue: string) => {
+    const selectedUser = teacherAliasMemberOptions.find((user) => String(user.id) === userIdValue);
+    if (!selectedUser) {
+      return;
+    }
+    setTaFormUserId(selectedUser.username || '');
+    setTaFormDisplayName(selectedUser.name);
   };
 
   const handleTeacherAliasSubmit = async () => {
@@ -5611,6 +5622,24 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
             >
               <h3 className="mb-5 text-lg font-bold text-slate-900 dark:text-white">{teacherAliasModalMode === 'create' ? '添加讲师映射' : '编辑讲师映射'}</h3>
               <div className="space-y-4">
+                {teacherAliasMemberOptions.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">从网站成员选择</label>
+                    <select
+                      className={workspaceFieldClass}
+                      value={selectedTeacherAliasMember ? String(selectedTeacherAliasMember.id) : ''}
+                      onChange={(e) => handleTeacherAliasMemberChange(e.target.value)}
+                      disabled={teacherAliasModalMode === 'edit'}
+                    >
+                      <option value="">选择成员后自动填账号和中文名</option>
+                      {teacherAliasMemberOptions.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}{user.username ? `（${user.username}）` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">企微 ID</label>
                   <input
