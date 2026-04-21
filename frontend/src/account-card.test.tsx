@@ -563,6 +563,22 @@ test('approval page source removes the start binding action from member cards', 
   assert.doesNotMatch(approvalBlock[0], /onStartBinding\(user\.id\)/);
 });
 
+test('approval member cards link teacher class binding into class management', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(approvalBlock);
+  assert.ok(classManagementBlock);
+  assert.match(approvalBlock[0], /绑定班级/);
+  assert.match(approvalBlock[0], /onOpenClassBinding\(\{ teacherUserId: user\.id, teacherName: user\.name \}\)/);
+  assert.match(source, /const \[classBindingTarget, setClassBindingTarget\] = useState<ClassBindingTarget \| null>\(null\);/);
+  assert.match(source, /setClassBindingTarget\(target\);\s*setActivePage\('classes'\);/);
+  assert.match(source, /<ApprovalPage currentUser=\{currentUser\} onOpenClassBinding=\{handleOpenClassBinding\} \/>/);
+  assert.match(source, /<ClassManagementPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
+  assert.match(classManagementBlock[0], /classBindingTarget\?\.teacherName/);
+});
+
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
@@ -752,4 +768,15 @@ test('class management source keeps delete and save buttons inside the teacher c
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /<div className=\{`\$\{workspaceCardClass\} space-y-5 p-5`\}>[\s\S]*删除当前班级[\s\S]*保存班级/);
   assert.doesNotMatch(classManagementBlock[0], /<div className="flex flex-col gap-3 border-t border-sky-100\/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white\/10">[\s\S]*删除当前班级[\s\S]*保存班级/);
+});
+
+test('login source includes password reset and first-login class claim entry points', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
+  assert.match(source, /\/api\/password-reset/);
+  assert.match(source, /recovery_phone/);
+  assert.match(source, /const ClassClaimPage = \(/);
+  assert.match(source, /\/api\/me\/unbound-classes/);
+  assert.match(source, /\/api\/me\/claim-classes/);
 });

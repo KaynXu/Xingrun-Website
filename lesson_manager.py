@@ -44,6 +44,14 @@ SUPER_OWNER_ROLE = "super_owner"
 OWNER_ROLE = "owner"
 ADMIN_ROLE = "admin"
 MEMBER_ROLE = "member"
+CONFIGURABLE_VISIBLE_PAGES = (
+    "review-generation",
+    "class-feedback-generation",
+    "consultation",
+    "calendar",
+    "smartWrongQuestions",
+    "classes",
+)
 WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
 ORGANIZATION_REQUEST_PENDING = "pending"
 ORGANIZATION_REQUEST_APPROVED = "approved"
@@ -203,6 +211,63 @@ def _is_owner_username(username: str) -> bool:
 
 def _is_super_owner_role(role: str) -> bool:
     return (role or "").strip() == SUPER_OWNER_ROLE
+
+
+def get_default_visible_pages_for_role(role: str) -> list[str]:
+    return list(CONFIGURABLE_VISIBLE_PAGES)
+
+
+def normalize_visible_pages(raw_pages: object) -> list[str]:
+    if not isinstance(raw_pages, list):
+        raise ValueError("visible_pages must be a list")
+    allowed = set(CONFIGURABLE_VISIBLE_PAGES)
+    normalized = []
+    seen = set()
+    for page in raw_pages:
+        if not isinstance(page, str) or page not in allowed:
+            raise ValueError("visible_pages contains invalid page")
+        if page not in seen:
+            seen.add(page)
+            normalized.append(page)
+    return normalized
+
+
+def _load_visible_pages_for_user(row) -> list[str]:
+    keys = row.keys() if hasattr(row, "keys") else []
+    if "visible_pages_json" not in keys or row["visible_pages_json"] in (None, ""):
+        return get_default_visible_pages_for_role(row["role"])
+    try:
+        raw_pages = json.loads(row["visible_pages_json"])
+        return normalize_visible_pages(raw_pages)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return get_default_visible_pages_for_role(row["role"])
+
+
+def _normalize_recovery_phone(phone: str) -> str:
+    return re.sub(r"\D+", "", phone or "")
+
+
+def _normalize_security_answer(answer: str) -> str:
+    return (answer or "").strip().casefold()
+
+
+def _normalize_account_recovery(
+    recovery_phone: str = "",
+    security_question: str = "",
+    security_answer: str = "",
+) -> tuple[str, str, str]:
+    normalized_phone = _normalize_recovery_phone(recovery_phone)
+    normalized_question = (security_question or "").strip()
+    normalized_answer = _normalize_security_answer(security_answer)
+
+    if normalized_phone and not (6 <= len(normalized_phone) <= 20):
+        raise ValueError("电话号码格式不正确")
+    if (normalized_question and not normalized_answer) or (normalized_answer and not normalized_question):
+        raise ValueError("密保问题和答案需要一起填写")
+    if not normalized_phone and not (normalized_question and normalized_answer):
+        raise ValueError("请设置找回密码方式：电话号码或密保问题")
+
+    return normalized_phone, normalized_question, hash_password(normalized_answer) if normalized_answer else ""
 
 
 def _user_exists_with_username(conn: sqlite3.Connection, username: str, exclude_user_id: int = 0) -> bool:
@@ -1572,6 +1637,11 @@ def init_db():
             role            TEXT NOT NULL DEFAULT 'member',
             status          TEXT NOT NULL DEFAULT 'active',
             organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            visible_pages_json TEXT DEFAULT NULL,
+            recovery_phone  TEXT NOT NULL DEFAULT '',
+            security_question TEXT NOT NULL DEFAULT '',
+            security_answer_hash TEXT NOT NULL DEFAULT '',
+            initial_class_claim_completed INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT DEFAULT (datetime('now','localtime'))
         );
 
@@ -1594,6 +1664,9 @@ def init_db():
             display_name    TEXT NOT NULL,
             organization_id INTEGER NOT NULL REFERENCES organizations(id),
             status          TEXT NOT NULL DEFAULT 'pending',
+            recovery_phone  TEXT NOT NULL DEFAULT '',
+            security_question TEXT NOT NULL DEFAULT '',
+            security_answer_hash TEXT NOT NULL DEFAULT '',
             reviewed_by     INTEGER REFERENCES users(id),
             reviewed_at     TEXT,
             created_at      TEXT DEFAULT (datetime('now','localtime'))
@@ -1606,6 +1679,9 @@ def init_db():
             password_hash     TEXT NOT NULL,
             display_name      TEXT NOT NULL,
             status            TEXT NOT NULL DEFAULT 'pending',
+            recovery_phone    TEXT NOT NULL DEFAULT '',
+            security_question TEXT NOT NULL DEFAULT '',
+            security_answer_hash TEXT NOT NULL DEFAULT '',
             reviewed_by       INTEGER REFERENCES users(id),
             reviewed_at       TEXT,
             created_at        TEXT DEFAULT (datetime('now','localtime'))
@@ -2012,6 +2088,38 @@ def init_db():
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "last_login" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
+        if "visible_pages_json" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN visible_pages_json TEXT DEFAULT NULL")
+        if "recovery_phone" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN recovery_phone TEXT NOT NULL DEFAULT ''")
+        if "security_question" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN security_question TEXT NOT NULL DEFAULT ''")
+        if "security_answer_hash" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN security_answer_hash TEXT NOT NULL DEFAULT ''")
+        if "initial_class_claim_completed" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN initial_class_claim_completed INTEGER NOT NULL DEFAULT 0")
+            conn.execute(
+                """
+                UPDATE users
+                SET initial_class_claim_completed=1
+                WHERE role!=? OR last_login IS NOT NULL
+                """,
+                (MEMBER_ROLE,),
+            )
+        registration_request_cols = [r[1] for r in conn.execute("PRAGMA table_info(registration_requests)").fetchall()]
+        if "recovery_phone" not in registration_request_cols:
+            conn.execute("ALTER TABLE registration_requests ADD COLUMN recovery_phone TEXT NOT NULL DEFAULT ''")
+        if "security_question" not in registration_request_cols:
+            conn.execute("ALTER TABLE registration_requests ADD COLUMN security_question TEXT NOT NULL DEFAULT ''")
+        if "security_answer_hash" not in registration_request_cols:
+            conn.execute("ALTER TABLE registration_requests ADD COLUMN security_answer_hash TEXT NOT NULL DEFAULT ''")
+        organization_request_cols = [r[1] for r in conn.execute("PRAGMA table_info(organization_requests)").fetchall()]
+        if "recovery_phone" not in organization_request_cols:
+            conn.execute("ALTER TABLE organization_requests ADD COLUMN recovery_phone TEXT NOT NULL DEFAULT ''")
+        if "security_question" not in organization_request_cols:
+            conn.execute("ALTER TABLE organization_requests ADD COLUMN security_question TEXT NOT NULL DEFAULT ''")
+        if "security_answer_hash" not in organization_request_cols:
+            conn.execute("ALTER TABLE organization_requests ADD COLUMN security_answer_hash TEXT NOT NULL DEFAULT ''")
         _drop_legacy_table_if_exists(conn, "questions")
     print(f"数据库已初始化：{DB_PATH}")
 
@@ -2336,6 +2444,36 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
+def _requires_initial_class_claim(row) -> bool:
+    if not row:
+        return False
+    keys = row.keys() if hasattr(row, "keys") else []
+    if row["role"] != MEMBER_ROLE:
+        return False
+    if "initial_class_claim_completed" in keys and int(row["initial_class_claim_completed"] or 0):
+        return False
+    with get_conn() as conn:
+        own_class = conn.execute(
+            "SELECT 1 FROM user_classes WHERE user_id=? LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        if own_class:
+            return False
+        unbound_class = conn.execute(
+            """
+            SELECT 1
+            FROM classes c
+            WHERE c.organization_id=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_classes uc WHERE uc.class_id=c.id
+              )
+            LIMIT 1
+            """,
+            (row["organization_id"],),
+        ).fetchone()
+    return unbound_class is not None
+
+
 def _public_user_dict(row):
     if not row:
         return None
@@ -2350,6 +2488,8 @@ def _public_user_dict(row):
         "organization_name": row["organization_name"],
         "created_at": row["created_at"],
         "last_login": row["last_login"] if "last_login" in keys else None,
+        "visible_pages": _load_visible_pages_for_user(row),
+        "requires_class_claim": _requires_initial_class_claim(row),
     }
 
 
@@ -4253,6 +4393,22 @@ def actor_can_manage_user(actor_user: dict, target_user: dict) -> bool:
     return target_user.get("role") in {ADMIN_ROLE, MEMBER_ROLE}
 
 
+def actor_can_manage_user_visible_pages(actor_user: dict, target_user: dict) -> bool:
+    if not actor_user or not target_user:
+        return False
+    if actor_user.get("id") == target_user.get("id"):
+        return False
+    if actor_user.get("role") == SUPER_OWNER_ROLE:
+        return target_user.get("role") != SUPER_OWNER_ROLE
+    if actor_user.get("organization_id") != target_user.get("organization_id"):
+        return False
+    if actor_user.get("role") == OWNER_ROLE:
+        return target_user.get("role") in {ADMIN_ROLE, MEMBER_ROLE}
+    if actor_user.get("role") == ADMIN_ROLE:
+        return target_user.get("role") == MEMBER_ROLE
+    return False
+
+
 def list_classes_for_actor(actor_user: dict) -> list[dict]:
     if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
         return list_classes()
@@ -4418,6 +4574,23 @@ def update_user_display_name_for_actor(actor_user: dict, target_user_id: int, di
     return _public_user_dict(updated)
 
 
+def update_user_visible_pages_for_actor(actor_user: dict, target_user_id: int, visible_pages: object):
+    normalized_pages = normalize_visible_pages(visible_pages)
+    with get_conn() as conn:
+        target_row = _fetch_user_row_by_id(conn, target_user_id)
+        if not target_row:
+            raise LookupError("user not found")
+        target_user = _public_user_dict(target_row)
+        if not actor_can_manage_user_visible_pages(actor_user, target_user):
+            raise LookupError("user not found")
+        conn.execute(
+            "UPDATE users SET visible_pages_json=? WHERE id=?",
+            (json.dumps(normalized_pages, ensure_ascii=False), target_user_id),
+        )
+        updated = _fetch_user_row_by_id(conn, target_user_id)
+    return _public_user_dict(updated)
+
+
 def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
     with get_conn() as conn:
         target_row = _fetch_user_row_by_id(conn, target_user_id)
@@ -4525,11 +4698,131 @@ def authenticate_user(username: str, password: str):
     return _public_user_dict(row), None
 
 
+def reset_user_password_by_recovery(
+    username: str,
+    new_password: str,
+    recovery_phone: str = "",
+    security_question: str = "",
+    security_answer: str = "",
+) -> None:
+    normalized_username = _normalize_username(username)
+    if not normalized_username or not new_password:
+        raise ValueError("请填写账号和新密码")
+    if len(new_password) < 6:
+        raise ValueError("新密码至少需要 6 位")
+
+    normalized_phone = _normalize_recovery_phone(recovery_phone)
+    normalized_question = (security_question or "").strip()
+    normalized_answer = _normalize_security_answer(security_answer)
+
+    with get_conn() as conn:
+        row = _fetch_user_row_by_username(conn, normalized_username)
+        if not row:
+            raise ValueError("找回密码验证失败")
+        phone_matched = bool(normalized_phone and row["recovery_phone"] and normalized_phone == row["recovery_phone"])
+        security_matched = bool(
+            normalized_question
+            and normalized_answer
+            and row["security_question"]
+            and row["security_answer_hash"]
+            and normalized_question == row["security_question"]
+            and hash_password(normalized_answer) == row["security_answer_hash"]
+        )
+        if not phone_matched and not security_matched:
+            raise ValueError("找回密码验证失败")
+        conn.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (hash_password(new_password), row["id"]),
+        )
+
+
+def list_unbound_classes_for_user_claim(user_id: int) -> list[dict]:
+    with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        rows = conn.execute(
+            """
+            SELECT c.*, COUNT(l.id) AS lesson_count, NULL AS teacher_user_id
+            FROM classes c
+            LEFT JOIN lessons l ON l.class_id = c.id
+            WHERE c.organization_id=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_classes uc WHERE uc.class_id=c.id
+              )
+            GROUP BY c.id
+            ORDER BY c.created_at DESC, c.id DESC
+            """,
+            (user_row["organization_id"],),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def claim_classes_for_user(user_id: int, class_ids: list[int]) -> dict:
+    if not isinstance(class_ids, list):
+        raise ValueError("class_ids must be a list")
+
+    normalized_class_ids = []
+    seen = set()
+    for raw_class_id in class_ids:
+        if isinstance(raw_class_id, bool) or not isinstance(raw_class_id, int):
+            raise ValueError("class_ids must be integers")
+        if raw_class_id in seen:
+            continue
+        seen.add(raw_class_id)
+        normalized_class_ids.append(raw_class_id)
+
+    with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if user_row["role"] != MEMBER_ROLE:
+            raise ValueError("仅老师账号需要认领班级")
+
+        unbound_rows = conn.execute(
+            """
+            SELECT c.id
+            FROM classes c
+            WHERE c.organization_id=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_classes uc WHERE uc.class_id=c.id
+              )
+            ORDER BY c.id
+            """,
+            (user_row["organization_id"],),
+        ).fetchall()
+        unbound_ids = {row["id"] for row in unbound_rows}
+        if not normalized_class_ids and unbound_ids:
+            raise ValueError("请选择需要绑定的班级")
+
+        for class_id in normalized_class_ids:
+            if class_id not in unbound_ids:
+                class_row = conn.execute("SELECT organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
+                if not class_row or class_row["organization_id"] != user_row["organization_id"]:
+                    raise LookupError("class not found")
+                raise ValueError("班级已绑定")
+            conn.execute(
+                "INSERT INTO user_classes (user_id, class_id) VALUES (?, ?)",
+                (user_id, class_id),
+            )
+        if normalized_class_ids:
+            _sync_class_teacher_metadata(conn, normalized_class_ids)
+        conn.execute(
+            "UPDATE users SET initial_class_claim_completed=1 WHERE id=?",
+            (user_id,),
+        )
+        updated = _fetch_user_row_by_id(conn, user_id)
+    return _public_user_dict(updated)
+
+
 def create_organization_request(
     organization_name: str,
     username: str,
     display_name: str,
     password: str,
+    recovery_phone: str = "",
+    security_question: str = "",
+    security_answer: str = "",
 ):
     normalized_name = (organization_name or "").strip()
     normalized_username = _normalize_username(username)
@@ -4543,11 +4836,17 @@ def create_organization_request(
             raise ValueError("username already exists")
         if _pending_registration_exists(conn, normalized_username) or _pending_organization_request_username_exists(conn, normalized_username):
             raise ValueError("username already pending")
+        normalized_phone, normalized_question, answer_hash = _normalize_account_recovery(
+            recovery_phone=recovery_phone,
+            security_question=security_question,
+            security_answer=security_answer,
+        )
         cur = conn.execute(
             """
             INSERT INTO organization_requests
-                (organization_name, username, password_hash, display_name, status)
-            VALUES (?, ?, ?, ?, ?)
+                (organization_name, username, password_hash, display_name, status,
+                 recovery_phone, security_question, security_answer_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 normalized_name,
@@ -4555,6 +4854,9 @@ def create_organization_request(
                 hash_password(password),
                 normalized_display_name,
                 ORGANIZATION_REQUEST_PENDING,
+                normalized_phone,
+                normalized_question,
+                answer_hash,
             ),
         )
         row = conn.execute(
@@ -4596,10 +4898,22 @@ def approve_organization_request(request_id: int, reviewer_id: int):
         org = _ensure_organization(conn, req["organization_name"])
         cur = conn.execute(
             """
-            INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-            VALUES (?, ?, ?, ?, 'active', ?)
+            INSERT INTO users (
+                username, password_hash, display_name, role, status, organization_id,
+                recovery_phone, security_question, security_answer_hash
+            )
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
             """,
-            (req["username"], req["password_hash"], req["display_name"], OWNER_ROLE, org["id"]),
+            (
+                req["username"],
+                req["password_hash"],
+                req["display_name"],
+                OWNER_ROLE,
+                org["id"],
+                req["recovery_phone"],
+                req["security_question"],
+                req["security_answer_hash"],
+            ),
         )
         conn.execute(
             """
@@ -5549,19 +5863,30 @@ def _create_member_from_invite_row(
     username: str,
     display_name: str,
     password: str,
+    recovery_phone: str = "",
+    security_question: str = "",
+    security_answer: str = "",
 ):
     normalized_username = _normalize_username(username)
     normalized_display_name = (display_name or "").strip()
     if not normalized_username or not normalized_display_name or not password:
         raise ValueError("join fields are required")
+    normalized_phone, normalized_question, answer_hash = _normalize_account_recovery(
+        recovery_phone=recovery_phone,
+        security_question=security_question,
+        security_answer=security_answer,
+    )
     if _is_owner_username(normalized_username) or _user_exists_with_username(conn, normalized_username):
         raise ValueError("username already exists")
     if _pending_registration_exists(conn, normalized_username) or _pending_organization_request_username_exists(conn, normalized_username):
         raise ValueError("username already pending")
     cur = conn.execute(
         """
-        INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-        VALUES (?, ?, ?, ?, 'active', ?)
+        INSERT INTO users (
+            username, password_hash, display_name, role, status, organization_id,
+            recovery_phone, security_question, security_answer_hash
+        )
+        VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
         """,
         (
             normalized_username,
@@ -5569,30 +5894,70 @@ def _create_member_from_invite_row(
             normalized_display_name,
             MEMBER_ROLE,
             invite_row["organization_id"],
+            normalized_phone,
+            normalized_question,
+            answer_hash,
         ),
     )
     user_row = _fetch_user_row_by_id(conn, cur.lastrowid)
     return _public_user_dict(user_row)
 
 
-def join_organization_by_invite_code(invite_code: str, username: str, display_name: str, password: str):
+def join_organization_by_invite_code(
+    invite_code: str,
+    username: str,
+    display_name: str,
+    password: str,
+    recovery_phone: str = "",
+    security_question: str = "",
+    security_answer: str = "",
+):
     with get_conn() as conn:
         invite_row = _fetch_active_organization_invite_by_code(conn, invite_code)
         if not invite_row:
             raise LookupError("invite not found")
-        return _create_member_from_invite_row(conn, invite_row, username, display_name, password)
+        return _create_member_from_invite_row(
+            conn,
+            invite_row,
+            username,
+            display_name,
+            password,
+            recovery_phone=recovery_phone,
+            security_question=security_question,
+            security_answer=security_answer,
+        )
 
 
-def join_organization_by_invite_link_token(invite_token: str, username: str, display_name: str, password: str):
+def join_organization_by_invite_link_token(
+    invite_token: str,
+    username: str,
+    display_name: str,
+    password: str,
+    recovery_phone: str = "",
+    security_question: str = "",
+    security_answer: str = "",
+):
     with get_conn() as conn:
         invite_row = _fetch_active_organization_invite_by_token(conn, invite_token)
         if not invite_row:
             raise LookupError("invite not found")
-        return _create_member_from_invite_row(conn, invite_row, username, display_name, password)
+        return _create_member_from_invite_row(
+            conn,
+            invite_row,
+            username,
+            display_name,
+            password,
+            recovery_phone=recovery_phone,
+            security_question=security_question,
+            security_answer=security_answer,
+        )
 
 
 def create_registration_request(username: str, display_name: str, password: str,
-                                organization_name: str = DEFAULT_ORGANIZATION_NAME):
+                                organization_name: str = DEFAULT_ORGANIZATION_NAME,
+                                recovery_phone: str = "",
+                                security_question: str = "",
+                                security_answer: str = ""):
     normalized_username = _normalize_username(username)
     with get_conn() as conn:
         org = _ensure_organization(conn, organization_name)
@@ -5600,12 +5965,28 @@ def create_registration_request(username: str, display_name: str, password: str,
             raise ValueError("用户名已存在")
         if _pending_registration_exists(conn, normalized_username):
             raise ValueError("该用户名已有待审批申请")
+        normalized_phone, normalized_question, answer_hash = _normalize_account_recovery(
+            recovery_phone=recovery_phone,
+            security_question=security_question,
+            security_answer=security_answer,
+        )
         cur = conn.execute(
             """
-            INSERT INTO registration_requests (username, password_hash, display_name, organization_id, status)
-            VALUES (?, ?, ?, ?, 'pending')
+            INSERT INTO registration_requests (
+                username, password_hash, display_name, organization_id, status,
+                recovery_phone, security_question, security_answer_hash
+            )
+            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
             """,
-            (normalized_username, hash_password(password), display_name, org["id"]),
+            (
+                normalized_username,
+                hash_password(password),
+                display_name,
+                org["id"],
+                normalized_phone,
+                normalized_question,
+                answer_hash,
+            ),
         )
         row = conn.execute(
             """
@@ -5653,10 +6034,22 @@ def approve_registration_request(request_id: int, reviewer_id: int):
             raise ValueError("用户名已存在")
         cur = conn.execute(
             """
-            INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
-            VALUES (?, ?, ?, ?, 'active', ?)
+            INSERT INTO users (
+                username, password_hash, display_name, role, status, organization_id,
+                recovery_phone, security_question, security_answer_hash
+            )
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
             """,
-            (req["username"], req["password_hash"], req["display_name"], MEMBER_ROLE, req["organization_id"]),
+            (
+                req["username"],
+                req["password_hash"],
+                req["display_name"],
+                MEMBER_ROLE,
+                req["organization_id"],
+                req["recovery_phone"],
+                req["security_question"],
+                req["security_answer_hash"],
+            ),
         )
         conn.execute(
             """

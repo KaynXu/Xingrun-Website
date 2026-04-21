@@ -82,7 +82,7 @@ type Page =
   | 'credit'
   | 'settings';
 type LandingLegalDocumentKey = 'privacy' | 'terms';
-type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization';
+type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization' | 'password-reset';
 
 interface Lesson {
   id: number;
@@ -217,6 +217,8 @@ interface CurrentUser {
   organization_id: number;
   organization_name: string;
   created_at: string;
+  visible_pages?: Page[];
+  requires_class_claim?: boolean;
 }
 
 interface RegistrationRequestItem {
@@ -269,6 +271,7 @@ interface UserItem {
   role: Role;
   username?: string;
   last_login?: string | null;
+  visible_pages?: Page[];
 }
 
 type MemberBindingSummaryStatus = 'healthy' | 'needs_review' | 'incomplete';
@@ -291,7 +294,13 @@ interface MemberBindingSummary {
 
 interface ApprovalPageProps {
   currentUser: CurrentUser;
+  onOpenClassBinding: (target: ClassBindingTarget) => void;
 }
+
+type ClassBindingTarget = {
+  teacherUserId: number;
+  teacherName: string;
+};
 
 interface ClassFormValues {
   name: string;
@@ -328,6 +337,15 @@ const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
 
 const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
+const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
+  { id: 'review-generation', label: '复习生成' },
+  { id: 'class-feedback-generation', label: '课堂反馈' },
+  { id: 'consultation', label: '咨询记录' },
+  { id: 'calendar', label: '课程日历' },
+  { id: 'smartWrongQuestions', label: '智能错题' },
+  { id: 'classes', label: '班级管理' },
+];
+const configurableWorkspacePageIds = new Set(configurableWorkspacePages.map((item) => item.id));
 
 function getRoleLabel(role: Role): string {
   if (role === 'super_owner') return '超级管理员';
@@ -346,6 +364,30 @@ function hasStaffAccess(role: Role): boolean {
 
 function canAccessSmartWrongQuestions(role: Role): boolean {
   return hasStaffAccess(role) || role === 'member';
+}
+
+function getVisibleWorkspacePages(user: Pick<CurrentUser, 'visible_pages'> | UserItem): Page[] {
+  if (!Array.isArray(user.visible_pages)) {
+    return configurableWorkspacePages.map((item) => item.id);
+  }
+  const visiblePageSet = new Set(user.visible_pages.filter((page) => configurableWorkspacePageIds.has(page)));
+  return configurableWorkspacePages.map((item) => item.id).filter((page) => visiblePageSet.has(page));
+}
+
+function canOpenWorkspacePage(user: CurrentUser, page: Page): boolean {
+  if (page === 'dashboard' || page === 'settings') {
+    return true;
+  }
+  if (page === 'credit') {
+    return hasOwnerAccess(user.role);
+  }
+  if (page === 'accounts') {
+    return hasStaffAccess(user.role);
+  }
+  if (page === 'smartWrongQuestions' && !canAccessSmartWrongQuestions(user.role)) {
+    return false;
+  }
+  return getVisibleWorkspacePages(user).includes(page);
 }
 
 function syncMemberScopedClassSelection(
@@ -1477,20 +1519,20 @@ const Sidebar = ({
 }) => {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const menuItems = [
-    { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
-    { id: 'review-generation', icon: Library, label: '复习生成' },
-    { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
-    { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
-    { id: 'calendar', icon: CalendarDays, label: '课程日历' },
-    ...(canAccessSmartWrongQuestions(currentUser.role)
-      ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
-      : []),
-    ...(hasStaffAccess(currentUser.role)
-      ? [{ id: 'classes', icon: Home, label: '班级管理' }]
-      : []),
-    ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
-    ...(hasOwnerAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
-    { id: 'settings', icon: Settings, label: '系统设置' },
+    ...[
+      { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
+      { id: 'review-generation', icon: Library, label: '复习生成' },
+      { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
+      { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
+      { id: 'calendar', icon: CalendarDays, label: '课程日历' },
+      ...(canAccessSmartWrongQuestions(currentUser.role)
+        ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
+        : []),
+      { id: 'classes', icon: Home, label: '班级管理' },
+      ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
+      ...(hasStaffAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
+      { id: 'settings', icon: Settings, label: '系统设置' },
+    ].filter((item) => canOpenWorkspacePage(currentUser, item.id as Page)),
   ];
 
   return (
@@ -4366,7 +4408,7 @@ interface TeacherAliasEntry {
   aliases: string[];
 }
 
-const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
+const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationSummaryItem[]>([]);
@@ -4381,6 +4423,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [bindingSummaryError, setBindingSummaryError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
   const [roleSavingUserId, setRoleSavingUserId] = useState<number | null>(null);
+  const [visiblePageSavingUserId, setVisiblePageSavingUserId] = useState<number | null>(null);
   const [editingDisplayNameUserId, setEditingDisplayNameUserId] = useState<number | null>(null);
   const [pendingDisplayName, setPendingDisplayName] = useState('');
   const [displayNameSavingUserId, setDisplayNameSavingUserId] = useState<number | null>(null);
@@ -4413,6 +4456,12 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   const [taDeletingId, setTaDeletingId] = useState<string | null>(null);
 
   const loadItems = useCallback(async () => {
+    if (!hasOwnerAccess(currentUser.role)) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
@@ -4423,7 +4472,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser.role]);
 
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
@@ -4525,6 +4574,12 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
   }, [currentUser.role]);
 
   const loadTeacherAliases = useCallback(async () => {
+    if (!hasOwnerAccess(currentUser.role)) {
+      setTeacherAliases([]);
+      setTeacherAliasLoading(false);
+      return;
+    }
+
     setTeacherAliasLoading(true);
     setTeacherAliasError('');
     try {
@@ -4535,7 +4590,7 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
     } finally {
       setTeacherAliasLoading(false);
     }
-  }, []);
+  }, [currentUser.role]);
 
   const openTeacherAliasCreate = () => {
     setTeacherAliasEditingEntry(null);
@@ -4701,6 +4756,40 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
       setUsersError(err instanceof Error ? err.message : '成员权限更新失败');
     } finally {
       setRoleSavingUserId(null);
+    }
+  };
+
+  const handleToggleVisiblePage = async (targetUser: UserItem, page: Page) => {
+    if (visiblePageSavingUserId !== null || targetUser.role === 'super_owner') {
+      return;
+    }
+
+    const currentVisiblePages = getVisibleWorkspacePages(targetUser);
+    const nextVisiblePageSet = new Set(currentVisiblePages);
+    if (nextVisiblePageSet.has(page)) {
+      nextVisiblePageSet.delete(page);
+    } else {
+      nextVisiblePageSet.add(page);
+    }
+    const nextVisiblePages = configurableWorkspacePages
+      .map((item) => item.id)
+      .filter((item) => nextVisiblePageSet.has(item));
+
+    setVisiblePageSavingUserId(targetUser.id);
+    setUsersError('');
+    setUsers((current) => current.map((user) => (user.id === targetUser.id ? { ...user, visible_pages: nextVisiblePages } : user)));
+
+    try {
+      const response = await apiFetch<{ ok: boolean; user: UserItem }>(`/api/admin/users/${targetUser.id}/visible-pages`, {
+        method: 'PUT',
+        body: JSON.stringify({ visible_pages: nextVisiblePages }),
+      });
+      setUsers((current) => current.map((user) => (user.id === targetUser.id ? { ...user, ...response.user } : user)));
+    } catch (err) {
+      setUsers((current) => current.map((user) => (user.id === targetUser.id ? { ...user, visible_pages: currentVisiblePages } : user)));
+      setUsersError(err instanceof Error ? err.message : '可见页面更新失败');
+    } finally {
+      setVisiblePageSavingUserId(null);
     }
   };
 
@@ -5021,126 +5110,128 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
         </section>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
-        <section className={`${workspaceCardClass} space-y-5 p-6`}>
-          <div>
-            <p className="text-sm uppercase tracking-[0.25em] text-sky-600">账号审批与权限</p>
-            <h3 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">账号审批</h3>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">超级管理员和机构负责人都可以审核注册申请，并为用户开通后台访问权限。</p>
-          </div>
-          <div className={`${workspaceSoftCardClass} p-5`}>
-            <p className="text-xs uppercase tracking-[0.25em] text-sky-600">当前账号</p>
-            <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500 dark:text-slate-400">账号</span>
-                <span className="text-slate-700 dark:text-slate-200">{currentUser.username}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500 dark:text-slate-400">权限</span>
-                <span className="text-slate-700 dark:text-slate-200">{getRoleLabel(currentUser.role)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-500 dark:text-slate-400">机构</span>
-                <span className="text-slate-700 dark:text-slate-200">{currentUser.organization_name}</span>
-              </div>
-            </div>
-          </div>
-          <div className={`${workspaceSoftCardClass} p-5`}>
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Queue</p>
-            <p className="mt-3 text-4xl font-bold text-slate-900 dark:text-white">{items.length}</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前待审核注册申请</p>
-          </div>
-        </section>
-
-        <section className={`${workspaceCardClass} p-6`}>
-          <div className="flex items-center justify-between gap-4 mb-6">
+      {hasOwnerAccess(currentUser.role) && (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
+          <section className={`${workspaceCardClass} space-y-5 p-6`}>
             <div>
-              <h4 className="text-xl font-semibold text-slate-900 dark:text-white">待审批申请</h4>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
+              <p className="text-sm uppercase tracking-[0.25em] text-sky-600">账号审批与权限</p>
+              <h3 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">账号审批</h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">超级管理员和机构负责人都可以审核注册申请，并为用户开通后台访问权限。</p>
             </div>
-            <button
-              onClick={() => loadItems().catch(() => undefined)}
-              className={workspaceSecondaryButtonClass}
-            >
-              刷新列表
-            </button>
-          </div>
+            <div className={`${workspaceSoftCardClass} p-5`}>
+              <p className="text-xs uppercase tracking-[0.25em] text-sky-600">当前账号</p>
+              <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
+              <div className="mt-4 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-slate-500 dark:text-slate-400">账号</span>
+                  <span className="text-slate-700 dark:text-slate-200">{currentUser.username}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-slate-500 dark:text-slate-400">权限</span>
+                  <span className="text-slate-700 dark:text-slate-200">{getRoleLabel(currentUser.role)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-slate-500 dark:text-slate-400">机构</span>
+                  <span className="text-slate-700 dark:text-slate-200">{currentUser.organization_name}</span>
+                </div>
+              </div>
+            </div>
+            <div className={`${workspaceSoftCardClass} p-5`}>
+              <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Queue</p>
+              <p className="mt-3 text-4xl font-bold text-slate-900 dark:text-white">{items.length}</p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前待审核注册申请</p>
+            </div>
+          </section>
 
-          {error && (
-            <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-              <AlertCircle size={16} />
-              {error}
+          <section className={`${workspaceCardClass} p-6`}>
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div>
+                <h4 className="text-xl font-semibold text-slate-900 dark:text-white">待审批申请</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新账号统一归属机构 {currentUser.organization_name}，通过后即可进入后台。</p>
+              </div>
+              <button
+                onClick={() => loadItems().catch(() => undefined)}
+                className={workspaceSecondaryButtonClass}
+              >
+                刷新列表
+              </button>
             </div>
-          )}
 
-          {loading ? (
-            <div className="p-8 text-center text-slate-500 dark:text-slate-400">正在读取审批队列...</div>
-          ) : items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-              暂无待审批申请，新的注册请求会出现在这里。
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {items.map((item) => {
-                const busy = actingId === item.id;
-                return (
-                  <div key={item.id} className={`${workspaceSoftCardClass} p-5`}>
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.display_name}</span>
-                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
-                            待审批
-                          </span>
+            {error && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                <AlertCircle size={16} />
+                {error}
+              </div>
+            )}
+
+            {loading ? (
+              <div className="p-8 text-center text-slate-500 dark:text-slate-400">正在读取审批队列...</div>
+            ) : items.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                暂无待审批申请，新的注册请求会出现在这里。
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {items.map((item) => {
+                  const busy = actingId === item.id;
+                  return (
+                    <div key={item.id} className={`${workspaceSoftCardClass} p-5`}>
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.display_name}</span>
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
+                              待审批
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">账号</p>
+                              <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">机构</p>
+                              <p className="mt-1 text-slate-700 dark:text-slate-200">{item.organization_name}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">申请时间</p>
+                              <p className="mt-1 text-slate-700 dark:text-slate-200">{item.created_at}</p>
+                            </div>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-1 gap-3 text-sm text-slate-500 md:grid-cols-3 dark:text-slate-400">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">账号</p>
-                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.username}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">机构</p>
-                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.organization_name}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">申请时间</p>
-                            <p className="mt-1 text-slate-700 dark:text-slate-200">{item.created_at}</p>
-                          </div>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleDecision(item.id, 'reject')}
+                            disabled={busy}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            拒绝
+                          </button>
+                          <button
+                            onClick={() => handleDecision(item.id, 'approve')}
+                            disabled={busy}
+                            className={workspacePrimaryButtonClass}
+                          >
+                            {busy ? '处理中...' : '通过并开通'}
+                          </button>
                         </div>
-                      </div>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => handleDecision(item.id, 'reject')}
-                          disabled={busy}
-                          className={workspaceSecondaryButtonClass}
-                        >
-                          拒绝
-                        </button>
-                        <button
-                          onClick={() => handleDecision(item.id, 'approve')}
-                          disabled={busy}
-                          className={workspacePrimaryButtonClass}
-                        >
-                          {busy ? '处理中...' : '通过并开通'}
-                        </button>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
-      {hasOwnerAccess(currentUser.role) && (
+      {hasStaffAccess(currentUser.role) && (
         <section className={`${workspaceCardClass} p-6`}>
           <div className="flex flex-col gap-3 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-start sm:justify-between dark:border-white/10">
             <div>
               <h4 className="text-xl font-semibold text-slate-900 dark:text-white">成员权限</h4>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限，班级分配不再放在审批页。
+                超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面。
               </p>
             </div>
             <button onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
@@ -5166,9 +5257,11 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
               {users.map((user) => {
                 const busy = roleSavingUserId === user.id;
                 const displayNameBusy = displayNameSavingUserId === user.id;
+                const visiblePageSaving = visiblePageSavingUserId === user.id;
                 const editingName = editingDisplayNameUserId === user.id;
                 const deleting = deletingUserId === user.id;
                 const bindingSummary = bindingSummaryByUserId[user.id];
+                const visiblePages = getVisibleWorkspacePages(user);
                 const responsibleClasses = bindingSummary?.responsible_classes ?? [];
                 const bindingStatus = bindingSummary?.mapping_summary.status ?? 'incomplete';
                 const visibleClassNames = responsibleClasses.slice(0, 3).map((item) => item.name);
@@ -5178,9 +5271,15 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                   + (bindingSummary?.mapping_summary.ambiguous_count ?? 0);
                 const assignableRoles = getAssignableRoles(user);
                 const roleFixed = assignableRoles.length === 0;
-                const canDeleteUser = user.role !== 'super_owner'
+                const canDeleteUser = currentUser.role !== 'admin'
+                  && user.role !== 'super_owner'
                   && user.id !== currentUser.id
                   && (canManageOwnerRole(currentUser.role) || user.role !== 'owner');
+                const canEditVisiblePages = user.role !== 'super_owner'
+                  && user.id !== currentUser.id
+                  && (currentUser.role === 'super_owner'
+                    || (currentUser.role === 'owner' && (user.role === 'admin' || user.role === 'member'))
+                    || (currentUser.role === 'admin' && user.role === 'member'));
                 const isCollapsed = collapsedUserIds.has(user.id);
                 const toggleCollapse = () => setCollapsedUserIds((prev) => {
                   const next = new Set(prev);
@@ -5263,6 +5362,19 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                                 <span className="text-slate-400">负责班级</span>
                                 <span className="text-slate-700 dark:text-slate-200">{responsibleClasses.length} 个班级</span>
                               </div>
+                              {user.role !== 'super_owner' && canOpenWorkspacePage(currentUser, 'classes') && (
+                                <div className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="text-slate-400">绑定班级</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenClassBinding({ teacherUserId: user.id, teacherName: user.name })}
+                                    className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 font-semibold text-sky-700 transition hover:bg-sky-50 dark:border-sky-500/30 dark:bg-slate-950/70 dark:text-sky-300 dark:hover:bg-sky-500/10"
+                                  >
+                                    去绑定班级
+                                    <ArrowRight size={12} />
+                                  </button>
+                                </div>
+                              )}
                               {visibleClassNames.length > 0 && (
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
                                   {visibleClassNames.join('、')}{hiddenClassCount > 0 ? ` +${hiddenClassCount}` : ''}
@@ -5283,10 +5395,39 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
                               <p className="mt-2 text-xs text-rose-500 dark:text-rose-300">教学绑定摘要加载失败</p>
                             )}
                           </div>
+                          <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                            <div className="flex items-center justify-between gap-3">
+                              <h5 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">可见页面</h5>
+                              {visiblePageSaving && (
+                                <span className="text-xs font-semibold text-sky-600 dark:text-sky-300">保存中...</span>
+                              )}
+                            </div>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              {configurableWorkspacePages.map((pageOption) => {
+                                const checked = visiblePages.includes(pageOption.id);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={`${user.id}-visible-${pageOption.id}`}
+                                    onClick={() => void handleToggleVisiblePage(user, pageOption.id)}
+                                    disabled={!canEditVisiblePages || visiblePageSaving}
+                                    className={cn(
+                                      'rounded-xl border px-3 py-2 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+                                      checked
+                                        ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-400/40 dark:bg-sky-500/10 dark:text-sky-200'
+                                        : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                                    )}
+                                  >
+                                    {pageOption.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                         <div className="mt-3 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            {user.role !== 'super_owner' && (
+                            {currentUser.role !== 'admin' && user.role !== 'super_owner' && (
                               <button
                                 type="button"
                                 onClick={() => handleStartDisplayNameEdit(user.id, user.name)}
@@ -5380,7 +5521,8 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
       )}
 
       {/* Teacher Alias Mapping Section */}
-      <section className={`${workspaceCardClass} mt-6 p-6`}>
+      {hasOwnerAccess(currentUser.role) && (
+        <section className={`${workspaceCardClass} mt-6 p-6`}>
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">讲师映射</h4>
@@ -5437,7 +5579,8 @@ const ApprovalPage = ({ currentUser }: ApprovalPageProps) => {
             </table>
           </div>
         )}
-      </section>
+        </section>
+      )}
 
       <AnimatePresence>
         {teacherAliasModalOpen && (
@@ -6060,7 +6203,15 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   );
 };
 
-const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
+const ClassManagementPage = ({
+  currentUser,
+  classBindingTarget,
+  onClearClassBindingTarget,
+}: {
+  currentUser: CurrentUser;
+  classBindingTarget?: ClassBindingTarget | null;
+  onClearClassBindingTarget?: () => void;
+}) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
@@ -6093,6 +6244,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
+  const canManageClassTeachers = hasStaffAccess(currentUser.role);
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
@@ -6104,8 +6256,12 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     try {
       const [classItems, userItems, teacherBindingData] = await Promise.all([
         apiFetch<ClassItem[]>('/api/classes'),
-        apiFetch<UserItem[]>('/api/admin/users'),
-        apiFetch<{ teacher_bindings: Record<number, number | null> }>('/api/classes/teacher-bindings'),
+        hasStaffAccess(currentUser.role)
+          ? apiFetch<UserItem[]>('/api/admin/users')
+          : Promise.resolve([] as UserItem[]),
+        hasStaffAccess(currentUser.role)
+          ? apiFetch<{ teacher_bindings: Record<number, number | null> }>('/api/classes/teacher-bindings')
+          : Promise.resolve({ teacher_bindings: {} as Record<number, number | null> }),
       ]);
 
       if (requestVersion !== loadPageRequestVersionRef.current) {
@@ -6160,7 +6316,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         setLoading(false);
       }
     }
-  }, []);
+  }, [currentUser.role]);
 
   useEffect(() => {
     loadPage().catch(() => undefined);
@@ -6271,6 +6427,22 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setFormError('');
     setAssignmentError('');
   };
+
+  useEffect(() => {
+    if (!classBindingTarget || expandedClassId === null) {
+      return;
+    }
+
+    const stateKey = getClassStateKey(expandedClassId);
+    setTeacherSearchByClassId((current) => (
+      current[stateKey]
+        ? current
+        : { ...current, [stateKey]: classBindingTarget.teacherName }
+    ));
+    if (expandedClassId === 'new') {
+      setNewClassTeacherUserId(classBindingTarget.teacherUserId);
+    }
+  }, [classBindingTarget, expandedClassId]);
 
   const handleSaveClass = async (classId: number | 'new') => {
     const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
@@ -6550,6 +6722,23 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             在这里统一管理 {currentUser.organization_name} 的班级信息与负责老师安排。
           </p>
         </div>
+        {classBindingTarget && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-sky-500/30 dark:bg-sky-500/10">
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-sky-600 dark:text-sky-300">绑定班级</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">目标老师：{classBindingTarget?.teacherName}</p>
+            </div>
+            {onClearClassBindingTarget && (
+              <button
+                type="button"
+                onClick={onClearClassBindingTarget}
+                className={workspaceSecondaryButtonClass}
+              >
+                清除目标
+              </button>
+            )}
+          </div>
+        )}
         <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
           <p className="text-sm font-semibold text-slate-900 dark:text-white">命名统一规则</p>
           <p className="text-sm text-slate-500 dark:text-slate-400">新建或编辑班级时会优先统一成“六年级 2 班 / 初一 3 班 / 高二 1 班”的格式。</p>
@@ -6588,7 +6777,7 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             >
               刷新列表
             </button>
-            {hasStaffAccess(currentUser.role) && (
+            {canManageClassTeachers && (
               <button
                 type="button"
                 onClick={() => handleToggleExpandedClass('new')}
@@ -6934,7 +7123,8 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </div>
 
                     <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                      <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                      {canManageClassTeachers && (
+                        <div className={`${workspaceCardClass} space-y-5 p-5`}>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
@@ -6996,7 +7186,6 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           </select>
                         )}
 
-                        {hasStaffAccess(currentUser.role) && (
                           <div className="grid gap-3 border-t border-sky-100/80 pt-5 sm:grid-cols-2 dark:border-white/10">
                             <button
                               type="button"
@@ -7016,8 +7205,8 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                               {saving ? '保存中...' : '保存班级'}
                             </button>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
                       <div className={`${workspaceCardClass} space-y-4 p-5`}>
                         <div>
@@ -7093,16 +7282,260 @@ const ClassManagementPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
 // --- Login Modal ---
 
+type RecoveryMethod = 'phone' | 'security';
+
+const authInputClass = 'w-full bg-black border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors';
+
+function buildRecoveryPayload(
+  recoveryMethod: RecoveryMethod,
+  recoveryPhone: string,
+  securityQuestion: string,
+  securityAnswer: string,
+) {
+  if (recoveryMethod === 'phone') {
+    return { recovery_phone: recoveryPhone };
+  }
+  return { security_question: securityQuestion, security_answer: securityAnswer };
+}
+
+const RecoverySetupFields = ({
+  recoveryMethod,
+  setRecoveryMethod,
+  recoveryPhone,
+  setRecoveryPhone,
+  securityQuestion,
+  setSecurityQuestion,
+  securityAnswer,
+  setSecurityAnswer,
+}: {
+  recoveryMethod: RecoveryMethod;
+  setRecoveryMethod: (method: RecoveryMethod) => void;
+  recoveryPhone: string;
+  setRecoveryPhone: (value: string) => void;
+  securityQuestion: string;
+  setSecurityQuestion: (value: string) => void;
+  securityAnswer: string;
+  setSecurityAnswer: (value: string) => void;
+}) => (
+  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="grid grid-cols-2 gap-2 rounded-xl bg-black p-1">
+      <button
+        type="button"
+        onClick={() => setRecoveryMethod('phone')}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          recoveryMethod === 'phone' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+        }`}
+      >
+        电话号码
+      </button>
+      <button
+        type="button"
+        onClick={() => setRecoveryMethod('security')}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          recoveryMethod === 'security' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+        }`}
+      >
+        密保问题
+      </button>
+    </div>
+
+    {recoveryMethod === 'phone' ? (
+      <div className="space-y-1.5">
+        <label className="text-sm text-gray-400">找回密码电话</label>
+        <input
+          type="tel"
+          value={recoveryPhone}
+          onChange={(e) => setRecoveryPhone(e.target.value)}
+          required
+          placeholder="输入电话号码即可验证"
+          className={authInputClass}
+        />
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-sm text-gray-400">密保问题</label>
+          <input
+            type="text"
+            value={securityQuestion}
+            onChange={(e) => setSecurityQuestion(e.target.value)}
+            required
+            placeholder="例如：我的入职年份？"
+            className={authInputClass}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm text-gray-400">密保答案</label>
+          <input
+            type="text"
+            value={securityAnswer}
+            onChange={(e) => setSecurityAnswer(e.target.value)}
+            required
+            placeholder="请输入答案"
+            className={authInputClass}
+          />
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+const ClassClaimPage = ({
+  currentUser,
+  onClaimed,
+  onLogout,
+}: {
+  currentUser: CurrentUser;
+  onClaimed: (user: CurrentUser) => void;
+  onLogout: () => void;
+}) => {
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [selectedClassIds, setSelectedClassIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiFetch<{ items: ClassItem[] }>('/api/me/unbound-classes')
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setClasses(payload.items);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '班级加载失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleClass = (classId: number) => {
+    setSelectedClassIds((current) =>
+      current.includes(classId) ? current.filter((id) => id !== classId) : [...current, classId],
+    );
+  };
+
+  const handleClaim = async () => {
+    setError('');
+    if (classes.length > 0 && selectedClassIds.length === 0) {
+      setError('请选择需要绑定的班级');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = await apiFetch<{ ok: boolean; user: CurrentUser }>('/api/me/claim-classes', {
+        method: 'POST',
+        body: JSON.stringify({ class_ids: selectedClassIds }),
+      });
+      onClaimed(payload.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '班级认领失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] px-4 py-8 text-slate-900 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <div className={`${workspaceCardClass} relative w-full max-w-3xl p-6 md:p-8`}>
+        <div className="flex flex-col gap-3 border-b border-sky-100 pb-5 dark:border-white/10">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-sky-600 dark:text-sky-300">首次登录</p>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">认领你的班级</h1>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                {currentUser.display_name}，请选择需要绑定到你账号下的未绑定班级。
+              </p>
+            </div>
+            <button type="button" onClick={onLogout} className={workspaceSecondaryButtonClass}>
+              退出登录
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+            <AlertCircle size={16} />
+            {error}
+          </div>
+        )}
+
+        <div className="mt-5 space-y-3">
+          {loading ? (
+            <WorkspaceLoading label="正在加载未绑定班级..." />
+          ) : classes.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+              当前没有未绑定班级。
+            </div>
+          ) : (
+            classes.map((item) => {
+              const checked = selectedClassIds.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => toggleClass(item.id)}
+                  className={`flex w-full items-center justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition ${
+                    checked
+                      ? 'border-sky-300 bg-sky-50 text-slate-900 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-white'
+                      : 'border-sky-100 bg-white/70 text-slate-700 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{item.name}</span>
+                    <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                      {[item.grade, item.subject].filter(Boolean).join(' · ') || '未设置年级科目'}
+                    </span>
+                  </span>
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                    checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 dark:border-slate-600'
+                  }`}>
+                    {checked ? <CheckCircle2 size={14} /> : null}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => void handleClaim()}
+            disabled={loading || saving}
+            className={workspacePrimaryButtonClass}
+          >
+            {saving ? '绑定中...' : classes.length === 0 ? '完成' : '绑定所选班级'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LoginModal = ({
   onLogin,
   onClose,
   onOpenApplyOrganization,
   onOpenJoinOrganization,
+  onOpenPasswordReset,
 }: {
   onLogin: (token: string) => void;
   onClose: () => void;
   onOpenApplyOrganization: () => void;
   onOpenJoinOrganization: () => void;
+  onOpenPasswordReset: () => void;
 }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -7186,7 +7619,16 @@ const LoginModal = ({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm text-gray-400">密码</label>
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-sm text-gray-400">密码</label>
+                <button
+                  type="button"
+                  onClick={onOpenPasswordReset}
+                  className="text-sm font-medium text-sky-300 transition-colors hover:text-sky-100"
+                >
+                  找回密码
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type={showPwd ? 'text' : 'password'}
@@ -7238,11 +7680,179 @@ const LoginModal = ({
 
 const RegisterRequestModal = ({ onClose }: { onClose: () => void }) => <OrganizationApplyModal onClose={onClose} />;
 
+const PasswordResetModal = ({
+  onClose,
+  onBackToLogin,
+}: {
+  onClose: () => void;
+  onBackToLogin: () => void;
+}) => {
+  const [username, setUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (newPassword !== confirmPassword) {
+      setError('两次输入的新密码不一致');
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiFetch<{ ok: boolean }>('/api/password-reset', {
+        method: 'POST',
+        body: JSON.stringify({
+          username,
+          new_password: newPassword,
+          ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
+        }),
+      });
+      setSuccess('密码已重置，请使用新密码登录。');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '密码重置失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-lg"
+      >
+        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 shadow-2xl text-white">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">找回密码</h2>
+            <button onClick={onClose} className="text-2xl leading-none text-gray-500 transition-colors hover:text-white">×</button>
+          </div>
+
+          {error && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+              <AlertCircle size={16} />
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm text-green-300">
+              <CheckCircle2 size={16} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm text-gray-400">账号</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoFocus
+                placeholder="请输入账号"
+                className={authInputClass}
+              />
+            </div>
+
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">新密码</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="至少 6 位"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 pr-11 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(!showPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-gray-400">确认新密码</label>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="再次输入新密码"
+                  className={authInputClass}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-500 disabled:opacity-50"
+            >
+              {loading ? '重置中...' : '重置密码'}
+            </button>
+            <button
+              type="button"
+              onClick={onBackToLogin}
+              className="w-full rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium transition-colors hover:bg-white/10"
+            >
+              返回登录
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -7266,6 +7876,7 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
           username,
           display_name: displayName,
           password,
+          ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
         }),
       });
       const raw = await res.text();
@@ -7278,6 +7889,9 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
       setDisplayName('');
       setPassword('');
       setConfirmPassword('');
+      setRecoveryPhone('');
+      setSecurityQuestion('');
+      setSecurityAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册申请提交失败');
     } finally {
@@ -7392,6 +8006,17 @@ const LegacyRegisterRequestModal = ({ onClose }: { onClose: () => void }) => {
               </div>
             </div>
 
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
             <button
               type="submit"
               disabled={loading}
@@ -7412,6 +8037,10 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -7434,6 +8063,7 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
           username,
           display_name: displayName,
           password,
+          ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
         }),
       });
       setSuccess('机构申请已提交，等待审核。');
@@ -7442,6 +8072,9 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
       setDisplayName('');
       setPassword('');
       setConfirmPassword('');
+      setRecoveryPhone('');
+      setSecurityQuestion('');
+      setSecurityAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '机构申请提交失败');
     } finally {
@@ -7557,6 +8190,18 @@ const OrganizationApplyModal = ({ onClose }: { onClose: () => void }) => {
                 />
               </div>
             </div>
+
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
             <button
               type="submit"
               disabled={loading}
@@ -7583,6 +8228,10 @@ const JoinOrganizationModal = ({
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryMethod, setRecoveryMethod] = useState<RecoveryMethod>('phone');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [organizationName, setOrganizationName] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -7635,8 +8284,19 @@ const JoinOrganizationModal = ({
       const payload = await apiFetch<{ user: CurrentUser }>(path, {
         method: 'POST',
         body: inviteToken
-          ? JSON.stringify({ username, display_name: displayName, password })
-          : JSON.stringify({ invite_code: inviteCode, username, display_name: displayName, password }),
+          ? JSON.stringify({
+            username,
+            display_name: displayName,
+            password,
+            ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
+          })
+          : JSON.stringify({
+            invite_code: inviteCode,
+            username,
+            display_name: displayName,
+            password,
+            ...buildRecoveryPayload(recoveryMethod, recoveryPhone, securityQuestion, securityAnswer),
+          }),
       });
       setSuccess(`已加入 ${payload.user.organization_name}，现在可以使用新账号登录。`);
       setInviteCode('');
@@ -7644,6 +8304,9 @@ const JoinOrganizationModal = ({
       setDisplayName('');
       setPassword('');
       setConfirmPassword('');
+      setRecoveryPhone('');
+      setSecurityQuestion('');
+      setSecurityAnswer('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '加入机构失败');
     } finally {
@@ -7770,6 +8433,18 @@ const JoinOrganizationModal = ({
                 />
               </div>
             </div>
+
+            <RecoverySetupFields
+              recoveryMethod={recoveryMethod}
+              setRecoveryMethod={setRecoveryMethod}
+              recoveryPhone={recoveryPhone}
+              setRecoveryPhone={setRecoveryPhone}
+              securityQuestion={securityQuestion}
+              setSecurityQuestion={setSecurityQuestion}
+              securityAnswer={securityAnswer}
+              setSecurityAnswer={setSecurityAnswer}
+            />
+
             <button
               type="submit"
               disabled={loading || previewLoading || (Boolean(inviteToken) && !organizationName)}
@@ -8351,6 +9026,7 @@ export default function App() {
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [classBindingTarget, setClassBindingTarget] = useState<ClassBindingTarget | null>(null);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
@@ -8457,10 +9133,13 @@ export default function App() {
           if (page === 'credit' && !hasOwnerAccess(user.role)) {
             return 'dashboard';
           }
-          if (page === 'accounts' && !hasOwnerAccess(user.role)) {
+          if (page === 'accounts' && !hasStaffAccess(user.role)) {
             return 'dashboard';
           }
-          if (page === 'classes' && !hasStaffAccess(user.role)) {
+          if (page === 'classes' && !canOpenWorkspacePage(user, 'classes')) {
+            return 'dashboard';
+          }
+          if (!canOpenWorkspacePage(user, page)) {
             return 'dashboard';
           }
           return page;
@@ -8560,8 +9239,22 @@ export default function App() {
     setPublicAuthModal('join-organization');
   };
 
+  const openPasswordReset = () => {
+    setPublicAuthModal('password-reset');
+  };
+
+  const backToLogin = () => {
+    setPublicAuthModal('login');
+  };
+
   const handleReviewGenerationSuccess = () => {
     setActivePage('review-generation');
+  };
+
+  const handleOpenClassBinding = (target: ClassBindingTarget) => {
+    setClassBindingTarget(target);
+    setActivePage('classes');
+    setMobileNavOpen(false);
   };
 
   const handlePreviousCalendarWeek = () => {
@@ -8623,7 +9316,11 @@ export default function App() {
               onClose={closePublicAuthModal}
               onOpenApplyOrganization={openApplyOrganization}
               onOpenJoinOrganization={openJoinOrganization}
+              onOpenPasswordReset={openPasswordReset}
             />
+          )}
+          {publicAuthModal === 'password-reset' && (
+            <PasswordResetModal onClose={closePublicAuthModal} onBackToLogin={backToLogin} />
           )}
           {publicAuthModal === 'apply-organization' && (
             <OrganizationApplyModal onClose={closePublicAuthModal} />
@@ -8633,6 +9330,19 @@ export default function App() {
           )}
         </AnimatePresence>
       </>
+    );
+  }
+
+  if (currentUser.requires_class_claim) {
+    return (
+      <ClassClaimPage
+        currentUser={currentUser}
+        onClaimed={(user) => {
+          setCurrentUser(user);
+          setActivePage('dashboard');
+        }}
+        onLogout={handleLogout}
+      />
     );
   }
 
@@ -8717,7 +9427,7 @@ export default function App() {
                       primaryButtonClass: workspacePrimaryButtonClass,
                       secondaryButtonClass: workspaceSecondaryButtonClass,
                     }}
-                    canOpenAccounts={hasOwnerAccess(currentUser.role)}
+                    canOpenAccounts={hasStaffAccess(currentUser.role)}
                   />
                 )}
                 {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
@@ -8742,11 +9452,11 @@ export default function App() {
                 {activePage === 'smartWrongQuestions' &&
                   canAccessSmartWrongQuestions(currentUser.role) &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
-                {activePage === 'classes' && hasStaffAccess(currentUser.role) && (
-                  <ClassManagementPage currentUser={currentUser} />
+                {activePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
+                  <ClassManagementPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={() => setClassBindingTarget(null)} />
                 )}
                 {activePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
-                {activePage === 'accounts' && hasOwnerAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} />}
+                {activePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
                 {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>

@@ -14,13 +14,47 @@ type WorkspaceDashboardProps = {
   currentUser: {
     display_name: string;
     role: WorkspaceRole;
+    visible_pages?: WorkspacePage[];
   };
   setActivePage: (page: WorkspacePage) => void;
   styles: WorkspaceStyles;
   canOpenAccounts: boolean;
 };
 
+function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'], page: WorkspacePage): boolean {
+  if (page === 'dashboard' || page === 'settings') {
+    return true;
+  }
+  if (!Array.isArray(currentUser.visible_pages)) {
+    return true;
+  }
+  return currentUser.visible_pages.includes(page);
+}
+
 function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
+  const teachingEntries = [
+    {
+      page: 'review-generation' as WorkspacePage,
+      title: '复习生成',
+      description: '生成讲义、错题回顾和 AI 阶段复习资料。',
+    },
+    {
+      page: 'class-feedback-generation' as WorkspacePage,
+      title: '课堂反馈',
+      description: '进入班级反馈生成，整理本节课教学结论。',
+    },
+    {
+      page: 'calendar' as WorkspacePage,
+      title: '课程日历',
+      description: '查看课程安排，切换到本周和后续排课视图。',
+    },
+    {
+      page: 'smartWrongQuestions' as WorkspacePage,
+      title: '智能错题',
+      description: '查看学生错题，记录错因和掌握情况。',
+    },
+  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+
   return (
     <div className={`${styles.pageClass} space-y-6`}>
       <section className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-6 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)] md:p-8">
@@ -32,30 +66,22 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
               已开放 AI 复习生成、课堂反馈、课程日历和智能错题入口。
             </p>
           </div>
-          <button type="button" onClick={() => setActivePage('review-generation')} className={styles.primaryButtonClass}>
-            <PlusCircle size={18} />
-            新建复习文档
-          </button>
+          {canOpenDashboardPage(currentUser, 'review-generation') && (
+            <button type="button" onClick={() => setActivePage('review-generation')} className={styles.primaryButtonClass}>
+              <PlusCircle size={18} />
+              新建复习文档
+            </button>
+          )}
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <button type="button" onClick={() => setActivePage('review-generation')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">复习生成</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">生成讲义、错题回顾和 AI 阶段复习资料。</span>
-        </button>
-        <button type="button" onClick={() => setActivePage('class-feedback-generation')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">课堂反馈</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">进入班级反馈生成，整理本节课教学结论。</span>
-        </button>
-        <button type="button" onClick={() => setActivePage('calendar')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">课程日历</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看课程安排，切换到本周和后续排课视图。</span>
-        </button>
-        <button type="button" onClick={() => setActivePage('smartWrongQuestions')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">智能错题</span>
-          <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看学生错题，记录错因和掌握情况。</span>
-        </button>
+        {teachingEntries.map((entry) => (
+          <button key={entry.page} type="button" onClick={() => setActivePage(entry.page)} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
+            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{entry.title}</span>
+            <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{entry.description}</span>
+          </button>
+        ))}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
@@ -202,7 +228,8 @@ export function getOrganizationManagementEntries(canOpenAccounts: boolean): Orga
 }
 
 function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAccounts }: WorkspaceDashboardProps) {
-  const managementEntries = getOrganizationManagementEntries(canOpenAccounts);
+  const managementEntries = getOrganizationManagementEntries(canOpenAccounts)
+    .filter((entry) => canOpenDashboardPage(currentUser, entry.page));
 
   return (
     <div className={`${styles.pageClass} space-y-6`}>

@@ -83,7 +83,7 @@ function renderDashboard(role: DashboardRole): string {
       }}
       setActivePage={() => undefined}
       styles={defaultStyles}
-      canOpenAccounts={role === 'owner'}
+      canOpenAccounts={role !== 'member'}
     />,
   );
 }
@@ -107,10 +107,10 @@ test('workspace dashboard shows admin operations overview', () => {
 
   assert.match(markup, /机构运营概览/);
   assert.match(markup, /班级管理/);
-  assert.match(markup, /咨询记录/);
+  assert.match(markup, /账号审批/);
   assert.match(markup, /课堂反馈/);
   assert.match(markup, /智能错题/);
-  assert.doesNotMatch(markup, /账号审批/);
+  assert.doesNotMatch(markup, /咨询记录/);
   assert.doesNotMatch(markup, /新建复习文档/);
 });
 
@@ -215,7 +215,7 @@ test('app source routes the dashboard page through WorkspaceDashboard', () => {
 
   assert.match(source, /import \{ WorkspaceDashboard \} from '\.\/WorkspaceDashboard';/);
   assert.match(source, /\{activePage === 'dashboard' && \([\s\S]*<WorkspaceDashboard[\s\S]*currentUser=\{currentUser\}[\s\S]*setActivePage=\{setActivePage\}[\s\S]*styles=\{/);
-  assert.match(source, /canOpenAccounts=\{hasOwnerAccess\(currentUser\.role\)\}/);
+  assert.match(source, /canOpenAccounts=\{hasStaffAccess\(currentUser\.role\)\}/);
   assert.doesNotMatch(source, /\{activePage === 'dashboard' && \(\s*<Dashboard/);
   assert.doesNotMatch(source, /const Dashboard = \(/);
 });
