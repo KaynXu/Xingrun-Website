@@ -911,7 +911,7 @@ def _generate_wrong_question_practice_sheet_pdf_via_reportlab(
             )
         )
         story.append(_spacer(0.15))
-        story.append(Paragraph("重做这题（可选）", styles["tip"]))
+        story.append(Paragraph("重做这题", styles["tip"]))
         story.append(_spacer(0.05))
         story.append(_build_wrong_question_practice_redo_lines())
 
@@ -964,14 +964,31 @@ def generate_wrong_question_practice_sheet_pdf(
     items: list[dict],
     output_path: str,
 ) -> str:
-    return _render_wrong_question_practice_sheet_pdf_via_browser(
-        student_name=student_name,
-        class_name=class_name,
-        teacher_name=teacher_name,
-        title=title,
-        items=items,
-        output_path=output_path,
-    )
+    try:
+        return _render_wrong_question_practice_sheet_pdf_via_browser(
+            student_name=student_name,
+            class_name=class_name,
+            teacher_name=teacher_name,
+            title=title,
+            items=items,
+            output_path=output_path,
+        )
+    except Exception as browser_error:
+        try:
+            return _generate_wrong_question_practice_sheet_pdf_via_reportlab(
+                student_name=student_name,
+                class_name=class_name,
+                teacher_name=teacher_name,
+                title=title,
+                items=items,
+                output_path=output_path,
+            )
+        except Exception as reportlab_error:
+            raise RuntimeError(
+                "错题练习 PDF 生成失败："
+                f"浏览器渲染失败：{browser_error}；"
+                f"ReportLab 回退失败：{reportlab_error}"
+            ) from reportlab_error
 
 
 # ─── Day 1 渲染（step 结构）──────────────────────────────────────────────────
