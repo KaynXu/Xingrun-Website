@@ -243,6 +243,27 @@ _BARE_LATEX_TEXT_REPLACEMENTS = (
 _BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
     r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
 )
+_BROWSER_RENDERER_ENV_KEYS = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "XDG_RUNTIME_DIR",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "FONTCONFIG_PATH",
+    "FONTCONFIG_FILE",
+)
+_BROWSER_RENDERER_ENV_PREFIXES = (
+    "XR_PLAYWRIGHT_",
+    "PLAYWRIGHT_",
+)
 
 
 def _render_bare_latex_superscript(content: str) -> str:
@@ -613,6 +634,27 @@ def _build_browser_renderer_failure_message(*, default_message: str, result: sub
     return f"{default_message}（exit code {int(result.returncode or 0)}）"
 
 
+def _build_browser_renderer_env(source_env: dict[str, str] | None = None) -> dict[str, str]:
+    raw_env = os.environ if source_env is None else source_env
+    renderer_env = {}
+
+    for key in _BROWSER_RENDERER_ENV_KEYS:
+        value = str(raw_env.get(key) or "").strip()
+        if value:
+            renderer_env[key] = value
+
+    for key, value in raw_env.items():
+        if not value:
+            continue
+        if any(key.startswith(prefix) for prefix in _BROWSER_RENDERER_ENV_PREFIXES):
+            renderer_env[key] = str(value)
+
+    if "PATH" not in renderer_env:
+        renderer_env["PATH"] = os.defpath
+
+    return renderer_env
+
+
 def _render_student_wrong_question_library_pdf_via_browser(
     *,
     student_name: str,
@@ -642,6 +684,7 @@ def _render_student_wrong_question_library_pdf_via_browser(
             capture_output=True,
             text=True,
             check=False,
+            env=_build_browser_renderer_env(),
         )
     finally:
         try:
@@ -694,6 +737,7 @@ def _render_wrong_question_practice_sheet_pdf_via_browser(
             capture_output=True,
             text=True,
             check=False,
+            env=_build_browser_renderer_env(),
         )
     finally:
         try:
