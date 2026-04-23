@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -378,6 +379,67 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
 
         self.assertIn("exit code 137", str(context.exception))
         self.assertFalse(output_path.exists())
+
+    def test_generate_wrong_question_practice_sheet_pdf_sanitizes_browser_environment(self):
+        items = [
+            {
+                "question_order": 1,
+                "wrong_question_record_id": "wechat-1",
+                "is_geometry": 0,
+                "question_text_snapshot": "计算 $2+3\\times4$ 的结果。",
+                "reason_blank_prompt": "先梳理错因\n这道题因为 ______ 所以做错了，还漏看了 ______，相关知识点是 ______。",
+                "improvement_summary_prompt": "再写你的想法\n接下来我准备先补 ______，再练 ______，做题时提醒自己注意 ______。",
+            }
+        ]
+        output_path = self.base / "practice-browser-env.pdf"
+        captured_env = {}
+
+        def fake_run(command, **kwargs):
+            captured_env.update(kwargs.get("env") or {})
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake practice pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.dict(
+            os.environ,
+            {
+                "PATH": "/usr/local/bin:/usr/bin",
+                "HOME": "/home/ubuntu",
+                "LANG": "zh_CN.UTF-8",
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+                "XR_PLAYWRIGHT_EXECUTABLE_PATH": "/snap/bin/chromium",
+                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH": "/custom/chromium",
+                "PLAYWRIGHT_BROWSERS_PATH": "/home/ubuntu/.cache/ms-playwright",
+                "NODE_CHANNEL_FD": "3",
+                "PM2_HOME": "/home/ubuntu/.pm2",
+                "axm_options": "{}",
+                "status": "launching",
+                "env": "[object Object]",
+            },
+            clear=True,
+        ):
+            with patch("pdf_engine.subprocess.run", side_effect=fake_run):
+                result = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                    student_name="Alice",
+                    class_name="六年级 1 班",
+                    teacher_name="平台管理员",
+                    title="Alice 错题练习",
+                    items=items,
+                    output_path=str(output_path),
+                )
+
+        self.assertEqual(result, str(output_path.resolve()))
+        self.assertEqual(captured_env["PATH"], "/usr/local/bin:/usr/bin")
+        self.assertEqual(captured_env["HOME"], "/home/ubuntu")
+        self.assertEqual(captured_env["LANG"], "zh_CN.UTF-8")
+        self.assertEqual(captured_env["XR_PLAYWRIGHT_EXECUTABLE_PATH"], "/snap/bin/chromium")
+        self.assertEqual(captured_env["PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"], "/custom/chromium")
+        self.assertEqual(captured_env["PLAYWRIGHT_BROWSERS_PATH"], "/home/ubuntu/.cache/ms-playwright")
+        self.assertNotIn("NODE_CHANNEL_FD", captured_env)
+        self.assertNotIn("PM2_HOME", captured_env)
+        self.assertNotIn("axm_options", captured_env)
+        self.assertNotIn("status", captured_env)
+        self.assertNotIn("env", captured_env)
 
 
 if __name__ == "__main__":
