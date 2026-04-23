@@ -284,9 +284,11 @@ test('submitParentWrongQuestion parses the upload bridge response', async () => 
 
 test('submitParentWrongQuestion forwards the child reason text in upload form data', async () => {
   let capturedFormData = null;
+  let capturedTimeout = 0;
   const wxApi = {
-    uploadFile({ formData, success }) {
+    uploadFile({ formData, timeout, success }) {
       capturedFormData = formData;
+      capturedTimeout = timeout;
       success({
         statusCode: 201,
         data: JSON.stringify({
@@ -322,6 +324,7 @@ test('submitParentWrongQuestion forwards the child reason text in upload form da
     primaryErrorType: '细节问题',
     secondaryErrorSummary: '单位换算遗漏',
   });
+  assert.equal(capturedTimeout, 180000);
 });
 
 test('uploadParentReasonAudio parses the upload response', async () => {

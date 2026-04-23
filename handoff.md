@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-04-21
+最后更新：2026-04-23
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-23 已修复小程序家长端错题最终提交容易显示“上传超时”的问题：`miniprogram/miniprogram/utils/parentApi.js` 保留普通上传默认 30 秒，但把最终 `submitParentWrongQuestion()` 的 `/wechat/parent/wrong-questions` 上传等待时间单独延长到 180 秒，适配服务端同步完成图片识别和错题库 PDF 重建所需时间；`miniprogram/miniprogram/utils/parentApi.test.js` 已补断言锁定该 timeout。临时 proof 已跑通 `node --test miniprogram/miniprogram/utils/parentApi.test.js miniprogram/miniprogram/pages/parent-upload/model.test.js miniprogram/miniprogram/parent-only-scope.test.js`，30 条通过。
 - 2026-04-21 已按标准 release 流程把本地 `develop(601b4da)` 合到 `master(552a8fc)` 并部署到生产机 `49.234.185.86`；这次发布包含课程日历下午时间段改为 `14:00-16:00 / 16:00-18:00 / 18:00-20:00 / 20:00-22:00`、拖拽后直接弹出“微调启动时间”弹窗、快捷提前/延后 15 或 30 分钟、自定义提前/延后分钟数、卡片右上角显示实际开课时间，以及桌面 7 天紧凑视图和 iPad/手机 42 格自适应布局。后端会自动把旧 `13:00-15:00 / 15:00-17:00 / 17:00-19:00 / 19:00-21:00` 排课迁移到新时间段。发布前本地 `develop` 与合并后的 `master` 均已通过临时 proof 脚本：后端课程日历 API 4 条 unittest、前端 189 条测试、`tsc --noEmit`、production build、以及真 Chrome headless 在 `1440 / 1024 / 390` 视口下的拖拽微调与无横向溢出检查；生产机已完成 `git pull --ff-only origin master`、前端 build、`pm2 restart xingrun`，根路由健康检查返回 `HTTP/1.1 302 FOUND`，远端 HEAD 为 `552a8fc5`。
 - 2026-04-21 已完成网站 iPad/iPhone 滚动稳定性收口：工作台、账号验证中、首次认领班级这些顶层移动容器已从会随浏览器地址栏实时变化的 `100dvh` 改为更稳定的 `100svh`；根级 `body/html` 不再强行设置 `overscroll-behavior-y` 和 `touch-action`，让移动浏览器原生滚动链路接管；触屏设备上会关闭独立 `filter: blur(...)` 的大面积背景模糊，降低快速滚动时的合成压力。前端 189 条测试、`tsc --noEmit`、production build、以及本机 Chrome 的 iPhone/iPad 触摸快速滚动 smoke 均已通过。
 - 2026-04-21 已按标准 release 流程把本地 `develop(2bd3839)` 合到 `master(ab80cea)` 并部署到生产机 `49.234.185.86`；这次发布包含讲师映射可从网站成员下拉选择并自动填账号/中文名，以及班级管理结构化命名文案收口。发布前本机 `develop` 和合并后的 `master` 均已跑通后端目标 unittest、前端 `npm test` 185 条和 `npm run build`，`develop` 额外跑过 `npm run lint`；生产机已完成 `git pull --ff-only origin master`、前端 build 与 `pm2 restart xingrun`，`xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`。
@@ -119,6 +120,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 需要把这次小程序 timeout 修复随下一次小程序包上传/发版带到真机；如果真机仍显示超时，下一步应把网站端 `/api/wechat/wrong-questions` 改成异步任务返回，避免小程序长时间等 AI 识别和 PDF 重建。
 - 最值得继续做的是拿真实 iPad/iPhone Safari 打开已登录工作台，在地址栏展开和收起两种状态下分别慢滑、快滑一遍，确认页面不再出现卡片被粘住后回弹的体感；Playwright 只能覆盖移动触摸滚动和 CSS 状态，不能完整模拟 iOS Safari 地址栏动画。
 - 最值得继续做的是用真实 owner/admin 账号打开账号审批页，新增一条讲师映射时从网站成员下拉选择一个新老师，确认企微 ID 和中文名自动填好、保存后咨询批量整理/接待老师识别仍能命中该账号。
 - 最值得继续做的是用真实 owner/admin/member 账号 smoke 一遍班级链路：创建一个 `数学七年级三班` 结构的班级，确认班级管理可按年级+学科组合筛选，首次登录老师认领页也能按学科筛到该班级；再删除一个有班级绑定、家长绑定或错题练习历史的老师账号，确认前端不再出现 `INTERNAL SERVER ERROR`。
@@ -165,6 +167,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这轮只修了小程序端最终提交的等待时间，还没有把小程序包上传到微信开发者工具或真机验证；如果生产链路本身超过 180 秒或被上游网关提前切断，仍需要继续做服务端异步化。
 - 本轮定位依据是源码里的根级滚动限制、`100dvh` 动态视口高度和移动端大面积模糊背景；这些都与用户描述的地址栏收缩、页面聚焦状态和快速滑动卡顿相符。自动化 proof 已覆盖 Chrome 移动触摸模拟，但真实 iOS Safari 的地址栏动画仍只能靠真机最终验收。
 - 讲师映射下拉只把“网站成员账号 -> 企微 ID 字段”这一步从手填改成可选择，并不会自动给每个新成员创建一条映射；新老师加入网站后，仍需要在讲师映射里选择并保存一次，才能进入 `teachers.json` 并被咨询助手/批量整理识别链路使用。本轮已跑后端目标用例、前端测试、lint、build 和临时 proof，但还没有在真实浏览器里手工保存一条映射。
 - 本轮已用后端定向测试覆盖老师账号删除时的家长绑定、错题、错题练习和班级邀请码外键收口，也用前端源码测试和 build 覆盖两个学科筛选入口；但还没有在真实浏览器里用实际账号手工走创建、认领、筛选、删除的完整 smoke。

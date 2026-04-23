@@ -2,6 +2,7 @@ const PARENT_SESSION_KEY = 'xr_parent_session';
 const PARENT_BINDINGS_KEY = 'xr_parent_bindings';
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
+const WRONG_QUESTION_SUBMIT_TIMEOUT_MS = 180000;
 const DEFAULT_LOGIN_TIMEOUT_MS = 10000;
 
 function safeGetStorage(wxApi, key, fallbackValue) {
@@ -402,6 +403,7 @@ async function submitParentWrongQuestion(wxApi, serverUrl, params) {
     url: `${serverUrl}/wechat/parent/wrong-questions`,
     filePath: params.filePath,
     name: 'file',
+    timeoutMs: WRONG_QUESTION_SUBMIT_TIMEOUT_MS,
     formData: {
       openId: params.openId,
       bindingId: String(params.bindingId),
