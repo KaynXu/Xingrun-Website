@@ -3425,6 +3425,9 @@ test('SmartWrongQuestionsPage shows wrong-question practice history inside the n
       assert.match(pageText, /1题/);
       assert.match(pageText, /预览 PDF/);
       assert.match(pageText, /下载 PDF/);
+      const downloadLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('下载 PDF')) ?? null;
+      assert.equal(downloadLink?.tagName, 'A');
+      assert.equal(downloadLink?.getAttribute('download'), null);
     });
   } finally {
     if (root) {
