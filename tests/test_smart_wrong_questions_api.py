@@ -65,6 +65,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
                 "display_name": display_name,
                 "password": password,
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(submit.status_code, 201)
