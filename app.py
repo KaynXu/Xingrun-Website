@@ -1520,7 +1520,7 @@ def _wrong_question_practice_sheet_download_name(sheet: object) -> str:
     if isinstance(sheet, dict):
         student_name = _safe_pdf_download_filename_part(sheet.get("student_name_snapshot"), "学生")
     export_date = datetime.now().strftime("%Y-%m-%d")
-    return f"{student_name}联系单_{export_date}.pdf"
+    return f"{student_name}练习单_{export_date}.pdf"
 
 
 def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:

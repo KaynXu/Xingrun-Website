@@ -861,7 +861,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         content_disposition = download_response.headers.get("Content-Disposition", "")
         self.assertIn("attachment;", content_disposition)
         self.assertIn(
-            f"filename*=UTF-8''{quote('Alice联系单_2026-04-25.pdf')}",
+            f"filename*=UTF-8''{quote('Alice练习单_2026-04-25.pdf')}",
             content_disposition,
         )
         self.assertEqual(download_response.data, pdf_path.read_bytes())
