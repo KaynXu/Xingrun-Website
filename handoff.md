@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-25 已按用户提供的《立体几何外接球问题讲解》课堂纪要生成一份“课堂原话约 20%”的复习计划样稿课程包：`review_plan_templates/lesson_pack_circumsphere_models_quote20.py`。已用现有 `review_plan_templates/generate_review_pdfs.py` 导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf`（PDF 输出目录按 `.gitignore` 不入库）；临时 proof 已确认课程包可 `py_compile`、PDF 14 页、211509 bytes，包含 5 个复习节点、关键课堂原话、墙角模型/对棱相等/正棱台/圆锥等关键词，且已渲染抽查第 1/2/6/14 页没有空白页。
 - 2026-04-25 已按用户提供的《8.5班自主招生考试内容讲解》课堂纪要生成一份“课堂原话约 20%”的复习计划样稿课程包：`review_plan_templates/lesson_pack_admission_algebra_quote20.py`。已用现有 `review_plan_templates/generate_review_pdfs.py` 导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf`（PDF 输出目录按 `.gitignore` 不入库）；临时 proof 已确认课程包可 `py_compile`、PDF 14 页、226999 bytes，包含 5 个复习节点与关键课堂原话，且已渲染抽查第 1/2/6/14 页没有空白页。
 - 2026-04-25 已按标准 release 流程把 `develop(6698d14)` 合到 `master(c919675)` 并部署到生产机 `49.234.185.86`。本次发布包含智能错题练习 PDF 下载命名收口（下载附件名为 `孩子姓名练习单_YYYY-MM-DD.pdf`，前端不再用旧英文 `download` 文件名覆盖后端响应头）、讲师映射网站成员关联修正、小程序家长端错题最终提交超时修复，以及错题 PDF 浏览器渲染环境净化。发布前本地 `develop` 与合并后的 `master` 均已通过前端 189 条测试、前端 production build、后端定向 53 条测试；生产机已完成 `git pull --ff-only origin master`、前端 build、`pm2 restart xingrun`，`xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`，生产机 HEAD 为 `c919675b`。
 - 2026-04-24 已定位这次“又崩”的直接原因：不是复习计划整体掉线，而是智能错题练习单的浏览器 PDF 子进程在生产 PM2 环境里再次崩溃。新失败记录是 `wrong_question_practice_sheets.sheet_id=21`，生产日志连续 4 次重试都报 `错题练习 PDF 浏览器渲染失败（signal 6）`。同一份练习单在同机同代码下，只要脱离 PM2 进程环境、改用干净 shell 环境直接调用 `pdf_engine.generate_wrong_question_practice_sheet_pdf(...)` 就能成功生成，说明根因不是题目内容、也不是内存/磁盘不足，而是 Node/Chromium 渲染子进程继承了 PM2 注入的一整包环境变量后再次触发崩溃。当前已发布的代码对错题库/错题练习两个浏览器渲染入口都改成只传最小白名单环境（`PATH/HOME/LANG/XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS` 及 `XR_PLAYWRIGHT_* / PLAYWRIGHT_*`），避免把 `NODE_CHANNEL_FD / PM2_HOME / axm_* / status / env` 这类 PM2 元数据继续传给 Chromium；对应回归已补到 `tests/test_wrong_question_library_pdf.py`，并与 `tests/test_wrong_question_practice_async_api.py` 一起通过。线上当前失败的 `sheet_id=21` 也已手工走“重新生成 AI 材料 -> 直接渲染 PDF -> 回写数据库”补救链路恢复为 `ready`，PDF 已写回 `data/pdfs/wrong_question_practice_sheets/sheet-21.pdf`。
@@ -124,6 +125,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf` 全文扫一遍，重点核对外接球通法、墙角模型、对棱相等模型、正棱台方程、圆锥/正三棱锥类比和取值范围题里的变量设法；如果老师希望把“例题 2 / 例题 3”展开成具体题目，需要回到 `lesson_pack_circumsphere_models_quote20.py` 增补题面细节。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf` 全文扫一遍，确认自招考试定位、二项式定理、齐次换元、因式定理、轮换对称式和均值不等式这些口径符合老师原课；如果觉得课堂原话仍不够，可以继续在 `lesson_pack_admission_algebra_quote20.py` 增加每日 `quotes`，但要避免挤占主体练习。
 - 需要把这次小程序 timeout 修复随下一次小程序包上传/发版带到真机；如果真机仍显示超时，下一步应把网站端 `/api/wechat/wrong-questions` 改成异步任务返回，避免小程序长时间等 AI 识别和 PDF 重建。
 - 最值得继续做的是拿真实 iPad/iPhone Safari 打开已登录工作台，在地址栏展开和收起两种状态下分别慢滑、快滑一遍，确认页面不再出现卡片被粘住后回弹的体感；Playwright 只能覆盖移动触摸滚动和 CSS 状态，不能完整模拟 iOS Safari 地址栏动画。
@@ -172,6 +174,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这份立体几何外接球复习计划同样是根据飞书智能纪要整理出的样稿，不是逐字人工校对的录音转写；纪要里“圆柱半径/高的设法”“正四棱锥变量命名”和个别例题条件可能有误，正式给学生前需要老师快速核对。
 - 这份 20% 原话复习计划是根据飞书智能纪要整理出的样稿，不是逐字人工校对的录音转写；纪要里公式和老师原话可能有误，正式给学生前仍需要老师快速核对公式细节和课堂表达。
 - 生产机当前跑的仍是旧 `master(de9a6c6a)`，还没有带上这次“浏览器渲染子进程环境净化”的代码修复；虽然 `sheet_id=21` 已人工补救恢复，但在正式按 release 流程把 `develop` 发到生产前，新建错题练习单仍可能继续撞同一个 PM2 环境污染导致的 `signal 6`。
 - 智能错题练习 PDF 仍依赖服务器上的 `/snap/bin/chromium` 做 Playwright/Skia 渲染；本轮线上两份失败任务重跑已恢复，但 `signal 6` 是浏览器子进程无 stderr 的崩溃，属于运行时稳定性风险。如果后续继续出现同类失败，优先考虑给生产机安装 Playwright 官方 Chromium 或继续收口渲染进程启动参数，而不是恢复已经按用户要求删除的 ReportLab fallback。
