@@ -554,17 +554,18 @@ test('approval page source loads and renders member teaching binding summaries',
   assert.match(approvalBlock[0], /mini_teacher_bound/);
 });
 
-test('teacher alias mapping source can prefill from website members', () => {
+test('teacher alias mapping source links website members without guessing the external id', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /const \[taLinkedUsername, setTaLinkedUsername\] = useState\(''\);/);
   assert.match(approvalBlock[0], /const teacherAliasMemberOptions = users\.filter/);
-  assert.match(approvalBlock[0], /const handleTeacherAliasMemberChange = \(userIdValue: string\) => \{/);
-  assert.match(approvalBlock[0], /setTaFormUserId\(selectedUser\.username \|\| ''\);/);
-  assert.match(approvalBlock[0], /setTaFormDisplayName\(selectedUser\.name\);/);
-  assert.match(approvalBlock[0], />从网站成员选择<\/label>/);
-  assert.match(approvalBlock[0], /onChange=\{\(e\) => handleTeacherAliasMemberChange\(e\.target\.value\)\}/);
+  assert.match(approvalBlock[0], /linked_username: taLinkedUsername\.trim\(\)/);
+  assert.match(approvalBlock[0], />关联网站成员（可选）<\/label>/);
+  assert.match(approvalBlock[0], /onChange=\{\(e\) => setTaLinkedUsername\(e\.target\.value\)\}/);
+  assert.doesNotMatch(approvalBlock[0], /setTaFormUserId\(selectedUser\.username \|\| ''\);/);
+  assert.doesNotMatch(approvalBlock[0], /setTaFormDisplayName\(selectedUser\.name\);/);
 });
 
 test('approval page source removes the start binding action from member cards', () => {

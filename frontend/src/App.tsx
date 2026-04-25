@@ -4417,6 +4417,7 @@ interface TeacherAliasEntry {
   wecom_userid: string;
   display_name: string;
   aliases: string[];
+  linked_username?: string;
 }
 
 const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) => {
@@ -4463,10 +4464,10 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   const [taFormUserId, setTaFormUserId] = useState('');
   const [taFormDisplayName, setTaFormDisplayName] = useState('');
   const [taFormAliases, setTaFormAliases] = useState('');
+  const [taLinkedUsername, setTaLinkedUsername] = useState('');
   const [taSubmitting, setTaSubmitting] = useState(false);
   const [taDeletingId, setTaDeletingId] = useState<string | null>(null);
   const teacherAliasMemberOptions = users.filter((user) => user.username && user.role !== 'super_owner');
-  const selectedTeacherAliasMember = teacherAliasMemberOptions.find((user) => user.username === taFormUserId);
 
   const loadItems = useCallback(async () => {
     if (!hasOwnerAccess(currentUser.role)) {
@@ -4610,6 +4611,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
     setTaFormUserId('');
     setTaFormDisplayName('');
     setTaFormAliases('');
+    setTaLinkedUsername('');
     setTeacherAliasModalMode('create');
     setTeacherAliasModalOpen(true);
   };
@@ -4619,17 +4621,9 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
     setTaFormUserId(entry.wecom_userid);
     setTaFormDisplayName(entry.display_name);
     setTaFormAliases(entry.aliases.slice(1).join(', '));
+    setTaLinkedUsername(entry.linked_username || '');
     setTeacherAliasModalMode('edit');
     setTeacherAliasModalOpen(true);
-  };
-
-  const handleTeacherAliasMemberChange = (userIdValue: string) => {
-    const selectedUser = teacherAliasMemberOptions.find((user) => String(user.id) === userIdValue);
-    if (!selectedUser) {
-      return;
-    }
-    setTaFormUserId(selectedUser.username || '');
-    setTaFormDisplayName(selectedUser.name);
   };
 
   const handleTeacherAliasSubmit = async () => {
@@ -4640,12 +4634,21 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
       if (teacherAliasModalMode === 'create') {
         await apiFetch('/api/teacher-aliases', {
           method: 'POST',
-          body: JSON.stringify({ wecom_userid: taFormUserId.trim(), display_name: taFormDisplayName.trim(), aliases }),
+          body: JSON.stringify({
+            wecom_userid: taFormUserId.trim(),
+            display_name: taFormDisplayName.trim(),
+            linked_username: taLinkedUsername.trim(),
+            aliases,
+          }),
         });
       } else if (teacherAliasEditingEntry) {
         await apiFetch(`/api/teacher-aliases/${encodeURIComponent(teacherAliasEditingEntry.wecom_userid)}`, {
           method: 'PUT',
-          body: JSON.stringify({ display_name: taFormDisplayName.trim(), aliases }),
+          body: JSON.stringify({
+            display_name: taFormDisplayName.trim(),
+            linked_username: taLinkedUsername.trim(),
+            aliases,
+          }),
         });
       }
       setTeacherAliasModalOpen(false);
@@ -5572,31 +5575,38 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 <tr className="border-b border-sky-100 dark:border-white/10">
                   <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">企微 ID</th>
                   <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">中文名</th>
+                  <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">网站成员</th>
                   <th className="px-5 py-3.5 font-semibold text-slate-500 dark:text-slate-400">别名</th>
                   <th className="px-5 py-3.5 text-right font-semibold text-slate-500 dark:text-slate-400">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {teacherAliases.map((entry) => (
-                  <tr key={entry.wecom_userid} className="border-b border-sky-50 last:border-b-0 dark:border-white/5">
-                    <td className="px-5 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{entry.wecom_userid}</td>
-                    <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">{entry.display_name}</td>
-                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{entry.aliases.slice(1).join('、') || '—'}</td>
-                    <td className="px-5 py-3 text-right">
-                      <button type="button" className="mr-2 text-sky-600 hover:text-sky-500 dark:text-sky-400" onClick={() => openTeacherAliasEdit(entry)}>
-                        <Pencil className="inline h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="text-red-500 hover:text-red-400 disabled:opacity-40"
-                        disabled={taDeletingId === entry.wecom_userid}
-                        onClick={() => handleTeacherAliasDelete(entry.wecom_userid)}
-                      >
-                        <Trash2 className="inline h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {teacherAliases.map((entry) => {
+                  const linkedMember = teacherAliasMemberOptions.find((user) => user.username === entry.linked_username);
+                  return (
+                    <tr key={entry.wecom_userid} className="border-b border-sky-50 last:border-b-0 dark:border-white/5">
+                      <td className="px-5 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{entry.wecom_userid}</td>
+                      <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">{entry.display_name}</td>
+                      <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                        {linkedMember ? `${linkedMember.name}（${linkedMember.username}）` : entry.linked_username || '—'}
+                      </td>
+                      <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{entry.aliases.slice(1).join('、') || '—'}</td>
+                      <td className="px-5 py-3 text-right">
+                        <button type="button" className="mr-2 text-sky-600 hover:text-sky-500 dark:text-sky-400" onClick={() => openTeacherAliasEdit(entry)}>
+                          <Pencil className="inline h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="text-red-500 hover:text-red-400 disabled:opacity-40"
+                          disabled={taDeletingId === entry.wecom_userid}
+                          onClick={() => handleTeacherAliasDelete(entry.wecom_userid)}
+                        >
+                          <Trash2 className="inline h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -5624,16 +5634,15 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
               <div className="space-y-4">
                 {teacherAliasMemberOptions.length > 0 && (
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">从网站成员选择</label>
+                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">关联网站成员（可选）</label>
                     <select
                       className={workspaceFieldClass}
-                      value={selectedTeacherAliasMember ? String(selectedTeacherAliasMember.id) : ''}
-                      onChange={(e) => handleTeacherAliasMemberChange(e.target.value)}
-                      disabled={teacherAliasModalMode === 'edit'}
+                      value={taLinkedUsername}
+                      onChange={(e) => setTaLinkedUsername(e.target.value)}
                     >
-                      <option value="">选择成员后自动填账号和中文名</option>
+                      <option value="">不关联网站成员</option>
                       {teacherAliasMemberOptions.map((user) => (
-                        <option key={user.id} value={user.id}>
+                        <option key={user.id} value={user.username || ''}>
                           {user.name}{user.username ? `（${user.username}）` : ''}
                         </option>
                       ))}
@@ -5641,7 +5650,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                   </div>
                 )}
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">企微 ID</label>
+                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">企微 ID（手动填写）</label>
                   <input
                     className={workspaceFieldClass}
                     value={taFormUserId}
@@ -5651,7 +5660,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">中文名</label>
+                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">中文名（手动填写）</label>
                   <input
                     className={workspaceFieldClass}
                     value={taFormDisplayName}

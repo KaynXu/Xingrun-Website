@@ -4,7 +4,9 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime as real_datetime
 from pathlib import Path
+from urllib.parse import quote
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +65,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
                 "display_name": display_name,
                 "password": password,
                 "organization_name": "星润Starain",
+                "recovery_phone": "13800000000",
             },
         )
         self.assertEqual(submit.status_code, 201)
@@ -847,14 +850,21 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(preview_response.data, pdf_path.read_bytes())
         preview_response.close()
 
-        download_response = self.client.get(
-            f"/api/wrong-question-practice-sheets/{sheet['id']}/pdf/download",
-            headers=self.auth_headers(owner_payload["token"]),
-        )
+        with patch("app.datetime") as mock_datetime:
+            mock_datetime.now.return_value = real_datetime(2026, 4, 25, 9, 30, 0)
+            download_response = self.client.get(
+                f"/api/wrong-question-practice-sheets/{sheet['id']}/pdf/download",
+                headers=self.auth_headers(owner_payload["token"]),
+            )
 
         self.assertEqual(download_response.status_code, 200)
         self.assertEqual(download_response.mimetype, "application/pdf")
-        self.assertIn("attachment;", download_response.headers.get("Content-Disposition", ""))
+        content_disposition = download_response.headers.get("Content-Disposition", "")
+        self.assertIn("attachment;", content_disposition)
+        self.assertIn(
+            f"filename*=UTF-8''{quote('Alice练习单_2026-04-25.pdf')}",
+            content_disposition,
+        )
         self.assertEqual(download_response.data, pdf_path.read_bytes())
         download_response.close()
 

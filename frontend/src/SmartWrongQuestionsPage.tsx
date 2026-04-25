@@ -963,7 +963,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         </a>
                         <a
                           href={downloadUrl}
-                          download={`wrong-question-practice-sheet-${sheet.id}.pdf`}
                           className={workspacePrimaryButtonClass}
                         >
                           下载 PDF
