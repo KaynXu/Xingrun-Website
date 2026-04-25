@@ -1509,6 +1509,20 @@ def _serialize_wrong_question_practice_sheets_for_response(items: object) -> lis
     return serialized_items
 
 
+def _safe_pdf_download_filename_part(value: object, fallback: str) -> str:
+    safe = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", str(value or "").strip())
+    safe = re.sub(r"\s+", "_", safe).strip("._ ")
+    return safe or fallback
+
+
+def _wrong_question_practice_sheet_download_name(sheet: object) -> str:
+    student_name = "学生"
+    if isinstance(sheet, dict):
+        student_name = _safe_pdf_download_filename_part(sheet.get("student_name_snapshot"), "学生")
+    export_date = datetime.now().strftime("%Y-%m-%d")
+    return f"{student_name}_智能错题_{export_date}.pdf"
+
+
 def _can_access_lesson(user, lesson: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
     if user.get("role") == "super_owner":
         return True
@@ -2558,7 +2572,7 @@ def api_wrong_question_practice_sheet_pdf_download(sheet_id: int):
         pdf_path,
         mimetype="application/pdf",
         as_attachment=True,
-        download_name=pdf_path.name,
+        download_name=_wrong_question_practice_sheet_download_name(sheet),
     )
 
 
