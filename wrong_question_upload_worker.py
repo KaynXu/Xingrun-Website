@@ -61,14 +61,19 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
         if task.get("child_reason_input_mode") == "voice" and task.get("child_reason_audio_url"):
             transcription = ai_processor.transcribe_child_reason_audio(task["child_reason_audio_url"])
             reason_text = str(transcription.get("transcript_text") or "").strip()
-        if not reason_text:
-            raise ValueError("child reason text is required")
 
         recognition = ai_processor.recognize_wrong_question_image(task["image_url"])
-        classification = ai_processor.classify_wrong_question_reason(
-            reason_text,
-            question_text=str(recognition.get("question_text") or ""),
-        )
+        if reason_text:
+            classification = ai_processor.classify_wrong_question_reason(
+                reason_text,
+                question_text=str(recognition.get("question_text") or ""),
+            )
+        else:
+            classification = {
+                "display_text": "待补充｜孩子暂未填写错因",
+                "primary_error_type": "待补充",
+                "secondary_error_summary": "孩子暂未填写错因",
+            }
         display_text = str(classification.get("display_text") or reason_text).strip()
 
         record = create_wechat_wrong_question_submission(

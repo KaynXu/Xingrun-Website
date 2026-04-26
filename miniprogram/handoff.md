@@ -8,11 +8,12 @@
 - 小程序子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，微信工程代码位于 `miniprogram/miniprogram/`，bridge 位于 `miniprogram/backend/`。
 - 家长链路当前只保留 `绑定孩子 -> 家长首页 -> 上传错题 -> 查看错题本/PDF`。
 - 家长上传最终提交已改成网站端 RQ + Redis 异步任务：小程序只上传题图和可选录音 URL，bridge 转发到网站 `/api/wechat/wrong-questions` 后拿到 `202 + task`；录音转写、错因归类、题图识别、错题入库和 PDF 重建都由网站 RQ worker 后台完成。
+- 家长上传最终提交不再要求 `childReasonText` 或录音 URL 必填；只要有题图就能入队，错因缺失时服务器会用“待补充｜孩子暂未填写错因”占位，避免家长因为没填文字或录音上传失败被挡在提交前。
 - 家长首页绑定态已恢复 `绑定更多孩子` 入口，继续复用 `goBindMore()` 返回 `pages/parent-bind/index`。
 - 家长错题本页已恢复学生级 `查看 PDF`，bridge 仍保留 `GET /wechat/parent/children/:studentId/wrong-question-library`。
 - 家长错题本页的题目卡片现在已补上轻量 LaTeX 可读化：`pages/parent-wrongbook/latex-preview.js` 会把 `$...$`、`\frac`、`\sqrt`、`\mathbb{R}`、上下标等源码转成普通文本预览，避免小程序列表里直接显示公式源码；顶部 `查看 PDF` 仍是服务器上的正式版排版。
 - 家长错题本页的 LaTeX 预处理 helper 这一版已改成更保守的小程序兼容写法，不再依赖 `Array.from` 或 `String.fromCharCode` 这类本项目此前未在小程序侧使用过的 API，优先避免微信运行时白屏。
-- 家长上传页当前是手动补框模式：`补加框 / 删除当前 / 顺时针旋转`，每个题框单独填写文字或语音错因，再统一提交。
+- 家长上传页当前是手动补框模式：`补加框 / 删除当前 / 顺时针旋转`，每个题框可选填写文字或语音错因，再统一提交。
 - 家长上传页裁切后上传前会把超大题图压到 `1280 x 1792` 以内并用 `quality=0.82` 导出，避免拍原图/整页图时触发服务器 `413 Request Entity Too Large`。
 - 家长上传页语音转录已切到网站后端本地 `faster-whisper`，当前固定 `base + cpu + int8`，先自动识别语言，只有自动识别没出有效文本时才回退 `zh`，不再单独要求 OpenAI Whisper key；但语音转成文字后，错因归类仍走现有聊天类 AI provider，所以系统仍需要至少一个可用 provider key。
 - 家长上传页顶部“拍照 / 继续选图”和底部“统一提交所有错题”按钮都已改为独立窄屏样式，避免被系统默认按钮宽度挤成两行。

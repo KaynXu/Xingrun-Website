@@ -380,6 +380,24 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(task["record_id"], "")
         self.assertEqual(task["error_message"], "")
 
+    def test_create_wechat_wrong_question_upload_task_allows_image_only_submission(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            child_raw_reason_text="",
+        )
+
+        self.assertEqual(task["status"], "pending")
+        self.assertEqual(task["child_raw_reason_text"], "")
+        self.assertEqual(task["child_reason_audio_url"], "")
+
     def test_update_wechat_wrong_question_upload_task_status(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(

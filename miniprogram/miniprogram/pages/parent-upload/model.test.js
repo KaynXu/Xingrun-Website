@@ -28,7 +28,7 @@ test('appendLocalImages keeps existing images and appends new ones', () => {
   });
 });
 
-test('getSubmitBlockers reports images with zero boxes or missing reasons', () => {
+test('getSubmitBlockers reports images with zero boxes', () => {
   const blockers = getSubmitBlockers([
     { id: 'img_1', localPath: 'a.jpg', boxes: [{ id: 'box_1', childReasonText: '我审题没看完' }] },
     { id: 'img_2', localPath: 'b.jpg', boxes: [] },
@@ -38,7 +38,7 @@ test('getSubmitBlockers reports images with zero boxes or missing reasons', () =
 
   assert.deepEqual(blockers, {
     emptyImageIds: ['img_2'],
-    missingReasonBoxIds: ['box_2', 'box_4'],
+    missingReasonBoxIds: [],
   });
 });
 
