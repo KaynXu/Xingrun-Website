@@ -108,7 +108,7 @@
 
       <view wx:else class="voice-card">
         <button class="ghost-btn voice-btn" bindtap="toggleActiveBoxVoiceRecording">{{recordingBoxId === activeBox.id ? '结束录音' : '开始录音'}}</button>
-        <text wx:if="{{activeBox.voiceFilePath}}" class="voice-status">{{activeBox.voiceFileName || '已录制语音，提交时会自动转文字'}}</text>
+        <text wx:if="{{activeBox.voiceFilePath}}" class="voice-status">{{activeBox.voiceFileName || '已录制语音，提交后服务器会自动识别'}}</text>
         <text wx:if="{{activeBox.reasonStatusText}}" class="voice-hint">{{activeBox.reasonStatusText}}</text>
       </view>
     </view>
@@ -116,9 +116,9 @@
     <button class="primary-btn submit-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题</button>
   </view>
 
-  <view wx:if="{{successRecordIds.length}}" class="state-card success-card">
-    <text class="state-title">上传成功</text>
-    <text class="state-desc">本次共提交 {{successRecordIds.length}} 条记录，已进入网站端老师工作区。</text>
+  <view wx:if="{{successTaskIds.length}}" class="state-card success-card">
+    <text class="state-title">已提交</text>
+    <text class="state-desc">本次共提交 {{successTaskIds.length}} 条任务，服务器正在识别。</text>
     <button class="ghost-btn" bindtap="backHome">返回家长主页</button>
   </view>
 

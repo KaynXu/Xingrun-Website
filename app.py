@@ -65,7 +65,7 @@ from lesson_manager import (
     create_class_feedback_task,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
-    create_wechat_wrong_question_submission,
+    create_wechat_wrong_question_upload_task,
     create_organization_request,
     create_student_for_class,
     create_auth_session,
@@ -149,7 +149,9 @@ from lesson_manager import (
     set_user_class_ids,
     set_wechat_wrong_question_archive_status,
     get_wechat_wrong_question_submission,
+    get_wechat_wrong_question_upload_task_for_openid,
     save_wechat_wrong_question_review,
+    update_wechat_wrong_question_upload_task,
     update_wechat_wrong_question_question_text,
     update_user_display_name_for_actor,
     update_user_visible_pages_for_actor,
@@ -167,6 +169,7 @@ from lesson_manager import (
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
 import master_data
+from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
     CreditBalanceError,
     ensure_feature_credits_available,
@@ -3217,16 +3220,11 @@ def api_wechat_wrong_questions_create():
     image_url = (data.get("image_url") or "").strip()
     child_raw_reason_text = (data.get("child_raw_reason_text") or "").strip()
     child_reason_input_mode = (data.get("child_reason_input_mode") or "text").strip() or "text"
-    primary_error_type = (data.get("primary_error_type") or "").strip()
-    secondary_error_summary = (data.get("secondary_error_summary") or "").strip()
+    child_reason_audio_url = (data.get("child_reason_audio_url") or "").strip()
     if not open_id or not binding_id or not image_url:
         return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
-    if not child_raw_reason_text:
-        return jsonify({"error": "child_raw_reason_text is required"}), 400
-    if primary_error_type not in ai_processor.WRONG_QUESTION_ERROR_TYPE_OPTIONS:
-        return jsonify({"error": "primary_error_type is invalid"}), 400
-    if not secondary_error_summary:
-        return jsonify({"error": "secondary_error_summary is required"}), 400
+    if not child_raw_reason_text and not child_reason_audio_url:
+        return jsonify({"error": "child_raw_reason_text or child_reason_audio_url is required"}), 400
 
     account = _get_parent_wechat_account_by_openid(open_id)
     if not account:
@@ -3236,67 +3234,49 @@ def api_wechat_wrong_questions_create():
     if not binding or binding.get("parent_wechat_account_id") != account["id"]:
         return jsonify({"error": "binding not found"}), 404
 
-    charge_user = {
-        "id": int(binding["teacher_user_id"]),
-        "organization_id": int(binding["organization_id"]),
-    }
-    provider = _default_ai_provider_name()
-    model = _default_chat_model_name()
-
     try:
-        recognition = _run_ai_feature_with_charge(
-            user=charge_user,
-            feature_key="wrong_question_recognize",
-            source_record_type="wechat_wrong_question_image",
-            source_record_id=hashlib.sha256(image_url.encode("utf-8")).hexdigest()[:16],
-            producer=lambda: _call_ai_helper_with_usage(
-                ai_processor.recognize_wrong_question_image,
-                image_url,
-            ),
-            provider=provider,
-            model=model,
-        )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
-    except ValueError as exc:
-        return jsonify({"error": str(exc), "retryable": True}), 422
-    except Exception as exc:
-        return jsonify({"error": str(exc), "retryable": True}), 502
-
-    try:
-        record = create_wechat_wrong_question_submission(
+        task = create_wechat_wrong_question_upload_task(
             binding_id=binding_id,
             image_url=image_url,
             child_raw_reason_text=child_raw_reason_text,
             child_reason_input_mode=child_reason_input_mode,
-            primary_error_type=primary_error_type,
-            secondary_error_summary=secondary_error_summary,
-            recognition_status="recognized",
-            is_geometry=bool(recognition.get("is_geometry")),
-            question_text=str(recognition.get("question_text") or ""),
-            question_text_source="ai",
+            child_reason_audio_url=child_reason_audio_url,
         )
-    except LookupError as exc:
-        return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
 
     try:
-        pdf_path = _rebuild_student_wrong_question_library(binding["student_id"])
-        record = attach_student_library_pdf_path(record["id"], pdf_path)
+        enqueue_wechat_wrong_question_upload_task(task["id"])
     except Exception as exc:
-        with get_conn() as conn:
-            conn.execute("DELETE FROM wrong_question_submissions WHERE id=?", (record["id"],))
+        update_wechat_wrong_question_upload_task(
+            task["id"],
+            status="failed",
+            error_message=str(exc),
+        )
         return jsonify({"error": str(exc), "retryable": True}), 502
 
     return jsonify(
         {
-            "record": record,
+            "task": task,
             "student_library_pdf_url": f"/api/wechat/student-libraries/{binding['student_id']}",
         }
-    ), 201
+    ), 202
+
+
+@app.route("/api/wechat/wrong-question-upload-tasks/<int:task_id>", methods=["GET"])
+def api_wechat_wrong_question_upload_task_get(task_id: int):
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    open_id = (request.args.get("open_id") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+    task = get_wechat_wrong_question_upload_task_for_openid(task_id, open_id)
+    if not task:
+        return jsonify({"error": "task not found"}), 404
+    return jsonify({"task": task})
 
 
 @app.route("/api/wechat/reason-classifications", methods=["POST"])

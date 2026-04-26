@@ -7,6 +7,7 @@
 ## 当前状态
 - 小程序子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，微信工程代码位于 `miniprogram/miniprogram/`，bridge 位于 `miniprogram/backend/`。
 - 家长链路当前只保留 `绑定孩子 -> 家长首页 -> 上传错题 -> 查看错题本/PDF`。
+- 家长上传最终提交已改成网站端 RQ + Redis 异步任务：小程序只上传题图和可选录音 URL，bridge 转发到网站 `/api/wechat/wrong-questions` 后拿到 `202 + task`；录音转写、错因归类、题图识别、错题入库和 PDF 重建都由网站 RQ worker 后台完成。
 - 家长首页绑定态已恢复 `绑定更多孩子` 入口，继续复用 `goBindMore()` 返回 `pages/parent-bind/index`。
 - 家长错题本页已恢复学生级 `查看 PDF`，bridge 仍保留 `GET /wechat/parent/children/:studentId/wrong-question-library`。
 - 家长错题本页的题目卡片现在已补上轻量 LaTeX 可读化：`pages/parent-wrongbook/latex-preview.js` 会把 `$...$`、`\frac`、`\sqrt`、`\mathbb{R}`、上下标等源码转成普通文本预览，避免小程序列表里直接显示公式源码；顶部 `查看 PDF` 仍是服务器上的正式版排版。
@@ -17,6 +18,9 @@
 - `AI 框选` 已从小程序页面、`parentApi.js`、bridge、website API 和 `smart_wrong_questions.py` 活代码里删除；`POST /wechat/parent/wrong-question-boxes` 与 `/api/wechat/wrong-question-boxes` 已不再是当前能力。
 
 ## 本轮完成
+- 家长上传页最终提交不再先调用转写和错因归类接口，语音错因只先传 `/upload` 得到音频 URL，再随题图提交给服务器后台任务。
+- bridge 的 `/wechat/parent/wrong-questions` 已改为接受 `childReasonAudioUrl` 并返回 `202 + task`，同时新增 `/wechat/parent/wrong-question-upload-tasks/:taskId` 状态查询代理。
+- 小程序上传成功态文案已从“上传成功/进入老师工作区”改为“已提交/服务器正在识别”。
 - 网站后端录音转文字实现从 OpenAI Whisper 改成了本地 `faster-whisper`，并新增后端单测锁定“自动识别优先、必要时回退中文”的行为；`requirements.txt` 已补入 `faster-whisper` 依赖。
 - 家长上传页选图按钮和统一提交按钮都新增专用窄屏样式，宽度改为占满内容区，长文案保持单行显示。
 - 小程序范围测试新增这两个按钮的布局约束校验，覆盖 class、宽度和不换行规则。
@@ -25,6 +29,7 @@
 - LaTeX 预处理 helper 已进一步回退到更保守的 ES 运行时用法，去掉了 `Array.from` / `String.fromCharCode`，用于降低小程序真机或开发者工具白屏风险。
 
 ## 剩余问题
+- 还没有在生产机启动真实 Redis + RQ worker 后，用真机完整走“录音 + 题图提交 -> 后台识别完成 -> 错题本/PDF 刷新”的端到端 smoke。
 - 还没有在真实 4 核 + 4GB 服务器上拿一段“中文为主但夹英文字母/公式”的录音跑过本地 `faster-whisper`，首个请求模型下载、后续 CPU 时延、峰值内存和自动识别命中率都还需要人工 smoke。
 - 这轮上传页布局修复目前主要用本地自动测试验证过，还没有在微信开发者工具或真机上实际看一次“继续拍照 / 继续选图”和“统一提交所有错题”在不同机型上的展示。
 - 错题本页 `查看 PDF` 入口虽然已有自动测试覆盖，但还需要真机再点一次确认 `wx.downloadFile + wx.openDocument` 运行时行为。
@@ -39,6 +44,7 @@
 - 在微信开发者工具或真机打开一次家长错题本页，拿含公式的真实题目看一眼卡片预览，确认多行换行、长公式断行和顶部 PDF 入口组合体验都符合预期。
 
 ## 风险
+- 部署时如果只更新 Flask/bridge 而没有安装 Redis、启动 Redis 服务和 RQ worker，上传任务会停在 `pending` 或直接入队失败；需要把 worker 纳入 PM2/systemd 管理。
 - 本地 `faster-whisper` 现在固定走 `base + cpu + int8`，并采用“自动识别优先、空结果再回退 `zh`”；这对中文短录音和夹少量英文字母通常更平衡，但在口音重、环境噪声大或服务器并发高时，识别质量和延迟仍可能不如云端 Whisper。
 - 这轮 AI 框选删除后，上传页完全依赖手动补框；如果老师或家长之前习惯用 AI，需要同步确认产品预期。
 - 当前拍照自动旋正和本地 canvas 旋转链路仍未做真机全量 smoke，尤其是大图、横屏照片和连续追加图片场景。

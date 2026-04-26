@@ -1,11 +1,17 @@
 ## Handoff
 
-最后更新：2026-04-25
+最后更新：2026-04-26
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-26 智能错题家长上传链路已从“提交时同步识别/生成 PDF”改为 RQ + Redis 异步任务：网站 `/api/wechat/wrong-questions` 现在只创建 `wechat_wrong_question_upload_tasks` 任务并入队，返回 `202 + task`；独立 RQ worker 执行录音转写、错因归类、题图识别、错题入库和学生错题库 PDF 重建；新增任务状态查询接口 `/api/wechat/wrong-question-upload-tasks/<task_id>`。小程序最终提交不再先等语音转写和错因归类，只上传题图和可选录音 URL，提交成功文案改为“服务器正在识别”。上线前必须安装 `redis/rq` Python 依赖、启动 Redis，并额外启动 RQ worker 队列 `wrong_question_uploads`。
+- 2026-04-26 已按用户要求找到企业微信缓存文件 `/Users/xiaodi/Library/Containers/com.tencent.WeWorkMac/Data/Documents/Profiles/E313E6B3D1AB15551C1603AD2AAF13EA/Caches/Files/2026-04/5a75679b8d0924b593ca4c5c4f559696/热学知识点及作业讲解.txt`，并按 `review_plan_templates/review-plan-workflow.md` 生成“热学知识点及作业讲解”复习计划课程包：`review_plan_templates/lesson_pack_thermal_homework.py`。主题收口为热学作业题、等温/等压/等容、打气抽气漏气溢气、力热结合、绝热/导热、内能、做功、传热、热力学第一定律和第二定律关键词“自发”。已导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260426-173653.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_thermal_review_plan_proof.py` 已确认课程包可 `py_compile`、PDF 14 页、227104 bytes，包含 `热学知识点及作业讲解 / 等温 / 等压 / 等容 / 力热结合 / 热力学第一定律 / Delta U / 自发` 和 5 个复习日期 `2026-04-27 / 2026-04-28 / 2026-05-03 / 2026-05-10 / 2026-05-26`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
+- 2026-04-26 已按用户要求用下载目录录音 `/Users/xiaodi/Downloads/04-26 课堂授课_ 错位相减法与数列求和.mp3` 试跑“课堂录音 -> 转写 -> 复习计划 PDF”链路。该音频约 2877 秒，整段默认转写过慢，本轮改用本地 `faster-whisper-base` 轻量参数完成转写，新增转写稿 `review_plan_templates/source_transcripts/0426_sequence_subtraction_sum_transcript.txt` 和课程包 `review_plan_templates/lesson_pack_sequence_subtraction_sum_0426.py`，主题收口为“错位相减法、等比数列求和、分数型等比数列、立方和、平方和”。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260426-165613.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof 已确认课程包可 `py_compile`、转写稿包含 `错位相减法 / 等比数列 / 立方 / 平方`，PDF 15 页、196867 bytes，包含 `错位相减法 / 数列求和 / 等比数列 / 立方和 / 平方和` 和 5 个复习日期 `2026-04-27 / 2026-04-28 / 2026-05-03 / 2026-05-10 / 2026-05-26`；并用 PyMuPDF 渲染抽查第 1/2/7/15 页，没有空白页。
+- 2026-04-26 已按用户要求用本地录音 `7631121683310742458_record_audio.m4a` 试跑“直接从课堂录音生成复习计划”链路。该录音此前已有入库转写稿 `review_plan_templates/source_transcripts/7631121683310742458_record_audio_transcript.txt` 和课程包 `review_plan_templates/lesson_pack_geometry_angle_similarity.py`，本轮复用课程包重新导出 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260426-163231.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof 已确认课程包可 `py_compile`、PDF 15 页、198406 bytes，包含 `几何基础模型 / 外角定理 / 角平分线 / 全等 / 相似` 和 5 个复习日期 `2026-04-27 / 2026-04-28 / 2026-05-03 / 2026-05-10 / 2026-05-26`；并用 PyMuPDF 渲染抽查第 1/2/6/15 页，没有空白页。
+- 2026-04-25 已按用户提供的《立体几何外接球问题讲解》课堂纪要生成一份“课堂原话约 20%”的复习计划样稿课程包：`review_plan_templates/lesson_pack_circumsphere_models_quote20.py`。已用现有 `review_plan_templates/generate_review_pdfs.py` 导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf`（PDF 输出目录按 `.gitignore` 不入库）；临时 proof 已确认课程包可 `py_compile`、PDF 14 页、211509 bytes，包含 5 个复习节点、关键课堂原话、墙角模型/对棱相等/正棱台/圆锥等关键词，且已渲染抽查第 1/2/6/14 页没有空白页。
+- 2026-04-25 已按用户提供的《8.5班自主招生考试内容讲解》课堂纪要生成一份“课堂原话约 20%”的复习计划样稿课程包：`review_plan_templates/lesson_pack_admission_algebra_quote20.py`。已用现有 `review_plan_templates/generate_review_pdfs.py` 导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf`（PDF 输出目录按 `.gitignore` 不入库）；临时 proof 已确认课程包可 `py_compile`、PDF 14 页、226999 bytes，包含 5 个复习节点与关键课堂原话，且已渲染抽查第 1/2/6/14 页没有空白页。
 - 2026-04-25 已按标准 release 流程把 `develop(6698d14)` 合到 `master(c919675)` 并部署到生产机 `49.234.185.86`。本次发布包含智能错题练习 PDF 下载命名收口（下载附件名为 `孩子姓名练习单_YYYY-MM-DD.pdf`，前端不再用旧英文 `download` 文件名覆盖后端响应头）、讲师映射网站成员关联修正、小程序家长端错题最终提交超时修复，以及错题 PDF 浏览器渲染环境净化。发布前本地 `develop` 与合并后的 `master` 均已通过前端 189 条测试、前端 production build、后端定向 53 条测试；生产机已完成 `git pull --ff-only origin master`、前端 build、`pm2 restart xingrun`，`xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`，生产机 HEAD 为 `c919675b`。
 - 2026-04-24 已定位这次“又崩”的直接原因：不是复习计划整体掉线，而是智能错题练习单的浏览器 PDF 子进程在生产 PM2 环境里再次崩溃。新失败记录是 `wrong_question_practice_sheets.sheet_id=21`，生产日志连续 4 次重试都报 `错题练习 PDF 浏览器渲染失败（signal 6）`。同一份练习单在同机同代码下，只要脱离 PM2 进程环境、改用干净 shell 环境直接调用 `pdf_engine.generate_wrong_question_practice_sheet_pdf(...)` 就能成功生成，说明根因不是题目内容、也不是内存/磁盘不足，而是 Node/Chromium 渲染子进程继承了 PM2 注入的一整包环境变量后再次触发崩溃。当前已发布的代码对错题库/错题练习两个浏览器渲染入口都改成只传最小白名单环境（`PATH/HOME/LANG/XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS` 及 `XR_PLAYWRIGHT_* / PLAYWRIGHT_*`），避免把 `NODE_CHANNEL_FD / PM2_HOME / axm_* / status / env` 这类 PM2 元数据继续传给 Chromium；对应回归已补到 `tests/test_wrong_question_library_pdf.py`，并与 `tests/test_wrong_question_practice_async_api.py` 一起通过。线上当前失败的 `sheet_id=21` 也已手工走“重新生成 AI 材料 -> 直接渲染 PDF -> 回写数据库”补救链路恢复为 `ready`，PDF 已写回 `data/pdfs/wrong_question_practice_sheets/sheet-21.pdf`。
 - 2026-04-24 已处理线上“智能错题/复习计划掉线”排查：生产 PM2 服务 `xingrun` 仍在线，复习计划接口在真实 PM2 环境下能正常读取 `.env.runtime` 的 `XR_PROVIDER=n1n / N1N_API_KEY`，空内容 POST 已返回业务校验 `请填写课堂总结内容` 而不是 API Key 离线；智能错题列表接口返回 200。真正坏掉的是两份错题练习 PDF 异步任务：`wrong_question_practice_sheets` 的 `sheet_id=19` 和 `sheet_id=20` 在 2026-04-23 因 Chromium/Playwright PDF 子进程 `signal 6` 崩溃被标记为 `failed`。本轮已按 `scripts/run_backend.sh` 同款环境变量导出方式重跑这两份任务，当前均恢复为 `ready`，PDF 已生成：`data/pdfs/wrong_question_practice_sheets/sheet-19.pdf` 和 `sheet-20.pdf`。
@@ -123,6 +129,8 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf` 全文扫一遍，重点核对外接球通法、墙角模型、对棱相等模型、正棱台方程、圆锥/正三棱锥类比和取值范围题里的变量设法；如果老师希望把“例题 2 / 例题 3”展开成具体题目，需要回到 `lesson_pack_circumsphere_models_quote20.py` 增补题面细节。
+- 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf` 全文扫一遍，确认自招考试定位、二项式定理、齐次换元、因式定理、轮换对称式和均值不等式这些口径符合老师原课；如果觉得课堂原话仍不够，可以继续在 `lesson_pack_admission_algebra_quote20.py` 增加每日 `quotes`，但要避免挤占主体练习。
 - 需要把这次小程序 timeout 修复随下一次小程序包上传/发版带到真机；如果真机仍显示超时，下一步应把网站端 `/api/wechat/wrong-questions` 改成异步任务返回，避免小程序长时间等 AI 识别和 PDF 重建。
 - 最值得继续做的是拿真实 iPad/iPhone Safari 打开已登录工作台，在地址栏展开和收起两种状态下分别慢滑、快滑一遍，确认页面不再出现卡片被粘住后回弹的体感；Playwright 只能覆盖移动触摸滚动和 CSS 状态，不能完整模拟 iOS Safari 地址栏动画。
 - 最值得继续做的是用真实 owner/admin 账号打开账号审批页，新增一条讲师映射时手动填写企微 ID 和中文名、从网站成员下拉选择对应老师，保存后确认表格显示网站成员，并用咨询批量整理/接待老师识别确认企微 ID 能命中该网站账号。
@@ -171,7 +179,10 @@
 
 ### 风险
 - 智能错题练习 PDF 当前虽然已经在生产 `master(31747f5)` 上带着“浏览器子进程环境净化”修复上线，并通过了 PM2 环境复现 proof，但运行时依赖仍是服务器上的 `/snap/bin/chromium`。如果后续继续出现新的 Chromium 自身崩溃，优先考虑给生产机安装 Playwright 官方 Chromium 或继续收口渲染进程启动参数，而不是恢复已经按用户要求删除的 ReportLab fallback。
-- 这轮只修了小程序端最终提交的等待时间，还没有把小程序包上传到微信开发者工具或真机验证；如果生产链路本身超过 180 秒或被上游网关提前切断，仍需要继续做服务端异步化。
+- RQ/Redis 异步上传还没有在生产机用真实 Redis、真实 RQ worker 和真实录音/题图跑端到端 smoke；部署时如果只重启 Flask/PM2 而没有启动 worker，任务会停在 `pending` 或入队失败。
+- 这份热学复习计划根据企业微信缓存中的课堂文字记录整理，记录中有少量口误、识别噪声和课堂闲聊；复习计划已按可稳定识别的物理主线归纳，但正式发给学生前仍建议老师快速核对例题数据、符号正负号和“热力学第一定律”相关表述。
+- 这份立体几何外接球复习计划同样是根据飞书智能纪要整理出的样稿，不是逐字人工校对的录音转写；纪要里“圆柱半径/高的设法”“正四棱锥变量命名”和个别例题条件可能有误，正式给学生前需要老师快速核对。
+- 这份 20% 原话复习计划是根据飞书智能纪要整理出的样稿，不是逐字人工校对的录音转写；纪要里公式和老师原话可能有误，正式给学生前仍需要老师快速核对公式细节和课堂表达。
 - 本轮定位依据是源码里的根级滚动限制、`100dvh` 动态视口高度和移动端大面积模糊背景；这些都与用户描述的地址栏收缩、页面聚焦状态和快速滑动卡顿相符。自动化 proof 已覆盖 Chrome 移动触摸模拟，但真实 iOS Safari 的地址栏动画仍只能靠真机最终验收。
 - 讲师映射下拉现在保存的是 `linked_username` 真实关联，但仍不会自动给每个新成员创建映射；新老师加入网站后，负责人仍需要手动填写企微 ID/中文名并选择网站成员保存一次，才能进入 `teachers.json` 并被咨询助手/批量整理识别链路使用。本轮已跑临时 proof、咨询流定向测试、前端测试、类型检查和 build，但还没有在真实浏览器里手工保存一条映射。
 - 本轮已用后端定向测试覆盖老师账号删除时的家长绑定、错题、错题练习和班级邀请码外键收口，也用前端源码测试和 build 覆盖两个学科筛选入口；但还没有在真实浏览器里用实际账号手工走创建、认领、筛选、删除的完整 smoke。

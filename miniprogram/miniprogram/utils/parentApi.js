@@ -409,8 +409,17 @@ async function submitParentWrongQuestion(wxApi, serverUrl, params) {
       bindingId: String(params.bindingId),
       childReasonText: String(params.childReasonText || '').trim(),
       childReasonInputMode: String(params.childReasonInputMode || 'text').trim() || 'text',
-      primaryErrorType: String(params.primaryErrorType || '').trim(),
-      secondaryErrorSummary: String(params.secondaryErrorSummary || '').trim(),
+      childReasonAudioUrl: String(params.childReasonAudioUrl || '').trim(),
+    },
+  });
+}
+
+async function fetchWrongQuestionUploadTask(wxApi, serverUrl, params) {
+  return requestJson(wxApi, {
+    url: `${serverUrl}/wechat/parent/wrong-question-upload-tasks/${params.taskId}`,
+    method: 'GET',
+    data: {
+      openId: params.openId,
     },
   });
 }
@@ -455,6 +464,7 @@ module.exports = {
   classifyParentReason,
   uploadParentReasonAudio,
   submitParentWrongQuestion,
+  fetchWrongQuestionUploadTask,
   fetchChildWrongQuestions,
   fetchChildWrongQuestionLibrary,
 };

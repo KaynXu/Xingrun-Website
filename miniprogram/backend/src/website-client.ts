@@ -92,6 +92,19 @@ export interface WebsiteReasonClassification {
   secondary_error_summary: string;
 }
 
+export interface WebsiteWrongQuestionUploadTask {
+  id: number;
+  binding_id: number;
+  student_id: number;
+  image_url: string;
+  child_raw_reason_text?: string;
+  child_reason_input_mode?: string;
+  child_reason_audio_url?: string;
+  status: string;
+  record_id?: string;
+  error_message?: string;
+}
+
 export async function loginParentWechatAccount(input: {
   openId: string;
   nicknameSnapshot?: string;
@@ -171,10 +184,9 @@ export async function submitWechatWrongQuestionToWebsite(input: {
   imageUrl: string;
   childReasonText: string;
   childReasonInputMode?: string;
-  primaryErrorType: string;
-  secondaryErrorSummary: string;
+  childReasonAudioUrl?: string;
 }) {
-  return requestWebsite<{ record: WebsiteWrongQuestionSubmission }>('/api/wechat/wrong-questions', {
+  return requestWebsite<{ task: WebsiteWrongQuestionUploadTask; student_library_pdf_url?: string }>('/api/wechat/wrong-questions', {
     method: 'POST',
     body: {
       open_id: input.openId,
@@ -182,10 +194,19 @@ export async function submitWechatWrongQuestionToWebsite(input: {
       image_url: input.imageUrl,
       child_raw_reason_text: input.childReasonText,
       child_reason_input_mode: input.childReasonInputMode || 'text',
-      primary_error_type: input.primaryErrorType,
-      secondary_error_summary: input.secondaryErrorSummary,
+      child_reason_audio_url: input.childReasonAudioUrl || '',
     },
   });
+}
+
+export async function getWrongQuestionUploadTaskOnWebsite(input: {
+  openId: string;
+  taskId: number;
+}) {
+  const query = new URLSearchParams({ open_id: String(input.openId || '').trim() });
+  return requestWebsite<{ task: WebsiteWrongQuestionUploadTask }>(
+    `/api/wechat/wrong-question-upload-tasks/${input.taskId}?${query.toString()}`
+  );
 }
 
 export interface WebsiteWrongQuestionItem {
