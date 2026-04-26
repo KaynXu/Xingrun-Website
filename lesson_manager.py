@@ -5906,10 +5906,10 @@ def list_wechat_wrong_question_submissions_for_parent_student(
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
-            WHERE wqs.parent_wechat_account_id=? AND wqs.student_id=?
+            WHERE wqs.student_id=?
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
-            (parent_wechat_account_id, student_id),
+            (student_id,),
         ).fetchall()
     return [
         item
