@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-04-25
+最后更新：2026-04-26
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-26 已按用户要求用本地录音 `7631121683310742458_record_audio.m4a` 试跑“直接从课堂录音生成复习计划”链路。该录音此前已有入库转写稿 `review_plan_templates/source_transcripts/7631121683310742458_record_audio_transcript.txt` 和课程包 `review_plan_templates/lesson_pack_geometry_angle_similarity.py`，本轮复用课程包重新导出 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260426-163231.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof 已确认课程包可 `py_compile`、PDF 15 页、198406 bytes，包含 `几何基础模型 / 外角定理 / 角平分线 / 全等 / 相似` 和 5 个复习日期 `2026-04-27 / 2026-04-28 / 2026-05-03 / 2026-05-10 / 2026-05-26`；并用 PyMuPDF 渲染抽查第 1/2/6/15 页，没有空白页。
 - 2026-04-25 已按用户提供的《立体几何外接球问题讲解》课堂纪要生成一份“课堂原话约 20%”的复习计划样稿课程包：`review_plan_templates/lesson_pack_circumsphere_models_quote20.py`。已用现有 `review_plan_templates/generate_review_pdfs.py` 导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf`（PDF 输出目录按 `.gitignore` 不入库）；临时 proof 已确认课程包可 `py_compile`、PDF 14 页、211509 bytes，包含 5 个复习节点、关键课堂原话、墙角模型/对棱相等/正棱台/圆锥等关键词，且已渲染抽查第 1/2/6/14 页没有空白页。
 - 2026-04-25 已按用户提供的《8.5班自主招生考试内容讲解》课堂纪要生成一份“课堂原话约 20%”的复习计划样稿课程包：`review_plan_templates/lesson_pack_admission_algebra_quote20.py`。已用现有 `review_plan_templates/generate_review_pdfs.py` 导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf`（PDF 输出目录按 `.gitignore` 不入库）；临时 proof 已确认课程包可 `py_compile`、PDF 14 页、226999 bytes，包含 5 个复习节点与关键课堂原话，且已渲染抽查第 1/2/6/14 页没有空白页。
 - 2026-04-25 已按标准 release 流程把 `develop(6698d14)` 合到 `master(c919675)` 并部署到生产机 `49.234.185.86`。本次发布包含智能错题练习 PDF 下载命名收口（下载附件名为 `孩子姓名练习单_YYYY-MM-DD.pdf`，前端不再用旧英文 `download` 文件名覆盖后端响应头）、讲师映射网站成员关联修正、小程序家长端错题最终提交超时修复，以及错题 PDF 浏览器渲染环境净化。发布前本地 `develop` 与合并后的 `master` 均已通过前端 189 条测试、前端 production build、后端定向 53 条测试；生产机已完成 `git pull --ff-only origin master`、前端 build、`pm2 restart xingrun`，`xingrun` 在线，根路由健康检查返回 `HTTP/1.1 302 FOUND`，生产机 HEAD 为 `c919675b`。
