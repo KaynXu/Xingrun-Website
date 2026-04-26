@@ -5,6 +5,7 @@ const {
   buildUploadJobs,
   buildImageRotationPlan,
   buildUploadExportPlan,
+  buildUploadTaskSummary,
   appendLocalImages,
   addManualBoxToImage,
   getSubmitBlockers,
@@ -80,6 +81,48 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
   assert.equal(jobs[2].boxId, 'box_3');
   assert.equal(jobs[2].localPath, 'b.jpg');
   assert.equal(jobs[1].childRawReasonText, '第二题是我算错了');
+});
+
+test('buildUploadTaskSummary reports failed task messages before success', () => {
+  const summary = buildUploadTaskSummary([
+    { id: 1, status: 'ready' },
+    { id: 2, status: 'failed', error_message: '题目识别失败，请重新拍清楚一点' },
+  ]);
+
+  assert.deepEqual(summary, {
+    state: 'failed',
+    title: '识别失败',
+    description: '1 条识别失败：题目识别失败，请重新拍清楚一点',
+    readyCount: 1,
+    failedCount: 1,
+    pendingCount: 0,
+  });
+});
+
+test('buildUploadTaskSummary reports ready only after every task is ready', () => {
+  assert.deepEqual(buildUploadTaskSummary([
+    { id: 1, status: 'ready' },
+    { id: 2, status: 'ready' },
+  ]), {
+    state: 'ready',
+    title: '识别完成',
+    description: '本次 2 条错题已加入错题本。',
+    readyCount: 2,
+    failedCount: 0,
+    pendingCount: 0,
+  });
+
+  assert.deepEqual(buildUploadTaskSummary([
+    { id: 1, status: 'ready' },
+    { id: 2, status: 'processing' },
+  ]), {
+    state: 'pending',
+    title: '正在识别',
+    description: '已完成 1 条，还有 1 条正在服务器识别。',
+    readyCount: 1,
+    failedCount: 0,
+    pendingCount: 1,
+  });
 });
 
 test('buildImageRotationPlan swaps canvas bounds for clockwise quarter turns', () => {

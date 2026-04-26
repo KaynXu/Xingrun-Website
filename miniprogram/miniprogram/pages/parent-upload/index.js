@@ -2,6 +2,7 @@ const app = getApp();
 const {
   ensureParentSession,
   fetchParentBindings,
+  fetchWrongQuestionUploadTask,
   submitParentWrongQuestion,
   uploadParentReasonAudio,
 } = require('../../utils/parentApi');
@@ -11,9 +12,13 @@ const {
   buildImageRotationPlan,
   buildUploadExportPlan,
   buildUploadJobs,
+  buildUploadTaskSummary,
   getSubmitBlockers,
   rotateImageBoxesClockwise,
 } = require('./model');
+
+const TASK_POLL_INTERVAL_MS = 2000;
+const TASK_POLL_MAX_ATTEMPTS = 12;
 
 Page({
   data: {
@@ -26,6 +31,7 @@ Page({
     displayBoxes: [],
     submitting: false,
     successTaskIds: [],
+    uploadTaskSummary: null,
     errorMessage: '',
     stageWidth: 0,
     stageHeight: 0,
@@ -825,6 +831,7 @@ Page({
 
       this.setData({
         successTaskIds,
+        uploadTaskSummary: buildUploadTaskSummary(successTaskIds.map((id) => ({ id, status: 'pending' }))),
         imageItems: [],
         selectedImageId: '',
         currentImage: null,
@@ -835,7 +842,15 @@ Page({
         loadError: false,
         activeBox: null,
       });
-      wx.showToast({ title: '上传成功', icon: 'success' });
+      const uploadTaskSummary = await this.pollUploadTasks(session.openId, successTaskIds);
+      this.setData({
+        successTaskIds,
+        uploadTaskSummary,
+      });
+      wx.showToast({
+        title: uploadTaskSummary.state === 'failed' ? '识别失败' : '已提交',
+        icon: uploadTaskSummary.state === 'failed' ? 'none' : 'success',
+      });
     } catch (error) {
       this.setData({
         errorMessage: error instanceof Error ? error.message : '上传失败',
@@ -843,6 +858,38 @@ Page({
     } finally {
       this.setData({ submitting: false });
     }
+  },
+
+  waitForUploadTaskPoll() {
+    return new Promise((resolve) => {
+      setTimeout(resolve, TASK_POLL_INTERVAL_MS);
+    });
+  },
+
+  async pollUploadTasks(openId, taskIds) {
+    const ids = (Array.isArray(taskIds) ? taskIds : []).filter((id) => id !== undefined && id !== null && String(id).trim());
+    let tasks = ids.map((id) => ({ id, status: 'pending' }));
+    let summary = buildUploadTaskSummary(tasks);
+    this.setData({ uploadTaskSummary: summary });
+
+    for (let attempt = 0; attempt < TASK_POLL_MAX_ATTEMPTS; attempt += 1) {
+      tasks = await Promise.all(ids.map(async (taskId) => {
+        const payload = await fetchWrongQuestionUploadTask(wx, app.globalData.serverUrl, {
+          openId,
+          taskId,
+        });
+        return payload.task || { id: taskId, status: 'pending' };
+      }));
+      summary = buildUploadTaskSummary(tasks);
+      this.setData({ uploadTaskSummary: summary });
+
+      if (summary.state === 'ready' || summary.state === 'failed') {
+        return summary;
+      }
+      await this.waitForUploadTaskPoll();
+    }
+
+    return summary;
   },
 
   backHome() {
