@@ -5610,8 +5610,6 @@ def create_wechat_wrong_question_upload_task(
     if not normalized_image_url:
         raise ValueError("image_url is required")
     normalized_reason_text = (child_raw_reason_text or "").strip()
-    if not normalized_reason_text and not (child_reason_audio_url or "").strip():
-        raise ValueError("child_raw_reason_text or child_reason_audio_url is required")
     normalized_reason_input_mode = ((child_reason_input_mode or "text").strip() or "text").lower()
     if normalized_reason_input_mode not in WECHAT_CHILD_REASON_INPUT_MODES:
         raise ValueError("child_reason_input_mode must be text or voice")

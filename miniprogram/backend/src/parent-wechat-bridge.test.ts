@@ -300,6 +300,51 @@ test('parent upload bridge stores the file locally and forwards the generated im
   }
 });
 
+test('parent upload bridge allows image-only submissions for server-side recognition', async (t) => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      assert.equal(body.child_raw_reason_text, '');
+      assert.equal(body.child_reason_audio_url, '');
+      assert.match(body.image_url, /^http:\/\/127\.0\.0\.1:\d+\/files\/.+/);
+
+      return createJsonResponse({
+        task: {
+          id: 9002,
+          status: 'pending',
+          image_url: body.image_url,
+        },
+      }, 202);
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const formData = new FormData();
+    formData.set('openId', 'openid-parent-1');
+    formData.set('bindingId', '21');
+    formData.set('file', new Blob(['mock-image']), 'wrong-question.txt');
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).task.id, 9002);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('parent upload task bridge forwards task status requests to the website', async (t) => {
   const originalFetch = globalThis.fetch;
   const websiteCalls: Array<{ url: string }> = [];

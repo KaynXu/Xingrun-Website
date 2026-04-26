@@ -186,6 +186,34 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["secondary_error_summary"], "先算了加法，忽略乘法优先")
         self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
 
+    def test_worker_processes_image_only_wrong_question_upload_task(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            child_raw_reason_text="",
+        )
+
+        from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
+
+        with patch("wrong_question_upload_worker.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch("wrong_question_upload_worker.ai_processor.classify_wrong_question_reason") as classify_mock, \
+             patch("wrong_question_upload_worker._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
+            result = process_wechat_wrong_question_upload_task(task["id"])
+
+        self.assertEqual(result["status"], "ready")
+        refreshed = lesson_manager.get_wechat_wrong_question_upload_task(task["id"])
+        record = lesson_manager.get_wechat_wrong_question_submission(refreshed["record_id"])
+        self.assertEqual(record["child_raw_reason_text"], "待补充｜孩子暂未填写错因")
+        self.assertEqual(record["primary_error_type"], "待补充")
+        self.assertEqual(record["secondary_error_summary"], "孩子暂未填写错因")
+        classify_mock.assert_not_called()
+
     def test_worker_marks_wrong_question_upload_task_failed(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
         binding = lesson_manager.bind_parent_to_student(
@@ -270,7 +298,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(payload["bindings"][0]["student_name"], "Alice")
         self.assertEqual(payload["bindings"][0]["teacher_name"], "平台管理员")
 
-    def test_wechat_service_upload_requires_child_reason_text(self):
+    def test_wechat_service_upload_can_queue_image_only_task(self):
         self.client.post(
             "/api/wechat/login",
             headers=self.service_headers(),
@@ -288,18 +316,22 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(bind.status_code, 200)
         binding = bind.get_json()["binding"]
 
-        upload = self.client.post(
-            "/api/wechat/wrong-questions",
-            headers=self.service_headers(),
-            json={
-                "open_id": "openid-1",
-                "binding_id": binding["id"],
-                "image_url": "https://files.example.com/record.png",
-            },
-        )
+        with patch("app.enqueue_wechat_wrong_question_upload_task") as enqueue_mock:
+            upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": binding["id"],
+                    "image_url": "https://files.example.com/record.png",
+                },
+            )
 
-        self.assertEqual(upload.status_code, 400)
-        self.assertEqual(upload.get_json()["error"], "child_raw_reason_text or child_reason_audio_url is required")
+        self.assertEqual(upload.status_code, 202)
+        task = upload.get_json()["task"]
+        self.assertEqual(task["child_raw_reason_text"], "")
+        self.assertEqual(task["child_reason_audio_url"], "")
+        enqueue_mock.assert_called_once_with(task["id"])
 
     def test_wechat_service_can_transcribe_child_reason_audio(self):
         with patch(

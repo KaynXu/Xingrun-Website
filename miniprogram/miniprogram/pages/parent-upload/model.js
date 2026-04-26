@@ -117,21 +117,6 @@ function getSubmitBlockers(imageItems) {
   const list = Array.isArray(imageItems) ? imageItems : [];
   const missingReasonBoxIds = [];
 
-  list.forEach((item) => {
-    (item.boxes || []).forEach((box) => {
-      if (String(box.childReasonInputMode || 'text') === 'voice') {
-        if (!String(box.voiceFilePath || '').trim()) {
-          missingReasonBoxIds.push(box.id);
-        }
-        return;
-      }
-
-      if (!String(box.childReasonText || '').trim()) {
-        missingReasonBoxIds.push(box.id);
-      }
-    });
-  });
-
   return {
     emptyImageIds: list.filter((item) => !(item.boxes || []).length).map((item) => item.id),
     missingReasonBoxIds,

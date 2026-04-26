@@ -223,11 +223,6 @@ export function createApp() {
       res.status(400).json({ error: 'file required' });
       return;
     }
-    if (!childReasonText && !childReasonAudioUrl) {
-      res.status(400).json({ error: 'childReasonText or childReasonAudioUrl required' });
-      return;
-    }
-
     try {
       const payload = await submitWechatWrongQuestionToWebsite({
         openId,

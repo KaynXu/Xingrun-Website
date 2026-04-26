@@ -3223,8 +3223,6 @@ def api_wechat_wrong_questions_create():
     child_reason_audio_url = (data.get("child_reason_audio_url") or "").strip()
     if not open_id or not binding_id or not image_url:
         return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
-    if not child_raw_reason_text and not child_reason_audio_url:
-        return jsonify({"error": "child_raw_reason_text or child_reason_audio_url is required"}), 400
 
     account = _get_parent_wechat_account_by_openid(open_id)
     if not account:
