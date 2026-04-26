@@ -198,9 +198,14 @@ function renderTextSegmentHtml(value, { preserveRaw = false } = {}) {
 
 const BROKEN_NEWLINE_LATEX_COMMAND_PATTERN =
   /(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))/g;
+const BROKEN_CARRIAGE_RETURN_LATEX_COMMAND_PATTERN =
+  /\r(?=(?:ight\b|ightarrow\b))/g;
 const LITERAL_NEWLINE_LATEX_COMMAND_PATTERN =
   /\\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))/g;
+const LITERAL_CARRIAGE_RETURN_LATEX_COMMAND_PATTERN =
+  /\\r(?=(?:ight\b|ightarrow\b))/g;
 const LITERAL_NEWLINE_LATEX_COMMAND_TOKEN = 'XR_LITERAL_NEWLINE_LATEX_COMMAND_TOKEN';
+const LITERAL_CARRIAGE_RETURN_LATEX_COMMAND_TOKEN = 'XR_LITERAL_CARRIAGE_RETURN_LATEX_COMMAND_TOKEN';
 
 function repairWrongQuestionLatexTransport(value) {
   return String(value ?? '')
@@ -209,12 +214,15 @@ function repairWrongQuestionLatexTransport(value) {
     .replaceAll('\t', '\\t')
     .replaceAll('\f', '\\f')
     .replaceAll('\b', '\\b')
-    .replaceAll('\r', '\\r')
-    .replaceAll('\\r', '\n')
+    .replace(BROKEN_CARRIAGE_RETURN_LATEX_COMMAND_PATTERN, '\\r')
+    .replaceAll('\r', '\n')
     .replace(BROKEN_NEWLINE_LATEX_COMMAND_PATTERN, '\\n')
+    .replace(LITERAL_CARRIAGE_RETURN_LATEX_COMMAND_PATTERN, LITERAL_CARRIAGE_RETURN_LATEX_COMMAND_TOKEN)
     .replace(LITERAL_NEWLINE_LATEX_COMMAND_PATTERN, LITERAL_NEWLINE_LATEX_COMMAND_TOKEN)
     .replaceAll('\\n', '\n')
+    .replaceAll('\\r', '\n')
     .replaceAll(LITERAL_NEWLINE_LATEX_COMMAND_TOKEN, '\\n')
+    .replaceAll(LITERAL_CARRIAGE_RETURN_LATEX_COMMAND_TOKEN, '\\r')
     .replace(/(?<!\\)\\\[/g, '$$')
     .replace(/(?<!\\)\\\]/g, '$$')
     .replace(/(?<!\\)\\\(/g, '$')

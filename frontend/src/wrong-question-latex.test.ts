@@ -79,6 +79,20 @@ test('parseWrongQuestionLatexSegments repairs latex commands eaten by json escap
   );
 });
 
+test('parseWrongQuestionLatexSegments repairs right delimiters eaten by json escaping', () => {
+  const rootPreview = buildWrongQuestionLatexPreviewModel(
+    '计算 $\\sqrt[4]{4 - \\left(\\frac{3}{5}' + '\right)^2} \\times \\sqrt[3]{\\frac{8}{27}} - \\sqrt[3]{-1}$',
+  );
+  const absoluteValuePreview = buildWrongQuestionLatexPreviewModel(
+    '记 $Q(M) = \\left| \\frac{4d - 3c}{2b - a}' + '\right|$',
+  );
+
+  assert.equal(rootPreview.errors.length, 0);
+  assert.equal(absoluteValuePreview.errors.length, 0);
+  assert.match(rootPreview.html, /katex/);
+  assert.match(absoluteValuePreview.html, /katex/);
+});
+
 test('buildWrongQuestionLatexPreviewModel normalizes bare latex fragments inside prose', () => {
   const preview = buildWrongQuestionLatexPreviewModel(
     '已知函数 f(x)=(x-1)e^{-ax}（a \\in \\mathbbR），e=2.71828\\ldots，且 a<m<a\\frac{a+e}{ae}-1。',
