@@ -353,5 +353,93 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(updated["question_text_edited"], 1)
         self.assertEqual(updated["student_library_pdf_path"], "/tmp/student-1.pdf")
 
+    def test_create_wechat_wrong_question_upload_task_stores_payload_and_scope(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            child_raw_reason_text="我把单位换算漏掉了",
+            child_reason_input_mode="voice",
+            child_reason_audio_url="https://files.example.com/reason.m4a",
+        )
+
+        self.assertEqual(task["status"], "pending")
+        self.assertEqual(task["binding_id"], binding["id"])
+        self.assertEqual(task["parent_wechat_account_id"], account["id"])
+        self.assertEqual(task["student_id"], self.student["id"])
+        self.assertEqual(task["image_url"], "https://files.example.com/wrong-question.png")
+        self.assertEqual(task["child_raw_reason_text"], "我把单位换算漏掉了")
+        self.assertEqual(task["child_reason_input_mode"], "voice")
+        self.assertEqual(task["child_reason_audio_url"], "https://files.example.com/reason.m4a")
+        self.assertEqual(task["record_id"], "")
+        self.assertEqual(task["error_message"], "")
+
+    def test_update_wechat_wrong_question_upload_task_status(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            child_raw_reason_text="我看漏了题目条件",
+        )
+
+        updated = lesson_manager.update_wechat_wrong_question_upload_task(
+            task["id"],
+            status="ready",
+            record_id="wechat-record-1",
+            error_message="",
+        )
+
+        self.assertEqual(updated["status"], "ready")
+        self.assertEqual(updated["record_id"], "wechat-record-1")
+        self.assertEqual(updated["error_message"], "")
+
+    def test_get_wechat_wrong_question_upload_task_for_parent_scopes_by_openid(self):
+        primary_account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        primary_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=primary_account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=primary_binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            child_raw_reason_text="我看漏了题目条件",
+        )
+        other_account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-2")
+        other_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=other_account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=other_binding["id"],
+            image_url="https://files.example.com/other.png",
+            child_raw_reason_text="我算错了",
+        )
+
+        visible = lesson_manager.get_wechat_wrong_question_upload_task_for_openid(
+            task["id"],
+            "openid-parent-1",
+        )
+        hidden = lesson_manager.get_wechat_wrong_question_upload_task_for_openid(
+            task["id"],
+            "openid-parent-2",
+        )
+
+        self.assertIsNotNone(visible)
+        self.assertEqual(visible["id"], task["id"])
+        self.assertIsNone(hidden)
+
 if __name__ == "__main__":
     unittest.main()

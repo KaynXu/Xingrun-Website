@@ -1,10 +1,8 @@
 const app = getApp();
 const {
-  classifyParentReason,
   ensureParentSession,
   fetchParentBindings,
   submitParentWrongQuestion,
-  transcribeParentReason,
   uploadParentReasonAudio,
 } = require('../../utils/parentApi');
 const {
@@ -26,7 +24,7 @@ Page({
     currentStatusText: '',
     displayBoxes: [],
     submitting: false,
-    successRecordIds: [],
+    successTaskIds: [],
     errorMessage: '',
     stageWidth: 0,
     stageHeight: 0,
@@ -201,7 +199,7 @@ Page({
       currentImage,
       activeBox,
       currentStatusText: this.buildStatusText(currentImage),
-      successRecordIds: [],
+      successTaskIds: [],
     });
 
     if (shouldReloadStage) {
@@ -788,15 +786,13 @@ Page({
 
     try {
       const session = await ensureParentSession(wx, app.globalData.serverUrl);
-      const successRecordIds = [];
+      const successTaskIds = [];
       let currentJob;
       let imageItem;
       let croppedPath;
       let payload;
-      let reasonTextForClassification;
       let audioPayload;
-      let transcription;
-      let classification;
+      let childReasonAudioUrl;
 
       app.globalData.parentSession = session;
 
@@ -806,38 +802,28 @@ Page({
           continue;
         }
         croppedPath = await this.exportBoxCrop(imageItem, currentJob.box);
-        reasonTextForClassification = currentJob.childRawReasonText;
+        childReasonAudioUrl = '';
 
         if (currentJob.childReasonInputMode === 'voice') {
           audioPayload = await uploadParentReasonAudio(wx, app.globalData.serverUrl, {
             filePath: currentJob.voiceFilePath,
           });
-          transcription = await transcribeParentReason(wx, app.globalData.serverUrl, {
-            audioUrl: audioPayload.audioUrl,
-          });
-          reasonTextForClassification = String(transcription.transcript_text || '').trim();
-          if (!reasonTextForClassification) {
-            throw new Error('语音没有识别出有效内容，请再录一次。');
-          }
+          childReasonAudioUrl = String(audioPayload.audioUrl || '').trim();
         }
 
-        classification = await classifyParentReason(wx, app.globalData.serverUrl, {
-          childReasonText: reasonTextForClassification,
-        });
         payload = await submitParentWrongQuestion(wx, app.globalData.serverUrl, {
           openId: session.openId,
           bindingId: this.data.binding.id,
           filePath: croppedPath,
-          childReasonText: String(classification.display_text || reasonTextForClassification).trim(),
+          childReasonText: String(currentJob.childRawReasonText || '').trim(),
           childReasonInputMode: currentJob.childReasonInputMode,
-          primaryErrorType: String(classification.primary_error_type || '').trim(),
-          secondaryErrorSummary: String(classification.secondary_error_summary || '').trim(),
+          childReasonAudioUrl,
         });
-        successRecordIds.push((payload.record && payload.record.id) || '');
+        successTaskIds.push((payload.task && payload.task.id) || '');
       }
 
       this.setData({
-        successRecordIds,
+        successTaskIds,
         imageItems: [],
         selectedImageId: '',
         currentImage: null,

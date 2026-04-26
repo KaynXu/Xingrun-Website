@@ -8,6 +8,7 @@ const {
   ensureParentSession,
   fetchParentBindings,
   fetchChildWrongQuestionLibrary,
+  fetchWrongQuestionUploadTask,
   getParentBindings,
   normalizeParentBinding,
   resolveParentEntryPath,
@@ -79,12 +80,12 @@ function createWxApi() {
 
       if (url.endsWith('/wechat/parent/wrong-questions')) {
         success({
-          statusCode: 201,
+          statusCode: 202,
           data: JSON.stringify({
-            record: {
-              id: 'wechat-record-1',
+            task: {
+              id: 9001,
               binding_id: Number(formData.bindingId),
-              source: 'wechat_mp',
+              status: 'pending',
             },
           }),
         });
@@ -277,12 +278,12 @@ test('submitParentWrongQuestion parses the upload bridge response', async () => 
     secondaryErrorSummary: '乘法顺序混淆',
   });
 
-  assert.equal(payload.record.id, 'wechat-record-1');
-  assert.equal(payload.record.source, 'wechat_mp');
-  assert.equal(payload.record.binding_id, 21);
+  assert.equal(payload.task.id, 9001);
+  assert.equal(payload.task.status, 'pending');
+  assert.equal(payload.task.binding_id, 21);
 });
 
-test('submitParentWrongQuestion forwards the child reason text in upload form data', async () => {
+test('submitParentWrongQuestion forwards the child reason text and audio url in upload form data', async () => {
   let capturedFormData = null;
   let capturedTimeout = 0;
   const wxApi = {
@@ -290,12 +291,12 @@ test('submitParentWrongQuestion forwards the child reason text in upload form da
       capturedFormData = formData;
       capturedTimeout = timeout;
       success({
-        statusCode: 201,
+        statusCode: 202,
         data: JSON.stringify({
-          record: {
-            id: 'wechat-record-2',
+          task: {
+            id: 9002,
             binding_id: 21,
-            source: 'wechat_mp',
+            status: 'pending',
           },
         }),
       });
@@ -311,20 +312,52 @@ test('submitParentWrongQuestion forwards the child reason text in upload form da
     bindingId: 21,
     filePath: '/tmp/mock-image.png',
     childReasonText: '我把单位换算漏掉了',
-    childReasonInputMode: 'text',
-    primaryErrorType: '细节问题',
-    secondaryErrorSummary: '单位换算遗漏',
+    childReasonInputMode: 'voice',
+    childReasonAudioUrl: 'https://example.com/files/reason.m4a',
   });
 
   assert.deepEqual(capturedFormData, {
     openId: 'openid-parent-1',
     bindingId: '21',
     childReasonText: '我把单位换算漏掉了',
-    childReasonInputMode: 'text',
-    primaryErrorType: '细节问题',
-    secondaryErrorSummary: '单位换算遗漏',
+    childReasonInputMode: 'voice',
+    childReasonAudioUrl: 'https://example.com/files/reason.m4a',
   });
   assert.equal(capturedTimeout, 180000);
+});
+
+test('fetchWrongQuestionUploadTask fetches the server task status', async () => {
+  let capturedRequest = null;
+  const wxApi = {
+    request({ url, method, data, success }) {
+      capturedRequest = { url, method, data };
+      success({
+        statusCode: 200,
+        data: {
+          task: {
+            id: 9001,
+            status: 'ready',
+            record_id: 'wechat-record-1',
+          },
+        },
+      });
+    },
+  };
+
+  const payload = await fetchWrongQuestionUploadTask(wxApi, 'https://example.com', {
+    openId: 'openid-parent-1',
+    taskId: 9001,
+  });
+
+  assert.deepEqual(capturedRequest, {
+    url: 'https://example.com/wechat/parent/wrong-question-upload-tasks/9001',
+    method: 'GET',
+    data: {
+      openId: 'openid-parent-1',
+    },
+  });
+  assert.equal(payload.task.status, 'ready');
+  assert.equal(payload.task.record_id, 'wechat-record-1');
 });
 
 test('uploadParentReasonAudio parses the upload response', async () => {

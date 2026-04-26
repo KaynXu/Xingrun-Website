@@ -1920,6 +1920,25 @@ def init_db():
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS wechat_wrong_question_upload_tasks (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            binding_id                INTEGER NOT NULL REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
+            class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER NOT NULL REFERENCES students(id),
+            teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
+            image_url                 TEXT NOT NULL,
+            child_raw_reason_text     TEXT NOT NULL DEFAULT '',
+            child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
+            child_reason_audio_url    TEXT NOT NULL DEFAULT '',
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            record_id                 TEXT NOT NULL DEFAULT '',
+            error_message             TEXT NOT NULL DEFAULT '',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS wrong_question_practice_sheets (
             id                        INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2214,6 +2233,9 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_organization_class_teacher_status
             ON wrong_question_submissions (organization_id, class_id, teacher_user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_wechat_wrong_question_upload_tasks_parent_status
+            ON wechat_wrong_question_upload_tasks (parent_wechat_account_id, status, created_at);
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_practice_sheets_student_created
             ON wrong_question_practice_sheets (student_id, created_at, id);
@@ -5571,6 +5593,130 @@ def list_parent_student_bindings_for_openid(open_id: str) -> list[dict]:
             (normalized_openid,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+WECHAT_WRONG_QUESTION_UPLOAD_TASK_STATUSES = {"pending", "processing", "ready", "failed"}
+
+
+def create_wechat_wrong_question_upload_task(
+    *,
+    binding_id: int,
+    image_url: str,
+    child_raw_reason_text: str,
+    child_reason_input_mode: str = "text",
+    child_reason_audio_url: str = "",
+) -> dict:
+    normalized_image_url = (image_url or "").strip()
+    if not normalized_image_url:
+        raise ValueError("image_url is required")
+    normalized_reason_text = (child_raw_reason_text or "").strip()
+    if not normalized_reason_text and not (child_reason_audio_url or "").strip():
+        raise ValueError("child_raw_reason_text or child_reason_audio_url is required")
+    normalized_reason_input_mode = ((child_reason_input_mode or "text").strip() or "text").lower()
+    if normalized_reason_input_mode not in WECHAT_CHILD_REASON_INPUT_MODES:
+        raise ValueError("child_reason_input_mode must be text or voice")
+
+    with get_conn() as conn:
+        binding_row = conn.execute(
+            """
+            SELECT *
+            FROM parent_student_bindings
+            WHERE id=? AND status='active'
+            """,
+            (binding_id,),
+        ).fetchone()
+        if not binding_row:
+            raise LookupError("binding not found")
+
+        cursor = conn.execute(
+            """
+            INSERT INTO wechat_wrong_question_upload_tasks (
+                organization_id, parent_wechat_account_id, binding_id,
+                class_id, student_id, teacher_user_id, image_url,
+                child_raw_reason_text, child_reason_input_mode, child_reason_audio_url,
+                status, record_id, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+            """,
+            (
+                binding_row["organization_id"],
+                binding_row["parent_wechat_account_id"],
+                binding_id,
+                binding_row["class_id"],
+                binding_row["student_id"],
+                binding_row["teacher_user_id"],
+                normalized_image_url,
+                normalized_reason_text,
+                normalized_reason_input_mode,
+                (child_reason_audio_url or "").strip(),
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wechat_wrong_question_upload_tasks WHERE id=?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def get_wechat_wrong_question_upload_task(task_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM wechat_wrong_question_upload_tasks WHERE id=?",
+            (int(task_id or 0),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_wechat_wrong_question_upload_task_for_openid(task_id: int, open_id: str) -> Optional[dict]:
+    normalized_openid = (open_id or "").strip()
+    if not normalized_openid:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT task.*
+            FROM wechat_wrong_question_upload_tasks task
+            JOIN parent_wechat_accounts pwa ON pwa.id = task.parent_wechat_account_id
+            WHERE task.id=? AND pwa.openid=?
+            """,
+            (int(task_id or 0), normalized_openid),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_wechat_wrong_question_upload_task(
+    task_id: int,
+    *,
+    status: str,
+    record_id: str = "",
+    error_message: str = "",
+) -> Optional[dict]:
+    normalized_status = (status or "").strip()
+    if normalized_status not in WECHAT_WRONG_QUESTION_UPLOAD_TASK_STATUSES:
+        raise ValueError("upload task status is invalid")
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE wechat_wrong_question_upload_tasks
+            SET status=?,
+                record_id=?,
+                error_message=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                normalized_status,
+                (record_id or "").strip(),
+                (error_message or "").strip(),
+                int(task_id or 0),
+            ),
+        )
+        refreshed = conn.execute(
+            "SELECT * FROM wechat_wrong_question_upload_tasks WHERE id=?",
+            (int(task_id or 0),),
+        ).fetchone()
+    return dict(refreshed) if refreshed else None
+
 
 def create_wechat_wrong_question_submission(
     *,

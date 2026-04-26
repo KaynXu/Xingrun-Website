@@ -10,6 +10,7 @@ import {
   bindParentStudentOnWebsite,
   classifyParentReasonOnWebsite,
   getWrongQuestionLibraryForChildOnWebsite,
+  getWrongQuestionUploadTaskOnWebsite,
   listParentBindingsOnWebsite,
   listWrongQuestionsForChildOnWebsite,
   loginParentWechatAccount,
@@ -206,8 +207,7 @@ export function createApp() {
     const bindingId = Number(req.body?.bindingId ?? req.body?.binding_id ?? 0);
     const childReasonText = String(req.body?.childReasonText ?? req.body?.childRawReasonText ?? req.body?.child_raw_reason_text ?? '').trim();
     const childReasonInputMode = String(req.body?.childReasonInputMode ?? req.body?.child_reason_input_mode ?? 'text').trim() || 'text';
-    const primaryErrorType = String(req.body?.primaryErrorType ?? req.body?.primary_error_type ?? '').trim();
-    const secondaryErrorSummary = String(req.body?.secondaryErrorSummary ?? req.body?.secondary_error_summary ?? '').trim();
+    const childReasonAudioUrl = String(req.body?.childReasonAudioUrl ?? req.body?.child_reason_audio_url ?? '').trim();
     const uploadedImageUrl = req.file ? `${getBaseUrl(req.get('host'))}/files/${req.file.filename}` : '';
     const imageUrl = uploadedImageUrl || String(req.body?.imageUrl ?? req.body?.image_url ?? '').trim();
 
@@ -223,16 +223,8 @@ export function createApp() {
       res.status(400).json({ error: 'file required' });
       return;
     }
-    if (!childReasonText) {
-      res.status(400).json({ error: 'childReasonText required' });
-      return;
-    }
-    if (!primaryErrorType) {
-      res.status(400).json({ error: 'primaryErrorType required' });
-      return;
-    }
-    if (!secondaryErrorSummary) {
-      res.status(400).json({ error: 'secondaryErrorSummary required' });
+    if (!childReasonText && !childReasonAudioUrl) {
+      res.status(400).json({ error: 'childReasonText or childReasonAudioUrl required' });
       return;
     }
 
@@ -243,10 +235,31 @@ export function createApp() {
         imageUrl,
         childReasonText,
         childReasonInputMode,
-        primaryErrorType,
-        secondaryErrorSummary,
+        childReasonAudioUrl,
       });
-      res.status(201).json(payload);
+      res.status(202).json(payload);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/wechat/parent/wrong-question-upload-tasks/:taskId', async (req, res) => {
+    const openId = String(req.query?.openId ?? req.query?.open_id ?? '').trim();
+    const taskId = Number(req.params.taskId);
+    if (!openId) {
+      res.status(400).json({ error: 'openId required' });
+      return;
+    }
+    if (!Number.isFinite(taskId) || taskId <= 0) {
+      res.status(400).json({ error: 'taskId required' });
+      return;
+    }
+
+    try {
+      const payload = await getWrongQuestionUploadTaskOnWebsite({ openId, taskId });
+      res.json(payload);
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
