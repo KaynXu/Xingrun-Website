@@ -4,6 +4,7 @@ const test = require('node:test');
 const {
   buildUploadJobs,
   buildImageRotationPlan,
+  buildUploadExportPlan,
   appendLocalImages,
   addManualBoxToImage,
   getSubmitBlockers,
@@ -112,6 +113,19 @@ test('buildImageRotationPlan normalizes repeated clockwise turns', () => {
     translateY: 0,
     rotationRadians: Math.PI / 2,
     backgroundColor: '#ffffff',
+  });
+});
+
+test('buildUploadExportPlan limits oversized crops before upload', () => {
+  const plan = buildUploadExportPlan({
+    cropWidth: 3000,
+    cropHeight: 4200,
+  });
+
+  assert.deepEqual(plan, {
+    outputWidth: 1280,
+    outputHeight: 1792,
+    quality: 0.82,
   });
 });
 

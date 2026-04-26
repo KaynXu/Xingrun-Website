@@ -71,6 +71,24 @@ function buildImageRotationPlan(options) {
   };
 }
 
+function buildUploadExportPlan(options) {
+  const cropWidth = Math.max(1, Math.round(Number(options && options.cropWidth) || 0));
+  const cropHeight = Math.max(1, Math.round(Number(options && options.cropHeight) || 0));
+  const maxLongEdge = 1792;
+  const maxShortEdge = 1280;
+  const scale = Math.min(
+    1,
+    maxLongEdge / Math.max(cropWidth, cropHeight),
+    maxShortEdge / Math.min(cropWidth, cropHeight)
+  );
+
+  return {
+    outputWidth: Math.max(1, Math.round(cropWidth * scale)),
+    outputHeight: Math.max(1, Math.round(cropHeight * scale)),
+    quality: 0.82,
+  };
+}
+
 function appendLocalImages(imageItems, filePaths) {
   const list = Array.isArray(imageItems) ? imageItems.slice() : [];
   const nextPaths = Array.isArray(filePaths) ? filePaths : [];
@@ -160,6 +178,7 @@ function rotateImageBoxesClockwise(imageItem) {
 module.exports = {
   appendLocalImages,
   addManualBoxToImage,
+  buildUploadExportPlan,
   buildImageRotationPlan,
   getSubmitBlockers,
   buildUploadJobs,

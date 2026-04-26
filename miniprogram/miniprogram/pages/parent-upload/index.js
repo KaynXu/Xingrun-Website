@@ -9,6 +9,7 @@ const {
   addManualBoxToImage,
   appendLocalImages,
   buildImageRotationPlan,
+  buildUploadExportPlan,
   buildUploadJobs,
   getSubmitBlockers,
   rotateImageBoxesClockwise,
@@ -731,15 +732,15 @@ Page({
     const cropY = Math.max(0, Math.round(box.y * imageInfo.height));
     const cropWidth = Math.max(1, Math.round(box.width * imageInfo.width));
     const cropHeight = Math.max(1, Math.round(box.height * imageInfo.height));
-    const outputWidth = Math.min(cropWidth, 1800);
-    const outputHeight = Math.max(1, Math.round((cropHeight / cropWidth) * outputWidth));
+    const exportPlan = buildUploadExportPlan({ cropWidth, cropHeight });
 
     return this.exportCanvasImage(imageItem.localPath, {
-      canvasWidth: outputWidth,
-      canvasHeight: outputHeight,
-      drawWidth: outputWidth,
-      drawHeight: outputHeight,
+      canvasWidth: exportPlan.outputWidth,
+      canvasHeight: exportPlan.outputHeight,
+      drawWidth: exportPlan.outputWidth,
+      drawHeight: exportPlan.outputHeight,
       backgroundColor: '#ffffff',
+      quality: exportPlan.quality,
       sourceRect: {
         x: cropX,
         y: cropY,
