@@ -44,23 +44,21 @@ test('buildWrongQuestionLatexPreviewModel supports bracket-style latex delimiter
   assert.equal(preview.errors.length, 0);
 });
 
-test('buildWrongQuestionLatexPreviewModel reports invalid latex but keeps the raw source visible', () => {
+test('buildWrongQuestionLatexPreviewModel degrades invalid latex to readable text without visible errors', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 $\\frac{1}{ $ 的结果。');
 
-  assert.equal(preview.errors.length, 1);
-  assert.equal(preview.errors[0]?.type, 'render');
-  assert.match(preview.html, /xr-latex-error-source/);
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /xr-latex-error-source/);
   assert.match(preview.html, /\\frac\{1\}\{ /);
-  assert.equal(hasWrongQuestionLatexErrors('计算 $\\frac{1}{ $ 的结果。'), true);
+  assert.equal(hasWrongQuestionLatexErrors('计算 $\\frac{1}{ $ 的结果。'), false);
 });
 
-test('buildWrongQuestionLatexPreviewModel flags unmatched delimiters as parse errors', () => {
+test('buildWrongQuestionLatexPreviewModel degrades unmatched delimiters to readable text without visible errors', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 $x^2 + 1 的结果。');
 
-  assert.equal(preview.errors.length, 1);
-  assert.equal(preview.errors[0]?.type, 'parse');
-  assert.match(preview.errors[0]?.message ?? '', /未闭合/);
-  assert.match(preview.html, /\$x\^2 \+ 1 的结果。/);
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /xr-latex-error-source/);
+  assert.match(preview.html, /\$x² \+ 1 的结果。/);
 });
 
 test('parseWrongQuestionLatexSegments repairs latex commands eaten by json escaping', () => {

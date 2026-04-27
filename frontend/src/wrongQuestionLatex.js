@@ -278,12 +278,7 @@ export function parseWrongQuestionLatexSegments(input) {
 
     if (!closed) {
       const rawValue = `${delimiter}${formula}`;
-      errors.push({
-        type: 'parse',
-        source: rawValue,
-        message: `未闭合的${isDisplay ? '块级' : '行内'}公式分隔符`,
-      });
-      segments.push({ type: 'text', value: rawValue, preserveRaw: true });
+      segments.push({ type: 'text', value: rawValue });
       break;
     }
 
@@ -323,14 +318,7 @@ export function buildWrongQuestionLatexPreviewModel(input) {
         ? `<div class="xr-latex-display">${rendered}</div>`
         : rendered;
     } catch (error) {
-      const message = error instanceof Error ? error.message : '公式渲染失败';
-      errors.push({
-        type: 'render',
-        source: segment.raw,
-        formula: segment.value,
-        message,
-      });
-      return `<span class="xr-latex-error-source" title="${escapeHtml(message)}">${escapeHtml(segment.raw)}</span>`;
+      return renderTextSegmentHtml(segment.raw);
     }
   });
 
