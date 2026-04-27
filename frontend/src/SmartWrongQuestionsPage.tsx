@@ -1000,7 +1000,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             />
           </label>
           <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">
-            正文直接写，公式片段用 <code>$...$</code> 或 <code>$$...$$</code>。无法渲染的公式会自动按可读文本显示。
+            正文直接写，公式片段用 <code>$...$</code> 或 <code>$$...$$</code>。保存不会拦截公式错误，但下面会提示渲染失败的位置。
           </p>
           <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
             <div className="flex flex-wrap items-center justify-between gap-3">
