@@ -615,6 +615,57 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_bound_parent_can_see_same_child_wrong_questions_uploaded_by_other_parent(self):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-mother", "nickname_snapshot": "Alice 妈妈"},
+        )
+        mother_bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-mother",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(mother_bind.status_code, 200)
+        mother_binding = mother_bind.get_json()["binding"]
+        record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=mother_binding["id"],
+            image_url="https://files.example.com/mother-upload.png",
+            child_raw_reason_text="我把单位换算漏掉了",
+            recognition_status="recognized",
+        )
+
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-father", "nickname_snapshot": "Alice 爸爸"},
+        )
+        father_bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-father",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(father_bind.status_code, 200)
+
+        response = self.client.get(
+            f"/api/wechat/children/{self.student['id']}/wrong-questions",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-father"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([item["id"] for item in payload["items"]], [record["id"]])
+        self.assertEqual(payload["total"], 1)
+
     def test_parent_child_library_returns_404_for_unbound_student(self):
         unbound_student = lesson_manager.create_student_for_class(self.class_id, "Bob")
         self.client.post(

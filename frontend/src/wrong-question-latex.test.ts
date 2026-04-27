@@ -44,23 +44,21 @@ test('buildWrongQuestionLatexPreviewModel supports bracket-style latex delimiter
   assert.equal(preview.errors.length, 0);
 });
 
-test('buildWrongQuestionLatexPreviewModel reports invalid latex but keeps the raw source visible', () => {
+test('buildWrongQuestionLatexPreviewModel degrades invalid latex to readable text without visible errors', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 $\\frac{1}{ $ 的结果。');
 
-  assert.equal(preview.errors.length, 1);
-  assert.equal(preview.errors[0]?.type, 'render');
-  assert.match(preview.html, /xr-latex-error-source/);
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /xr-latex-error-source/);
   assert.match(preview.html, /\\frac\{1\}\{ /);
-  assert.equal(hasWrongQuestionLatexErrors('计算 $\\frac{1}{ $ 的结果。'), true);
+  assert.equal(hasWrongQuestionLatexErrors('计算 $\\frac{1}{ $ 的结果。'), false);
 });
 
-test('buildWrongQuestionLatexPreviewModel flags unmatched delimiters as parse errors', () => {
+test('buildWrongQuestionLatexPreviewModel degrades unmatched delimiters to readable text without visible errors', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 $x^2 + 1 的结果。');
 
-  assert.equal(preview.errors.length, 1);
-  assert.equal(preview.errors[0]?.type, 'parse');
-  assert.match(preview.errors[0]?.message ?? '', /未闭合/);
-  assert.match(preview.html, /\$x\^2 \+ 1 的结果。/);
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /xr-latex-error-source/);
+  assert.match(preview.html, /\$x² \+ 1 的结果。/);
 });
 
 test('parseWrongQuestionLatexSegments repairs latex commands eaten by json escaping', () => {
@@ -77,6 +75,20 @@ test('parseWrongQuestionLatexSegments repairs latex commands eaten by json escap
     parsed.segments[3]?.type === 'math' ? parsed.segments[3].value : '',
     'f(3) \\neq \\text{lim}_{x \\to 3} f(x)',
   );
+});
+
+test('parseWrongQuestionLatexSegments repairs right delimiters eaten by json escaping', () => {
+  const rootPreview = buildWrongQuestionLatexPreviewModel(
+    '计算 $\\sqrt[4]{4 - \\left(\\frac{3}{5}' + '\right)^2} \\times \\sqrt[3]{\\frac{8}{27}} - \\sqrt[3]{-1}$',
+  );
+  const absoluteValuePreview = buildWrongQuestionLatexPreviewModel(
+    '记 $Q(M) = \\left| \\frac{4d - 3c}{2b - a}' + '\right|$',
+  );
+
+  assert.equal(rootPreview.errors.length, 0);
+  assert.equal(absoluteValuePreview.errors.length, 0);
+  assert.match(rootPreview.html, /katex/);
+  assert.match(absoluteValuePreview.html, /katex/);
 });
 
 test('buildWrongQuestionLatexPreviewModel normalizes bare latex fragments inside prose', () => {

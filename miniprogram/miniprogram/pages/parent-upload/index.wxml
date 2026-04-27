@@ -116,9 +116,9 @@
     <button class="primary-btn submit-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题</button>
   </view>
 
-  <view wx:if="{{successTaskIds.length}}" class="state-card success-card">
-    <text class="state-title">已提交</text>
-    <text class="state-desc">本次共提交 {{successTaskIds.length}} 条任务，服务器正在识别。</text>
+  <view wx:if="{{successTaskIds.length}}" class="state-card {{uploadTaskSummary.state === 'failed' ? 'error-card' : 'success-card'}}">
+    <text class="state-title">{{uploadTaskSummary.title || '已提交'}}</text>
+    <text class="state-desc">{{uploadTaskSummary.description || '服务器正在识别。'}}</text>
     <button class="ghost-btn" bindtap="backHome">返回家长主页</button>
   </view>
 

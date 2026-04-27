@@ -169,7 +169,7 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
             class_id=self.class_id,
             student_id=other_student["id"],
         )
-        lesson_manager.create_wechat_wrong_question_submission(
+        other_student_record = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=other_student_binding["id"],
             image_url="https://files.example.com/other-student.png",
         )
@@ -180,7 +180,7 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
             class_id=self.class_id,
             student_id=self.student["id"],
         )
-        lesson_manager.create_wechat_wrong_question_submission(
+        other_parent_record = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=other_account_binding["id"],
             image_url="https://files.example.com/other-parent.png",
         )
@@ -190,9 +190,10 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
             student_id=self.student["id"],
         )
 
-        self.assertEqual([item["id"] for item in items], [target["id"]])
-        self.assertEqual(items[0]["parent_wechat_account_id"], primary_account["id"])
-        self.assertEqual(items[0]["student_id"], self.student["id"])
+        item_ids = {item["id"] for item in items}
+        self.assertEqual(item_ids, {target["id"], other_parent_record["id"]})
+        self.assertNotIn(other_student_record["id"], item_ids)
+        self.assertEqual({item["student_id"] for item in items}, {self.student["id"]})
 
     def test_remove_student_from_class_hides_active_parent_binding_from_mini_program(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")

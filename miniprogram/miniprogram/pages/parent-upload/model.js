@@ -138,6 +138,46 @@ function buildUploadJobs(imageItems) {
   }, []);
 }
 
+function buildUploadTaskSummary(tasks) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  const readyCount = list.filter((task) => String(task.status || '') === 'ready').length;
+  const failedTasks = list.filter((task) => String(task.status || '') === 'failed');
+  const failedCount = failedTasks.length;
+  const pendingCount = Math.max(0, list.length - readyCount - failedCount);
+
+  if (failedCount) {
+    const message = String(failedTasks[0].error_message || failedTasks[0].errorMessage || '请重新拍清楚一点').trim();
+    return {
+      state: 'failed',
+      title: '识别失败',
+      description: `${failedCount} 条识别失败：${message}`,
+      readyCount,
+      failedCount,
+      pendingCount,
+    };
+  }
+
+  if (list.length && readyCount === list.length) {
+    return {
+      state: 'ready',
+      title: '识别完成',
+      description: `本次 ${readyCount} 条错题已加入错题本。`,
+      readyCount,
+      failedCount,
+      pendingCount,
+    };
+  }
+
+  return {
+    state: 'pending',
+    title: '正在识别',
+    description: `已完成 ${readyCount} 条，还有 ${pendingCount} 条正在服务器识别。`,
+    readyCount,
+    failedCount,
+    pendingCount,
+  };
+}
+
 function rotateImageBoxesClockwise(imageItem) {
   if (!imageItem) {
     return imageItem;
@@ -165,6 +205,7 @@ module.exports = {
   addManualBoxToImage,
   buildUploadExportPlan,
   buildImageRotationPlan,
+  buildUploadTaskSummary,
   getSubmitBlockers,
   buildUploadJobs,
   rotateImageBoxesClockwise,

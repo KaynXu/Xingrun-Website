@@ -9,6 +9,7 @@
 - 家长链路当前只保留 `绑定孩子 -> 家长首页 -> 上传错题 -> 查看错题本/PDF`。
 - 家长上传最终提交已改成网站端 RQ + Redis 异步任务：小程序只上传题图和可选录音 URL，bridge 转发到网站 `/api/wechat/wrong-questions` 后拿到 `202 + task`；录音转写、错因归类、题图识别、错题入库和 PDF 重建都由网站 RQ worker 后台完成。
 - 家长上传最终提交不再要求 `childReasonText` 或录音 URL 必填；只要有题图就能入队，错因缺失时服务器会用“待补充｜孩子暂未填写错因”占位，避免家长因为没填文字或录音上传失败被挡在提交前。
+- 家长上传页提交后会轮询后台任务状态：`ready` 才提示“识别完成”，`failed` 会展示服务器返回的失败原因，不再把“任务已提交”误提示成最终上传成功。
 - 家长首页绑定态已恢复 `绑定更多孩子` 入口，继续复用 `goBindMore()` 返回 `pages/parent-bind/index`。
 - 家长错题本页已恢复学生级 `查看 PDF`，bridge 仍保留 `GET /wechat/parent/children/:studentId/wrong-question-library`。
 - 家长错题本页的题目卡片现在已补上轻量 LaTeX 可读化：`pages/parent-wrongbook/latex-preview.js` 会把 `$...$`、`\frac`、`\sqrt`、`\mathbb{R}`、上下标等源码转成普通文本预览，避免小程序列表里直接显示公式源码；顶部 `查看 PDF` 仍是服务器上的正式版排版。
