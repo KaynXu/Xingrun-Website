@@ -1842,6 +1842,30 @@ def init_db():
             UNIQUE(class_id, date, time_block)
         );
 
+        CREATE TABLE IF NOT EXISTS course_calendar_custom_items (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            title           TEXT NOT NULL,
+            time_range      TEXT NOT NULL,
+            note            TEXT NOT NULL DEFAULT '',
+            visibility      TEXT NOT NULL DEFAULT 'private',
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS course_calendar_custom_schedules (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            custom_item_id  INTEGER NOT NULL REFERENCES course_calendar_custom_items(id) ON DELETE CASCADE,
+            date            TEXT NOT NULL,
+            time_block      TEXT NOT NULL,
+            start_offset_minutes INTEGER NOT NULL DEFAULT 0,
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(custom_item_id, date, time_block)
+        );
+
+
         CREATE TABLE IF NOT EXISTS students (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2209,6 +2233,9 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "course_calendar_custom_items", "visibility", "TEXT NOT NULL DEFAULT 'private'")
+        _ensure_column(conn, "course_calendar_custom_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
         _migrate_course_calendar_time_blocks(conn)
         _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn)
         conn.executescript(
@@ -3384,6 +3411,229 @@ def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block:
 def delete_course_calendar_schedule(schedule_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM course_calendar_schedules WHERE id=?", (schedule_id,))
+        return cur.rowcount > 0
+
+
+def _normalize_course_calendar_custom_item_title(value: object) -> str:
+    title = str(value or "").strip()
+    if not title:
+        raise ValueError("title is required")
+    if len(title) > 80:
+        raise ValueError("title must be at most 80 characters")
+    return title
+
+
+def _normalize_course_calendar_custom_item_time_range(value: object) -> str:
+    time_range = str(value or "").strip()
+    if not time_range:
+        raise ValueError("time_range is required")
+    if len(time_range) > 40:
+        raise ValueError("time_range must be at most 40 characters")
+    return time_range
+
+
+def _normalize_course_calendar_custom_item_note(value: object) -> str:
+    note = str(value or "").strip()
+    if len(note) > 500:
+        raise ValueError("note must be at most 500 characters")
+    return note
+
+
+def _normalize_course_calendar_custom_item_visibility(value: object) -> str:
+    visibility = str(value or "private").strip()
+    if visibility not in {"private", "organization"}:
+        raise ValueError("visibility is invalid")
+    return visibility
+
+
+def _serialize_course_calendar_custom_item_row(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    return {
+        "id": item["id"],
+        "organization_id": item["organization_id"],
+        "title": item["title"],
+        "time_range": item["time_range"],
+        "note": item.get("note", ""),
+        "visibility": item.get("visibility", "private"),
+        "created_by": item.get("created_by"),
+        "created_at": item.get("created_at"),
+    }
+
+
+def _can_access_course_calendar_custom_item(actor_user: dict, item: dict) -> bool:
+    if actor_user.get("role") == SUPER_OWNER_ROLE:
+        if item.get("visibility") == "organization":
+            return item.get("organization_id") == actor_user.get("organization_id")
+        return item.get("created_by") == actor_user.get("id")
+    if item.get("organization_id") != actor_user.get("organization_id"):
+        return False
+    if actor_user.get("role") in {OWNER_ROLE, ADMIN_ROLE}:
+        return item.get("created_by") == actor_user.get("id")
+    return item.get("created_by") == actor_user.get("id") or item.get("visibility") == "organization"
+
+
+def get_course_calendar_custom_item(item_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM course_calendar_custom_items WHERE id=?", (item_id,)).fetchone()
+        return _serialize_course_calendar_custom_item_row(row) if row else None
+
+
+def list_course_calendar_custom_items_for_actor(actor_user: dict) -> list[dict]:
+    query_sql = "SELECT * FROM course_calendar_custom_items"
+    params: list[object] = []
+    if actor_user.get("role") == MEMBER_ROLE:
+        query_sql += " WHERE organization_id=? AND (created_by=? OR visibility='organization')"
+        params.extend([actor_user["organization_id"], actor_user["id"]])
+    elif actor_user.get("role") == SUPER_OWNER_ROLE:
+        query_sql += " WHERE created_by=? OR (organization_id=? AND visibility='organization')"
+        params.extend([actor_user["id"], actor_user["organization_id"]])
+    else:
+        query_sql += " WHERE organization_id=? AND created_by=?"
+        params.extend([actor_user["organization_id"], actor_user["id"]])
+    query_sql += " ORDER BY created_at DESC, id DESC"
+
+    with get_conn() as conn:
+        rows = conn.execute(query_sql, params).fetchall()
+        return [_serialize_course_calendar_custom_item_row(row) for row in rows]
+
+
+def create_course_calendar_custom_item(*, actor_user: dict, title: object, time_range: object, note: object = "", visibility: object = "private"):
+    normalized_title = _normalize_course_calendar_custom_item_title(title)
+    normalized_time_range = _normalize_course_calendar_custom_item_time_range(time_range)
+    normalized_note = _normalize_course_calendar_custom_item_note(note)
+    normalized_visibility = _normalize_course_calendar_custom_item_visibility(visibility)
+    if actor_user.get("role") == MEMBER_ROLE and normalized_visibility != "private":
+        raise PermissionError("members can only create private custom items")
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO course_calendar_custom_items
+                (organization_id, title, time_range, note, visibility, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actor_user["organization_id"],
+                normalized_title,
+                normalized_time_range,
+                normalized_note,
+                normalized_visibility,
+                actor_user["id"],
+            ),
+        )
+        row = conn.execute("SELECT * FROM course_calendar_custom_items WHERE id=?", (cur.lastrowid,)).fetchone()
+        return _serialize_course_calendar_custom_item_row(row)
+
+
+def _serialize_course_calendar_custom_schedule_row(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    return {
+        "id": item["id"],
+        "organization_id": item["organization_id"],
+        "custom_item_id": item["custom_item_id"],
+        "date": item["date"],
+        "time_block": item["time_block"],
+        "start_offset_minutes": item["start_offset_minutes"],
+        "created_by": item.get("created_by"),
+        "created_at": item.get("created_at"),
+        "title": item.get("title", ""),
+        "time_range": item.get("time_range", ""),
+        "note": item.get("note", ""),
+        "visibility": item.get("visibility", "private"),
+    }
+
+
+def _course_calendar_custom_schedule_select_sql() -> str:
+    return """
+        SELECT s.*,
+               i.title,
+               i.time_range,
+               i.note,
+               i.visibility
+        FROM course_calendar_custom_schedules s
+        JOIN course_calendar_custom_items i ON i.id = s.custom_item_id
+    """
+
+
+def get_course_calendar_custom_schedule(schedule_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            f"{_course_calendar_custom_schedule_select_sql()} WHERE s.id=?",
+            (schedule_id,),
+        ).fetchone()
+        return _serialize_course_calendar_custom_schedule_row(row) if row else None
+
+
+def list_course_calendar_custom_schedules_for_actor(actor_user: dict, start_date: str = "", end_date: str = "") -> list[dict]:
+    normalized_start = _normalize_course_calendar_date(start_date) if start_date else ""
+    normalized_end = _normalize_course_calendar_date(end_date) if end_date else ""
+    if normalized_start and normalized_end and normalized_start > normalized_end:
+        raise ValueError("start_date must be before or equal to end_date")
+
+    query_sql = _course_calendar_custom_schedule_select_sql()
+    where_clauses = []
+    params: list[object] = []
+    if actor_user.get("role") == MEMBER_ROLE:
+        where_clauses.append("s.organization_id=? AND (i.created_by=? OR i.visibility='organization')")
+        params.extend([actor_user["organization_id"], actor_user["id"]])
+    elif actor_user.get("role") == SUPER_OWNER_ROLE:
+        where_clauses.append("i.created_by=? OR (s.organization_id=? AND i.visibility='organization')")
+        params.extend([actor_user["id"], actor_user["organization_id"]])
+    else:
+        where_clauses.append("s.organization_id=? AND i.created_by=?")
+        params.extend([actor_user["organization_id"], actor_user["id"]])
+
+    if normalized_start:
+        where_clauses.append("s.date>=?")
+        params.append(normalized_start)
+    if normalized_end:
+        where_clauses.append("s.date<=?")
+        params.append(normalized_end)
+
+    query_sql += " WHERE " + " AND ".join(f"({clause})" for clause in where_clauses)
+    query_sql += " ORDER BY s.date ASC, s.time_block ASC, s.id ASC"
+
+    with get_conn() as conn:
+        rows = conn.execute(query_sql, params).fetchall()
+        return [_serialize_course_calendar_custom_schedule_row(row) for row in rows]
+
+
+def create_course_calendar_custom_schedule(*, actor_user: dict, custom_item_id: int, date_str: str, time_block: str, start_offset_minutes: object = None):
+    normalized_date = _normalize_course_calendar_date(date_str)
+    normalized_time_block = _normalize_course_calendar_time_block(time_block)
+    normalized_start_offset_minutes = _normalize_course_calendar_start_offset_minutes(start_offset_minutes)
+    item = get_course_calendar_custom_item(custom_item_id)
+    if not item:
+        raise LookupError("custom item not found")
+    if not _can_access_course_calendar_custom_item(actor_user, item):
+        raise PermissionError("forbidden")
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO course_calendar_custom_schedules
+                (organization_id, custom_item_id, date, time_block, start_offset_minutes, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item["organization_id"],
+                custom_item_id,
+                normalized_date,
+                normalized_time_block,
+                normalized_start_offset_minutes,
+                actor_user["id"],
+            ),
+        )
+        row = conn.execute(
+            f"{_course_calendar_custom_schedule_select_sql()} WHERE s.custom_item_id=? AND s.date=? AND s.time_block=?",
+            (custom_item_id, normalized_date, normalized_time_block),
+        ).fetchone()
+        return _serialize_course_calendar_custom_schedule_row(row)
+
+
+def delete_course_calendar_custom_schedule(schedule_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM course_calendar_custom_schedules WHERE id=?", (schedule_id,))
         return cur.rowcount > 0
 
 

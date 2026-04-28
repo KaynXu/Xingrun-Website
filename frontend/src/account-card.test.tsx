@@ -104,16 +104,17 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
   assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
   assert.match(source, /:\s*'h-screen w-72 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(source, /\?\s*'h-screen w-24 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
   assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(source, /<main className="flex min-w-0 flex-1 flex-col lg:pl-72">/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
-  assert.match(source, /<div className="mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10">/);
+  assert.match(source, /<div className=\{cn\('mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10', compact && !mobile && 'px-3'\)\}>/);
 });
 
 test('sidebar account sheet renders above workspace content without relying on a fullscreen blur layer', () => {
@@ -128,7 +129,7 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className="flex min-w-0 flex-1 flex-col lg:pl-72">/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
   assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
@@ -509,7 +510,7 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /bg-cyan-200\/35 blur-\[130px\][^\n]*dark:bg-cyan-500\/10/);
   assert.match(appSource, /bg-blue-200\/30 blur-\[150px\][^\n]*dark:bg-blue-500\/10/);
   assert.match(appSource, /bg-white\/75 blur-\[120px\][^\n]*dark:bg-slate-900\/40/);
-  assert.match(calendarSource, /<select className="[^"]*\[color-scheme:light\][^"]*dark:\[color-scheme:dark\][^"]*"/);
+  assert.match(calendarSource, /<select[\s\S]*className="[^"]*\[color-scheme:light\][^"]*dark:\[color-scheme:dark\][^"]*"/);
   assert.match(calendarSource, /dark:bg-\[radial-gradient\(circle_at_top_left,rgba\(34,211,238,0\.12\),transparent_24%\),radial-gradient\(circle_at_85%_15%,rgba\(59,130,246,0\.14\),transparent_22%\),linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\]/);
   assert.match(calendarSource, /dark:border-white\/10 dark:bg-slate-900\/78/);
   assert.match(calendarSource, /dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.82\)_100%\)\]/);

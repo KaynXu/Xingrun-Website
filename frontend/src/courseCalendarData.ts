@@ -41,6 +41,30 @@ export interface CourseCalendarScheduleRecord {
   teacher_email?: string;
 }
 
+export interface CourseCalendarCustomItemRecord {
+  id: number;
+  title: string;
+  time_range: string;
+  note: string;
+  visibility: 'private' | 'organization';
+  created_by?: number | null;
+  created_at?: string;
+}
+
+export interface CourseCalendarCustomScheduleRecord {
+  id: number;
+  custom_item_id: number;
+  date: string;
+  time_block: CourseCalendarTimeBlock | string;
+  start_offset_minutes?: number;
+  title: string;
+  time_range: string;
+  note: string;
+  visibility?: 'private' | 'organization';
+  created_by?: number | null;
+  created_at?: string;
+}
+
 export interface JoinedCourseCalendarSchedule {
   id: number;
   classId: number;
@@ -174,6 +198,21 @@ function sortByBlockAndDate(a: JoinedCourseCalendarSchedule, b: JoinedCourseCale
 export function getWeekDates(anchorDate: string): string[] {
   const weekStart = startOfIsoWeek(parseIsoDate(anchorDate));
   return Array.from({ length: 7 }, (_, index) => formatIsoDate(addDays(weekStart, index)));
+}
+
+export function getCurrentWeekTuesday(dateString: string): string {
+  return formatIsoDate(addDays(startOfIsoWeek(parseIsoDate(dateString)), 1));
+}
+
+export function getCalendarPageDates(anchorDate: string, visibleDayCount: number): string[] {
+  const pageStart = parseIsoDate(anchorDate);
+  const normalizedCount = Math.max(1, Math.min(14, Math.trunc(visibleDayCount) || 6));
+  return Array.from({ length: normalizedCount }, (_, index) => formatIsoDate(addDays(pageStart, index)));
+}
+
+export function getCalendarPageRangeLabel(anchorDate: string, visibleDayCount: number): string {
+  const dates = getCalendarPageDates(anchorDate, visibleDayCount);
+  return `${formatWeekLabelDate(parseIsoDate(dates[0]))} - ${formatWeekLabelDate(parseIsoDate(dates[dates.length - 1]))}`;
 }
 
 export function getWeekRangeLabel(anchorDate: string): string {

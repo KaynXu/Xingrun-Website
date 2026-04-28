@@ -7,6 +7,8 @@
 后端地址：http://127.0.0.1:5001
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
@@ -70,6 +72,8 @@ from lesson_manager import (
     create_student_for_class,
     create_auth_session,
     create_consultation,
+    create_course_calendar_custom_item,
+    create_course_calendar_custom_schedule,
     create_course_calendar_schedule,
     create_registration_request,
     claim_classes_for_user,
@@ -78,6 +82,7 @@ from lesson_manager import (
     delete_wrong_question_practice_sheet,
     delete_user_for_actor,
     delete_consultation,
+    delete_course_calendar_custom_schedule,
     delete_class as db_delete_class,
     delete_lesson as db_delete_lesson,
     delete_organization,
@@ -87,6 +92,7 @@ from lesson_manager import (
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
+    get_course_calendar_custom_schedule,
     get_course_calendar_schedule,
     get_current_user,
     get_parent_student_binding,
@@ -108,6 +114,8 @@ from lesson_manager import (
     list_recent_confirmed_class_feedback_summaries,
     list_consultation_teachers,
     list_consultations_for_actor,
+    list_course_calendar_custom_items_for_actor,
+    list_course_calendar_custom_schedules_for_actor,
     list_course_calendar_schedules_for_actor,
     list_lessons,
     list_lessons_for_actor,
@@ -2866,6 +2874,96 @@ def api_course_calendar_schedule_delete(schedule_id):
     if class_error:
         return class_error
     removed = delete_course_calendar_schedule(schedule_id)
+    return jsonify({"ok": True, "removed": removed})
+
+
+@app.route("/api/course-calendar/custom-items", methods=["GET"])
+def api_course_calendar_custom_items_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    return jsonify({"items": list_course_calendar_custom_items_for_actor(user)})
+
+
+@app.route("/api/course-calendar/custom-items", methods=["POST"])
+def api_course_calendar_custom_item_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    try:
+        item = create_course_calendar_custom_item(
+            actor_user=user,
+            title=data.get("title"),
+            time_range=data.get("time_range"),
+            note=data.get("note") or "",
+            visibility=data.get("visibility") or "private",
+        )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"item": item}), 201
+
+
+@app.route("/api/course-calendar/custom-schedules", methods=["GET"])
+def api_course_calendar_custom_schedules_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        items = list_course_calendar_custom_schedules_for_actor(
+            user,
+            start_date=(request.args.get("start_date") or "").strip(),
+            end_date=(request.args.get("end_date") or "").strip(),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"items": items})
+
+
+@app.route("/api/course-calendar/custom-schedules", methods=["POST"])
+def api_course_calendar_custom_schedule_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    custom_item_id = data.get("custom_item_id")
+    if isinstance(custom_item_id, bool) or not isinstance(custom_item_id, int):
+        return jsonify({"error": "custom_item_id must be an integer"}), 400
+    try:
+        item = create_course_calendar_custom_schedule(
+            actor_user=user,
+            custom_item_id=custom_item_id,
+            date_str=(data.get("date") or "").strip(),
+            time_block=(data.get("time_block") or "").strip(),
+            start_offset_minutes=data.get("start_offset_minutes"),
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"item": item}), 201
+
+
+@app.route("/api/course-calendar/custom-schedules/<int:schedule_id>", methods=["DELETE"])
+def api_course_calendar_custom_schedule_delete(schedule_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    item = get_course_calendar_custom_schedule(schedule_id)
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    visible = list_course_calendar_custom_schedules_for_actor(user, start_date=item["date"], end_date=item["date"])
+    if not any(schedule["id"] == schedule_id for schedule in visible):
+        return jsonify({"error": "forbidden"}), 403
+    removed = delete_course_calendar_custom_schedule(schedule_id)
     return jsonify({"ok": True, "removed": removed})
 
 

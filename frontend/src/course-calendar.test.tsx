@@ -10,7 +10,9 @@ import { CourseCalendarPage } from './CourseCalendarPage';
 test('course calendar page renders the approved weekly dashboard shell', () => {
   const markup = renderToStaticMarkup(
     <CourseCalendarPage
-      anchorDate="2026-04-01"
+      anchorDate="2026-03-31"
+      today="2026-04-02"
+      currentUserRole="owner"
       classes={[
         {
           id: 1,
@@ -26,15 +28,34 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
         {
           id: 101,
           class_id: 1,
-          date: '2026-03-30',
+          date: '2026-03-31',
           time_block: '08:00-10:00',
           start_offset_minutes: 15,
         },
       ]}
-      onPreviousWeek={() => undefined}
-      onNextWeek={() => undefined}
+      customItems={[
+        { id: 201, title: '教研会', time_range: '19:00-20:00', note: '带资料', visibility: 'private' },
+      ]}
+      customSchedules={[
+        {
+          id: 301,
+          custom_item_id: 201,
+          date: '2026-04-02',
+          time_block: '20:00-22:00',
+          title: '教研会',
+          time_range: '19:00-20:00',
+          note: '带资料',
+        },
+      ]}
+      visibleDayCount={6}
+      onVisibleDayCountChange={() => undefined}
+      onPreviousPage={() => undefined}
+      onNextPage={() => undefined}
       onScheduleClass={() => undefined}
+      onScheduleCustomItem={() => undefined}
+      onCreateCustomItem={() => undefined}
       onDeleteSchedule={() => undefined}
+      onDeleteCustomSchedule={() => undefined}
     />,
   );
 
@@ -47,11 +68,12 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /20:00-22:00/);
   assert.match(markup, /08:15 开始/);
   assert.match(markup, /08:15-10:15/);
-  assert.match(markup, /拖动班级到时间板块/);
+  assert.match(markup, /拖动课程到此/);
   assert.match(markup, /draggable="true"/);
-  assert.match(markup, /本周老师负载/);
+  assert.match(markup, /课程卡片/);
+  assert.match(markup, /自定义事项/);
+  assert.match(markup, /教研会/);
   assert.doesNotMatch(markup, /待补录课程/);
-  assert.match(markup, /班级状态/);
   assert.doesNotMatch(markup, /新增班级/);
   assert.doesNotMatch(markup, /函数入门/);
 });
@@ -59,13 +81,22 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
 test('course calendar page avoids a nested min-h-screen container inside the workspace shell', () => {
   const markup = renderToStaticMarkup(
     <CourseCalendarPage
-      anchorDate="2026-04-01"
+      anchorDate="2026-03-31"
+      today="2026-04-02"
+      currentUserRole="member"
       classes={[]}
       schedules={[]}
-      onPreviousWeek={() => undefined}
-      onNextWeek={() => undefined}
+      customItems={[]}
+      customSchedules={[]}
+      visibleDayCount={6}
+      onVisibleDayCountChange={() => undefined}
+      onPreviousPage={() => undefined}
+      onNextPage={() => undefined}
       onScheduleClass={() => undefined}
+      onScheduleCustomItem={() => undefined}
+      onCreateCustomItem={() => undefined}
       onDeleteSchedule={() => undefined}
+      onDeleteCustomSchedule={() => undefined}
     />,
   );
 
@@ -79,14 +110,19 @@ test('app loads course calendar schedules separately from review plans', () => {
   assert.ok(calendarEffect);
   assert.match(calendarEffect[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(calendarEffect[0], /apiFetch<\{ items: CourseCalendarScheduleRecord\[] \}>\('\/api\/course-calendar\/schedules/);
+  assert.match(calendarEffect[0], /apiFetch<\{ items: CourseCalendarCustomItemRecord\[] \}>\('\/api\/course-calendar\/custom-items/);
+  assert.match(calendarEffect[0], /apiFetch<\{ items: CourseCalendarCustomScheduleRecord\[] \}>\('\/api\/course-calendar\/custom-schedules/);
   assert.doesNotMatch(calendarEffect[0], /\/api\/review-plans/);
   assert.match(appSource, /apiFetch<\{ item: CourseCalendarScheduleRecord \}>\('\/api\/course-calendar\/schedules'/);
+  assert.match(appSource, /apiFetch<\{ item: CourseCalendarCustomItemRecord \}>\('\/api\/course-calendar\/custom-items'/);
+  assert.match(appSource, /apiFetch<\{ item: CourseCalendarCustomScheduleRecord \}>\('\/api\/course-calendar\/custom-schedules'/);
 });
 
 test('course calendar source opens time adjustment after dropping a class', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
 
-  assert.match(source, /setPendingDrop\(\{ classId, date, timeBlock \}\)/);
+  assert.match(source, /setPendingDrop\(\{ itemType: 'class', itemId: classId, date, timeBlock \}\)/);
+  assert.match(source, /setPendingDrop\(\{ itemType: 'custom', itemId: customItemId, date, timeBlock \}\)/);
   assert.match(source, /提前 15 分钟/);
   assert.match(source, /提前半小时/);
   assert.match(source, /晚 15 分钟/);

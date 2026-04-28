@@ -6,6 +6,9 @@ import {
   assignScheduleCardsToTimeBlocks,
   buildCourseScheduleTimeRange,
   buildClassStatusRailData,
+  getCalendarPageDates,
+  getCalendarPageRangeLabel,
+  getCurrentWeekTuesday,
   getWeekDates,
   getWeekRangeLabel,
   joinClassesAndSchedules,
@@ -54,6 +57,16 @@ test('course calendar data helpers build an independent six-block schedule from 
 
   assert.equal(weekDates.length, 7);
   assert.equal(weekDates[0], '2026-03-30');
+  assert.deepEqual(getCalendarPageDates('2026-03-31', 6), [
+    '2026-03-31',
+    '2026-04-01',
+    '2026-04-02',
+    '2026-04-03',
+    '2026-04-04',
+    '2026-04-05',
+  ]);
+  assert.equal(getCurrentWeekTuesday('2026-04-03'), '2026-03-31');
+  assert.equal(getCalendarPageRangeLabel('2026-03-31', 6), '2026.03.31 - 2026.04.05');
   assert.equal(getWeekRangeLabel('2026-04-01'), '2026.03.30 - 2026.04.05');
   assert.equal(COURSE_CALENDAR_TIME_BLOCKS.length, 6);
   assert.deepEqual(COURSE_CALENDAR_TIME_BLOCKS, [
