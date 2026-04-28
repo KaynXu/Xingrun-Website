@@ -2476,6 +2476,29 @@ def api_wrong_question_archive_save(record_id):
     return jsonify({"ok": True, "record": saved_record})
 
 
+@app.route("/api/wrong-question-student-libraries/<int:student_id>/refresh", methods=["POST"])
+def api_wrong_question_student_library_refresh(student_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+
+    records = list_student_wrong_question_library_records(student_id)
+    if not records:
+        return jsonify({"error": "student library pdf not found"}), 404
+    if not any(_can_access_wrong_question_record(user, record) for record in records):
+        return jsonify({"error": "not found"}), 404
+
+    pdf_path = _refresh_student_wrong_question_library_cache(student_id)
+    return jsonify(
+        {
+            "ok": True,
+            "student_id": student_id,
+            "student_library_pdf_path": pdf_path,
+            "pdf_url": f"/api/wechat/student-libraries/{student_id}",
+        }
+    )
+
+
 @app.route("/api/wrong-question-practice-sheets", methods=["POST"])
 def api_wrong_question_practice_sheet_create():
     user, error = _require_auth()

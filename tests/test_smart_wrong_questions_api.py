@@ -729,6 +729,49 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(saved["question_text_source"], "teacher")
         self.assertEqual(saved["student_library_pdf_path"], "/tmp/student-1.pdf")
 
+    @patch("app._refresh_student_wrong_question_library_cache", return_value="/tmp/student-1.pdf")
+    def test_staff_can_refresh_student_wrong_question_library_pdf(self, mock_refresh):
+        owner_payload = self.login_owner()
+        bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])
+        self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/local-record.png",
+            question_text="老师修正后的题目文本",
+            is_geometry=False,
+        )
+
+        response = self.client.post(
+            f"/api/wrong-question-student-libraries/{bundle['student']['id']}/refresh",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["student_id"], bundle["student"]["id"])
+        self.assertEqual(payload["student_library_pdf_path"], "/tmp/student-1.pdf")
+        self.assertEqual(payload["pdf_url"], f"/api/wechat/student-libraries/{bundle['student']['id']}")
+        mock_refresh.assert_called_once_with(bundle["student"]["id"])
+
+    @patch("app._refresh_student_wrong_question_library_cache")
+    def test_member_cannot_refresh_unowned_student_wrong_question_library_pdf(self, mock_refresh):
+        owner_payload = self.login_owner()
+        bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])
+        self.create_recognized_local_wechat_record(
+            bundle["binding"]["id"],
+            image_url="https://files.example.com/local-record.png",
+            question_text="老师修正后的题目文本",
+            is_geometry=False,
+        )
+        member_payload = self.approve_user(owner_payload["token"], "member-pdf-refresh", "成员", "member-pass-1")
+
+        response = self.client.post(
+            f"/api/wrong-question-student-libraries/{bundle['student']['id']}/refresh",
+            headers=self.auth_headers(member_payload["token"]),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        mock_refresh.assert_not_called()
+
     @patch("app.has_api_key", return_value=True)
     @patch("app._start_wrong_question_practice_generation_thread")
     def test_staff_can_create_pending_wrong_question_practice_sheet(self, mock_start_thread, _mock_has_api_key):

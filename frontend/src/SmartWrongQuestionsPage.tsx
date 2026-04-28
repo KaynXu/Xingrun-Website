@@ -202,6 +202,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [detailError, setDetailError] = useState('');
   const [savingReview, setSavingReview] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [pdfRefreshNotice, setPdfRefreshNotice] = useState('');
+  const [refreshingLibraryPdf, setRefreshingLibraryPdf] = useState(false);
   const [reviewDraftByRecordId, setReviewDraftByRecordId] = useState<Record<string, WrongQuestionReviewDraft>>({});
   const [reviewDraftDirtyByRecordId, setReviewDraftDirtyByRecordId] = useState<Record<string, boolean>>({});
   const [serverSummary, setServerSummary] = useState<WrongQuestionSummary | null>(null);
@@ -791,6 +793,38 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleRefreshStudentLibraryPdf = async () => {
+    if (!selectedRecord || selectedRecord.source !== 'wechat_mp' || !selectedRecord.studentId) {
+      return;
+    }
+
+    setRefreshingLibraryPdf(true);
+    setSaveError('');
+    setPdfRefreshNotice('');
+
+    try {
+      const response = await apiFetch<{
+        pdf_url?: string;
+        student_library_pdf_path?: string;
+      }>(`/api/wrong-question-student-libraries/${encodeURIComponent(String(selectedRecord.studentId))}/refresh`, {
+        method: 'POST',
+      });
+      const nextPdfPath = String(response.pdf_url || response.student_library_pdf_path || selectedRecord.studentLibraryPdfPath || '').trim();
+      if (nextPdfPath) {
+        setRecords((current) => current.map((item) => (
+          item.studentId === selectedRecord.studentId
+            ? { ...item, studentLibraryPdfPath: nextPdfPath }
+            : item
+        )));
+      }
+      setPdfRefreshNotice('PDF 已重新生成。');
+    } catch (refreshError) {
+      setSaveError(refreshError instanceof Error ? refreshError.message : '重新生成 PDF 失败');
+    } finally {
+      setRefreshingLibraryPdf(false);
+    }
+  };
+
   const handlePracticeRecordCheckedChange = (recordId: string, checked: boolean) => {
     setPracticeSelectionTouched(true);
     setSelectedPracticeRecordIds((current) => {
@@ -903,6 +937,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             >
               下载 PDF
             </a>
+            <button
+              type="button"
+              onClick={() => void handleRefreshStudentLibraryPdf()}
+              disabled={refreshingLibraryPdf}
+              className={workspaceSecondaryButtonClass}
+            >
+              {refreshingLibraryPdf ? '正在生成 PDF' : '重新生成 PDF'}
+            </button>
           </div>
         ) : null}
       </div>
@@ -931,6 +973,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setSelectedId(null);
     setDetailError('');
     setSaveError('');
+    setPdfRefreshNotice('');
     setNotebookModalView('questions');
     setSelectedPracticeRecordIds([]);
     setPracticeSelectionTouched(false);
@@ -1756,6 +1799,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
                         <AlertCircle size={16} />
                         {saveError}
+                      </div>
+                    )}
+
+                    {pdfRefreshNotice && (
+                      <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                        {pdfRefreshNotice}
                       </div>
                     )}
 
