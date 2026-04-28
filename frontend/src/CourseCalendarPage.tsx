@@ -7,6 +7,8 @@ import {
   Clock,
   Filter,
   GripVertical,
+  Maximize2,
+  Minimize2,
   Plus,
   Sparkles,
   Trash2,
@@ -205,14 +207,17 @@ function CustomScheduleCard({ schedule, onOpenNote, onDeleteSchedule }: CustomSc
     <button
       type="button"
       onClick={() => onOpenNote(schedule)}
-      className="w-full rounded-xl border border-amber-100 bg-amber-50/70 px-2.5 py-2.5 text-left shadow-[0_10px_30px_rgba(245,158,11,0.08)] transition hover:bg-amber-50 dark:border-amber-400/20 dark:bg-amber-500/10 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)]"
+      className="w-full overflow-hidden rounded-xl border border-amber-100 bg-amber-50/70 px-2.5 py-2.5 text-left shadow-[0_10px_30px_rgba(245,158,11,0.08)] transition hover:bg-amber-50 dark:border-amber-400/20 dark:bg-amber-500/10 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">
+          <p
+            className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white"
+            style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
+          >
             {schedule.title}
           </p>
-          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-200">{schedule.timeRange}</p>
+          <p className="mt-0.5 truncate text-xs text-amber-700 dark:text-amber-200">{schedule.timeRange}</p>
         </div>
         <span className="rounded-xl border border-amber-200 bg-white/75 px-2 py-1 text-[10px] font-bold text-amber-700 dark:border-amber-400/20 dark:bg-white/10 dark:text-amber-200">
           事项
@@ -294,6 +299,7 @@ export function CourseCalendarPage({
   const [customVisibility, setCustomVisibility] = React.useState<'private' | 'organization'>('private');
   const [openedCustomSchedule, setOpenedCustomSchedule] = React.useState<JoinedCustomSchedule | null>(null);
   const [pendingCustomCreate, setPendingCustomCreate] = React.useState<PendingCustomCreate | null>(null);
+  const [isCalendarExpanded, setIsCalendarExpanded] = React.useState(false);
   const pendingDropClass = pendingDrop?.itemType === 'class'
     ? classes.find((courseClass) => courseClass.id === pendingDrop.itemId)
     : undefined;
@@ -492,8 +498,11 @@ export function CourseCalendarPage({
           </div>
 
           <div className="space-y-5 px-4 py-5 md:px-5 xl:px-6 xl:py-6">
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="rounded-[1.75rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(239,248,255,0.9)_100%)] p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] md:p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.72)_100%)] dark:shadow-[0_20px_50px_rgba(2,6,23,0.35)]">
+            <div className={cn('grid gap-5', isCalendarExpanded ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_300px]')}>
+              <div className={cn(
+                'rounded-[1.75rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(239,248,255,0.9)_100%)] p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] md:p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.72)_100%)] dark:shadow-[0_20px_50px_rgba(2,6,23,0.35)]',
+                isCalendarExpanded && 'fixed inset-3 z-40 overflow-auto md:inset-5',
+              )}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <CalendarDays className="h-5 w-5 text-sky-600 dark:text-sky-300" />
@@ -504,6 +513,15 @@ export function CourseCalendarPage({
                   <span className="rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-300">
                     6 天 · 六段工作时间
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCalendarExpanded((expanded) => !expanded)}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-sky-100 bg-white px-3 text-xs font-bold text-sky-700 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-white/10"
+                    aria-label={isCalendarExpanded ? '还原课程表' : '扩大课程表'}
+                  >
+                    {isCalendarExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                    {isCalendarExpanded ? '还原' : '扩大'}
+                  </button>
                 </div>
 
                 <div className="hidden lg:block">
@@ -557,13 +575,13 @@ export function CourseCalendarPage({
                                 onDragOver={(event) => event.preventDefault()}
                                 onDrop={(event) => handleDrop(event, date, timeBlock)}
                                 className={cn(
-                                  'min-h-[108px] rounded-xl border px-2 py-2 transition',
+                                  'h-[108px] overflow-hidden rounded-xl border px-2 py-2 transition',
                                   date === today
                                     ? 'border-cyan-300 bg-cyan-50/70 dark:border-cyan-400/40 dark:bg-cyan-500/15'
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
                                 )}
                               >
-                                <div className="space-y-2">
+                                <div className="max-h-full space-y-2 overflow-y-auto pr-1">
                                   {blockCards.length + customBlockCards.length > 0 ? (
                                     <>
                                       {blockCards.map((schedule) => (
@@ -664,8 +682,8 @@ export function CourseCalendarPage({
                   ))}
                 </div>
               </div>
-            </div>
 
+            {!isCalendarExpanded && (
             <aside className="space-y-5">
               <section className="rounded-[1.75rem] border border-sky-100 bg-white/92 p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_20px_45px_rgba(2,6,23,0.32)]">
                 <div className="flex items-center justify-between gap-3">
@@ -786,6 +804,8 @@ export function CourseCalendarPage({
                 </div>
               </section>
             </aside>
+            )}
+            </div>
           </div>
         </div>
       </div>

@@ -137,6 +137,11 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /onPreviousPage\(normalizedPageStepDays\)/);
   assert.match(source, /onNextPage\(normalizedPageStepDays\)/);
   assert.match(source, /gridTemplateColumns: '82px repeat\(6, minmax\(0, 1fr\)\)'/);
+  assert.match(source, /h-\[108px\] overflow-hidden rounded-xl/);
+  assert.match(source, /max-h-full space-y-2 overflow-y-auto/);
+  assert.match(source, /isCalendarExpanded/);
+  assert.match(source, /Maximize2/);
+  assert.match(source, /Minimize2/);
   assert.match(source, /lg:hidden/);
   assert.match(source, /lg:block/);
 });
