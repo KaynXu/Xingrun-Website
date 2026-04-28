@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-28 已继续修正课程日历右侧课程卡片区：课程卡片列表改成固定最大高度的独立滚动区域，课程较多时在绿圈区域内滚动；课程卡片排序改为按年级从高到低（高三到小一）排列，同年级再按科目/班名排序。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_course_list_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已继续修正课程日历自定义事项：课表内自定义事项卡片改成第一行标题、第二行时间段、第三行状态文案，公开事项文案从“公开”改为“管理员发布”；右侧自定义事项源卡片删除权限改为以后端 `can_delete` 为准，并在删除失败时给出前端提示，避免按钮无反馈。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_custom_card_delete_proof.sh`：后端课程日历 API 5 条、前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已继续按标注微调课程日历顶部：说明文案改到标题右侧，翻页/老师/学科控制整排居中；自定义事项源卡片删除按钮只对创建者显示，并阻止按钮触发拖拽，同时后端删除源卡片时显式先删除所有相关排期，避免“点了没反应/删不干净”。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_center_delete_proof.sh`：后端课程日历 API 5 条、前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已继续修正课程日历：顶部说明文案移入翻页/筛选控制行，控制区整体下移，说明文案限制为更紧凑的一到两行；右侧自定义事项源卡片新增删除入口，并补齐后端 DELETE `/api/course-calendar/custom-items/<id>`，删除源卡片时会同步清掉已排入课表的自定义事项排期。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_header_delete_proof.sh`：后端课程日历 API 5 条、前端 190 条测试、frontend production build、`git diff --check`。

@@ -158,7 +158,9 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.doesNotMatch(source, /setTeacherEditorOpen\(true\)/);
   assert.doesNotMatch(source, /handleAddTeacherOption/);
   assert.doesNotMatch(source, /handleRemoveTeacherOption/);
-  assert.match(source, /max-h-\[28vh\]/);
+  assert.match(source, /function getClassGradeRank/);
+  assert.match(source, /getClassGradeRank\(b\) - getClassGradeRank\(a\)/);
+  assert.match(source, /max-h-\[320px\] space-y-2 overflow-y-auto overscroll-contain/);
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_240px\]/);
   assert.match(source, /isCalendarExpanded \? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm'/);
   assert.match(source, /fixed inset-3 z-50 overflow-hidden/);

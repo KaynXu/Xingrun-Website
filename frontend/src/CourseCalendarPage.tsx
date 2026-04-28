@@ -140,8 +140,33 @@ function getTeacherOptions(classes: CourseCalendarClassRecord[]): string[] {
   ) as string[];
 }
 
+function getClassGradeRank(courseClass: CourseCalendarClassRecord): number {
+  const label = `${courseClass.grade || ''} ${courseClass.name || ''}`;
+  const gradeRanks: Array<[RegExp, number]> = [
+    [/高三|高中三|高 3|高3/, 12],
+    [/高二|高中二|高 2|高2/, 11],
+    [/高一|高中一|高 1|高1/, 10],
+    [/初三|初中三|初 3|初3|九年级|9年级/, 9],
+    [/初二|初中二|初 2|初2|八年级|8年级/, 8],
+    [/初一|初中一|初 1|初1|七年级|7年级/, 7],
+    [/六年级|6年级|小六/, 6],
+    [/五年级|5年级|小五/, 5],
+    [/四年级|4年级|小四/, 4],
+    [/三年级|3年级|小三/, 3],
+    [/二年级|2年级|小二/, 2],
+    [/一年级|1年级|小一/, 1],
+  ];
+  return gradeRanks.find(([pattern]) => pattern.test(label))?.[1] ?? 0;
+}
+
 function getClassOptions(classes: CourseCalendarClassRecord[]): CourseCalendarClassRecord[] {
-  return [...classes].sort((a, b) => a.id - b.id);
+  return [...classes].sort((a, b) => {
+    const gradeDelta = getClassGradeRank(b) - getClassGradeRank(a);
+    if (gradeDelta !== 0) {
+      return gradeDelta;
+    }
+    return `${a.subject || ''}${a.name}`.localeCompare(`${b.subject || ''}${b.name}`, 'zh-Hans') || a.id - b.id;
+  });
 }
 
 function EmptyDropZone({ onCreateCustomItem }: { onCreateCustomItem: () => void }): React.JSX.Element {
@@ -714,7 +739,7 @@ export function CourseCalendarPage({
                   </div>
                   <GripVertical className="h-5 w-5 text-sky-500 dark:text-sky-300" />
                 </div>
-                <div className="mt-3 max-h-[28vh] space-y-2 overflow-y-auto pr-1">
+                <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto overscroll-contain pr-1">
                   {classOptions.length > 0 ? (
                     classOptions.map((courseClass) => (
                       <div
