@@ -3525,6 +3525,12 @@ def create_course_calendar_custom_item(*, actor_user: dict, title: object, time_
         return _serialize_course_calendar_custom_item_row(row)
 
 
+def delete_course_calendar_custom_item(item_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM course_calendar_custom_items WHERE id=?", (item_id,))
+        return cur.rowcount > 0
+
+
 def _serialize_course_calendar_custom_schedule_row(row: sqlite3.Row) -> dict:
     item = dict(row)
     return {

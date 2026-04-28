@@ -235,6 +235,27 @@ class CourseCalendarApiTestCase(unittest.TestCase):
         self.assertIsNotNone(other_payload)
         self.assertEqual([item["title"] for item in other_payload["items"]], ["全员教研"])
 
+        member_delete_owner_item = self.client.delete(
+            f"/api/course-calendar/custom-items/{published_id}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(member_delete_owner_item.status_code, 403)
+
+        owner_delete_item = self.client.delete(
+            f"/api/course-calendar/custom-items/{published_id}",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(owner_delete_item.status_code, 200)
+
+        member_after_delete = self.client.get(
+            "/api/course-calendar/custom-schedules?start_date=2026-04-21&end_date=2026-04-21",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(member_after_delete.status_code, 200)
+        member_after_payload = member_after_delete.get_json()
+        self.assertIsNotNone(member_after_payload)
+        self.assertEqual(member_after_payload["items"], [])
+
         member_publish = self.client.post(
             "/api/course-calendar/custom-items",
             headers=self.auth_headers(target_member["token"]),

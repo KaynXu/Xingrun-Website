@@ -77,6 +77,7 @@ from lesson_manager import (
     create_course_calendar_schedule,
     create_registration_request,
     claim_classes_for_user,
+    delete_course_calendar_custom_item,
     delete_course_calendar_schedule,
     delete_wechat_wrong_question_submission,
     delete_wrong_question_practice_sheet,
@@ -92,6 +93,7 @@ from lesson_manager import (
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
+    get_course_calendar_custom_item,
     get_course_calendar_custom_schedule,
     get_course_calendar_schedule,
     get_current_user,
@@ -2906,6 +2908,20 @@ def api_course_calendar_custom_item_create():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"item": item}), 201
+
+
+@app.route("/api/course-calendar/custom-items/<int:item_id>", methods=["DELETE"])
+def api_course_calendar_custom_item_delete(item_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    item = get_course_calendar_custom_item(item_id)
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    if item.get("created_by") != user.get("id"):
+        return jsonify({"error": "forbidden"}), 403
+    removed = delete_course_calendar_custom_item(item_id)
+    return jsonify({"ok": True, "removed": removed})
 
 
 @app.route("/api/course-calendar/custom-schedules", methods=["GET"])

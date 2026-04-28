@@ -44,6 +44,7 @@ export interface CourseCalendarPageProps {
   onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
   onScheduleCustomItem: (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
   onCreateCustomItem: (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => Promise<CourseCalendarCustomItemRecord>;
+  onDeleteCustomItem: (itemId: number) => void;
   onDeleteSchedule: (scheduleId: number) => void;
   onDeleteCustomSchedule: (scheduleId: number) => void;
 }
@@ -290,6 +291,7 @@ export function CourseCalendarPage({
   onScheduleClass,
   onScheduleCustomItem,
   onCreateCustomItem,
+  onDeleteCustomItem,
   onDeleteSchedule,
   onDeleteCustomSchedule,
 }: CourseCalendarPageProps): React.JSX.Element {
@@ -428,8 +430,8 @@ export function CourseCalendarPage({
           'rounded-[2rem] border border-sky-100/90 bg-white/82 shadow-[0_28px_90px_rgba(47,128,237,0.1)] dark:border-white/10 dark:bg-slate-900/78 dark:shadow-[0_30px_80px_rgba(2,6,23,0.42)]',
           isCalendarExpanded ? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm',
         )}>
-          <div className="border-b border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_100%)] px-5 py-5 md:px-7 md:py-6 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.82)_100%)]">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="border-b border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_100%)] px-5 py-5 md:px-7 md:py-7 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.82)_100%)]">
+            <div className="flex flex-col gap-5">
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.32em] text-sky-600 dark:border-sky-500/30 dark:bg-white/5 dark:text-sky-300">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -439,13 +441,13 @@ export function CourseCalendarPage({
                   <h1 className="text-3xl font-black tracking-tight text-slate-900 md:text-4xl dark:text-white">
                     课程日历
                   </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 md:text-base dark:text-slate-300">
-                    将绑定班级或自定义事项拖动到时间板块，快速完成当前页排课。
-                  </p>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
+                <p className="max-w-[22rem] text-sm leading-5 text-slate-500 xl:max-w-none xl:whitespace-nowrap dark:text-slate-300">
+                  将绑定班级或自定义事项拖动到时间板块，快速完成当前页排课。
+                </p>
                 <div className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm dark:border-white/10 dark:bg-white/5">
                   <button
                     type="button"
@@ -825,12 +827,28 @@ export function CourseCalendarPage({
                               <p className={cn('truncate font-semibold', isOrganizationVisible ? 'text-white' : 'text-slate-900 dark:text-white')}>{item.title}</p>
                               <p className={cn('mt-1 truncate text-xs', isOrganizationVisible ? 'text-sky-100' : 'text-amber-700 dark:text-amber-200')}>{item.time_range}</p>
                             </div>
-                            <span className={cn(
-                              'rounded-full px-2.5 py-1 text-[10px] font-bold',
-                              isOrganizationVisible ? 'bg-white/10 text-white' : 'bg-white/75 text-amber-700 dark:bg-white/10 dark:text-amber-200',
-                            )}>
-                              {isOrganizationVisible ? '公开' : '私有'}
-                            </span>
+                            <div className="flex shrink-0 flex-col items-end gap-2">
+                              <span className={cn(
+                                'rounded-full px-2.5 py-1 text-[10px] font-bold',
+                                isOrganizationVisible ? 'bg-white/10 text-white' : 'bg-white/75 text-amber-700 dark:bg-white/10 dark:text-amber-200',
+                              )}>
+                                {isOrganizationVisible ? '公开' : '私有'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  onDeleteCustomItem(item.id);
+                                }}
+                                className={cn(
+                                  'rounded-full px-2.5 py-1 text-[10px] font-bold transition',
+                                  isOrganizationVisible ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-white text-rose-500 hover:bg-rose-50 dark:bg-white/10 dark:text-rose-200 dark:hover:bg-white/15',
+                                )}
+                              >
+                                删除
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

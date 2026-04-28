@@ -54,6 +54,7 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
       onScheduleClass={() => undefined}
       onScheduleCustomItem={() => undefined}
       onCreateCustomItem={() => Promise.resolve({ id: 999, title: '事项', time_range: '19:00-20:00', note: '', visibility: 'private' })}
+      onDeleteCustomItem={() => undefined}
       onDeleteSchedule={() => undefined}
       onDeleteCustomSchedule={() => undefined}
     />,
@@ -102,6 +103,7 @@ test('course calendar page avoids a nested min-h-screen container inside the wor
       onScheduleClass={() => undefined}
       onScheduleCustomItem={() => undefined}
       onCreateCustomItem={() => Promise.resolve({ id: 999, title: '事项', time_range: '19:00-20:00', note: '', visibility: 'private' })}
+      onDeleteCustomItem={() => undefined}
       onDeleteSchedule={() => undefined}
       onDeleteCustomSchedule={() => undefined}
     />,
@@ -155,6 +157,9 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_240px\]/);
   assert.match(source, /isCalendarExpanded \? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm'/);
   assert.match(source, /fixed inset-3 z-50 overflow-hidden/);
+  assert.match(source, /xl:justify-end/);
+  assert.match(source, /xl:whitespace-nowrap/);
+  assert.match(source, /onDeleteCustomItem\(item\.id\)/);
   assert.match(source, /OpenedCourseScheduleModal/);
   assert.match(source, /onOpenSchedule=\{setOpenedCourseSchedule\}/);
   assert.match(source, /visibility: schedule\.visibility \?\? 'private'/);

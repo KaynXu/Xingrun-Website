@@ -9455,6 +9455,17 @@ export default function App() {
       });
   };
 
+  const handleDeleteCalendarCustomItem = (itemId: number) => {
+    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/custom-items/${itemId}`, {
+      method: 'DELETE',
+    })
+      .then(() => {
+        setCalendarCustomItems((current) => current.filter((item) => item.id !== itemId));
+        setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.custom_item_id !== itemId));
+      })
+      .catch(console.error);
+  };
+
   const handleScheduleCalendarCustomItem = (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
     apiFetch<{ item: CourseCalendarCustomScheduleRecord }>('/api/course-calendar/custom-schedules', {
       method: 'POST',
@@ -9680,6 +9691,7 @@ export default function App() {
                       onScheduleClass={handleScheduleCalendarClass}
                       onScheduleCustomItem={handleScheduleCalendarCustomItem}
                       onCreateCustomItem={handleCreateCalendarCustomItem}
+                      onDeleteCustomItem={handleDeleteCalendarCustomItem}
                       onDeleteSchedule={handleDeleteCalendarSchedule}
                       onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
                     />
