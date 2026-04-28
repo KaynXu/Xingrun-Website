@@ -12,6 +12,7 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
     <CourseCalendarPage
       anchorDate="2026-03-31"
       today="2026-04-02"
+      currentUserId={1}
       currentUserRole="owner"
       classes={[
         {
@@ -34,7 +35,7 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
         },
       ]}
       customItems={[
-        { id: 201, title: '教研会', time_range: '19:00-20:00', note: '带资料', visibility: 'private' },
+        { id: 201, title: '教研会', time_range: '19:00-20:00', note: '带资料', visibility: 'private', created_by: 1 },
       ]}
       customSchedules={[
         {
@@ -91,6 +92,7 @@ test('course calendar page avoids a nested min-h-screen container inside the wor
     <CourseCalendarPage
       anchorDate="2026-03-31"
       today="2026-04-02"
+      currentUserId={2}
       currentUserRole="member"
       classes={[]}
       schedules={[]}
@@ -157,8 +159,13 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_240px\]/);
   assert.match(source, /isCalendarExpanded \? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm'/);
   assert.match(source, /fixed inset-3 z-50 overflow-hidden/);
-  assert.match(source, /xl:justify-end/);
+  assert.match(source, /xl:items-end/);
+  assert.match(source, /时间板块，快速完成当前页排课。/);
+  assert.match(source, /xl:justify-center/);
   assert.match(source, /xl:whitespace-nowrap/);
+  assert.match(source, /const canDeleteCustomItem = item\.created_by === currentUserId/);
+  assert.match(source, /draggable=\{false\}/);
+  assert.match(source, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(source, /onDeleteCustomItem\(item\.id\)/);
   assert.match(source, /OpenedCourseScheduleModal/);
   assert.match(source, /onOpenSchedule=\{setOpenedCourseSchedule\}/);

@@ -9679,6 +9679,7 @@ export default function App() {
                     <CourseCalendarPage
                       anchorDate={calendarAnchorDate}
                       today={getTodayIsoDate()}
+                      currentUserId={currentUser.id}
                       currentUserRole={currentUser.role}
                       classes={calendarClasses}
                       schedules={calendarSchedules}

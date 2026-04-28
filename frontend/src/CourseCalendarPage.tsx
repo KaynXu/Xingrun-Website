@@ -32,6 +32,7 @@ import {
 export interface CourseCalendarPageProps {
   anchorDate: string;
   today: string;
+  currentUserId: number;
   currentUserRole: 'super_owner' | 'owner' | 'admin' | 'member';
   classes: CourseCalendarClassRecord[];
   schedules: CourseCalendarScheduleRecord[];
@@ -279,6 +280,7 @@ interface CustomScheduleCardProps {
 export function CourseCalendarPage({
   anchorDate,
   today,
+  currentUserId,
   currentUserRole,
   classes,
   schedules,
@@ -437,17 +439,17 @@ export function CourseCalendarPage({
                   <Sparkles className="h-3.5 w-3.5" />
                   Starain
                 </div>
-                <div>
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
                   <h1 className="text-3xl font-black tracking-tight text-slate-900 md:text-4xl dark:text-white">
                     课程日历
                   </h1>
+                  <p className="max-w-[22rem] pb-1 text-sm leading-5 text-slate-500 xl:max-w-none xl:whitespace-nowrap dark:text-slate-300">
+                    时间板块，快速完成当前页排课。
+                  </p>
                 </div>
               </div>
 
-              <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
-                <p className="max-w-[22rem] text-sm leading-5 text-slate-500 xl:max-w-none xl:whitespace-nowrap dark:text-slate-300">
-                  将绑定班级或自定义事项拖动到时间板块，快速完成当前页排课。
-                </p>
+              <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-center">
                 <div className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm dark:border-white/10 dark:bg-white/5">
                   <button
                     type="button"
@@ -809,6 +811,7 @@ export function CourseCalendarPage({
                   {customItems.length > 0 ? (
                     customItems.map((item) => {
                       const isOrganizationVisible = item.visibility === 'organization';
+                      const canDeleteCustomItem = item.created_by === currentUserId;
                       return (
                         <div
                           key={item.id}
@@ -834,20 +837,24 @@ export function CourseCalendarPage({
                               )}>
                                 {isOrganizationVisible ? '公开' : '私有'}
                               </span>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onDeleteCustomItem(item.id);
-                                }}
-                                className={cn(
-                                  'rounded-full px-2.5 py-1 text-[10px] font-bold transition',
-                                  isOrganizationVisible ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-white text-rose-500 hover:bg-rose-50 dark:bg-white/10 dark:text-rose-200 dark:hover:bg-white/15',
-                                )}
-                              >
-                                删除
-                              </button>
+                              {canDeleteCustomItem && (
+                                <button
+                                  type="button"
+                                  draggable={false}
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDeleteCustomItem(item.id);
+                                  }}
+                                  className={cn(
+                                    'rounded-full px-2.5 py-1 text-[10px] font-bold transition',
+                                    isOrganizationVisible ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-white text-rose-500 hover:bg-rose-50 dark:bg-white/10 dark:text-rose-200 dark:hover:bg-white/15',
+                                  )}
+                                >
+                                  删除
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>

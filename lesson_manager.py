@@ -3527,6 +3527,7 @@ def create_course_calendar_custom_item(*, actor_user: dict, title: object, time_
 
 def delete_course_calendar_custom_item(item_id: int) -> bool:
     with get_conn() as conn:
+        conn.execute("DELETE FROM course_calendar_custom_schedules WHERE custom_item_id=?", (item_id,))
         cur = conn.execute("DELETE FROM course_calendar_custom_items WHERE id=?", (item_id,))
         return cur.rowcount > 0
 

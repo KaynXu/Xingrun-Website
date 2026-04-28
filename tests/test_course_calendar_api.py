@@ -246,6 +246,9 @@ class CourseCalendarApiTestCase(unittest.TestCase):
             headers=self.auth_headers(self.owner_token),
         )
         self.assertEqual(owner_delete_item.status_code, 200)
+        owner_delete_payload = owner_delete_item.get_json()
+        self.assertIsNotNone(owner_delete_payload)
+        self.assertTrue(owner_delete_payload["removed"])
 
         member_after_delete = self.client.get(
             "/api/course-calendar/custom-schedules?start_date=2026-04-21&end_date=2026-04-21",
