@@ -66,11 +66,11 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /16:00-18:00/);
   assert.match(markup, /18:00-20:00/);
   assert.match(markup, /20:00-22:00/);
-  assert.match(markup, /08:15 开始/);
   assert.match(markup, /08:15-10:15/);
   assert.match(markup, /拖动课程到此/);
   assert.match(markup, /添加自定义事项/);
   assert.match(markup, /翻动/);
+  assert.match(markup, /管理教师筛选/);
   assert.doesNotMatch(markup, /第 1 页/);
   assert.doesNotMatch(markup, /天数/);
   assert.match(markup, /draggable="true"/);
@@ -142,6 +142,11 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /isCalendarExpanded/);
   assert.match(source, /Maximize2/);
   assert.match(source, /Minimize2/);
+  assert.match(source, /setTeacherEditorOpen\(true\)/);
+  assert.match(source, /handleAddTeacherOption/);
+  assert.match(source, /handleRemoveTeacherOption/);
+  assert.match(source, /max-h-\[28vh\]/);
+  assert.match(source, /schedule\.className[\s\S]*schedule\.displayRange/);
   assert.match(source, /lg:hidden/);
   assert.match(source, /lg:block/);
 });
