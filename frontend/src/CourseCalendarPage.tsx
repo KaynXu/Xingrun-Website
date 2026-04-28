@@ -36,13 +36,13 @@ export interface CourseCalendarPageProps {
   schedules: CourseCalendarScheduleRecord[];
   customItems: CourseCalendarCustomItemRecord[];
   customSchedules: CourseCalendarCustomScheduleRecord[];
-  visibleDayCount: number;
-  onVisibleDayCountChange: (dayCount: number) => void;
+  pageStepDays: number;
+  onPageStepDaysChange: (dayCount: number) => void;
   onPreviousPage: (dayCount: number) => void;
   onNextPage: (dayCount: number) => void;
   onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
   onScheduleCustomItem: (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
-  onCreateCustomItem: (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => void;
+  onCreateCustomItem: (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => Promise<CourseCalendarCustomItemRecord>;
   onDeleteSchedule: (scheduleId: number) => void;
   onDeleteCustomSchedule: (scheduleId: number) => void;
 }
@@ -60,6 +60,11 @@ type CustomOffsetDirection = 'early' | 'late';
 interface PendingDrop {
   itemType: 'class' | 'custom';
   itemId: number;
+  date: string;
+  timeBlock: CourseCalendarTimeBlock;
+}
+
+interface PendingCustomCreate {
   date: string;
   timeBlock: CourseCalendarTimeBlock;
 }
@@ -133,10 +138,18 @@ function getClassOptions(classes: CourseCalendarClassRecord[]): CourseCalendarCl
   return [...classes].sort((a, b) => a.id - b.id);
 }
 
-function EmptyDropZone(): React.JSX.Element {
+function EmptyDropZone({ onCreateCustomItem }: { onCreateCustomItem: () => void }): React.JSX.Element {
   return (
-    <div className="rounded-2xl border border-dashed border-sky-100 bg-white/55 px-3 py-5 text-center text-xs font-medium text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-500">
-      拖动课程到此
+    <div className="rounded-2xl border border-dashed border-sky-100 bg-white/55 px-3 py-4 text-center text-xs font-medium text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-500">
+      <p className="whitespace-nowrap">拖动课程到此</p>
+      <button
+        type="button"
+        onClick={onCreateCustomItem}
+        className="mt-3 inline-flex h-8 w-full items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-600 transition hover:border-sky-200 hover:bg-sky-100 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+        aria-label="添加自定义事项"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -239,8 +252,8 @@ export function CourseCalendarPage({
   schedules,
   customItems,
   customSchedules,
-  visibleDayCount,
-  onVisibleDayCountChange,
+  pageStepDays,
+  onPageStepDaysChange,
   onPreviousPage,
   onNextPage,
   onScheduleClass,
@@ -249,8 +262,9 @@ export function CourseCalendarPage({
   onDeleteSchedule,
   onDeleteCustomSchedule,
 }: CourseCalendarPageProps): React.JSX.Element {
-  const normalizedVisibleDayCount = Math.max(1, Math.min(14, Math.trunc(visibleDayCount) || 6));
-  const visibleDates = getCalendarPageDates(anchorDate, normalizedVisibleDayCount);
+  const visibleDayCount = 6;
+  const normalizedPageStepDays = Math.max(1, Math.min(14, Math.trunc(pageStepDays) || 6));
+  const visibleDates = getCalendarPageDates(anchorDate, visibleDayCount);
   const visibleDateSet = new Set(visibleDates);
   const joinedSchedules = joinClassesAndSchedules(classes, schedules);
   const visibleSchedules = joinedSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
@@ -279,6 +293,7 @@ export function CourseCalendarPage({
   const [customNote, setCustomNote] = React.useState('');
   const [customVisibility, setCustomVisibility] = React.useState<'private' | 'organization'>('private');
   const [openedCustomSchedule, setOpenedCustomSchedule] = React.useState<JoinedCustomSchedule | null>(null);
+  const [pendingCustomCreate, setPendingCustomCreate] = React.useState<PendingCustomCreate | null>(null);
   const pendingDropClass = pendingDrop?.itemType === 'class'
     ? classes.find((courseClass) => courseClass.id === pendingDrop.itemId)
     : undefined;
@@ -352,18 +367,26 @@ export function CourseCalendarPage({
     setPendingDrop(null);
   };
 
-  const handleCreateCustomItem = () => {
+  const resetCustomForm = () => {
+    setCustomTitle('');
+    setCustomTimeRange('');
+    setCustomNote('');
+    setCustomVisibility('private');
+  };
+
+  const handleCreateCustomItem = async () => {
     const title = customTitle.trim();
     const timeRange = customTimeRange.trim();
     const note = customNote.trim();
     if (!title || !timeRange) {
       return;
     }
-    onCreateCustomItem({ title, time_range: timeRange, note, visibility: customVisibility });
-    setCustomTitle('');
-    setCustomTimeRange('');
-    setCustomNote('');
-    setCustomVisibility('private');
+    const createdItem = await onCreateCustomItem({ title, time_range: timeRange, note, visibility: customVisibility });
+    if (pendingCustomCreate) {
+      onScheduleCustomItem(createdItem.id, pendingCustomCreate.date, pendingCustomCreate.timeBlock, 0);
+      setPendingCustomCreate(null);
+    }
+    resetCustomForm();
   };
 
   return (
@@ -391,23 +414,20 @@ export function CourseCalendarPage({
                 <div className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm dark:border-white/10 dark:bg-white/5">
                   <button
                     type="button"
-                    onClick={() => onPreviousPage(normalizedVisibleDayCount)}
+                    onClick={() => onPreviousPage(normalizedPageStepDays)}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700 transition hover:bg-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-sky-300 dark:hover:bg-white/10"
                     aria-label="查看上一页"
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </button>
-                  <div className="min-w-44 px-2 text-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-500 dark:text-sky-300">
-                      第 1 页
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                      {getCalendarPageRangeLabel(anchorDate, normalizedVisibleDayCount)}
+                  <div className="min-w-72 px-2 text-center">
+                    <p className="whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white">
+                      {getCalendarPageRangeLabel(anchorDate, visibleDayCount)}
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => onNextPage(normalizedVisibleDayCount)}
+                    onClick={() => onNextPage(normalizedPageStepDays)}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700 transition hover:bg-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-sky-300 dark:hover:bg-white/10"
                     aria-label="查看下一页"
                   >
@@ -417,21 +437,21 @@ export function CourseCalendarPage({
 
                 <label className="relative">
                   <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                    天数
+                    翻动
                   </span>
                   <input
                     type="number"
                     min={1}
                     max={14}
-                    value={normalizedVisibleDayCount}
-                    onChange={(event) => onVisibleDayCountChange(Math.max(1, Math.min(14, Math.trunc(Number(event.target.value) || 6))))}
-                    className="h-14 w-28 rounded-2xl border border-sky-200 bg-white px-4 pt-5 text-sm font-medium text-slate-700 shadow-sm outline-none transition [color-scheme:light] focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
+                    value={normalizedPageStepDays}
+                    onChange={(event) => onPageStepDaysChange(Math.max(1, Math.min(14, Math.trunc(Number(event.target.value) || 6))))}
+                    className="h-14 w-32 rounded-2xl border border-sky-200 bg-white px-4 pt-5 text-sm font-medium text-slate-700 shadow-sm outline-none transition [color-scheme:light] focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
                   />
                 </label>
 
                 {canFilterCourses && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="relative">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(9.5rem,1fr)_minmax(9.5rem,1fr)]">
+                  <label className="relative min-w-38">
                     <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
                       <Users className="h-3.5 w-3.5" />
                       老师
@@ -448,7 +468,7 @@ export function CourseCalendarPage({
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-4 top-5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                   </label>
-                  <label className="relative">
+                  <label className="relative min-w-38">
                     <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
                       <Filter className="h-3.5 w-3.5" />
                       学科
@@ -482,7 +502,7 @@ export function CourseCalendarPage({
                     </span>
                   </div>
                   <span className="rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-300">
-                    {normalizedVisibleDayCount} 天 · 六段工作时间
+                    6 天 · 六段工作时间
                   </span>
                 </div>
 
@@ -490,7 +510,7 @@ export function CourseCalendarPage({
                   <div className="min-w-0">
                     <div
                       className="grid gap-2 pb-2"
-                      style={{ gridTemplateColumns: `82px repeat(${normalizedVisibleDayCount}, minmax(0, 1fr))` }}
+                      style={{ gridTemplateColumns: '82px repeat(6, minmax(0, 1fr))' }}
                     >
                       <div className="rounded-xl border border-sky-100 bg-white/90 px-3 py-3 text-xs font-bold text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                         时间板块
@@ -518,7 +538,7 @@ export function CourseCalendarPage({
                         <div
                           key={timeBlock}
                           className="grid gap-2"
-                          style={{ gridTemplateColumns: `82px repeat(${normalizedVisibleDayCount}, minmax(0, 1fr))` }}
+                          style={{ gridTemplateColumns: '82px repeat(6, minmax(0, 1fr))' }}
                         >
                           <div className="rounded-xl border border-sky-100 bg-white/92 px-2.5 py-3 dark:border-white/10 dark:bg-white/5">
                             <p className="text-sm font-black leading-tight text-slate-900 dark:text-white">{timeBlock}</p>
@@ -563,7 +583,7 @@ export function CourseCalendarPage({
                                       ))}
                                     </>
                                   ) : (
-                                    <EmptyDropZone />
+                                    <EmptyDropZone onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
                                   )}
                                 </div>
                               </div>
@@ -633,7 +653,7 @@ export function CourseCalendarPage({
                                     ))}
                                   </>
                                 ) : (
-                                  <EmptyDropZone />
+                                  <EmptyDropZone onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
                                 )}
                               </div>
                             </div>
@@ -769,6 +789,73 @@ export function CourseCalendarPage({
           </div>
         </div>
       </div>
+      {pendingCustomCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-3xl border border-amber-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-amber-400/20 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-600 dark:text-amber-200">自定义事项</p>
+                <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">生成事项卡片</h2>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  {formatWeekdayLabel(pendingCustomCreate.date)} {formatDayLabel(pendingCustomCreate.date)} · {pendingCustomCreate.timeBlock}
+                </p>
+              </div>
+              <Plus className="h-6 w-6 shrink-0 text-amber-500 dark:text-amber-200" />
+            </div>
+            <div className="mt-5 space-y-3">
+              <input
+                value={customTitle}
+                onChange={(event) => setCustomTitle(event.target.value)}
+                placeholder="事项名称"
+                className="h-11 w-full rounded-xl border border-amber-100 bg-white px-3 text-sm text-slate-700 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+              <input
+                value={customTimeRange}
+                onChange={(event) => setCustomTimeRange(event.target.value)}
+                placeholder="时间段"
+                className="h-11 w-full rounded-xl border border-amber-100 bg-white px-3 text-sm text-slate-700 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+              <textarea
+                value={customNote}
+                onChange={(event) => setCustomNote(event.target.value)}
+                placeholder="备注"
+                rows={3}
+                className="w-full resize-none rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+              {currentUserRole !== 'member' && (
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={customVisibility === 'organization'}
+                    onChange={(event) => setCustomVisibility(event.target.checked ? 'organization' : 'private')}
+                    className="h-4 w-4 rounded border-amber-200 text-amber-500 focus:ring-amber-200"
+                  />
+                  发布给本机构成员
+                </label>
+              )}
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingCustomCreate(null);
+                  resetCustomForm();
+                }}
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-100 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-amber-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCustomItem}
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-500 px-5 text-sm font-bold text-white transition hover:bg-amber-600"
+              >
+                生成并排入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {openedCustomSchedule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
           <div className="w-full max-w-lg rounded-3xl border border-amber-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-amber-400/20 dark:bg-slate-900">

@@ -9163,7 +9163,7 @@ export default function App() {
   const [calendarCustomSchedules, setCalendarCustomSchedules] = useState<CourseCalendarCustomScheduleRecord[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getCurrentWeekTuesday(getTodayIsoDate()));
-  const [calendarVisibleDayCount, setCalendarVisibleDayCount] = useState(6);
+  const [calendarPageStepDays, setCalendarPageStepDays] = useState(6);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -9403,8 +9403,8 @@ export default function App() {
     setCalendarAnchorDate((current) => shiftIsoDate(current, dayCount));
   };
 
-  const handleCalendarVisibleDayCountChange = (dayCount: number) => {
-    setCalendarVisibleDayCount(Math.max(1, Math.min(14, Math.trunc(dayCount) || 6)));
+  const handleCalendarPageStepDaysChange = (dayCount: number) => {
+    setCalendarPageStepDays(Math.max(1, Math.min(14, Math.trunc(dayCount) || 6)));
   };
 
   const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
@@ -9441,14 +9441,18 @@ export default function App() {
   };
 
   const handleCreateCalendarCustomItem = (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => {
-    apiFetch<{ item: CourseCalendarCustomItemRecord }>('/api/course-calendar/custom-items', {
+    return apiFetch<{ item: CourseCalendarCustomItemRecord }>('/api/course-calendar/custom-items', {
       method: 'POST',
       body: JSON.stringify(item),
     })
       .then(({ item: createdItem }) => {
         setCalendarCustomItems((current) => [createdItem, ...current.filter((existing) => existing.id !== createdItem.id)]);
+        return createdItem;
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        throw error;
+      });
   };
 
   const handleScheduleCalendarCustomItem = (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
@@ -9669,8 +9673,8 @@ export default function App() {
                       schedules={calendarSchedules}
                       customItems={calendarCustomItems}
                       customSchedules={calendarCustomSchedules}
-                      visibleDayCount={calendarVisibleDayCount}
-                      onVisibleDayCountChange={handleCalendarVisibleDayCountChange}
+                      pageStepDays={calendarPageStepDays}
+                      onPageStepDaysChange={handleCalendarPageStepDaysChange}
                       onPreviousPage={handlePreviousCalendarPage}
                       onNextPage={handleNextCalendarPage}
                       onScheduleClass={handleScheduleCalendarClass}

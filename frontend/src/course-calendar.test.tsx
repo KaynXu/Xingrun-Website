@@ -47,13 +47,13 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
           note: '带资料',
         },
       ]}
-      visibleDayCount={6}
-      onVisibleDayCountChange={() => undefined}
+      pageStepDays={6}
+      onPageStepDaysChange={() => undefined}
       onPreviousPage={() => undefined}
       onNextPage={() => undefined}
       onScheduleClass={() => undefined}
       onScheduleCustomItem={() => undefined}
-      onCreateCustomItem={() => undefined}
+      onCreateCustomItem={() => Promise.resolve({ id: 999, title: '事项', time_range: '19:00-20:00', note: '', visibility: 'private' })}
       onDeleteSchedule={() => undefined}
       onDeleteCustomSchedule={() => undefined}
     />,
@@ -69,6 +69,10 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /08:15 开始/);
   assert.match(markup, /08:15-10:15/);
   assert.match(markup, /拖动课程到此/);
+  assert.match(markup, /添加自定义事项/);
+  assert.match(markup, /翻动/);
+  assert.doesNotMatch(markup, /第 1 页/);
+  assert.doesNotMatch(markup, /天数/);
   assert.match(markup, /draggable="true"/);
   assert.match(markup, /课程卡片/);
   assert.match(markup, /自定义事项/);
@@ -88,13 +92,13 @@ test('course calendar page avoids a nested min-h-screen container inside the wor
       schedules={[]}
       customItems={[]}
       customSchedules={[]}
-      visibleDayCount={6}
-      onVisibleDayCountChange={() => undefined}
+      pageStepDays={6}
+      onPageStepDaysChange={() => undefined}
       onPreviousPage={() => undefined}
       onNextPage={() => undefined}
       onScheduleClass={() => undefined}
       onScheduleCustomItem={() => undefined}
-      onCreateCustomItem={() => undefined}
+      onCreateCustomItem={() => Promise.resolve({ id: 999, title: '事项', time_range: '19:00-20:00', note: '', visibility: 'private' })}
       onDeleteSchedule={() => undefined}
       onDeleteCustomSchedule={() => undefined}
     />,
@@ -129,6 +133,10 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /晚半小时/);
   assert.match(source, /自定义微调/);
   assert.match(source, /buildCourseScheduleTimeRange\(pendingDrop\.timeBlock, selectedOffsetMinutes\)/);
+  assert.match(source, /const visibleDayCount = 6/);
+  assert.match(source, /onPreviousPage\(normalizedPageStepDays\)/);
+  assert.match(source, /onNextPage\(normalizedPageStepDays\)/);
+  assert.match(source, /gridTemplateColumns: '82px repeat\(6, minmax\(0, 1fr\)\)'/);
   assert.match(source, /lg:hidden/);
   assert.match(source, /lg:block/);
 });
