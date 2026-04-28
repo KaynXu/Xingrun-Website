@@ -7,6 +7,8 @@ PDF 生成引擎（数据驱动版）
   - 月度综合复习讲义
 """
 
+from __future__ import annotations
+
 import base64
 import html
 import io

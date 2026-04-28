@@ -167,6 +167,107 @@ class CourseCalendarApiTestCase(unittest.TestCase):
         )
         self.assertEqual(forbidden.status_code, 403)
 
+    def test_custom_items_are_private_or_published_to_members(self):
+        target_member = self.approve_user("calendar_custom_member", "Calendar Custom Member")
+        other_member = self.approve_user("calendar_custom_other", "Calendar Custom Other")
+
+        private_item = self.client.post(
+            "/api/course-calendar/custom-items",
+            headers=self.auth_headers(self.owner_token),
+            json={"title": "内部会", "time_range": "19:00-20:00", "note": "只给自己看"},
+        )
+        self.assertEqual(private_item.status_code, 201)
+
+        published_item = self.client.post(
+            "/api/course-calendar/custom-items",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "title": "全员教研",
+                "time_range": "20:00-21:00",
+                "note": "今晚发布",
+                "visibility": "organization",
+            },
+        )
+        self.assertEqual(published_item.status_code, 201)
+        published_payload = published_item.get_json()
+        self.assertIsNotNone(published_payload)
+        published_id = published_payload["item"]["id"]
+
+        owner_listed = self.client.get(
+            "/api/course-calendar/custom-items",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(owner_listed.status_code, 200)
+        owner_payload = owner_listed.get_json()
+        self.assertIsNotNone(owner_payload)
+        self.assertCountEqual(
+            [item["title"] for item in owner_payload["items"]],
+            ["内部会", "全员教研"],
+        )
+        self.assertTrue(all(item["can_delete"] for item in owner_payload["items"]))
+
+        member_listed = self.client.get(
+            "/api/course-calendar/custom-items",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(member_listed.status_code, 200)
+        member_payload = member_listed.get_json()
+        self.assertIsNotNone(member_payload)
+        self.assertEqual([item["title"] for item in member_payload["items"]], ["全员教研"])
+        self.assertFalse(member_payload["items"][0]["can_delete"])
+
+        member_schedule = self.client.post(
+            "/api/course-calendar/custom-schedules",
+            headers=self.auth_headers(target_member["token"]),
+            json={"custom_item_id": published_id, "date": "2026-04-21", "time_block": "20:00-22:00"},
+        )
+        self.assertEqual(member_schedule.status_code, 201)
+
+        scheduled_payload = member_schedule.get_json()
+        self.assertIsNotNone(scheduled_payload)
+        self.assertEqual(scheduled_payload["item"]["title"], "全员教研")
+        self.assertEqual(scheduled_payload["item"]["note"], "今晚发布")
+
+        other_member_listed = self.client.get(
+            "/api/course-calendar/custom-schedules?start_date=2026-04-21&end_date=2026-04-21",
+            headers=self.auth_headers(other_member["token"]),
+        )
+        self.assertEqual(other_member_listed.status_code, 200)
+        other_payload = other_member_listed.get_json()
+        self.assertIsNotNone(other_payload)
+        self.assertEqual([item["title"] for item in other_payload["items"]], ["全员教研"])
+
+        member_delete_owner_item = self.client.delete(
+            f"/api/course-calendar/custom-items/{published_id}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(member_delete_owner_item.status_code, 403)
+
+        owner_delete_item = self.client.delete(
+            f"/api/course-calendar/custom-items/{published_id}",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(owner_delete_item.status_code, 200)
+        owner_delete_payload = owner_delete_item.get_json()
+        self.assertIsNotNone(owner_delete_payload)
+        self.assertTrue(owner_delete_payload["removed"])
+
+        member_after_delete = self.client.get(
+            "/api/course-calendar/custom-schedules?start_date=2026-04-21&end_date=2026-04-21",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(member_after_delete.status_code, 200)
+        member_after_payload = member_after_delete.get_json()
+        self.assertIsNotNone(member_after_payload)
+        self.assertEqual(member_after_payload["items"], [])
+
+        member_publish = self.client.post(
+            "/api/course-calendar/custom-items",
+            headers=self.auth_headers(target_member["token"]),
+            json={"title": "成员广播", "time_range": "18:00-19:00", "visibility": "organization"},
+        )
+        self.assertEqual(member_publish.status_code, 403)
+
     def test_course_calendar_rejects_out_of_range_start_offset(self):
         class_id = lesson_manager.save_class("微调测试班", subject="数学", grade="六年级")
 

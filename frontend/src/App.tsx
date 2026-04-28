@@ -40,7 +40,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
-import type { CourseCalendarScheduleRecord, CourseCalendarTimeBlock } from './courseCalendarData';
+import type { CourseCalendarCustomItemRecord, CourseCalendarCustomScheduleRecord, CourseCalendarScheduleRecord, CourseCalendarTimeBlock } from './courseCalendarData';
+import { getCurrentWeekTuesday } from './courseCalendarData';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import { WorkspaceDashboard } from './WorkspaceDashboard';
@@ -808,14 +809,6 @@ function inferClassFeedbackStageName(dateString: string): ClassFeedbackStageName
   return '寒假';
 }
 
-function getLatestScheduleDate(schedules: CourseCalendarScheduleRecord[]): string {
-  if (schedules.length === 0) {
-    return getTodayIsoDate();
-  }
-
-  return schedules.reduce((latest, schedule) => (schedule.date > latest ? schedule.date : latest), schedules[0].date);
-}
-
 function compactConsultationText(value: string): string {
   return value.replace(/\s+/g, '').trim();
 }
@@ -1518,6 +1511,7 @@ const Sidebar = ({
   setActivePage,
   onNavigate,
   mobile,
+  compact,
   onProfileUpdated,
 }: {
   activePage: Page;
@@ -1526,6 +1520,7 @@ const Sidebar = ({
   setActivePage: (p: Page) => void;
   onNavigate?: () => void;
   mobile?: boolean;
+  compact?: boolean;
   onProfileUpdated?: (username: string, displayName: string) => void;
 }) => {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
@@ -1552,20 +1547,22 @@ const Sidebar = ({
         'flex flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,15,30,0.98)_0%,rgba(15,23,42,0.96)_52%,rgba(17,24,39,0.98)_100%)]',
         mobile
           ? 'h-full w-full overflow-y-auto overscroll-y-auto [-webkit-overflow-scrolling:touch] shadow-[18px_0_48px_rgba(47,128,237,0.12)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.48)]'
-          : 'h-screen w-72 shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
+          : compact
+            ? 'h-screen w-24 shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]'
+            : 'h-screen w-72 shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
       )}
     >
-      <div className="border-b border-sky-100/80 px-6 py-6 dark:border-white/10">
-        <div className="flex items-center gap-3">
+      <div className={cn('border-b border-sky-100/80 py-6 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-6')}>
+        <div className={cn('flex items-center gap-3', compact && !mobile && 'justify-center')}>
         <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
-          <div>
+          <div className={cn(compact && !mobile && 'hidden')}>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Starain 工作台</h1>
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">机构工作台</p>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 px-4 py-5">
+      <nav className={cn('flex-1 space-y-1 py-5', compact && !mobile ? 'px-3' : 'px-4')}>
         {menuItems.map((item) => (
           <button
             key={item.id}
@@ -1575,38 +1572,39 @@ const Sidebar = ({
               onNavigate?.();
             }}
             className={cn(
-              'flex w-full touch-manipulation items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
+              'relative flex w-full touch-manipulation items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
+              compact && !mobile && 'justify-center px-3',
               activePage === item.id
                 ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)] dark:border-sky-500/30 dark:bg-white/10 dark:text-sky-300 dark:shadow-[0_16px_36px_rgba(2,6,23,0.35)]'
                 : 'border border-transparent text-slate-500 hover:border-sky-100 hover:bg-white/75 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/10 dark:hover:bg-white/5 dark:hover:text-slate-100',
             )}
           >
             <item.icon size={20} />
-            <span className="font-medium">{item.label}</span>
+            <span className={cn('font-medium', compact && !mobile && 'hidden')}>{item.label}</span>
             {activePage === item.id && (
               <motion.div
                 layoutId="active-pill"
-                className="ml-auto h-2 w-2 rounded-full bg-sky-500"
+                className={cn('h-2 w-2 rounded-full bg-sky-500', compact && !mobile ? 'absolute right-2' : 'ml-auto')}
               />
             )}
           </button>
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-sky-100/80 p-4 dark:border-white/10">
+      <div className={cn('mt-auto border-t border-sky-100/80 p-4 dark:border-white/10', compact && !mobile && 'px-3')}>
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
-          className="flex w-full items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 p-3 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+          className={cn('flex w-full items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 p-3 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10', compact && !mobile && 'justify-center')}
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 font-bold text-white">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className={cn('flex-1 min-w-0', compact && !mobile && 'hidden')}>
             <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
             <p className="truncate text-xs text-slate-500 dark:text-slate-400">{getRoleLabel(currentUser.role)}</p>
           </div>
-          <MoreVertical size={16} className="shrink-0 text-slate-400 dark:text-slate-500" />
+          <MoreVertical size={16} className={cn('shrink-0 text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')} />
         </button>
       </div>
 
@@ -9161,8 +9159,11 @@ export default function App() {
   );
   const [calendarClasses, setCalendarClasses] = useState<ClassItem[]>([]);
   const [calendarSchedules, setCalendarSchedules] = useState<CourseCalendarScheduleRecord[]>([]);
+  const [calendarCustomItems, setCalendarCustomItems] = useState<CourseCalendarCustomItemRecord[]>([]);
+  const [calendarCustomSchedules, setCalendarCustomSchedules] = useState<CourseCalendarCustomScheduleRecord[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
-  const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getTodayIsoDate());
+  const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getCurrentWeekTuesday(getTodayIsoDate()));
+  const [calendarPageStepDays, setCalendarPageStepDays] = useState(6);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -9296,8 +9297,10 @@ export default function App() {
     if (!token || !currentUser) {
       setCalendarClasses([]);
       setCalendarSchedules([]);
+      setCalendarCustomItems([]);
+      setCalendarCustomSchedules([]);
       setCalendarLoading(false);
-      setCalendarAnchorDate(getTodayIsoDate());
+      setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
       return;
     }
 
@@ -9311,14 +9314,18 @@ export default function App() {
     Promise.all([
       apiFetch<ClassItem[]>('/api/classes'),
       apiFetch<{ items: CourseCalendarScheduleRecord[] }>('/api/course-calendar/schedules'),
+      apiFetch<{ items: CourseCalendarCustomItemRecord[] }>('/api/course-calendar/custom-items'),
+      apiFetch<{ items: CourseCalendarCustomScheduleRecord[] }>('/api/course-calendar/custom-schedules'),
     ])
-      .then(([classes, schedulePayload]) => {
+      .then(([classes, schedulePayload, customItemPayload, customSchedulePayload]) => {
         if (cancelled) {
           return;
         }
         setCalendarClasses(classes);
         setCalendarSchedules(schedulePayload.items);
-        setCalendarAnchorDate(getLatestScheduleDate(schedulePayload.items));
+        setCalendarCustomItems(customItemPayload.items);
+        setCalendarCustomSchedules(customSchedulePayload.items);
+        setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
       })
       .catch(console.error)
       .finally(() => {
@@ -9388,12 +9395,16 @@ export default function App() {
     setMobileNavOpen(false);
   };
 
-  const handlePreviousCalendarWeek = () => {
-    setCalendarAnchorDate((current) => shiftIsoDate(current, -7));
+  const handlePreviousCalendarPage = (dayCount: number) => {
+    setCalendarAnchorDate((current) => shiftIsoDate(current, -dayCount));
   };
 
-  const handleNextCalendarWeek = () => {
-    setCalendarAnchorDate((current) => shiftIsoDate(current, 7));
+  const handleNextCalendarPage = (dayCount: number) => {
+    setCalendarAnchorDate((current) => shiftIsoDate(current, dayCount));
+  };
+
+  const handleCalendarPageStepDaysChange = (dayCount: number) => {
+    setCalendarPageStepDays(Math.max(1, Math.min(14, Math.trunc(dayCount) || 6)));
   };
 
   const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
@@ -9415,7 +9426,6 @@ export default function App() {
           ),
           item,
         ]);
-        setCalendarAnchorDate(date);
       })
       .catch(console.error);
   };
@@ -9426,6 +9436,70 @@ export default function App() {
     })
       .then(() => {
         setCalendarSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
+      })
+      .catch(console.error);
+  };
+
+  const handleCreateCalendarCustomItem = (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => {
+    return apiFetch<{ item: CourseCalendarCustomItemRecord }>('/api/course-calendar/custom-items', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    })
+      .then(({ item: createdItem }) => {
+        setCalendarCustomItems((current) => [createdItem, ...current.filter((existing) => existing.id !== createdItem.id)]);
+        return createdItem;
+      })
+      .catch((error) => {
+        console.error(error);
+        throw error;
+      });
+  };
+
+  const handleDeleteCalendarCustomItem = (itemId: number) => {
+    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/custom-items/${itemId}`, {
+      method: 'DELETE',
+    })
+      .then(() => {
+        setCalendarCustomItems((current) => current.filter((item) => item.id !== itemId));
+        setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.custom_item_id !== itemId));
+      })
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '删除自定义事项失败');
+        }
+      });
+  };
+
+  const handleScheduleCalendarCustomItem = (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
+    apiFetch<{ item: CourseCalendarCustomScheduleRecord }>('/api/course-calendar/custom-schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        custom_item_id: customItemId,
+        date,
+        time_block: timeBlock,
+        start_offset_minutes: startOffsetMinutes,
+      }),
+    })
+      .then(({ item }) => {
+        setCalendarCustomSchedules((current) => [
+          ...current.filter(
+            (schedule) =>
+              schedule.id !== item.id
+              && !(schedule.custom_item_id === item.custom_item_id && schedule.date === item.date && schedule.time_block === item.time_block),
+          ),
+          item,
+        ]);
+      })
+      .catch(console.error);
+  };
+
+  const handleDeleteCalendarCustomSchedule = (scheduleId: number) => {
+    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/custom-schedules/${scheduleId}`, {
+      method: 'DELETE',
+    })
+      .then(() => {
+        setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
       })
       .catch(console.error);
   };
@@ -9525,6 +9599,7 @@ export default function App() {
             currentUser={currentUser}
             onLogout={handleLogout}
             setActivePage={setActivePage}
+            compact={activePage === 'calendar'}
             onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
           />
         </div>
@@ -9565,7 +9640,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        <main className="flex min-w-0 flex-1 flex-col lg:pl-72">
+        <main className={cn('flex min-w-0 flex-1 flex-col', activePage === 'calendar' ? 'lg:pl-24' : 'lg:pl-72')}>
           <Header
             title={pageTitle[activePage]}
             onGoHome={() => setShowLanding(true)}
@@ -9608,12 +9683,23 @@ export default function App() {
                   ) : (
                     <CourseCalendarPage
                       anchorDate={calendarAnchorDate}
+                      today={getTodayIsoDate()}
+                      currentUserId={currentUser.id}
+                      currentUserRole={currentUser.role}
                       classes={calendarClasses}
                       schedules={calendarSchedules}
-                      onPreviousWeek={handlePreviousCalendarWeek}
-                      onNextWeek={handleNextCalendarWeek}
+                      customItems={calendarCustomItems}
+                      customSchedules={calendarCustomSchedules}
+                      pageStepDays={calendarPageStepDays}
+                      onPageStepDaysChange={handleCalendarPageStepDaysChange}
+                      onPreviousPage={handlePreviousCalendarPage}
+                      onNextPage={handleNextCalendarPage}
                       onScheduleClass={handleScheduleCalendarClass}
+                      onScheduleCustomItem={handleScheduleCalendarCustomItem}
+                      onCreateCustomItem={handleCreateCalendarCustomItem}
+                      onDeleteCustomItem={handleDeleteCalendarCustomItem}
                       onDeleteSchedule={handleDeleteCalendarSchedule}
+                      onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
                     />
                   ))}
                 {activePage === 'smartWrongQuestions' &&

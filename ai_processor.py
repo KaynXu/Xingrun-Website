@@ -3,13 +3,16 @@
 """
 AI 处理模块：
   - 音频转录（faster-whisper）
-  - 课堂总结解析 → 结构化复习计划 JSON（GPT-4o）
+  - 课堂总结解析 → 结构化复习计划 JSON（DeepSeek）
   - 月度复习计划聚合
 """
+
+from __future__ import annotations
 
 import json
 import os
 import re
+import subprocess
 import tempfile
 import threading
 import urllib.parse
@@ -25,7 +28,7 @@ def _load_config() -> dict:
 
 
 def _provider_name() -> str:
-    return str(_load_config().get("provider", "openai") or "openai")
+    return str(_load_config().get("provider", "deepseek") or "deepseek")
 
 
 def _usage_dict(response, *, provider: str | None = None, model_fallback: str = "") -> dict:
@@ -42,7 +45,7 @@ def _get_client():
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
     cfg = _load_config()
-    provider = cfg.get("provider", "openai")
+    provider = cfg.get("provider", "deepseek")
 
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
@@ -80,7 +83,7 @@ def _get_client():
 def _get_chat_model() -> str:
     """返回当前服务商对应的对话模型名称。"""
     cfg = _load_config()
-    provider = cfg.get("provider", "openai")
+    provider = cfg.get("provider", "deepseek")
     if provider == "deepseek":
         return cfg.get("deepseek_model", "deepseek-chat")
     elif provider == "mimo":
@@ -91,7 +94,74 @@ def _get_chat_model() -> str:
 
 
 def _get_structured_generation_model() -> str:
-    return str(_get_chat_model() or "gpt-4o")
+    return str(_get_chat_model() or "deepseek-chat")
+
+
+_BARE_LATEX_COMMAND_RE = re.compile(
+    r"(?<!\\)\\(?:left|right|frac|sqrt|theta|alpha|beta|gamma|delta|pi|sin|cos|tan|"
+    r"log|ln|angle|parallel|perp|cdot|times|div|leq|geq|neq|pm|circ|text|overline|widehat)\b"
+)
+
+
+def _escape_bare_backslashes_in_json_strings(raw: str) -> str:
+    result: list[str] = []
+    in_string = False
+    i = 0
+    valid_simple_escapes = {'"', "\\", "/", "b", "f", "n", "r", "t"}
+
+    while i < len(raw):
+        char = raw[i]
+        if not in_string:
+            result.append(char)
+            if char == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if char == '"':
+            result.append(char)
+            in_string = False
+            i += 1
+            continue
+
+        if char != "\\":
+            result.append(char)
+            i += 1
+            continue
+
+        if i + 1 >= len(raw):
+            result.append("\\\\")
+            i += 1
+            continue
+
+        next_char = raw[i + 1]
+        if next_char == "u" and i + 5 < len(raw) and re.fullmatch(r"[0-9a-fA-F]{4}", raw[i + 2 : i + 6]):
+            result.append(raw[i : i + 6])
+            i += 6
+            continue
+        if next_char in {'"', "\\", "/"}:
+            result.append(raw[i : i + 2])
+            i += 2
+            continue
+        if next_char in valid_simple_escapes and not (i + 2 < len(raw) and raw[i + 2].isalpha()):
+            result.append(raw[i : i + 2])
+            i += 2
+            continue
+
+        result.append("\\\\")
+        i += 1
+
+    return "".join(result)
+
+
+def _loads_model_json(raw: str | None, default: str = "{}"):
+    content = raw if raw is not None and str(raw).strip() else default
+    if _BARE_LATEX_COMMAND_RE.search(content):
+        return json.loads(_escape_bare_backslashes_in_json_strings(content))
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return json.loads(_escape_bare_backslashes_in_json_strings(content))
 
 
 _LOCAL_WHISPER_MODEL = None
@@ -192,6 +262,24 @@ WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 - notes: string
 如果是几何题，question_text 返回空字符串。
 如果不是几何题但无法可靠识别题目文本，也要如实返回空字符串，并在 notes 里说明原因。"""
+
+WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT = """你是错题识别质量审稿员。
+你会收到原始错题图片、当前识别出的题目文本，以及可选的 LaTeX 渲染错误。
+请判断这份题目文本是否适合直接进入学生错题库 PDF。
+
+检查标准：
+1. 只保留原始题目主体，不要包含学生手写答案、草稿、订正、批改痕迹、圈画说明或解题过程。
+2. 不要漏掉原题关键条件、选项、问题问法。
+3. 普通文字保留自然文本，不要整段改写成 LaTeX。
+4. 行内短公式必须用 $...$。
+5. 独立成行、较长公式、方程组、分段式、长根式或多行表达式必须用 $$...$$。
+6. LaTeX 必须适合 KaTeX 渲染。
+
+请用纯文本返回，不要返回 JSON。
+第一行必须是“结论：通过”或“结论：不通过”。
+如果不通过，后续写明问题和修改要求，方便下一轮重写。"""
+
+_WRONG_QUESTION_RECOGNITION_MAX_ATTEMPTS = 3
 
 WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
     "知识点问题",
@@ -306,29 +394,171 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
     }
 
 
-def recognize_wrong_question_image(image_url: str) -> dict:
-    normalized_image_url = str(image_url or "").strip()
-    if not normalized_image_url:
-        raise ValueError("image_url is required")
+def _request_wrong_question_recognition_attempt(
+    image_url: str,
+    *,
+    revision_feedback: str = "",
+    client=None,
+) -> dict:
+    active_client = client or _get_client()
+    user_instruction = "请判断这道错题是否属于几何题，并提取非几何题题目文本。"
+    if revision_feedback:
+        user_instruction = (
+            "上一版识别没有通过质量检查。请根据下面的审稿意见重新识别并重写题目文本：\n"
+            f"{revision_feedback}\n\n"
+            "只保留原始题目主体，忽略学生手写答案、草稿、订正、批改痕迹和解题过程。"
+        )
 
-    client = _get_client()
-    response = client.chat.completions.create(
+    response = active_client.chat.completions.create(
         model=_get_structured_generation_model(),
         messages=[
             {"role": "system", "content": WRONG_QUESTION_RECOGNITION_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "请判断这道错题是否属于几何题，并提取非几何题题目文本。"},
-                    {"type": "image_url", "image_url": {"url": normalized_image_url}},
+                    {"type": "text", "text": user_instruction},
+                    {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             },
         ],
         temperature=0,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
-    return _normalize_wrong_question_recognition_result(payload)
+    return _loads_model_json(response.choices[0].message.content)
+
+
+def _collect_wrong_question_latex_render_issues(question_text: str) -> list[str]:
+    normalized_text = str(question_text or "").strip()
+    if not normalized_text:
+        return []
+
+    checker_script = Path(__file__).resolve().parent / "frontend" / "scripts" / "checkWrongQuestionLatex.mjs"
+    if not checker_script.exists():
+        return []
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as temp_file:
+        json.dump({"questionText": normalized_text}, temp_file, ensure_ascii=False)
+        temp_file_path = temp_file.name
+
+    try:
+        result = subprocess.run(
+            ["node", str(checker_script), temp_file_path],
+            cwd=str(Path(__file__).resolve().parent),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+    finally:
+        try:
+            Path(temp_file_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    if result.returncode != 0:
+        stderr = str(result.stderr or "").strip()
+        return [stderr or f"LaTeX 渲染检查执行失败（exit code {result.returncode}）"]
+
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return ["LaTeX 渲染检查返回了无法解析的结果"]
+
+    issues = []
+    for error in payload.get("errors") or []:
+        if not isinstance(error, dict):
+            continue
+        source = str(error.get("source") or "").strip()
+        message = str(error.get("message") or "公式渲染失败").strip()
+        issues.append(f"{message}：{source}" if source else message)
+    return issues
+
+
+def _review_wrong_question_recognition_quality(
+    *,
+    image_url: str,
+    question_text: str,
+    latex_issues: list[str],
+    client=None,
+) -> str:
+    active_client = client or _get_client()
+    issue_text = "\n".join(f"- {issue}" for issue in latex_issues) if latex_issues else "无"
+    response = active_client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "请审稿下面这版错题识别结果。\n\n"
+                            f"当前题目文本：\n{question_text}\n\n"
+                            f"LaTeX 渲染错误：\n{issue_text}"
+                        ),
+                    },
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            },
+        ],
+        temperature=0,
+    )
+    return str(response.choices[0].message.content or "").strip()
+
+
+def _wrong_question_quality_review_passed(review_text: str) -> bool:
+    for line in str(review_text or "").splitlines():
+        normalized = re.sub(r"\s+", "", line)
+        if not normalized:
+            continue
+        return normalized.startswith("结论：通过") or normalized.startswith("结论:通过")
+    return False
+
+
+def recognize_wrong_question_image(image_url: str) -> dict:
+    normalized_image_url = str(image_url or "").strip()
+    if not normalized_image_url:
+        raise ValueError("image_url is required")
+
+    client = None
+    revision_feedback = ""
+    last_failure = ""
+    for _attempt in range(_WRONG_QUESTION_RECOGNITION_MAX_ATTEMPTS):
+        try:
+            payload = _request_wrong_question_recognition_attempt(
+                normalized_image_url,
+                revision_feedback=revision_feedback,
+                client=client,
+            )
+            normalized = _normalize_wrong_question_recognition_result(payload)
+        except ValueError as exc:
+            last_failure = str(exc)
+            revision_feedback = f"上一版识别失败：{last_failure}"
+            continue
+
+        if normalized["is_geometry"]:
+            return normalized
+
+        latex_issues = _collect_wrong_question_latex_render_issues(normalized["question_text"])
+        review_text = _review_wrong_question_recognition_quality(
+            image_url=normalized_image_url,
+            question_text=normalized["question_text"],
+            latex_issues=latex_issues,
+            client=client,
+        )
+        if not latex_issues and _wrong_question_quality_review_passed(review_text):
+            return normalized
+
+        feedback_parts = []
+        if latex_issues:
+            feedback_parts.append("LaTeX 渲染检查未通过：\n" + "\n".join(f"- {issue}" for issue in latex_issues))
+        if review_text:
+            feedback_parts.append("AI 审稿意见：\n" + review_text)
+        revision_feedback = "\n\n".join(feedback_parts).strip()
+        last_failure = revision_feedback or "AI 审稿未通过"
+
+    raise ValueError(f"题目识别质量检查未通过：{last_failure}")
 
 
 def transcribe_child_reason_audio(audio_url: str) -> dict:
@@ -375,7 +605,7 @@ def classify_wrong_question_reason(child_reason_text: str, *, question_text: str
         temperature=0,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    payload = _loads_model_json(response.choices[0].message.content)
     display_text = str(payload.get("display_text") or "").strip()
     primary_error_type = str(payload.get("primary_error_type") or "").strip()
     secondary_error_summary = str(payload.get("secondary_error_summary") or "").strip()
@@ -511,7 +741,7 @@ def generate_wrong_question_practice_sheet_material(
         temperature=0.4,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    payload = _loads_model_json(response.choices[0].message.content)
     normalized = _normalize_wrong_question_practice_sheet_material(
         payload,
         expected_record_ids=expected_record_ids,
@@ -795,7 +1025,7 @@ def parse_and_generate_plan(
     )
 
     raw = response.choices[0].message.content
-    plan = json.loads(raw)
+    plan = _loads_model_json(raw)
     
     # 补充日期
     if lesson_date and "lesson_info" in plan:
@@ -820,7 +1050,7 @@ def parse_consultation_batch_text(raw_text: str, *, include_usage: bool = False)
         temperature=0.1,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content)
+    payload = _loads_model_json(response.choices[0].message.content)
     if not isinstance(payload.get("items"), list):
         raise RuntimeError("咨询记录批量解析返回了无效结果")
     parsed = {
@@ -934,7 +1164,7 @@ def generate_class_feedback_bundle(
         response_format={"type": "json_object"},
     )
     content = (response.choices[0].message.content or "").strip()
-    bundle = json.loads(content or "{}")
+    bundle = _loads_model_json(content)
     if not isinstance(bundle, dict):
         raise ValueError("AI 返回格式不正确")
     if not isinstance(bundle.get("student_entries"), list):
@@ -970,7 +1200,7 @@ def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = Fals
         response_format={"type": "json_object"},
     )
 
-    plan = json.loads(response.choices[0].message.content)
+    plan = _loads_model_json(response.choices[0].message.content)
     plan.setdefault("lesson_info", {})["month"] = month_str
     plan["lesson_info"]["topic"] = f"{month_str} 综合复习"
     print("月度复习计划生成完成。")
