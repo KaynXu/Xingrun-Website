@@ -10,6 +10,7 @@ AI 处理模块：
 import json
 import os
 import re
+import subprocess
 import tempfile
 import threading
 import urllib.parse
@@ -260,6 +261,24 @@ WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 如果是几何题，question_text 返回空字符串。
 如果不是几何题但无法可靠识别题目文本，也要如实返回空字符串，并在 notes 里说明原因。"""
 
+WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT = """你是错题识别质量审稿员。
+你会收到原始错题图片、当前识别出的题目文本，以及可选的 LaTeX 渲染错误。
+请判断这份题目文本是否适合直接进入学生错题库 PDF。
+
+检查标准：
+1. 只保留原始题目主体，不要包含学生手写答案、草稿、订正、批改痕迹、圈画说明或解题过程。
+2. 不要漏掉原题关键条件、选项、问题问法。
+3. 普通文字保留自然文本，不要整段改写成 LaTeX。
+4. 行内短公式必须用 $...$。
+5. 独立成行、较长公式、方程组、分段式、长根式或多行表达式必须用 $$...$$。
+6. LaTeX 必须适合 KaTeX 渲染。
+
+请用纯文本返回，不要返回 JSON。
+第一行必须是“结论：通过”或“结论：不通过”。
+如果不通过，后续写明问题和修改要求，方便下一轮重写。"""
+
+_WRONG_QUESTION_RECOGNITION_MAX_ATTEMPTS = 3
+
 WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
     "知识点问题",
     "细节问题",
@@ -373,29 +392,171 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
     }
 
 
-def recognize_wrong_question_image(image_url: str) -> dict:
-    normalized_image_url = str(image_url or "").strip()
-    if not normalized_image_url:
-        raise ValueError("image_url is required")
+def _request_wrong_question_recognition_attempt(
+    image_url: str,
+    *,
+    revision_feedback: str = "",
+    client=None,
+) -> dict:
+    active_client = client or _get_client()
+    user_instruction = "请判断这道错题是否属于几何题，并提取非几何题题目文本。"
+    if revision_feedback:
+        user_instruction = (
+            "上一版识别没有通过质量检查。请根据下面的审稿意见重新识别并重写题目文本：\n"
+            f"{revision_feedback}\n\n"
+            "只保留原始题目主体，忽略学生手写答案、草稿、订正、批改痕迹和解题过程。"
+        )
 
-    client = _get_client()
-    response = client.chat.completions.create(
+    response = active_client.chat.completions.create(
         model=_get_structured_generation_model(),
         messages=[
             {"role": "system", "content": WRONG_QUESTION_RECOGNITION_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "请判断这道错题是否属于几何题，并提取非几何题题目文本。"},
-                    {"type": "image_url", "image_url": {"url": normalized_image_url}},
+                    {"type": "text", "text": user_instruction},
+                    {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             },
         ],
         temperature=0,
         response_format={"type": "json_object"},
     )
-    payload = _loads_model_json(response.choices[0].message.content)
-    return _normalize_wrong_question_recognition_result(payload)
+    return _loads_model_json(response.choices[0].message.content)
+
+
+def _collect_wrong_question_latex_render_issues(question_text: str) -> list[str]:
+    normalized_text = str(question_text or "").strip()
+    if not normalized_text:
+        return []
+
+    checker_script = Path(__file__).resolve().parent / "frontend" / "scripts" / "checkWrongQuestionLatex.mjs"
+    if not checker_script.exists():
+        return []
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as temp_file:
+        json.dump({"questionText": normalized_text}, temp_file, ensure_ascii=False)
+        temp_file_path = temp_file.name
+
+    try:
+        result = subprocess.run(
+            ["node", str(checker_script), temp_file_path],
+            cwd=str(Path(__file__).resolve().parent),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+    finally:
+        try:
+            Path(temp_file_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    if result.returncode != 0:
+        stderr = str(result.stderr or "").strip()
+        return [stderr or f"LaTeX 渲染检查执行失败（exit code {result.returncode}）"]
+
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return ["LaTeX 渲染检查返回了无法解析的结果"]
+
+    issues = []
+    for error in payload.get("errors") or []:
+        if not isinstance(error, dict):
+            continue
+        source = str(error.get("source") or "").strip()
+        message = str(error.get("message") or "公式渲染失败").strip()
+        issues.append(f"{message}：{source}" if source else message)
+    return issues
+
+
+def _review_wrong_question_recognition_quality(
+    *,
+    image_url: str,
+    question_text: str,
+    latex_issues: list[str],
+    client=None,
+) -> str:
+    active_client = client or _get_client()
+    issue_text = "\n".join(f"- {issue}" for issue in latex_issues) if latex_issues else "无"
+    response = active_client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "请审稿下面这版错题识别结果。\n\n"
+                            f"当前题目文本：\n{question_text}\n\n"
+                            f"LaTeX 渲染错误：\n{issue_text}"
+                        ),
+                    },
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            },
+        ],
+        temperature=0,
+    )
+    return str(response.choices[0].message.content or "").strip()
+
+
+def _wrong_question_quality_review_passed(review_text: str) -> bool:
+    for line in str(review_text or "").splitlines():
+        normalized = re.sub(r"\s+", "", line)
+        if not normalized:
+            continue
+        return normalized.startswith("结论：通过") or normalized.startswith("结论:通过")
+    return False
+
+
+def recognize_wrong_question_image(image_url: str) -> dict:
+    normalized_image_url = str(image_url or "").strip()
+    if not normalized_image_url:
+        raise ValueError("image_url is required")
+
+    client = None
+    revision_feedback = ""
+    last_failure = ""
+    for _attempt in range(_WRONG_QUESTION_RECOGNITION_MAX_ATTEMPTS):
+        try:
+            payload = _request_wrong_question_recognition_attempt(
+                normalized_image_url,
+                revision_feedback=revision_feedback,
+                client=client,
+            )
+            normalized = _normalize_wrong_question_recognition_result(payload)
+        except ValueError as exc:
+            last_failure = str(exc)
+            revision_feedback = f"上一版识别失败：{last_failure}"
+            continue
+
+        if normalized["is_geometry"]:
+            return normalized
+
+        latex_issues = _collect_wrong_question_latex_render_issues(normalized["question_text"])
+        review_text = _review_wrong_question_recognition_quality(
+            image_url=normalized_image_url,
+            question_text=normalized["question_text"],
+            latex_issues=latex_issues,
+            client=client,
+        )
+        if not latex_issues and _wrong_question_quality_review_passed(review_text):
+            return normalized
+
+        feedback_parts = []
+        if latex_issues:
+            feedback_parts.append("LaTeX 渲染检查未通过：\n" + "\n".join(f"- {issue}" for issue in latex_issues))
+        if review_text:
+            feedback_parts.append("AI 审稿意见：\n" + review_text)
+        revision_feedback = "\n\n".join(feedback_parts).strip()
+        last_failure = revision_feedback or "AI 审稿未通过"
+
+    raise ValueError(f"题目识别质量检查未通过：{last_failure}")
 
 
 def transcribe_child_reason_audio(audio_url: str) -> dict:
