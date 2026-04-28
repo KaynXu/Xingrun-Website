@@ -7,7 +7,8 @@
 
 .library-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: space-between;
   gap: 20rpx;
   margin-bottom: 24rpx;
@@ -38,6 +39,7 @@
 }
 
 .library-btn {
+  width: 100%;
   margin: 0;
   padding: 0 28rpx;
   height: 72rpx;
@@ -47,6 +49,8 @@
   color: #ffffff;
   font-size: 24rpx;
   font-weight: 600;
+  white-space: nowrap;
+  box-sizing: border-box;
   flex-shrink: 0;
 }
 

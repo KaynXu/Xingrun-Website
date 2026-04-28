@@ -125,3 +125,35 @@ test('parent upload and wrongbook pages expose primary topic category controls',
   assert.equal(wrongbookTemplate.includes('专题'), true);
   assert.equal(wrongbookTemplate.includes('bindtap="saveTopicCategory"'), true);
 });
+
+test('parent mini program pages stack action areas for narrow phone screens', () => {
+  const homeStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxss'), 'utf8');
+  const bindStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxss'), 'utf8');
+  const wrongbookStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxss'), 'utf8');
+  const assertRuleIncludes = (styles, selector, declaration) => {
+    assert.equal(
+      styles
+        .split('}')
+        .some((rule) => {
+          const [selectors, body = ''] = rule.split('{');
+          return selectors.includes(selector) && body.includes(declaration);
+        }),
+      true,
+      `${selector} should include ${declaration}`,
+    );
+  };
+
+  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: column;');
+  assertRuleIncludes(homeStyles, '.binding-actions', 'width: 100%;');
+  assertRuleIncludes(homeStyles, '.mini-btn', 'width: 100%;');
+  assertRuleIncludes(homeStyles, '.mini-btn', 'white-space: nowrap;');
+
+  assertRuleIncludes(bindStyles, '.student-card', 'flex-direction: column;');
+  assertRuleIncludes(bindStyles, '.section-head', 'flex-direction: column;');
+  assertRuleIncludes(bindStyles, '.mini-btn', 'width: 100%;');
+  assertRuleIncludes(bindStyles, '.mini-btn', 'white-space: nowrap;');
+
+  assertRuleIncludes(wrongbookStyles, '.library-card', 'flex-direction: column;');
+  assertRuleIncludes(wrongbookStyles, '.library-btn', 'width: 100%;');
+  assertRuleIncludes(wrongbookStyles, '.library-btn', 'white-space: nowrap;');
+});
