@@ -208,7 +208,7 @@ def get_config():
 
 
 def _default_ai_provider_name() -> str:
-    return str(get_config().get("provider", "openai") or "openai")
+    return str(get_config().get("provider", "deepseek") or "deepseek")
 
 
 def _default_chat_model_name() -> str:
@@ -1000,7 +1000,7 @@ def _start_monthly_plan_generation_thread(**job_kwargs) -> None:
 
 def has_api_key():
     cfg = get_config()
-    provider = cfg.get("provider", "openai")
+    provider = cfg.get("provider", "deepseek")
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
     elif provider == "mimo":
@@ -3964,7 +3964,7 @@ def api_settings_get():
     def _mask(k):
         return (k[:4] + "..." + k[-4:]) if len(k) > 8 else ("*" * len(k) if k else "")
     return jsonify({
-        "provider": cfg.get("provider", "openai"),
+        "provider": cfg.get("provider", "deepseek"),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),

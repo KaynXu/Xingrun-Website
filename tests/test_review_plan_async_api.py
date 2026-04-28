@@ -86,8 +86,8 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
         self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
-        self.assertEqual(thread_kwargs["chat_provider"], "openai")
-        self.assertEqual(thread_kwargs["chat_model"], "gpt-4o")
+        self.assertEqual(thread_kwargs["chat_provider"], "deepseek")
+        self.assertEqual(thread_kwargs["chat_model"], "deepseek-chat")
         self.assertIn("request_key", thread_kwargs)
         self.assertNotIn("lesson_date", thread_kwargs)
         self.assertNotIn("class_id", thread_kwargs)

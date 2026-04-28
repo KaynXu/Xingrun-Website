@@ -7,6 +7,7 @@
 
 ### 当前状态
 - 2026-04-28 已按用户提供的飞书智能纪要和 `review_plan_templates/review-plan-workflow.md` 生成《动角问题表达式及方程讨论》课后复习计划课程包：`review_plan_templates/lesson_pack_moving_angle_expression_equation_20260426.py`。主题收口为动角运动状态、分段表达式、分类讨论、伴随线、追及与相遇、往返运动、角平分线和角度问题难度分级。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260428-141348.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof 已确认课程包可 `py_compile`、PDF 15 页、239404 bytes，包含 `动角问题表达式及方程讨论 / 运动状态 / 分类讨论 / 伴随线 / 追及 / 角平分线 / 基础角问题 / 拐点模型 / 复杂动角问题` 和 5 个复习日期 `2026-04-29 / 2026-04-30 / 2026-05-05 / 2026-05-12 / 2026-05-28`；并用 PyMuPDF 渲染抽查第 1/2/8/15 页，没有空白页。
+- 2026-04-28 已把网站后端可安全切换的文本类 AI 默认 provider 从 OpenAI 收口为 DeepSeek：`config_runtime.py` 默认 `provider=deepseek`，`ai_processor.py` / `app.py` 的无配置 fallback 同步改为 DeepSeek，旧命令行 `setup` 改为写入 `deepseek_api_key` 并设置 `provider=deepseek`，`.env.runtime.example` 改成 DeepSeek 示例，并新增 `XR_DEEPSEEK_MODEL` 环境变量覆盖。音频转写仍保留本地 `faster-whisper`；题图/图片理解链路未切 DeepSeek，避免官方 API 图片输入能力不明确导致线上识别退化。latest proof 已通过临时脚本 `/tmp/xingrun_deepseek_defaults_proof.py`：默认 provider/model/key 断言、18 条定向后端测试、`git diff --check`。
 - 2026-04-27 已按用户要求撤回智能错题 LaTeX 的“所有坏公式自动降级”行为：现在只保留 `\right` 被 JSON 转义吞成回车后的修复；其它 KaTeX 解析失败、未闭合 `$...` 等普通公式错误继续显示渲染失败提示，方便老师检修。老师端提示文案已恢复为“保存不会拦截公式错误，但下面会提示渲染失败的位置”。latest proof 已通过前端 190 条测试、production build 和 `git diff --check`。
 - 2026-04-26 已修复智能错题 LaTeX 预览里 `\right` 被 JSON 转义吞成回车后显示为 `ight` 的回归：`frontend/src/wrongQuestionLatex.js` 现在会把实际 `\r` + `ight/ightarrow` 和字面量 `\\r` + `ight/ightarrow` 当作 LaTeX 命令反斜杠修回，而普通换行仍按换行处理；新增回归覆盖截图里的 `\left(...\right)` 四次根式和 `\left|...\right|` 绝对值两类 KaTeX 报错。latest proof 已通过前端 190 条测试与 `git diff --check`。
 - 2026-04-26 已修复小程序家长端“爸爸妈妈绑定同一个孩子后错题本不同步”的后端查询问题：`/api/wechat/children/<student_id>/wrong-questions` 仍先校验当前 `open_id` 是否已绑定该学生，但错题列表改为按 `student_id` 返回该孩子的错题全集，不再按上传者 `parent_wechat_account_id` 隔离；妈妈上传的错题，已绑定同一孩子的爸爸也能在错题本看到。定向 proof 已通过 `tests.test_wechat_parent_upload_data` 与 `tests.test_wechat_parent_upload_api` 共 36 条。
@@ -183,6 +184,8 @@
 
 ### 风险
 - 这份动角复习计划根据飞书智能纪要整理，不是逐字人工校对的课堂转写；纪要中具体题号、射线字母和个别角名可能有识别偏差，正式发给学生前建议老师快速核对例题字母、速度、时间范围和方程条件。
+- 当前只改了仓库默认和示例配置，还没有直接登录生产机改 `.env.runtime` 或重启 PM2；生产机如果仍显式设置 `XR_PROVIDER=n1n`，运行时会继续按环境变量优先级使用 n1n，需发版/运维时把生产 `.env.runtime` 改为 `XR_PROVIDER=deepseek` 并配置 `DEEPSEEK_API_KEY`。
+- DeepSeek 只承接文本类聊天/JSON 生成任务；音频继续本地 `faster-whisper`，题图识别仍需要保留可处理图片输入的 provider 或先走 OCR 再交给 DeepSeek。
 - RQ/Redis 异步上传已在生产机启动真实 Redis 和 RQ worker，但还没有用真机真实录音/题图跑完整端到端 smoke；新版小程序包也还需要上传微信后台，旧小程序仍会先走转写/归类等待链路，无法完整体现“提交后服务器后台识别”的新体验。
 - 这份热学复习计划根据企业微信缓存中的课堂文字记录整理，记录中有少量口误、识别噪声和课堂闲聊；复习计划已按可稳定识别的物理主线归纳，但正式发给学生前仍建议老师快速核对例题数据、符号正负号和“热力学第一定律”相关表述。
 - 这份立体几何外接球复习计划同样是根据飞书智能纪要整理出的样稿，不是逐字人工校对的录音转写；纪要里“圆柱半径/高的设法”“正四棱锥变量命名”和个别例题条件可能有误，正式给学生前需要老师快速核对。

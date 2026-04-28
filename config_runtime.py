@@ -14,6 +14,7 @@ ENV_VAR_MAP = {
     "provider": "XR_PROVIDER",
     "openai_api_key": "OPENAI_API_KEY",
     "deepseek_api_key": "DEEPSEEK_API_KEY",
+    "deepseek_model": "XR_DEEPSEEK_MODEL",
     "mimo_api_key": "MIMO_API_KEY",
     "mimo_base_url": "XR_MIMO_BASE_URL",
     "mimo_model": "XR_MIMO_MODEL",
@@ -30,7 +31,7 @@ ENV_VAR_MAP = {
 }
 
 DEFAULTS = {
-    "provider": "openai",
+    "provider": "deepseek",
     "xhs_base_url": "https://ark.xiaohongshu.com",
     "mimo_model": "MiMo-7B-RL",
     "n1n_base_url": "https://api.n1n.ai/v1",

@@ -6591,7 +6591,7 @@ def cmd_setup(_args):
         with open(CFG_PATH, encoding="utf-8") as f:
             cfg = json.load(f)
 
-    existing_key = cfg.get("openai_api_key", "")
+    existing_key = cfg.get("deepseek_api_key", "")
     if existing_key:
         print(f"当前已有 API Key（前8位）：{existing_key[:8]}...")
         ans = input("是否重新设置？[y/N] ").strip().lower()
@@ -6599,14 +6599,15 @@ def cmd_setup(_args):
             print("保持原有 API Key 不变。")
             return
 
-    key = input("请输入你的 OpenAI API Key（留空跳过）：").strip()
+    key = input("请输入你的 DeepSeek API Key（留空跳过）：").strip()
     if key:
-        cfg["openai_api_key"] = key
+        cfg["provider"] = "deepseek"
+        cfg["deepseek_api_key"] = key
         with open(CFG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         print(f"API Key 已保存到 {CFG_PATH}")
     else:
-        print("跳过 API Key 设置（可后续手动编辑 config.json 或设置环境变量 OPENAI_API_KEY）。")
+        print("跳过 API Key 设置（可后续手动编辑 config.json 或设置环境变量 DEEPSEEK_API_KEY）。")
     print("\n初始化完成！可以开始使用了。")
 
 

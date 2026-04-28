@@ -3,7 +3,7 @@
 """
 AI 处理模块：
   - 音频转录（faster-whisper）
-  - 课堂总结解析 → 结构化复习计划 JSON（GPT-4o）
+  - 课堂总结解析 → 结构化复习计划 JSON（DeepSeek）
   - 月度复习计划聚合
 """
 
@@ -25,7 +25,7 @@ def _load_config() -> dict:
 
 
 def _provider_name() -> str:
-    return str(_load_config().get("provider", "openai") or "openai")
+    return str(_load_config().get("provider", "deepseek") or "deepseek")
 
 
 def _usage_dict(response, *, provider: str | None = None, model_fallback: str = "") -> dict:
@@ -42,7 +42,7 @@ def _get_client():
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
     cfg = _load_config()
-    provider = cfg.get("provider", "openai")
+    provider = cfg.get("provider", "deepseek")
 
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
@@ -80,7 +80,7 @@ def _get_client():
 def _get_chat_model() -> str:
     """返回当前服务商对应的对话模型名称。"""
     cfg = _load_config()
-    provider = cfg.get("provider", "openai")
+    provider = cfg.get("provider", "deepseek")
     if provider == "deepseek":
         return cfg.get("deepseek_model", "deepseek-chat")
     elif provider == "mimo":
@@ -91,7 +91,7 @@ def _get_chat_model() -> str:
 
 
 def _get_structured_generation_model() -> str:
-    return str(_get_chat_model() or "gpt-4o")
+    return str(_get_chat_model() or "deepseek-chat")
 
 
 _LOCAL_WHISPER_MODEL = None
