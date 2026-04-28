@@ -94,6 +94,73 @@ def _get_structured_generation_model() -> str:
     return str(_get_chat_model() or "deepseek-chat")
 
 
+_BARE_LATEX_COMMAND_RE = re.compile(
+    r"(?<!\\)\\(?:left|right|frac|sqrt|theta|alpha|beta|gamma|delta|pi|sin|cos|tan|"
+    r"log|ln|angle|parallel|perp|cdot|times|div|leq|geq|neq|pm|circ|text|overline|widehat)\b"
+)
+
+
+def _escape_bare_backslashes_in_json_strings(raw: str) -> str:
+    result: list[str] = []
+    in_string = False
+    i = 0
+    valid_simple_escapes = {'"', "\\", "/", "b", "f", "n", "r", "t"}
+
+    while i < len(raw):
+        char = raw[i]
+        if not in_string:
+            result.append(char)
+            if char == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if char == '"':
+            result.append(char)
+            in_string = False
+            i += 1
+            continue
+
+        if char != "\\":
+            result.append(char)
+            i += 1
+            continue
+
+        if i + 1 >= len(raw):
+            result.append("\\\\")
+            i += 1
+            continue
+
+        next_char = raw[i + 1]
+        if next_char == "u" and i + 5 < len(raw) and re.fullmatch(r"[0-9a-fA-F]{4}", raw[i + 2 : i + 6]):
+            result.append(raw[i : i + 6])
+            i += 6
+            continue
+        if next_char in {'"', "\\", "/"}:
+            result.append(raw[i : i + 2])
+            i += 2
+            continue
+        if next_char in valid_simple_escapes and not (i + 2 < len(raw) and raw[i + 2].isalpha()):
+            result.append(raw[i : i + 2])
+            i += 2
+            continue
+
+        result.append("\\\\")
+        i += 1
+
+    return "".join(result)
+
+
+def _loads_model_json(raw: str | None, default: str = "{}"):
+    content = raw if raw is not None and str(raw).strip() else default
+    if _BARE_LATEX_COMMAND_RE.search(content):
+        return json.loads(_escape_bare_backslashes_in_json_strings(content))
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return json.loads(_escape_bare_backslashes_in_json_strings(content))
+
+
 _LOCAL_WHISPER_MODEL = None
 _LOCAL_WHISPER_MODEL_LOCK = threading.Lock()
 _LOCAL_WHISPER_MODEL_NAME = "base"
@@ -327,7 +394,7 @@ def recognize_wrong_question_image(image_url: str) -> dict:
         temperature=0,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    payload = _loads_model_json(response.choices[0].message.content)
     return _normalize_wrong_question_recognition_result(payload)
 
 
@@ -375,7 +442,7 @@ def classify_wrong_question_reason(child_reason_text: str, *, question_text: str
         temperature=0,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    payload = _loads_model_json(response.choices[0].message.content)
     display_text = str(payload.get("display_text") or "").strip()
     primary_error_type = str(payload.get("primary_error_type") or "").strip()
     secondary_error_summary = str(payload.get("secondary_error_summary") or "").strip()
@@ -511,7 +578,7 @@ def generate_wrong_question_practice_sheet_material(
         temperature=0.4,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    payload = _loads_model_json(response.choices[0].message.content)
     normalized = _normalize_wrong_question_practice_sheet_material(
         payload,
         expected_record_ids=expected_record_ids,
@@ -795,7 +862,7 @@ def parse_and_generate_plan(
     )
 
     raw = response.choices[0].message.content
-    plan = json.loads(raw)
+    plan = _loads_model_json(raw)
     
     # 补充日期
     if lesson_date and "lesson_info" in plan:
@@ -820,7 +887,7 @@ def parse_consultation_batch_text(raw_text: str, *, include_usage: bool = False)
         temperature=0.1,
         response_format={"type": "json_object"},
     )
-    payload = json.loads(response.choices[0].message.content)
+    payload = _loads_model_json(response.choices[0].message.content)
     if not isinstance(payload.get("items"), list):
         raise RuntimeError("咨询记录批量解析返回了无效结果")
     parsed = {
@@ -934,7 +1001,7 @@ def generate_class_feedback_bundle(
         response_format={"type": "json_object"},
     )
     content = (response.choices[0].message.content or "").strip()
-    bundle = json.loads(content or "{}")
+    bundle = _loads_model_json(content)
     if not isinstance(bundle, dict):
         raise ValueError("AI 返回格式不正确")
     if not isinstance(bundle.get("student_entries"), list):
@@ -970,7 +1037,7 @@ def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = Fals
         response_format={"type": "json_object"},
     )
 
-    plan = json.loads(response.choices[0].message.content)
+    plan = _loads_model_json(response.choices[0].message.content)
     plan.setdefault("lesson_info", {})["month"] = month_str
     plan["lesson_info"]["topic"] = f"{month_str} 综合复习"
     print("月度复习计划生成完成。")

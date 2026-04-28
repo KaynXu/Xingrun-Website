@@ -10,12 +10,17 @@ import ai_processor
 
 
 class _FakeChatCompletions:
-    def __init__(self, content: dict):
+    def __init__(self, content: dict | str):
         self.content = content
         self.last_kwargs = None
 
     def create(self, **kwargs):
         self.last_kwargs = kwargs
+        raw_content = (
+            self.content
+            if isinstance(self.content, str)
+            else json.dumps(self.content, ensure_ascii=False)
+        )
         return type(
             "Response",
             (),
@@ -30,7 +35,7 @@ class _FakeChatCompletions:
                                 "Message",
                                 (),
                                 {
-                                    "content": json.dumps(self.content, ensure_ascii=False),
+                                    "content": raw_content,
                                 },
                             )()
                         },
@@ -41,7 +46,7 @@ class _FakeChatCompletions:
 
 
 class _FakeClient:
-    def __init__(self, content: dict):
+    def __init__(self, content: dict | str):
         self.chat = type(
             "Chat",
             (),
@@ -170,6 +175,24 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             ai_processor.parse_and_generate_plan("课堂总结")
 
         self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
+
+    def test_parse_and_generate_plan_recovers_bare_latex_backslashes(self):
+        fake_client = _FakeClient(
+            r"""{"lesson_info":{"topic":"含参方程"},"days":[{"items":[{"text":"观察 $\left(x+1\right)^2$ 的开口方向"}]}],"weekly_review_prompts":[]}"""
+        )
+        with patch("ai_processor._get_client", return_value=fake_client):
+            plan = ai_processor.parse_and_generate_plan("课堂总结")
+
+        self.assertEqual(plan["days"][0]["items"][0]["text"], r"观察 $\left(x+1\right)^2$ 的开口方向")
+
+    def test_parse_and_generate_plan_preserves_bare_latex_json_control_escapes(self):
+        fake_client = _FakeClient(
+            r"""{"lesson_info":{"topic":"分式"},"days":[{"items":[{"text":"计算 $\frac{1}{2}$ 的值"}]}],"weekly_review_prompts":[]}"""
+        )
+        with patch("ai_processor._get_client", return_value=fake_client):
+            plan = ai_processor.parse_and_generate_plan("课堂总结")
+
+        self.assertEqual(plan["days"][0]["items"][0]["text"], r"计算 $\frac{1}{2}$ 的值")
 
     def test_generate_monthly_plan_uses_configured_model_for_n1n(self):
         fake_client = _FakeClient(
