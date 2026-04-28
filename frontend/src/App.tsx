@@ -9463,7 +9463,12 @@ export default function App() {
         setCalendarCustomItems((current) => current.filter((item) => item.id !== itemId));
         setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.custom_item_id !== itemId));
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '删除自定义事项失败');
+        }
+      });
   };
 
   const handleScheduleCalendarCustomItem = (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {

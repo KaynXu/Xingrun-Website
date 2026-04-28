@@ -244,30 +244,17 @@ function CustomScheduleCard({ schedule, onOpenNote }: CustomScheduleCardProps): 
           : 'border border-amber-100 bg-amber-50/70 hover:bg-amber-50 dark:border-amber-400/20 dark:bg-amber-500/10',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p
-            className={cn('break-words text-sm font-semibold leading-snug', isOrganizationVisible ? 'text-white' : 'text-slate-900 dark:text-white')}
-            style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
-          >
-            {schedule.title}
-          </p>
-          <p className={cn('mt-0.5 truncate text-xs', isOrganizationVisible ? 'text-sky-100' : 'text-amber-700 dark:text-amber-200')}>{schedule.timeRange}</p>
-        </div>
-        <span
-          className={cn(
-            'rounded-xl px-2 py-1 text-[10px] font-bold',
-            isOrganizationVisible
-              ? 'border border-white/15 bg-white/10 text-white'
-              : 'border border-amber-200 bg-white/75 text-amber-700 dark:border-amber-400/20 dark:bg-white/10 dark:text-amber-200',
-          )}
-        >
-          {isOrganizationVisible ? '公开' : '事项'}
-        </span>
-      </div>
-      <div className={cn('mt-2 text-[11px]', isOrganizationVisible ? 'text-slate-200' : 'text-slate-500 dark:text-slate-400')}>
-        <span>{schedule.displayRange}</span>
-      </div>
+      <p
+        className={cn('truncate text-sm font-semibold leading-snug', isOrganizationVisible ? 'text-white' : 'text-slate-900 dark:text-white')}
+      >
+        {schedule.title}
+      </p>
+      <p className={cn('mt-1 truncate text-xs font-semibold', isOrganizationVisible ? 'text-sky-100' : 'text-amber-700 dark:text-amber-200')}>
+        {schedule.timeRange || schedule.displayRange}
+      </p>
+      <p className={cn('mt-1 truncate text-[11px] font-bold', isOrganizationVisible ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400')}>
+        {isOrganizationVisible ? '管理员发布' : '自定义事项'}
+      </p>
     </button>
   );
 }
@@ -811,7 +798,7 @@ export function CourseCalendarPage({
                   {customItems.length > 0 ? (
                     customItems.map((item) => {
                       const isOrganizationVisible = item.visibility === 'organization';
-                      const canDeleteCustomItem = item.created_by === currentUserId;
+                      const canDeleteCustomItem = item.can_delete ?? item.created_by === currentUserId;
                       return (
                         <div
                           key={item.id}

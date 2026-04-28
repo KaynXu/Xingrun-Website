@@ -46,6 +46,7 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
           title: '教研会',
           time_range: '19:00-20:00',
           note: '带资料',
+          visibility: 'organization',
         },
       ]}
       pageStepDays={6}
@@ -82,6 +83,7 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /课程卡片/);
   assert.match(markup, /自定义事项/);
   assert.match(markup, /教研会/);
+  assert.match(markup, /管理员发布/);
   assert.doesNotMatch(markup, /待补录课程/);
   assert.doesNotMatch(markup, /新增班级/);
   assert.doesNotMatch(markup, /函数入门/);
@@ -127,6 +129,7 @@ test('app loads course calendar schedules separately from review plans', () => {
   assert.match(appSource, /apiFetch<\{ item: CourseCalendarScheduleRecord \}>\('\/api\/course-calendar\/schedules'/);
   assert.match(appSource, /apiFetch<\{ item: CourseCalendarCustomItemRecord \}>\('\/api\/course-calendar\/custom-items'/);
   assert.match(appSource, /apiFetch<\{ item: CourseCalendarCustomScheduleRecord \}>\('\/api\/course-calendar\/custom-schedules'/);
+  assert.match(appSource, /window\.alert\(error instanceof Error \? error\.message : '删除自定义事项失败'\)/);
 });
 
 test('course calendar source opens time adjustment after dropping a class', () => {
@@ -163,14 +166,14 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /时间板块，快速完成当前页排课。/);
   assert.match(source, /xl:justify-center/);
   assert.match(source, /xl:whitespace-nowrap/);
-  assert.match(source, /const canDeleteCustomItem = item\.created_by === currentUserId/);
+  assert.match(source, /const canDeleteCustomItem = item\.can_delete \?\? item\.created_by === currentUserId/);
   assert.match(source, /draggable=\{false\}/);
   assert.match(source, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(source, /onDeleteCustomItem\(item\.id\)/);
   assert.match(source, /OpenedCourseScheduleModal/);
   assert.match(source, /onOpenSchedule=\{setOpenedCourseSchedule\}/);
   assert.match(source, /visibility: schedule\.visibility \?\? 'private'/);
-  assert.match(source, /isOrganizationVisible \? '公开' : '事项'/);
+  assert.match(source, /isOrganizationVisible \? '管理员发布' : '自定义事项'/);
   assert.doesNotMatch(source, /Trash2/);
   assert.match(source, /schedule\.className[\s\S]*schedule\.displayRange/);
   assert.match(source, /lg:hidden/);

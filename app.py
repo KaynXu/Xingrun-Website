@@ -2918,7 +2918,13 @@ def api_course_calendar_custom_item_delete(item_id):
     item = get_course_calendar_custom_item(item_id)
     if not item:
         return jsonify({"error": "not found"}), 404
-    if item.get("created_by") != user.get("id"):
+    is_creator = item.get("created_by") == user.get("id")
+    is_legacy_staff_item = (
+        item.get("created_by") is None
+        and user.get("role") in {"super_owner", "owner", "admin"}
+        and item.get("organization_id") == user.get("organization_id")
+    )
+    if not (is_creator or is_legacy_staff_item):
         return jsonify({"error": "forbidden"}), 403
     removed = delete_course_calendar_custom_item(item_id)
     return jsonify({"ok": True, "removed": removed})

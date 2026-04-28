@@ -204,6 +204,7 @@ class CourseCalendarApiTestCase(unittest.TestCase):
             [item["title"] for item in owner_payload["items"]],
             ["内部会", "全员教研"],
         )
+        self.assertTrue(all(item["can_delete"] for item in owner_payload["items"]))
 
         member_listed = self.client.get(
             "/api/course-calendar/custom-items",
@@ -213,6 +214,7 @@ class CourseCalendarApiTestCase(unittest.TestCase):
         member_payload = member_listed.get_json()
         self.assertIsNotNone(member_payload)
         self.assertEqual([item["title"] for item in member_payload["items"]], ["全员教研"])
+        self.assertFalse(member_payload["items"][0]["can_delete"])
 
         member_schedule = self.client.post(
             "/api/course-calendar/custom-schedules",

@@ -47,6 +47,7 @@ export interface CourseCalendarCustomItemRecord {
   time_range: string;
   note: string;
   visibility: 'private' | 'organization';
+  can_delete?: boolean;
   created_by?: number | null;
   created_at?: string;
 }

@@ -3460,6 +3460,14 @@ def _serialize_course_calendar_custom_item_row(row: sqlite3.Row) -> dict:
     }
 
 
+def _can_delete_course_calendar_custom_item(actor_user: dict, item: dict) -> bool:
+    if item.get("created_by") == actor_user.get("id"):
+        return True
+    if item.get("created_by") is None and actor_user.get("role") in {SUPER_OWNER_ROLE, OWNER_ROLE, ADMIN_ROLE}:
+        return item.get("organization_id") == actor_user.get("organization_id")
+    return False
+
+
 def _can_access_course_calendar_custom_item(actor_user: dict, item: dict) -> bool:
     if actor_user.get("role") == SUPER_OWNER_ROLE:
         if item.get("visibility") == "organization":
@@ -3494,7 +3502,10 @@ def list_course_calendar_custom_items_for_actor(actor_user: dict) -> list[dict]:
 
     with get_conn() as conn:
         rows = conn.execute(query_sql, params).fetchall()
-        return [_serialize_course_calendar_custom_item_row(row) for row in rows]
+        items = [_serialize_course_calendar_custom_item_row(row) for row in rows]
+        for item in items:
+            item["can_delete"] = _can_delete_course_calendar_custom_item(actor_user, item)
+        return items
 
 
 def create_course_calendar_custom_item(*, actor_user: dict, title: object, time_range: object, note: object = "", visibility: object = "private"):
@@ -3522,7 +3533,9 @@ def create_course_calendar_custom_item(*, actor_user: dict, title: object, time_
             ),
         )
         row = conn.execute("SELECT * FROM course_calendar_custom_items WHERE id=?", (cur.lastrowid,)).fetchone()
-        return _serialize_course_calendar_custom_item_row(row)
+        item = _serialize_course_calendar_custom_item_row(row)
+        item["can_delete"] = True
+        return item
 
 
 def delete_course_calendar_custom_item(item_id: int) -> bool:
