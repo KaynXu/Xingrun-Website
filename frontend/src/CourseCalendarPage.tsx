@@ -13,7 +13,6 @@ import {
   Sparkles,
   Trash2,
   Users,
-  X,
 } from 'lucide-react';
 
 import {
@@ -57,6 +56,7 @@ const TIME_ADJUSTMENT_PRESETS = [
   { label: '晚 15 分钟', minutes: 15 },
   { label: '晚半小时', minutes: 30 },
 ] as const;
+const SUBJECT_FILTER_OPTIONS = ['数学', '物理'];
 
 type CustomOffsetDirection = 'early' | 'late';
 
@@ -267,17 +267,9 @@ export function CourseCalendarPage({
   const joinedCustomSchedules = buildJoinedCustomSchedules(customSchedules);
   const visibleCustomSchedules = joinedCustomSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
   const teacherOptions = getTeacherOptions(classes);
-  const subjectOptions = Array.from(new Set(classes.map((courseClass) => courseClass.subject?.trim()).filter(Boolean))) as string[];
   const [teacherFilter, setTeacherFilter] = React.useState('');
   const [subjectFilter, setSubjectFilter] = React.useState('');
-  const [manualTeacherOptions, setManualTeacherOptions] = React.useState<string[]>([]);
-  const [hiddenTeacherOptions, setHiddenTeacherOptions] = React.useState<string[]>([]);
-  const [teacherEditorOpen, setTeacherEditorOpen] = React.useState(false);
-  const [newTeacherName, setNewTeacherName] = React.useState('');
   const canFilterCourses = currentUserRole !== 'member';
-  const canManageTeacherOptions = currentUserRole === 'super_owner' || currentUserRole === 'owner';
-  const mergedTeacherOptions = Array.from(new Set([...teacherOptions, ...manualTeacherOptions]))
-    .filter((teacherName) => !hiddenTeacherOptions.includes(teacherName));
   const classOptions = getClassOptions(classes).filter((courseClass) => {
     if (canFilterCourses && teacherFilter && courseClass.teacher_name !== teacherFilter) {
       return false;
@@ -393,24 +385,6 @@ export function CourseCalendarPage({
     resetCustomForm();
   };
 
-  const handleAddTeacherOption = () => {
-    const teacherName = newTeacherName.trim();
-    if (!teacherName) {
-      return;
-    }
-    setManualTeacherOptions((current) => Array.from(new Set([...current, teacherName])));
-    setHiddenTeacherOptions((current) => current.filter((name) => name !== teacherName));
-    setNewTeacherName('');
-  };
-
-  const handleRemoveTeacherOption = (teacherName: string) => {
-    setManualTeacherOptions((current) => current.filter((name) => name !== teacherName));
-    setHiddenTeacherOptions((current) => Array.from(new Set([...current, teacherName])));
-    if (teacherFilter === teacherName) {
-      setTeacherFilter('');
-    }
-  };
-
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.15),transparent_26%),radial-gradient(circle_at_90%_10%,rgba(47,128,237,0.14),transparent_24%),linear-gradient(180deg,#F7FBFF_0%,#EEF7FF_100%)] px-4 py-5 text-slate-900 md:px-6 md:py-6 dark:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),radial-gradient(circle_at_85%_15%,rgba(59,130,246,0.14),transparent_22%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="mx-auto max-w-[1600px]">
@@ -473,8 +447,7 @@ export function CourseCalendarPage({
 
                 {canFilterCourses && (
                   <div className="grid gap-3 sm:grid-cols-[minmax(9.5rem,1fr)_minmax(9.5rem,1fr)]">
-                  <div className="flex min-w-38 gap-2">
-                  <label className="relative min-w-0 flex-1">
+                  <label className="relative min-w-38">
                     <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
                       <Users className="h-3.5 w-3.5" />
                       老师
@@ -485,23 +458,12 @@ export function CourseCalendarPage({
                       className="h-14 w-full appearance-none rounded-2xl border border-sky-200 bg-white px-4 pt-5 text-sm font-medium text-slate-700 shadow-sm outline-none transition [color-scheme:light] focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
                     >
                       <option value="">全部老师</option>
-                      {mergedTeacherOptions.map((teacherName) => (
+                      {teacherOptions.map((teacherName) => (
                         <option key={teacherName} value={teacherName}>{teacherName}</option>
                       ))}
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-4 top-5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                   </label>
-                  {canManageTeacherOptions && (
-                    <button
-                      type="button"
-                      onClick={() => setTeacherEditorOpen(true)}
-                      className="inline-flex h-14 w-12 shrink-0 items-center justify-center rounded-2xl border border-sky-200 bg-white text-sky-700 shadow-sm transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-white/10"
-                      aria-label="管理教师筛选"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  )}
-                  </div>
                   <label className="relative min-w-38">
                     <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
                       <Filter className="h-3.5 w-3.5" />
@@ -513,7 +475,7 @@ export function CourseCalendarPage({
                       className="h-14 w-full appearance-none rounded-2xl border border-sky-200 bg-white px-4 pt-5 text-sm font-medium text-slate-700 shadow-sm outline-none transition [color-scheme:light] focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
                     >
                       <option value="">全部学科</option>
-                      {subjectOptions.map((subject) => (
+                      {SUBJECT_FILTER_OPTIONS.map((subject) => (
                         <option key={subject} value={subject}>{subject}</option>
                       ))}
                     </select>
@@ -837,66 +799,6 @@ export function CourseCalendarPage({
           </div>
         </div>
       </div>
-      {teacherEditorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-500 dark:text-sky-300">教师筛选</p>
-                <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">管理教师名单</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTeacherEditorOpen(false)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-slate-500 transition hover:bg-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                aria-label="关闭教师管理"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-5 flex gap-2">
-              <input
-                value={newTeacherName}
-                onChange={(event) => setNewTeacherName(event.target.value)}
-                placeholder="教师姓名"
-                className="h-11 min-w-0 flex-1 rounded-xl border border-sky-100 bg-white px-3 text-sm text-slate-700 outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
-              />
-              <button
-                type="button"
-                onClick={handleAddTeacherOption}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white transition hover:bg-sky-600"
-                aria-label="添加教师"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto pr-1">
-              {mergedTeacherOptions.length > 0 ? (
-                mergedTeacherOptions.map((teacherName) => (
-                  <div
-                    key={teacherName}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                  >
-                    <span className="truncate font-semibold">{teacherName}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTeacherOption(teacherName)}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-100 bg-white text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                      aria-label={`移除${teacherName}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-xl border border-dashed border-sky-100 bg-sky-50/50 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-                  暂无教师
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       {pendingCustomCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
           <div className="w-full max-w-lg rounded-3xl border border-amber-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-amber-400/20 dark:bg-slate-900">
