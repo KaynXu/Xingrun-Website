@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-28 已继续修正课程日历扩大视图：扩大模式不再被外层卡片裁切，不再使用扩大浮层内部滚动条；扩大时 6 个时段格子按视口高度动态压缩，尽量一屏内完整查看课表。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_expand_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已按用户最新标注继续修正课程日历：空时间格内部取消右侧和底部滚动条；课程表内课程卡片取消直接显示删除图标，改为点击卡片打开排期弹窗后再删除；右侧卡片栏宽度从 300px 收到 240px，把空间让给左侧课表；公开发布给机构成员的自定义事项和排期改为深色卡片样式突出显示。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_card_space_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已按用户要求收口课程日历顶部筛选：老师下拉只直接使用导入/班级数据里的教师名，不再提供手动 `+` 增减；学科下拉固定为 `全部学科 / 数学 / 物理`，不会再跟随班级数据扩出其它学科。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_subject_filter_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已按用户三圈标注修正课程日历：课程表内排课卡片改为第一行显示班级名、第二行显示实际时间段，避免窄列里文案竖排；右侧卡片区压缩了上下间距和课程列表高度，减少课程卡片与自定义事项之间的空白。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_teacher_layout_proof_compact.sh`：前端 190 条测试、frontend production build、`git diff --check`。

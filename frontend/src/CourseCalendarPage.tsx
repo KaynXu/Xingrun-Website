@@ -424,7 +424,10 @@ export function CourseCalendarPage({
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.15),transparent_26%),radial-gradient(circle_at_90%_10%,rgba(47,128,237,0.14),transparent_24%),linear-gradient(180deg,#F7FBFF_0%,#EEF7FF_100%)] px-4 py-5 text-slate-900 md:px-6 md:py-6 dark:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),radial-gradient(circle_at_85%_15%,rgba(59,130,246,0.14),transparent_22%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="mx-auto max-w-[1600px]">
-        <div className="overflow-hidden rounded-[2rem] border border-sky-100/90 bg-white/82 shadow-[0_28px_90px_rgba(47,128,237,0.1)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/78 dark:shadow-[0_30px_80px_rgba(2,6,23,0.42)]">
+        <div className={cn(
+          'rounded-[2rem] border border-sky-100/90 bg-white/82 shadow-[0_28px_90px_rgba(47,128,237,0.1)] dark:border-white/10 dark:bg-slate-900/78 dark:shadow-[0_30px_80px_rgba(2,6,23,0.42)]',
+          isCalendarExpanded ? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm',
+        )}>
           <div className="border-b border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_100%)] px-5 py-5 md:px-7 md:py-6 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.82)_100%)]">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div className="space-y-2">
@@ -527,7 +530,7 @@ export function CourseCalendarPage({
             <div className={cn('grid gap-5', isCalendarExpanded ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_240px]')}>
               <div className={cn(
                 'rounded-[1.75rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(239,248,255,0.9)_100%)] p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] md:p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.72)_100%)] dark:shadow-[0_20px_50px_rgba(2,6,23,0.35)]',
-                isCalendarExpanded && 'fixed inset-3 z-40 overflow-auto md:inset-5',
+                isCalendarExpanded && 'fixed inset-3 z-50 overflow-hidden md:inset-5',
               )}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -601,7 +604,8 @@ export function CourseCalendarPage({
                                 onDragOver={(event) => event.preventDefault()}
                                 onDrop={(event) => handleDrop(event, date, timeBlock)}
                                 className={cn(
-                                  'h-[108px] overflow-hidden rounded-xl border px-2 py-2 transition',
+                                  'overflow-hidden rounded-xl border px-2 py-2 transition',
+                                  isCalendarExpanded ? 'h-[calc((100vh-250px)/6)] min-h-[72px]' : 'h-[108px]',
                                   date === today
                                     ? 'border-cyan-300 bg-cyan-50/70 dark:border-cyan-400/40 dark:bg-cyan-500/15'
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
