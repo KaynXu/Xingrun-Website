@@ -301,6 +301,84 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertIn("\\frac{1}{2}", normalized["question_text"])
         self.assertIn("\\neq \\text{lim}_{x \\to 3}", normalized["question_text"])
 
+    def test_recognize_wrong_question_image_rewrites_until_ai_quality_review_passes(self):
+        attempts = [
+            {
+                "is_geometry": False,
+                "question_text": "学生写：答案是 3。原题：计算 x^2+1。",
+                "confidence": "high",
+                "notes": "",
+            },
+            {
+                "is_geometry": False,
+                "question_text": "计算 $x^2+1$ 的值。",
+                "confidence": "high",
+                "notes": "",
+            },
+        ]
+        reviews = [
+            "结论：不通过\n问题：包含学生手写答案。",
+            "结论：通过\n问题：无",
+        ]
+
+        with patch("ai_processor._request_wrong_question_recognition_attempt", side_effect=attempts) as recognize, \
+            patch("ai_processor._review_wrong_question_recognition_quality", side_effect=reviews) as review, \
+            patch("ai_processor._collect_wrong_question_latex_render_issues", return_value=[]):
+            result = ai_processor.recognize_wrong_question_image("https://files.example.com/question.png")
+
+        self.assertEqual(result["question_text"], "计算 $x^2+1$ 的值。")
+        self.assertEqual(recognize.call_count, 2)
+        self.assertEqual(review.call_count, 2)
+        self.assertIn("包含学生手写答案", recognize.call_args_list[1].kwargs["revision_feedback"])
+
+    def test_recognize_wrong_question_image_stops_after_limited_failed_reviews(self):
+        attempt = {
+            "is_geometry": False,
+            "question_text": "学生写：答案是 3。原题：计算 x^2+1。",
+            "confidence": "high",
+            "notes": "",
+        }
+
+        with patch("ai_processor._request_wrong_question_recognition_attempt", return_value=attempt) as recognize, \
+            patch(
+                "ai_processor._review_wrong_question_recognition_quality",
+                return_value="结论：不通过\n问题：包含学生手写答案。",
+            ), \
+            patch("ai_processor._collect_wrong_question_latex_render_issues", return_value=[]):
+            with self.assertRaises(ValueError) as context:
+                ai_processor.recognize_wrong_question_image("https://files.example.com/question.png")
+
+        self.assertEqual(recognize.call_count, 3)
+        self.assertIn("题目识别质量检查未通过", str(context.exception))
+
+    def test_recognize_wrong_question_image_rewrites_when_latex_render_check_fails(self):
+        attempts = [
+            {
+                "is_geometry": False,
+                "question_text": "计算 $\\frac{1}{$ 的值。",
+                "confidence": "high",
+                "notes": "",
+            },
+            {
+                "is_geometry": False,
+                "question_text": "计算 $\\frac{1}{2}$ 的值。",
+                "confidence": "high",
+                "notes": "",
+            },
+        ]
+
+        with patch("ai_processor._request_wrong_question_recognition_attempt", side_effect=attempts) as recognize, \
+            patch("ai_processor._review_wrong_question_recognition_quality", return_value="结论：通过\n问题：无"), \
+            patch(
+                "ai_processor._collect_wrong_question_latex_render_issues",
+                side_effect=[["Expected group after '\\frac'"], []],
+            ):
+            result = ai_processor.recognize_wrong_question_image("https://files.example.com/question.png")
+
+        self.assertEqual(result["question_text"], "计算 $\\frac{1}{2}$ 的值。")
+        self.assertEqual(recognize.call_count, 2)
+        self.assertIn("LaTeX 渲染检查未通过", recognize.call_args_list[1].kwargs["revision_feedback"])
+
     def test_build_portable_wrong_question_text_repairs_broken_latex_for_reportlab_fallback(self):
         portable = pdf_engine._build_portable_wrong_question_text(
             "The function $f$ is continuous at $x = 3$.\n$$f(3) = 1 + \text{lim}_{x \to 3^-} f(x)$$\n(C) $f(3) \neq \text{lim}_{x \to 3} f(x)$"
