@@ -11,7 +11,6 @@ import {
   Minimize2,
   Plus,
   Sparkles,
-  Trash2,
   Users,
 } from 'lucide-react';
 
@@ -83,6 +82,7 @@ interface JoinedCustomSchedule {
   startOffsetMinutes: number;
   startText: string;
   displayRange: string;
+  visibility: 'private' | 'organization';
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -127,6 +127,7 @@ function buildJoinedCustomSchedules(customSchedules: CourseCalendarCustomSchedul
       startOffsetMinutes,
       startText: timeRange.startText,
       displayRange: timeRange.displayRange,
+      visibility: schedule.visibility ?? 'private',
     };
   });
 }
@@ -159,85 +160,119 @@ function EmptyDropZone({ onCreateCustomItem }: { onCreateCustomItem: () => void 
 
 interface ScheduleCardProps {
   schedule: JoinedCourseCalendarSchedule;
-  onDeleteSchedule: (scheduleId: number) => void;
+  onOpenSchedule: (schedule: JoinedCourseCalendarSchedule) => void;
 }
 
-function ScheduleCard({ schedule, onDeleteSchedule }: ScheduleCardProps): React.JSX.Element {
+function ScheduleCard({ schedule, onOpenSchedule }: ScheduleCardProps): React.JSX.Element {
   return (
-    <div className="overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 shadow-[0_10px_30px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)]">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">{schedule.className}</p>
-          <p className="mt-1 truncate text-xs font-semibold text-cyan-700 dark:text-cyan-200">{schedule.displayRange}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => onDeleteSchedule(schedule.id)}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-sky-100 bg-sky-50 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-          aria-label="删除排课"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+    <button
+      type="button"
+      onClick={() => onOpenSchedule(schedule)}
+      className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">{schedule.className}</p>
+        <p className="mt-1 truncate text-xs font-semibold text-cyan-700 dark:text-cyan-200">{schedule.displayRange}</p>
       </div>
       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
         <span className="truncate">{schedule.teacherName || '未分配教师'}</span>
         <span className="shrink-0 truncate">{[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || schedule.startText}</span>
       </div>
+    </button>
+  );
+}
+
+interface OpenedCourseScheduleModalProps {
+  schedule: JoinedCourseCalendarSchedule;
+  onClose: () => void;
+  onDeleteSchedule: (scheduleId: number) => void;
+}
+
+function OpenedCourseScheduleModal({ schedule, onClose, onDeleteSchedule }: OpenedCourseScheduleModalProps): React.JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <div className="w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-500 dark:text-sky-300">课程排期</p>
+            <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">{schedule.className}</h2>
+            <p className="mt-2 text-sm text-cyan-700 dark:text-cyan-200">{schedule.displayRange}</p>
+          </div>
+          <Clock className="h-6 w-6 shrink-0 text-sky-500 dark:text-sky-300" />
+        </div>
+        <div className="mt-5 rounded-2xl border border-sky-100 bg-sky-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+          <p>{[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || '未设置科目'}</p>
+          <p>{schedule.teacherName || '未分配教师'}</p>
+          <p>{formatWeekdayLabel(schedule.date)} {formatDayLabel(schedule.date)} · {schedule.timeBlock}</p>
+        </div>
+        <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-11 items-center justify-center rounded-xl border border-sky-100 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+          >
+            关闭
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onDeleteSchedule(schedule.id);
+              onClose();
+            }}
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-rose-500 px-5 text-sm font-bold text-white transition hover:bg-rose-600"
+          >
+            删除
+          </button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function CustomScheduleCard({ schedule, onOpenNote }: CustomScheduleCardProps): React.JSX.Element {
+  const isOrganizationVisible = schedule.visibility === 'organization';
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenNote(schedule)}
+      className={cn(
+        'w-full overflow-hidden rounded-xl px-2.5 py-2.5 text-left shadow-[0_10px_30px_rgba(245,158,11,0.08)] transition',
+        isOrganizationVisible
+          ? 'border border-slate-700 bg-slate-900 text-white hover:bg-slate-800 dark:border-slate-500 dark:bg-slate-950 dark:hover:bg-slate-900'
+          : 'border border-amber-100 bg-amber-50/70 hover:bg-amber-50 dark:border-amber-400/20 dark:bg-amber-500/10',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p
+            className={cn('break-words text-sm font-semibold leading-snug', isOrganizationVisible ? 'text-white' : 'text-slate-900 dark:text-white')}
+            style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
+          >
+            {schedule.title}
+          </p>
+          <p className={cn('mt-0.5 truncate text-xs', isOrganizationVisible ? 'text-sky-100' : 'text-amber-700 dark:text-amber-200')}>{schedule.timeRange}</p>
+        </div>
+        <span
+          className={cn(
+            'rounded-xl px-2 py-1 text-[10px] font-bold',
+            isOrganizationVisible
+              ? 'border border-white/15 bg-white/10 text-white'
+              : 'border border-amber-200 bg-white/75 text-amber-700 dark:border-amber-400/20 dark:bg-white/10 dark:text-amber-200',
+          )}
+        >
+          {isOrganizationVisible ? '公开' : '事项'}
+        </span>
+      </div>
+      <div className={cn('mt-2 text-[11px]', isOrganizationVisible ? 'text-slate-200' : 'text-slate-500 dark:text-slate-400')}>
+        <span>{schedule.displayRange}</span>
+      </div>
+    </button>
   );
 }
 
 interface CustomScheduleCardProps {
   schedule: JoinedCustomSchedule;
   onOpenNote: (schedule: JoinedCustomSchedule) => void;
-  onDeleteSchedule: (scheduleId: number) => void;
-}
-
-function CustomScheduleCard({ schedule, onOpenNote, onDeleteSchedule }: CustomScheduleCardProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenNote(schedule)}
-      className="w-full overflow-hidden rounded-xl border border-amber-100 bg-amber-50/70 px-2.5 py-2.5 text-left shadow-[0_10px_30px_rgba(245,158,11,0.08)] transition hover:bg-amber-50 dark:border-amber-400/20 dark:bg-amber-500/10 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p
-            className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white"
-            style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
-          >
-            {schedule.title}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-amber-700 dark:text-amber-200">{schedule.timeRange}</p>
-        </div>
-        <span className="rounded-xl border border-amber-200 bg-white/75 px-2 py-1 text-[10px] font-bold text-amber-700 dark:border-amber-400/20 dark:bg-white/10 dark:text-amber-200">
-          事项
-        </span>
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-        <span>{schedule.displayRange}</span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDeleteSchedule(schedule.id);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              event.stopPropagation();
-              onDeleteSchedule(schedule.id);
-            }
-          }}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-100 bg-white text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-          aria-label="删除事项排期"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </span>
-      </div>
-    </button>
-  );
 }
 
 export function CourseCalendarPage({
@@ -287,6 +322,7 @@ export function CourseCalendarPage({
   const [customTimeRange, setCustomTimeRange] = React.useState('');
   const [customNote, setCustomNote] = React.useState('');
   const [customVisibility, setCustomVisibility] = React.useState<'private' | 'organization'>('private');
+  const [openedCourseSchedule, setOpenedCourseSchedule] = React.useState<JoinedCourseCalendarSchedule | null>(null);
   const [openedCustomSchedule, setOpenedCustomSchedule] = React.useState<JoinedCustomSchedule | null>(null);
   const [pendingCustomCreate, setPendingCustomCreate] = React.useState<PendingCustomCreate | null>(null);
   const [isCalendarExpanded, setIsCalendarExpanded] = React.useState(false);
@@ -488,7 +524,7 @@ export function CourseCalendarPage({
           </div>
 
           <div className="space-y-5 px-4 py-5 md:px-5 xl:px-6 xl:py-6">
-            <div className={cn('grid gap-5', isCalendarExpanded ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_300px]')}>
+            <div className={cn('grid gap-5', isCalendarExpanded ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_240px]')}>
               <div className={cn(
                 'rounded-[1.75rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(239,248,255,0.9)_100%)] p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] md:p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.72)_100%)] dark:shadow-[0_20px_50px_rgba(2,6,23,0.35)]',
                 isCalendarExpanded && 'fixed inset-3 z-40 overflow-auto md:inset-5',
@@ -571,14 +607,14 @@ export function CourseCalendarPage({
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
                                 )}
                               >
-                                <div className="max-h-full space-y-2 overflow-y-auto pr-1">
+                                <div className="max-h-full space-y-2 overflow-hidden">
                                   {blockCards.length + customBlockCards.length > 0 ? (
                                     <>
                                       {blockCards.map((schedule) => (
                                         <ScheduleCard
                                           key={schedule.id}
                                           schedule={schedule}
-                                          onDeleteSchedule={onDeleteSchedule}
+                                          onOpenSchedule={setOpenedCourseSchedule}
                                         />
                                       ))}
                                       {customBlockCards.map((schedule) => (
@@ -586,7 +622,6 @@ export function CourseCalendarPage({
                                           key={`custom-${schedule.id}`}
                                           schedule={schedule}
                                           onOpenNote={setOpenedCustomSchedule}
-                                          onDeleteSchedule={onDeleteCustomSchedule}
                                         />
                                       ))}
                                     </>
@@ -648,7 +683,7 @@ export function CourseCalendarPage({
                                       <ScheduleCard
                                         key={schedule.id}
                                         schedule={schedule}
-                                        onDeleteSchedule={onDeleteSchedule}
+                                        onOpenSchedule={setOpenedCourseSchedule}
                                       />
                                     ))}
                                     {customBlockCards.map((schedule) => (
@@ -656,7 +691,6 @@ export function CourseCalendarPage({
                                         key={`custom-${schedule.id}`}
                                         schedule={schedule}
                                         onOpenNote={setOpenedCustomSchedule}
-                                        onDeleteSchedule={onDeleteCustomSchedule}
                                       />
                                     ))}
                                   </>
@@ -767,25 +801,36 @@ export function CourseCalendarPage({
 
                 <div className="mt-4 space-y-3">
                   {customItems.length > 0 ? (
-                    customItems.map((item) => (
-                      <div
-                        key={item.id}
-                        data-course-custom-item-id={item.id}
-                        draggable
-                        onDragStart={(event) => handleCustomItemDragStart(event, item.id)}
-                        className="cursor-grab rounded-2xl border border-amber-100 bg-amber-50/70 p-3 active:cursor-grabbing dark:border-amber-400/20 dark:bg-amber-500/10"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">{item.title}</p>
-                            <p className="mt-1 text-xs text-amber-700 dark:text-amber-200">{item.time_range}</p>
+                    customItems.map((item) => {
+                      const isOrganizationVisible = item.visibility === 'organization';
+                      return (
+                        <div
+                          key={item.id}
+                          data-course-custom-item-id={item.id}
+                          draggable
+                          onDragStart={(event) => handleCustomItemDragStart(event, item.id)}
+                          className={cn(
+                            'cursor-grab rounded-2xl border p-3 active:cursor-grabbing',
+                            isOrganizationVisible
+                              ? 'border-slate-700 bg-slate-900 text-white dark:border-slate-500 dark:bg-slate-950'
+                              : 'border-amber-100 bg-amber-50/70 dark:border-amber-400/20 dark:bg-amber-500/10',
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className={cn('truncate font-semibold', isOrganizationVisible ? 'text-white' : 'text-slate-900 dark:text-white')}>{item.title}</p>
+                              <p className={cn('mt-1 truncate text-xs', isOrganizationVisible ? 'text-sky-100' : 'text-amber-700 dark:text-amber-200')}>{item.time_range}</p>
+                            </div>
+                            <span className={cn(
+                              'rounded-full px-2.5 py-1 text-[10px] font-bold',
+                              isOrganizationVisible ? 'bg-white/10 text-white' : 'bg-white/75 text-amber-700 dark:bg-white/10 dark:text-amber-200',
+                            )}>
+                              {isOrganizationVisible ? '公开' : '私有'}
+                            </span>
                           </div>
-                          <span className="rounded-full bg-white/75 px-2.5 py-1 text-[10px] font-bold text-amber-700 dark:bg-white/10 dark:text-amber-200">
-                            {item.visibility === 'organization' ? '已发布' : '私有'}
-                          </span>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="rounded-2xl border border-dashed border-amber-100 bg-amber-50/40 p-5 text-sm text-slate-500 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-slate-400">
                       暂无自定义事项
@@ -866,6 +911,13 @@ export function CourseCalendarPage({
           </div>
         </div>
       )}
+      {openedCourseSchedule && (
+        <OpenedCourseScheduleModal
+          schedule={openedCourseSchedule}
+          onClose={() => setOpenedCourseSchedule(null)}
+          onDeleteSchedule={onDeleteSchedule}
+        />
+      )}
       {openedCustomSchedule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
           <div className="w-full max-w-lg rounded-3xl border border-amber-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-amber-400/20 dark:bg-slate-900">
@@ -880,13 +932,23 @@ export function CourseCalendarPage({
             <div className="mt-5 rounded-2xl border border-amber-100 bg-amber-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-slate-200">
               {openedCustomSchedule.note || '暂无备注'}
             </div>
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={() => setOpenedCustomSchedule(null)}
-                className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-500 px-5 text-sm font-bold text-white transition hover:bg-amber-600"
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-100 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-amber-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
               >
                 关闭
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteCustomSchedule(openedCustomSchedule.id);
+                  setOpenedCustomSchedule(null);
+                }}
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-rose-500 px-5 text-sm font-bold text-white transition hover:bg-rose-600"
+              >
+                删除
               </button>
             </div>
           </div>

@@ -141,7 +141,7 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /onNextPage\(normalizedPageStepDays\)/);
   assert.match(source, /gridTemplateColumns: '82px repeat\(6, minmax\(0, 1fr\)\)'/);
   assert.match(source, /h-\[108px\] overflow-hidden rounded-xl/);
-  assert.match(source, /max-h-full space-y-2 overflow-y-auto/);
+  assert.match(source, /max-h-full space-y-2 overflow-hidden/);
   assert.match(source, /isCalendarExpanded/);
   assert.match(source, /Maximize2/);
   assert.match(source, /Minimize2/);
@@ -151,6 +151,12 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.doesNotMatch(source, /handleAddTeacherOption/);
   assert.doesNotMatch(source, /handleRemoveTeacherOption/);
   assert.match(source, /max-h-\[28vh\]/);
+  assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_240px\]/);
+  assert.match(source, /OpenedCourseScheduleModal/);
+  assert.match(source, /onOpenSchedule=\{setOpenedCourseSchedule\}/);
+  assert.match(source, /visibility: schedule\.visibility \?\? 'private'/);
+  assert.match(source, /isOrganizationVisible \? '公开' : '事项'/);
+  assert.doesNotMatch(source, /Trash2/);
   assert.match(source, /schedule\.className[\s\S]*schedule\.displayRange/);
   assert.match(source, /lg:hidden/);
   assert.match(source, /lg:block/);
