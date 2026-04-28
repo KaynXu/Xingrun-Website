@@ -7,6 +7,8 @@ AI 处理模块：
   - 月度复习计划聚合
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
