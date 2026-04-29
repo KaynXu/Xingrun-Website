@@ -251,15 +251,25 @@ function TeacherSummaryCard({
   summary: TeacherScheduleSummary;
   onOpenSummary: (summary: TeacherScheduleSummary) => void;
 }): React.JSX.Element {
+  const summaryTitle = summary.schedules.map(formatScheduleSummaryLine).join('\n');
+
   return (
     <button
       type="button"
       onClick={() => onOpenSummary(summary)}
       className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
+      title={summaryTitle}
     >
-      <p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">
-        {summary.teacherName}
-      </p>
+      <div className="max-h-16 space-y-1 overflow-y-auto overscroll-contain pr-1">
+        {summary.schedules.map((schedule) => (
+          <p
+            key={schedule.id}
+            className="truncate whitespace-nowrap text-xs font-semibold leading-tight text-slate-900 dark:text-white"
+          >
+            {formatScheduleSummaryLine(schedule)}
+          </p>
+        ))}
+      </div>
     </button>
   );
 }
