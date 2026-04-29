@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-29 已修复老师端错题详情/错题练习入口看不到 2026-04-25 前后旧上传题图的问题：根因是生产 `xingrun-bridge` 从旧目录 `/home/ubuntu/xingrun-backend-repo/backend` 切到新目录 `/home/ubuntu/Xingrun-Website/miniprogram/backend` 后，`/files` 只暴露新上传目录，历史文件实际仍在 `/home/ubuntu/uploads`，截图里的 `https://xingrun.online/files/1777122622026-ncis5qzha6.jpg` 因此返回 404。生产上已先把旧上传文件软链接回当前 `/home/ubuntu/Xingrun-Website/miniprogram/uploads`，该 URL 现已返回 `200 image/jpeg`；代码层面 `miniprogram/backend/src/index.ts` 已补 `/files` legacy uploads fallback，默认覆盖旧生产路径，也支持 `LEGACY_UPLOADS_DIRS` 追加配置。latest proof 已通过临时脚本 `/tmp/xingrun_legacy_uploads_proof.sh`：bridge build、12 条 bridge 测试、`git diff --check`、生产截图图片 URL `200 image/jpeg`。
 - 2026-04-29 已按 release 流程发布到生产：本地先把远端 `origin/develop(c6f192b)` 合入课程日历开发分支并解决 `handoff.md` 冲突，得到 `develop(d642307)`；随后合入 `master(8e91aba)` 并部署到生产机 `49.234.185.86`。本地到 GitHub 曾短暂出现 HTTPS/HTTP2/443 超时，先用 bundle 兜底把 `master(8e91aba)` 部署到生产，随后 `git -c http.version=HTTP/1.1 push origin master` 补推成功。生产机已完成 backend deps 安装、`init_db`、frontend production build、`pm2 restart xingrun`，`pm2 status xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`；生产仓库当前 `HEAD=8e91aba`，临时 bundle 已删除。release proof：`/tmp/xingrun_release_merged_develop_verify.sh`、`/tmp/xingrun_release_master_verify.sh`、bundle 部署脚本均通过。
 - 2026-04-28 已继续修正课程日历右侧课程卡片区：课程卡片列表改成固定最大高度的独立滚动区域，课程较多时在绿圈区域内滚动；课程卡片排序改为按年级从高到低（高三到小一）排列，同年级再按科目/班名排序。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_course_list_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已继续修正课程日历自定义事项：课表内自定义事项卡片改成第一行标题、第二行时间段、第三行状态文案，公开事项文案从“公开”改为“管理员发布”；右侧自定义事项源卡片删除权限改为以后端 `can_delete` 为准，并在删除失败时给出前端提示，避免按钮无反馈。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_custom_card_delete_proof.sh`：后端课程日历 API 5 条、前端 190 条测试、frontend production build、`git diff --check`。
@@ -149,6 +150,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 下次正式 release 时把 `miniprogram/backend/src/index.ts` 的 legacy uploads fallback 一起发到生产；当前生产图片已靠软链接恢复，但代码 fallback 需要随标准 `develop -> master -> 部署` 流程落地，避免以后清理或重启目录时旧上传题图再次 404。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf` 全文扫一遍，重点核对外接球通法、墙角模型、对棱相等模型、正棱台方程、圆锥/正三棱锥类比和取值范围题里的变量设法；如果老师希望把“例题 2 / 例题 3”展开成具体题目，需要回到 `lesson_pack_circumsphere_models_quote20.py` 增补题面细节。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf` 全文扫一遍，确认自招考试定位、二项式定理、齐次换元、因式定理、轮换对称式和均值不等式这些口径符合老师原课；如果觉得课堂原话仍不够，可以继续在 `lesson_pack_admission_algebra_quote20.py` 增加每日 `quotes`，但要避免挤占主体练习。
 - 需要把这次小程序 timeout 修复随下一次小程序包上传/发版带到真机；如果真机仍显示超时，下一步应把网站端 `/api/wechat/wrong-questions` 改成异步任务返回，避免小程序长时间等 AI 识别和 PDF 重建。
