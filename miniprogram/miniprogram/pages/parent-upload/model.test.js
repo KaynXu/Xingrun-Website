@@ -55,6 +55,7 @@ test('addManualBoxToImage appends a manual box and selects it', () => {
   assert.equal(next.boxes[0].source, 'manual');
   assert.equal(next.activeBoxId, next.boxes[0].id);
   assert.equal(next.boxes[0].childReasonText, '');
+  assert.equal(next.boxes[0].topicCategory, '未分类');
 });
 
 test('buildUploadJobs creates one upload job per box across all images', () => {
@@ -63,7 +64,7 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
       id: 'img_1',
       localPath: 'a.jpg',
       boxes: [
-        { id: 'box_1', x: 0.1, y: 0.2, width: 0.4, height: 0.3, childReasonText: '第一题是我没审清楚' },
+        { id: 'box_1', x: 0.1, y: 0.2, width: 0.4, height: 0.3, childReasonText: '第一题是我没审清楚', topicCategory: '行程' },
         { id: 'box_2', x: 0.55, y: 0.5, width: 0.3, height: 0.22, childReasonText: '第二题是我算错了' },
       ],
     },
@@ -71,7 +72,7 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
       id: 'img_2',
       localPath: 'b.jpg',
       boxes: [
-        { id: 'box_3', x: 0.15, y: 0.18, width: 0.5, height: 0.28, childReasonText: '第三题单位换算漏了' },
+        { id: 'box_3', x: 0.15, y: 0.18, width: 0.5, height: 0.28, childReasonText: '第三题单位换算漏了', topicCategory: '周期问题' },
       ],
     },
   ]);
@@ -81,6 +82,9 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
   assert.equal(jobs[2].boxId, 'box_3');
   assert.equal(jobs[2].localPath, 'b.jpg');
   assert.equal(jobs[1].childRawReasonText, '第二题是我算错了');
+  assert.equal(jobs[0].topicCategory, '行程');
+  assert.equal(jobs[1].topicCategory, '未分类');
+  assert.equal(jobs[2].topicCategory, '周期问题');
 });
 
 test('buildUploadTaskSummary reports failed task messages before success', () => {

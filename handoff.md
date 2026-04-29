@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-04-29
+最后更新：2026-04-30
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-30 已完成小学组错题“专题分类”第一版并准备集成到 `develop`：微信错题新增 `topic_category` 字段，默认 `未分类`，固定专题为 `未分类 / 计算 / 经济 / 浓度 / 工程 / 行程 / 几何 / 数论`，支持同机构小学一年级到六年级共享自定义专题；老师端学生错题本可按专题数量筛选并在题目详情修改专题，家长小程序上传每道框选错题时可选择/输入专题，家长错题本也可按专题筛选并补改专题。老师和家长修改都走同一条网站记录，修改后双方刷新即可同步。latest proof 已通过临时脚本 `/tmp/xingrun_primary_topic_proof.sh`：后端 6 条定向 unittest、React 智能错题 40 条、frontend production build、小程序 36 条测试、bridge 13 条测试、bridge `tsc` build、`git diff --check`。
 - 2026-04-29 已和用户确认“咨询记录派单任务”第一版需求，并写入设计稿 `docs/superpowers/specs/2026-04-29-consultation-dispatch-tasks-design.md`：目标只聚焦派单/接单/任务数字提醒，避免学生咨询无人认领或老师不知道自己有咨询任务。设计方向为“一个学生一行 + 多个咨询任务项”，普通老师入口数字统计自己未结束任务，有 `可派单咨询` 权限的人入口数字统计全机构未结束任务；旧咨询不合并迁移但按 1 个任务项计数，AI 批量整理第一版不改。下一步应先让用户 review 设计稿，再进入实现计划。
 - 2026-04-29 已定位并修复“三年级 1 班黄尔帅小程序已提交但老师端错题记录找不到”的链路：生产上学生正式姓名为 `黄尔帅`，不是 `黄耳帅`；最新有效上传任务 `74` 已失败且旧 worker 没有落 `wrong_question_submissions`，所以老师端无学生卡片。代码层面 `wrong_question_upload_worker.py` 已改为识别/处理失败时仍创建一条老师端可见的 `recognition_status='failed'` 错题记录，并把 `record_id` 回填到任务；测试 `tests/test_wechat_parent_upload_api.py` 已覆盖该行为。本地已按规则从 `develop` 拉分支开发并合回 `develop`，但 GitHub 443 超时导致 `git push origin develop` 和 HTTP/1.1 兜底 push 均未完成，远端推送待网络恢复后补做。生产数据层面已先备份 `data/xingrun.db.backup-before-huang-wrong-question-backfill-20260429`，并给任务 `74` 补建记录 `wechat-da55a8a4f5319c04`，只读校验显示 `黄尔帅 / 三年级 1 班 / recognition_status=failed / image_url=https://xingrun.online/files/1777465507080-hqf230piosp.jpg`。任务 `66` 属于旧 inactive 绑定，未硬插记录。latest local proof 已通过临时脚本 `/tmp/xingrun_failed_upload_record_proof.sh`：`tests.test_wechat_parent_upload_api` 21 条、`py_compile`、`git diff --check`。
 - 2026-04-29 已修复并部署老师端错题详情/错题练习入口看不到 2026-04-25 前后旧上传题图的问题：根因是生产 `xingrun-bridge` 从旧目录 `/home/ubuntu/xingrun-backend-repo/backend` 切到新目录 `/home/ubuntu/Xingrun-Website/miniprogram/backend` 后，`/files` 只暴露新上传目录，历史文件实际仍在 `/home/ubuntu/uploads`，截图里的 `https://xingrun.online/files/1777122622026-ncis5qzha6.jpg` 因此返回 404。生产上已先把旧上传文件软链接回当前 `/home/ubuntu/Xingrun-Website/miniprogram/uploads`，随后代码层面 `miniprogram/backend/src/index.ts` 补 `/files` legacy uploads fallback，默认覆盖旧生产路径，也支持 `LEGACY_UPLOADS_DIRS` 追加配置。本地 `develop` 已合入 `master(a284f58)`，因本机 GitHub 443 超时且生产 deploy key 只读，GitHub push 尚未完成；生产机已通过 bundle 导入并部署 `master(a284f58)`，`xingrun-bridge` 已 build/restart 在线。latest proof 已通过临时脚本 `/tmp/xingrun_legacy_uploads_proof.sh`：bridge build、12 条 bridge 测试、`git diff --check`、生产截图图片 URL `200 image/jpeg`；生产部署 proof：`npm --prefix miniprogram/backend run build`、`pm2 restart xingrun-bridge`、`/healthz 200`、`/files/1777122622026-ncis5qzha6.jpg 200 image/jpeg`。

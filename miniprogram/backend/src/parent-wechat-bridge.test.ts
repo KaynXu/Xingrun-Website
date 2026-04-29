@@ -233,6 +233,55 @@ test('parent wrong-question-library bridge forwards the canonical openid to the 
   }
 });
 
+test('parent topic category bridge forwards parent edits to the website', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const websiteCalls: Array<{ url: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions/wechat-record-1/topic-category') {
+      websiteCalls.push({ url, init });
+      const body = JSON.parse(String(init?.body || '{}'));
+      assert.equal(body.open_id, 'openid-parent-1');
+      assert.equal(body.topic_category, '周期问题');
+      return createJsonResponse({
+        ok: true,
+        record: {
+          id: 'wechat-record-1',
+          topic_category: '周期问题',
+        },
+      });
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions/wechat-record-1/topic-category`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        openId: 'openid-parent-1',
+        topicCategory: '周期问题',
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.record.topic_category, '周期问题');
+    assert.equal(websiteCalls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('parent upload bridge stores the file locally and forwards the generated image url to the website', async (t) => {
   const originalFetch = globalThis.fetch;
   const uploadedFiles: string[] = [];
@@ -246,6 +295,7 @@ test('parent upload bridge stores the file locally and forwards the generated im
       assert.equal(body.child_raw_reason_text, '我把单位换算漏掉了');
       assert.equal(body.child_reason_input_mode, 'voice');
       assert.equal(body.child_reason_audio_url, 'https://example.com/files/reason.m4a');
+      assert.equal(body.topic_category, '周期问题');
       assert.match(body.image_url, /^http:\/\/127\.0\.0\.1:\d+\/files\/.+/);
 
       const fileName = String(body.image_url).split('/files/')[1];
@@ -276,6 +326,7 @@ test('parent upload bridge stores the file locally and forwards the generated im
     formData.set('childReasonText', '我把单位换算漏掉了');
     formData.set('childReasonInputMode', 'voice');
     formData.set('childReasonAudioUrl', 'https://example.com/files/reason.m4a');
+    formData.set('topicCategory', '周期问题');
     formData.set('file', new Blob(['mock-image']), 'wrong-question.txt');
 
     const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {

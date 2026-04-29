@@ -17,6 +17,7 @@ import {
   previewParentClassBinding,
   submitWechatWrongQuestionToWebsite,
   transcribeParentReasonOnWebsite,
+  updateWrongQuestionTopicCategoryOnWebsite,
 } from './website-client.js';
 import { exchangeCodeForOpenId } from './wechat.js';
 
@@ -232,6 +233,7 @@ export function createApp() {
     const childReasonText = String(req.body?.childReasonText ?? req.body?.childRawReasonText ?? req.body?.child_raw_reason_text ?? '').trim();
     const childReasonInputMode = String(req.body?.childReasonInputMode ?? req.body?.child_reason_input_mode ?? 'text').trim() || 'text';
     const childReasonAudioUrl = String(req.body?.childReasonAudioUrl ?? req.body?.child_reason_audio_url ?? '').trim();
+    const topicCategory = String(req.body?.topicCategory ?? req.body?.topic_category ?? '未分类').trim() || '未分类';
     const uploadedImageUrl = req.file ? `${getBaseUrl(req.get('host'))}/files/${req.file.filename}` : '';
     const imageUrl = uploadedImageUrl || String(req.body?.imageUrl ?? req.body?.image_url ?? '').trim();
 
@@ -255,6 +257,7 @@ export function createApp() {
         childReasonText,
         childReasonInputMode,
         childReasonAudioUrl,
+        topicCategory,
       });
       res.status(202).json(payload);
     } catch (error) {
@@ -301,6 +304,30 @@ export function createApp() {
 
     try {
       const payload = await listWrongQuestionsForChildOnWebsite({ openId, studentId });
+      res.json(payload);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.put('/wechat/parent/wrong-questions/:recordId/topic-category', async (req, res) => {
+    const recordId = String(req.params.recordId || '').trim();
+    const openId = String(req.body?.openId ?? req.body?.open_id ?? '').trim();
+    const topicCategory = String(req.body?.topicCategory ?? req.body?.topic_category ?? '未分类').trim() || '未分类';
+
+    if (!recordId) {
+      res.status(400).json({ error: 'recordId required' });
+      return;
+    }
+    if (!openId) {
+      res.status(400).json({ error: 'openId required' });
+      return;
+    }
+
+    try {
+      const payload = await updateWrongQuestionTopicCategoryOnWebsite({ openId, recordId, topicCategory });
       res.json(payload);
     } catch (error) {
       res.status(500).json({

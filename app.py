@@ -125,6 +125,7 @@ from lesson_manager import (
     list_organizations,
     list_organization_requests,
     list_parent_student_bindings_for_openid,
+    list_primary_topic_category_suggestions,
     list_student_wrong_question_library_records,
     list_students_for_class,
     list_wechat_wrong_question_submissions_for_parent_student,
@@ -163,6 +164,7 @@ from lesson_manager import (
     save_wechat_wrong_question_review,
     update_wechat_wrong_question_upload_task,
     update_wechat_wrong_question_question_text,
+    update_wechat_wrong_question_topic_category,
     update_user_display_name_for_actor,
     update_user_visible_pages_for_actor,
     update_class,
@@ -2422,6 +2424,30 @@ def api_wrong_question_review_save(record_id):
         return jsonify({"error": str(exc)}), exc.status_code
 
 
+@app.route("/api/wrong-questions/<record_id>/topic-category", methods=["PUT"])
+def api_wrong_question_topic_category_save(record_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if not local_record or not _can_access_wrong_question_record(user, local_record):
+        return jsonify({"error": "not found"}), 404
+
+    saved_record = update_wechat_wrong_question_topic_category(
+        record_id,
+        topic_category=(data.get("topic_category") or data.get("topicCategory") or "").strip(),
+    )
+    if not saved_record:
+        return jsonify({"error": "not found"}), 404
+    _refresh_student_wrong_question_library_cache(local_record["student_id"])
+    saved_record = get_wechat_wrong_question_submission(record_id)
+    return jsonify({"ok": True, "record": saved_record})
+
+
 @app.route("/api/wrong-questions/<record_id>/archive", methods=["PUT"])
 def api_wrong_question_archive_save(record_id):
     user, error = _require_staff()
@@ -3341,6 +3367,7 @@ def api_wechat_wrong_questions_create():
     child_raw_reason_text = (data.get("child_raw_reason_text") or "").strip()
     child_reason_input_mode = (data.get("child_reason_input_mode") or "text").strip() or "text"
     child_reason_audio_url = (data.get("child_reason_audio_url") or "").strip()
+    topic_category = (data.get("topic_category") or data.get("topicCategory") or "").strip()
     if not open_id or not binding_id or not image_url:
         return jsonify({"error": "open_id, binding_id and image_url are required"}), 400
 
@@ -3359,6 +3386,7 @@ def api_wechat_wrong_questions_create():
             child_raw_reason_text=child_raw_reason_text,
             child_reason_input_mode=child_reason_input_mode,
             child_reason_audio_url=child_reason_audio_url,
+            topic_category=topic_category,
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -3395,6 +3423,63 @@ def api_wechat_wrong_question_upload_task_get(task_id: int):
     if not task:
         return jsonify({"error": "task not found"}), 404
     return jsonify({"task": task})
+
+
+@app.route("/api/wechat/wrong-questions/<record_id>/topic-category", methods=["PUT"])
+def api_wechat_wrong_question_topic_category_save(record_id: str):
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    open_id = (data.get("open_id") or "").strip()
+    topic_category = (data.get("topic_category") or data.get("topicCategory") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if not local_record:
+        return jsonify({"error": "not found"}), 404
+    binding = get_parent_student_binding_for_student(account["id"], int(local_record.get("student_id") or 0))
+    if not binding:
+        return jsonify({"error": "not found"}), 404
+
+    saved_record = update_wechat_wrong_question_topic_category(record_id, topic_category=topic_category)
+    if not saved_record:
+        return jsonify({"error": "not found"}), 404
+    _refresh_student_wrong_question_library_cache(local_record["student_id"])
+    saved_record = get_wechat_wrong_question_submission(record_id)
+    return jsonify({"ok": True, "record": saved_record})
+
+
+@app.route("/api/wechat/primary-topic-category-suggestions", methods=["GET"])
+def api_wechat_primary_topic_category_suggestions():
+    _, error = _require_wechat_service()
+    if error:
+        return error
+    open_id = (request.args.get("open_id") or "").strip()
+    topic_category = (request.args.get("topic_category") or request.args.get("topicCategory") or "").strip()
+    if not open_id:
+        return jsonify({"error": "open_id is required"}), 400
+    account = _get_parent_wechat_account_by_openid(open_id)
+    if not account:
+        return jsonify({"error": "parent wechat account not found"}), 404
+    bindings = list_parent_student_bindings_for_openid(open_id)
+    if not bindings:
+        return jsonify({"items": []})
+    organization_id = int(bindings[0].get("organization_id") or 0)
+    return jsonify({
+        "items": list_primary_topic_category_suggestions(
+            organization_id=organization_id,
+            topic_category=topic_category,
+        )
+    })
 
 
 @app.route("/api/wechat/reason-classifications", methods=["POST"])

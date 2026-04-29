@@ -19,6 +19,7 @@ const {
 
 const TASK_POLL_INTERVAL_MS = 2000;
 const TASK_POLL_MAX_ATTEMPTS = 12;
+const TOPIC_CATEGORY_OPTIONS = ['未分类', '计算', '经济', '浓度', '工程', '行程', '几何', '数论', '自定义'];
 
 Page({
   data: {
@@ -45,6 +46,7 @@ Page({
     canvasWidth: 1,
     canvasHeight: 1,
     recordingBoxId: '',
+    topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
   },
 
   onLoad() {
@@ -454,6 +456,65 @@ Page({
     void this.commitImageItems(imageItems, this.data.selectedImageId, false);
   },
 
+  handleActiveBoxTopicChange(event) {
+    const index = Number(event && event.detail ? event.detail.value : 0);
+    const nextTopic = TOPIC_CATEGORY_OPTIONS[index] || '未分类';
+    const currentImage = this.data.currentImage;
+    if (!currentImage || !currentImage.activeBoxId) {
+      return;
+    }
+
+    const imageItems = this.data.imageItems.map((item) => {
+      if (item.id !== currentImage.id) {
+        return item;
+      }
+
+      return {
+        ...item,
+        boxes: (item.boxes || []).map((box) => {
+          if (box.id !== currentImage.activeBoxId) {
+            return box;
+          }
+          return {
+            ...box,
+            topicCategory: nextTopic === '自定义' ? '' : nextTopic,
+          };
+        }),
+      };
+    });
+
+    void this.commitImageItems(imageItems, this.data.selectedImageId, false);
+  },
+
+  handleActiveBoxCustomTopicInput(event) {
+    const nextTopic = String(event && event.detail ? event.detail.value : '').trim();
+    const currentImage = this.data.currentImage;
+    if (!currentImage || !currentImage.activeBoxId) {
+      return;
+    }
+
+    const imageItems = this.data.imageItems.map((item) => {
+      if (item.id !== currentImage.id) {
+        return item;
+      }
+
+      return {
+        ...item,
+        boxes: (item.boxes || []).map((box) => {
+          if (box.id !== currentImage.activeBoxId) {
+            return box;
+          }
+          return {
+            ...box,
+            topicCategory: nextTopic,
+          };
+        }),
+      };
+    });
+
+    void this.commitImageItems(imageItems, this.data.selectedImageId, false);
+  },
+
   switchActiveBoxReasonMode(event) {
     const dataset = event && event.currentTarget ? event.currentTarget.dataset : null;
     const nextMode = dataset && dataset.mode === 'voice' ? 'voice' : 'text';
@@ -825,6 +886,7 @@ Page({
           childReasonText: String(currentJob.childRawReasonText || '').trim(),
           childReasonInputMode: currentJob.childReasonInputMode,
           childReasonAudioUrl,
+          topicCategory: currentJob.topicCategory,
         });
         successTaskIds.push((payload.task && payload.task.id) || '');
       }

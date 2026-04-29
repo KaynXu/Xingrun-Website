@@ -110,3 +110,18 @@ test('parent wrongbook page exposes question text and a pdf entry button', () =>
   assert.equal(wrongbookTemplate.includes('查看 PDF'), true);
   assert.equal(wrongbookTemplate.includes('item.questionPreviewText'), true);
 });
+
+test('parent upload and wrongbook pages expose primary topic category controls', () => {
+  const uploadSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.js'), 'utf8');
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const wrongbookSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.js'), 'utf8');
+  const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
+
+  assert.equal(uploadSource.includes('topicCategoryOptions'), true);
+  assert.equal(uploadTemplate.includes('专题分类'), true);
+  assert.equal(uploadTemplate.includes('handleActiveBoxTopicChange'), true);
+  assert.equal(wrongbookSource.includes('updateChildWrongQuestionTopicCategory'), true);
+  assert.equal(wrongbookSource.includes('topicSummaries'), true);
+  assert.equal(wrongbookTemplate.includes('专题'), true);
+  assert.equal(wrongbookTemplate.includes('bindtap="saveTopicCategory"'), true);
+});

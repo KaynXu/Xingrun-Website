@@ -15,6 +15,7 @@ import {
   buildWrongQuestionReviewDraft,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
+  buildWrongQuestionTopicSummaries,
   filterWrongQuestionRecordsForMemberNotebook,
   getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
@@ -25,6 +26,7 @@ import {
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
+  filterWrongQuestionRecordsByTopic,
   type WrongQuestionRecord,
 } from './smartWrongQuestions';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
@@ -326,6 +328,34 @@ test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class 
     filterWrongQuestionRecordsForMemberNotebook(records, 101, 'Alice').map((item) => item.id),
     ['c', 'a'],
   );
+});
+
+test('topic helpers summarize and filter primary wrong question topics', () => {
+  const records = [
+    makeWrongQuestionRecord({ id: 'a', source: 'wechat_mp', classId: 101, studentName: 'Alice', topicCategory: '行程' }),
+    makeWrongQuestionRecord({ id: 'b', source: 'wechat_mp', classId: 101, studentName: 'Alice', topicCategory: '周期问题' }),
+    makeWrongQuestionRecord({ id: 'c', source: 'wechat_mp', classId: 101, studentName: 'Alice', topicCategory: '' }),
+    makeWrongQuestionRecord({ id: 'd', source: 'wechat_mp', classId: 101, studentName: 'Bob', topicCategory: '行程' }),
+  ];
+
+  assert.deepEqual(buildWrongQuestionTopicSummaries(records.slice(0, 3)), [
+    { topicCategory: '全部', count: 3 },
+    { topicCategory: '未分类', count: 1 },
+    { topicCategory: '行程', count: 1 },
+    { topicCategory: '周期问题', count: 1 },
+  ]);
+  assert.deepEqual(filterWrongQuestionRecordsByTopic(records, '行程').map((item) => item.id), ['a', 'd']);
+  assert.deepEqual(filterWrongQuestionRecordsByTopic(records, '未分类').map((item) => item.id), ['c']);
+});
+
+test('SmartWrongQuestionsPage wires primary topic summaries and topic category saving', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /buildWrongQuestionTopicSummaries/);
+  assert.match(pageSource, /filterWrongQuestionRecordsByTopic/);
+  assert.match(pageSource, /notebookTopicFilter/);
+  assert.match(pageSource, /小学专题/);
+  assert.match(pageSource, /\/api\/wrong-questions\/\$\{encodeURIComponent\(selectedRecord\.id\)\}\/topic-category/);
 });
 
 test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => {

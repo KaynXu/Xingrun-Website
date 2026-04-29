@@ -1,5 +1,6 @@
 let imageCounter = 0;
 let boxCounter = 0;
+const DEFAULT_TOPIC_CATEGORY = '未分类';
 
 function normalizeQuarterTurns(value) {
   const turns = Math.round(Number(value) || 0);
@@ -17,6 +18,7 @@ function createDefaultBox(source) {
     height: 0.28,
     childReasonText: '',
     childReasonInputMode: 'text',
+    topicCategory: DEFAULT_TOPIC_CATEGORY,
     voiceFilePath: '',
     voiceFileName: '',
     reasonStatusText: '',
@@ -133,6 +135,7 @@ function buildUploadJobs(imageItems) {
       box,
       childRawReasonText: String(box.childReasonText || '').trim(),
       childReasonInputMode: String(box.childReasonInputMode || 'text').trim() || 'text',
+      topicCategory: String(box.topicCategory || DEFAULT_TOPIC_CATEGORY).trim() || DEFAULT_TOPIC_CATEGORY,
       voiceFilePath: String(box.voiceFilePath || '').trim(),
     })));
   }, []);

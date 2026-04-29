@@ -18,6 +18,8 @@ import {
   buildWrongQuestionQuery,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
+  buildWrongQuestionTopicSummaries,
+  filterWrongQuestionRecordsByTopic,
   filterWrongQuestionRecordsForMemberNotebook,
   getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
@@ -71,6 +73,17 @@ const WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
   '细节问题',
   '方法问题',
   '审题问题',
+];
+
+const WRONG_QUESTION_TOPIC_CATEGORY_OPTIONS = [
+  '未分类',
+  '计算',
+  '经济',
+  '浓度',
+  '工程',
+  '行程',
+  '几何',
+  '数论',
 ];
 
 const initialFilters: WrongQuestionFilters = {
@@ -202,6 +215,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   reviewDraftByRecordIdRef.current = reviewDraftByRecordId;
   const [notebookModalView, setNotebookModalView] = useState<NotebookModalView>('questions');
   const [notebookMasteryFilter, setNotebookMasteryFilter] = useState<'all' | 'pending' | 'mastered'>('all');
+  const [notebookTopicFilter, setNotebookTopicFilter] = useState('全部');
   const [selectedPracticeRecordIds, setSelectedPracticeRecordIds] = useState<string[]>([]);
   const [practiceSelectionTouched, setPracticeSelectionTouched] = useState(false);
   const [practiceSheets, setPracticeSheets] = useState<WrongQuestionPracticeSheetSummary[]>([]);
@@ -265,14 +279,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       memberNotebookRecords.map((item, index) => [item.id, index + 1]),
     );
   }, [memberNotebookRecords]);
+  const notebookTopicSummaries = useMemo(() => {
+    return buildWrongQuestionTopicSummaries(memberNotebookRecords);
+  }, [memberNotebookRecords]);
   const displayedNotebookRecords = useMemo(() => {
     const filtered = notebookMasteryFilter === 'mastered'
       ? memberNotebookRecords.filter((item) => item.isMastered === true)
       : notebookMasteryFilter === 'pending'
         ? memberNotebookRecords.filter((item) => item.isMastered !== true)
         : memberNotebookRecords;
-    return [...filtered].reverse();
-  }, [memberNotebookRecords, notebookMasteryFilter]);
+    return [...filterWrongQuestionRecordsByTopic(filtered, notebookTopicFilter)].reverse();
+  }, [memberNotebookRecords, notebookMasteryFilter, notebookTopicFilter]);
   const selectedNotebookStudentId = useMemo(() => {
     const matchedRecord = memberNotebookRecords.find((item) => typeof item.studentId === 'number' && item.studentId > 0);
     return matchedRecord?.studentId ?? null;
@@ -298,6 +315,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       selectedDraft?.selectedErrorType?.trim() ?? '',
     ].filter(Boolean)));
   }, [selectedDraft?.selectedErrorType, selectedRecord?.analysis.errorType]);
+  const topicCategoryOptions = useMemo(() => {
+    return Array.from(new Set([
+      ...WRONG_QUESTION_TOPIC_CATEGORY_OPTIONS,
+      selectedRecord?.topicCategory?.trim() ?? '',
+      selectedDraft?.topicCategory?.trim() ?? '',
+    ].filter(Boolean)));
+  }, [selectedDraft?.topicCategory, selectedRecord?.topicCategory]);
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
     reviewDraftDirtyByRecordIdRef.current = {
@@ -688,11 +712,24 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-      const nextRecord = resolveSavedWrongQuestionRecord(
+      let nextRecord = resolveSavedWrongQuestionRecord(
         selectedRecord,
         payload,
         extractSavedWrongQuestionResponseRecord(response),
       );
+      const currentTopicCategory = (selectedRecord.topicCategory || selectedRecord.analysis.topicCategory || '未分类').trim() || '未分类';
+      const nextTopicCategory = payload.topicCategory || '未分类';
+      if (selectedRecord.source === 'wechat_mp' && nextTopicCategory !== currentTopicCategory) {
+        const topicResponse = await apiFetch<unknown>(`/api/wrong-questions/${encodeURIComponent(selectedRecord.id)}/topic-category`, {
+          method: 'PUT',
+          body: JSON.stringify({ topic_category: nextTopicCategory }),
+        });
+        nextRecord = resolveSavedWrongQuestionRecord(
+          nextRecord,
+          payload,
+          extractSavedWrongQuestionResponseRecord(topicResponse),
+        );
+      }
 
       setRecords((current) => current.map((item) => item.id === selectedRecord.id ? nextRecord : item));
       setServerSummary(null);
@@ -1050,10 +1087,37 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               />
             </a>
           ) : null}
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className={`${workspaceCardClass} p-4`}>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">孩子自述错因</p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.childReasonText || '孩子还没有填写错因描述。'}</p>
+            </div>
+            <div className={`${workspaceCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">小学专题</p>
+              {selectedDraft ? (
+                <div className="mt-2 space-y-2">
+                  <select
+                    aria-label="小学专题"
+                    value={topicCategoryOptions.includes(selectedDraft.topicCategory ?? '') ? selectedDraft.topicCategory : '自定义'}
+                    onChange={(event) => handleDraftChange('topicCategory', event.target.value === '自定义' ? '' : event.target.value)}
+                    className={workspaceFieldClass}
+                  >
+                    {topicCategoryOptions.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                    <option value="自定义">自定义</option>
+                  </select>
+                  <input
+                    aria-label="自定义小学专题"
+                    value={selectedDraft.topicCategory ?? '未分类'}
+                    onChange={(event) => handleDraftChange('topicCategory', event.target.value)}
+                    className={workspaceFieldClass}
+                    placeholder="如：周期问题"
+                  />
+                </div>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.topicCategory || '未分类'}</p>
+              )}
             </div>
             <div className={`${workspaceCardClass} p-4`}>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">问题归类</p>
@@ -1562,6 +1626,25 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           当前显示 {displayedNotebookRecords.length}题
                         </span>
                       </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">专题分类</p>
+                        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="小学专题筛选">
+                          {notebookTopicSummaries.map((item) => {
+                            const active = notebookTopicFilter === item.topicCategory;
+                            return (
+                              <button
+                                key={item.topicCategory}
+                                type="button"
+                                aria-pressed={active}
+                                onClick={() => setNotebookTopicFilter(item.topicCategory)}
+                                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active ? 'bg-sky-600 text-white dark:bg-sky-400 dark:text-slate-950' : 'border border-sky-100 bg-white text-sky-700 hover:border-sky-200 dark:border-sky-500/20 dark:bg-slate-950/60 dark:text-sky-300'}`}
+                              >
+                                {item.topicCategory} · {item.count}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                       <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-500 dark:text-slate-400">已选择 {selectedPracticeCount} 题</p>
                         <button
@@ -1610,6 +1693,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                                 <span className="text-slate-500 dark:text-slate-400">{item.createdAt || '未记录时间'}</span>
                                 <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${item.isMastered ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border-slate-200 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300'}`}>
                                   {item.isMastered ? '已掌握' : '未掌握'}
+                                </span>
+                                <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                                  {item.topicCategory || '未分类'}
                                 </span>
                               </div>
                               {!canSelect ? (
