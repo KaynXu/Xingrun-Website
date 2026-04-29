@@ -192,6 +192,19 @@ function EmptyDropZone({ onCreateCustomItem }: { onCreateCustomItem: () => void 
   );
 }
 
+function AddCustomItemRow({ onCreateCustomItem }: { onCreateCustomItem: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onCreateCustomItem}
+      className="inline-flex h-7 w-full items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-600 transition hover:border-sky-200 hover:bg-sky-100 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+      aria-label="添加自定义事项"
+    >
+      <Plus className="h-4 w-4" />
+    </button>
+  );
+}
+
 interface ScheduleCardProps {
   schedule: JoinedCourseCalendarSchedule;
   onOpenSchedule: (schedule: JoinedCourseCalendarSchedule) => void;
@@ -260,7 +273,7 @@ function TeacherSummaryCard({
       className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
       title={summaryTitle}
     >
-      <div className="max-h-16 space-y-1 overflow-y-auto overscroll-contain pr-1">
+      <div className={cn('space-y-1', summary.schedules.length > 2 ? 'max-h-12 overflow-y-auto overscroll-contain pr-1' : 'overflow-hidden')}>
         {summary.schedules.map((schedule) => (
           <p
             key={schedule.id}
@@ -739,6 +752,8 @@ export function CourseCalendarPage({
                           {dailyBuckets.map(({ date, blocks, customBlocks }) => {
                             const blockCards = blocks[timeBlock];
                             const customBlockCards = customBlocks[timeBlock];
+                            const teacherSummaries = showTeacherSummaries ? buildTeacherScheduleSummaries(blockCards, date, timeBlock) : [];
+                            const slotCardCount = (showTeacherSummaries ? teacherSummaries.length : blockCards.length) + customBlockCards.length;
                             return (
                               <div
                                 key={`${date}-${timeBlock}`}
@@ -753,11 +768,11 @@ export function CourseCalendarPage({
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
                                 )}
                               >
-                                <div className="max-h-full space-y-2 overflow-y-auto overscroll-contain pr-1">
-                                  {blockCards.length + customBlockCards.length > 0 ? (
+                                <div className={cn('max-h-full space-y-2', slotCardCount > 1 ? 'overflow-y-auto overscroll-contain pr-1' : 'overflow-hidden')}>
+                                  {slotCardCount > 0 ? (
                                     <>
                                       {showTeacherSummaries
-                                        ? buildTeacherScheduleSummaries(blockCards, date, timeBlock).map((summary) => (
+                                        ? teacherSummaries.map((summary) => (
                                           <TeacherSummaryCard
                                             key={`${summary.teacherName}-${date}-${timeBlock}`}
                                             summary={summary}
@@ -778,6 +793,7 @@ export function CourseCalendarPage({
                                           onOpenNote={setOpenedCustomSchedule}
                                         />
                                       ))}
+                                      <AddCustomItemRow onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
                                     </>
                                   ) : (
                                     <EmptyDropZone onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
@@ -813,6 +829,8 @@ export function CourseCalendarPage({
                         {COURSE_CALENDAR_TIME_BLOCKS.map((timeBlock) => {
                           const blockCards = blocks[timeBlock];
                           const customBlockCards = customBlocks[timeBlock];
+                          const teacherSummaries = showTeacherSummaries ? buildTeacherScheduleSummaries(blockCards, date, timeBlock) : [];
+                          const slotCardCount = (showTeacherSummaries ? teacherSummaries.length : blockCards.length) + customBlockCards.length;
                           return (
                             <div
                               key={`${date}-${timeBlock}`}
@@ -831,10 +849,10 @@ export function CourseCalendarPage({
                                 <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">拖入排课</p>
                               </div>
                               <div className="space-y-2">
-                                {blockCards.length + customBlockCards.length > 0 ? (
+                                {slotCardCount > 0 ? (
                                   <>
                                     {showTeacherSummaries
-                                      ? buildTeacherScheduleSummaries(blockCards, date, timeBlock).map((summary) => (
+                                      ? teacherSummaries.map((summary) => (
                                         <TeacherSummaryCard
                                           key={`${summary.teacherName}-${date}-${timeBlock}`}
                                           summary={summary}
@@ -855,6 +873,7 @@ export function CourseCalendarPage({
                                         onOpenNote={setOpenedCustomSchedule}
                                       />
                                     ))}
+                                    <AddCustomItemRow onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
                                   </>
                                 ) : (
                                   <EmptyDropZone onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />

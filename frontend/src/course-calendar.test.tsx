@@ -150,7 +150,10 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /gridTemplateColumns: '82px repeat\(6, minmax\(0, 1fr\)\)'/);
   assert.match(source, /overflow-hidden rounded-xl border px-2 py-2 transition/);
   assert.match(source, /h-\[calc\(\(100vh-250px\)\/6\)\] min-h-\[72px\]/);
-  assert.match(source, /max-h-full space-y-2 overflow-y-auto overscroll-contain pr-1/);
+  assert.match(source, /function AddCustomItemRow/);
+  assert.match(source, /const slotCardCount = \(showTeacherSummaries \? teacherSummaries\.length : blockCards\.length\) \+ customBlockCards\.length/);
+  assert.match(source, /slotCardCount > 1 \? 'overflow-y-auto overscroll-contain pr-1' : 'overflow-hidden'/);
+  assert.match(source, /<AddCustomItemRow onCreateCustomItem=\{\(\) => setPendingCustomCreate\(\{ date, timeBlock \}\)\} \/>/);
   assert.match(source, /isCalendarExpanded/);
   assert.match(source, /Maximize2/);
   assert.match(source, /Minimize2/);
@@ -163,7 +166,7 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /function TeacherSummaryCard/);
   assert.match(source, /const summaryTitle = summary\.schedules\.map\(formatScheduleSummaryLine\)\.join\('\\n'\)/);
   assert.match(source, /summary\.schedules\.map\(\(schedule\) =>/);
-  assert.match(source, /max-h-16 space-y-1 overflow-y-auto overscroll-contain pr-1/);
+  assert.match(source, /summary\.schedules\.length > 2 \? 'max-h-12 overflow-y-auto overscroll-contain pr-1' : 'overflow-hidden'/);
   assert.match(source, /OpenedTeacherSummaryModal/);
   assert.match(source, /setOpenedTeacherSummary/);
   assert.doesNotMatch(source, /setTeacherEditorOpen\(true\)/);

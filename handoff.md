@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-29 已继续修正课程日历时间格交互：桌面时间格只有在同一格存在多条课程/事项时才启用格内滚动，空格或单条内容不再主动露出滚动条；已有课程/事项的时间格末尾也会保留紧凑 `+` 按钮，可直接创建自定义事项。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_slot_scroll_plus_proof.sh`：课程日历定向前端 4 条测试、frontend production build、`git diff --check`。
 - 2026-04-29 已继续修正课程日历“全部老师”汇总卡：超级管理员/机构负责人查看全部老师时，格子里的老师汇总卡不再只显示教师姓名，而是逐行显示“学科 · 教师姓名 · 班名 · 时间段”；多行时卡片内部滚动，点击卡片仍打开该老师该时段完整排课明细。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_teacher_summary_lines_proof.sh`：课程日历定向前端 4 条测试、frontend production build、`git diff --check`。
 - 2026-04-29 已继续修正课程日历课表内课程卡片：课程卡片改为单行摘要，按“学科 · 教师姓名 · 班名 · 时间段”展示；同一时间格多条内容时改为格内纵向滚动，点击卡片仍打开排期详情查看完整信息。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_schedule_line_proof.sh`：课程日历定向前端 4 条测试、frontend production build、`git diff --check`。
 - 2026-04-29 已继续收紧课程日历主内容区横向留白：外层最大宽度从 1600px 放宽到 1760px，页面与主内容左右 padding 下调，课表和右侧固定 240px 卡片栏之间的间距缩小；右侧课程卡片/自定义事项尺寸不变，整体更靠右，中间课表获得更多宽度。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_horizontal_space_proof.sh`：课程日历定向前端 4 条测试、frontend production build、`git diff --check`；本轮也额外跑过前端 190 条测试通过。
