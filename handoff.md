@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-04-29 已继续修正课程日历 staff 视图：超级管理员/机构负责人/管理员在“全部老师”时，时间格内课程不再显示完整班级卡，而是按老师聚合，只显示老师姓名；点击老师汇总卡会弹出同一日期/时段下该老师的课程明细。选择具体老师后，课程表会过滤为该老师的完整课程表；学科筛选仍会同步作用于课程表和右侧课程卡片。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_teacher_summary_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-29 已按 release 流程发布到生产：本地先把远端 `origin/develop(c6f192b)` 合入课程日历开发分支并解决 `handoff.md` 冲突，得到 `develop(d642307)`；随后合入 `master(8e91aba)` 并部署到生产机 `49.234.185.86`。本地到 GitHub 曾短暂出现 HTTPS/HTTP2/443 超时，先用 bundle 兜底把 `master(8e91aba)` 部署到生产，随后 `git -c http.version=HTTP/1.1 push origin master` 补推成功。生产机已完成 backend deps 安装、`init_db`、frontend production build、`pm2 restart xingrun`，`pm2 status xingrun` 在线，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`；生产仓库当前 `HEAD=8e91aba`，临时 bundle 已删除。release proof：`/tmp/xingrun_release_merged_develop_verify.sh`、`/tmp/xingrun_release_master_verify.sh`、bundle 部署脚本均通过。
 - 2026-04-28 已继续修正课程日历右侧课程卡片区：课程卡片列表改成固定最大高度的独立滚动区域，课程较多时在绿圈区域内滚动；课程卡片排序改为按年级从高到低（高三到小一）排列，同年级再按科目/班名排序。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_course_list_proof.sh`：前端 190 条测试、frontend production build、`git diff --check`。
 - 2026-04-28 已继续修正课程日历自定义事项：课表内自定义事项卡片改成第一行标题、第二行时间段、第三行状态文案，公开事项文案从“公开”改为“管理员发布”；右侧自定义事项源卡片删除权限改为以后端 `can_delete` 为准，并在删除失败时给出前端提示，避免按钮无反馈。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_custom_card_delete_proof.sh`：后端课程日历 API 5 条、前端 190 条测试、frontend production build、`git diff --check`。

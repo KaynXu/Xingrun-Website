@@ -87,6 +87,13 @@ interface JoinedCustomSchedule {
   visibility: 'private' | 'organization';
 }
 
+interface TeacherScheduleSummary {
+  date: string;
+  timeBlock: CourseCalendarTimeBlock;
+  teacherName: string;
+  schedules: JoinedCourseCalendarSchedule[];
+}
+
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
 }
@@ -209,6 +216,49 @@ function ScheduleCard({ schedule, onOpenSchedule }: ScheduleCardProps): React.JS
   );
 }
 
+function buildTeacherScheduleSummaries(
+  schedules: JoinedCourseCalendarSchedule[],
+  date: string,
+  timeBlock: CourseCalendarTimeBlock,
+): TeacherScheduleSummary[] {
+  const grouped = schedules.reduce((result, schedule) => {
+    const teacherName = schedule.teacherName || '未分配教师';
+    const current = result.get(teacherName) || [];
+    current.push(schedule);
+    result.set(teacherName, current);
+    return result;
+  }, new Map<string, JoinedCourseCalendarSchedule[]>());
+
+  return Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right, 'zh-Hans'))
+    .map(([teacherName, teacherSchedules]) => ({
+      date,
+      timeBlock,
+      teacherName,
+      schedules: teacherSchedules,
+    }));
+}
+
+function TeacherSummaryCard({
+  summary,
+  onOpenSummary,
+}: {
+  summary: TeacherScheduleSummary;
+  onOpenSummary: (summary: TeacherScheduleSummary) => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenSummary(summary)}
+      className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
+    >
+      <p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">
+        {summary.teacherName}
+      </p>
+    </button>
+  );
+}
+
 interface OpenedCourseScheduleModalProps {
   schedule: JoinedCourseCalendarSchedule;
   onClose: () => void;
@@ -249,6 +299,54 @@ function OpenedCourseScheduleModal({ schedule, onClose, onDeleteSchedule }: Open
             className="inline-flex h-11 items-center justify-center rounded-xl bg-rose-500 px-5 text-sm font-bold text-white transition hover:bg-rose-600"
           >
             删除
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OpenedTeacherSummaryModal({
+  summary,
+  onClose,
+}: {
+  summary: TeacherScheduleSummary;
+  onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <div className="w-full max-w-xl rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-500 dark:text-sky-300">老师排课</p>
+            <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">{summary.teacherName}</h2>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              {formatWeekdayLabel(summary.date)} {formatDayLabel(summary.date)} · {summary.timeBlock}
+            </p>
+          </div>
+          <Clock className="h-6 w-6 shrink-0 text-sky-500 dark:text-sky-300" />
+        </div>
+        <div className="mt-5 space-y-2">
+          {summary.schedules.map((schedule) => (
+            <div
+              key={schedule.id}
+              className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3 text-sm dark:border-white/10 dark:bg-white/5"
+            >
+              <p className="font-bold text-slate-900 dark:text-white">{schedule.className}</p>
+              <p className="mt-1 font-semibold text-cyan-700 dark:text-cyan-200">{schedule.displayRange}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || '未设置科目'}
+              </p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-11 items-center justify-center rounded-xl border border-sky-100 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+          >
+            关闭
           </button>
         </div>
       </div>
@@ -314,13 +412,25 @@ export function CourseCalendarPage({
   const visibleDates = getCalendarPageDates(anchorDate, visibleDayCount);
   const visibleDateSet = new Set(visibleDates);
   const joinedSchedules = joinClassesAndSchedules(classes, schedules);
-  const visibleSchedules = joinedSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
-  const joinedCustomSchedules = buildJoinedCustomSchedules(customSchedules);
-  const visibleCustomSchedules = joinedCustomSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
   const teacherOptions = getTeacherOptions(classes);
   const [teacherFilter, setTeacherFilter] = React.useState('');
   const [subjectFilter, setSubjectFilter] = React.useState('');
   const canFilterCourses = currentUserRole !== 'member';
+  const showTeacherSummaries = canFilterCourses && !teacherFilter;
+  const visibleSchedules = joinedSchedules.filter((schedule) => {
+    if (!visibleDateSet.has(schedule.date)) {
+      return false;
+    }
+    if (canFilterCourses && teacherFilter && schedule.teacherName !== teacherFilter) {
+      return false;
+    }
+    if (canFilterCourses && subjectFilter && schedule.subject !== subjectFilter) {
+      return false;
+    }
+    return true;
+  });
+  const joinedCustomSchedules = buildJoinedCustomSchedules(customSchedules);
+  const visibleCustomSchedules = joinedCustomSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
   const classOptions = getClassOptions(classes).filter((courseClass) => {
     if (canFilterCourses && teacherFilter && courseClass.teacher_name !== teacherFilter) {
       return false;
@@ -339,6 +449,7 @@ export function CourseCalendarPage({
   const [customNote, setCustomNote] = React.useState('');
   const [customVisibility, setCustomVisibility] = React.useState<'private' | 'organization'>('private');
   const [openedCourseSchedule, setOpenedCourseSchedule] = React.useState<JoinedCourseCalendarSchedule | null>(null);
+  const [openedTeacherSummary, setOpenedTeacherSummary] = React.useState<TeacherScheduleSummary | null>(null);
   const [openedCustomSchedule, setOpenedCustomSchedule] = React.useState<JoinedCustomSchedule | null>(null);
   const [pendingCustomCreate, setPendingCustomCreate] = React.useState<PendingCustomCreate | null>(null);
   const [isCalendarExpanded, setIsCalendarExpanded] = React.useState(false);
@@ -630,13 +741,21 @@ export function CourseCalendarPage({
                                 <div className="max-h-full space-y-2 overflow-hidden">
                                   {blockCards.length + customBlockCards.length > 0 ? (
                                     <>
-                                      {blockCards.map((schedule) => (
-                                        <ScheduleCard
-                                          key={schedule.id}
-                                          schedule={schedule}
-                                          onOpenSchedule={setOpenedCourseSchedule}
-                                        />
-                                      ))}
+                                      {showTeacherSummaries
+                                        ? buildTeacherScheduleSummaries(blockCards, date, timeBlock).map((summary) => (
+                                          <TeacherSummaryCard
+                                            key={`${summary.teacherName}-${date}-${timeBlock}`}
+                                            summary={summary}
+                                            onOpenSummary={setOpenedTeacherSummary}
+                                          />
+                                        ))
+                                        : blockCards.map((schedule) => (
+                                          <ScheduleCard
+                                            key={schedule.id}
+                                            schedule={schedule}
+                                            onOpenSchedule={setOpenedCourseSchedule}
+                                          />
+                                        ))}
                                       {customBlockCards.map((schedule) => (
                                         <CustomScheduleCard
                                           key={`custom-${schedule.id}`}
@@ -699,13 +818,21 @@ export function CourseCalendarPage({
                               <div className="space-y-2">
                                 {blockCards.length + customBlockCards.length > 0 ? (
                                   <>
-                                    {blockCards.map((schedule) => (
-                                      <ScheduleCard
-                                        key={schedule.id}
-                                        schedule={schedule}
-                                        onOpenSchedule={setOpenedCourseSchedule}
-                                      />
-                                    ))}
+                                    {showTeacherSummaries
+                                      ? buildTeacherScheduleSummaries(blockCards, date, timeBlock).map((summary) => (
+                                        <TeacherSummaryCard
+                                          key={`${summary.teacherName}-${date}-${timeBlock}`}
+                                          summary={summary}
+                                          onOpenSummary={setOpenedTeacherSummary}
+                                        />
+                                      ))
+                                      : blockCards.map((schedule) => (
+                                        <ScheduleCard
+                                          key={schedule.id}
+                                          schedule={schedule}
+                                          onOpenSchedule={setOpenedCourseSchedule}
+                                        />
+                                      ))}
                                     {customBlockCards.map((schedule) => (
                                       <CustomScheduleCard
                                         key={`custom-${schedule.id}`}
@@ -957,6 +1084,12 @@ export function CourseCalendarPage({
           schedule={openedCourseSchedule}
           onClose={() => setOpenedCourseSchedule(null)}
           onDeleteSchedule={onDeleteSchedule}
+        />
+      )}
+      {openedTeacherSummary && (
+        <OpenedTeacherSummaryModal
+          summary={openedTeacherSummary}
+          onClose={() => setOpenedTeacherSummary(null)}
         />
       )}
       {openedCustomSchedule && (

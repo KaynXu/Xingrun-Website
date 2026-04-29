@@ -69,7 +69,8 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /16:00-18:00/);
   assert.match(markup, /18:00-20:00/);
   assert.match(markup, /20:00-22:00/);
-  assert.match(markup, /08:15-10:15/);
+  assert.match(markup, /Alice/);
+  assert.doesNotMatch(markup, /08:15-10:15/);
   assert.match(markup, /拖动课程到此/);
   assert.match(markup, /添加自定义事项/);
   assert.match(markup, /翻动/);
@@ -155,6 +156,13 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /Minimize2/);
   assert.match(source, /const SUBJECT_FILTER_OPTIONS = \['数学', '物理'\]/);
   assert.match(source, /getTeacherOptions\(classes\)/);
+  assert.match(source, /const showTeacherSummaries = canFilterCourses && !teacherFilter/);
+  assert.match(source, /schedule\.teacherName !== teacherFilter/);
+  assert.match(source, /schedule\.subject !== subjectFilter/);
+  assert.match(source, /function buildTeacherScheduleSummaries/);
+  assert.match(source, /function TeacherSummaryCard/);
+  assert.match(source, /OpenedTeacherSummaryModal/);
+  assert.match(source, /setOpenedTeacherSummary/);
   assert.doesNotMatch(source, /setTeacherEditorOpen\(true\)/);
   assert.doesNotMatch(source, /handleAddTeacherOption/);
   assert.doesNotMatch(source, /handleRemoveTeacherOption/);
