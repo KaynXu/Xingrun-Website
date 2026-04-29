@@ -169,6 +169,8 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /function getClassGradeRank/);
   assert.match(source, /getClassGradeRank\(b\) - getClassGradeRank\(a\)/);
   assert.match(source, /max-h-\[320px\] space-y-2 overflow-y-auto overscroll-contain/);
+  assert.match(source, /max-w-\[1760px\]/);
+  assert.match(source, /grid gap-4/);
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_240px\]/);
   assert.match(source, /isCalendarExpanded \? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm'/);
   assert.match(source, /fixed inset-3 z-50 overflow-hidden/);
