@@ -80,6 +80,17 @@
     </view>
 
     <view wx:if="{{activeBox}}" class="reason-card">
+      <text class="field-label topic-label">专题分类</text>
+      <picker mode="selector" range="{{topicCategoryOptions}}" bindchange="handleActiveBoxTopicChange">
+        <view class="topic-picker">{{activeBox.topicCategory || '未分类'}}</view>
+      </picker>
+      <input
+        class="field-input topic-input"
+        value="{{activeBox.topicCategory}}"
+        placeholder="不确定可填未分类，自定义如周期问题"
+        bindinput="handleActiveBoxCustomTopicInput"
+      />
+
       <text class="field-label textarea-label">当前题目怎么说自己为什么错了</text>
       <view class="mode-switch-row">
         <button

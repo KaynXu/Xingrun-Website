@@ -23,13 +23,37 @@
   </view>
 
   <view wx:else class="item-list">
-    <view wx:for="{{items}}" wx:key="id" class="item-card">
+    <scroll-view class="topic-scroll" scroll-x="true" show-scrollbar="false">
+      <button
+        wx:for="{{topicSummaries}}"
+        wx:key="topicCategory"
+        class="topic-chip {{activeTopicCategory === item.topicCategory ? 'topic-chip-active' : ''}}"
+        data-topic="{{item.topicCategory}}"
+        bindtap="selectTopicFilter"
+      >
+        {{item.topicCategory}} {{item.count}}
+      </button>
+    </scroll-view>
+
+    <view wx:for="{{displayedItems}}" wx:key="id" class="item-card">
       <image wx:if="{{item.imageUrl}}" class="item-img" src="{{item.imageUrl}}" mode="aspectFill" />
       <view class="item-body">
         <view class="item-top">
+          <text class="tag topic-tag">专题：{{item.topicCategory || '未分类'}}</text>
           <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
           <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
         </view>
+        <view wx:if="{{editingTopicRecordId === item.id}}" class="topic-edit-card">
+          <picker mode="selector" range="{{topicCategoryOptions}}" bindchange="handleTopicCategoryChange">
+            <view class="topic-picker">{{editingTopicCategory || '未分类'}}</view>
+          </picker>
+          <input class="topic-input" value="{{editingTopicCategory}}" placeholder="自定义专题，如周期问题" bindinput="handleCustomTopicInput" />
+          <view class="topic-edit-actions">
+            <button class="topic-action-btn" bindtap="cancelEditTopicCategory">取消</button>
+            <button class="topic-action-btn topic-save-btn" loading="{{savingTopic}}" bindtap="saveTopicCategory">保存</button>
+          </view>
+        </view>
+        <button wx:else class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
         <text wx:if="{{item.questionPreviewText}}" class="item-question">{{item.questionPreviewText}}</text>
         <text wx:if="{{item.errorSummary}}" class="item-summary">{{item.errorSummary}}</text>
         <text class="item-date">{{item.dateStr}}</text>

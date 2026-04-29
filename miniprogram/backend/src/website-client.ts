@@ -185,6 +185,7 @@ export async function submitWechatWrongQuestionToWebsite(input: {
   childReasonText: string;
   childReasonInputMode?: string;
   childReasonAudioUrl?: string;
+  topicCategory?: string;
 }) {
   return requestWebsite<{ task: WebsiteWrongQuestionUploadTask; student_library_pdf_url?: string }>('/api/wechat/wrong-questions', {
     method: 'POST',
@@ -195,6 +196,7 @@ export async function submitWechatWrongQuestionToWebsite(input: {
       child_raw_reason_text: input.childReasonText,
       child_reason_input_mode: input.childReasonInputMode || 'text',
       child_reason_audio_url: input.childReasonAudioUrl || '',
+      topic_category: input.topicCategory || '未分类',
     },
   });
 }
@@ -226,7 +228,9 @@ export interface WebsiteWrongQuestionItem {
     error_type: string;
     selected_error_type: string;
     student_note: string;
+    topic_category?: string;
   };
+  topic_category?: string;
 }
 
 export interface WebsiteWrongQuestionLibrarySummary {
@@ -243,6 +247,23 @@ export async function listWrongQuestionsForChildOnWebsite(input: {
   const query = new URLSearchParams({ open_id: input.openId });
   return requestWebsite<{ items: WebsiteWrongQuestionItem[]; total: number }>(
     `/api/wechat/children/${input.studentId}/wrong-questions?${query.toString()}`
+  );
+}
+
+export async function updateWrongQuestionTopicCategoryOnWebsite(input: {
+  openId: string;
+  recordId: string;
+  topicCategory: string;
+}) {
+  return requestWebsite<{ ok: boolean; record: WebsiteWrongQuestionItem }>(
+    `/api/wechat/wrong-questions/${encodeURIComponent(input.recordId)}/topic-category`,
+    {
+      method: 'PUT',
+      body: {
+        open_id: input.openId,
+        topic_category: input.topicCategory,
+      },
+    }
   );
 }
 

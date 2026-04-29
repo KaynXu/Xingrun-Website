@@ -53,6 +53,17 @@ CONFIGURABLE_VISIBLE_PAGES = (
     "classes",
 )
 WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
+PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED = "未分类"
+PRIMARY_WRONG_QUESTION_TOPIC_PRESETS = (
+    PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
+    "计算",
+    "经济",
+    "浓度",
+    "工程",
+    "行程",
+    "几何",
+    "数论",
+)
 ORGANIZATION_REQUEST_PENDING = "pending"
 ORGANIZATION_REQUEST_APPROVED = "approved"
 ORGANIZATION_REQUEST_REJECTED = "rejected"
@@ -63,6 +74,41 @@ CONSULTATION_TEACHERS_JSON_CANDIDATES = [
     Path.home() / ".openclaw" / "workspace" / "teachers.json",
     Path.home() / ".openclaw" / "workspace-wecom" / "teachers.json",
 ]
+
+
+def normalize_primary_wrong_question_topic_category(value: str = "") -> str:
+    normalized = (value or "").strip()
+    return normalized or PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED
+
+
+def is_primary_school_class_name(class_name: str, grade: str = "") -> bool:
+    text = f"{class_name or ''} {grade or ''}"
+    if re.search(r"小[一二三四五六123456]", text):
+        return True
+    return bool(re.search(r"[一二三四五六123456]年级", text))
+
+
+def _normalize_topic_match_key(value: str) -> str:
+    normalized = re.sub(r"[\s,，.。;；:：、\-_/\\（）()【】\[\]{}]+", "", (value or "").strip())
+    for suffix in ("问题", "题", "类"):
+        if normalized.endswith(suffix) and len(normalized) > len(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+    return normalized
+
+
+def _topic_category_matches(candidate: str, query: str) -> bool:
+    candidate_key = _normalize_topic_match_key(candidate)
+    query_key = _normalize_topic_match_key(query)
+    if not candidate_key or not query_key:
+        return False
+    if candidate_key == query_key:
+        return True
+    if len(candidate_key) >= 2 and candidate_key in query_key:
+        return True
+    return len(query_key) >= 2 and query_key in candidate_key
+
+
 GRADE_NUMERAL_MAP = {
     1: "一",
     2: "二",
@@ -1302,6 +1348,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "child_reason_input_mode",
             "primary_error_type",
             "secondary_error_summary",
+            "topic_category",
             "archive_status",
             "archived_at",
             "status",
@@ -1340,6 +1387,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
             primary_error_type        TEXT NOT NULL DEFAULT '',
             secondary_error_summary   TEXT NOT NULL DEFAULT '',
+            topic_category            TEXT NOT NULL DEFAULT '未分类',
             archive_status            TEXT NOT NULL DEFAULT 'active',
             archived_at               TEXT DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
@@ -1930,6 +1978,7 @@ def init_db():
             child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
             primary_error_type        TEXT NOT NULL DEFAULT '',
             secondary_error_summary   TEXT NOT NULL DEFAULT '',
+            topic_category            TEXT NOT NULL DEFAULT '未分类',
             archive_status            TEXT NOT NULL DEFAULT 'active',
             archived_at               TEXT DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
@@ -1956,6 +2005,7 @@ def init_db():
             child_raw_reason_text     TEXT NOT NULL DEFAULT '',
             child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
             child_reason_audio_url    TEXT NOT NULL DEFAULT '',
+            topic_category            TEXT NOT NULL DEFAULT '未分类',
             status                    TEXT NOT NULL DEFAULT 'pending',
             record_id                 TEXT NOT NULL DEFAULT '',
             error_message             TEXT NOT NULL DEFAULT '',
@@ -2223,6 +2273,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
         _ensure_column(conn, "wrong_question_submissions", "primary_error_type", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
         _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "recognition_status", "TEXT NOT NULL DEFAULT 'pending'")
@@ -2232,6 +2283,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "course_calendar_custom_items", "visibility", "TEXT NOT NULL DEFAULT 'private'")
@@ -5875,6 +5927,7 @@ def create_wechat_wrong_question_upload_task(
     child_raw_reason_text: str,
     child_reason_input_mode: str = "text",
     child_reason_audio_url: str = "",
+    topic_category: str = PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
 ) -> dict:
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
@@ -5883,6 +5936,7 @@ def create_wechat_wrong_question_upload_task(
     normalized_reason_input_mode = ((child_reason_input_mode or "text").strip() or "text").lower()
     if normalized_reason_input_mode not in WECHAT_CHILD_REASON_INPUT_MODES:
         raise ValueError("child_reason_input_mode must be text or voice")
+    normalized_topic_category = normalize_primary_wrong_question_topic_category(topic_category)
 
     with get_conn() as conn:
         binding_row = conn.execute(
@@ -5902,8 +5956,9 @@ def create_wechat_wrong_question_upload_task(
                 organization_id, parent_wechat_account_id, binding_id,
                 class_id, student_id, teacher_user_id, image_url,
                 child_raw_reason_text, child_reason_input_mode, child_reason_audio_url,
+                topic_category,
                 status, record_id, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
             """,
             (
                 binding_row["organization_id"],
@@ -5916,6 +5971,7 @@ def create_wechat_wrong_question_upload_task(
                 normalized_reason_text,
                 normalized_reason_input_mode,
                 (child_reason_audio_url or "").strip(),
+                normalized_topic_category,
             ),
         )
         created = conn.execute(
@@ -5994,6 +6050,7 @@ def create_wechat_wrong_question_submission(
     child_reason_input_mode: str = "text",
     primary_error_type: str = "",
     secondary_error_summary: str = "",
+    topic_category: str = PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
     recognition_status: str = "pending",
     is_geometry: bool = False,
     question_text: str = "",
@@ -6007,6 +6064,7 @@ def create_wechat_wrong_question_submission(
     normalized_reason_input_mode = ((child_reason_input_mode or "text").strip() or "text").lower()
     if normalized_reason_input_mode not in WECHAT_CHILD_REASON_INPUT_MODES:
         raise ValueError("child_reason_input_mode must be text or voice")
+    normalized_topic_category = normalize_primary_wrong_question_topic_category(topic_category)
 
     with get_conn() as conn:
         binding_row = conn.execute(
@@ -6027,10 +6085,10 @@ def create_wechat_wrong_question_submission(
                 id, organization_id, source, parent_wechat_account_id, binding_id,
                 class_id, student_id, teacher_user_id, image_url,
                 child_raw_reason_text, child_reason_input_mode,
-                primary_error_type, secondary_error_summary, archive_status, status,
+                primary_error_type, secondary_error_summary, topic_category, archive_status, status,
                 recognition_status, is_geometry, question_text, question_text_edited,
                 question_text_source, recognition_error, student_library_pdf_path
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 record_id,
@@ -6045,6 +6103,7 @@ def create_wechat_wrong_question_submission(
                 normalized_reason_input_mode,
                 (primary_error_type or "").strip(),
                 (secondary_error_summary or "").strip(),
+                normalized_topic_category,
                 (recognition_status or "pending").strip() or "pending",
                 1 if is_geometry else 0,
                 (question_text or "").strip(),
@@ -6104,10 +6163,19 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     payload["teacher_name_snapshot"] = row["teacher_display_name"]
     payload["mapping_status"] = "mapped"
     payload["is_mastered"] = row["archive_status"] == "archived"
+    topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+    payload["topic_category"] = topic_category
+    payload["topicCategory"] = topic_category
+    payload["is_primary_school"] = is_primary_school_class_name(
+        str(row["class_display_name"] or ""),
+        str(payload.get("grade") or ""),
+    )
     payload["analysis"] = {
         "error_type": str(row["primary_error_type"] or ""),
         "selected_error_type": str(row["primary_error_type"] or ""),
         "student_note": str(row["secondary_error_summary"] or ""),
+        "topic_category": topic_category,
+        "topicCategory": topic_category,
     }
     return payload
 
@@ -6283,6 +6351,63 @@ def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(refreshed)
+
+
+def update_wechat_wrong_question_topic_category(record_id: str, *, topic_category: str) -> Optional[dict]:
+    normalized_topic_category = normalize_primary_wrong_question_topic_category(topic_category)
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET topic_category=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (normalized_topic_category, record_id),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
+
+
+def list_primary_topic_category_suggestions(
+    *,
+    organization_id: int,
+    topic_category: str,
+    limit: int = 5,
+) -> list[str]:
+    query = normalize_primary_wrong_question_topic_category(topic_category)
+    if query in PRIMARY_WRONG_QUESTION_TOPIC_PRESETS:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT wqs.topic_category, c.name AS class_name, c.grade AS class_grade
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            WHERE wqs.organization_id=?
+              AND COALESCE(wqs.topic_category, '') <> ''
+            ORDER BY wqs.topic_category ASC
+            """,
+            (int(organization_id or 0),),
+        ).fetchall()
+
+    suggestions = []
+    for row in rows:
+        candidate = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+        if candidate in PRIMARY_WRONG_QUESTION_TOPIC_PRESETS:
+            continue
+        if not is_primary_school_class_name(str(row["class_name"] or ""), str(row["class_grade"] or "")):
+            continue
+        if not candidate or candidate == query or not _topic_category_matches(candidate, query):
+            continue
+        suggestions.append(candidate)
+        if len(suggestions) >= max(1, int(limit or 5)):
+            break
+    return suggestions
 
 
 def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:

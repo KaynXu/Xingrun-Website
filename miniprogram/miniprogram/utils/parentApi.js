@@ -410,6 +410,7 @@ async function submitParentWrongQuestion(wxApi, serverUrl, params) {
       childReasonText: String(params.childReasonText || '').trim(),
       childReasonInputMode: String(params.childReasonInputMode || 'text').trim() || 'text',
       childReasonAudioUrl: String(params.childReasonAudioUrl || '').trim(),
+      topicCategory: String(params.topicCategory || '未分类').trim() || '未分类',
     },
   });
 }
@@ -444,6 +445,17 @@ async function fetchChildWrongQuestionLibrary(wxApi, serverUrl, params) {
   });
 }
 
+async function updateChildWrongQuestionTopicCategory(wxApi, serverUrl, params) {
+  return requestJson(wxApi, {
+    url: `${serverUrl}/wechat/parent/wrong-questions/${params.recordId}/topic-category`,
+    method: 'PUT',
+    data: {
+      openId: params.openId,
+      topicCategory: String(params.topicCategory || '未分类').trim() || '未分类',
+    },
+  });
+}
+
 module.exports = {
   PARENT_SESSION_KEY,
   PARENT_BINDINGS_KEY,
@@ -467,4 +479,5 @@ module.exports = {
   fetchWrongQuestionUploadTask,
   fetchChildWrongQuestions,
   fetchChildWrongQuestionLibrary,
+  updateChildWrongQuestionTopicCategory,
 };

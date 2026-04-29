@@ -105,6 +105,94 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(submission["child_reason_input_mode"], "voice")
         self.assertEqual(submission["archive_status"], "active")
 
+    def test_wrong_question_submission_stores_primary_topic_category(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+        default_submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question-1.png",
+        )
+        custom_submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question-2.png",
+            topic_category="周期问题",
+        )
+        serialized_default = lesson_manager.get_wechat_wrong_question_submission(default_submission["id"])
+        serialized_custom = lesson_manager.get_wechat_wrong_question_submission(custom_submission["id"])
+
+        self.assertEqual(default_submission["topic_category"], "未分类")
+        self.assertEqual(serialized_default["analysis"]["topic_category"], "未分类")
+        self.assertEqual(custom_submission["topic_category"], "周期问题")
+        self.assertEqual(serialized_custom["analysis"]["topic_category"], "周期问题")
+
+    def test_update_wechat_wrong_question_topic_category_reuses_record_for_teacher_and_parent(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        submission = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            topic_category="未分类",
+        )
+
+        saved = lesson_manager.update_wechat_wrong_question_topic_category(
+            submission["id"],
+            topic_category="行程",
+        )
+        parent_items = lesson_manager.list_wechat_wrong_question_submissions_for_parent_student(
+            parent_wechat_account_id=account["id"],
+            student_id=self.student["id"],
+        )
+
+        self.assertEqual(saved["topic_category"], "行程")
+        self.assertEqual(parent_items[0]["topic_category"], "行程")
+
+    def test_primary_topic_suggestions_match_existing_custom_topics_in_primary_organization(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/wrong-question.png",
+            topic_category="周期问题",
+        )
+        middle_class_id = lesson_manager.save_class(
+            "初一 1 班",
+            subject="数学",
+            grade="初一",
+            organization_id=self.organization_id,
+        )
+        lesson_manager.set_class_teacher_user_id(middle_class_id, self.owner_id)
+        middle_student = lesson_manager.create_student_for_class(middle_class_id, "Bob")
+        middle_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=middle_class_id,
+            student_id=middle_student["id"],
+        )
+        lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=middle_binding["id"],
+            image_url="https://files.example.com/middle.png",
+            topic_category="周期专项",
+        )
+
+        suggestions = lesson_manager.list_primary_topic_category_suggestions(
+            organization_id=self.organization_id,
+            topic_category="周期",
+        )
+
+        self.assertEqual(suggestions, ["周期问题"])
+
     def test_save_wechat_wrong_question_review_only_updates_mastery_state(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(

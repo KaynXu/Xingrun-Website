@@ -130,6 +130,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
                     "binding_id": binding["id"],
                     "image_url": "https://files.example.com/record.png",
                     "child_raw_reason_text": "我把乘法和加法一起从左往右算了",
+                    "topic_category": "行程",
                     "primary_error_type": "方法问题",
                     "secondary_error_summary": "先算了加法，忽略乘法优先",
                 },
@@ -141,6 +142,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(task["binding_id"], binding["id"])
         self.assertEqual(task["student_id"], self.student["id"])
         self.assertEqual(task["image_url"], "https://files.example.com/record.png")
+        self.assertEqual(task["topic_category"], "行程")
         self.assertEqual(upload.get_json()["student_library_pdf_url"], f"/api/wechat/student-libraries/{self.student['id']}")
         enqueue_mock.assert_called_once_with(task["id"])
         self.assertEqual(lesson_manager.list_wechat_wrong_question_submissions(), [])
@@ -156,6 +158,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
             binding_id=binding["id"],
             image_url="https://files.example.com/record.png",
             child_raw_reason_text="我把乘法和加法一起从左往右算了",
+            topic_category="周期问题",
         )
 
         from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
@@ -184,7 +187,44 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["child_raw_reason_text"], "方法问题｜先算了加法，忽略乘法优先")
         self.assertEqual(record["primary_error_type"], "方法问题")
         self.assertEqual(record["secondary_error_summary"], "先算了加法，忽略乘法优先")
+        self.assertEqual(record["topic_category"], "周期问题")
         self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
+
+    def test_staff_and_parent_can_update_wrong_question_topic_category(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            topic_category="未分类",
+        )
+
+        staff_update = self.client.put(
+            f"/api/wrong-questions/{record['id']}/topic-category",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"topic_category": "几何"},
+        )
+        parent_update = self.client.put(
+            f"/api/wechat/wrong-questions/{record['id']}/topic-category",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "topic_category": "周期问题"},
+        )
+        parent_items = self.client.get(
+            f"/api/wechat/children/{self.student['id']}/wrong-questions",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(staff_update.status_code, 200)
+        self.assertEqual(staff_update.get_json()["record"]["topic_category"], "几何")
+        self.assertEqual(parent_update.status_code, 200)
+        self.assertEqual(parent_update.get_json()["record"]["topic_category"], "周期问题")
+        self.assertEqual(parent_items.status_code, 200)
+        self.assertEqual(parent_items.get_json()["items"][0]["topic_category"], "周期问题")
 
     def test_worker_processes_image_only_wrong_question_upload_task(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
