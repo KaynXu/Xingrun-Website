@@ -80,6 +80,36 @@ def _get_client():
         return OpenAI(api_key=key)
 
 
+def _get_vision_client():
+    from openai import OpenAI
+    cfg = _load_config()
+    provider = str(cfg.get("vision_provider") or "n1n").strip() or "n1n"
+
+    if provider == "n1n":
+        key = cfg.get("n1n_api_key", "") or os.environ.get("N1N_API_KEY", "")
+        base_url = cfg.get("n1n_base_url", "https://api.n1n.ai/v1").strip()
+        if not key:
+            raise RuntimeError("未找到 N1N API Key，请在设置页面配置。")
+        return OpenAI(api_key=key, base_url=base_url)
+
+    if provider == "openai":
+        key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
+        if not key:
+            raise RuntimeError("未找到 OpenAI API Key，请在设置页面配置。")
+        return OpenAI(api_key=key)
+
+    if provider == "mimo":
+        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
+        base_url = cfg.get("mimo_base_url", "").strip()
+        if not key:
+            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
+        if not base_url:
+            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
+        return OpenAI(api_key=key, base_url=base_url)
+
+    return _get_client()
+
+
 def _get_chat_model() -> str:
     """返回当前服务商对应的对话模型名称。"""
     cfg = _load_config()
@@ -95,6 +125,10 @@ def _get_chat_model() -> str:
 
 def _get_structured_generation_model() -> str:
     return str(_get_chat_model() or "deepseek-chat")
+
+
+def _get_vision_model() -> str:
+    return str(_load_config().get("vision_model") or "gpt-5.5")
 
 
 _BARE_LATEX_COMMAND_RE = re.compile(
@@ -400,7 +434,7 @@ def _request_wrong_question_recognition_attempt(
     revision_feedback: str = "",
     client=None,
 ) -> dict:
-    active_client = client or _get_client()
+    active_client = client or _get_vision_client()
     user_instruction = "请判断这道错题是否属于几何题，并提取非几何题题目文本。"
     if revision_feedback:
         user_instruction = (
@@ -410,7 +444,7 @@ def _request_wrong_question_recognition_attempt(
         )
 
     response = active_client.chat.completions.create(
-        model=_get_structured_generation_model(),
+        model=_get_vision_model(),
         messages=[
             {"role": "system", "content": WRONG_QUESTION_RECOGNITION_PROMPT},
             {
@@ -481,10 +515,10 @@ def _review_wrong_question_recognition_quality(
     latex_issues: list[str],
     client=None,
 ) -> str:
-    active_client = client or _get_client()
+    active_client = client or _get_vision_client()
     issue_text = "\n".join(f"- {issue}" for issue in latex_issues) if latex_issues else "无"
     response = active_client.chat.completions.create(
-        model=_get_structured_generation_model(),
+        model=_get_vision_model(),
         messages=[
             {"role": "system", "content": WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT},
             {

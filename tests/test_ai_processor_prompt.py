@@ -180,6 +180,31 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
 
+    def test_wrong_question_recognition_uses_vision_model_when_text_provider_is_deepseek(self):
+        fake_client = _FakeClient(
+            {
+                "is_geometry": False,
+                "question_text": "计算 $1+1$。",
+                "confidence": "high",
+            }
+        )
+        with patch(
+            "ai_processor._load_config",
+            return_value={
+                "provider": "deepseek",
+                "deepseek_model": "deepseek-chat",
+                "vision_provider": "n1n",
+                "vision_model": "gpt-5.5",
+                "n1n_api_key": "test-key",
+                "n1n_base_url": "https://api.n1n.ai/v1",
+            },
+        ), patch("ai_processor._get_vision_client", return_value=fake_client):
+            ai_processor._request_wrong_question_recognition_attempt(
+                "https://files.example.com/question.png"
+            )
+
+        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.5")
+
     def test_parse_and_generate_plan_recovers_bare_latex_backslashes(self):
         fake_client = _FakeClient(
             r"""{"lesson_info":{"topic":"含参方程"},"days":[{"items":[{"text":"观察 $\left(x+1\right)^2$ 的开口方向"}]}],"weekly_review_prompts":[]}"""
