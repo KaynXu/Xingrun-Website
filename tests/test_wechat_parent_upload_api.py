@@ -236,7 +236,39 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         refreshed = lesson_manager.get_wechat_wrong_question_upload_task(task["id"])
         self.assertEqual(refreshed["status"], "failed")
         self.assertEqual(refreshed["error_message"], "题目识别失败")
-        self.assertEqual(lesson_manager.list_wechat_wrong_question_submissions(), [])
+        self.assertNotEqual(refreshed["record_id"], "")
+        record = lesson_manager.get_wechat_wrong_question_submission(refreshed["record_id"])
+        self.assertEqual(record["recognition_status"], "failed")
+        self.assertEqual(record["recognition_error"], "题目识别失败")
+
+    def test_worker_keeps_failed_recognition_visible_to_teacher(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            child_raw_reason_text="我没看懂题",
+        )
+
+        from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
+
+        with patch("wrong_question_upload_worker.ai_processor.recognize_wrong_question_image", side_effect=ValueError("题目识别失败")):
+            result = process_wechat_wrong_question_upload_task(task["id"])
+
+        self.assertEqual(result["status"], "failed")
+        self.assertNotEqual(result["record_id"], "")
+        record = lesson_manager.get_wechat_wrong_question_submission(result["record_id"])
+        self.assertIsNotNone(record)
+        self.assertEqual(record["student_id"], self.student["id"])
+        self.assertEqual(record["class_id"], self.class_id)
+        self.assertEqual(record["image_url"], "https://files.example.com/record.png")
+        self.assertEqual(record["child_raw_reason_text"], "我没看懂题")
+        self.assertEqual(record["recognition_status"], "failed")
+        self.assertEqual(record["recognition_error"], "题目识别失败")
 
     def test_wechat_service_can_fetch_parent_scoped_upload_task(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
@@ -544,7 +576,10 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["error_message"], "题目识别失败，请重新识别")
-        self.assertEqual(lesson_manager.list_wechat_wrong_question_submissions(), [])
+        self.assertNotEqual(result["record_id"], "")
+        record = lesson_manager.get_wechat_wrong_question_submission(result["record_id"])
+        self.assertEqual(record["recognition_status"], "failed")
+        self.assertEqual(record["recognition_error"], "题目识别失败，请重新识别")
 
     def test_wechat_child_library_endpoint_returns_shared_pdf_url(self):
         self.client.post(
