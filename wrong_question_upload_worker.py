@@ -5,7 +5,6 @@ import pdf_engine
 from lesson_manager import (
     attach_student_library_pdf_path,
     create_wechat_wrong_question_submission,
-    delete_wechat_wrong_question_submission,
     get_wechat_wrong_question_upload_task,
     list_student_wrong_question_library_records,
     set_student_wrong_question_library_pdf_path,
@@ -56,8 +55,10 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
 
     update_wechat_wrong_question_upload_task(task["id"], status="processing")
     created_record_id = ""
+    reason_text = str(task.get("child_raw_reason_text") or "").strip()
+    display_text = ""
+    recognition = {}
     try:
-        reason_text = str(task.get("child_raw_reason_text") or "").strip()
         if task.get("child_reason_input_mode") == "voice" and task.get("child_reason_audio_url"):
             transcription = ai_processor.transcribe_child_reason_audio(task["child_reason_audio_url"])
             reason_text = str(transcription.get("transcript_text") or "").strip()
@@ -98,11 +99,27 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
             error_message="",
         ) or {}
     except Exception as exc:
-        if created_record_id:
-            delete_wechat_wrong_question_submission(created_record_id)
+        if not created_record_id:
+            try:
+                failed_record = create_wechat_wrong_question_submission(
+                    binding_id=int(task["binding_id"]),
+                    image_url=str(task["image_url"] or ""),
+                    child_raw_reason_text=display_text or reason_text,
+                    child_reason_input_mode=str(task["child_reason_input_mode"] or "text"),
+                    primary_error_type="待补充",
+                    secondary_error_summary="题目识别失败，等待老师查看原图后补充。",
+                    recognition_status="failed",
+                    is_geometry=bool(recognition.get("is_geometry")) if isinstance(recognition, dict) else False,
+                    question_text=str(recognition.get("question_text") or "") if isinstance(recognition, dict) else "",
+                    question_text_source="ai",
+                    recognition_error=str(exc),
+                )
+                created_record_id = str(failed_record.get("id") or "")
+            except Exception:
+                created_record_id = ""
         return update_wechat_wrong_question_upload_task(
             task["id"],
             status="failed",
-            record_id="",
+            record_id=created_record_id,
             error_message=str(exc),
         ) or {}
