@@ -197,21 +197,26 @@ interface ScheduleCardProps {
   onOpenSchedule: (schedule: JoinedCourseCalendarSchedule) => void;
 }
 
+function formatScheduleSummaryLine(schedule: JoinedCourseCalendarSchedule): string {
+  return [
+    schedule.subject || '未设置科目',
+    schedule.teacherName || '未分配教师',
+    schedule.className,
+    schedule.displayRange,
+  ].filter(Boolean).join(' · ');
+}
+
 function ScheduleCard({ schedule, onOpenSchedule }: ScheduleCardProps): React.JSX.Element {
   return (
     <button
       type="button"
       onClick={() => onOpenSchedule(schedule)}
       className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
+      title={formatScheduleSummaryLine(schedule)}
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">{schedule.className}</p>
-        <p className="mt-1 truncate text-xs font-semibold text-cyan-700 dark:text-cyan-200">{schedule.displayRange}</p>
-      </div>
-      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-        <span className="truncate">{schedule.teacherName || '未分配教师'}</span>
-        <span className="shrink-0 truncate">{[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || schedule.startText}</span>
-      </div>
+      <p className="truncate whitespace-nowrap text-xs font-semibold leading-tight text-slate-900 dark:text-white">
+        {formatScheduleSummaryLine(schedule)}
+      </p>
     </button>
   );
 }
@@ -738,7 +743,7 @@ export function CourseCalendarPage({
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
                                 )}
                               >
-                                <div className="max-h-full space-y-2 overflow-hidden">
+                                <div className="max-h-full space-y-2 overflow-y-auto overscroll-contain pr-1">
                                   {blockCards.length + customBlockCards.length > 0 ? (
                                     <>
                                       {showTeacherSummaries

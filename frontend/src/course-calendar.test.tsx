@@ -150,7 +150,7 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /gridTemplateColumns: '82px repeat\(6, minmax\(0, 1fr\)\)'/);
   assert.match(source, /overflow-hidden rounded-xl border px-2 py-2 transition/);
   assert.match(source, /h-\[calc\(\(100vh-250px\)\/6\)\] min-h-\[72px\]/);
-  assert.match(source, /max-h-full space-y-2 overflow-hidden/);
+  assert.match(source, /max-h-full space-y-2 overflow-y-auto overscroll-contain pr-1/);
   assert.match(source, /isCalendarExpanded/);
   assert.match(source, /Maximize2/);
   assert.match(source, /Minimize2/);
@@ -184,10 +184,16 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /onDeleteCustomItem\(item\.id\)/);
   assert.match(source, /OpenedCourseScheduleModal/);
   assert.match(source, /onOpenSchedule=\{setOpenedCourseSchedule\}/);
+  assert.match(source, /function formatScheduleSummaryLine/);
+  assert.match(source, /schedule\.subject \|\| '未设置科目'/);
+  assert.match(source, /schedule\.teacherName \|\| '未分配教师'/);
+  assert.match(source, /schedule\.className/);
+  assert.match(source, /schedule\.displayRange/);
+  assert.match(source, /title=\{formatScheduleSummaryLine\(schedule\)\}/);
+  assert.match(source, /truncate whitespace-nowrap text-xs font-semibold/);
   assert.match(source, /visibility: schedule\.visibility \?\? 'private'/);
   assert.match(source, /isOrganizationVisible \? '管理员发布' : '自定义事项'/);
   assert.doesNotMatch(source, /Trash2/);
-  assert.match(source, /schedule\.className[\s\S]*schedule\.displayRange/);
   assert.match(source, /lg:hidden/);
   assert.match(source, /lg:block/);
 });
