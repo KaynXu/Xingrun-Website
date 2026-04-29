@@ -193,6 +193,9 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /function formatScheduleSummaryLine/);
   assert.match(source, /schedule\.subject \|\| '未设置科目'/);
   assert.match(source, /schedule\.teacherName \|\| '未分配教师'/);
+  assert.match(source, /<p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">\{schedule\.className\}<\/p>/);
+  assert.match(source, /<p className="mt-1 truncate text-xs font-semibold text-cyan-700 dark:text-cyan-200">\{schedule\.displayRange\}<\/p>/);
+  assert.match(source, /\[schedule\.grade, schedule\.subject\]\.filter\(Boolean\)\.join\(' · '\) \|\| schedule\.startText/);
   assert.match(source, /schedule\.className/);
   assert.match(source, /schedule\.displayRange/);
   assert.match(source, /title=\{formatScheduleSummaryLine\(schedule\)\}/);
