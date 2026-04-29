@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+const LEGACY_UPLOADS_DIR = path.resolve(__dirname, '../../legacy-uploads-test');
 
 async function loadAppModule() {
   process.env.WEBSITE_API_BASE_URL = 'https://website.example';
   process.env.WEBSITE_API_TOKEN = 'wechat-service-token';
+  process.env.LEGACY_UPLOADS_DIRS = LEGACY_UPLOADS_DIR;
   return import('./index.js');
 }
 
@@ -493,6 +495,27 @@ test('generic upload route stores the file and returns a public file url', async
       fs.rmSync(uploadedPath, { force: true });
     }
   });
+});
+
+test('files route serves legacy upload files after bridge directory moves', async (t) => {
+  fs.mkdirSync(LEGACY_UPLOADS_DIR, { recursive: true });
+  const legacyFileName = `legacy-${Date.now()}.txt`;
+  const legacyPath = path.join(LEGACY_UPLOADS_DIR, legacyFileName);
+  fs.writeFileSync(legacyPath, 'legacy-image-bytes');
+  t.after(() => {
+    fs.rmSync(legacyPath, { force: true });
+    fs.rmSync(LEGACY_UPLOADS_DIR, { recursive: true, force: true });
+  });
+
+  const server = await startTestServer(t);
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const response = await fetch(`${baseUrl}/files/${legacyFileName}`);
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'legacy-image-bytes');
 });
 
 test('parent bridge no longer exposes the AI box route', async (t) => {

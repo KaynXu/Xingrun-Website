@@ -24,6 +24,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
 const BASE_URL = process.env.BASE_URL;
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
+const DEFAULT_LEGACY_UPLOADS_DIRS = [
+  '/home/ubuntu/xingrun-backend-repo/uploads',
+  '/home/ubuntu/xingrun-backend-repo/backend/uploads',
+];
+
+function getLegacyUploadDirs() {
+  const configuredDirs = String(process.env.LEGACY_UPLOADS_DIRS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  return [...configuredDirs, ...DEFAULT_LEGACY_UPLOADS_DIRS]
+    .map((item) => path.resolve(item))
+    .filter((item) => {
+      if (item === path.resolve(UPLOADS_DIR) || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+}
 
 function getBaseUrl(host?: string | null) {
   if (BASE_URL) return BASE_URL;
@@ -51,6 +72,9 @@ export function createApp() {
 
   app.use(express.json());
   app.use('/files', express.static(UPLOADS_DIR));
+  for (const legacyUploadDir of getLegacyUploadDirs()) {
+    app.use('/files', express.static(legacyUploadDir));
+  }
 
   app.get('/healthz', (_req, res) => {
     res.json({
