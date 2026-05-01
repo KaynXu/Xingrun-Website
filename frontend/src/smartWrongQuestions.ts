@@ -1,5 +1,6 @@
 export interface WrongQuestionAnalysis {
   questionCategory: string;
+  topicCategory?: string;
   errorType: string;
   knowledgePoints: string[];
   isRepeatedMistake?: string;
@@ -19,6 +20,7 @@ export interface WrongQuestionReviewDraft {
   studentNote: string;
   teacherComment: string;
   reviewStatus: string;
+  topicCategory?: string;
   isMastered?: boolean;
   questionText?: string;
 }
@@ -31,6 +33,7 @@ export interface WrongQuestionReviewPayload {
   studentNote: string;
   teacherComment: string;
   reviewStatus: string;
+  topicCategory?: string;
   is_mastered?: boolean;
   question_text?: string;
 }
@@ -61,6 +64,7 @@ export interface WrongQuestionRecord {
   parentNote: string;
   childReasonText?: string;
   childReasonInputMode?: string;
+  topicCategory?: string;
   primaryErrorType?: string;
   causeNote?: string;
   isMastered?: boolean;
@@ -75,6 +79,11 @@ export interface WrongQuestionFilters {
   subject?: string;
   teacherName?: string;
   errorType?: string;
+}
+
+export interface WrongQuestionTopicSummary {
+  topicCategory: string;
+  count: number;
 }
 
 export interface WrongQuestionSummary {
@@ -196,6 +205,11 @@ function pickStringArrayValue(source: Record<string, unknown>, keys: string[]): 
   return [];
 }
 
+function normalizeWrongQuestionTopicCategory(value = ''): string {
+  const normalized = value.trim();
+  return normalized || '未分类';
+}
+
 function normalizeWrongQuestionMappingStatus(value: string, fallback: WrongQuestionMappingStatus = 'mapped'): WrongQuestionMappingStatus {
   if (value === 'mapped' || value === 'unmapped' || value === 'ambiguous' || value === 'needs_review') {
     return value;
@@ -225,6 +239,7 @@ function normalizeWrongQuestionAnalysis(rawAnalysis: unknown): WrongQuestionAnal
   const selectedActions = pickStringArrayValue(source, ['selectedActions', 'selected_actions']);
   const selectedReasons = pickStringArrayValue(source, ['selectedReasons', 'selected_reasons']);
   const selectedErrorType = pickStringValue(source, ['selectedErrorType', 'selected_error_type']);
+  const topicCategory = pickStringValue(source, ['topicCategory', 'topic_category']);
   const studentNote = pickStringValue(source, ['studentNote', 'student_note']);
 
   const analysis: WrongQuestionAnalysis = {
@@ -232,6 +247,10 @@ function normalizeWrongQuestionAnalysis(rawAnalysis: unknown): WrongQuestionAnal
     errorType: pickStringValue(source, ['errorType', 'error_type']),
     knowledgePoints: pickStringArrayValue(source, ['knowledgePoints', 'knowledge_points']),
   };
+
+  if (topicCategory) {
+    analysis.topicCategory = normalizeWrongQuestionTopicCategory(topicCategory);
+  }
 
   const isRepeatedMistake = pickStringValue(source, ['isRepeatedMistake', 'is_repeated_mistake']);
   const teacherPriority = pickStringValue(source, ['teacherPriority', 'teacher_priority']);
@@ -282,6 +301,9 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const studentLibraryPdfPath = pickStringValue(source, ['studentLibraryPdfPath', 'student_library_pdf_path']);
   const childReasonText = pickStringValue(source, ['childReasonText', 'child_reason_text', 'childRawReasonText', 'child_raw_reason_text']);
   const childReasonInputMode = pickStringValue(source, ['childReasonInputMode', 'child_reason_input_mode']);
+  const topicCategory = pickStringValue(source, ['topicCategory', 'topic_category'])
+    || normalizeWrongQuestionAnalysis(source.analysis).topicCategory
+    || '';
   const primaryErrorType = pickStringValue(source, ['primaryErrorType', 'primary_error_type']);
   const causeNote = pickStringValue(source, ['causeNote', 'cause_note', 'secondaryErrorSummary', 'secondary_error_summary']);
   const archiveStatus = pickStringValue(source, ['archiveStatus', 'archive_status']);
@@ -332,6 +354,8 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     if (childReasonInputMode) {
       record.childReasonInputMode = childReasonInputMode;
     }
+
+    record.topicCategory = normalizeWrongQuestionTopicCategory(topicCategory);
 
     if (primaryErrorType) {
       record.primaryErrorType = primaryErrorType;
@@ -396,6 +420,7 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
 
   if (isWechatMiniProgramWrongQuestionRecord(record)) {
     draft.isMastered = Boolean(record.isMastered);
+    draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
   }
 
   if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
@@ -415,6 +440,10 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
     teacherComment: draft.teacherComment.trim(),
     reviewStatus: draft.reviewStatus.trim(),
   };
+
+  if (typeof draft.topicCategory === 'string') {
+    payload.topicCategory = normalizeWrongQuestionTopicCategory(draft.topicCategory);
+  }
 
   if (typeof draft.isMastered === 'boolean') {
     payload.is_mastered = draft.isMastered;
@@ -475,7 +504,11 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     delete nextAnalysis.studentNote;
   }
 
-  return {
+  if (payload.topicCategory) {
+    nextAnalysis.topicCategory = payload.topicCategory;
+  }
+
+  const nextRecord: WrongQuestionRecord = {
     ...record,
     teacherComment: payload.teacherComment,
     reviewStatus: payload.reviewStatus || record.reviewStatus,
@@ -483,6 +516,10 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     questionText: typeof payload.question_text === 'string' ? payload.question_text : record.questionText,
     analysis: nextAnalysis,
   };
+  if (payload.topicCategory) {
+    nextRecord.topicCategory = payload.topicCategory;
+  }
+  return nextRecord;
 }
 
 export function resolveSavedWrongQuestionRecord(
@@ -505,6 +542,7 @@ export function resolveSavedWrongQuestionRecord(
     const hasTeacherComment = hasOwnKey(responseSource, ['teacherComment', 'teacher_comment']);
     const hasReviewStatus = hasOwnKey(responseSource, ['status']);
     const hasMastered = hasOwnKey(responseSource, ['is_mastered', 'archive_status', 'archiveStatus']);
+    const hasTopicCategory = hasOwnKey(responseSource, ['topicCategory', 'topic_category']);
 
     return {
       ...normalizedResponse,
@@ -528,6 +566,7 @@ export function resolveSavedWrongQuestionRecord(
       teacherComment: hasTeacherComment ? normalizedResponse.teacherComment : currentRecord.teacherComment,
       reviewStatus: hasReviewStatus ? normalizedResponse.reviewStatus : currentRecord.reviewStatus,
       isMastered: hasMastered ? normalizedResponse.isMastered : currentRecord.isMastered,
+      topicCategory: hasTopicCategory ? normalizedResponse.topicCategory : currentRecord.topicCategory,
     };
   }
 
@@ -627,6 +666,39 @@ export function filterWrongQuestionRecordsForMemberNotebook(
     .filter((item) => classId === null || item.classId === classId)
     .filter((item) => !studentName || item.studentName === studentName)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export function filterWrongQuestionRecordsByTopic(
+  records: WrongQuestionRecord[],
+  topicCategory: string,
+): WrongQuestionRecord[] {
+  const normalizedTopic = normalizeWrongQuestionTopicCategory(topicCategory);
+  if (!normalizedTopic || normalizedTopic === '全部') {
+    return records;
+  }
+  return records.filter((record) => normalizeWrongQuestionTopicCategory(record.topicCategory ?? '') === normalizedTopic);
+}
+
+export function buildWrongQuestionTopicSummaries(records: WrongQuestionRecord[]): WrongQuestionTopicSummary[] {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    const topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? '');
+    counts.set(topicCategory, (counts.get(topicCategory) ?? 0) + 1);
+  }
+
+  const topicItems = Array.from(counts.entries())
+    .sort(([left], [right]) => {
+      if (left === '未分类') {
+        return -1;
+      }
+      if (right === '未分类') {
+        return 1;
+      }
+      return left.localeCompare(right, 'zh-Hans-CN');
+    })
+    .map(([topicCategory, count]) => ({ topicCategory, count }));
+
+  return [{ topicCategory: '全部', count: records.length }, ...topicItems];
 }
 
 export function buildMemberStudentNotebookSummaries(

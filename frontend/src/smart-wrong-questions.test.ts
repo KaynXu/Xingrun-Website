@@ -15,6 +15,7 @@ import {
   buildWrongQuestionReviewDraft,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
+  buildWrongQuestionTopicSummaries,
   filterWrongQuestionRecordsForMemberNotebook,
   getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
@@ -25,6 +26,7 @@ import {
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
+  filterWrongQuestionRecordsByTopic,
   type WrongQuestionRecord,
 } from './smartWrongQuestions';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
@@ -326,6 +328,34 @@ test('filterWrongQuestionRecordsForMemberNotebook keeps only the selected class 
     filterWrongQuestionRecordsForMemberNotebook(records, 101, 'Alice').map((item) => item.id),
     ['c', 'a'],
   );
+});
+
+test('topic helpers summarize and filter primary wrong question topics', () => {
+  const records = [
+    makeWrongQuestionRecord({ id: 'a', source: 'wechat_mp', classId: 101, studentName: 'Alice', topicCategory: '行程' }),
+    makeWrongQuestionRecord({ id: 'b', source: 'wechat_mp', classId: 101, studentName: 'Alice', topicCategory: '周期问题' }),
+    makeWrongQuestionRecord({ id: 'c', source: 'wechat_mp', classId: 101, studentName: 'Alice', topicCategory: '' }),
+    makeWrongQuestionRecord({ id: 'd', source: 'wechat_mp', classId: 101, studentName: 'Bob', topicCategory: '行程' }),
+  ];
+
+  assert.deepEqual(buildWrongQuestionTopicSummaries(records.slice(0, 3)), [
+    { topicCategory: '全部', count: 3 },
+    { topicCategory: '未分类', count: 1 },
+    { topicCategory: '行程', count: 1 },
+    { topicCategory: '周期问题', count: 1 },
+  ]);
+  assert.deepEqual(filterWrongQuestionRecordsByTopic(records, '行程').map((item) => item.id), ['a', 'd']);
+  assert.deepEqual(filterWrongQuestionRecordsByTopic(records, '未分类').map((item) => item.id), ['c']);
+});
+
+test('SmartWrongQuestionsPage wires primary topic summaries and topic category saving', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /buildWrongQuestionTopicSummaries/);
+  assert.match(pageSource, /filterWrongQuestionRecordsByTopic/);
+  assert.match(pageSource, /notebookTopicFilter/);
+  assert.match(pageSource, /小学专题/);
+  assert.match(pageSource, /\/api\/wrong-questions\/\$\{encodeURIComponent\(selectedRecord\.id\)\}\/topic-category/);
 });
 
 test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => {
@@ -1293,6 +1323,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
             {
               id: 'wechat-record-edit',
               source: 'wechat_mp',
+              student_id: 1,
               student_name: 'Alice',
               class_display_name: '六年级 1 班',
               class_id: 42,
@@ -1323,6 +1354,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
         return createJsonResponse({
           id: 'wechat-record-edit',
           source: 'wechat_mp',
+          student_id: 1,
           student_name: 'Alice',
           class_display_name: '六年级 1 班',
           class_id: 42,
@@ -1351,6 +1383,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
           record: {
             id: 'wechat-record-edit',
             source: 'wechat_mp',
+            student_id: 1,
             student_name: 'Alice',
             class_display_name: '六年级 1 班',
             subject: '数学',
@@ -1370,6 +1403,15 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
               student_note: '孩子知道规则，但这道题没先算乘法。',
             },
           },
+        });
+      }
+
+      if (input === '/api/wrong-question-student-libraries/1/refresh' && init?.method === 'POST') {
+        return createJsonResponse({
+          ok: true,
+          student_id: 1,
+          student_library_pdf_path: '/tmp/student-1.pdf',
+          pdf_url: '/api/wechat/student-libraries/1',
         });
       }
 
@@ -1398,6 +1440,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       assert.match(pageText, /公式预览/);
       assert.match(pageText, /预览 PDF/);
       assert.match(pageText, /下载 PDF/);
+      assert.match(pageText, /重新生成 PDF/);
       assert.match(pageText, /孩子自述错因/);
       assert.match(pageText, /问题归类/);
       const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
@@ -1417,14 +1460,29 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
     });
 
     const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
-  const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="问题归类"]') as HTMLSelectElement | null;
+    const errorTypeSelect = domEnvironment.container.querySelector('select[aria-label="问题归类"]') as HTMLSelectElement | null;
     const masteryCheckbox = domEnvironment.container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
+    const refreshPdfButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('重新生成 PDF'));
 
     assert.ok(questionTextarea instanceof HTMLTextAreaElement);
     assert.ok(errorTypeSelect instanceof HTMLSelectElement);
     assert.ok(masteryCheckbox instanceof HTMLInputElement);
     assert.ok(saveButton instanceof HTMLButtonElement);
+    assert.ok(refreshPdfButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      refreshPdfButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const refreshCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-question-student-libraries/1/refresh');
+      assert.ok(refreshCall);
+      assert.equal(refreshCall.init?.method, 'POST');
+      assert.match(domEnvironment.container.textContent || '', /PDF 已重新生成/);
+    });
 
     await act(async () => {
       errorTypeSelect.value = '方法问题';

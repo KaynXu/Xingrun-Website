@@ -17,8 +17,11 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 cfg = config_runtime.get_runtime_config()
 
                 self.assertEqual(cfg["provider"], "deepseek")
+                self.assertEqual(cfg["vision_provider"], "n1n")
+                self.assertEqual(cfg["vision_model"], "gpt-5.5")
                 self.assertEqual(ai_processor._provider_name(), "deepseek")
                 self.assertEqual(ai_processor._get_chat_model(), "deepseek-chat")
+                self.assertEqual(ai_processor._get_vision_model(), "gpt-5.5")
                 self.assertEqual(app._default_ai_provider_name(), "deepseek")
                 self.assertEqual(app._default_chat_model_name(), "deepseek-chat")
                 self.assertFalse(app.has_api_key())
@@ -51,6 +54,19 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(config_runtime.get_runtime_config()["deepseek_model"], "deepseek-custom")
                 self.assertEqual(ai_processor._get_chat_model(), "deepseek-custom")
                 self.assertEqual(app._default_chat_model_name(), "deepseek-custom")
+
+    def test_vision_model_can_be_overridden_by_environment(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_config = Path(tmpdir) / "config.json"
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
+                os.environ,
+                {"XR_VISION_PROVIDER": "n1n", "XR_VISION_MODEL": "gpt-5.4"},
+                clear=True,
+            ):
+                cfg = config_runtime.get_runtime_config()
+                self.assertEqual(cfg["vision_provider"], "n1n")
+                self.assertEqual(cfg["vision_model"], "gpt-5.4")
+                self.assertEqual(ai_processor._get_vision_model(), "gpt-5.4")
 
 
 if __name__ == "__main__":

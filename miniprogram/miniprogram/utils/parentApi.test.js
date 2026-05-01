@@ -16,6 +16,7 @@ const {
   setParentSession,
   submitParentWrongQuestion,
   transcribeParentReason,
+  updateChildWrongQuestionTopicCategory,
   uploadParentReasonAudio,
   upsertParentBinding,
 } = require('./parentApi');
@@ -314,6 +315,7 @@ test('submitParentWrongQuestion forwards the child reason text and audio url in 
     childReasonText: '我把单位换算漏掉了',
     childReasonInputMode: 'voice',
     childReasonAudioUrl: 'https://example.com/files/reason.m4a',
+    topicCategory: '周期问题',
   });
 
   assert.deepEqual(capturedFormData, {
@@ -322,6 +324,7 @@ test('submitParentWrongQuestion forwards the child reason text and audio url in 
     childReasonText: '我把单位换算漏掉了',
     childReasonInputMode: 'voice',
     childReasonAudioUrl: 'https://example.com/files/reason.m4a',
+    topicCategory: '周期问题',
   });
   assert.equal(capturedTimeout, 180000);
 });
@@ -358,6 +361,41 @@ test('fetchWrongQuestionUploadTask fetches the server task status', async () => 
   });
   assert.equal(payload.task.status, 'ready');
   assert.equal(payload.task.record_id, 'wechat-record-1');
+});
+
+test('updateChildWrongQuestionTopicCategory sends the parent topic category update', async () => {
+  let capturedRequest = null;
+  const wxApi = {
+    request({ url, method, data, success }) {
+      capturedRequest = { url, method, data };
+      success({
+        statusCode: 200,
+        data: {
+          ok: true,
+          record: {
+            id: 'wechat-record-1',
+            topic_category: '周期问题',
+          },
+        },
+      });
+    },
+  };
+
+  const payload = await updateChildWrongQuestionTopicCategory(wxApi, 'https://example.com', {
+    openId: 'openid-parent-1',
+    recordId: 'wechat-record-1',
+    topicCategory: '周期问题',
+  });
+
+  assert.deepEqual(capturedRequest, {
+    url: 'https://example.com/wechat/parent/wrong-questions/wechat-record-1/topic-category',
+    method: 'PUT',
+    data: {
+      openId: 'openid-parent-1',
+      topicCategory: '周期问题',
+    },
+  });
+  assert.equal(payload.record.topic_category, '周期问题');
 });
 
 test('uploadParentReasonAudio parses the upload response', async () => {
