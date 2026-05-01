@@ -455,14 +455,17 @@ def _collect_wrong_question_latex_render_issues(question_text: str) -> list[str]
         except OSError:
             pass
 
-    if result.returncode != 0:
-        stderr = str(result.stderr or "").strip()
-        return [stderr or f"LaTeX 渲染检查执行失败（exit code {result.returncode}）"]
-
     try:
         payload = json.loads(result.stdout or "{}")
     except json.JSONDecodeError:
+        if result.returncode != 0:
+            stderr = str(result.stderr or "").strip()
+            return [stderr or f"LaTeX 渲染检查执行失败（exit code {result.returncode}）"]
         return ["LaTeX 渲染检查返回了无法解析的结果"]
+
+    if result.returncode != 0 and not isinstance(payload, dict):
+        stderr = str(result.stderr or "").strip()
+        return [stderr or f"LaTeX 渲染检查执行失败（exit code {result.returncode}）"]
 
     issues = []
     for error in payload.get("errors") or []:

@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-04-29
+最后更新：2026-05-01
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-01 已定位并修复生产智能错题非几何题图片转 LaTeX 批量失败：根因是 `xingrun-rq-worker` 环境里 Node 检查脚本会先输出合法 JSON 后以 `exit code -6` 退出，后端此前直接按 returncode 判失败，导致所有非几何错题被误标为“题目识别质量检查未通过”。`ai_processor._collect_wrong_question_latex_render_issues()` 已改为优先解析合法 stdout，生产 `xingrun-rq-worker` 已重启并通过队列内诊断；已备份生产库 `data/xingrun.db.backup-before-luzheng-latex-fix-20260501`，并把四年级3班吕铮今天下午任务 `161/162` 原记录补成 `ready/recognized`，学生错题库 PDF 已重建到 `data/pdfs/wrong_question_libraries/student-35.pdf`。任务 `141` 仍保留失败，因为当前 AI 审稿认为原图混入手写答案/裁切不完整，需要老师看原图人工确认。
 - 2026-04-29 已按 release 流程把课程日历近期 6 个提交和远端错题上传/legacy uploads 修复合并发布：本地先把 `origin/develop(ecece4a)` 合入 `develop(84bf5e6)`，再合入 `master(6d5a06d)` 并成功推送 `origin/master`；`origin/develop` 因本机 GitHub 443 间歇连接失败仍待补推。生产机 `49.234.185.86` 已从 `origin/master` 拉取并与生产本地历史 bundle merge 提交合并，当前生产仓库 `HEAD=2cbaaa4`；已安装后端依赖、初始化数据库、构建 frontend、`npm --prefix miniprogram/backend ci && build`，并重启 `xingrun`、`xingrun-bridge`、`xingrun-rq-worker`。生产健康检查通过：`http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`，`http://127.0.0.1:3001/healthz` 返回 `HTTP/1.1 200 OK`。release proof 已通过临时脚本 `/tmp/xingrun_release_develop_verify_20260429.sh` 和 `/tmp/xingrun_release_master_verify_20260429.sh`：课程日历前端 4 条、失败上传后端 21 条、bridge 12 条、frontend production build、bridge build、`git diff --check`；生产部署脚本 `/tmp/xingrun_deploy_master_merge_remote_20260429.expect` 通过。
 - 2026-04-29 已继续修正课程日历选中老师视图：普通课程卡片恢复为原正常板式（班名、时间段、教师、年级/学科分行铺满展示），只在“全部老师”汇总卡里继续使用“学科 · 教师姓名 · 班名 · 时间段”的单行摘要。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_teacher_selected_full_card_proof.sh`：课程日历定向前端 4 条测试、frontend production build、`git diff --check`。
 - 2026-04-29 已继续修正课程日历时间格交互：桌面时间格只有在同一格存在多条课程/事项时才启用格内滚动，空格或单条内容不再主动露出滚动条；已有课程/事项的时间格末尾也会保留紧凑 `+` 按钮，可直接创建自定义事项。latest proof 已通过临时脚本 `/tmp/xingrun_course_calendar_slot_scroll_plus_proof.sh`：课程日历定向前端 4 条测试、frontend production build、`git diff --check`。

@@ -180,6 +180,18 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
 
+    def test_wrong_question_latex_checker_uses_valid_stdout_when_node_aborts_after_output(self):
+        completed = subprocess.CompletedProcess(
+            args=["node"],
+            returncode=-6,
+            stdout=json.dumps({"errors": []}, ensure_ascii=False),
+            stderr="",
+        )
+        with patch("ai_processor.subprocess.run", return_value=completed):
+            issues = ai_processor._collect_wrong_question_latex_render_issues("计算 $\\frac{1}{2}$。")
+
+        self.assertEqual(issues, [])
+
     def test_parse_and_generate_plan_recovers_bare_latex_backslashes(self):
         fake_client = _FakeClient(
             r"""{"lesson_info":{"topic":"含参方程"},"days":[{"items":[{"text":"观察 $\left(x+1\right)^2$ 的开口方向"}]}],"weekly_review_prompts":[]}"""
