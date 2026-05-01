@@ -8,7 +8,9 @@ const {
   buildUploadTaskSummary,
   appendLocalImages,
   addManualBoxToImage,
+  buildBoxTouchFrame,
   getSubmitBlockers,
+  normalizeDisplayBoxFrame,
   rotateImageBoxesClockwise,
 } = require('./model');
 
@@ -200,6 +202,49 @@ test('buildUploadExportPlan limits oversized crops before upload', () => {
   });
 });
 
+test('buildBoxTouchFrame lets parents shrink a crop box to a small printed question', () => {
+  const frame = buildBoxTouchFrame({
+    mode: 'resize-se',
+    startLeft: 10,
+    startTop: 20,
+    startWidth: 180,
+    startHeight: 120,
+    deltaX: -400,
+    deltaY: -400,
+    imageLeft: 0,
+    imageTop: 0,
+    imageWidth: 240,
+    imageHeight: 320,
+  });
+
+  assert.deepEqual(frame, {
+    left: 10,
+    top: 20,
+    width: 16,
+    height: 16,
+  });
+});
+
+test('normalizeDisplayBoxFrame saves small crop boxes without forcing eight percent of the image', () => {
+  const box = normalizeDisplayBoxFrame({
+    left: 10,
+    top: 20,
+    width: 16,
+    height: 16,
+    imageLeft: 0,
+    imageTop: 0,
+    imageWidth: 240,
+    imageHeight: 320,
+  });
+
+  assert.deepEqual(box, {
+    x: 10 / 240,
+    y: 20 / 320,
+    width: 16 / 240,
+    height: 16 / 320,
+  });
+});
+
 test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate system', () => {
   const next = rotateImageBoxesClockwise({
     id: 'img_1',
@@ -218,4 +263,22 @@ test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate s
   ]);
   assert.equal(next.activeBoxId, 'box_2');
   assert.equal(next.contentVersion, 1);
+});
+
+test('rotateImageBoxesClockwise keeps narrow boxes after parents adjust small questions', () => {
+  const next = rotateImageBoxesClockwise({
+    id: 'img_1',
+    localPath: 'a.jpg',
+    contentVersion: 0,
+    boxes: [
+      { id: 'box_1', x: 0.2, y: 0.3, width: 0.02, height: 0.03 },
+    ],
+    activeBoxId: 'box_1',
+  });
+
+  assert.equal(next.boxes[0].id, 'box_1');
+  assert.equal(Math.round(next.boxes[0].x * 100), 67);
+  assert.equal(next.boxes[0].y, 0.2);
+  assert.equal(next.boxes[0].width, 0.03);
+  assert.equal(next.boxes[0].height, 0.02);
 });

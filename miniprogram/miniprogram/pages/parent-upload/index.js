@@ -9,11 +9,13 @@ const {
 const {
   addManualBoxToImage,
   appendLocalImages,
+  buildBoxTouchFrame,
   buildImageRotationPlan,
   buildUploadExportPlan,
   buildUploadJobs,
   buildUploadTaskSummary,
   getSubmitBlockers,
+  normalizeDisplayBoxFrame,
   rotateImageBoxesClockwise,
 } = require('./model');
 
@@ -635,12 +637,16 @@ Page({
       return;
     }
 
-    const normalizedBox = {
-      x: (nextLeft - this.data.imageLeft) / this.data.imageWidth,
-      y: (nextTop - this.data.imageTop) / this.data.imageHeight,
-      width: nextWidth / this.data.imageWidth,
-      height: nextHeight / this.data.imageHeight,
-    };
+    const normalizedBox = normalizeDisplayBoxFrame({
+      left: nextLeft,
+      top: nextTop,
+      width: nextWidth,
+      height: nextHeight,
+      imageLeft: this.data.imageLeft,
+      imageTop: this.data.imageTop,
+      imageWidth: this.data.imageWidth,
+      imageHeight: this.data.imageHeight,
+    });
 
     const imageItems = this.data.imageItems.map((item) => {
       if (item.id !== currentImage.id) {
@@ -654,10 +660,10 @@ Page({
           }
           return {
             ...box,
-            x: Math.max(0, Math.min(normalizedBox.x, 1)),
-            y: Math.max(0, Math.min(normalizedBox.y, 1)),
-            width: Math.max(0.08, Math.min(normalizedBox.width, 1)),
-            height: Math.max(0.08, Math.min(normalizedBox.height, 1)),
+            x: normalizedBox.x,
+            y: normalizedBox.y,
+            width: normalizedBox.width,
+            height: normalizedBox.height,
           };
         }),
         activeBoxId: boxId,
@@ -696,39 +702,21 @@ Page({
     const touch = event.touches[0];
     const deltaX = touch.clientX - this.touchState.startX;
     const deltaY = touch.clientY - this.touchState.startY;
-    const minSize = 72;
-    const imageRight = this.data.imageLeft + this.data.imageWidth;
-    const imageBottom = this.data.imageTop + this.data.imageHeight;
+    const nextFrame = buildBoxTouchFrame({
+      mode: this.touchState.mode,
+      startLeft: this.touchState.left,
+      startTop: this.touchState.top,
+      startWidth: this.touchState.width,
+      startHeight: this.touchState.height,
+      deltaX,
+      deltaY,
+      imageLeft: this.data.imageLeft,
+      imageTop: this.data.imageTop,
+      imageWidth: this.data.imageWidth,
+      imageHeight: this.data.imageHeight,
+    });
 
-    let nextLeft = this.touchState.left;
-    let nextTop = this.touchState.top;
-    let nextWidth = this.touchState.width;
-    let nextHeight = this.touchState.height;
-
-    if (this.touchState.mode === 'move') {
-      nextLeft = this.touchState.left + deltaX;
-      nextTop = this.touchState.top + deltaY;
-      nextLeft = Math.max(this.data.imageLeft, Math.min(nextLeft, imageRight - nextWidth));
-      nextTop = Math.max(this.data.imageTop, Math.min(nextTop, imageBottom - nextHeight));
-    } else if (this.touchState.mode === 'resize-se') {
-      nextWidth = Math.max(minSize, Math.min(this.touchState.width + deltaX, imageRight - this.touchState.left));
-      nextHeight = Math.max(minSize, Math.min(this.touchState.height + deltaY, imageBottom - this.touchState.top));
-    } else if (this.touchState.mode === 'resize-sw') {
-      nextLeft = Math.max(this.data.imageLeft, Math.min(this.touchState.left + deltaX, this.touchState.left + this.touchState.width - minSize));
-      nextWidth = this.touchState.width + (this.touchState.left - nextLeft);
-      nextHeight = Math.max(minSize, Math.min(this.touchState.height + deltaY, imageBottom - this.touchState.top));
-    } else if (this.touchState.mode === 'resize-ne') {
-      nextTop = Math.max(this.data.imageTop, Math.min(this.touchState.top + deltaY, this.touchState.top + this.touchState.height - minSize));
-      nextWidth = Math.max(minSize, Math.min(this.touchState.width + deltaX, imageRight - this.touchState.left));
-      nextHeight = this.touchState.height + (this.touchState.top - nextTop);
-    } else if (this.touchState.mode === 'resize-nw') {
-      nextLeft = Math.max(this.data.imageLeft, Math.min(this.touchState.left + deltaX, this.touchState.left + this.touchState.width - minSize));
-      nextTop = Math.max(this.data.imageTop, Math.min(this.touchState.top + deltaY, this.touchState.top + this.touchState.height - minSize));
-      nextWidth = this.touchState.width + (this.touchState.left - nextLeft);
-      nextHeight = this.touchState.height + (this.touchState.top - nextTop);
-    }
-
-    this.updateBoxDisplay(this.touchState.boxId, nextLeft, nextTop, nextWidth, nextHeight);
+    this.updateBoxDisplay(this.touchState.boxId, nextFrame.left, nextFrame.top, nextFrame.width, nextFrame.height);
   },
 
   onBoxTouchEnd() {

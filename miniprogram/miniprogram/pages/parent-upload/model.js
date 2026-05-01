@@ -1,6 +1,22 @@
 let imageCounter = 0;
 let boxCounter = 0;
 const DEFAULT_TOPIC_CATEGORY = '未分类';
+const MIN_CROP_BOX_DISPLAY_SIZE = 16;
+const MIN_CROP_BOX_RATIO = 0.01;
+
+function toFiniteNumber(value, fallbackValue) {
+  const numberValue = Number(value);
+  return isFinite(numberValue) ? numberValue : fallbackValue;
+}
+
+function clampNumber(value, minValue, maxValue) {
+  return Math.max(minValue, Math.min(value, maxValue));
+}
+
+function resolveMinCropBoxDisplaySize(value) {
+  const minSize = Math.round(toFiniteNumber(value, MIN_CROP_BOX_DISPLAY_SIZE));
+  return Math.max(1, minSize || MIN_CROP_BOX_DISPLAY_SIZE);
+}
 
 function normalizeQuarterTurns(value) {
   const turns = Math.round(Number(value) || 0);
@@ -88,6 +104,77 @@ function buildUploadExportPlan(options) {
     outputWidth: Math.max(1, Math.round(cropWidth * scale)),
     outputHeight: Math.max(1, Math.round(cropHeight * scale)),
     quality: 0.82,
+  };
+}
+
+function buildBoxTouchFrame(options) {
+  const source = options || {};
+  const mode = String(source.mode || 'move');
+  const minSize = resolveMinCropBoxDisplaySize(source.minSize);
+  const imageLeft = toFiniteNumber(source.imageLeft, 0);
+  const imageTop = toFiniteNumber(source.imageTop, 0);
+  const imageWidth = Math.max(1, toFiniteNumber(source.imageWidth, 1));
+  const imageHeight = Math.max(1, toFiniteNumber(source.imageHeight, 1));
+  const imageRight = imageLeft + imageWidth;
+  const imageBottom = imageTop + imageHeight;
+  const deltaX = toFiniteNumber(source.deltaX, 0);
+  const deltaY = toFiniteNumber(source.deltaY, 0);
+
+  let nextLeft = toFiniteNumber(source.startLeft, imageLeft);
+  let nextTop = toFiniteNumber(source.startTop, imageTop);
+  let nextWidth = toFiniteNumber(source.startWidth, minSize);
+  let nextHeight = toFiniteNumber(source.startHeight, minSize);
+
+  if (mode === 'move') {
+    nextLeft = clampNumber(nextLeft + deltaX, imageLeft, imageRight - nextWidth);
+    nextTop = clampNumber(nextTop + deltaY, imageTop, imageBottom - nextHeight);
+  } else if (mode === 'resize-se') {
+    nextWidth = Math.max(minSize, Math.min(nextWidth + deltaX, imageRight - nextLeft));
+    nextHeight = Math.max(minSize, Math.min(nextHeight + deltaY, imageBottom - nextTop));
+  } else if (mode === 'resize-sw') {
+    const right = nextLeft + nextWidth;
+    nextLeft = clampNumber(nextLeft + deltaX, imageLeft, right - minSize);
+    nextWidth = right - nextLeft;
+    nextHeight = Math.max(minSize, Math.min(nextHeight + deltaY, imageBottom - nextTop));
+  } else if (mode === 'resize-ne') {
+    const bottom = nextTop + nextHeight;
+    nextTop = clampNumber(nextTop + deltaY, imageTop, bottom - minSize);
+    nextHeight = bottom - nextTop;
+    nextWidth = Math.max(minSize, Math.min(nextWidth + deltaX, imageRight - nextLeft));
+  } else if (mode === 'resize-nw') {
+    const right = nextLeft + nextWidth;
+    const bottom = nextTop + nextHeight;
+    nextLeft = clampNumber(nextLeft + deltaX, imageLeft, right - minSize);
+    nextTop = clampNumber(nextTop + deltaY, imageTop, bottom - minSize);
+    nextWidth = right - nextLeft;
+    nextHeight = bottom - nextTop;
+  }
+
+  return {
+    left: nextLeft,
+    top: nextTop,
+    width: nextWidth,
+    height: nextHeight,
+  };
+}
+
+function normalizeDisplayBoxFrame(options) {
+  const source = options || {};
+  const minSize = resolveMinCropBoxDisplaySize(source.minSize);
+  const imageLeft = toFiniteNumber(source.imageLeft, 0);
+  const imageTop = toFiniteNumber(source.imageTop, 0);
+  const imageWidth = Math.max(1, toFiniteNumber(source.imageWidth, 1));
+  const imageHeight = Math.max(1, toFiniteNumber(source.imageHeight, 1));
+  const width = Math.max(Math.min(minSize, imageWidth), Math.min(toFiniteNumber(source.width, minSize), imageWidth));
+  const height = Math.max(Math.min(minSize, imageHeight), Math.min(toFiniteNumber(source.height, minSize), imageHeight));
+  const left = clampNumber(toFiniteNumber(source.left, imageLeft), imageLeft, imageLeft + imageWidth - width);
+  const top = clampNumber(toFiniteNumber(source.top, imageTop), imageTop, imageTop + imageHeight - height);
+
+  return {
+    x: (left - imageLeft) / imageWidth,
+    y: (top - imageTop) / imageHeight,
+    width: width / imageWidth,
+    height: height / imageHeight,
   };
 }
 
@@ -193,8 +280,8 @@ function rotateImageBoxesClockwise(imageItem) {
       ...box,
       x: Math.max(0, Math.min(1, 1 - (Number(box.y) || 0) - (Number(box.height) || 0))),
       y: Math.max(0, Math.min(1, Number(box.x) || 0)),
-      width: Math.max(0.08, Math.min(1, Number(box.height) || 0)),
-      height: Math.max(0.08, Math.min(1, Number(box.width) || 0)),
+      width: Math.max(MIN_CROP_BOX_RATIO, Math.min(1, Number(box.height) || 0)),
+      height: Math.max(MIN_CROP_BOX_RATIO, Math.min(1, Number(box.width) || 0)),
     };
   });
 
@@ -210,8 +297,10 @@ module.exports = {
   addManualBoxToImage,
   buildUploadExportPlan,
   buildImageRotationPlan,
+  buildBoxTouchFrame,
   buildUploadTaskSummary,
   getSubmitBlockers,
   buildUploadJobs,
+  normalizeDisplayBoxFrame,
   rotateImageBoxesClockwise,
 };
