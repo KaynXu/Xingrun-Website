@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-01 已按 `review_plan_templates/review-plan-workflow.md` 从企业微信缓存录音 `7634844093533506513_record_audio.m4a` 生成《角度单位换算、角度表达与基础角关系》课后复习计划：新增转写稿 `review_plan_templates/source_transcripts/7634844093533506513_record_audio_transcript.txt` 和课程包 `review_plan_templates/lesson_pack_angle_unit_relationships_20260501.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260501-193408.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_angle_review_plan_proof.sh` 已通过：课程包可 `py_compile`、转写稿 4159 字、PDF 14 页 165631 bytes，包含 `角度单位换算 / 度、分、秒 / 周角 / 平角 / 角AOB / 角平分线` 和 5 个复习日期 `2026-05-02 / 2026-05-03 / 2026-05-08 / 2026-05-15 / 2026-05-31`；并用 PyMuPDF 渲染抽查第 1/2/7/14 页，没有空白页。
 - 2026-05-01 已按 `review_plan_templates/review-plan-workflow.md` 读取录音转写稿 `review_plan_templates/source_transcripts/7631121683310742458_record_audio_transcript.txt`，复用已入库课程包 `review_plan_templates/lesson_pack_geometry_angle_similarity.py` 生成《几何基础模型、外角定理与全等相似课后复习计划》新版 PDF：`review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260501-190425.pdf`（PDF 输出目录按 `.gitignore` 不入库）。latest proof 已通过临时脚本 `/tmp/xingrun_review_plan_audio_763112_proof.sh`：PDF 存在且 15 页、包含主题关键词和 5 个复习日期 `2026-05-02 / 2026-05-03 / 2026-05-08 / 2026-05-15 / 2026-05-31`，并渲染抽查第 1/2/8/15 页非空，`git diff --check` 通过。
 - 2026-04-30 已完成小学组错题“专题分类”第一版并准备集成到 `develop`：微信错题新增 `topic_category` 字段，默认 `未分类`，固定专题为 `未分类 / 计算 / 经济 / 浓度 / 工程 / 行程 / 几何 / 数论`，支持同机构小学一年级到六年级共享自定义专题；老师端学生错题本可按专题数量筛选并在题目详情修改专题，家长小程序上传每道框选错题时可选择/输入专题，家长错题本也可按专题筛选并补改专题。老师和家长修改都走同一条网站记录，修改后双方刷新即可同步。latest proof 已通过临时脚本 `/tmp/xingrun_primary_topic_proof.sh`：后端 6 条定向 unittest、React 智能错题 40 条、frontend production build、小程序 36 条测试、bridge 13 条测试、bridge `tsc` build、`git diff --check`。
 - 2026-04-29 已和用户确认“咨询记录派单任务”第一版需求，并写入设计稿 `docs/superpowers/specs/2026-04-29-consultation-dispatch-tasks-design.md`：目标只聚焦派单/接单/任务数字提醒，避免学生咨询无人认领或老师不知道自己有咨询任务。设计方向为“一个学生一行 + 多个咨询任务项”，普通老师入口数字统计自己未结束任务，有 `可派单咨询` 权限的人入口数字统计全机构未结束任务；旧咨询不合并迁移但按 1 个任务项计数，AI 批量整理第一版不改。下一步应先让用户 review 设计稿，再进入实现计划。
@@ -204,6 +205,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这份角度单位复习计划来自本地 `faster-whisper base` 对 62 分钟企业微信 Opus 录音的分段转写；原始转写噪声较重，已按稳定出现的“角度、度分秒、周角/平角、角名、角平分线、角关系表达”主线整理，正式发给学生前建议老师快速核对课堂原题字母、题面数据和单位换算例子。
 - 用户本轮点名的文件名为 `7633721706604170168_record_audio`，本地实际找到并处理的是 `7631121683310742458_record_audio.m4a` 及其同名前缀转写稿；若还有另一个 `763372...` 录音，需要补传或放到仓库后重新生成。当前几何复习计划基于已有 Whisper 转写稿整理，转写中有较多识别噪声，正式发给学生前建议老师快速核对外角、角平分线、凸凹型、全等相似对应点等课堂表述。
 - 智能错题练习 PDF 当前虽然已经在生产 `master(31747f5)` 上带着“浏览器子进程环境净化”修复上线，并通过了 PM2 环境复现 proof，但运行时依赖仍是服务器上的 `/snap/bin/chromium`。如果后续继续出现新的 Chromium 自身崩溃，优先考虑给生产机安装 Playwright 官方 Chromium 或继续收口渲染进程启动参数，而不是恢复已经按用户要求删除的 ReportLab fallback。
 - RQ/Redis 异步上传已在生产机启动真实 Redis 和 RQ worker，但还没有用真机真实录音/题图跑完整端到端 smoke；新版小程序包也还需要上传微信后台，旧小程序仍会先走转写/归类等待链路，无法完整体现“提交后服务器后台识别”的新体验。
