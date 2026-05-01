@@ -87,6 +87,30 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
   assert.equal(jobs[2].topicCategory, '周期问题');
 });
 
+test('buildUploadJobs falls back to text mode when a voice box has no recording file', () => {
+  const jobs = buildUploadJobs([
+    {
+      id: 'img_1',
+      localPath: 'a.jpg',
+      boxes: [
+        {
+          id: 'box_1',
+          x: 0.1,
+          y: 0.2,
+          width: 0.4,
+          height: 0.3,
+          childReasonInputMode: 'voice',
+          voiceFilePath: '',
+        },
+      ],
+    },
+  ]);
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].childReasonInputMode, 'text');
+  assert.equal(jobs[0].voiceFilePath, '');
+});
+
 test('buildUploadTaskSummary reports failed task messages before success', () => {
   const summary = buildUploadTaskSummary([
     { id: 1, status: 'ready' },

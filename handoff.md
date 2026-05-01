@@ -7,6 +7,7 @@
 
 ### 当前状态
 - 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
+- 2026-05-01 已完成一轮小程序稳定性排查并修复一个家长上传提交风险：如果家长切到“语音错因”但没有成功录音，上传任务现在会回退为 `text`/空错因提交，不再拿空 `voiceFilePath` 调用音频 `/upload` 导致整批提交失败。改动只触达 `miniprogram/miniprogram/pages/parent-upload/model.js` 和对应测试；临时 proof `/tmp/xingrun_miniprogram_stability_proof.sh` 已通过 bridge 13 条测试、bridge `tsc` build、小程序 40 条测试、活代码陈旧 `AI 框选` 扫描和 `git diff --check`。未触碰生产数据，仍需真机 smoke。
 - 2026-05-01 已排查生产“七年级5班”家长错题上传：班级 `id=15` 共 5 名学生，当日不是全部上传失败。刘益函任务 `179` 成功；毛裕宁 `157`、邹欣彤 `164`、李奕萱 `171`、王睿博 `177/178` 为历史失败，其余同批任务已 `ready` 并入错题本。5 条失败图片 URL 均返回 `200 image/jpeg`，说明小程序/bridge 文件上传成功；失败发生在网站后端 RQ worker 的题图识别质量检查，错误均为旧逻辑把 LaTeX 检查脚本 `exit code -6` 当成渲染失败。当前生产修复后，2026-05-01 17:00 以后 13 条上传任务全为 `ready`。小程序端另有展示体感问题：同批只要 1 条 failed，汇总就显示整批“识别失败”，容易让家长误以为全部失败。本轮只读排查，未补跑任务、未改生产数据。
 - 2026-05-01 已定位并修复生产智能错题非几何题图片转 LaTeX 批量失败：根因是 `xingrun-rq-worker` 环境里 Node 检查脚本会先输出合法 JSON 后以 `exit code -6` 退出，后端此前直接按 returncode 判失败，导致所有非几何错题被误标为“题目识别质量检查未通过”。`ai_processor._collect_wrong_question_latex_render_issues()` 已改为优先解析合法 stdout，生产 `xingrun-rq-worker` 已重启并通过队列内诊断；已备份生产库 `data/xingrun.db.backup-before-luzheng-latex-fix-20260501`，并把四年级3班吕铮今天下午任务 `161/162` 原记录补成 `ready/recognized`，学生错题库 PDF 已重建到 `data/pdfs/wrong_question_libraries/student-35.pdf`。任务 `141` 仍保留失败，因为当前 AI 审稿认为原图混入手写答案/裁切不完整，需要老师看原图人工确认。
 - 2026-05-01 已按 `review_plan_templates/review-plan-workflow.md` 从企业微信缓存录音 `7634844093533506513_record_audio.m4a` 生成《角度单位换算、角度表达与基础角关系》课后复习计划：新增转写稿 `review_plan_templates/source_transcripts/7634844093533506513_record_audio_transcript.txt` 和课程包 `review_plan_templates/lesson_pack_angle_unit_relationships_20260501.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260501-193408.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_angle_review_plan_proof.sh` 已通过：课程包可 `py_compile`、转写稿 4159 字、PDF 14 页 165631 bytes，包含 `角度单位换算 / 度、分、秒 / 周角 / 平角 / 角AOB / 角平分线` 和 5 个复习日期 `2026-05-02 / 2026-05-03 / 2026-05-08 / 2026-05-15 / 2026-05-31`；并用 PyMuPDF 渲染抽查第 1/2/7/14 页，没有空白页。
@@ -163,6 +164,7 @@
 
 ### 下一步
 - 最值得继续做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf` 全文扫一遍，确认三棱锥外接球例题、线面平行、线面垂直、面面垂直、围魏救赵和体积计算迁移这些口径符合老师原课。
+- 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
 - 如果要恢复七年级5班今天的历史失败错题，先备份生产库，再用当前已修复 worker 补跑或重识别任务 `157/164/171/177/178`，完成后重建对应学生错题库 PDF；补跑前不要改小程序代码。
 - GitHub push 仍待网络/权限恢复后补做：本机 `github.com:443` 当前连接超时，生产机 deploy key 可 fetch 但 push 报 read-only。当前本地 `develop/master` 和生产机 `master(a284f58)` 已包含 legacy uploads fallback，远端 `origin/develop/origin/master` 仍停在 `367cf98`。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf` 全文扫一遍，重点核对外接球通法、墙角模型、对棱相等模型、正棱台方程、圆锥/正三棱锥类比和取值范围题里的变量设法；如果老师希望把“例题 2 / 例题 3”展开成具体题目，需要回到 `lesson_pack_circumsphere_models_quote20.py` 增补题面细节。
@@ -318,6 +320,7 @@
 
 ### 当前工作区
 - 当前分支：`develop`
+- 当前仍有用户未跟踪文件 `Note May 1, 2026.pdf`；不要纳入小程序稳定性提交。
 - `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
 - 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。

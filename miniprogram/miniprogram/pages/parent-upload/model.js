@@ -134,7 +134,9 @@ function buildUploadJobs(imageItems) {
       localPath: item.localPath,
       box,
       childRawReasonText: String(box.childReasonText || '').trim(),
-      childReasonInputMode: String(box.childReasonInputMode || 'text').trim() || 'text',
+      childReasonInputMode: String(box.childReasonInputMode || 'text').trim() === 'voice' && String(box.voiceFilePath || '').trim()
+        ? 'voice'
+        : 'text',
       topicCategory: String(box.topicCategory || DEFAULT_TOPIC_CATEGORY).trim() || DEFAULT_TOPIC_CATEGORY,
       voiceFilePath: String(box.voiceFilePath || '').trim(),
     })));
