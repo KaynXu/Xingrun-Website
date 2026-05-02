@@ -18,5 +18,5 @@ Baseline proof for every completed story:
 Status:
 - FE-STAB-001 passes: added scripts/ralph/frontend_stability_proof.sh as the shared frontend baseline proof runner.
 - Added scripts/ralph/run_codex_ralph.sh for optional Codex CLI auto-loop execution; --check and --print-prompt modes validate the next story without invoking Codex.
-- Updated scripts/ralph/run_codex_ralph.sh to pass --model explicitly; default is gpt-5.4 so Codex CLI 0.118.0 does not inherit an unsupported gpt-5.5 from ~/.codex/config.toml.
+- Upgraded the local Codex CLI from 0.118.0 to 0.128.0 after 0.118.0 rejected gpt-5.5; scripts/ralph/run_codex_ralph.sh now defaults to gpt-5.5 again.
 - Next story: FE-STAB-002.

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PRD_FILE="$ROOT_DIR/scripts/ralph/prd.json"
 PROGRESS_FILE="$ROOT_DIR/scripts/ralph/progress.txt"
-CODEX_MODEL="${CODEX_RALPH_MODEL:-gpt-5.4}"
+CODEX_MODEL="${CODEX_RALPH_MODEL:-gpt-5.5}"
 
 MODE="run"
 MAX_ITERATIONS="${CODEX_RALPH_MAX_ITERATIONS:-}"
@@ -23,8 +23,7 @@ all stories pass, Codex fails, no progress is detected, or max_iterations is hit
 Environment:
   CODEX_RALPH_MAX_ITERATIONS  Override default max iterations.
   CODEX_RALPH_MODEL           Optional Codex model name passed with --model.
-                              Defaults to gpt-5.4 to avoid older CLI failures
-                              when ~/.codex/config.toml points at gpt-5.5.
+                              Defaults to gpt-5.5.
 USAGE
 }
 

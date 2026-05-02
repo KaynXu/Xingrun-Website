@@ -16,7 +16,7 @@ printf '%s\n' "$check_output"
 
 grep -q "Remaining stories: $expected_remaining" <<< "$check_output"
 grep -q "Next story: $expected_next" <<< "$check_output"
-grep -q "Codex model: ${CODEX_RALPH_MODEL:-gpt-5.4}" <<< "$check_output"
+grep -q "Codex model: ${CODEX_RALPH_MODEL:-gpt-5.5}" <<< "$check_output"
 
 if [[ "$expected_remaining" != "0" ]]; then
   prompt_output="$("$RUNNER" --print-prompt)"
