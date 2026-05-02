@@ -221,8 +221,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 12,
-      "passes": false,
-      "notes": "This story is the final Ralph completion gate for the parent upload 2.0 stability PRD."
+      "passes": true,
+      "notes": "Completed: added scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh as the final acceptance guardrail. It verifies the upload 2.0 fixture checklist, active-code AI box removal, all PRD stories marked passes=true, targeted mini program/bridge/website tests, and the shared mini program upload stability baseline."
     }
   ]
 }
