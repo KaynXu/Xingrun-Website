@@ -74,7 +74,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Focus on website workspace navigation, not mini program routes."
     },
     {

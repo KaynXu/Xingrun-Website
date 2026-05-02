@@ -135,7 +135,7 @@ test('app loads course calendar schedules separately from review plans', () => {
 test('app exposes a recoverable course calendar list-load failure path', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const calendarEffect = appSource.match(/setCalendarLoading\(true\);[\s\S]*?return \(\) => \{\s*cancelled = true;\s*\};/);
-  const calendarRender = appSource.match(/\{activePage === 'calendar' &&[\s\S]*?\{activePage === 'smartWrongQuestions'/);
+  const calendarRender = appSource.match(/\{activeWorkspacePage === 'calendar' &&[\s\S]*?\{activeWorkspacePage === 'smartWrongQuestions'/);
 
   assert.ok(calendarEffect);
   assert.ok(calendarRender);

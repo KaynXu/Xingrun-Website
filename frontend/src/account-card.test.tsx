@@ -108,7 +108,7 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
   assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
@@ -129,7 +129,7 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
   assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
@@ -588,7 +588,7 @@ test('approval member cards link teacher class binding into class management', (
   assert.match(approvalBlock[0], /绑定班级/);
   assert.match(approvalBlock[0], /onOpenClassBinding\(\{ teacherUserId: user\.id, teacherName: user\.name \}\)/);
   assert.match(source, /const \[classBindingTarget, setClassBindingTarget\] = useState<ClassBindingTarget \| null>\(null\);/);
-  assert.match(source, /setClassBindingTarget\(target\);\s*setActivePage\('classes'\);/);
+  assert.match(source, /setClassBindingTarget\(target\);\s*navigateWorkspacePage\('classes'\);/);
   assert.match(source, /<ApprovalPage currentUser=\{currentUser\} onOpenClassBinding=\{handleOpenClassBinding\} \/>/);
   assert.match(source, /<ClassManagementPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
   assert.match(classManagementBlock[0], /classBindingTarget\?\.teacherName/);

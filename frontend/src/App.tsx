@@ -396,6 +396,10 @@ function canOpenWorkspacePage(user: CurrentUser, page: Page): boolean {
   return getVisibleWorkspacePages(user).includes(page);
 }
 
+function getWorkspacePageFallback(user: CurrentUser, page: Page): Page {
+  return canOpenWorkspacePage(user, page) ? page : 'dashboard';
+}
+
 function syncMemberScopedClassSelection(
   role: Role,
   classes: ClassItem[],
@@ -9266,21 +9270,7 @@ export default function App() {
           return;
         }
         setCurrentUser(user);
-        setActivePage((page) => {
-          if (page === 'credit' && !hasOwnerAccess(user.role)) {
-            return 'dashboard';
-          }
-          if (page === 'accounts' && !hasStaffAccess(user.role)) {
-            return 'dashboard';
-          }
-          if (page === 'classes' && !canOpenWorkspacePage(user, 'classes')) {
-            return 'dashboard';
-          }
-          if (!canOpenWorkspacePage(user, page)) {
-            return 'dashboard';
-          }
-          return page;
-        });
+        setActivePage((page) => getWorkspacePageFallback(user, page));
       })
       .catch(() => {
         if (cancelled) {
@@ -9354,6 +9344,14 @@ export default function App() {
     };
   }, [authReady, currentUser, token]);
 
+  useEffect(() => {
+    if (!currentUser) {
+      setActivePage('dashboard');
+      return;
+    }
+    setActivePage((page) => getWorkspacePageFallback(currentUser, page));
+  }, [currentUser]);
+
   const handleLogin = (t: string) => {
     clearJoinInvitePathIfNeeded();
     writeLocalStorageItem('xr_token', t);
@@ -9400,13 +9398,21 @@ export default function App() {
     setPublicAuthModal('login');
   };
 
+  const navigateWorkspacePage = useCallback((page: Page) => {
+    if (!currentUser) {
+      setActivePage('dashboard');
+      return;
+    }
+    setActivePage(getWorkspacePageFallback(currentUser, page));
+  }, [currentUser]);
+
   const handleReviewGenerationSuccess = () => {
-    setActivePage('review-generation');
+    navigateWorkspacePage('review-generation');
   };
 
   const handleOpenClassBinding = (target: ClassBindingTarget) => {
     setClassBindingTarget(target);
-    setActivePage('classes');
+    navigateWorkspacePage('classes');
     setMobileNavOpen(false);
   };
 
@@ -9620,6 +9626,8 @@ export default function App() {
     );
   }
 
+  const activeWorkspacePage = getWorkspacePageFallback(currentUser, activePage);
+
   return (
     <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
@@ -9630,11 +9638,11 @@ export default function App() {
       <div className="relative flex min-h-[100svh] sm:min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
           <Sidebar
-            activePage={activePage}
+            activePage={activeWorkspacePage}
             currentUser={currentUser}
             onLogout={handleLogout}
-            setActivePage={setActivePage}
-            compact={activePage === 'calendar'}
+            setActivePage={navigateWorkspacePage}
+            compact={activeWorkspacePage === 'calendar'}
             onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
           />
         </div>
@@ -9663,10 +9671,10 @@ export default function App() {
                   <X size={18} />
                 </button>
                 <Sidebar
-                  activePage={activePage}
+                  activePage={activeWorkspacePage}
                   currentUser={currentUser}
                   onLogout={handleLogout}
-                  setActivePage={setActivePage}
+                  setActivePage={navigateWorkspacePage}
                   onNavigate={() => setMobileNavOpen(false)}
                   mobile={true}
                   onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
@@ -9675,9 +9683,9 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', activePage === 'calendar' ? 'lg:pl-24' : 'lg:pl-72')}>
+        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' ? 'lg:pl-24' : 'lg:pl-72')}>
           <Header
-            title={pageTitle[activePage]}
+            title={pageTitle[activeWorkspacePage]}
             onGoHome={() => setShowLanding(true)}
             isDark={isDark}
             onToggleDarkMode={() => setIsDark((current) => !current)}
@@ -9686,16 +9694,16 @@ export default function App() {
           <div className="flex-1">
             <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
               <motion.div
-                key={activePage}
+                key={activeWorkspacePage}
                 initial={isMobileViewport ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 0, y: -6 }}
                 transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
               >
-                {activePage === 'dashboard' && (
+                {activeWorkspacePage === 'dashboard' && (
                   <WorkspaceDashboard
                     currentUser={currentUser}
-                    setActivePage={setActivePage}
+                    setActivePage={navigateWorkspacePage}
                     styles={{
                       pageClass: workspacePageClass,
                       cardClass: workspaceCardClass,
@@ -9705,10 +9713,12 @@ export default function App() {
                     canOpenAccounts={hasStaffAccess(currentUser.role)}
                   />
                 )}
-                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
-                {activePage === 'class-feedback-generation' && <ClassFeedbackGenerationPage currentUser={currentUser} />}
-                {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
-                {activePage === 'calendar' &&
+                {activeWorkspacePage === 'review-generation' && canOpenWorkspacePage(currentUser, 'review-generation') && (
+                  <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />
+                )}
+                {activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage(currentUser, 'class-feedback-generation') && <ClassFeedbackGenerationPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'consultation' && canOpenWorkspacePage(currentUser, 'consultation') && <ConsultationPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'calendar' && canOpenWorkspacePage(currentUser, 'calendar') &&
                   (calendarLoading ? (
                     <div className={`${workspacePageClass}`}>
                       <div className={`${workspaceCardClass} p-8`}>
@@ -9747,15 +9757,15 @@ export default function App() {
                       />
                     </>
                   ))}
-                {activePage === 'smartWrongQuestions' &&
-                  canAccessSmartWrongQuestions(currentUser.role) &&
+                {activeWorkspacePage === 'smartWrongQuestions' &&
+                  canOpenWorkspacePage(currentUser, 'smartWrongQuestions') &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
-                {activePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
+                {activeWorkspacePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
                   <ClassManagementPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={() => setClassBindingTarget(null)} />
                 )}
-                {activePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
-                {activePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
-                {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
+                {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
+                {activeWorkspacePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>
           </div>

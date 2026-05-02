@@ -214,9 +214,9 @@ test('app source routes the dashboard page through WorkspaceDashboard', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.match(source, /import \{ WorkspaceDashboard \} from '\.\/WorkspaceDashboard';/);
-  assert.match(source, /\{activePage === 'dashboard' && \([\s\S]*<WorkspaceDashboard[\s\S]*currentUser=\{currentUser\}[\s\S]*setActivePage=\{setActivePage\}[\s\S]*styles=\{/);
+  assert.match(source, /\{activeWorkspacePage === 'dashboard' && \([\s\S]*<WorkspaceDashboard[\s\S]*currentUser=\{currentUser\}[\s\S]*setActivePage=\{navigateWorkspacePage\}[\s\S]*styles=\{/);
   assert.match(source, /canOpenAccounts=\{hasStaffAccess\(currentUser\.role\)\}/);
-  assert.doesNotMatch(source, /\{activePage === 'dashboard' && \(\s*<Dashboard/);
+  assert.doesNotMatch(source, /\{activeWorkspacePage === 'dashboard' && \(\s*<Dashboard/);
   assert.doesNotMatch(source, /const Dashboard = \(/);
 });
 
