@@ -179,7 +179,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Keep this scoped to frontend render helpers and tests."
     },
     {

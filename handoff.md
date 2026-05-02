@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-010`：`frontend/src/mobile-workspace-performance.test.ts` 现在覆盖工作台主 shell、课程日历和智能错题两类高内容页的移动滚动 guardrail；`CourseCalendarPage.tsx` 的移动端翻页控件已改为窄屏可收缩、平板/桌面保留原宽度，避免 `min-w-72` 加双按钮造成横向溢出。`scripts/ralph/prd.json` 已将 `FE-STAB-010` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-011`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-011`：`wrongQuestionLatex.js` 现在会在修复 malformed transport escapes 后，把裸 `\overrightarrow{...}` 片段降级为可读文本；`wrong-question-latex`、错题库 PDF markup、错题练习 PDF markup 测试已覆盖 malformed/bare math、缺失孩子错因/备注、几何图片记录、几何占位记录和非空题目块。`scripts/ralph/prd.json` 已将 `FE-STAB-011` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-012`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-010`：`frontend/src/mobile-workspace-performance.test.ts` 现在覆盖工作台主 shell、课程日历和智能错题两类高内容页的移动滚动 guardrail；`CourseCalendarPage.tsx` 的移动端翻页控件已改为窄屏可收缩、平板/桌面保留原宽度，避免 `min-w-72` 加双按钮造成横向溢出。`scripts/ralph/prd.json` 已将 `FE-STAB-010` 标记为 `passes=true`。
 - 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-009`：`App.tsx` 的班级管理手动刷新现在使用保留状态的刷新路径，刷新失败时不会丢掉仍存在的展开编辑卡；班级刷新锁纳入 loading 状态；账号审批、机构邀请、机构列表、成员权限和讲师映射入口在相关加载或突变中会禁用，避免重复提交。`frontend/src/account-card.test.tsx` 和 `frontend/src/workspace-navigation.test.ts` 已覆盖 create/save/delete/refresh/invite/approval/teacher-binding 锁定与保留展开卡断言。`scripts/ralph/prd.json` 已将 `FE-STAB-009` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-010`。
 - 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-008`：新增 `frontend/src/reviewGenerationAsync.ts` 和对应测试，复习生成历史列表现在会规整异常轮询 payload，区分 pending/failed/missing-output 状态，并且只有完成记录带 PDF 路径时才显示预览/下载入口；课堂反馈任务 hydrate/generate 路径现在会规整任务响应，pending/generating 状态提示用户稍后刷新，生成内容不完整时不再显示成功文案。`scripts/ralph/prd.json` 已将 `FE-STAB-008` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-009`。
 - 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-007`：`frontend/src/class-feedback-generation.test.tsx` 已覆盖课堂反馈生成/保存/确认失败 handler 的 busy state 释放和草稿保留源码约束，以及 accessible class/member selection 变化；`App.tsx` 现在在当前选中班级不再属于可访问班级列表时清掉旧课堂反馈 task、草稿、学生和状态，避免旧班级反馈残留在新权限范围内。`scripts/ralph/prd.json` 已将 `FE-STAB-007` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-008`。
@@ -177,7 +178,7 @@
 
 ### 下一步
 - 若要自动跑完剩余网站前端稳定性 story，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh`；如果想先试一轮，执行 `scripts/ralph/run_codex_ralph.sh 1`。
-- 如果继续按 Ralph 模式处理网站前端稳定性，下一步从 `scripts/ralph/prd.json` 的 `FE-STAB-011` 开始，只做一个 story，验证通过后再把该 story 标记为 `passes=true` 并提交。
+- 如果继续按 Ralph 模式处理网站前端稳定性，下一步从 `scripts/ralph/prd.json` 的 `FE-STAB-012` 开始，只做一个 story，验证通过后再把该 story 标记为 `passes=true` 并提交。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
 - GitHub push 仍待网络/权限恢复后补做：本机 `github.com:443` 当前连接超时，生产机 deploy key 可 fetch 但 push 报 read-only。当前本地 `develop/master` 和生产机 `master(a284f58)` 已包含 legacy uploads fallback，远端 `origin/develop/origin/master` 仍停在 `367cf98`。
