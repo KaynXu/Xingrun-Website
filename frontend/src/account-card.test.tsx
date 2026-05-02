@@ -675,8 +675,8 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
   assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
   assert.match(classManagementBlock[0], /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
   assert.match(classManagementBlock[0], /disabled=\{pageRefreshLocked\}[\s\S]*刷新列表/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*新建班级/);
@@ -787,6 +787,38 @@ test('class management source keeps delete and save buttons inside the teacher c
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /<div className=\{`\$\{workspaceCardClass\} space-y-5 p-5`\}>[\s\S]*删除当前班级[\s\S]*保存班级/);
   assert.doesNotMatch(classManagementBlock[0], /<div className="flex flex-col gap-3 border-t border-sky-100\/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white\/10">[\s\S]*删除当前班级[\s\S]*保存班级/);
+});
+
+test('class management source preserves expanded edit cards during manual refresh failures', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => loadPage\(expandedClassId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => loadPage\(editingClass\.id, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
+});
+
+test('account administration source disables refresh and teacher alias actions while mutations run', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /const organizationRequestRefreshLocked = organizationRequestsLoading \|\| organizationActingId !== null;/);
+  assert.match(approvalBlock[0], /const organizationInviteRefreshLocked = organizationInviteLoading \|\| organizationInviteResetting;/);
+  assert.match(approvalBlock[0], /const organizationListRefreshLocked = organizationsLoading \|\| deletingOrgId !== null;/);
+  assert.match(approvalBlock[0], /const approvalRefreshLocked = loading \|\| actingId !== null;/);
+  assert.match(approvalBlock[0], /const memberRefreshLocked = usersLoading \|\| bindingSummaryLoading \|\| roleSavingUserId !== null \|\| visiblePageSavingUserId !== null \|\| displayNameSavingUserId !== null \|\| deletingUserId !== null;/);
+  assert.match(approvalBlock[0], /const teacherAliasActionLocked = taSubmitting \|\| taDeletingId !== null;/);
+  assert.match(approvalBlock[0], /disabled=\{organizationRequestRefreshLocked\}[\s\S]*刷新机构申请/);
+  assert.match(approvalBlock[0], /disabled=\{organizationInviteRefreshLocked\}[\s\S]*刷新邀请信息/);
+  assert.match(approvalBlock[0], /disabled=\{organizationListRefreshLocked\}[\s\S]*刷新机构列表/);
+  assert.match(approvalBlock[0], /disabled=\{approvalRefreshLocked\}[\s\S]*刷新列表/);
+  assert.match(approvalBlock[0], /disabled=\{memberRefreshLocked\}[\s\S]*刷新成员/);
+  assert.match(approvalBlock[0], /disabled=\{teacherAliasActionLocked\}[\s\S]*添加/);
+  assert.match(approvalBlock[0], /disabled=\{teacherAliasActionLocked\}[\s\S]*openTeacherAliasEdit\(entry\)/);
+  assert.match(approvalBlock[0], /disabled=\{teacherAliasActionLocked \|\| taDeletingId === entry\.wecom_userid\}[\s\S]*handleTeacherAliasDelete\(entry\.wecom_userid\)/);
 });
 
 test('login source includes password reset and first-login class claim entry points', () => {

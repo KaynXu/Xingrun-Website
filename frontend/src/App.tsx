@@ -4533,6 +4533,12 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   const [taSubmitting, setTaSubmitting] = useState(false);
   const [taDeletingId, setTaDeletingId] = useState<string | null>(null);
   const teacherAliasMemberOptions = users.filter((user) => user.username && user.role !== 'super_owner');
+  const organizationRequestRefreshLocked = organizationRequestsLoading || organizationActingId !== null;
+  const organizationInviteRefreshLocked = organizationInviteLoading || organizationInviteResetting;
+  const organizationListRefreshLocked = organizationsLoading || deletingOrgId !== null;
+  const approvalRefreshLocked = loading || actingId !== null;
+  const memberRefreshLocked = usersLoading || bindingSummaryLoading || roleSavingUserId !== null || visiblePageSavingUserId !== null || displayNameSavingUserId !== null || deletingUserId !== null;
+  const teacherAliasActionLocked = taSubmitting || taDeletingId !== null;
 
   const loadItems = useCallback(async () => {
     if (!hasOwnerAccess(currentUser.role)) {
@@ -4974,7 +4980,11 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 审核新机构的开通申请。通过后，申请人会自动成为该机构的首位管理员，并生成当前唯一有效的邀请码与邀请链接。
               </p>
             </div>
-            <button onClick={() => loadOrganizationRequests().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button
+              onClick={() => loadOrganizationRequests().catch(() => undefined)}
+              disabled={organizationRequestRefreshLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               刷新机构申请
             </button>
           </div>
@@ -5057,6 +5067,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
             </div>
             <button
               onClick={() => loadOrganizationInvite().catch(() => undefined)}
+              disabled={organizationInviteRefreshLocked}
               className={workspaceSecondaryButtonClass}
             >
               刷新邀请信息
@@ -5090,7 +5101,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
               </div>
               <button
                 onClick={() => void handleResetOrganizationInvite()}
-                disabled={organizationInviteResetting}
+                disabled={organizationInviteRefreshLocked}
                 className={workspacePrimaryButtonClass}
               >
                 {organizationInviteResetting ? '重置中...' : '重置邀请码'}
@@ -5113,7 +5124,11 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 查看已经开通的机构规模，快速确认负责人、成员和班级是否已正常落库。
               </p>
             </div>
-            <button onClick={() => loadOrganizations().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button
+              onClick={() => loadOrganizations().catch(() => undefined)}
+              disabled={organizationListRefreshLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               刷新机构列表
             </button>
           </div>
@@ -5241,6 +5256,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
               </div>
               <button
                 onClick={() => loadItems().catch(() => undefined)}
+                disabled={approvalRefreshLocked}
                 className={workspaceSecondaryButtonClass}
               >
                 刷新列表
@@ -5324,7 +5340,11 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面。
               </p>
             </div>
-            <button onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button
+              onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)}
+              disabled={memberRefreshLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               刷新成员
             </button>
           </div>
@@ -5618,7 +5638,12 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">讲师映射</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">管理企业微信 ID 到讲师中文名的映射（咨询助手自动识别用）</p>
           </div>
-          <button type="button" className={workspacePrimaryButtonClass} onClick={openTeacherAliasCreate}>
+          <button
+            type="button"
+            className={workspacePrimaryButtonClass}
+            disabled={teacherAliasActionLocked}
+            onClick={openTeacherAliasCreate}
+          >
             <PlusCircle className="h-4 w-4" />
             添加
           </button>
@@ -5657,13 +5682,18 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                       </td>
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{entry.aliases.slice(1).join('、') || '—'}</td>
                       <td className="px-5 py-3 text-right">
-                        <button type="button" className="mr-2 text-sky-600 hover:text-sky-500 dark:text-sky-400" onClick={() => openTeacherAliasEdit(entry)}>
+                        <button
+                          type="button"
+                          className="mr-2 text-sky-600 hover:text-sky-500 disabled:opacity-40 dark:text-sky-400"
+                          disabled={teacherAliasActionLocked}
+                          onClick={() => openTeacherAliasEdit(entry)}
+                        >
                           <Pencil className="inline h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
                           className="text-red-500 hover:text-red-400 disabled:opacity-40"
-                          disabled={taDeletingId === entry.wecom_userid}
+                          disabled={teacherAliasActionLocked || taDeletingId === entry.wecom_userid}
                           onClick={() => handleTeacherAliasDelete(entry.wecom_userid)}
                         >
                           <Trash2 className="inline h-3.5 w-3.5" />
@@ -6357,8 +6387,8 @@ const ClassManagementPage = ({
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
   const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
-  const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
-  const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
+  const pageRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
+  const assignmentRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
   const canManageClassTeachers = hasStaffAccess(currentUser.role);
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
@@ -6899,7 +6929,7 @@ const ClassManagementPage = ({
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => loadPage(expandedClassId).catch(() => undefined)}
+              onClick={() => loadPage(expandedClassId, { preserveStateOnError: true }).catch(() => undefined)}
               disabled={pageRefreshLocked}
               className={workspaceSecondaryButtonClass}
             >
@@ -7274,7 +7304,7 @@ const ClassManagementPage = ({
                           </div>
                           <button
                             type="button"
-                            onClick={() => loadPage(editingClass.id).catch(() => undefined)}
+                            onClick={() => loadPage(editingClass.id, { preserveStateOnError: true }).catch(() => undefined)}
                             disabled={assignmentRefreshLocked}
                             className={workspaceSecondaryButtonClass}
                           >

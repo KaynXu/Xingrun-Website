@@ -149,7 +149,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Existing account-card and class-management tests already assert several interaction locks."
     },
     {
