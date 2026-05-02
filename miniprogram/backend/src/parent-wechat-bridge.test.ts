@@ -39,6 +39,21 @@ function createJsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function createParentUploadForm() {
+  const formData = new FormData();
+  formData.set('openId', 'openid-parent-1');
+  formData.set('bindingId', '21');
+  formData.set('file', new Blob(['mock-image']), 'wrong-question.txt');
+  return formData;
+}
+
+function trackUploadedFileFromImageUrl(uploadedFiles: string[], imageUrl: unknown) {
+  const fileName = String(imageUrl || '').split('/files/')[1] || '';
+  if (fileName) {
+    uploadedFiles.push(fileName);
+  }
+}
+
 test('parent login and binding bridge forward canonical payloads to the website', async (t) => {
   const originalFetch = globalThis.fetch;
   const websiteCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -395,6 +410,271 @@ test('parent upload bridge allows image-only submissions for server-side recogni
     assert.equal((await response.json()).task.id, 9002);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('parent upload bridge preserves website accepted task payloads with optional fields missing', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const uploadedFiles: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      trackUploadedFileFromImageUrl(uploadedFiles, body.image_url);
+      return createJsonResponse({
+        task: {
+          id: 9101,
+          status: 'pending',
+        },
+        retryable: false,
+      }, 202);
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: createParentUploadForm(),
+    });
+
+    assert.equal(response.status, 202);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      task: {
+        id: 9101,
+        status: 'pending',
+      },
+      retryable: false,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const fileName of uploadedFiles) {
+      fs.rmSync(path.join(UPLOADS_DIR, fileName), { force: true });
+    }
+  }
+});
+
+test('parent upload bridge maps website validation failures without losing structured fields', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const uploadedFiles: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      trackUploadedFileFromImageUrl(uploadedFiles, body.image_url);
+      return createJsonResponse({
+        error: '绑定关系已失效，请重新绑定孩子',
+        retryable: false,
+        task: {
+          id: 9102,
+          status: 'failed',
+          error_message: 'binding inactive',
+        },
+      }, 400);
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: createParentUploadForm(),
+    });
+
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.equal(payload.error, '绑定关系已失效，请重新绑定孩子');
+    assert.equal(payload.retryable, false);
+    assert.equal(payload.task.id, 9102);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const fileName of uploadedFiles) {
+      fs.rmSync(path.join(UPLOADS_DIR, fileName), { force: true });
+    }
+  }
+});
+
+test('parent upload bridge maps website payload-too-large failures as final', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const uploadedFiles: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      trackUploadedFileFromImageUrl(uploadedFiles, body.image_url);
+      return createJsonResponse({
+        error: '题图文件太大，请缩小框选范围后重试',
+        retryable: false,
+      }, 413);
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: createParentUploadForm(),
+    });
+
+    assert.equal(response.status, 413);
+    const payload = await response.json();
+    assert.equal(payload.error, '题图文件太大，请缩小框选范围后重试');
+    assert.equal(payload.retryable, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const fileName of uploadedFiles) {
+      fs.rmSync(path.join(UPLOADS_DIR, fileName), { force: true });
+    }
+  }
+});
+
+test('parent upload bridge maps website enqueue failures as retryable', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const uploadedFiles: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      trackUploadedFileFromImageUrl(uploadedFiles, body.image_url);
+      return createJsonResponse({
+        error: '上传任务暂时无法入队，请稍后重试',
+        retryable: true,
+        task: {
+          id: 9104,
+          status: 'failed',
+          error_message: 'queue unavailable',
+        },
+      }, 502);
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: createParentUploadForm(),
+    });
+
+    assert.equal(response.status, 502);
+    const payload = await response.json();
+    assert.equal(payload.error, '上传任务暂时无法入队，请稍后重试');
+    assert.equal(payload.retryable, true);
+    assert.equal(payload.task.id, 9104);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const fileName of uploadedFiles) {
+      fs.rmSync(path.join(UPLOADS_DIR, fileName), { force: true });
+    }
+  }
+});
+
+test('parent upload bridge maps website timeout as retryable gateway timeout', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const uploadedFiles: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      trackUploadedFileFromImageUrl(uploadedFiles, body.image_url);
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: createParentUploadForm(),
+    });
+
+    assert.equal(response.status, 504);
+    const payload = await response.json();
+    assert.equal(payload.error, '网站上传接口超时，请稍后重试');
+    assert.equal(payload.retryable, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const fileName of uploadedFiles) {
+      fs.rmSync(path.join(UPLOADS_DIR, fileName), { force: true });
+    }
+  }
+});
+
+test('parent upload bridge maps malformed website acceptance responses as retryable upstream failures', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const uploadedFiles: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === 'https://website.example/api/wechat/wrong-questions') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      trackUploadedFileFromImageUrl(uploadedFiles, body.image_url);
+      return new Response('not json', {
+        status: 202,
+        headers: {
+          'content-type': 'text/plain',
+        },
+      });
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/wrong-questions`, {
+      method: 'POST',
+      body: createParentUploadForm(),
+    });
+
+    assert.equal(response.status, 502);
+    const payload = await response.json();
+    assert.equal(payload.error, '网站上传接口返回异常，请稍后重试');
+    assert.equal(payload.retryable, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const fileName of uploadedFiles) {
+      fs.rmSync(path.join(UPLOADS_DIR, fileName), { force: true });
+    }
   }
 });
 

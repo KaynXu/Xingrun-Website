@@ -141,8 +141,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 7,
-      "passes": false,
-      "notes": "This story focuses on the miniprogram/backend bridge layer."
+      "passes": true,
+      "notes": "Completed: bridge upload proxy tests cover website 202 acceptance with optional fields missing, 400 validation failure, 413 payload too large, 502 retryable enqueue failure, timeout, and malformed acceptance response. The upload route now preserves website task payloads and retryable flags, maps website status codes instead of collapsing them to 500, and parentApi keeps structured error metadata for parent-facing handling."
     },
     {
       "id": "MP-UPLOAD-008",

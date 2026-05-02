@@ -18,6 +18,7 @@ import {
   submitWechatWrongQuestionToWebsite,
   transcribeParentReasonOnWebsite,
   updateWrongQuestionTopicCategoryOnWebsite,
+  WebsiteRequestError,
 } from './website-client.js';
 import { exchangeCodeForOpenId } from './wechat.js';
 
@@ -51,6 +52,32 @@ function getBaseUrl(host?: string | null) {
   if (BASE_URL) return BASE_URL;
   if (host) return `http://${host}`;
   return `http://localhost:${PORT}`;
+}
+
+function isWebsiteRequestError(error: unknown): error is WebsiteRequestError {
+  return error instanceof WebsiteRequestError || Boolean(
+    error
+    && typeof error === 'object'
+    && (error as { name?: unknown }).name === 'WebsiteRequestError'
+    && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+    && typeof (error as { retryable?: unknown }).retryable === 'boolean',
+  );
+}
+
+function sendWebsiteUploadProxyError(res: express.Response, error: unknown) {
+  if (isWebsiteRequestError(error)) {
+    const body = { ...error.payload };
+    if (typeof body.error !== 'string' || !body.error.trim()) {
+      body.error = error.message;
+    }
+    body.retryable = error.retryable;
+    res.status(error.statusCode).json(body);
+    return;
+  }
+
+  res.status(500).json({
+    error: error instanceof Error ? error.message : String(error),
+  });
 }
 
 async function resolveParentOpenId(payload: Record<string, unknown> | undefined) {
@@ -261,9 +288,7 @@ export function createApp() {
       });
       res.status(202).json(payload);
     } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : String(error),
-      });
+      sendWebsiteUploadProxyError(res, error);
     }
   });
 

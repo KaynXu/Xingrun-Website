@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-006` 已完成，下一条是 `MP-UPLOAD-007 Harden bridge upload proxy error mapping`。
+- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-007` 已完成，下一条是 `MP-UPLOAD-008 Harden website upload task API and enqueue semantics`。
+- 2026-05-03 `MP-UPLOAD-007` 已完成：bridge 上传代理现在保留网站 `202` 接收任务 payload，即使缺少可选 task 字段也不本地判失败；网站 `400/413/502/timeout/malformed response` 会映射为结构化 bridge 响应并保留 `retryable` 和任务信息；小程序 `parentApi` 的错误对象会保留 bridge 返回的 `task/payload` 元数据。
 - 2026-05-03 `MP-UPLOAD-006` 已完成：`parentApi` 的语音上传、压缩后题图任务提交和任务状态刷新现在分别使用更短的专用超时；压缩后题图仍触发 `413` 时会提示草稿已保留并要求缩小框选/重拍，5xx、网络失败和超时会提示可重新点“统一提交所有错题”重试；页面失败后保留原草稿，重试收到任务后才清空。
 - 2026-05-03 `MP-UPLOAD-005` 已完成：家长上传页手动框选现在覆盖大竖图/大横图、旋转图、小题框、切换图片、删除当前框、多个题框导出和裁切失败；裁切失败会标明第几题且不清空草稿，旋转/裁切失败/删除后保持当前图片和题框选择稳定，裁切或旋转导出期间会锁住手势和重复提交，`1280 x 1792 / quality 0.82` 导出上限仍有回归覆盖。
 - 2026-05-03 `MP-UPLOAD-004` 已完成：家长上传页会把已接收 task id 按 `openId + bindingId` 持久化到本机恢复记录，附带孩子和图片/题框元数据；页面重开后只恢复轮询任务状态，不重新上传裁切图，ready/failed 终态会从恢复记录清掉，损坏或不可读 storage 会显示可恢复提示。
@@ -170,7 +171,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 若要继续小程序上传 2.0 稳定性 Ralph，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check` 确认下一条 story，然后运行 `scripts/ralph/run_codex_ralph.sh`；当前下一条应为 `MP-UPLOAD-007`。
+- 若要继续小程序上传 2.0 稳定性 Ralph，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check` 确认下一条 story，然后运行 `scripts/ralph/run_codex_ralph.sh`；当前下一条应为 `MP-UPLOAD-008`。
 - 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
@@ -325,8 +326,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`ralph/website-frontend-stability`
-- 当前仍有用户未跟踪文件 `Note May 1, 2026.pdf`；不要纳入小程序稳定性提交。
+- 当前分支：`develop`
 - `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
 - 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。

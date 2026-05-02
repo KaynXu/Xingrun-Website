@@ -391,6 +391,43 @@ test('submitParentWrongQuestion maps transient server failures to a retryable dr
   );
 });
 
+test('submitParentWrongQuestion preserves structured bridge error metadata', async () => {
+  const wxApi = {
+    uploadFile({ success }) {
+      success({
+        statusCode: 400,
+        data: JSON.stringify({
+          error: '绑定关系已失效，请重新绑定孩子',
+          retryable: false,
+          task: {
+            id: 9102,
+            status: 'failed',
+          },
+        }),
+      });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => submitParentWrongQuestion(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      bindingId: 21,
+      filePath: '/tmp/crop.jpg',
+    }),
+    (error) => {
+      assert.equal(error.message, '绑定关系已失效，请重新绑定孩子');
+      assert.equal(error.statusCode, 400);
+      assert.equal(error.retryable, false);
+      assert.equal(error.task.id, 9102);
+      return true;
+    },
+  );
+});
+
 test('submitParentWrongQuestion maps network failures to a retryable draft-preserving message', async () => {
   const wxApi = {
     uploadFile({ fail }) {

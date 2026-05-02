@@ -64,27 +64,46 @@ function createParentApiError(message, metadata) {
   if (source.retryable !== undefined) {
     error.retryable = Boolean(source.retryable);
   }
+  if (source.task !== undefined) {
+    error.task = source.task;
+  }
+  if (source.payload !== undefined) {
+    error.payload = source.payload;
+  }
   return error;
 }
 
 function buildHttpError(response, fallbackMessage, messages) {
   const statusCode = Number((response && response.statusCode) || 0);
+  const payload = response && response.data && typeof response.data === 'object'
+    ? response.data
+    : {};
+  const payloadRetryable = typeof payload.retryable === 'boolean'
+    ? payload.retryable
+    : undefined;
+  const metadata = {
+    statusCode,
+    retryable: payloadRetryable !== undefined ? payloadRetryable : statusCode >= 500,
+    payload,
+  };
+  if (payload.task !== undefined) {
+    metadata.task = payload.task;
+  }
   const source = messages && typeof messages === 'object' ? messages : {};
   if (statusCode === 413 && source.oversizeMessage) {
     return createParentApiError(source.oversizeMessage, {
-      statusCode,
+      ...metadata,
       retryable: false,
     });
   }
   if (statusCode >= 500 && source.serverRetryMessage) {
     return createParentApiError(source.serverRetryMessage, {
-      statusCode,
-      retryable: true,
+      ...metadata,
+      retryable: metadata.retryable,
     });
   }
   return createParentApiError(extractRequestErrorMessage(response, fallbackMessage), {
-    statusCode,
-    retryable: statusCode >= 500,
+    ...metadata,
   });
 }
 
