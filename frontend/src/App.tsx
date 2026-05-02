@@ -2455,6 +2455,19 @@ const ClassFeedbackGenerationPage = ({
     [classFeedbackPeriodYear],
   );
 
+  const resetClassFeedbackWorkspaceState = useCallback((statusMessage = '先选择班级和反馈阶段，再汇总阶段素材。') => {
+    setActiveClassFeedbackTaskId(null);
+    setCurrentTaskStatus('draft');
+    setTeacherNameLabel(currentUser.display_name);
+    setClassFeedbackSummary('');
+    setClassFeedbackStatusTags([]);
+    setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
+    setClassFeedbackStudents([]);
+    setMatchedLessonCount(0);
+    classFeedbackDraftSnapshotRef.current = '';
+    setClassFeedbackStatusMessage(statusMessage);
+  }, [currentUser.display_name]);
+
   const loadRosterOnly = useCallback(async (classId: number) => {
     const roster = await listClassStudents(classId);
     setClassFeedbackStudents(createEmptyClassFeedbackStudentCards(roster.students));
@@ -2534,8 +2547,19 @@ const ClassFeedbackGenerationPage = ({
       return;
     }
 
-    setSelectedClassId((current) => syncMemberScopedClassSelection(currentUser.role, classes, current));
-  }, [classes, classesLoading, currentUser.role]);
+    const nextClassId = syncMemberScopedClassSelection(currentUser.role, classes, selectedClassId);
+    if (nextClassId === selectedClassId) {
+      return;
+    }
+
+    resetClassFeedbackWorkspaceState('班级权限已变化，请重新同步反馈任务。');
+    setTeacherNameLabel(
+      nextClassId
+        ? classes.find((item) => item.id === nextClassId)?.teacher_name || currentUser.display_name
+        : currentUser.display_name,
+    );
+    setSelectedClassId(nextClassId);
+  }, [classes, classesLoading, currentUser.display_name, currentUser.role, resetClassFeedbackWorkspaceState, selectedClassId]);
 
   useEffect(() => {
     if (classesLoading || currentUser.role === 'member' || selectedClassId === null) {
@@ -2546,8 +2570,9 @@ const ClassFeedbackGenerationPage = ({
       return;
     }
 
+    resetClassFeedbackWorkspaceState('班级权限已变化，请重新同步反馈任务。');
     setSelectedClassId(null);
-  }, [classes, classesLoading, currentUser.role, selectedClassId]);
+  }, [classes, classesLoading, currentUser.role, resetClassFeedbackWorkspaceState, selectedClassId]);
 
   useEffect(() => {
     if (!selectedClassId) {
@@ -2582,18 +2607,10 @@ const ClassFeedbackGenerationPage = ({
 
   const handleClassChange = async (nextClassId: number | null) => {
     setSelectedClassId(nextClassId);
-    setActiveClassFeedbackTaskId(null);
-    setCurrentTaskStatus('draft');
+    resetClassFeedbackWorkspaceState();
     setTeacherNameLabel(nextClassId ? classes.find((item) => item.id === nextClassId)?.teacher_name || currentUser.display_name : currentUser.display_name);
-    setClassFeedbackSummary('');
-    setClassFeedbackStatusTags([]);
-    setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
-    classFeedbackDraftSnapshotRef.current = '';
-    setMatchedLessonCount(0);
 
     if (!nextClassId) {
-      setClassFeedbackStudents([]);
-      setClassFeedbackStatusMessage('先选择班级和反馈阶段，再汇总阶段素材。');
       return;
     }
 

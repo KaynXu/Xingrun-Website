@@ -17,6 +17,14 @@ import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorks
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const workspaceSource = readFileSync(new URL('./ClassFeedbackGenerationWorkspace.tsx', import.meta.url), 'utf8');
 
+function sourceBetween(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing start marker: ${startMarker}`);
+  const end = source.indexOf(endMarker, start);
+  assert.notEqual(end, -1, `missing end marker: ${endMarker}`);
+  return source.slice(start, end);
+}
+
 test('defaultStageLabelGroups exposes the built-in grouped labels', () => {
   assert.equal(defaultStageLabelGroups.length, 4);
   assert.equal(defaultStageLabelGroups[0]?.group, '课堂状态');
@@ -356,7 +364,70 @@ test('App source anchors class feedback period preview to the top-right and task
 });
 
 test('App source synchronizes class feedback member selection against accessible classes', () => {
+  const memberSelectionEffect = sourceBetween(
+    appSource,
+    "if (classesLoading || currentUser.role !== 'member')",
+    "if (classesLoading || currentUser.role === 'member' || selectedClassId === null)",
+  );
+  const staffSelectionEffect = sourceBetween(
+    appSource,
+    "if (classesLoading || currentUser.role === 'member' || selectedClassId === null)",
+    "if (!selectedClassId) {",
+  );
+
   assert.match(appSource, /function syncMemberScopedClassSelection\(/);
-  assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classItems, current\)\);/);
-  assert.match(appSource, /setSelectedClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
+  assert.match(appSource, /const resetClassFeedbackWorkspaceState = useCallback\(/);
+  assert.match(appSource, /resetClassFeedbackWorkspaceState\('班级权限已变化，请重新同步反馈任务。'\);/);
+  assert.match(appSource, /setActiveClassFeedbackTaskId\(null\);/);
+  assert.match(appSource, /setClassFeedbackSummary\(''\);/);
+  assert.match(appSource, /setClassFeedbackStudents\(\[\]\);/);
+  assert.match(memberSelectionEffect, /const nextClassId = syncMemberScopedClassSelection\(currentUser\.role, classes, selectedClassId\);/);
+  assert.match(memberSelectionEffect, /if \(nextClassId === selectedClassId\)/);
+  assert.match(memberSelectionEffect, /resetClassFeedbackWorkspaceState\('班级权限已变化，请重新同步反馈任务。'\);/);
+  assert.match(memberSelectionEffect, /setSelectedClassId\(nextClassId\);/);
+  assert.match(staffSelectionEffect, /resetClassFeedbackWorkspaceState\('班级权限已变化，请重新同步反馈任务。'\);/);
+  assert.match(staffSelectionEffect, /setSelectedClassId\(null\);/);
+});
+
+test('App source clears class feedback busy states and preserves drafts after failed actions', () => {
+  const saveHandler = sourceBetween(
+    appSource,
+    'const saveCurrentClassFeedbackDraft = useCallback(async () => {',
+    'useEffect(() => {',
+  );
+  const generateHandler = sourceBetween(
+    appSource,
+    'const handleGenerateClassFeedback = useCallback(async () => {',
+    'const handleCopyClassFeedbackSummary = async () => {',
+  );
+  const confirmHandler = sourceBetween(
+    appSource,
+    'const handleConfirmClassFeedback = useCallback(async () => {',
+    'const checkedStudentCount = useMemo(',
+  );
+  const failureHandlers = [
+    {
+      source: saveHandler,
+      busySetter: /setIsSavingClassFeedback\(false\);/,
+      fallback: /'保存课堂反馈草稿失败，请重试。'/,
+    },
+    {
+      source: generateHandler,
+      busySetter: /setIsGeneratingClassFeedback\(false\);/,
+      fallback: /'生成课堂反馈失败，请重试。'/,
+    },
+    {
+      source: confirmHandler,
+      busySetter: /setIsConfirmingClassFeedback\(false\);/,
+      fallback: /'确认课堂反馈失败，请重试。'/,
+    },
+  ];
+
+  for (const handler of failureHandlers) {
+    assert.match(handler.source, /catch \(error\) \{/);
+    assert.match(handler.source, handler.fallback);
+    assert.match(handler.source, /finally \{/);
+    assert.match(handler.source, handler.busySetter);
+    assert.doesNotMatch(handler.source, /catch \(error\) \{[\s\S]*(setClassFeedbackSummary\(''\)|setClassFeedbackStudents\(\[\]\)|classFeedbackDraftSnapshotRef\.current = '')/);
+  }
 });

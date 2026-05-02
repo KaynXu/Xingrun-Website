@@ -119,7 +119,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Start from class-feedback-generation.test.tsx and ClassFeedbackGenerationWorkspace.tsx."
     },
     {
