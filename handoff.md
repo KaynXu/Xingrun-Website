@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-03 网站前端稳定性 Ralph 分支已合入 `develop`：`scripts/ralph/prd.json` 里 `FE-STAB-001` 到 `FE-STAB-012` 均为 `passes=true`，`scripts/ralph/run_codex_ralph.sh --check` 显示 `Remaining stories: 0` 和 `<promise>COMPLETE</promise>`。本轮覆盖启动/auth 存储、课程日历失败恢复、工作区权限 fallback、智能错题/PDF、课堂反馈、异步轮询、账号/班级表单锁、移动滚动、数学渲染和前端 stale-code guard；合并前 Ralph 分支 proof 已通过 226 条前端测试、frontend production build 和 `git diff --check`。
+- 2026-05-03 当前活跃 Ralph 已切换为“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 现在包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 已完成 proof runner，下一条是 `MP-UPLOAD-002 Add explicit parent upload stage feedback`。
+- 2026-05-03 已完成的网站前端稳定性 Ralph PRD 已归档到 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，对应进度归档到 `scripts/ralph/archive/website_frontend_stability_progress_20260503.txt`；该批覆盖启动/auth 存储、课程日历失败恢复、工作区权限 fallback、智能错题/PDF、课堂反馈、异步轮询、账号/班级表单锁、移动滚动、数学渲染和前端 stale-code guard。
 - 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
 - 2026-05-01 已修复小程序家长上传页手动题框最小尺寸过大问题：旧逻辑在拖拽缩放时强制 `72px` 下限、保存时又强制 `0.08` 归一化宽高，整页照片缩到手机预览区后会让小题框无法继续缩小。现在题框手势和保存归一化统一走小程序模型 helper，最低可缩到 `16px` 预览尺寸，旋转后也不会把窄题框重新放大到 8%。本地新增回归覆盖小题框缩放、保存和旋转；仍需微信开发者工具或真机手工 smoke 一次小题/窄题框。
 - 2026-05-01 已手动补跑生产“七年级5班”历史失败错题任务 `157/164/171/177/178`：执行前备份生产库 `data/xingrun.db.backup-before-g7c5-rerun-20260501-230224`，其中 `157/164/171/177` 用当前修复后的识别链路原地恢复为 `ready/recognized`；`178` 当前 AI 审稿认为原图含坐标系图象、不适合纯文本转写，已按系统现有几何/配图题逻辑原地恢复为 `is_geometry=1`、保留原图入库，执行前另备份 `data/xingrun.db.backup-before-g7c5-task178-image-preserve-20260501-231129`。最终统一刷新 PDF 前再备份 `data/xingrun.db.backup-before-g7c5-final-pdf-refresh-20260501-231232`，并重建学生 `76/77/78/79` 错题库 PDF。最终 proof 显示 5 个目标 task 均 `ready`、对应记录均 `recognized`、目标任务无剩余 non-ready，王睿博/毛裕宁/邹欣彤/李奕萱对应学生记录失败数均为 0，PDF 均存在且非空。
@@ -166,8 +167,8 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 若要检查网站前端稳定性 Ralph 状态，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check`；当前 PRD 已无剩余 story，不要在未新增 story 前继续自动循环。
-- 如果继续按 Ralph 模式处理网站前端稳定性，当前 `scripts/ralph/prd.json` 已无 `passes=false` story；下一轮需要先补新 PRD 或新 story，再按一轮一个 story 执行。
+- 若要继续小程序上传 2.0 稳定性 Ralph，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check` 确认下一条 story，然后运行 `scripts/ralph/run_codex_ralph.sh`；当前下一条应为 `MP-UPLOAD-002`。
+- 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf` 全文扫一遍，重点核对外接球通法、墙角模型、对棱相等模型、正棱台方程、圆锥/正三棱锥类比和取值范围题里的变量设法；如果老师希望把“例题 2 / 例题 3”展开成具体题目，需要回到 `lesson_pack_circumsphere_models_quote20.py` 增补题面细节。
