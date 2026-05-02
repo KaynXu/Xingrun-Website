@@ -61,8 +61,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "This story attacks the parent-visible 'turning/spinning' complaint first."
+      "passes": true,
+      "notes": "Completed: parent upload now exposes crop/audio/image/acceptance/recognition/background/ready/partial-failure/failed stages with deterministic page tests and disables draft-mutating controls while submitting."
     },
     {
       "id": "MP-UPLOAD-003",

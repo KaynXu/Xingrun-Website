@@ -33,6 +33,9 @@ Page({
     currentStatusText: '',
     displayBoxes: [],
     submitting: false,
+    uploadStage: '',
+    uploadStageTitle: '',
+    uploadStageText: '',
     successTaskIds: [],
     uploadTaskSummary: null,
     errorMessage: '',
@@ -146,6 +149,36 @@ Page({
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
+  },
+
+  setUploadStage(uploadStage, uploadStageText, uploadStageTitle) {
+    this.setData({
+      uploadStage,
+      uploadStageText,
+      uploadStageTitle: uploadStageTitle || '上传进度',
+    });
+  },
+
+  setUploadStageFromSummary(summary) {
+    const currentSummary = summary || {};
+    const state = String(currentSummary.state || 'pending');
+    if (state === 'ready') {
+      this.setUploadStage('ready', '识别完成，错题本已更新。', currentSummary.title || '识别完成');
+      return;
+    }
+    if (state === 'background') {
+      this.setUploadStage('background', currentSummary.description || '服务器会在后台继续识别，稍后可回错题本查看。', currentSummary.title || '后台继续识别');
+      return;
+    }
+    if (state === 'partial_failed') {
+      this.setUploadStage('partial_failed', `${currentSummary.title || '部分识别失败'}：${currentSummary.description || '部分题目识别失败，其他题目仍保留。'}`, currentSummary.title || '部分识别失败');
+      return;
+    }
+    if (state === 'failed') {
+      this.setUploadStage('failed', `${currentSummary.title || '识别失败'}：${currentSummary.description || '请重新拍清楚一点。'}`, currentSummary.title || '识别失败');
+      return;
+    }
+    this.setUploadStage('recognizing', `服务器正在识别错题，${currentSummary.description || '完成后会进入错题本。'}`, currentSummary.title || '正在识别');
   },
 
   getCurrentImageFrom(imageItems, selectedImageId) {
@@ -853,20 +886,25 @@ Page({
       app.globalData.parentSession = session;
 
       for (currentJob of jobs) {
+        const jobIndex = successTaskIds.length + 1;
+        const jobLabel = `第 ${jobIndex}/${jobs.length} 题`;
         imageItem = this.data.imageItems.find((item) => item.id === currentJob.imageId);
         if (!imageItem) {
           continue;
         }
+        this.setUploadStage('preparing_crop', `正在裁切${jobLabel}，请勿退出页面。`, '正在准备题图');
         croppedPath = await this.exportBoxCrop(imageItem, currentJob.box);
         childReasonAudioUrl = '';
 
         if (currentJob.childReasonInputMode === 'voice') {
+          this.setUploadStage('uploading_audio', `正在上传${jobLabel}的语音说明。`, '正在上传语音');
           audioPayload = await uploadParentReasonAudio(wx, app.globalData.serverUrl, {
             filePath: currentJob.voiceFilePath,
           });
           childReasonAudioUrl = String(audioPayload.audioUrl || '').trim();
         }
 
+        this.setUploadStage('uploading_image', `正在上传${jobLabel}题图并提交识别任务。`, '正在上传题图');
         payload = await submitParentWrongQuestion(wx, app.globalData.serverUrl, {
           openId: session.openId,
           bindingId: this.data.binding.id,
@@ -876,7 +914,9 @@ Page({
           childReasonAudioUrl,
           topicCategory: currentJob.topicCategory,
         });
-        successTaskIds.push((payload.task && payload.task.id) || '');
+        const taskId = (payload.task && payload.task.id) || '';
+        successTaskIds.push(taskId);
+        this.setUploadStage('task_accepted', `${jobLabel}已接收${taskId ? `，任务 ${taskId}` : ''}。`, '任务已接收');
       }
 
       this.setData({
@@ -897,14 +937,17 @@ Page({
         successTaskIds,
         uploadTaskSummary,
       });
+      const hasFailedTasks = uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed';
       wx.showToast({
-        title: uploadTaskSummary.state === 'failed' ? '识别失败' : '已提交',
-        icon: uploadTaskSummary.state === 'failed' ? 'none' : 'success',
+        title: hasFailedTasks ? uploadTaskSummary.title : '已提交',
+        icon: hasFailedTasks ? 'none' : 'success',
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '上传失败';
       this.setData({
-        errorMessage: error instanceof Error ? error.message : '上传失败',
+        errorMessage,
       });
+      this.setUploadStage('failed', `上传中断：${errorMessage}`, '上传失败');
     } finally {
       this.setData({ submitting: false });
     }
@@ -921,6 +964,7 @@ Page({
     let tasks = ids.map((id) => ({ id, status: 'pending' }));
     let summary = buildUploadTaskSummary(tasks);
     this.setData({ uploadTaskSummary: summary });
+    this.setUploadStageFromSummary(summary);
 
     for (let attempt = 0; attempt < TASK_POLL_MAX_ATTEMPTS; attempt += 1) {
       tasks = await Promise.all(ids.map(async (taskId) => {
@@ -932,13 +976,17 @@ Page({
       }));
       summary = buildUploadTaskSummary(tasks);
       this.setData({ uploadTaskSummary: summary });
+      this.setUploadStageFromSummary(summary);
 
-      if (summary.state === 'ready' || summary.state === 'failed') {
+      if (summary.state === 'ready' || summary.state === 'failed' || summary.state === 'partial_failed') {
         return summary;
       }
       await this.waitForUploadTaskPoll();
     }
 
+    summary = buildUploadTaskSummary(tasks, { background: true });
+    this.setData({ uploadTaskSummary: summary });
+    this.setUploadStageFromSummary(summary);
     return summary;
   },
 

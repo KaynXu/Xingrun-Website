@@ -18,5 +18,5 @@ Baseline proof for every completed story:
 Status:
 - Archived the completed website frontend stability Ralph PRD and progress log under scripts/ralph/archive/.
 - MP-UPLOAD-001 passes: added scripts/ralph/miniprogram_upload_stability_proof.sh as the shared mini program upload stability baseline proof runner.
-- Next story: MP-UPLOAD-002 Add explicit parent upload stage feedback.
-
+- MP-UPLOAD-002 passes: parent upload now shows explicit stages for crop export, optional audio upload, image upload/task acceptance, recognition polling, background processing, ready, partial failure, and failed states. Draft-mutating upload controls are disabled only while submitting and release after failure/completion. Baseline proof is still scripts/ralph/miniprogram_upload_stability_proof.sh.
+- Next story: MP-UPLOAD-003 Make upload task polling resilient.

@@ -113,19 +113,51 @@ test('buildUploadJobs falls back to text mode when a voice box has no recording 
   assert.equal(jobs[0].voiceFilePath, '');
 });
 
-test('buildUploadTaskSummary reports failed task messages before success', () => {
+test('buildUploadTaskSummary reports partial failure when some accepted tasks succeed', () => {
   const summary = buildUploadTaskSummary([
     { id: 1, status: 'ready' },
     { id: 2, status: 'failed', error_message: '题目识别失败，请重新拍清楚一点' },
   ]);
 
   assert.deepEqual(summary, {
-    state: 'failed',
-    title: '识别失败',
+    state: 'partial_failed',
+    title: '部分识别失败',
     description: '1 条识别失败：题目识别失败，请重新拍清楚一点',
     readyCount: 1,
     failedCount: 1,
     pendingCount: 0,
+  });
+});
+
+test('buildUploadTaskSummary reports failed when every accepted task fails', () => {
+  const summary = buildUploadTaskSummary([
+    { id: 1, status: 'failed', error_message: '题图太模糊' },
+    { id: 2, status: 'failed', error_message: '题图太模糊' },
+  ]);
+
+  assert.deepEqual(summary, {
+    state: 'failed',
+    title: '识别失败',
+    description: '2 条识别失败：题图太模糊',
+    readyCount: 0,
+    failedCount: 2,
+    pendingCount: 0,
+  });
+});
+
+test('buildUploadTaskSummary reports background processing after the polling window ends', () => {
+  const summary = buildUploadTaskSummary([
+    { id: 1, status: 'ready' },
+    { id: 2, status: 'processing' },
+  ], { background: true });
+
+  assert.deepEqual(summary, {
+    state: 'background',
+    title: '后台继续识别',
+    description: '已完成 1 条，还有 1 条在后台继续识别，稍后可回错题本查看。',
+    readyCount: 1,
+    failedCount: 0,
+    pendingCount: 1,
   });
 });
 

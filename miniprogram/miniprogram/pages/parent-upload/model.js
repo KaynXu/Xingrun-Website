@@ -230,7 +230,7 @@ function buildUploadJobs(imageItems) {
   }, []);
 }
 
-function buildUploadTaskSummary(tasks) {
+function buildUploadTaskSummary(tasks, options) {
   const list = Array.isArray(tasks) ? tasks : [];
   const readyCount = list.filter((task) => String(task.status || '') === 'ready').length;
   const failedTasks = list.filter((task) => String(task.status || '') === 'failed');
@@ -239,10 +239,22 @@ function buildUploadTaskSummary(tasks) {
 
   if (failedCount) {
     const message = String(failedTasks[0].error_message || failedTasks[0].errorMessage || '请重新拍清楚一点').trim();
+    const hasAcceptedItems = readyCount > 0 || pendingCount > 0;
     return {
-      state: 'failed',
-      title: '识别失败',
+      state: hasAcceptedItems ? 'partial_failed' : 'failed',
+      title: hasAcceptedItems ? '部分识别失败' : '识别失败',
       description: `${failedCount} 条识别失败：${message}`,
+      readyCount,
+      failedCount,
+      pendingCount,
+    };
+  }
+
+  if (options && options.background && pendingCount) {
+    return {
+      state: 'background',
+      title: '后台继续识别',
+      description: `已完成 ${readyCount} 条，还有 ${pendingCount} 条在后台继续识别，稍后可回错题本查看。`,
       readyCount,
       failedCount,
       pendingCount,

@@ -22,6 +22,7 @@ cd "$ROOT_DIR"
 
 run node --test \
   miniprogram/miniprogram/pages/parent-upload/model.test.js \
+  miniprogram/miniprogram/pages/parent-upload/index.test.js \
   miniprogram/miniprogram/pages/parent-wrongbook/latex-preview.test.js \
   miniprogram/miniprogram/parent-only-scope.test.js \
   miniprogram/miniprogram/utils/parentApi.test.js
