@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-01
+最后更新：2026-05-02
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
 - 2026-05-01 已定位并修复生产智能错题非几何题图片转 LaTeX 批量失败：根因是 `xingrun-rq-worker` 环境里 Node 检查脚本会先输出合法 JSON 后以 `exit code -6` 退出，后端此前直接按 returncode 判失败，导致所有非几何错题被误标为“题目识别质量检查未通过”。`ai_processor._collect_wrong_question_latex_render_issues()` 已改为优先解析合法 stdout，生产 `xingrun-rq-worker` 已重启并通过队列内诊断；已备份生产库 `data/xingrun.db.backup-before-luzheng-latex-fix-20260501`，并把四年级3班吕铮今天下午任务 `161/162` 原记录补成 `ready/recognized`，学生错题库 PDF 已重建到 `data/pdfs/wrong_question_libraries/student-35.pdf`。任务 `141` 仍保留失败，因为当前 AI 审稿认为原图混入手写答案/裁切不完整，需要老师看原图人工确认。
 - 2026-05-01 已按 `review_plan_templates/review-plan-workflow.md` 从企业微信缓存录音 `7634844093533506513_record_audio.m4a` 生成《角度单位换算、角度表达与基础角关系》课后复习计划：新增转写稿 `review_plan_templates/source_transcripts/7634844093533506513_record_audio_transcript.txt` 和课程包 `review_plan_templates/lesson_pack_angle_unit_relationships_20260501.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260501-193408.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_angle_review_plan_proof.sh` 已通过：课程包可 `py_compile`、转写稿 4159 字、PDF 14 页 165631 bytes，包含 `角度单位换算 / 度、分、秒 / 周角 / 平角 / 角AOB / 角平分线` 和 5 个复习日期 `2026-05-02 / 2026-05-03 / 2026-05-08 / 2026-05-15 / 2026-05-31`；并用 PyMuPDF 渲染抽查第 1/2/7/14 页，没有空白页。
 - 2026-05-01 已按 `review_plan_templates/review-plan-workflow.md` 读取录音转写稿 `review_plan_templates/source_transcripts/7631121683310742458_record_audio_transcript.txt`，复用已入库课程包 `review_plan_templates/lesson_pack_geometry_angle_similarity.py` 生成《几何基础模型、外角定理与全等相似课后复习计划》新版 PDF：`review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260501-190425.pdf`（PDF 输出目录按 `.gitignore` 不入库）。latest proof 已通过临时脚本 `/tmp/xingrun_review_plan_audio_763112_proof.sh`：PDF 存在且 15 页、包含主题关键词和 5 个复习日期 `2026-05-02 / 2026-05-03 / 2026-05-08 / 2026-05-15 / 2026-05-31`，并渲染抽查第 1/2/8/15 页非空，`git diff --check` 通过。
@@ -160,6 +161,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 最值得继续做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf` 全文扫一遍，确认三棱锥外接球例题、线面平行、线面垂直、面面垂直、围魏救赵和体积计算迁移这些口径符合老师原课。
 - GitHub push 仍待网络/权限恢复后补做：本机 `github.com:443` 当前连接超时，生产机 deploy key 可 fetch 但 push 报 read-only。当前本地 `develop/master` 和生产机 `master(a284f58)` 已包含 legacy uploads fallback，远端 `origin/develop/origin/master` 仍停在 `367cf98`。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-233701.pdf` 全文扫一遍，重点核对外接球通法、墙角模型、对棱相等模型、正棱台方程、圆锥/正三棱锥类比和取值范围题里的变量设法；如果老师希望把“例题 2 / 例题 3”展开成具体题目，需要回到 `lesson_pack_circumsphere_models_quote20.py` 增补题面细节。
 - 最值得先做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260425-223621.pdf` 全文扫一遍，确认自招考试定位、二项式定理、齐次换元、因式定理、轮换对称式和均值不等式这些口径符合老师原课；如果觉得课堂原话仍不够，可以继续在 `lesson_pack_admission_algebra_quote20.py` 增加每日 `quotes`，但要避免挤占主体练习。
@@ -210,6 +212,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 这份空间几何复习计划来自飞书智能纪要而非逐字人工校对转写；纪要中部分图形字母和题面关系可能有识别偏差。纪要给出的 5、7、8 底面外接圆半径写成 `√7/3`，与余弦定理、正弦定理和后续表面积结果不一致，本轮课程包按可校验计算改为 `7√3/3`。
 - 这份角度单位复习计划来自本地 `faster-whisper base` 对 62 分钟企业微信 Opus 录音的分段转写；原始转写噪声较重，已按稳定出现的“角度、度分秒、周角/平角、角名、角平分线、角关系表达”主线整理，正式发给学生前建议老师快速核对课堂原题字母、题面数据和单位换算例子。
 - 用户本轮点名的文件名为 `7633721706604170168_record_audio`，本地实际找到并处理的是 `7631121683310742458_record_audio.m4a` 及其同名前缀转写稿；若还有另一个 `763372...` 录音，需要补传或放到仓库后重新生成。当前几何复习计划基于已有 Whisper 转写稿整理，转写中有较多识别噪声，正式发给学生前建议老师快速核对外角、角平分线、凸凹型、全等相似对应点等课堂表述。
 - 智能错题练习 PDF 当前虽然已经在生产 `master(31747f5)` 上带着“浏览器子进程环境净化”修复上线，并通过了 PM2 环境复现 proof，但运行时依赖仍是服务器上的 `/snap/bin/chromium`。如果后续继续出现新的 Chromium 自身崩溃，优先考虑给生产机安装 Playwright 官方 Chromium 或继续收口渲染进程启动参数，而不是恢复已经按用户要求删除的 ReportLab fallback。
