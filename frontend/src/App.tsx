@@ -9169,6 +9169,7 @@ export default function App() {
   const [calendarCustomItems, setCalendarCustomItems] = useState<CourseCalendarCustomItemRecord[]>([]);
   const [calendarCustomSchedules, setCalendarCustomSchedules] = useState<CourseCalendarCustomScheduleRecord[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState('');
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getCurrentWeekTuesday(getTodayIsoDate()));
   const [calendarPageStepDays, setCalendarPageStepDays] = useState(6);
 
@@ -9307,6 +9308,7 @@ export default function App() {
       setCalendarCustomItems([]);
       setCalendarCustomSchedules([]);
       setCalendarLoading(false);
+      setCalendarError('');
       setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
       return;
     }
@@ -9317,6 +9319,7 @@ export default function App() {
 
     let cancelled = false;
     setCalendarLoading(true);
+    setCalendarError('');
 
     Promise.all([
       apiFetch<ClassItem[]>('/api/classes'),
@@ -9334,7 +9337,12 @@ export default function App() {
         setCalendarCustomSchedules(customSchedulePayload.items);
         setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
       })
-      .catch(console.error)
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) {
+          setCalendarError(error instanceof Error ? error.message : '课程日历加载失败，请刷新重试。');
+        }
+      })
       .finally(() => {
         if (!cancelled) {
           setCalendarLoading(false);
@@ -9434,7 +9442,12 @@ export default function App() {
           item,
         ]);
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '新增课程排期失败');
+        }
+      });
   };
 
   const handleDeleteCalendarSchedule = (scheduleId: number) => {
@@ -9444,7 +9457,12 @@ export default function App() {
       .then(() => {
         setCalendarSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '删除课程排期失败');
+        }
+      });
   };
 
   const handleCreateCalendarCustomItem = (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => {
@@ -9498,7 +9516,12 @@ export default function App() {
           item,
         ]);
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '新增自定义事项排期失败');
+        }
+      });
   };
 
   const handleDeleteCalendarCustomSchedule = (scheduleId: number) => {
@@ -9508,7 +9531,12 @@ export default function App() {
       .then(() => {
         setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '删除自定义事项排期失败');
+        }
+      });
   };
 
   const pageTitle: Record<Page, string> = {
@@ -9688,26 +9716,36 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    <CourseCalendarPage
-                      anchorDate={calendarAnchorDate}
-                      today={getTodayIsoDate()}
-                      currentUserId={currentUser.id}
-                      currentUserRole={currentUser.role}
-                      classes={calendarClasses}
-                      schedules={calendarSchedules}
-                      customItems={calendarCustomItems}
-                      customSchedules={calendarCustomSchedules}
-                      pageStepDays={calendarPageStepDays}
-                      onPageStepDaysChange={handleCalendarPageStepDaysChange}
-                      onPreviousPage={handlePreviousCalendarPage}
-                      onNextPage={handleNextCalendarPage}
-                      onScheduleClass={handleScheduleCalendarClass}
-                      onScheduleCustomItem={handleScheduleCalendarCustomItem}
-                      onCreateCustomItem={handleCreateCalendarCustomItem}
-                      onDeleteCustomItem={handleDeleteCalendarCustomItem}
-                      onDeleteSchedule={handleDeleteCalendarSchedule}
-                      onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
-                    />
+                    <>
+                      {calendarError && (
+                        <div className={`${workspacePageClass} pb-0`}>
+                          <div className={`${workspaceCardClass} flex items-center gap-2 border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300`}>
+                            <AlertCircle size={16} />
+                            <span>课程日历加载失败：{calendarError}</span>
+                          </div>
+                        </div>
+                      )}
+                      <CourseCalendarPage
+                        anchorDate={calendarAnchorDate}
+                        today={getTodayIsoDate()}
+                        currentUserId={currentUser.id}
+                        currentUserRole={currentUser.role}
+                        classes={calendarClasses}
+                        schedules={calendarSchedules}
+                        customItems={calendarCustomItems}
+                        customSchedules={calendarCustomSchedules}
+                        pageStepDays={calendarPageStepDays}
+                        onPageStepDaysChange={handleCalendarPageStepDaysChange}
+                        onPreviousPage={handlePreviousCalendarPage}
+                        onNextPage={handleNextCalendarPage}
+                        onScheduleClass={handleScheduleCalendarClass}
+                        onScheduleCustomItem={handleScheduleCalendarCustomItem}
+                        onCreateCustomItem={handleCreateCalendarCustomItem}
+                        onDeleteCustomItem={handleDeleteCalendarCustomItem}
+                        onDeleteSchedule={handleDeleteCalendarSchedule}
+                        onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
+                      />
+                    </>
                   ))}
                 {activePage === 'smartWrongQuestions' &&
                   canAccessSmartWrongQuestions(currentUser.role) &&

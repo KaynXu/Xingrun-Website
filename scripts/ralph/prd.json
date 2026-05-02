@@ -59,7 +59,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Prefer existing alert/notice patterns; do not invent a new toast system."
     },
     {

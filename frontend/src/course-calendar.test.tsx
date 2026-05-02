@@ -132,6 +132,64 @@ test('app loads course calendar schedules separately from review plans', () => {
   assert.match(appSource, /window\.alert\(error instanceof Error \? error\.message : '删除自定义事项失败'\)/);
 });
 
+test('app exposes a recoverable course calendar list-load failure path', () => {
+  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const calendarEffect = appSource.match(/setCalendarLoading\(true\);[\s\S]*?return \(\) => \{\s*cancelled = true;\s*\};/);
+  const calendarRender = appSource.match(/\{activePage === 'calendar' &&[\s\S]*?\{activePage === 'smartWrongQuestions'/);
+
+  assert.ok(calendarEffect);
+  assert.ok(calendarRender);
+  assert.match(appSource, /const \[calendarError, setCalendarError\] = useState\(''\);/);
+  assert.match(calendarEffect[0], /setCalendarError\(''\);/);
+  assert.match(
+    calendarEffect[0],
+    /setCalendarError\(error instanceof Error \? error\.message : '课程日历加载失败，请刷新重试。'\);/,
+  );
+  assert.match(calendarEffect[0], /setCalendarLoading\(false\);/);
+  assert.match(calendarRender[0], /calendarError/);
+  assert.match(calendarRender[0], /课程日历加载失败/);
+});
+
+test('app shows a user-facing error when course calendar schedule saves fail', () => {
+  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const scheduleClassBlock = appSource.match(/const handleScheduleCalendarClass =[\s\S]*?const handleDeleteCalendarSchedule =/);
+  const scheduleCustomBlock = appSource.match(/const handleScheduleCalendarCustomItem =[\s\S]*?const handleDeleteCalendarCustomSchedule =/);
+
+  assert.ok(scheduleClassBlock);
+  assert.ok(scheduleCustomBlock);
+  assert.match(
+    scheduleClassBlock[0],
+    /window\.alert\(error instanceof Error \? error\.message : '新增课程排期失败'\)/,
+  );
+  assert.match(
+    scheduleCustomBlock[0],
+    /window\.alert\(error instanceof Error \? error\.message : '新增自定义事项排期失败'\)/,
+  );
+});
+
+test('app shows a user-facing error when course calendar delete or refresh actions fail', () => {
+  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const deleteScheduleBlock = appSource.match(/const handleDeleteCalendarSchedule =[\s\S]*?const handleCreateCalendarCustomItem =/);
+  const deleteCustomItemBlock = appSource.match(/const handleDeleteCalendarCustomItem =[\s\S]*?const handleScheduleCalendarCustomItem =/);
+  const deleteCustomScheduleBlock = appSource.match(/const handleDeleteCalendarCustomSchedule =[\s\S]*?const pageTitle:/);
+
+  assert.ok(deleteScheduleBlock);
+  assert.ok(deleteCustomItemBlock);
+  assert.ok(deleteCustomScheduleBlock);
+  assert.match(
+    deleteScheduleBlock[0],
+    /window\.alert\(error instanceof Error \? error\.message : '删除课程排期失败'\)/,
+  );
+  assert.match(
+    deleteCustomItemBlock[0],
+    /window\.alert\(error instanceof Error \? error\.message : '删除自定义事项失败'\)/,
+  );
+  assert.match(
+    deleteCustomScheduleBlock[0],
+    /window\.alert\(error instanceof Error \? error\.message : '删除自定义事项排期失败'\)/,
+  );
+});
+
 test('course calendar source opens time adjustment after dropping a class', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
 
