@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PRD_FILE="$ROOT_DIR/scripts/ralph/prd.json"
 PROGRESS_FILE="$ROOT_DIR/scripts/ralph/progress.txt"
+CODEX_MODEL="${CODEX_RALPH_MODEL:-gpt-5.4}"
 
 MODE="run"
 MAX_ITERATIONS="${CODEX_RALPH_MAX_ITERATIONS:-}"
@@ -22,6 +23,8 @@ all stories pass, Codex fails, no progress is detected, or max_iterations is hit
 Environment:
   CODEX_RALPH_MAX_ITERATIONS  Override default max iterations.
   CODEX_RALPH_MODEL           Optional Codex model name passed with --model.
+                              Defaults to gpt-5.4 to avoid older CLI failures
+                              when ~/.codex/config.toml points at gpt-5.5.
 USAGE
 }
 
@@ -84,6 +87,7 @@ print_status() {
   remaining="$(remaining_count)"
   echo "PRD: $PRD_FILE"
   echo "Progress: $PROGRESS_FILE"
+  echo "Codex model: $CODEX_MODEL"
   echo "Remaining stories: $remaining"
   if [[ "$remaining" == "0" ]]; then
     echo "Next story: <none>"
@@ -177,10 +181,7 @@ for iteration in $(seq 1 "$MAX_ITERATIONS"); do
   echo "  Story: $story_id - $story_title"
   echo "==============================================================="
 
-  codex_args=(exec --cd "$ROOT_DIR" --dangerously-bypass-approvals-and-sandbox)
-  if [[ -n "${CODEX_RALPH_MODEL:-}" ]]; then
-    codex_args+=(--model "$CODEX_RALPH_MODEL")
-  fi
+  codex_args=(exec --cd "$ROOT_DIR" --dangerously-bypass-approvals-and-sandbox --model "$CODEX_MODEL")
 
   build_prompt "$story_id" "$story_title" | codex "${codex_args[@]}" -
 
