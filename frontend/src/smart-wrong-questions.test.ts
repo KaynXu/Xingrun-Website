@@ -196,6 +196,139 @@ function makeWrongQuestionRecord(overrides: Partial<WrongQuestionRecord>): Wrong
   };
 }
 
+type SmartWrongQuestionFetchCall = { input: RequestInfo | URL; init?: RequestInit };
+
+function makeNotebookApiRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'notebook-record-a',
+    source: 'wechat_mp',
+    student_id: 501,
+    student_name: 'Alice',
+    class_display_name: '六年级 1 班',
+    class_id: 42,
+    subject: '数学',
+    teacher_display_name: 'Kayn',
+    teacher_user_id: 7,
+    created_at: '2026-03-29T09:00:00Z',
+    child_raw_reason_text: '我把乘法优先级看漏了',
+    primary_error_type: '方法问题',
+    secondary_error_summary: '步骤检查不完整',
+    recognition_status: 'recognized',
+    is_geometry: 0,
+    question_text: '计算 $2+3\\\\times4$ 的结果。',
+    question_text_source: 'ai',
+    student_library_pdf_path: '/api/wechat/student-libraries/501',
+    topic_category: '未分类',
+    archive_status: 'active',
+    status: 'pending',
+    analysis: {
+      question_category: '计算',
+      error_type: '方法问题',
+      knowledge_points: ['运算顺序'],
+      student_note: '步骤检查不完整',
+    },
+    ...overrides,
+  };
+}
+
+function createNotebookFetch(
+  fetchCalls: SmartWrongQuestionFetchCall[],
+  options: {
+    record?: Record<string, unknown>;
+    detailRecord?: Record<string, unknown>;
+    detailResponse?: Response;
+    saveResponse?: Response;
+    pdfRefreshResponse?: Response;
+    deleteResponse?: Response;
+    practiceCreateResponse?: Response;
+    practiceHistoryItems?: unknown[];
+  } = {},
+): typeof fetch {
+  const record = options.record ?? makeNotebookApiRecord();
+  const detailRecord = options.detailRecord ?? record;
+  const recordId = String(record.id ?? 'notebook-record-a');
+  const studentId = Number(record.student_id ?? 501);
+
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls.push({ input, init });
+
+    if (input === '/api/classes') {
+      return createJsonResponse([{ id: 42, name: '六年级 1 班', subject: '数学', teacher_user_id: 7 }]);
+    }
+
+    if (input === '/api/classes/42/students') {
+      return createJsonResponse({
+        students: [{ id: studentId, name: 'Alice' }],
+      });
+    }
+
+    if (input === '/api/admin/users') {
+      return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+    }
+
+    if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+      return createJsonResponse({
+        items: [record],
+        summary: {
+          total_count: 1,
+          repeated_mistake_count: 0,
+          high_priority_count: 0,
+          pending_review_count: 1,
+          unique_class_count: 1,
+          unique_student_count: 1,
+        },
+      });
+    }
+
+    if (input === `/api/wrong-questions/${encodeURIComponent(recordId)}` && (!init?.method || init.method === 'GET')) {
+      return options.detailResponse ?? createJsonResponse(detailRecord);
+    }
+
+    if (input === `/api/wrong-questions/${encodeURIComponent(recordId)}/review` && init?.method === 'PUT') {
+      return options.saveResponse ?? createJsonResponse({ ok: true, record: detailRecord });
+    }
+
+    if (input === `/api/wrong-questions/${encodeURIComponent(recordId)}` && init?.method === 'DELETE') {
+      return options.deleteResponse ?? createJsonResponse({ ok: true, deleted_record_id: recordId });
+    }
+
+    if (input === `/api/wrong-question-student-libraries/${encodeURIComponent(String(studentId))}/refresh` && init?.method === 'POST') {
+      return options.pdfRefreshResponse ?? createJsonResponse({
+        ok: true,
+        student_id: studentId,
+        student_library_pdf_path: `/api/wechat/student-libraries/${studentId}`,
+      });
+    }
+
+    if (input === `/api/wrong-question-practice-sheets?student_id=${encodeURIComponent(String(studentId))}` && (!init?.method || init.method === 'GET')) {
+      return createJsonResponse({ items: options.practiceHistoryItems ?? [], total: options.practiceHistoryItems?.length ?? 0 });
+    }
+
+    if (input === '/api/wrong-question-practice-sheets' && init?.method === 'POST') {
+      return options.practiceCreateResponse ?? createJsonResponse({ id: 12, status: 'pending' }, 202);
+    }
+
+    throw new Error(`Unexpected fetch: ${String(input)}`);
+  }) as typeof fetch;
+}
+
+async function renderNotebookForAlice(container: ParentNode, root: Root | null): Promise<void> {
+  await act(async () => {
+    root?.render(
+      React.createElement(SmartWrongQuestionsPage, {
+        currentUser: {
+          display_name: '管理员',
+          organization_name: '星润Starain',
+          role: 'owner',
+        },
+      }),
+    );
+  });
+
+  await selectNotebookClass(container, '42');
+  await openNotebookStudent(container, 'Alice');
+}
+
 test('summarizeWrongQuestionRecords derives the overview card counts from loaded records', () => {
   const records: WrongQuestionRecord[] = [
     {
@@ -3681,6 +3814,303 @@ test('SmartWrongQuestionsPage deletes a wrong-question practice sheet from pract
     });
   } finally {
     window.confirm = originalConfirm;
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage keeps notebook open and draft visible when detail loading fails', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      detailResponse: createJsonResponse({ error: '详情接口失败' }, 500),
+    });
+
+    root = createRoot(domEnvironment.container);
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /Alice 的错题库/);
+      assert.match(pageText, /详情接口失败/);
+      assert.match(pageText, /题目文本/);
+      const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+      const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
+      assert.ok(textarea instanceof HTMLTextAreaElement);
+      assert.equal(textarea.value, '计算 $2+3\\\\times4$ 的结果。');
+      assert.ok(saveButton instanceof HTMLButtonElement);
+      assert.equal(saveButton.disabled, false);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage keeps edited fields and releases save button when review saving fails', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      saveResponse: createJsonResponse({ error: '保存接口失败' }, 500),
+    });
+
+    root = createRoot(domEnvironment.container);
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    await waitForAssertion(() => {
+      const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+      assert.ok(textarea instanceof HTMLTextAreaElement);
+    });
+
+    const textarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;
+    const saveButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('保存掌握情况'));
+    assert.ok(textarea instanceof HTMLTextAreaElement);
+    assert.ok(saveButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      textarea.value = '老师本地改动未丢失';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /保存接口失败/);
+      assert.match(pageText, /Alice 的错题库/);
+      assert.equal(textarea.value, '老师本地改动未丢失');
+      assert.equal(saveButton.disabled, false);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage keeps PDF actions enabled and links stable when PDF refresh fails', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      pdfRefreshResponse: createJsonResponse({ error: 'PDF 刷新失败' }, 500),
+    });
+
+    root = createRoot(domEnvironment.container);
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    await waitForAssertion(() => {
+      const refreshButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('重新生成 PDF'));
+      assert.ok(refreshButton instanceof HTMLButtonElement);
+    });
+
+    const refreshButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('重新生成 PDF'));
+    const previewLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('预览 PDF')) ?? null;
+    const downloadLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('下载 PDF')) ?? null;
+    assert.ok(refreshButton instanceof HTMLButtonElement);
+    assert.equal(previewLink?.getAttribute('href'), '/api/wechat/student-libraries/501?token=token-123');
+    assert.equal(downloadLink?.getAttribute('href'), '/api/wechat/student-libraries/501?token=token-123');
+
+    await act(async () => {
+      refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.match(domEnvironment.container.textContent || '', /PDF 刷新失败/);
+      assert.equal(refreshButton.disabled, false);
+      assert.equal(previewLink?.getAttribute('href'), '/api/wechat/student-libraries/501?token=token-123');
+      assert.equal(downloadLink?.getAttribute('href'), '/api/wechat/student-libraries/501?token=token-123');
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage keeps selected notebook record when deleting it fails', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const originalConfirm = window.confirm;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    window.confirm = () => true;
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      deleteResponse: createJsonResponse({ error: '删除接口失败' }, 500),
+    });
+
+    root = createRoot(domEnvironment.container);
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    await waitForAssertion(() => {
+      const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除本题'));
+      assert.ok(deleteButton instanceof HTMLButtonElement);
+    });
+
+    const deleteButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('删除本题'));
+    assert.ok(deleteButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /删除接口失败/);
+      assert.match(pageText, /计算 \$2\+3\\\\times4\$ 的结果。/);
+      assert.match(pageText, /Alice 的错题库/);
+      assert.equal(deleteButton.disabled, false);
+    });
+  } finally {
+    window.confirm = originalConfirm;
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage keeps practice selection and releases generate button when practice generation fails', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      practiceCreateResponse: createJsonResponse({ error: '练习生成失败' }, 500),
+    });
+
+    root = createRoot(domEnvironment.container);
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    await waitForAssertion(() => {
+      const checkbox = domEnvironment.container.querySelector('input[aria-label="选择第 1 题"]');
+      const generateButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成错题练习'));
+      assert.ok(checkbox instanceof HTMLInputElement);
+      assert.ok(generateButton instanceof HTMLButtonElement);
+    });
+
+    const checkbox = domEnvironment.container.querySelector('input[aria-label="选择第 1 题"]') as HTMLInputElement | null;
+    const generateButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成错题练习'));
+    assert.ok(checkbox instanceof HTMLInputElement);
+    assert.ok(generateButton instanceof HTMLButtonElement);
+    assert.equal(checkbox.checked, true);
+
+    await act(async () => {
+      generateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /练习生成失败/);
+      assert.match(pageText, /错题目录/);
+      assert.equal(checkbox.checked, true);
+      assert.equal(generateButton.disabled, false);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage builds practice history PDF links from pdf_path with auth token', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      practiceHistoryItems: [
+        {
+          id: 12,
+          student_id: 501,
+          class_id: 42,
+          student_name_snapshot: 'Alice',
+          class_name_snapshot: '六年级 1 班',
+          teacher_name_snapshot: 'Kayn',
+          question_count: 1,
+          status: 'ready',
+          pdf_path: '/api/wrong-question-practice-sheets/12/pdf',
+          created_at: '2026-04-20 10:00:00',
+        },
+      ],
+    });
+
+    root = createRoot(domEnvironment.container);
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    const historyTab = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('错题练习记录'));
+    assert.ok(historyTab instanceof HTMLButtonElement);
+
+    await act(async () => {
+      historyTab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const previewLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('预览 PDF')) ?? null;
+      const downloadLink = Array.from(domEnvironment.container.querySelectorAll('a')).find((link) => link.textContent?.includes('下载 PDF')) ?? null;
+      assert.equal(previewLink?.getAttribute('href'), '/api/wrong-question-practice-sheets/12/pdf?token=token-123');
+      assert.equal(downloadLink?.getAttribute('href'), '/api/wrong-question-practice-sheets/12/pdf?token=token-123');
+    });
+  } finally {
     if (root) {
       await act(async () => {
         root?.unmount();

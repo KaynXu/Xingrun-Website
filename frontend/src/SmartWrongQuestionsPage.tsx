@@ -1009,8 +1009,10 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <div className="space-y-4">
           {practiceSheets.map((sheet, index) => {
             const displaySheetNumber = practiceSheets.length - index;
-            const previewUrl = sheet.pdfUrl ? buildWrongQuestionAuthedPath(sheet.pdfUrl) : '';
-            const downloadUrl = sheet.downloadUrl ? buildWrongQuestionAuthedPath(sheet.downloadUrl) : previewUrl;
+            const previewPath = sheet.pdfUrl || sheet.pdfPath || sheet.downloadUrl || '';
+            const downloadPath = sheet.downloadUrl || sheet.pdfUrl || sheet.pdfPath || '';
+            const previewUrl = previewPath ? buildWrongQuestionAuthedPath(previewPath) : '';
+            const downloadUrl = downloadPath ? buildWrongQuestionAuthedPath(downloadPath) : previewUrl;
             return (
               <article key={sheet.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

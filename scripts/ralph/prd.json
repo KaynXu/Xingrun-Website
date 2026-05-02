@@ -104,7 +104,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "This is a high-risk user workflow because it combines editing, PDF, and async actions."
     },
     {
