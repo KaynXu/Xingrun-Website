@@ -189,8 +189,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 10,
-      "passes": false,
-      "notes": "This closes the loop between upload and the parent-visible wrongbook/PDF experience."
+      "passes": true,
+      "notes": "Completed: upload success cards now provide a direct child wrongbook/progress path with accepted task ids preserved; parent wrongbook refreshes ready/failed/background upload task states before loading records, marks failed or still-processing cards honestly, and shows recoverable PDF messages for not-ready, missing pdf_url, download failure, and openDocument failure."
     },
     {
       "id": "MP-UPLOAD-011",

@@ -18,6 +18,38 @@
   box-shadow: 0 16rpx 48rpx rgba(45, 87, 140, 0.08);
 }
 
+.upload-status-card {
+  margin-bottom: 24rpx;
+  padding: 28rpx;
+  border-radius: 28rpx;
+  border: 2rpx solid rgba(35, 117, 216, 0.1);
+  background: #f4f9ff;
+  box-shadow: 0 16rpx 48rpx rgba(45, 87, 140, 0.08);
+}
+
+.upload-status-error {
+  border-color: rgba(214, 68, 68, 0.12);
+  background: #fff5f5;
+}
+
+.upload-status-title,
+.upload-status-desc {
+  display: block;
+}
+
+.upload-status-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #10233f;
+}
+
+.upload-status-desc {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: #60738f;
+}
+
 .library-copy {
   flex: 1;
   min-width: 0;
@@ -163,6 +195,25 @@
 .mastered-tag {
   background: #e8faf0;
   color: #1d8348;
+}
+
+.pending-tag {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
+.failed-tag {
+  background: #fff1f0;
+  color: #c0392b;
+}
+
+.item-status {
+  display: block;
+  margin-bottom: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #ad6800;
+  white-space: pre-wrap;
 }
 
 .item-summary {

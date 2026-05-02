@@ -1294,6 +1294,28 @@ Page({
     return summary;
   },
 
+  openChildWrongbook() {
+    const binding = this.data.binding || {};
+    const studentId = Number(binding.studentId || binding.student_id || 0) || 0;
+    const studentName = String(binding.studentName || binding.student_name || '').trim();
+    const taskIds = (this.data.successTaskIds || [])
+      .filter((id) => id !== undefined && id !== null && String(id).trim())
+      .map((id) => String(id).trim())
+      .join(',');
+    const query = [`studentId=${studentId}`];
+    if (!studentId) {
+      wx.showToast({ title: '没有找到孩子信息', icon: 'none' });
+      return;
+    }
+    if (studentName) {
+      query.push(`studentName=${encodeURIComponent(studentName)}`);
+    }
+    if (taskIds) {
+      query.push(`uploadTaskIds=${encodeURIComponent(taskIds)}`);
+    }
+    wx.navigateTo({ url: `/pages/parent-wrongbook/index?${query.join('&')}` });
+  },
+
   backHome() {
     wx.reLaunch({ url: '/pages/parent-home/index' });
   },

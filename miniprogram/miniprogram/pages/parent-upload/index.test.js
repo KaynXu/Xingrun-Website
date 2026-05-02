@@ -777,3 +777,36 @@ test('restoreAcceptedUploadTasks shows a recoverable message when stored tasks a
   assert.equal(page.data.uploadStage, 'background');
   assert.match(page.data.uploadStageText, /无法读取本机保存的上传进度/);
 });
+
+test('openChildWrongbook keeps a clear progress path after upload acceptance', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'processing' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    binding: {
+      id: 21,
+      studentId: 101,
+      studentName: 'Alice',
+      className: '六年级 1 班',
+    },
+    successTaskIds: [9001, 9002],
+  });
+  const navigations = [];
+
+  await withWx(async () => {
+    page.openChildWrongbook();
+  }, {
+    navigateTo(payload) {
+      navigations.push(payload);
+    },
+  });
+
+  assert.equal(navigations.length, 1);
+  assert.match(navigations[0].url, /^\/pages\/parent-wrongbook\/index\?/);
+  assert.match(navigations[0].url, /studentId=101/);
+  assert.match(navigations[0].url, /studentName=Alice/);
+  assert.match(navigations[0].url, /uploadTaskIds=9001%2C9002/);
+});

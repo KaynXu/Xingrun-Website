@@ -139,6 +139,7 @@
   <view wx:if="{{successTaskIds.length}}" class="state-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : 'success-card'}}">
     <text class="state-title">{{uploadTaskSummary.title || '已提交'}}</text>
     <text class="state-desc">{{uploadTaskSummary.description || '服务器正在识别。'}}</text>
+    <button class="ghost-btn" bindtap="openChildWrongbook">查看错题本 / 刷新进度</button>
     <button class="ghost-btn" bindtap="backHome">返回家长主页</button>
   </view>
 
