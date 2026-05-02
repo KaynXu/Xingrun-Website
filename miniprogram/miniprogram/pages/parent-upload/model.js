@@ -240,10 +240,13 @@ function buildUploadTaskSummary(tasks, options) {
   if (failedCount) {
     const message = String(failedTasks[0].error_message || failedTasks[0].errorMessage || '请重新拍清楚一点').trim();
     const hasAcceptedItems = readyCount > 0 || pendingCount > 0;
+    const pendingMessage = pendingCount
+      ? `；${pendingCount} 条还在${options && options.background ? '后台继续识别，稍后可回错题本查看' : '服务器继续识别'}`
+      : '';
     return {
       state: hasAcceptedItems ? 'partial_failed' : 'failed',
       title: hasAcceptedItems ? '部分识别失败' : '识别失败',
-      description: `${failedCount} 条识别失败：${message}`,
+      description: `${failedCount} 条识别失败：${message}${pendingMessage}`,
       readyCount,
       failedCount,
       pendingCount,

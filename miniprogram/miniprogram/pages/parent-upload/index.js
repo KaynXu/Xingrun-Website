@@ -22,6 +22,39 @@ const {
 const TASK_POLL_INTERVAL_MS = 2000;
 const TASK_POLL_MAX_ATTEMPTS = 12;
 const TOPIC_CATEGORY_OPTIONS = ['未分类', '计算', '经济', '浓度', '工程', '行程', '几何', '数论', '自定义'];
+const UPLOAD_TASK_STATUS_MAP = {
+  pending: true,
+  processing: true,
+  ready: true,
+  failed: true,
+};
+
+function buildPendingUploadTask(taskId) {
+  return {
+    id: taskId,
+    status: 'pending',
+  };
+}
+
+function normalizeFetchedUploadTask(taskId, payloadTask, previousTask) {
+  const fallbackTask = previousTask || buildPendingUploadTask(taskId);
+  if (!payloadTask || typeof payloadTask !== 'object') {
+    return fallbackTask;
+  }
+  const payloadTaskId = payloadTask.id;
+  if (payloadTaskId === undefined || payloadTaskId === null || String(payloadTaskId) !== String(taskId)) {
+    return fallbackTask;
+  }
+  const status = String(payloadTask.status || '').trim();
+  if (!UPLOAD_TASK_STATUS_MAP[status]) {
+    return fallbackTask;
+  }
+  return {
+    ...payloadTask,
+    id: taskId,
+    status,
+  };
+}
 
 Page({
   data: {
@@ -961,24 +994,33 @@ Page({
 
   async pollUploadTasks(openId, taskIds) {
     const ids = (Array.isArray(taskIds) ? taskIds : []).filter((id) => id !== undefined && id !== null && String(id).trim());
-    let tasks = ids.map((id) => ({ id, status: 'pending' }));
+    let tasks = ids.map((id) => buildPendingUploadTask(id));
     let summary = buildUploadTaskSummary(tasks);
     this.setData({ uploadTaskSummary: summary });
     this.setUploadStageFromSummary(summary);
 
     for (let attempt = 0; attempt < TASK_POLL_MAX_ATTEMPTS; attempt += 1) {
+      const previousTasksById = tasks.reduce((result, task) => {
+        result[String(task.id)] = task;
+        return result;
+      }, {});
       tasks = await Promise.all(ids.map(async (taskId) => {
-        const payload = await fetchWrongQuestionUploadTask(wx, app.globalData.serverUrl, {
-          openId,
-          taskId,
-        });
-        return payload.task || { id: taskId, status: 'pending' };
+        const previousTask = previousTasksById[String(taskId)] || buildPendingUploadTask(taskId);
+        try {
+          const payload = await fetchWrongQuestionUploadTask(wx, app.globalData.serverUrl, {
+            openId,
+            taskId,
+          });
+          return normalizeFetchedUploadTask(taskId, payload && payload.task, previousTask);
+        } catch (_error) {
+          return previousTask;
+        }
       }));
       summary = buildUploadTaskSummary(tasks);
       this.setData({ uploadTaskSummary: summary });
       this.setUploadStageFromSummary(summary);
 
-      if (summary.state === 'ready' || summary.state === 'failed' || summary.state === 'partial_failed') {
+      if ((summary.state === 'ready' || summary.state === 'failed' || summary.state === 'partial_failed') && summary.pendingCount === 0) {
         return summary;
       }
       await this.waitForUploadTaskPoll();

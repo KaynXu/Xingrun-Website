@@ -77,8 +77,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Current polling window is short compared with real OCR/transcription/PDF latency."
+      "passes": true,
+      "notes": "Completed: parent upload task polling now keeps accepted task ids, survives transient status request failures, treats malformed task payloads as pending with the original task id, continues mixed ready/failed/pending batches until pending tasks finish or max attempts are exhausted, and reports partial/background processing without hiding successful items."
     },
     {
       "id": "MP-UPLOAD-004",

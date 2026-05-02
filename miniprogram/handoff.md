@@ -5,7 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 和 `MP-UPLOAD-002` 已完成，下一条 story 是 `MP-UPLOAD-003 Make upload task polling resilient`。
+- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-003` 已完成，下一条 story 是 `MP-UPLOAD-004 Persist accepted upload tasks for page recovery`。
 - 小程序子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，微信工程代码位于 `miniprogram/miniprogram/`，bridge 位于 `miniprogram/backend/`。
 - 家长链路当前只保留 `绑定孩子 -> 家长首页 -> 上传错题 -> 查看错题本/PDF`。
 - 家长上传最终提交已改成网站端 RQ + Redis 异步任务：小程序只上传题图和可选录音 URL，bridge 转发到网站 `/api/wechat/wrong-questions` 后拿到 `202 + task`；录音转写、错因归类、题图识别、错题入库和 PDF 重建都由网站 RQ worker 后台完成。
@@ -27,6 +27,7 @@
 ## 本轮完成
 - 2026-05-01 已修复家长上传页手动框选最小尺寸过大问题：题框拖拽缩放和保存归一化改为复用 `buildBoxTouchFrame()` / `normalizeDisplayBoxFrame()`，最低保留 `16px` 可操作尺寸，旋转窄题框时不再回到 8% 宽高；新增模型回归测试覆盖缩小、保存和旋转窄框。
 - 2026-05-03 已完成 `MP-UPLOAD-002`：家长上传页提交时会显示裁切题图、上传语音、上传题图/提交任务、任务已接收、服务器识别、后台继续识别、识别完成、部分失败和失败等阶段反馈；提交中会禁用会改动草稿的按钮/输入控件，失败或完成后释放。基线 proof 继续走 `scripts/ralph/miniprogram_upload_stability_proof.sh`。
+- 2026-05-03 已完成 `MP-UPLOAD-003`：家长上传任务轮询不再因单个状态请求短暂失败而整批失败；缺 id 或非法状态的任务 payload 会按原 task id 保持 pending；ready/failed/pending 混合批次会继续轮询 pending 项，耗尽后明确提示仍在后台处理，并保留已接收 task id。
 - 2026-05-01 已做小程序稳定性排查并修复语音错因空录音的提交失败风险：`buildUploadJobs()` 对没有录音文件的语音框回退到 `text` 模式，并新增回归测试。临时 proof `/tmp/xingrun_miniprogram_stability_proof.sh` 已通过 bridge 13 条测试、bridge `tsc` build、小程序 40 条测试、活代码陈旧 `AI 框选` 扫描和 `git diff --check`。
 - 家长上传页最终提交不再先调用转写和错因归类接口，语音错因只先传 `/upload` 得到音频 URL，再随题图提交给服务器后台任务。
 - bridge 的 `/wechat/parent/wrong-questions` 已改为接受 `childReasonAudioUrl` 并返回 `202 + task`，同时新增 `/wechat/parent/wrong-question-upload-tasks/:taskId` 状态查询代理。

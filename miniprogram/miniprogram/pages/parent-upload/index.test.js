@@ -210,3 +210,85 @@ test('pollUploadTasks exposes partial failure separately from total failure', as
   assert.equal(page.data.uploadStage, 'partial_failed');
   assert.match(page.data.uploadStageText, /部分识别失败/);
 });
+
+test('pollUploadTasks survives one transient status request failure without losing accepted tasks', async () => {
+  let calls = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async (_wx, _serverUrl, params) => {
+      calls += 1;
+      if (Number(params.taskId) === 9002 && calls <= 2) {
+        throw new Error('status timeout');
+      }
+      return {
+        task: { id: params.taskId, status: 'ready' },
+      };
+    },
+  });
+  const page = createPageInstance(pageConfig, createReadyUploadData());
+  page.data.successTaskIds = [9001, 9002];
+
+  await withWx(async () => {
+    const summary = await page.pollUploadTasks('openid-parent-1', [9001, 9002]);
+    assert.equal(summary.state, 'ready');
+  });
+
+  assert.deepEqual(page.data.successTaskIds, [9001, 9002]);
+  assert.equal(page.data.uploadStage, 'ready');
+  assert.equal(page.data.errorMessage, '');
+});
+
+test('pollUploadTasks reports mixed ready failed and pending tasks as partial background work after max attempts', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async (_wx, _serverUrl, params) => {
+      const taskId = Number(params.taskId);
+      if (taskId === 9001) {
+        return { task: { id: 9001, status: 'ready' } };
+      }
+      if (taskId === 9002) {
+        return { task: { id: 9002, status: 'failed', error_message: '题图太模糊' } };
+      }
+      return { task: { id: 9003, status: 'processing' } };
+    },
+  });
+  const page = createPageInstance(pageConfig, createReadyUploadData());
+  page.data.successTaskIds = [9001, 9002, 9003];
+
+  await withWx(async () => {
+    const summary = await page.pollUploadTasks('openid-parent-1', [9001, 9002, 9003]);
+    assert.equal(summary.state, 'partial_failed');
+    assert.equal(summary.readyCount, 1);
+    assert.equal(summary.failedCount, 1);
+    assert.equal(summary.pendingCount, 1);
+    assert.match(summary.description, /1 条还在后台继续识别/);
+  });
+
+  assert.deepEqual(page.data.successTaskIds, [9001, 9002, 9003]);
+  assert.equal(page.data.uploadStage, 'partial_failed');
+  assert.match(page.data.uploadStageText, /后台继续识别/);
+});
+
+test('pollUploadTasks treats malformed task payloads as pending with the original task id', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, createReadyUploadData());
+  page.data.successTaskIds = [9001];
+
+  await withWx(async () => {
+    const summary = await page.pollUploadTasks('openid-parent-1', [9001]);
+    assert.equal(summary.state, 'background');
+  });
+
+  assert.deepEqual(page.data.successTaskIds, [9001]);
+  assert.equal(page.data.uploadStage, 'background');
+  assert.match(page.data.uploadStageText, /后台继续识别/);
+});
