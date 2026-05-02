@@ -129,6 +129,26 @@ test('buildUploadTaskSummary reports partial failure when some accepted tasks su
   });
 });
 
+test('buildUploadTaskSummary prefers concise parent failure messages', () => {
+  const summary = buildUploadTaskSummary([
+    {
+      id: 1,
+      status: 'failed',
+      error_message: 'renderer crashed while rebuilding student pdf',
+      parent_error_message: '错题已保存，PDF 暂时生成失败，请稍后再查看。',
+    },
+  ]);
+
+  assert.deepEqual(summary, {
+    state: 'failed',
+    title: '识别失败',
+    description: '1 条识别失败：错题已保存，PDF 暂时生成失败，请稍后再查看。',
+    readyCount: 0,
+    failedCount: 1,
+    pendingCount: 0,
+  });
+});
+
 test('buildUploadTaskSummary reports failed when every accepted task fails', () => {
   const summary = buildUploadTaskSummary([
     { id: 1, status: 'failed', error_message: '题图太模糊' },

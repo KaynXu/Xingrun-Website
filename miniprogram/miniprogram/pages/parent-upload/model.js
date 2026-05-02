@@ -238,7 +238,13 @@ function buildUploadTaskSummary(tasks, options) {
   const pendingCount = Math.max(0, list.length - readyCount - failedCount);
 
   if (failedCount) {
-    const message = String(failedTasks[0].error_message || failedTasks[0].errorMessage || '请重新拍清楚一点').trim();
+    const message = String(
+      failedTasks[0].parent_error_message
+      || failedTasks[0].parentErrorMessage
+      || failedTasks[0].error_message
+      || failedTasks[0].errorMessage
+      || '请重新拍清楚一点',
+    ).trim();
     const hasAcceptedItems = readyCount > 0 || pendingCount > 0;
     const pendingMessage = pendingCount
       ? `；${pendingCount} 条还在${options && options.background ? '后台继续识别，稍后可回错题本查看' : '服务器继续识别'}`

@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-008` 已完成，下一条是 `MP-UPLOAD-009 Preserve submitted images through recognition and PDF failures`。
+- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-009` 已完成，下一条是 `MP-UPLOAD-010 Refresh parent wrongbook and PDF state after upload`。
+- 2026-05-03 `MP-UPLOAD-009` 已完成：网站 worker/API 现在覆盖“识别成功但学生错题库 PDF 重建失败”时仍保留原始题图和老师可见错题记录；失败任务状态 payload 会同时给小程序 `parent_error_message` 简短文案和 `maintainer_error_detail` 原始细节，小程序上传摘要优先显示家长文案，不再把底层 PDF 报错直接展示给家长。
 - 2026-05-03 `MP-UPLOAD-008` 已完成：网站 `/api/wechat/wrong-questions` 入队失败会先把 task 持久化为 `failed + retryable=1`，再返回 `502` 和结构化 task，不再假装任务已接收；任务状态 payload 现在包含 `state / retryable / is_stale / record_status / record_missing`，覆盖 pending、stale pending、ready、failed 和 missing-record 状态，图片-only 上传仍可入队。
 - 2026-05-03 `MP-UPLOAD-007` 已完成：bridge 上传代理现在保留网站 `202` 接收任务 payload，即使缺少可选 task 字段也不本地判失败；网站 `400/413/502/timeout/malformed response` 会映射为结构化 bridge 响应并保留 `retryable` 和任务信息；小程序 `parentApi` 的错误对象会保留 bridge 返回的 `task/payload` 元数据。
 - 2026-05-03 `MP-UPLOAD-006` 已完成：`parentApi` 的语音上传、压缩后题图任务提交和任务状态刷新现在分别使用更短的专用超时；压缩后题图仍触发 `413` 时会提示草稿已保留并要求缩小框选/重拍，5xx、网络失败和超时会提示可重新点“统一提交所有错题”重试；页面失败后保留原草稿，重试收到任务后才清空。
@@ -172,7 +173,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 若要继续小程序上传 2.0 稳定性 Ralph，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check` 确认下一条 story，然后运行 `scripts/ralph/run_codex_ralph.sh`；当前下一条应为 `MP-UPLOAD-009`。
+- 若要继续小程序上传 2.0 稳定性 Ralph，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check` 确认下一条 story，然后运行 `scripts/ralph/run_codex_ralph.sh`；当前下一条应为 `MP-UPLOAD-010`。
 - 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。

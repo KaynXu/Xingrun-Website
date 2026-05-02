@@ -310,6 +310,55 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["recognition_status"], "failed")
         self.assertEqual(record["recognition_error"], "题目识别失败")
 
+    def test_worker_keeps_recognized_record_visible_when_pdf_rebuild_fails(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            child_raw_reason_text="我把乘法和加法一起从左往右算了",
+        )
+
+        from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
+
+        with patch("wrong_question_upload_worker.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch(
+                 "wrong_question_upload_worker.ai_processor.classify_wrong_question_reason",
+                 return_value={
+                     "display_text": "方法问题｜先算了加法，忽略乘法优先",
+                     "primary_error_type": "方法问题",
+                     "secondary_error_summary": "先算了加法，忽略乘法优先",
+                 },
+             ), \
+             patch("wrong_question_upload_worker._rebuild_student_wrong_question_library", side_effect=RuntimeError("renderer crashed while rebuilding student pdf")):
+            result = process_wechat_wrong_question_upload_task(task["id"])
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error_message"], "renderer crashed while rebuilding student pdf")
+        self.assertNotEqual(result["record_id"], "")
+        record = lesson_manager.get_wechat_wrong_question_submission(result["record_id"])
+        self.assertEqual(record["image_url"], "https://files.example.com/record.png")
+        self.assertEqual(record["recognition_status"], "recognized")
+        self.assertEqual(record["question_text"], "计算 $2+3\\times4$ 的结果。")
+
+        status = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(status.status_code, 200)
+        payload = status.get_json()["task"]
+        self.assertEqual(payload["state"], "failed")
+        self.assertEqual(payload["record_id"], record["id"])
+        self.assertEqual(payload["record_status"], "recognized")
+        self.assertEqual(payload["parent_error_message"], "错题已保存，PDF 暂时生成失败，请稍后再查看。")
+        self.assertEqual(payload["maintainer_error_detail"], "renderer crashed while rebuilding student pdf")
+
     def test_wechat_service_can_fetch_parent_scoped_upload_task(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
         binding = lesson_manager.bind_parent_to_student(
@@ -778,6 +827,18 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         record = lesson_manager.get_wechat_wrong_question_submission(result["record_id"])
         self.assertEqual(record["recognition_status"], "failed")
         self.assertEqual(record["recognition_error"], "题目识别失败，请重新识别")
+
+        status = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(status.status_code, 200)
+        payload = status.get_json()["task"]
+        self.assertEqual(payload["record_status"], "failed")
+        self.assertEqual(payload["parent_error_message"], "错题处理失败，原图已保留，老师稍后可查看。")
+        self.assertEqual(payload["maintainer_error_detail"], "题目识别失败，请重新识别")
 
     def test_wechat_child_library_endpoint_returns_shared_pdf_url(self):
         self.client.post(

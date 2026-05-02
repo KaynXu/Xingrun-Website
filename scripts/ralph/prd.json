@@ -173,8 +173,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 9,
-      "passes": false,
-      "notes": "Parents can tolerate slow AI better than losing the submitted question."
+      "passes": true,
+      "notes": "Completed: worker/API tests now cover PDF rebuild failure after recognition so the task fails with the original image-backed record still visible; failed task payloads expose parent_error_message for concise parent-facing copy and maintainer_error_detail for raw diagnostics, and the mini program upload summary prefers the concise parent message."
     },
     {
       "id": "MP-UPLOAD-010",

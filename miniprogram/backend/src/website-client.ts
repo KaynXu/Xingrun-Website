@@ -219,6 +219,8 @@ export interface WebsiteWrongQuestionUploadTask {
   status: string;
   record_id?: string;
   error_message?: string;
+  parent_error_message?: string;
+  maintainer_error_detail?: string;
 }
 
 export async function loginParentWechatAccount(input: {

@@ -3394,6 +3394,18 @@ def _is_wechat_upload_task_stale(task: dict) -> bool:
     return (datetime.now() - updated_at).total_seconds() >= _WECHAT_UPLOAD_TASK_STALE_SECONDS
 
 
+def _wechat_wrong_question_upload_task_parent_error_message(task: dict, record_status: str) -> str:
+    if str(task.get("status") or "") != "failed":
+        return ""
+    if record_status == "recognized":
+        return "错题已保存，PDF 暂时生成失败，请稍后再查看。"
+    if record_status == "failed":
+        return "错题处理失败，原图已保留，老师稍后可查看。"
+    if bool(task.get("retryable")):
+        return "上传任务暂时无法完成，请稍后重试。"
+    return "上传任务处理失败，请稍后查看。"
+
+
 def _wechat_wrong_question_upload_task_payload(task: dict) -> dict:
     payload = dict(task)
     status = str(payload.get("status") or "pending").strip() or "pending"
@@ -3402,16 +3414,24 @@ def _wechat_wrong_question_upload_task_payload(task: dict) -> dict:
     payload["is_stale"] = _is_wechat_upload_task_stale(payload)
     payload["record_missing"] = False
     payload["record_status"] = ""
+    payload["parent_error_message"] = ""
+    payload["maintainer_error_detail"] = ""
 
-    if status == "ready":
-        record_id = str(payload.get("record_id") or "").strip()
-        record = get_wechat_wrong_question_submission(record_id) if record_id else None
-        if record:
-            payload["record_status"] = str(record.get("recognition_status") or "").strip()
-        else:
-            payload["state"] = "missing_record"
-            payload["record_missing"] = True
-            payload["retryable"] = True
+    record_id = str(payload.get("record_id") or "").strip()
+    record = get_wechat_wrong_question_submission(record_id) if record_id else None
+    if record:
+        payload["record_status"] = str(record.get("recognition_status") or "").strip()
+    elif status == "ready" and record_id:
+        payload["state"] = "missing_record"
+        payload["record_missing"] = True
+        payload["retryable"] = True
+
+    if status == "failed":
+        payload["maintainer_error_detail"] = str(payload.get("error_message") or "").strip()
+        payload["parent_error_message"] = _wechat_wrong_question_upload_task_parent_error_message(
+            payload,
+            str(payload.get("record_status") or ""),
+        )
 
     return payload
 
