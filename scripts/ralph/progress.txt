@@ -1,0 +1,19 @@
+# Ralph Progress Log
+Started: 2026-05-02
+---
+
+Current PRD: website frontend stability hardening.
+
+Scope:
+- Website frontend only: frontend/ Vite + React workspace.
+- Do not include WeChat mini program stability in this PRD.
+- Do not include backend worker reliability or production data repair in this PRD.
+- Each iteration should complete one user story from scripts/ralph/prd.json.
+
+Baseline proof for every completed story:
+- npm --prefix frontend test
+- npm --prefix frontend run build
+- git diff --check
+
+Status:
+- No stories have been implemented yet.

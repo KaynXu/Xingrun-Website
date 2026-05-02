@@ -7,6 +7,7 @@
 
 ### 当前状态
 - 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
+- 2026-05-02 已把网站前端稳定性整理成 Ralph-style PRD：新增 `scripts/ralph/prd.json`，范围限定为网站 `frontend/`，不包含小程序、后端 worker 或生产数据修复；共拆成 12 个可单轮执行的 story，覆盖前端 proof runner、启动/auth 存储、API 失败状态、工作台权限导航、课程日历、智能错题/PDF、班级反馈、异步轮询、账号/班级表单、移动滚动、数学/PDF 渲染和前端死路径守卫。同步新增 `scripts/ralph/progress.txt` 作为 Ralph/Codex 插件模式的初始进度文件；尚未开始实现这些 story。
 - 2026-05-01 已修复小程序家长上传页手动题框最小尺寸过大问题：旧逻辑在拖拽缩放时强制 `72px` 下限、保存时又强制 `0.08` 归一化宽高，整页照片缩到手机预览区后会让小题框无法继续缩小。现在题框手势和保存归一化统一走小程序模型 helper，最低可缩到 `16px` 预览尺寸，旋转后也不会把窄题框重新放大到 8%。本地新增回归覆盖小题框缩放、保存和旋转；仍需微信开发者工具或真机手工 smoke 一次小题/窄题框。
 - 2026-05-01 已手动补跑生产“七年级5班”历史失败错题任务 `157/164/171/177/178`：执行前备份生产库 `data/xingrun.db.backup-before-g7c5-rerun-20260501-230224`，其中 `157/164/171/177` 用当前修复后的识别链路原地恢复为 `ready/recognized`；`178` 当前 AI 审稿认为原图含坐标系图象、不适合纯文本转写，已按系统现有几何/配图题逻辑原地恢复为 `is_geometry=1`、保留原图入库，执行前另备份 `data/xingrun.db.backup-before-g7c5-task178-image-preserve-20260501-231129`。最终统一刷新 PDF 前再备份 `data/xingrun.db.backup-before-g7c5-final-pdf-refresh-20260501-231232`，并重建学生 `76/77/78/79` 错题库 PDF。最终 proof 显示 5 个目标 task 均 `ready`、对应记录均 `recognized`、目标任务无剩余 non-ready，王睿博/毛裕宁/邹欣彤/李奕萱对应学生记录失败数均为 0，PDF 均存在且非空。
 - 2026-05-01 已完成一轮小程序稳定性排查并修复一个家长上传提交风险：如果家长切到“语音错因”但没有成功录音，上传任务现在会回退为 `text`/空错因提交，不再拿空 `voiceFilePath` 调用音频 `/upload` 导致整批提交失败。改动只触达 `miniprogram/miniprogram/pages/parent-upload/model.js` 和对应测试；临时 proof `/tmp/xingrun_miniprogram_stability_proof.sh` 已通过 bridge 13 条测试、bridge `tsc` build、小程序 40 条测试、活代码陈旧 `AI 框选` 扫描和 `git diff --check`。未触碰生产数据，仍需真机 smoke。
@@ -166,6 +167,7 @@
 
 ### 下一步
 - 最值得继续做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf` 全文扫一遍，确认三棱锥外接球例题、线面平行、线面垂直、面面垂直、围魏救赵和体积计算迁移这些口径符合老师原课。
+- 如果继续按 Ralph 模式处理网站前端稳定性，下一步从 `scripts/ralph/prd.json` 的 `FE-STAB-001` 开始，只做一个 story，验证通过后再把该 story 标记为 `passes=true` 并提交。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
 - GitHub push 仍待网络/权限恢复后补做：本机 `github.com:443` 当前连接超时，生产机 deploy key 可 fetch 但 push 报 read-only。当前本地 `develop/master` 和生产机 `master(a284f58)` 已包含 legacy uploads fallback，远端 `origin/develop/origin/master` 仍停在 `367cf98`。
