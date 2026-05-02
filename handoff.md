@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-008`：新增 `frontend/src/reviewGenerationAsync.ts` 和对应测试，复习生成历史列表现在会规整异常轮询 payload，区分 pending/failed/missing-output 状态，并且只有完成记录带 PDF 路径时才显示预览/下载入口；课堂反馈任务 hydrate/generate 路径现在会规整任务响应，pending/generating 状态提示用户稍后刷新，生成内容不完整时不再显示成功文案。`scripts/ralph/prd.json` 已将 `FE-STAB-008` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-009`。
 - 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-007`：`frontend/src/class-feedback-generation.test.tsx` 已覆盖课堂反馈生成/保存/确认失败 handler 的 busy state 释放和草稿保留源码约束，以及 accessible class/member selection 变化；`App.tsx` 现在在当前选中班级不再属于可访问班级列表时清掉旧课堂反馈 task、草稿、学生和状态，避免旧班级反馈残留在新权限范围内。`scripts/ralph/prd.json` 已将 `FE-STAB-007` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-008`。
 - 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-006`：`frontend/src/smart-wrong-questions.test.ts` 已覆盖智能错题本详情加载失败、保存失败、学生错题库 PDF 刷新失败、删除当前题失败、错题练习生成失败，以及错题练习记录仅返回 `pdf_path` 时的鉴权 PDF 链接；`SmartWrongQuestionsPage.tsx` 现在生成练习记录 PDF 入口时会从 `pdfUrl / pdfPath / downloadUrl` 兜底并统一走现有鉴权 URL builder。`scripts/ralph/prd.json` 已将 `FE-STAB-006` 标记为 `passes=true`。
 - 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-005`：`CourseCalendarPage.tsx` 现在确认排课前会先清除 pending drop，并捕获课程/自定义事项排期 callback 失败，避免 API 失败或取消微调后残留弹窗；右侧课程卡片长班名加截断约束，自定义事项卡片列表补固定高度独立滚动。`frontend/src/course-calendar.test.tsx` 已覆盖空排期、缺老师/学科字段、长班名、筛选无匹配、取消/失败拖拽恢复、扩大模式滚动 guard 和右侧列表独立滚动。`scripts/ralph/prd.json` 已将 `FE-STAB-005` 标记为 `passes=true`。
@@ -174,7 +175,7 @@
 
 ### 下一步
 - 若要自动跑完剩余网站前端稳定性 story，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh`；如果想先试一轮，执行 `scripts/ralph/run_codex_ralph.sh 1`。
-- 如果继续按 Ralph 模式处理网站前端稳定性，下一步从 `scripts/ralph/prd.json` 的 `FE-STAB-008` 开始，只做一个 story，验证通过后再把该 story 标记为 `passes=true` 并提交。
+- 如果继续按 Ralph 模式处理网站前端稳定性，下一步从 `scripts/ralph/prd.json` 的 `FE-STAB-009` 开始，只做一个 story，验证通过后再把该 story 标记为 `passes=true` 并提交。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
 - GitHub push 仍待网络/权限恢复后补做：本机 `github.com:443` 当前连接超时，生产机 deploy key 可 fetch 但 push 报 read-only。当前本地 `develop/master` 和生产机 `master(a284f58)` 已包含 legacy uploads fallback，远端 `origin/develop/origin/master` 仍停在 `367cf98`。

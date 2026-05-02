@@ -58,8 +58,11 @@ import {
   defaultStageLabelGroups,
   formatClassFeedbackStudentCopyText,
   generateClassFeedbackTask,
+  hasCompleteClassFeedbackGeneratedContent,
+  isClassFeedbackTaskGenerating,
   loadClassFeedbackLabels,
   loadClassFeedbackTask,
+  normalizeClassFeedbackTaskResponse,
   saveClassFeedbackTaskDraft,
   type ClassFeedbackStageNotes,
   type ClassFeedbackStudentCard,
@@ -68,6 +71,13 @@ import {
   type ClassFeedbackStageName,
   type StageLabelGroup,
 } from './classFeedbackGeneration';
+import {
+  getReviewLessonTaskMessage,
+  getReviewLessonTaskState,
+  hasReviewLessonOutput,
+  isReviewLessonPending,
+  normalizeReviewLessonsResponse,
+} from './reviewGenerationAsync';
 
 // --- Types ---
 
@@ -2096,8 +2106,8 @@ const ReviewDocumentHistory = ({
     if (!quiet) {
       setLoading(true);
     }
-    return apiFetch<Lesson[]>('/api/review-plans')
-      .then(setLessons)
+    return apiFetch<unknown>('/api/review-plans')
+      .then((payload) => setLessons(normalizeReviewLessonsResponse(payload)))
       .catch(console.error)
       .finally(() => {
         if (!quiet) {
@@ -2110,7 +2120,7 @@ const ReviewDocumentHistory = ({
     void load();
   }, [load, refreshToken]);
 
-  const hasPendingLesson = lessons.some((lesson) => lesson.record_status === 'pending');
+  const hasPendingLesson = lessons.some(isReviewLessonPending);
 
   useEffect(() => {
     if (!hasPendingLesson) {
@@ -2153,18 +2163,22 @@ const ReviewDocumentHistory = ({
                 className="group flex h-full flex-col rounded-2xl border border-sky-100/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70"
               >
                 {(() => {
-                  const statusLabel = lesson.record_status === 'pending'
+                  const taskState = getReviewLessonTaskState(lesson);
+                  const taskMessage = getReviewLessonTaskMessage(lesson);
+                  const statusLabel = taskState === 'pending'
                     ? '生成中'
-                    : lesson.record_status === 'failed'
+                    : taskState === 'failed'
                       ? '生成失败'
-                      : lesson.pdf_path
+                      : taskState === 'missing-output'
+                        ? '待刷新'
+                        : hasReviewLessonOutput(lesson)
                         ? '已生成'
                         : '无 PDF';
-                  const statusDotClass = lesson.record_status === 'pending'
+                  const statusDotClass = taskState === 'pending'
                     ? 'bg-amber-500'
-                    : lesson.record_status === 'failed'
+                    : taskState === 'failed'
                       ? 'bg-rose-500'
-                      : lesson.pdf_path
+                      : hasReviewLessonOutput(lesson)
                         ? 'bg-emerald-500'
                         : 'bg-slate-300 dark:bg-slate-600';
 
@@ -2207,19 +2221,24 @@ const ReviewDocumentHistory = ({
                         </div>
                       </dl>
 
-                      {lesson.record_status === 'pending' && (
+                      {taskState === 'pending' && (
                         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-                          可离开页面，完成后会出现在列表中
+                          {taskMessage || '可离开页面，完成后会出现在列表中'}
                         </div>
                       )}
-                      {lesson.record_status === 'failed' && (
+                      {taskState === 'failed' && (
                         <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50/90 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-                          {lesson.generation_error || '生成失败'}
+                          {taskMessage || '生成失败'}
+                        </div>
+                      )}
+                      {taskState === 'missing-output' && (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                          {taskMessage}
                         </div>
                       )}
 
                       <div className="mt-4 flex flex-wrap justify-end gap-1">
-                        {lesson.pdf_path && (
+                        {hasReviewLessonOutput(lesson) && (
                           <>
                             <a
                               href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
@@ -2478,10 +2497,14 @@ const ClassFeedbackGenerationPage = ({
     async (taskId: number, classId: number) => {
     setIsRefreshingTask(true);
     try {
-      const [task, roster] = await Promise.all([
+      const [rawTask, roster] = await Promise.all([
         loadClassFeedbackTask(taskId),
         listClassStudents(classId),
       ]);
+      const task = normalizeClassFeedbackTaskResponse(rawTask);
+      if (!task) {
+        throw new Error('反馈任务响应格式异常，请刷新后重试。');
+      }
       const hydratedStudents = buildClassFeedbackStudentCards({
         roster: roster.students,
         task,
@@ -2502,11 +2525,15 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackSummary(hydratedSummary);
       setCurrentTaskStatus(task.status);
       classFeedbackDraftSnapshotRef.current = buildClassFeedbackDraftSnapshot(hydratedSummary, hydratedStudents);
+      const isGeneratingTask = isClassFeedbackTaskGenerating(task);
       setClassFeedbackStatusMessage(
-        task.status === 'confirmed'
+        isGeneratingTask
+          ? '课堂反馈仍在生成中，请稍后点击刷新任务。'
+          : task.status === 'confirmed'
           ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
             : `已同步 ${roster.students.length} 名学生，可补充阶段备注并生成草稿。`,
         );
+      return task;
       } finally {
         setIsRefreshingTask(false);
       }
@@ -2797,7 +2824,7 @@ const ClassFeedbackGenerationPage = ({
 
     setIsGeneratingClassFeedback(true);
     try {
-      const generated = await generateClassFeedbackTask(activeClassFeedbackTaskId, {
+      const rawGenerated = await generateClassFeedbackTask(activeClassFeedbackTaskId, {
         classStatusTags: classFeedbackStatusTags,
         classStatusNote: classFeedbackStageNotes.classStatusNote,
         parentFeedbackNote: classFeedbackStageNotes.parentFeedbackNote,
@@ -2809,7 +2836,19 @@ const ClassFeedbackGenerationPage = ({
           note: student.highlightNote,
         })),
       });
-      await hydrateClassFeedbackTask(generated.id, selectedClassId);
+      const generated = normalizeClassFeedbackTaskResponse(rawGenerated, { fallbackClassId: selectedClassId });
+      if (!generated) {
+        throw new Error('反馈任务响应格式异常，请刷新后重试。');
+      }
+      const hydratedTask = await hydrateClassFeedbackTask(generated.id, selectedClassId);
+      if (isClassFeedbackTaskGenerating(hydratedTask)) {
+        setClassFeedbackStatusMessage('课堂反馈仍在生成中，请稍后点击刷新任务。');
+        return;
+      }
+      if (!hasCompleteClassFeedbackGeneratedContent(hydratedTask, classFeedbackStudents.length)) {
+        setClassFeedbackStatusMessage('反馈任务已返回，但生成内容不完整，请点击刷新任务确认。');
+        return;
+      }
       setClassFeedbackStatusMessage(`已生成班级总评和 ${classFeedbackStudents.length} 名学生反馈草稿。`);
     } catch (error) {
       setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成课堂反馈失败，请重试。');

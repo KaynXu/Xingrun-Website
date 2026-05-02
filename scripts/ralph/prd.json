@@ -134,7 +134,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "This story is frontend-only; backend worker reliability belongs in a separate backend PRD."
     },
     {

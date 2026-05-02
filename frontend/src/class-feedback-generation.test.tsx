@@ -10,6 +10,9 @@ import {
   buildClassFeedbackConfirmPayload,
   defaultStageLabelGroups,
   formatClassFeedbackStudentCopyText,
+  hasCompleteClassFeedbackGeneratedContent,
+  isClassFeedbackTaskGenerating,
+  normalizeClassFeedbackTaskResponse,
   type ClassFeedbackStudentCard,
 } from './classFeedbackGeneration';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
@@ -200,6 +203,106 @@ test('formatClassFeedbackStudentCopyText joins student feedback into a parent-fr
   ]);
 
   assert.equal(content, '【张三】\n正式反馈\n\n【李四】\n待补充草稿');
+});
+
+test('normalizeClassFeedbackTaskResponse keeps malformed async task payloads recoverable', () => {
+  assert.equal(normalizeClassFeedbackTaskResponse({ id: 'bad' }), null);
+
+  const task = normalizeClassFeedbackTaskResponse({
+    id: 21,
+    class_id: 7,
+    teacher_user_id: null,
+    teacher_name_snapshot: '王老师',
+    start_date: '2026-05-01',
+    end_date: '2026-05-07',
+    period_length_days: 7,
+    period_granularity: 'weekly',
+    status: 'generating',
+    class_summary_ai_draft: null,
+    class_summary_final_text: null,
+    class_status_tags: 'bad',
+    class_status_note: null,
+    parent_feedback_note: null,
+    teaching_focus_note: null,
+    next_stage_preview_note: null,
+    student_highlights: null,
+    student_entries: 'bad',
+  });
+
+  assert.ok(task);
+  assert.equal(task.id, 21);
+  assert.equal(task.class_summary_ai_draft, '');
+  assert.deepEqual(task.student_entries, []);
+  assert.deepEqual(task.student_highlights, []);
+  assert.equal(isClassFeedbackTaskGenerating(task), true);
+  assert.equal(hasCompleteClassFeedbackGeneratedContent(task, 1), false);
+
+  const pendingTask = normalizeClassFeedbackTaskResponse(
+    { id: 23, status: 'pending' },
+    { fallbackClassId: 7 },
+  );
+  assert.ok(pendingTask);
+  assert.equal(pendingTask.class_id, 7);
+  assert.equal(isClassFeedbackTaskGenerating(pendingTask), true);
+});
+
+test('hasCompleteClassFeedbackGeneratedContent requires summary and every student output before success copy', () => {
+  const task = normalizeClassFeedbackTaskResponse({
+    id: 22,
+    class_id: 7,
+    teacher_user_id: null,
+    teacher_name_snapshot: '王老师',
+    start_date: '2026-05-01',
+    end_date: '2026-05-07',
+    period_length_days: 7,
+    period_granularity: 'weekly',
+    status: 'draft',
+    class_summary_ai_draft: '本周整体进入状态更快。',
+    class_summary_final_text: '',
+    class_status_tags: [],
+    class_status_note: '',
+    parent_feedback_note: '',
+    teaching_focus_note: '',
+    next_stage_preview_note: '',
+    student_highlights: [],
+    student_entries: [
+      { student_id: 1, student_name_snapshot: '学生甲', ai_draft: '表达更完整。', final_text: '' },
+      { student_id: 2, student_name_snapshot: '学生乙', ai_draft: '', final_text: '计算更稳。' },
+    ],
+  });
+
+  assert.ok(task);
+  const missingStudentOutputTask = normalizeClassFeedbackTaskResponse({
+    ...task,
+    student_entries: [
+      { student_id: 1, student_name_snapshot: '学生甲', ai_draft: '表达更完整。', final_text: '' },
+      { student_id: 2, student_name_snapshot: '学生乙', ai_draft: '', final_text: '' },
+    ],
+  });
+
+  assert.equal(hasCompleteClassFeedbackGeneratedContent(task, 2), true);
+  assert.ok(missingStudentOutputTask);
+  assert.equal(hasCompleteClassFeedbackGeneratedContent(missingStudentOutputTask, 2), false);
+});
+
+test('App source handles pending and incomplete class feedback generation responses through refresh path', () => {
+  const generateHandler = sourceBetween(
+    appSource,
+    'const handleGenerateClassFeedback = useCallback(async () => {',
+    'const handleCopyClassFeedbackSummary = async () => {',
+  );
+  const hydrateHandler = sourceBetween(
+    appSource,
+    'const hydrateClassFeedbackTask = useCallback(',
+    'useEffect(() => {',
+  );
+
+  assert.match(hydrateHandler, /normalizeClassFeedbackTaskResponse\(rawTask\)/);
+  assert.match(hydrateHandler, /isClassFeedbackTaskGenerating\(task\)/);
+  assert.match(generateHandler, /const hydratedTask = await hydrateClassFeedbackTask\(generated\.id, selectedClassId\);/);
+  assert.match(generateHandler, /hasCompleteClassFeedbackGeneratedContent\(hydratedTask, classFeedbackStudents\.length\)/);
+  assert.match(generateHandler, /课堂反馈仍在生成中，请稍后点击刷新任务。/);
+  assert.match(generateHandler, /反馈任务已返回，但生成内容不完整，请点击刷新任务确认。/);
 });
 
 test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, class summary, and student cards', () => {
