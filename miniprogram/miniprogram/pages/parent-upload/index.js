@@ -21,6 +21,7 @@ const {
 
 const TASK_POLL_INTERVAL_MS = 2000;
 const TASK_POLL_MAX_ATTEMPTS = 12;
+const UPLOAD_TASK_RECOVERY_KEY_PREFIX = 'xr_parent_upload_tasks_v1';
 const TOPIC_CATEGORY_OPTIONS = ['未分类', '计算', '经济', '浓度', '工程', '行程', '几何', '数论', '自定义'];
 const UPLOAD_TASK_STATUS_MAP = {
   pending: true,
@@ -29,11 +30,47 @@ const UPLOAD_TASK_STATUS_MAP = {
   failed: true,
 };
 
+function buildUploadTaskRecoveryStorageKey(openId, bindingId) {
+  return `${UPLOAD_TASK_RECOVERY_KEY_PREFIX}:${String(openId || '').trim()}:${Number(bindingId) || 0}`;
+}
+
 function buildPendingUploadTask(taskId) {
   return {
     id: taskId,
     status: 'pending',
   };
+}
+
+function isTerminalUploadTask(task) {
+  const status = String((task && task.status) || '').trim();
+  return status === 'ready' || status === 'failed';
+}
+
+function normalizeRecoveryTaskEntry(task) {
+  if (!task || typeof task !== 'object') {
+    return null;
+  }
+  const id = task.id;
+  if (id === undefined || id === null || !String(id).trim()) {
+    return null;
+  }
+  const status = String(task.status || 'pending').trim();
+  return {
+    id,
+    status: UPLOAD_TASK_STATUS_MAP[status] ? status : 'pending',
+    imageId: String(task.imageId || ''),
+    boxId: String(task.boxId || ''),
+    topicCategory: String(task.topicCategory || '未分类').trim() || '未分类',
+    acceptedAt: String(task.acceptedAt || ''),
+  };
+}
+
+function parseRecoveryRecord(rawValue) {
+  const record = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+  if (!record || typeof record !== 'object' || !Array.isArray(record.tasks)) {
+    throw new Error('invalid recovery record');
+  }
+  return record;
 }
 
 function normalizeFetchedUploadTask(taskId, payloadTask, previousTask) {
@@ -158,6 +195,9 @@ Page({
         binding,
         errorMessage: binding ? '' : '没有找到这个孩子的最新绑定关系，请先重新绑定。',
       });
+      if (binding) {
+        await this.restoreAcceptedUploadTasks(session.openId, binding);
+      }
     } catch (error) {
       this.setData({
         binding: null,
@@ -212,6 +252,144 @@ Page({
       return;
     }
     this.setUploadStage('recognizing', `服务器正在识别错题，${currentSummary.description || '完成后会进入错题本。'}`, currentSummary.title || '正在识别');
+  },
+
+  readAcceptedUploadTasks(openId, binding) {
+    const bindingId = binding && binding.id;
+    const key = buildUploadTaskRecoveryStorageKey(openId, bindingId);
+    let record;
+    let rawValue;
+    if (typeof wx === 'undefined' || typeof wx.getStorageSync !== 'function') {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '无法读取本机保存的上传进度，请稍后回错题本刷新。',
+      };
+    }
+
+    try {
+      rawValue = wx.getStorageSync(key);
+    } catch (_error) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '无法读取本机保存的上传进度，请稍后回错题本刷新。',
+      };
+    }
+
+    if (rawValue === '' || rawValue === undefined || rawValue === null) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '',
+      };
+    }
+
+    try {
+      record = parseRecoveryRecord(rawValue);
+    } catch (_error) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '无法读取本机保存的上传进度，请稍后回错题本刷新。',
+      };
+    }
+
+    if (String(record.openId || '') !== String(openId || '') || Number(record.bindingId || 0) !== Number(bindingId || 0)) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '',
+      };
+    }
+
+    return {
+      key,
+      tasks: record.tasks.map(normalizeRecoveryTaskEntry).filter(Boolean),
+      errorMessage: '',
+    };
+  },
+
+  persistAcceptedUploadTasks(openId, binding, tasks) {
+    const bindingId = binding && binding.id;
+    const key = buildUploadTaskRecoveryStorageKey(openId, bindingId);
+    const metadataById = this.uploadTaskRecoveryTasksById || {};
+    const activeTasks = (Array.isArray(tasks) ? tasks : [])
+      .map((task) => {
+        const metadata = metadataById[String(task && task.id)] || {};
+        return normalizeRecoveryTaskEntry({
+          ...metadata,
+          ...task,
+        });
+      })
+      .filter((task) => task && !isTerminalUploadTask(task));
+
+    if (!activeTasks.length) {
+      if (typeof wx !== 'undefined' && typeof wx.removeStorageSync === 'function') {
+        try {
+          wx.removeStorageSync(key);
+        } catch (_error) {
+          return;
+        }
+      }
+      return;
+    }
+
+    this.uploadTaskRecoveryTasksById = activeTasks.reduce((result, task) => {
+      result[String(task.id)] = task;
+      return result;
+    }, {});
+
+    if (typeof wx === 'undefined' || typeof wx.setStorageSync !== 'function') {
+      return;
+    }
+
+    try {
+      wx.setStorageSync(key, {
+        version: 1,
+        openId,
+        bindingId: Number(bindingId) || 0,
+        child: {
+          studentName: String((binding && binding.studentName) || ''),
+          className: String((binding && binding.className) || ''),
+        },
+        tasks: activeTasks,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (_error) {
+      this.setUploadStage('background', '本机暂时不能保存上传进度，请稍后回错题本刷新。', '上传进度待刷新');
+    }
+  },
+
+  async restoreAcceptedUploadTasks(openId, binding) {
+    const recovered = this.readAcceptedUploadTasks(openId, binding);
+    const tasks = recovered.tasks || [];
+    if (recovered.errorMessage) {
+      this.setUploadStage('background', recovered.errorMessage, '上传进度待刷新');
+      return null;
+    }
+    if (!tasks.length) {
+      return null;
+    }
+
+    this.uploadTaskRecoveryTasksById = tasks.reduce((result, task) => {
+      result[String(task.id)] = task;
+      return result;
+    }, {});
+
+    const taskIds = tasks.map((task) => task.id);
+    this.setData({
+      successTaskIds: taskIds,
+      uploadTaskSummary: buildUploadTaskSummary(tasks),
+      errorMessage: '',
+    });
+    this.setUploadStage('background', `找到 ${taskIds.length} 条此前已接收的上传任务，正在刷新状态。`, '正在恢复上传进度');
+    const summary = await this.pollUploadTasks(openId, taskIds);
+    this.setData({
+      successTaskIds: taskIds,
+      uploadTaskSummary: summary,
+    });
+    return summary;
   },
 
   getCurrentImageFrom(imageItems, selectedImageId) {
@@ -873,6 +1051,8 @@ Page({
 
   async submitUpload() {
     let jobs;
+    const successTaskIds = [];
+    const acceptedUploadTasks = [];
     if (this.data.submitting) {
       return;
     }
@@ -908,7 +1088,6 @@ Page({
 
     try {
       const session = await ensureParentSession(wx, app.globalData.serverUrl);
-      const successTaskIds = [];
       let currentJob;
       let imageItem;
       let croppedPath;
@@ -948,7 +1127,27 @@ Page({
           topicCategory: currentJob.topicCategory,
         });
         const taskId = (payload.task && payload.task.id) || '';
+        if (!String(taskId).trim()) {
+          throw new Error('服务器没有返回上传任务编号，请稍后重试。');
+        }
         successTaskIds.push(taskId);
+        acceptedUploadTasks.push({
+          id: taskId,
+          status: 'pending',
+          imageId: currentJob.imageId,
+          boxId: currentJob.boxId,
+          topicCategory: currentJob.topicCategory,
+          acceptedAt: new Date().toISOString(),
+        });
+        this.uploadTaskRecoveryTasksById = acceptedUploadTasks.reduce((result, task) => {
+          result[String(task.id)] = task;
+          return result;
+        }, {});
+        this.persistAcceptedUploadTasks(session.openId, this.data.binding, acceptedUploadTasks);
+        this.setData({
+          successTaskIds: successTaskIds.slice(),
+          uploadTaskSummary: buildUploadTaskSummary(acceptedUploadTasks),
+        });
         this.setUploadStage('task_accepted', `${jobLabel}已接收${taskId ? `，任务 ${taskId}` : ''}。`, '任务已接收');
       }
 
@@ -977,10 +1176,20 @@ Page({
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '上传失败';
-      this.setData({
-        errorMessage,
-      });
-      this.setUploadStage('failed', `上传中断：${errorMessage}`, '上传失败');
+      if (successTaskIds.length) {
+        const uploadTaskSummary = buildUploadTaskSummary(acceptedUploadTasks, { background: true });
+        this.setData({
+          errorMessage,
+          successTaskIds,
+          uploadTaskSummary,
+        });
+        this.setUploadStage('background', `已接收 ${successTaskIds.length} 条上传任务，后续提交中断：${errorMessage}。已接收的任务会继续保留，可稍后回错题本查看。`, '部分任务已接收');
+      } else {
+        this.setData({
+          errorMessage,
+        });
+        this.setUploadStage('failed', `上传中断：${errorMessage}`, '上传失败');
+      }
     } finally {
       this.setData({ submitting: false });
     }
@@ -1018,6 +1227,7 @@ Page({
       }));
       summary = buildUploadTaskSummary(tasks);
       this.setData({ uploadTaskSummary: summary });
+      this.persistAcceptedUploadTasks(openId, this.data.binding, tasks);
       this.setUploadStageFromSummary(summary);
 
       if ((summary.state === 'ready' || summary.state === 'failed' || summary.state === 'partial_failed') && summary.pendingCount === 0) {
@@ -1028,6 +1238,7 @@ Page({
 
     summary = buildUploadTaskSummary(tasks, { background: true });
     this.setData({ uploadTaskSummary: summary });
+    this.persistAcceptedUploadTasks(openId, this.data.binding, tasks);
     this.setUploadStageFromSummary(summary);
     return summary;
   },

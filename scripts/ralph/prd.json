@@ -93,8 +93,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "This keeps background processing from feeling like lost work."
+      "passes": true,
+      "notes": "Completed: accepted parent upload tasks are stored under a parent/child scoped recovery key with child and image/box metadata, restored on page reopen by polling task status without re-uploading crops, and cleared once recovered tasks reach ready/failed terminal states; corrupted or unavailable storage shows a recoverable progress message."
     },
     {
       "id": "MP-UPLOAD-005",

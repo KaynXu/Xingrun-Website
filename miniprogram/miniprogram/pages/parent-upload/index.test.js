@@ -94,13 +94,14 @@ function createReadyUploadData() {
   };
 }
 
-function withWx(testBody) {
+function withWx(testBody, wxOverrides) {
   const originalWx = global.wx;
   const toasts = [];
   global.wx = {
     showToast(payload) {
       toasts.push(payload);
     },
+    ...(wxOverrides || {}),
   };
   return Promise.resolve()
     .then(() => testBody(toasts))
@@ -291,4 +292,163 @@ test('pollUploadTasks treats malformed task payloads as pending with the origina
   assert.deepEqual(page.data.successTaskIds, [9001]);
   assert.equal(page.data.uploadStage, 'background');
   assert.match(page.data.uploadStageText, /后台继续识别/);
+});
+
+test('restoreAcceptedUploadTasks resumes pending stored tasks without re-uploading cropped images', async () => {
+  const requestedTaskIds = [];
+  const storedWrites = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => {
+      throw new Error('should not submit a recovered task again');
+    },
+    fetchWrongQuestionUploadTask: async (_wx, _serverUrl, params) => {
+      requestedTaskIds.push(Number(params.taskId));
+      if (Number(params.taskId) === 9001) {
+        return { task: { id: 9001, status: 'processing' } };
+      }
+      return { task: { id: 9002, status: 'ready' } };
+    },
+  });
+  const page = createPageInstance(pageConfig, {
+    binding: {
+      id: 21,
+      studentName: 'Alice',
+      className: '六年级 1 班',
+    },
+  });
+  page.exportBoxCrop = async () => {
+    throw new Error('should not export a recovered task again');
+  };
+
+  await withWx(async () => {
+    const summary = await page.restoreAcceptedUploadTasks('openid-parent-1', page.data.binding);
+    assert.equal(summary.state, 'background');
+  }, {
+    getStorageSync() {
+      return {
+        version: 1,
+        openId: 'openid-parent-1',
+        bindingId: 21,
+        child: {
+          studentName: 'Alice',
+          className: '六年级 1 班',
+        },
+        tasks: [
+          {
+            id: 9001,
+            status: 'pending',
+            imageId: 'img_1',
+            boxId: 'box_1',
+            topicCategory: '计算',
+          },
+          {
+            id: 9002,
+            status: 'pending',
+            imageId: 'img_2',
+            boxId: 'box_2',
+            topicCategory: '几何',
+          },
+        ],
+      };
+    },
+    setStorageSync(_key, value) {
+      storedWrites.push(value);
+    },
+    removeStorageSync() {},
+  });
+
+  assert.ok(requestedTaskIds.includes(9001));
+  assert.ok(requestedTaskIds.includes(9002));
+  assert.deepEqual(page.data.successTaskIds, [9001, 9002]);
+  assert.equal(page.data.uploadStage, 'background');
+  assert.match(page.data.uploadStageText, /后台继续识别/);
+  assert.equal(storedWrites.at(-1).tasks.length, 1);
+  assert.equal(storedWrites.at(-1).tasks[0].id, 9001);
+  assert.equal(storedWrites.at(-1).child.studentName, 'Alice');
+});
+
+test('restoreAcceptedUploadTasks clears recovered tasks after every task reaches a terminal state', async () => {
+  const removedKeys = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => {
+      throw new Error('should not submit a recovered task again');
+    },
+    fetchWrongQuestionUploadTask: async (_wx, _serverUrl, params) => {
+      if (Number(params.taskId) === 9001) {
+        return { task: { id: 9001, status: 'ready' } };
+      }
+      return { task: { id: 9002, status: 'failed', error_message: '题图太模糊' } };
+    },
+  });
+  const page = createPageInstance(pageConfig, {
+    binding: {
+      id: 21,
+      studentName: 'Alice',
+      className: '六年级 1 班',
+    },
+  });
+
+  await withWx(async () => {
+    const summary = await page.restoreAcceptedUploadTasks('openid-parent-1', page.data.binding);
+    assert.equal(summary.state, 'partial_failed');
+  }, {
+    getStorageSync() {
+      return {
+        version: 1,
+        openId: 'openid-parent-1',
+        bindingId: 21,
+        child: {
+          studentName: 'Alice',
+          className: '六年级 1 班',
+        },
+        tasks: [
+          { id: 9001, status: 'pending', imageId: 'img_1', boxId: 'box_1' },
+          { id: 9002, status: 'pending', imageId: 'img_2', boxId: 'box_2' },
+        ],
+      };
+    },
+    setStorageSync() {
+      throw new Error('terminal recovered tasks should not be persisted again');
+    },
+    removeStorageSync(key) {
+      removedKeys.push(key);
+    },
+  });
+
+  assert.deepEqual(page.data.successTaskIds, [9001, 9002]);
+  assert.equal(removedKeys.length, 1);
+  assert.match(removedKeys[0], /xr_parent_upload_tasks_v1:openid-parent-1:21/);
+});
+
+test('restoreAcceptedUploadTasks shows a recoverable message when stored tasks are corrupted', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    binding: {
+      id: 21,
+      studentName: 'Alice',
+      className: '六年级 1 班',
+    },
+  });
+
+  await withWx(async () => {
+    const summary = await page.restoreAcceptedUploadTasks('openid-parent-1', page.data.binding);
+    assert.equal(summary, null);
+  }, {
+    getStorageSync() {
+      return '{not-valid-json';
+    },
+  });
+
+  assert.deepEqual(page.data.successTaskIds, []);
+  assert.equal(page.data.uploadStage, 'background');
+  assert.match(page.data.uploadStageText, /无法读取本机保存的上传进度/);
 });

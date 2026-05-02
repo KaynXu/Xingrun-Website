@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-003` 已完成，下一条是 `MP-UPLOAD-004 Persist accepted upload tasks for page recovery`。
+- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-004` 已完成，下一条是 `MP-UPLOAD-005 Smooth manual crop and box interaction`。
+- 2026-05-03 `MP-UPLOAD-004` 已完成：家长上传页会把已接收 task id 按 `openId + bindingId` 持久化到本机恢复记录，附带孩子和图片/题框元数据；页面重开后只恢复轮询任务状态，不重新上传裁切图，ready/failed 终态会从恢复记录清掉，损坏或不可读 storage 会显示可恢复提示。
 - 2026-05-03 已完成的网站前端稳定性 Ralph PRD 已归档到 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，对应进度归档到 `scripts/ralph/archive/website_frontend_stability_progress_20260503.txt`；该批覆盖启动/auth 存储、课程日历失败恢复、工作区权限 fallback、智能错题/PDF、课堂反馈、异步轮询、账号/班级表单锁、移动滚动、数学渲染和前端 stale-code guard。
 - 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
 - 2026-05-01 已修复小程序家长上传页手动题框最小尺寸过大问题：旧逻辑在拖拽缩放时强制 `72px` 下限、保存时又强制 `0.08` 归一化宽高，整页照片缩到手机预览区后会让小题框无法继续缩小。现在题框手势和保存归一化统一走小程序模型 helper，最低可缩到 `16px` 预览尺寸，旋转后也不会把窄题框重新放大到 8%。本地新增回归覆盖小题框缩放、保存和旋转；仍需微信开发者工具或真机手工 smoke 一次小题/窄题框。
