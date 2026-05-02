@@ -94,6 +94,47 @@ function createReadyUploadData() {
   };
 }
 
+function createTwoBoxUploadData() {
+  const imageItem = {
+    id: 'img_1',
+    localPath: '/tmp/source.jpg',
+    boxes: [
+      {
+        id: 'box_1',
+        x: 0.1,
+        y: 0.12,
+        width: 0.36,
+        height: 0.22,
+        childReasonInputMode: 'text',
+        childReasonText: '第一题没看清单位',
+        topicCategory: '计算',
+      },
+      {
+        id: 'box_2',
+        x: 0.52,
+        y: 0.58,
+        width: 0.32,
+        height: 0.2,
+        childReasonInputMode: 'text',
+        childReasonText: '第二题算错了',
+        topicCategory: '几何',
+      },
+    ],
+    activeBoxId: 'box_2',
+  };
+  return {
+    binding: {
+      id: 21,
+      studentName: 'Alice',
+      className: '六年级 1 班',
+    },
+    imageItems: [imageItem],
+    selectedImageId: 'img_1',
+    currentImage: imageItem,
+    activeBox: imageItem.boxes[1],
+  };
+}
+
 function withWx(testBody, wxOverrides) {
   const originalWx = global.wx;
   const toasts = [];
@@ -109,6 +150,143 @@ function withWx(testBody, wxOverrides) {
       global.wx = originalWx;
     });
 }
+
+test('loadCurrentImage handles large portrait and landscape photos while switching images', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    stageWidth: 300,
+    stageHeight: 420,
+    imageItems: [
+      {
+        id: 'img_portrait',
+        localPath: '/tmp/large-portrait.jpg',
+        boxes: [{ id: 'box_p', x: 0.2, y: 0.2, width: 0.4, height: 0.2 }],
+        activeBoxId: 'box_p',
+      },
+      {
+        id: 'img_landscape',
+        localPath: '/tmp/large-landscape.jpg',
+        boxes: [{ id: 'box_l', x: 0.15, y: 0.18, width: 0.5, height: 0.3 }],
+        activeBoxId: 'box_l',
+      },
+    ],
+    selectedImageId: 'img_portrait',
+  });
+  page.getImageInfo = async (src) => {
+    if (src.includes('landscape')) {
+      return { width: 4200, height: 3000 };
+    }
+    return { width: 3000, height: 4200 };
+  };
+
+  await page.loadCurrentImage();
+  assert.equal(page.data.selectedImageId, 'img_portrait');
+  assert.equal(page.data.activeBox.id, 'box_p');
+  assert.equal(page.data.imageWidth, 300);
+  assert.equal(page.data.imageHeight, 420);
+
+  await page.selectImage({ currentTarget: { dataset: { imageId: 'img_landscape' } } });
+  assert.equal(page.data.selectedImageId, 'img_landscape');
+  assert.equal(page.data.activeBox.id, 'box_l');
+  assert.equal(page.data.imageWidth, 300);
+  assert.equal(page.data.imageHeight, 214);
+  assert.equal(page.data.imageTop, 103);
+});
+
+test('rotateCurrentImageClockwise keeps the selected image and tiny selected box stable', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    stageWidth: 300,
+    stageHeight: 420,
+    imageItems: [
+      {
+        id: 'img_1',
+        localPath: '/tmp/large-portrait.jpg',
+        contentVersion: 0,
+        boxes: [{ id: 'box_tiny', x: 0.2, y: 0.3, width: 0.02, height: 0.03 }],
+        activeBoxId: 'box_tiny',
+      },
+    ],
+    selectedImageId: 'img_1',
+    currentImage: {
+      id: 'img_1',
+      localPath: '/tmp/large-portrait.jpg',
+      contentVersion: 0,
+      boxes: [{ id: 'box_tiny', x: 0.2, y: 0.3, width: 0.02, height: 0.03 }],
+      activeBoxId: 'box_tiny',
+    },
+  });
+  page.getImageInfo = async (src) => {
+    if (src.includes('rotated')) {
+      return { width: 4200, height: 3000 };
+    }
+    return { width: 3000, height: 4200 };
+  };
+  page.exportCanvasImage = async () => '/tmp/rotated.jpg';
+
+  await page.rotateCurrentImageClockwise();
+
+  assert.equal(page.data.selectedImageId, 'img_1');
+  assert.equal(page.data.currentImage.localPath, '/tmp/rotated.jpg');
+  assert.equal(page.data.currentImage.contentVersion, 1);
+  assert.equal(page.data.activeBox.id, 'box_tiny');
+  assert.equal(page.data.activeBox.width, 0.03);
+  assert.equal(page.data.activeBox.height, 0.02);
+});
+
+test('removeActiveBox keeps the current image and selects the next neighboring box', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    imageItems: [
+      {
+        id: 'img_1',
+        localPath: '/tmp/source.jpg',
+        boxes: [
+          { id: 'box_1', x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+          { id: 'box_2', x: 0.35, y: 0.1, width: 0.2, height: 0.2 },
+          { id: 'box_3', x: 0.6, y: 0.1, width: 0.2, height: 0.2 },
+        ],
+        activeBoxId: 'box_2',
+      },
+    ],
+    selectedImageId: 'img_1',
+    currentImage: {
+      id: 'img_1',
+      localPath: '/tmp/source.jpg',
+      boxes: [
+        { id: 'box_1', x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        { id: 'box_2', x: 0.35, y: 0.1, width: 0.2, height: 0.2 },
+        { id: 'box_3', x: 0.6, y: 0.1, width: 0.2, height: 0.2 },
+      ],
+      activeBoxId: 'box_2',
+    },
+    activeBox: { id: 'box_2' },
+    imageWidth: 300,
+    imageHeight: 420,
+  });
+
+  await page.removeActiveBox();
+
+  assert.equal(page.data.selectedImageId, 'img_1');
+  assert.deepEqual(page.data.currentImage.boxes.map((box) => box.id), ['box_1', 'box_3']);
+  assert.equal(page.data.currentImage.activeBoxId, 'box_3');
+  assert.equal(page.data.activeBox.id, 'box_3');
+});
 
 test('submitUpload exposes each parent-visible upload stage without real network calls', async () => {
   const pageConfig = loadUploadPage({
@@ -168,6 +346,110 @@ test('submitUpload releases the page and shows a specific failed stage after cro
   assert.equal(page.data.uploadStage, 'failed');
   assert.match(page.data.uploadStageText, /裁切图片失败，请重试/);
   assert.match(page.data.errorMessage, /裁切图片失败，请重试/);
+});
+
+test('submitUpload reports crop export failure by item without clearing the draft', async () => {
+  let cropCalls = 0;
+  const submittedFiles = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => {
+      throw new Error('voice should not upload for text boxes');
+    },
+    submitParentWrongQuestion: async (_wx, _serverUrl, params) => {
+      submittedFiles.push(params.filePath);
+      return { task: { id: 9001, status: 'pending' } };
+    },
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'processing' } }),
+  });
+  const page = createPageInstance(pageConfig, createTwoBoxUploadData());
+  page.exportBoxCrop = async () => {
+    cropCalls += 1;
+    if (cropCalls === 2) {
+      throw new Error('canvas export timeout');
+    }
+    return `/tmp/crop-${cropCalls}.jpg`;
+  };
+
+  await withWx(async () => {
+    await page.submitUpload();
+  });
+
+  assert.deepEqual(submittedFiles, ['/tmp/crop-1.jpg']);
+  assert.equal(page.data.imageItems.length, 1);
+  assert.equal(page.data.selectedImageId, 'img_1');
+  assert.equal(page.data.activeBox.id, 'box_2');
+  assert.deepEqual(page.data.successTaskIds, [9001]);
+  assert.equal(page.data.uploadStage, 'background');
+  assert.match(page.data.errorMessage, /第 2\/2 题裁切失败/);
+  assert.match(page.data.uploadStageText, /第 2\/2 题裁切失败/);
+});
+
+test('exportBoxCrop keeps large landscape crops inside protected dimensions', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {});
+  const exportOptions = [];
+  page.getImageInfo = async () => ({ width: 4200, height: 3000 });
+  page.exportCanvasImage = async (_filePath, options) => {
+    exportOptions.push(options);
+    return '/tmp/crop.jpg';
+  };
+
+  const croppedPath = await page.exportBoxCrop(
+    { id: 'img_landscape', localPath: '/tmp/large-landscape.jpg' },
+    { id: 'box_full', x: 0, y: 0, width: 1, height: 1 }
+  );
+
+  assert.equal(croppedPath, '/tmp/crop.jpg');
+  assert.equal(exportOptions[0].canvasWidth, 1792);
+  assert.equal(exportOptions[0].canvasHeight, 1280);
+  assert.equal(exportOptions[0].quality, 0.82);
+  assert.deepEqual(exportOptions[0].sourceRect, {
+    x: 0,
+    y: 0,
+    width: 4200,
+    height: 3000,
+  });
+});
+
+test('crop export lock blocks gestures and duplicate submit actions', async () => {
+  let ensureCalls = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => {
+      ensureCalls += 1;
+      return { openId: 'openid-parent-1' };
+    },
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    ...createTwoBoxUploadData(),
+    cropExporting: true,
+    displayBoxes: [
+      { id: 'box_2', left: 20, top: 30, width: 120, height: 90, active: true },
+    ],
+    imageLeft: 0,
+    imageTop: 0,
+    imageWidth: 300,
+    imageHeight: 420,
+  });
+
+  page.onBoxTouchStart({
+    touches: [{ clientX: 30, clientY: 40 }],
+    currentTarget: { dataset: { boxId: 'box_2', mode: 'move' } },
+  });
+  await page.submitUpload();
+
+  assert.equal(Boolean(page.touchState), false);
+  assert.equal(ensureCalls, 0);
+  assert.equal(page.data.selectedImageId, 'img_1');
+  assert.equal(page.data.activeBox.id, 'box_2');
 });
 
 test('pollUploadTasks exposes background processing when tasks remain pending', async () => {

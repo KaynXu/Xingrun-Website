@@ -103,6 +103,7 @@ Page({
     currentStatusText: '',
     displayBoxes: [],
     submitting: false,
+    cropExporting: false,
     uploadStage: '',
     uploadStageTitle: '',
     uploadStageText: '',
@@ -230,6 +231,10 @@ Page({
       uploadStageText,
       uploadStageTitle: uploadStageTitle || '上传进度',
     });
+  },
+
+  isInteractionLocked() {
+    return Boolean(this.data.submitting || this.data.cropExporting);
   },
 
   setUploadStageFromSummary(summary) {
@@ -607,6 +612,9 @@ Page({
   },
 
   chooseImages() {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     wx.chooseImage({
       count: 9,
       sizeType: ['original'],
@@ -631,6 +639,9 @@ Page({
   },
 
   async selectImage(event) {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     const selectedImageId = String(event.currentTarget.dataset.imageId || '');
     if (!selectedImageId || selectedImageId === this.data.selectedImageId) {
       return;
@@ -639,6 +650,9 @@ Page({
   },
 
   async addManualBox() {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     if (!this.data.selectedImageId) {
       return;
     }
@@ -653,6 +667,9 @@ Page({
   },
 
   async selectBox(event) {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     const boxId = String(event.currentTarget.dataset.boxId || '');
     if (!boxId || !this.data.currentImage) {
       return;
@@ -851,6 +868,9 @@ Page({
   },
 
   async removeActiveBox() {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     if (!this.data.selectedImageId || !this.data.currentImage) {
       return;
     }
@@ -858,14 +878,18 @@ Page({
     const currentImageId = this.data.currentImage.id;
     const imageItems = this.data.imageItems.map((item) => {
       let boxes;
+      let activeBoxIndex;
+      let nextActiveBoxIndex;
       if (item.id !== currentImageId) {
         return item;
       }
+      activeBoxIndex = (item.boxes || []).findIndex((box) => box.id === item.activeBoxId);
       boxes = (item.boxes || []).filter((box) => box.id !== item.activeBoxId);
+      nextActiveBoxIndex = activeBoxIndex >= 0 ? Math.min(activeBoxIndex, boxes.length - 1) : 0;
       return {
         ...item,
         boxes,
-        activeBoxId: boxes[0] ? boxes[0].id : '',
+        activeBoxId: boxes[nextActiveBoxIndex] ? boxes[nextActiveBoxIndex].id : '',
       };
     });
     await this.commitImageItems(imageItems, this.data.selectedImageId, false);
@@ -918,6 +942,10 @@ Page({
   },
 
   onBoxTouchStart(event) {
+    if (this.isInteractionLocked()) {
+      this.touchState = null;
+      return;
+    }
     const touch = event.touches[0];
     const boxId = String(event.currentTarget.dataset.boxId || '');
     const mode = String(event.currentTarget.dataset.mode || 'move');
@@ -939,11 +967,18 @@ Page({
   },
 
   onBoxTouchMove(event) {
+    if (this.isInteractionLocked()) {
+      this.touchState = null;
+      return;
+    }
     if (!this.touchState) {
       return;
     }
 
     const touch = event.touches[0];
+    if (!touch) {
+      return;
+    }
     const deltaX = touch.clientX - this.touchState.startX;
     const deltaY = touch.clientY - this.touchState.startY;
     const nextFrame = buildBoxTouchFrame({
@@ -986,9 +1021,13 @@ Page({
     if (!currentImage || !currentImage.localPath) {
       return;
     }
+    if (this.isInteractionLocked()) {
+      return;
+    }
 
     this.setData({
       errorMessage: '',
+      cropExporting: true,
     });
 
     try {
@@ -1022,6 +1061,10 @@ Page({
       this.setData({
         errorMessage: error instanceof Error ? error.message : '旋转图片失败，请稍后重试。',
       });
+    } finally {
+      this.setData({
+        cropExporting: false,
+      });
     }
   },
 
@@ -1053,7 +1096,7 @@ Page({
     let jobs;
     const successTaskIds = [];
     const acceptedUploadTasks = [];
-    if (this.data.submitting) {
+    if (this.isInteractionLocked()) {
       return;
     }
     if (!this.data.binding || !this.data.binding.id) {
@@ -1105,7 +1148,15 @@ Page({
           continue;
         }
         this.setUploadStage('preparing_crop', `正在裁切${jobLabel}，请勿退出页面。`, '正在准备题图');
-        croppedPath = await this.exportBoxCrop(imageItem, currentJob.box);
+        this.setData({ cropExporting: true });
+        try {
+          croppedPath = await this.exportBoxCrop(imageItem, currentJob.box);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '裁切图片失败，请重试。';
+          throw new Error(`${jobLabel}裁切失败：${message}`);
+        } finally {
+          this.setData({ cropExporting: false });
+        }
         childReasonAudioUrl = '';
 
         if (currentJob.childReasonInputMode === 'voice') {

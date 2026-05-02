@@ -234,6 +234,19 @@ test('buildUploadExportPlan limits oversized crops before upload', () => {
   });
 });
 
+test('buildUploadExportPlan keeps landscape exports within existing upload limits', () => {
+  const plan = buildUploadExportPlan({
+    cropWidth: 4200,
+    cropHeight: 3000,
+  });
+
+  assert.deepEqual(plan, {
+    outputWidth: 1792,
+    outputHeight: 1280,
+    quality: 0.82,
+  });
+});
+
 test('buildBoxTouchFrame lets parents shrink a crop box to a small printed question', () => {
   const frame = buildBoxTouchFrame({
     mode: 'resize-se',

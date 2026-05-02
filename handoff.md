@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-004` 已完成，下一条是 `MP-UPLOAD-005 Smooth manual crop and box interaction`。
+- 2026-05-03 当前活跃 Ralph 是“小程序家长上传 2.0 稳定性”：`scripts/ralph/prd.json` 包含 `MP-UPLOAD-001` 到 `MP-UPLOAD-012`，范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke；`MP-UPLOAD-001` 到 `MP-UPLOAD-005` 已完成，下一条是 `MP-UPLOAD-006 Reduce upload timeout and retry frustration`。
+- 2026-05-03 `MP-UPLOAD-005` 已完成：家长上传页手动框选现在覆盖大竖图/大横图、旋转图、小题框、切换图片、删除当前框、多个题框导出和裁切失败；裁切失败会标明第几题且不清空草稿，旋转/裁切失败/删除后保持当前图片和题框选择稳定，裁切或旋转导出期间会锁住手势和重复提交，`1280 x 1792 / quality 0.82` 导出上限仍有回归覆盖。
 - 2026-05-03 `MP-UPLOAD-004` 已完成：家长上传页会把已接收 task id 按 `openId + bindingId` 持久化到本机恢复记录，附带孩子和图片/题框元数据；页面重开后只恢复轮询任务状态，不重新上传裁切图，ready/failed 终态会从恢复记录清掉，损坏或不可读 storage 会显示可恢复提示。
 - 2026-05-03 已完成的网站前端稳定性 Ralph PRD 已归档到 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，对应进度归档到 `scripts/ralph/archive/website_frontend_stability_progress_20260503.txt`；该批覆盖启动/auth 存储、课程日历失败恢复、工作区权限 fallback、智能错题/PDF、课堂反馈、异步轮询、账号/班级表单锁、移动滚动、数学渲染和前端 stale-code guard。
 - 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。

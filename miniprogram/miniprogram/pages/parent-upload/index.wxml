@@ -12,7 +12,7 @@
 
   <view wx:if="{{binding}}" class="panel-card">
     <text class="field-label">错题图片</text>
-    <button class="ghost-btn picker-btn" disabled="{{submitting}}" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
+    <button class="ghost-btn picker-btn" disabled="{{submitting || cropExporting}}" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
 
     <scroll-view wx:if="{{imageItems.length}}" class="thumb-strip" scroll-x="true" show-scrollbar="false">
       <view
@@ -73,22 +73,22 @@
       <text class="status-hint">{{currentStatusText}}</text>
 
       <view class="action-row">
-        <button class="ghost-btn compact-btn" disabled="{{submitting}}" bindtap="addManualBox">补加框</button>
-        <button class="ghost-btn compact-btn" disabled="{{submitting}}" bindtap="removeActiveBox">删除当前</button>
-        <button class="ghost-btn compact-btn" disabled="{{submitting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
+        <button class="ghost-btn compact-btn" disabled="{{submitting || cropExporting}}" bindtap="addManualBox">补加框</button>
+        <button class="ghost-btn compact-btn" disabled="{{submitting || cropExporting}}" bindtap="removeActiveBox">删除当前</button>
+        <button class="ghost-btn compact-btn" disabled="{{submitting || cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
       </view>
     </view>
 
     <view wx:if="{{activeBox}}" class="reason-card">
       <text class="field-label topic-label">专题分类</text>
-      <picker mode="selector" range="{{topicCategoryOptions}}" disabled="{{submitting}}" bindchange="handleActiveBoxTopicChange">
+      <picker mode="selector" range="{{topicCategoryOptions}}" disabled="{{submitting || cropExporting}}" bindchange="handleActiveBoxTopicChange">
         <view class="topic-picker">{{activeBox.topicCategory || '未分类'}}</view>
       </picker>
       <input
         class="field-input topic-input"
         value="{{activeBox.topicCategory}}"
         placeholder="不确定可填未分类，自定义如周期问题"
-        disabled="{{submitting}}"
+        disabled="{{submitting || cropExporting}}"
         bindinput="handleActiveBoxCustomTopicInput"
       />
 
@@ -97,7 +97,7 @@
         <button
           class="{{activeBox.childReasonInputMode === 'text' ? 'mode-btn mode-btn-active' : 'mode-btn'}}"
           data-mode="text"
-          disabled="{{submitting}}"
+          disabled="{{submitting || cropExporting}}"
           bindtap="switchActiveBoxReasonMode"
         >
           文字输入
@@ -105,7 +105,7 @@
         <button
           class="{{activeBox.childReasonInputMode === 'voice' ? 'mode-btn mode-btn-active' : 'mode-btn'}}"
           data-mode="voice"
-          disabled="{{submitting}}"
+          disabled="{{submitting || cropExporting}}"
           bindtap="switchActiveBoxReasonMode"
         >
           语音说明
@@ -117,12 +117,12 @@
         class="field-textarea"
         placeholder="让孩子自己写：这题为什么会错，错在看题、概念、方法还是计算哪一步"
         value="{{activeBox.childReasonText}}"
-        disabled="{{submitting}}"
+        disabled="{{submitting || cropExporting}}"
         bindinput="handleActiveBoxReasonInput"
       />
 
       <view wx:else class="voice-card">
-        <button class="ghost-btn voice-btn" disabled="{{submitting}}" bindtap="toggleActiveBoxVoiceRecording">{{recordingBoxId === activeBox.id ? '结束录音' : '开始录音'}}</button>
+        <button class="ghost-btn voice-btn" disabled="{{submitting || cropExporting}}" bindtap="toggleActiveBoxVoiceRecording">{{recordingBoxId === activeBox.id ? '结束录音' : '开始录音'}}</button>
         <text wx:if="{{activeBox.voiceFilePath}}" class="voice-status">{{activeBox.voiceFileName || '已录制语音，提交后服务器会自动识别'}}</text>
         <text wx:if="{{activeBox.reasonStatusText}}" class="voice-hint">{{activeBox.reasonStatusText}}</text>
       </view>
@@ -133,7 +133,7 @@
       <text class="upload-stage-desc">{{uploadStageText}}</text>
     </view>
 
-    <button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submitUpload">统一提交所有错题</button>
+    <button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting || cropExporting}}" bindtap="submitUpload">统一提交所有错题</button>
   </view>
 
   <view wx:if="{{successTaskIds.length}}" class="state-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : 'success-card'}}">

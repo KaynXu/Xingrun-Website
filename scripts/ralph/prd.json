@@ -109,8 +109,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Keep manual box mode; do not bring back AI box selection."
+      "passes": true,
+      "notes": "Completed: manual crop interaction now has focused tests for large portrait/landscape images, rotated images, tiny boxes, switching images, deleting selected boxes, export failures, and multi-box export. Crop export failures include the failing item label without clearing the draft, selected image/box state stays stable after rotate/export failure/delete, crop export locks conflicting gestures and duplicate submit actions, and 1280 x 1792 / quality 0.82 export limits remain covered."
     },
     {
       "id": "MP-UPLOAD-006",
