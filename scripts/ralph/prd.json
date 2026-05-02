@@ -29,7 +29,7 @@
         "Do not change business UI behavior in this story."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "This story creates the proof rail that all later stability stories reuse."
     },
     {

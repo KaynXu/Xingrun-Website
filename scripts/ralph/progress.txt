@@ -16,4 +16,5 @@ Baseline proof for every completed story:
 - git diff --check
 
 Status:
-- No stories have been implemented yet.
+- FE-STAB-001 passes: added scripts/ralph/frontend_stability_proof.sh as the shared frontend baseline proof runner.
+- Next story: FE-STAB-002.
