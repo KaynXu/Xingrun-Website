@@ -326,14 +326,127 @@ test('submitParentWrongQuestion forwards the child reason text and audio url in 
     childReasonAudioUrl: 'https://example.com/files/reason.m4a',
     topicCategory: '周期问题',
   });
-  assert.equal(capturedTimeout, 180000);
+  assert.equal(capturedTimeout, 30000);
+});
+
+test('submitParentWrongQuestion maps oversized compressed images to a specific non-retryable message', async () => {
+  const wxApi = {
+    uploadFile({ success }) {
+      success({
+        statusCode: 413,
+        data: JSON.stringify({
+          error: 'payload too large',
+        }),
+      });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => submitParentWrongQuestion(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      bindingId: 21,
+      filePath: '/tmp/oversized-crop.jpg',
+    }),
+    (error) => {
+      assert.equal(error.message, '题图仍然太大，草稿已保留，请缩小框选范围或重新拍清楚一点再试。');
+      assert.equal(error.statusCode, 413);
+      assert.equal(error.retryable, false);
+      return true;
+    },
+  );
+});
+
+test('submitParentWrongQuestion maps transient server failures to a retryable draft-preserving message', async () => {
+  const wxApi = {
+    uploadFile({ success }) {
+      success({
+        statusCode: 502,
+        data: JSON.stringify({
+          error: 'bad gateway',
+        }),
+      });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => submitParentWrongQuestion(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      bindingId: 21,
+      filePath: '/tmp/crop.jpg',
+    }),
+    (error) => {
+      assert.equal(error.message, '服务器暂时没有接住上传，草稿已保留，请稍后点“统一提交所有错题”重试。');
+      assert.equal(error.statusCode, 502);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
+test('submitParentWrongQuestion maps network failures to a retryable draft-preserving message', async () => {
+  const wxApi = {
+    uploadFile({ fail }) {
+      fail({ errMsg: 'uploadFile:fail network interrupted' });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => submitParentWrongQuestion(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      bindingId: 21,
+      filePath: '/tmp/crop.jpg',
+    }),
+    (error) => {
+      assert.equal(error.message, '网络连接中断，草稿已保留，请检查网络后重试。');
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
+test('uploadParentReasonAudio uses a shorter audio timeout and keeps the recording retryable', async () => {
+  let capturedTimeout = 0;
+  const wxApi = {
+    uploadFile({ timeout, fail }) {
+      capturedTimeout = timeout;
+      fail({ errMsg: 'uploadFile:fail timeout' });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => uploadParentReasonAudio(wxApi, 'https://example.com', {
+      filePath: '/tmp/mock-audio.mp3',
+    }),
+    (error) => {
+      assert.equal(error.message, '语音上传超时，录音还在本机，请检查网络后重试。');
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(capturedTimeout, 20000);
 });
 
 test('fetchWrongQuestionUploadTask fetches the server task status', async () => {
   let capturedRequest = null;
   const wxApi = {
-    request({ url, method, data, success }) {
-      capturedRequest = { url, method, data };
+    request({ url, method, data, timeout, success }) {
+      capturedRequest = { url, method, data, timeout };
       success({
         statusCode: 200,
         data: {
@@ -355,12 +468,34 @@ test('fetchWrongQuestionUploadTask fetches the server task status', async () => 
   assert.deepEqual(capturedRequest, {
     url: 'https://example.com/wechat/parent/wrong-question-upload-tasks/9001',
     method: 'GET',
+    timeout: 8000,
     data: {
       openId: 'openid-parent-1',
     },
   });
   assert.equal(payload.task.status, 'ready');
   assert.equal(payload.task.record_id, 'wechat-record-1');
+});
+
+test('fetchWrongQuestionUploadTask maps status refresh timeouts without failing accepted uploads', async () => {
+  const wxApi = {
+    request({ timeout, fail }) {
+      assert.equal(timeout, 8000);
+      fail({ errMsg: 'request:fail timeout' });
+    },
+  };
+
+  await assert.rejects(
+    () => fetchWrongQuestionUploadTask(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      taskId: 9001,
+    }),
+    (error) => {
+      assert.equal(error.message, '刷新上传进度超时，已接收的任务仍会继续处理，请稍后再看。');
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
 });
 
 test('updateChildWrongQuestionTopicCategory sends the parent topic category update', async () => {

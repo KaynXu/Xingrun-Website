@@ -125,8 +125,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "The old 180 second submit timeout should not be the parent experience."
+      "passes": true,
+      "notes": "Completed: parentApi now uses scoped shorter timeouts for audio upload, compressed question image task submission, and task status refresh; 413 oversized images get a specific non-retryable draft-preserving message, transient 5xx/network/timeout failures get retryable draft-preserving messages, and page retry keeps the original draft until a later accepted submission clears it."
     },
     {
       "id": "MP-UPLOAD-007",

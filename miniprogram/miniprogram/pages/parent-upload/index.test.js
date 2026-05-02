@@ -385,6 +385,49 @@ test('submitUpload reports crop export failure by item without clearing the draf
   assert.match(page.data.uploadStageText, /第 2\/2 题裁切失败/);
 });
 
+test('submitUpload keeps the original draft and allows retry after a retryable upload failure', async () => {
+  let submitCalls = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => {
+      throw new Error('voice should not upload for text boxes');
+    },
+    submitParentWrongQuestion: async () => {
+      submitCalls += 1;
+      if (submitCalls === 1) {
+        const error = new Error('网络连接中断，草稿已保留，请检查网络后重试。');
+        error.retryable = true;
+        throw error;
+      }
+      return { task: { id: 9001, status: 'pending' } };
+    },
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const originalData = createTwoBoxUploadData();
+  const page = createPageInstance(pageConfig, originalData);
+  page.exportBoxCrop = async (_imageItem, box) => `/tmp/${box.id}.jpg`;
+
+  await withWx(async () => {
+    await page.submitUpload();
+  });
+
+  assert.equal(page.data.submitting, false);
+  assert.equal(page.data.uploadStage, 'failed');
+  assert.match(page.data.uploadStageText, /草稿已保留/);
+  assert.equal(page.data.imageItems.length, 1);
+  assert.equal(page.data.currentImage.id, 'img_1');
+  assert.equal(page.data.activeBox.id, 'box_2');
+
+  await withWx(async () => {
+    await page.submitUpload();
+  });
+
+  assert.equal(submitCalls, 3);
+  assert.deepEqual(page.data.successTaskIds, [9001, 9001]);
+  assert.equal(page.data.uploadStage, 'ready');
+  assert.equal(page.data.imageItems.length, 0);
+});
+
 test('exportBoxCrop keeps large landscape crops inside protected dimensions', async () => {
   const pageConfig = loadUploadPage({
     ensureParentSession: async () => ({ openId: 'openid-parent-1' }),

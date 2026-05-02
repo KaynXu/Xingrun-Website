@@ -2,7 +2,9 @@ const PARENT_SESSION_KEY = 'xr_parent_session';
 const PARENT_BINDINGS_KEY = 'xr_parent_bindings';
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
-const WRONG_QUESTION_SUBMIT_TIMEOUT_MS = 180000;
+const AUDIO_UPLOAD_TIMEOUT_MS = 20000;
+const WRONG_QUESTION_SUBMIT_TIMEOUT_MS = 30000;
+const UPLOAD_TASK_STATUS_TIMEOUT_MS = 8000;
 const DEFAULT_LOGIN_TIMEOUT_MS = 10000;
 
 function safeGetStorage(wxApi, key, fallbackValue) {
@@ -53,6 +55,39 @@ function extractRequestErrorMessage(response, fallbackMessage) {
   return fallbackMessage;
 }
 
+function createParentApiError(message, metadata) {
+  const error = new Error(message);
+  const source = metadata && typeof metadata === 'object' ? metadata : {};
+  if (source.statusCode !== undefined) {
+    error.statusCode = source.statusCode;
+  }
+  if (source.retryable !== undefined) {
+    error.retryable = Boolean(source.retryable);
+  }
+  return error;
+}
+
+function buildHttpError(response, fallbackMessage, messages) {
+  const statusCode = Number((response && response.statusCode) || 0);
+  const source = messages && typeof messages === 'object' ? messages : {};
+  if (statusCode === 413 && source.oversizeMessage) {
+    return createParentApiError(source.oversizeMessage, {
+      statusCode,
+      retryable: false,
+    });
+  }
+  if (statusCode >= 500 && source.serverRetryMessage) {
+    return createParentApiError(source.serverRetryMessage, {
+      statusCode,
+      retryable: true,
+    });
+  }
+  return createParentApiError(extractRequestErrorMessage(response, fallbackMessage), {
+    statusCode,
+    retryable: statusCode >= 500,
+  });
+}
+
 function normalizeAsyncFailureMessage(rawMessage, fallbackMessage, timeoutMessage) {
   const message = String(rawMessage || '').trim();
   if (!message) {
@@ -64,12 +99,40 @@ function normalizeAsyncFailureMessage(rawMessage, fallbackMessage, timeoutMessag
   return message;
 }
 
+function buildAsyncFailureError(rawMessage, fallbackMessage, messages) {
+  const source = messages && typeof messages === 'object' ? messages : {};
+  const message = String(rawMessage || '').trim();
+  if (/timeout/i.test(message)) {
+    return createParentApiError(source.timeoutMessage || fallbackMessage, {
+      retryable: true,
+    });
+  }
+  if (/network|interrupted|offline|abort|socket|fail/i.test(message) && source.networkMessage) {
+    return createParentApiError(source.networkMessage, {
+      retryable: true,
+    });
+  }
+  return createParentApiError(message || fallbackMessage, {
+    retryable: false,
+  });
+}
+
 function requestJson(wxApi, options) {
   const requestOptions = options && typeof options === 'object' ? { ...options } : {};
   const timeoutMs = Number(requestOptions.timeoutMs || 0) > 0
     ? Number(requestOptions.timeoutMs)
     : DEFAULT_REQUEST_TIMEOUT_MS;
+  const errorMessages = {
+    timeoutMessage: requestOptions.timeoutMessage,
+    networkMessage: requestOptions.networkMessage,
+    oversizeMessage: requestOptions.oversizeMessage,
+    serverRetryMessage: requestOptions.serverRetryMessage,
+  };
   delete requestOptions.timeoutMs;
+  delete requestOptions.timeoutMessage;
+  delete requestOptions.networkMessage;
+  delete requestOptions.oversizeMessage;
+  delete requestOptions.serverRetryMessage;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -98,7 +161,7 @@ function requestJson(wxApi, options) {
           return;
         }
 
-        reject(new Error(extractRequestErrorMessage(response, '请求失败')));
+        reject(buildHttpError(response, '请求失败', errorMessages));
       },
       fail: (error) => {
         if (settled) {
@@ -106,11 +169,10 @@ function requestJson(wxApi, options) {
         }
         settled = true;
         clearTimeout(timer);
-        reject(new Error(normalizeAsyncFailureMessage(
-          error && error.errMsg,
-          '请求失败',
-          '请求超时，请检查网络后重试',
-        )));
+        reject(buildAsyncFailureError(error && error.errMsg, '请求失败', {
+          timeoutMessage: errorMessages.timeoutMessage || '请求超时，请检查网络后重试',
+          networkMessage: errorMessages.networkMessage,
+        }));
       },
     });
   });
@@ -165,7 +227,17 @@ function uploadFile(wxApi, options) {
   const timeoutMs = Number(uploadOptions.timeoutMs || 0) > 0
     ? Number(uploadOptions.timeoutMs)
     : DEFAULT_UPLOAD_TIMEOUT_MS;
+  const errorMessages = {
+    timeoutMessage: uploadOptions.timeoutMessage,
+    networkMessage: uploadOptions.networkMessage,
+    oversizeMessage: uploadOptions.oversizeMessage,
+    serverRetryMessage: uploadOptions.serverRetryMessage,
+  };
   delete uploadOptions.timeoutMs;
+  delete uploadOptions.timeoutMessage;
+  delete uploadOptions.networkMessage;
+  delete uploadOptions.oversizeMessage;
+  delete uploadOptions.serverRetryMessage;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -198,7 +270,10 @@ function uploadFile(wxApi, options) {
           try {
             payload = JSON.parse(responseData);
           } catch (_error) {
-            reject(new Error(extractRequestErrorMessage(response, '上传返回解析失败')));
+            reject(createParentApiError(extractRequestErrorMessage(response, '上传返回解析失败'), {
+              statusCode,
+              retryable: false,
+            }));
             return;
           }
         }
@@ -208,10 +283,10 @@ function uploadFile(wxApi, options) {
           return;
         }
 
-        reject(new Error(extractRequestErrorMessage({
+        reject(buildHttpError({
           ...response,
           data: payload,
-        }, '上传失败')));
+        }, '上传失败', errorMessages));
       },
       fail: (error) => {
         if (settled) {
@@ -219,11 +294,10 @@ function uploadFile(wxApi, options) {
         }
         settled = true;
         clearTimeout(timer);
-        reject(new Error(normalizeAsyncFailureMessage(
-          error && error.errMsg,
-          '上传失败',
-          '上传超时，请检查网络后重试',
-        )));
+        reject(buildAsyncFailureError(error && error.errMsg, '上传失败', {
+          timeoutMessage: errorMessages.timeoutMessage || '上传超时，请检查网络后重试',
+          networkMessage: errorMessages.networkMessage,
+        }));
       },
     });
   });
@@ -389,6 +463,11 @@ async function uploadParentReasonAudio(wxApi, serverUrl, params) {
     url: `${serverUrl}/upload`,
     filePath: params.filePath,
     name: 'file',
+    timeoutMs: AUDIO_UPLOAD_TIMEOUT_MS,
+    timeoutMessage: '语音上传超时，录音还在本机，请检查网络后重试。',
+    networkMessage: '网络连接中断，录音还在本机，请检查网络后重试。',
+    oversizeMessage: '录音文件太大，请重新录一段更短的语音。',
+    serverRetryMessage: '服务器暂时没有接住语音，录音还在本机，请稍后重试。',
     formData: {},
   });
 
@@ -404,6 +483,10 @@ async function submitParentWrongQuestion(wxApi, serverUrl, params) {
     filePath: params.filePath,
     name: 'file',
     timeoutMs: WRONG_QUESTION_SUBMIT_TIMEOUT_MS,
+    timeoutMessage: '题图上传超时，草稿已保留，请检查网络后重试。',
+    networkMessage: '网络连接中断，草稿已保留，请检查网络后重试。',
+    oversizeMessage: '题图仍然太大，草稿已保留，请缩小框选范围或重新拍清楚一点再试。',
+    serverRetryMessage: '服务器暂时没有接住上传，草稿已保留，请稍后点“统一提交所有错题”重试。',
     formData: {
       openId: params.openId,
       bindingId: String(params.bindingId),
@@ -419,6 +502,9 @@ async function fetchWrongQuestionUploadTask(wxApi, serverUrl, params) {
   return requestJson(wxApi, {
     url: `${serverUrl}/wechat/parent/wrong-question-upload-tasks/${params.taskId}`,
     method: 'GET',
+    timeoutMs: UPLOAD_TASK_STATUS_TIMEOUT_MS,
+    timeoutMessage: '刷新上传进度超时，已接收的任务仍会继续处理，请稍后再看。',
+    networkMessage: '刷新上传进度失败，已接收的任务仍会继续处理，请稍后再看。',
     data: {
       openId: params.openId,
     },

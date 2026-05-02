@@ -5,7 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-005` 已完成，下一条 story 是 `MP-UPLOAD-006 Reduce upload timeout and retry frustration`。
+- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-006` 已完成，下一条 story 是 `MP-UPLOAD-007 Harden bridge upload proxy error mapping`。
 - 小程序子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，微信工程代码位于 `miniprogram/miniprogram/`，bridge 位于 `miniprogram/backend/`。
 - 家长链路当前只保留 `绑定孩子 -> 家长首页 -> 上传错题 -> 查看错题本/PDF`。
 - 家长上传最终提交已改成网站端 RQ + Redis 异步任务：小程序只上传题图和可选录音 URL，bridge 转发到网站 `/api/wechat/wrong-questions` 后拿到 `202 + task`；录音转写、错因归类、题图识别、错题入库和 PDF 重建都由网站 RQ worker 后台完成。
@@ -21,6 +21,7 @@
 - 家长上传页手动题框的最小缩放限制已从旧的 `72px`/`0.08` 归一化下限收小为 `16px` 预览尺寸；保存和旋转都不会再把家长调好的小题框强制放大，便于框单道小题或较窄题目。
 - 家长上传页现在允许“切到语音错因但未成功录音”的题目继续提交：生成上传任务时只有存在 `voiceFilePath` 才保留 `voice` 模式，否则回退为 `text`/空错因，避免拿空音频路径调用 `/upload` 导致整批提交失败。
 - 家长上传页裁切后上传前会把超大题图压到 `1280 x 1792` 以内并用 `quality=0.82` 导出，避免拍原图/整页图时触发服务器 `413 Request Entity Too Large`。
+- 家长上传页现在对语音上传、压缩后题图任务提交和任务状态刷新使用专用短超时；压缩后仍 413 会提示草稿已保留并让家长缩小框选或重拍，5xx、网络失败和超时会提示保留草稿并可重新点“统一提交所有错题”重试。
 - 家长上传页语音转录已切到网站后端本地 `faster-whisper`，当前固定 `base + cpu + int8`，先自动识别语言，只有自动识别没出有效文本时才回退 `zh`，不再单独要求 OpenAI Whisper key；但语音转成文字后，错因归类仍走现有聊天类 AI provider，所以系统仍需要至少一个可用 provider key。
 - 家长上传页顶部“拍照 / 继续选图”和底部“统一提交所有错题”按钮都已改为独立窄屏样式，避免被系统默认按钮宽度挤成两行。
 - `AI 框选` 已从小程序页面、`parentApi.js`、bridge、website API 和 `smart_wrong_questions.py` 活代码里删除；`POST /wechat/parent/wrong-question-boxes` 与 `/api/wechat/wrong-question-boxes` 已不再是当前能力。
@@ -32,6 +33,7 @@
 - 2026-05-03 已完成 `MP-UPLOAD-003`：家长上传任务轮询不再因单个状态请求短暂失败而整批失败；缺 id 或非法状态的任务 payload 会按原 task id 保持 pending；ready/failed/pending 混合批次会继续轮询 pending 项，耗尽后明确提示仍在后台处理，并保留已接收 task id。
 - 2026-05-03 已完成 `MP-UPLOAD-004`：家长上传页会持久化已接收 task id 和孩子/图片/题框元数据，重开页面后恢复轮询 pending 任务且不重新上传裁切图；ready/failed 终态会清理恢复记录，损坏或不可读 storage 会显示可恢复提示。
 - 2026-05-03 已完成 `MP-UPLOAD-005`：新增手动框选交互回归，覆盖大竖图/大横图、旋转图、小题框、切换当前图片、删除当前框、多个题框导出和裁切失败；裁切失败按题号显示并保留草稿，旋转/失败/删除后选中状态稳定，裁切或旋转导出期间禁止冲突手势和重复提交。
+- 2026-05-03 已完成 `MP-UPLOAD-006`：语音上传超时收为 20 秒，压缩后题图任务提交收为 30 秒，上传任务状态刷新收为 8 秒；新增回归覆盖超时、压缩后 413、5xx、网络失败和用户重试，失败后保留草稿，重试拿到任务后才清空。
 - 2026-05-01 已做小程序稳定性排查并修复语音错因空录音的提交失败风险：`buildUploadJobs()` 对没有录音文件的语音框回退到 `text` 模式，并新增回归测试。临时 proof `/tmp/xingrun_miniprogram_stability_proof.sh` 已通过 bridge 13 条测试、bridge `tsc` build、小程序 40 条测试、活代码陈旧 `AI 框选` 扫描和 `git diff --check`。
 - 家长上传页最终提交不再先调用转写和错因归类接口，语音错因只先传 `/upload` 得到音频 URL，再随题图提交给服务器后台任务。
 - bridge 的 `/wechat/parent/wrong-questions` 已改为接受 `childReasonAudioUrl` 并返回 `202 + task`，同时新增 `/wechat/parent/wrong-question-upload-tasks/:taskId` 状态查询代理。
@@ -55,7 +57,7 @@
 
 ## 下一步
 - 如果继续按 Ralph 处理小程序上传稳定性，先在项目根目录运行 `scripts/ralph/run_codex_ralph.sh --check`，确认下一条 story 后再启动自动循环；不要把已归档的网站前端 PRD 当作当前队列。
-- 下一条 Ralph story 是 `MP-UPLOAD-006 Reduce upload timeout and retry frustration`，重点收上传/请求超时、413、5xx、网络失败和重试体验。
+- 下一条 Ralph story 是 `MP-UPLOAD-007 Harden bridge upload proxy error mapping`，重点收 bridge 层对网站 202、400、413、502、timeout 和异常响应的结构化映射。
 - 在目标服务器上先安装新依赖并用一段“中文叙述 + 英文字母/公式”真实短录音走一遍家长上传转录，确认模型首次下载、常驻内存、自动识别结果和单次转录时延都能接受；如果 `base` 效果不够，再单独评估是否升到 `small`。
 - 在微信开发者工具或真机打开家长上传页，确认顶部“拍照 / 继续选图”和底部“统一提交所有错题”在窄屏和长文案状态下都不再换行。
 - 在微信开发者工具或真机打开家长首页、绑定页和错题本页，重点看长学生名/长班级名、`绑定更多孩子`、`绑定这个孩子` 和 `查看 PDF` 在安卓/鸿蒙窄屏下是否仍然清楚、可点。
