@@ -89,7 +89,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Existing course-calendar and course-calendar-data tests should be extended before UI changes."
     },
     {

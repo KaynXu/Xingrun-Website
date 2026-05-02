@@ -20,6 +20,7 @@ Status:
 - FE-STAB-002 passes: App bootstrap auth check no longer triggers a full reload for stale tokens; storage guard coverage now includes blocked storage, stale token removal failure, and direct storage-read source guards.
 - FE-STAB-003 passes: App course calendar API failures now clear loading, show a page-level load error for list refresh failures, and alert on schedule/custom schedule save or delete failures; course-calendar tests cover list load failure, save failure, and delete/refresh failure paths.
 - FE-STAB-004 passes: App workspace navigation now resolves disallowed selected tabs through a shared dashboard fallback, uses the guarded navigation setter for sidebar/dashboard shortcuts, and source assertions cover owner/admin/member/staff plus unauthenticated paths.
+- FE-STAB-005 passes: Course calendar tests now cover empty schedules, missing teacher/subject labels, long class names, no-match filters, cancel/failed drop recovery, expanded-mode scroll guardrails, and independent right-side list scrolling; CourseCalendarPage now clears pending drops before invoking schedule callbacks, catches failed callbacks, truncates draggable course names, and gives custom item cards their own bounded scroll list.
 - Added scripts/ralph/run_codex_ralph.sh for optional Codex CLI auto-loop execution; --check and --print-prompt modes validate the next story without invoking Codex.
 - Upgraded the local Codex CLI from 0.118.0 to 0.128.0 after 0.118.0 rejected gpt-5.5; scripts/ralph/run_codex_ralph.sh now defaults to gpt-5.5 again.
-- Next story: FE-STAB-005.
+- Next story: FE-STAB-006.

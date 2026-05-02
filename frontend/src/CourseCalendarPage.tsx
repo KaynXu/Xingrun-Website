@@ -42,8 +42,8 @@ export interface CourseCalendarPageProps {
   onPageStepDaysChange: (dayCount: number) => void;
   onPreviousPage: (dayCount: number) => void;
   onNextPage: (dayCount: number) => void;
-  onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
-  onScheduleCustomItem: (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
+  onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void | Promise<void>;
+  onScheduleCustomItem: (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void | Promise<void>;
   onCreateCustomItem: (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => Promise<CourseCalendarCustomItemRecord>;
   onDeleteCustomItem: (itemId: number) => void;
   onDeleteSchedule: (scheduleId: number) => void;
@@ -407,12 +407,18 @@ export function CourseCalendarPage({
     if (!pendingDrop) {
       return;
     }
-    if (pendingDrop.itemType === 'class') {
-      onScheduleClass(pendingDrop.itemId, pendingDrop.date, pendingDrop.timeBlock, selectedOffsetMinutes);
-    } else {
-      onScheduleCustomItem(pendingDrop.itemId, pendingDrop.date, pendingDrop.timeBlock, selectedOffsetMinutes);
-    }
+    const scheduleDrop = pendingDrop;
     setPendingDrop(null);
+    try {
+      const result = scheduleDrop.itemType === 'class'
+        ? onScheduleClass(scheduleDrop.itemId, scheduleDrop.date, scheduleDrop.timeBlock, selectedOffsetMinutes)
+        : onScheduleCustomItem(scheduleDrop.itemId, scheduleDrop.date, scheduleDrop.timeBlock, selectedOffsetMinutes);
+      void Promise.resolve(result).catch((error) => {
+        console.error(error);
+      });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const resetCustomForm = () => {
@@ -750,8 +756,8 @@ export function CourseCalendarPage({
                         className="cursor-grab rounded-2xl border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,248,255,0.88)_100%)] p-3 active:cursor-grabbing dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82)_0%,rgba(30,41,59,0.55)_100%)]"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">{courseClass.name}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className={cn('truncate font-semibold text-slate-900 dark:text-white')}>{courseClass.name}</p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               {COURSE_CALENDAR_TIME_BLOCKS[0]}
                             </p>
@@ -819,7 +825,7 @@ export function CourseCalendarPage({
                   </button>
                 </div>
 
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 max-h-[320px] space-y-3 overflow-y-auto overscroll-contain pr-1">
                   {customItems.length > 0 ? (
                     customItems.map((item) => {
                       const isOrganizationVisible = item.visibility === 'organization';
