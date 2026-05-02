@@ -164,7 +164,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "This story protects recent iOS/iPad scroll fixes from regression."
     },
     {

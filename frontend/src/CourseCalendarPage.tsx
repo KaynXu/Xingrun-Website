@@ -468,7 +468,7 @@ export function CourseCalendarPage({
               </div>
 
               <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-center">
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm dark:border-white/10 dark:bg-white/5">
+                <div className="inline-flex w-full min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm sm:w-auto dark:border-white/10 dark:bg-white/5">
                   <button
                     type="button"
                     onClick={() => onPreviousPage(normalizedPageStepDays)}
@@ -477,7 +477,7 @@ export function CourseCalendarPage({
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </button>
-                  <div className="min-w-72 px-2 text-center">
+                  <div className="min-w-0 flex-1 px-2 text-center sm:min-w-72">
                     <p className="whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white">
                       {getCalendarPageRangeLabel(anchorDate, visibleDayCount)}
                     </p>
