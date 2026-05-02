@@ -157,8 +157,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 8,
-      "passes": false,
-      "notes": "This protects the website side from becoming the hidden source of spinning."
+      "passes": true,
+      "notes": "Completed: website upload tests now cover task creation, image-only submission, enqueue failure, unauthorized status access, stale pending status, ready status, failed status, missing-record state, and retryable fields. RQ enqueue failure now persists an inspectable failed task with retryable=1 and returns a retryable 502 without pretending acceptance; task status payloads expose state/is_stale/record_status/record_missing/retryable fields."
     },
     {
       "id": "MP-UPLOAD-009",

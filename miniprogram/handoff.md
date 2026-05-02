@@ -5,7 +5,8 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-007` 已完成，下一条 story 是 `MP-UPLOAD-008 Harden website upload task API and enqueue semantics`。
+- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-008` 已完成，下一条 story 是 `MP-UPLOAD-009 Preserve submitted images through recognition and PDF failures`。
+- 2026-05-03 `MP-UPLOAD-008` 已完成：网站上传任务 API 在入队失败时会持久化 `failed + retryable=1` task 并返回结构化 502；任务状态 payload 现在带 `state / retryable / is_stale / record_status / record_missing`，可区分 pending、stale pending、ready、failed 和 missing-record 状态。
 - 小程序子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，微信工程代码位于 `miniprogram/miniprogram/`，bridge 位于 `miniprogram/backend/`。
 - 家长链路当前只保留 `绑定孩子 -> 家长首页 -> 上传错题 -> 查看错题本/PDF`。
 - 家长上传最终提交已改成网站端 RQ + Redis 异步任务：小程序只上传题图和可选录音 URL，bridge 转发到网站 `/api/wechat/wrong-questions` 后拿到 `202 + task`；录音转写、错因归类、题图识别、错题入库和 PDF 重建都由网站 RQ worker 后台完成。
@@ -58,7 +59,7 @@
 
 ## 下一步
 - 如果继续按 Ralph 处理小程序上传稳定性，先在项目根目录运行 `scripts/ralph/run_codex_ralph.sh --check`，确认下一条 story 后再启动自动循环；不要把已归档的网站前端 PRD 当作当前队列。
-- 下一条 Ralph story 是 `MP-UPLOAD-008 Harden website upload task API and enqueue semantics`，重点收网站端上传任务创建、入队失败、状态 payload 和 retryable 语义。
+- 下一条 Ralph story 是 `MP-UPLOAD-009 Preserve submitted images through recognition and PDF failures`，重点收 worker/API/data 在识别或 PDF 失败时仍保留原始题图和可见记录。
 - 在目标服务器上先安装新依赖并用一段“中文叙述 + 英文字母/公式”真实短录音走一遍家长上传转录，确认模型首次下载、常驻内存、自动识别结果和单次转录时延都能接受；如果 `base` 效果不够，再单独评估是否升到 `small`。
 - 在微信开发者工具或真机打开家长上传页，确认顶部“拍照 / 继续选图”和底部“统一提交所有错题”在窄屏和长文案状态下都不再换行。
 - 在微信开发者工具或真机打开家长首页、绑定页和错题本页，重点看长学生名/长班级名、`绑定更多孩子`、`绑定这个孩子` 和 `查看 PDF` 在安卓/鸿蒙窄屏下是否仍然清楚、可点。

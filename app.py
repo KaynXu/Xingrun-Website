@@ -3375,6 +3375,47 @@ def _refresh_student_wrong_question_library_cache(student_id: int) -> str:
     return pdf_path
 
 
+_WECHAT_UPLOAD_TASK_STALE_SECONDS = 15 * 60
+
+
+def _parse_wechat_upload_task_time(value: object) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(value or ""))
+    except ValueError:
+        return None
+
+
+def _is_wechat_upload_task_stale(task: dict) -> bool:
+    if str(task.get("status") or "") not in {"pending", "processing"}:
+        return False
+    updated_at = _parse_wechat_upload_task_time(task.get("updated_at") or task.get("created_at"))
+    if not updated_at:
+        return False
+    return (datetime.now() - updated_at).total_seconds() >= _WECHAT_UPLOAD_TASK_STALE_SECONDS
+
+
+def _wechat_wrong_question_upload_task_payload(task: dict) -> dict:
+    payload = dict(task)
+    status = str(payload.get("status") or "pending").strip() or "pending"
+    payload["state"] = status
+    payload["retryable"] = bool(payload.get("retryable"))
+    payload["is_stale"] = _is_wechat_upload_task_stale(payload)
+    payload["record_missing"] = False
+    payload["record_status"] = ""
+
+    if status == "ready":
+        record_id = str(payload.get("record_id") or "").strip()
+        record = get_wechat_wrong_question_submission(record_id) if record_id else None
+        if record:
+            payload["record_status"] = str(record.get("recognition_status") or "").strip()
+        else:
+            payload["state"] = "missing_record"
+            payload["record_missing"] = True
+            payload["retryable"] = True
+
+    return payload
+
+
 @app.route("/api/wechat/wrong-questions", methods=["POST"])
 def api_wechat_wrong_questions_create():
     _, error = _require_wechat_service()
@@ -3419,16 +3460,23 @@ def api_wechat_wrong_questions_create():
     try:
         enqueue_wechat_wrong_question_upload_task(task["id"])
     except Exception as exc:
-        update_wechat_wrong_question_upload_task(
+        failed_task = update_wechat_wrong_question_upload_task(
             task["id"],
             status="failed",
             error_message=str(exc),
+            retryable=True,
         )
-        return jsonify({"error": str(exc), "retryable": True}), 502
+        return jsonify(
+            {
+                "error": "上传任务暂时无法入队，请稍后重试",
+                "retryable": True,
+                "task": _wechat_wrong_question_upload_task_payload(failed_task or task),
+            }
+        ), 502
 
     return jsonify(
         {
-            "task": task,
+            "task": _wechat_wrong_question_upload_task_payload(task),
             "student_library_pdf_url": f"/api/wechat/student-libraries/{binding['student_id']}",
         }
     ), 202
@@ -3445,7 +3493,7 @@ def api_wechat_wrong_question_upload_task_get(task_id: int):
     task = get_wechat_wrong_question_upload_task_for_openid(task_id, open_id)
     if not task:
         return jsonify({"error": "task not found"}), 404
-    return jsonify({"task": task})
+    return jsonify({"task": _wechat_wrong_question_upload_task_payload(task)})
 
 
 @app.route("/api/wechat/wrong-questions/<record_id>/topic-category", methods=["PUT"])
