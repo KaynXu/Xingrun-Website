@@ -205,8 +205,8 @@
         "Run the mini program upload stability proof baseline."
       ],
       "priority": 11,
-      "passes": false,
-      "notes": "This is for release readiness; do not mutate production during automated proof."
+      "passes": true,
+      "notes": "Completed: added docs/production-upload-pipeline-smoke-runbook.md plus scripts/ralph/production_upload_smoke_runbook_proof.sh. The runbook covers PM2 services, Redis/RQ worker health, bridge and Flask health, upload size limits, sample task status, wrongbook/PDF checks, and troubleshooting for pending tasks, enqueue failures, 413s, and PDF refresh failures; local proof validates referenced routes/scripts and the baseline still passes."
     },
     {
       "id": "MP-UPLOAD-012",

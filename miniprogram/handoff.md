@@ -5,7 +5,8 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-010` 已完成，下一条 story 是 `MP-UPLOAD-011 Add production upload pipeline smoke runbook`。
+- 2026-05-03 当前活跃“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-011` 已完成，下一条 story 是 `MP-UPLOAD-012 Add parent upload 2.0 acceptance guardrail`。
+- 2026-05-03 `MP-UPLOAD-011` 已完成：新增生产上传链路 smoke runbook `docs/production-upload-pipeline-smoke-runbook.md` 和本地校验脚本 `scripts/ralph/production_upload_smoke_runbook_proof.sh`，覆盖 PM2、Redis/RQ worker、Flask、bridge、上传大小限制、任务状态、错题本/PDF 检查，以及 pending、enqueue 失败、413、PDF refresh 失败处理；自动 proof 只校验本地引用和基线，不访问生产。
 - 2026-05-03 `MP-UPLOAD-010` 已完成：家长上传成功卡片新增“查看错题本 / 刷新进度”，会把已接收 task id 带到孩子错题本；家长错题本进入时先刷新 ready/failed/background 上传任务，再拉错题记录和 PDF 状态，识别失败或仍在处理的卡片不会展示 AI 成功题干，PDF 未就绪、缺 `pdf_url`、下载失败和打开失败都会给可恢复提示。
 - 2026-05-03 `MP-UPLOAD-008` 已完成：网站上传任务 API 在入队失败时会持久化 `failed + retryable=1` task 并返回结构化 502；任务状态 payload 现在带 `state / retryable / is_stale / record_status / record_missing`，可区分 pending、stale pending、ready、failed 和 missing-record 状态。
 - 小程序子项目根目录是 `/Users/ark.mini/Desktop/Xingrun-Website/miniprogram`，微信工程代码位于 `miniprogram/miniprogram/`，bridge 位于 `miniprogram/backend/`。
@@ -62,7 +63,7 @@
 
 ## 下一步
 - 如果继续按 Ralph 处理小程序上传稳定性，先在项目根目录运行 `scripts/ralph/run_codex_ralph.sh --check`，确认下一条 story 后再启动自动循环；不要把已归档的网站前端 PRD 当作当前队列。
-- 下一条 Ralph story 是 `MP-UPLOAD-011 Add production upload pipeline smoke runbook`，重点补生产上传链路 smoke runbook。
+- 下一条 Ralph story 是 `MP-UPLOAD-012 Add parent upload 2.0 acceptance guardrail`，重点补最终上传 2.0 稳定性验收闸门。
 - 在目标服务器上先安装新依赖并用一段“中文叙述 + 英文字母/公式”真实短录音走一遍家长上传转录，确认模型首次下载、常驻内存、自动识别结果和单次转录时延都能接受；如果 `base` 效果不够，再单独评估是否升到 `small`。
 - 在微信开发者工具或真机打开家长上传页，确认顶部“拍照 / 继续选图”和底部“统一提交所有错题”在窄屏和长文案状态下都不再换行。
 - 在微信开发者工具或真机打开家长首页、绑定页和错题本页，重点看长学生名/长班级名、`绑定更多孩子`、`绑定这个孩子` 和 `查看 PDF` 在安卓/鸿蒙窄屏下是否仍然清楚、可点。
