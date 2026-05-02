@@ -67,6 +67,42 @@ test('buildDocumentMarkup normalizes literal newline escapes in question and pro
   assert.match(markup, /接下来我准备先补/);
 });
 
+test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geometry practice records', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 2,
+        wrong_question_record_id: 'wechat-2',
+        is_geometry: false,
+        question_text_snapshot: '向量 ' + String.raw`\overrightarrow{AB}` + ' 长度为 ' + String.raw`\sqrt{16}` + '，且 $x^2+1>0$。',
+      },
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: true,
+        image_data_url: 'data:image/png;base64,ZmFrZQ==',
+      },
+      {
+        question_order: 4,
+        wrong_question_record_id: 'wechat-4',
+        is_geometry: true,
+      },
+    ],
+  });
+
+  assert.equal((markup.match(/class="question-latex-card"/g) || []).length, 1);
+  assert.equal((markup.match(/class="geometry-card"/g) || []).length, 2);
+  assert.match(markup, /向量 AB 长度为 √\(16\)/);
+  assert.match(markup, /class="katex"/);
+  assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
+  assert.match(markup, /图片暂时无法载入，已保留原图记录。/);
+  assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
+});
+
 test('resolveChromiumLaunchOptions adds hardened chromium flags on linux', async () => {
   const launchOptions = await resolveChromiumLaunchOptions({
     env: {},

@@ -113,6 +113,117 @@ export interface ClassFeedbackTask {
   }>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function pickString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function pickNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function pickStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+export function normalizeClassFeedbackTaskResponse(
+  source: unknown,
+  options: { fallbackClassId?: number } = {},
+): ClassFeedbackTask | null {
+  if (!isRecord(source)) {
+    return null;
+  }
+
+  const id = pickNumber(source.id);
+  const classId = pickNumber(source.class_id) ?? options.fallbackClassId ?? null;
+  if (id === null || classId === null) {
+    return null;
+  }
+
+  const studentHighlights = Array.isArray(source.student_highlights)
+    ? source.student_highlights.flatMap((item) => {
+        if (!isRecord(item)) {
+          return [];
+        }
+        const studentId = pickNumber(item.student_id);
+        if (studentId === null) {
+          return [];
+        }
+        return [{
+          student_id: studentId,
+          labels: pickStringList(item.labels),
+          note: pickString(item.note),
+        }];
+      })
+    : [];
+  const studentEntries = Array.isArray(source.student_entries)
+    ? source.student_entries.flatMap((item) => {
+        if (!isRecord(item)) {
+          return [];
+        }
+        const studentId = pickNumber(item.student_id);
+        if (studentId === null) {
+          return [];
+        }
+        return [{
+          id: pickNumber(item.id) ?? undefined,
+          task_id: pickNumber(item.task_id) ?? undefined,
+          student_id: studentId,
+          student_name_snapshot: pickString(item.student_name_snapshot),
+          ai_draft: pickString(item.ai_draft),
+          final_text: pickString(item.final_text),
+          checked_at: typeof item.checked_at === 'string' || item.checked_at === null ? item.checked_at : undefined,
+          updated_at: typeof item.updated_at === 'string' || item.updated_at === null ? item.updated_at : undefined,
+        }];
+      })
+    : [];
+
+  return {
+    id,
+    class_id: classId,
+    teacher_user_id: pickNumber(source.teacher_user_id),
+    teacher_name_snapshot: pickString(source.teacher_name_snapshot),
+    start_date: pickString(source.start_date),
+    end_date: pickString(source.end_date),
+    period_length_days: pickNumber(source.period_length_days) ?? 0,
+    period_granularity: pickString(source.period_granularity),
+    status: pickString(source.status) || 'draft',
+    class_summary_ai_draft: pickString(source.class_summary_ai_draft),
+    class_summary_final_text: pickString(source.class_summary_final_text),
+    class_status_tags: pickStringList(source.class_status_tags),
+    class_status_note: pickString(source.class_status_note),
+    parent_feedback_note: pickString(source.parent_feedback_note),
+    teaching_focus_note: pickString(source.teaching_focus_note),
+    next_stage_preview_note: pickString(source.next_stage_preview_note),
+    student_highlights: studentHighlights,
+    student_entries: studentEntries,
+  };
+}
+
+export function isClassFeedbackTaskGenerating(task: Pick<ClassFeedbackTask, 'status'>): boolean {
+  return ['pending', 'queued', 'processing', 'generating'].includes(task.status);
+}
+
+export function hasCompleteClassFeedbackGeneratedContent(
+  task: Pick<ClassFeedbackTask, 'class_summary_ai_draft' | 'class_summary_final_text' | 'student_entries'>,
+  rosterSize: number,
+): boolean {
+  const summary = (task.class_summary_final_text.trim() || task.class_summary_ai_draft.trim());
+  if (!summary || rosterSize <= 0) {
+    return false;
+  }
+
+  const studentIdsWithOutput = new Set(
+    task.student_entries
+      .filter((item) => (item.final_text.trim() || item.ai_draft.trim()).length > 0)
+      .map((item) => item.student_id),
+  );
+  return studentIdsWithOutput.size >= rosterSize;
+}
+
 export const defaultStageLabelGroups: StageLabelGroup[] = [
   { group: '课堂状态', labels: ['进入状态快', '注意力更集中', '注意力波动', '开口更主动', '开口偏少'] },
   { group: '学习表现', labels: ['基础更稳', '知识点仍卡住', '纠错后保持更好', '完整表达有进步', '应用时还不稳定'] },

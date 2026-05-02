@@ -29,7 +29,7 @@
         "Do not change business UI behavior in this story."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "This story creates the proof rail that all later stability stories reuse."
     },
     {
@@ -44,7 +44,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Existing app-storage-guard coverage is the starting point."
     },
     {
@@ -59,7 +59,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Prefer existing alert/notice patterns; do not invent a new toast system."
     },
     {
@@ -74,7 +74,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Focus on website workspace navigation, not mini program routes."
     },
     {
@@ -89,7 +89,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Existing course-calendar and course-calendar-data tests should be extended before UI changes."
     },
     {
@@ -104,7 +104,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "This is a high-risk user workflow because it combines editing, PDF, and async actions."
     },
     {
@@ -119,7 +119,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Start from class-feedback-generation.test.tsx and ClassFeedbackGenerationWorkspace.tsx."
     },
     {
@@ -134,7 +134,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "This story is frontend-only; backend worker reliability belongs in a separate backend PRD."
     },
     {
@@ -149,7 +149,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Existing account-card and class-management tests already assert several interaction locks."
     },
     {
@@ -164,7 +164,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "This story protects recent iOS/iPad scroll fixes from regression."
     },
     {
@@ -179,7 +179,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Keep this scoped to frontend render helpers and tests."
     },
     {
@@ -194,7 +194,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Examples from current handoff include removed old dashboard copy and hidden stale smart-wrong-question controls."
     }
   ]

@@ -23,10 +23,10 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   assert.match(appSource, /'class-feedback-generation': '课堂反馈'/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
-  assert.match(appSource, /activePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
+  assert.match(appSource, /activeWorkspacePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
   assert.match(sidebarBlock, /id: 'calendar'[\s\S]*label: '课程日历'/);
   assert.match(appSource, /calendar: '课程日历'/);
-  assert.match(appSource, /activePage === 'calendar'[\s\S]*<CourseCalendarPage/);
+  assert.match(appSource, /activeWorkspacePage === 'calendar'[\s\S]*<CourseCalendarPage/);
   assert.doesNotMatch(appSource, /QuestionBank/);
 });
 
@@ -37,7 +37,7 @@ test('review generation source replaces separate lesson input and library pages 
   assert.doesNotMatch(sidebarBlock, /id: 'input'[\s\S]*label:/);
   assert.doesNotMatch(sidebarBlock, /id: 'library'[\s\S]*label:/);
   assert.match(appSource, /'review-generation': '复习生成'/);
-  assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
+  assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
   assert.doesNotMatch(appSource, /activePage === 'input'/);
   assert.doesNotMatch(appSource, /activePage === 'library'/);
 });
@@ -103,7 +103,7 @@ test('review generation source requires class selection before generation and ca
   assert.match(lessonInputBlock, /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
   assert.match(reviewGenerationBlock, /<LessonInput[\s\S]*onSuccess=\{handleFormSuccess\}[\s\S]*currentUser=\{currentUser\}[\s\S]*\/>/);
   assert.doesNotMatch(reviewGenerationBlock, /initialLesson=\{/);
-  assert.match(appSource, /activePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
+  assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
 });
 
 test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {
@@ -127,7 +127,7 @@ test('workspace navigation wires smart wrong questions into every authenticated 
   assert.match(appSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
   assert.match(sidebarBlock, /canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
-  assert.match(appSource, /activePage === 'smartWrongQuestions'[\s\S]*canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /activeWorkspacePage === 'smartWrongQuestions'[\s\S]*canOpenWorkspacePage\(currentUser, 'smartWrongQuestions'\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
 test('workspace navigation removes the master data mappings page and keeps accounts focused on approval only', () => {
@@ -136,7 +136,7 @@ test('workspace navigation removes the master data mappings page and keeps accou
   assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
   assert.doesNotMatch(appSource, /masterDataMappings/);
   assert.doesNotMatch(sidebarBlock, /老师与班级匹配/);
-  assert.match(appSource, /activePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\}[\s\S]*\/>/);
+  assert.match(appSource, /activeWorkspacePage === 'accounts'[\s\S]*<ApprovalPage currentUser=\{currentUser\}[\s\S]*\/>/);
   assert.doesNotMatch(appSource, /onStartBinding=\{handleStartMemberBinding\}/);
 });
 
@@ -145,8 +145,8 @@ test('workspace navigation exposes a dedicated owner-only credit center page', (
 
   assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\) \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
   assert.match(appSource, /credit: '积分中心'/);
-  assert.match(appSource, /if \(page === 'credit' && !hasOwnerAccess\(user\.role\)\) \{\s*return 'dashboard';\s*\}/);
-  assert.match(appSource, /activePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
+  assert.match(appSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
 });
 
 test('settings page source keeps only account and about sections after credit center extraction', () => {
@@ -205,13 +205,38 @@ test('workspace navigation source exposes classes management through configurabl
   assert.match(appSource, /function canOpenWorkspacePage\(user: CurrentUser, page: Page\): boolean \{/);
   assert.match(sidebarBlock, /canOpenWorkspacePage\(currentUser, item\.id as Page\)/);
   assert.match(appSource, /classes: '班级管理'/);
-  assert.match(appSource, /if \(page === 'classes' && !canOpenWorkspacePage\(user, 'classes'\)\)/);
-  assert.match(appSource, /activePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
+  assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
+  assert.match(appSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
   assert.match(classManagementBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(classManagementBlock, /hasStaffAccess\(currentUser\.role\)[\s\S]*apiFetch<UserItem\[]>\('\/api\/admin\/users'\)[\s\S]*Promise\.resolve\(\[] as UserItem\[]\)/);
   assert.match(classManagementBlock, /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。/);
   assert.match(classManagementBlock, /负责老师/);
   assert.doesNotMatch(classManagementBlock, /成员班级分配/);
+});
+
+test('workspace navigation falls back when the selected page is not allowed for the current role', () => {
+  assert.match(appSource, /function getWorkspacePageFallback\(user: CurrentUser, page: Page\): Page \{/);
+  assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
+  assert.match(appSource, /const activeWorkspacePage = getWorkspacePageFallback\(currentUser, activePage\);/);
+  assert.match(appSource, /setActivePage\(\(page\) => getWorkspacePageFallback\(user, page\)\);/);
+  assert.match(appSource, /const navigateWorkspacePage = useCallback\(\(page: Page\) => \{/);
+  assert.match(appSource, /setActivePage\(getWorkspacePageFallback\(currentUser, page\)\);/);
+  assert.match(appSource, /setActivePage=\{navigateWorkspacePage\}/);
+  assert.match(appSource, /title=\{pageTitle\[activeWorkspacePage\]\}/);
+  assert.match(appSource, /key=\{activeWorkspacePage\}/);
+  assert.match(appSource, /activeWorkspacePage === 'review-generation' && canOpenWorkspacePage\(currentUser, 'review-generation'\)/);
+  assert.match(appSource, /activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage\(currentUser, 'class-feedback-generation'\)/);
+  assert.match(appSource, /activeWorkspacePage === 'consultation' && canOpenWorkspacePage\(currentUser, 'consultation'\)/);
+  assert.match(appSource, /activeWorkspacePage === 'calendar' && canOpenWorkspacePage\(currentUser, 'calendar'\)/);
+});
+
+test('workspace navigation keeps role and unauthenticated permission paths explicit', () => {
+  assert.match(appSource, /function hasOwnerAccess\(role: Role\): boolean \{\s*return role === 'super_owner' \|\| role === 'owner';\s*\}/);
+  assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{\s*return hasOwnerAccess\(role\) \|\| role === 'admin';\s*\}/);
+  assert.match(appSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
+  assert.match(appSource, /if \(page === 'accounts'\) \{\s*return hasStaffAccess\(user\.role\);\s*\}/);
+  assert.match(appSource, /if \(page === 'smartWrongQuestions' && !canAccessSmartWrongQuestions\(user\.role\)\) \{\s*return false;\s*\}/);
+  assert.match(appSource, /if \(!token \|\| !currentUser \|\| showLanding \|\| landingLegalPage\) \{/);
 });
 
 test('workspace navigation source exposes explicit super owner hierarchy for account controls', () => {
@@ -226,11 +251,11 @@ test('workspace navigation source exposes explicit super owner hierarchy for acc
 test('class management source guards selection and refresh during class save delete locks', () => {
   assert.match(appSource, /const classInteractionLocked = saving \|\| deleting;/);
   assert.match(appSource, /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(appSource, /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(appSource, /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(appSource, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
   assert.match(appSource, /const \[formByClassId, setFormByClassId\] = useState<Record<string, ClassFormValues>>/);
   assert.match(appSource, /const handleToggleExpandedClass = \(classId: number \| 'new'\) => \{\s*if \(classCardInteractionLocked\) \{\s*return;\s*\}\s*setExpandedClassId\(\(current\) => current === classId \? null : classId\);\s*setFormError\(''\);\s*setAssignmentError\(''\);\s*\};/);
-  assert.match(appSource, /onClick=\{\(\) => loadPage\(expandedClassId\)\.catch\(\(\) => undefined\)\}\s+disabled=\{pageRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
+  assert.match(appSource, /onClick=\{\(\) => loadPage\(expandedClassId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}\s+disabled=\{pageRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
   assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}\s+disabled=\{classCardInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
   assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
 });

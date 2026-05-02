@@ -6,8 +6,20 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的飞书智能纪要生成《空间几何证明方法与三棱锥外接球》课后复习计划课程包：`review_plan_templates/lesson_pack_spatial_geometry_proof_20260426.py`。已用现有生成器导出本地 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf`（PDF 输出目录按 `.gitignore` 不入库）。临时 proof `/tmp/xingrun_spatial_geometry_review_plan_proof.sh` 已通过：课程包可 `py_compile`、PDF 14 页 207920 bytes，包含 `空间几何证明方法与三棱锥外接球 / 侧棱相等 / 7√3/3 / 147π/2 / 激光一刀切 / 围魏救赵 / 面面垂直` 和 5 个复习日期 `2026-05-03 / 2026-05-04 / 2026-05-09 / 2026-05-16 / 2026-06-01`；并用 PyMuPDF 渲染抽查第 1/2/8/14 页，没有空白页。
-- 2026-05-02 已把网站前端稳定性整理成 Ralph-style PRD：新增 `scripts/ralph/prd.json`，范围限定为网站 `frontend/`，不包含小程序、后端 worker 或生产数据修复；共拆成 12 个可单轮执行的 story，覆盖前端 proof runner、启动/auth 存储、API 失败状态、工作台权限导航、课程日历、智能错题/PDF、班级反馈、异步轮询、账号/班级表单、移动滚动、数学/PDF 渲染和前端死路径守卫。同步新增 `scripts/ralph/progress.txt` 作为 Ralph/Codex 插件模式的初始进度文件；尚未开始实现这些 story。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-012`：新增 `frontend/src/frontend-stale-code-guard.test.ts`，集中扫描 active website frontend source，防止已删除的工作台对话式文案、智能错题引导文案、汇总导出和 pending-review 旧路径重新进入产品源码；扫描排除测试文件、历史文档、小程序文件和生成输出。`scripts/ralph/prd.json` 已将 `FE-STAB-012` 标记为 `passes=true`，当前网站前端稳定性 PRD 的 `FE-STAB-001` 到 `FE-STAB-012` 均已通过。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-011`：`wrongQuestionLatex.js` 现在会在修复 malformed transport escapes 后，把裸 `\overrightarrow{...}` 片段降级为可读文本；`wrong-question-latex`、错题库 PDF markup、错题练习 PDF markup 测试已覆盖 malformed/bare math、缺失孩子错因/备注、几何图片记录、几何占位记录和非空题目块。`scripts/ralph/prd.json` 已将 `FE-STAB-011` 标记为 `passes=true`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-010`：`frontend/src/mobile-workspace-performance.test.ts` 现在覆盖工作台主 shell、课程日历和智能错题两类高内容页的移动滚动 guardrail；`CourseCalendarPage.tsx` 的移动端翻页控件已改为窄屏可收缩、平板/桌面保留原宽度，避免 `min-w-72` 加双按钮造成横向溢出。`scripts/ralph/prd.json` 已将 `FE-STAB-010` 标记为 `passes=true`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-009`：`App.tsx` 的班级管理手动刷新现在使用保留状态的刷新路径，刷新失败时不会丢掉仍存在的展开编辑卡；班级刷新锁纳入 loading 状态；账号审批、机构邀请、机构列表、成员权限和讲师映射入口在相关加载或突变中会禁用，避免重复提交。`frontend/src/account-card.test.tsx` 和 `frontend/src/workspace-navigation.test.ts` 已覆盖 create/save/delete/refresh/invite/approval/teacher-binding 锁定与保留展开卡断言。`scripts/ralph/prd.json` 已将 `FE-STAB-009` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-010`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-008`：新增 `frontend/src/reviewGenerationAsync.ts` 和对应测试，复习生成历史列表现在会规整异常轮询 payload，区分 pending/failed/missing-output 状态，并且只有完成记录带 PDF 路径时才显示预览/下载入口；课堂反馈任务 hydrate/generate 路径现在会规整任务响应，pending/generating 状态提示用户稍后刷新，生成内容不完整时不再显示成功文案。`scripts/ralph/prd.json` 已将 `FE-STAB-008` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-009`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-007`：`frontend/src/class-feedback-generation.test.tsx` 已覆盖课堂反馈生成/保存/确认失败 handler 的 busy state 释放和草稿保留源码约束，以及 accessible class/member selection 变化；`App.tsx` 现在在当前选中班级不再属于可访问班级列表时清掉旧课堂反馈 task、草稿、学生和状态，避免旧班级反馈残留在新权限范围内。`scripts/ralph/prd.json` 已将 `FE-STAB-007` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-008`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-006`：`frontend/src/smart-wrong-questions.test.ts` 已覆盖智能错题本详情加载失败、保存失败、学生错题库 PDF 刷新失败、删除当前题失败、错题练习生成失败，以及错题练习记录仅返回 `pdf_path` 时的鉴权 PDF 链接；`SmartWrongQuestionsPage.tsx` 现在生成练习记录 PDF 入口时会从 `pdfUrl / pdfPath / downloadUrl` 兜底并统一走现有鉴权 URL builder。`scripts/ralph/prd.json` 已将 `FE-STAB-006` 标记为 `passes=true`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-005`：`CourseCalendarPage.tsx` 现在确认排课前会先清除 pending drop，并捕获课程/自定义事项排期 callback 失败，避免 API 失败或取消微调后残留弹窗；右侧课程卡片长班名加截断约束，自定义事项卡片列表补固定高度独立滚动。`frontend/src/course-calendar.test.tsx` 已覆盖空排期、缺老师/学科字段、长班名、筛选无匹配、取消/失败拖拽恢复、扩大模式滚动 guard 和右侧列表独立滚动。`scripts/ralph/prd.json` 已将 `FE-STAB-005` 标记为 `passes=true`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-004`：`App.tsx` 的工作区导航已收口为统一权限 fallback，当前选中页签、侧边栏和工作台快捷入口都会先经过 `canOpenWorkspacePage`，角色或可见页面变化后不再保留受限页签空面板；`frontend/src/workspace-navigation.test.ts` 已新增 owner/admin/member/staff 与未登录路径的源码断言，并同步相关源码断言到 `activeWorkspacePage`。`scripts/ralph/prd.json` 已将 `FE-STAB-004` 标记为 `passes=true`，`scripts/ralph/progress.txt` 已指向下一步 `FE-STAB-005`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-003`：`App.tsx` 的课程日历 API 失败状态已收口，列表加载失败会释放 loading 并在课程日历页显示现有风格错误提示，课程/自定义事项排期新增和删除失败会走现有 `alert` 用户提示路径；`frontend/src/course-calendar.test.tsx` 已覆盖 list load failure、save failure、delete/refresh failure 三类代表性失败。`scripts/ralph/prd.json` 已将 `FE-STAB-003` 标记为 `passes=true`。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-002`：`App.tsx` 的启动期 `/api/me` auth 校验遇到 stale/401 token 时不再触发全页 reload，而是清前端 auth state 回到现有登录/入口状态；`frontend/src/app-storage-guard.test.tsx` 已覆盖 storage blocked、stale token 且 `removeItem` 失败、以及 App 直接 storage 读取 guard。`scripts/ralph/prd.json` 已将 `FE-STAB-002` 标记为 `passes=true`。
+- 2026-05-02 已修正 Codex Ralph runner 的模型问题：根因是本机 `codex-cli 0.118.0` 太旧，无法使用 `gpt-5.5`；已升级全局 `@openai/codex` 到 `0.128.0`，`codex exec --model gpt-5.5` smoke 通过。`scripts/ralph/run_codex_ralph.sh` 现在默认显式传 `--model "${CODEX_RALPH_MODEL:-gpt-5.5}"`，和全局 `~/.codex/config.toml` 保持一致。
+- 2026-05-02 已新增 Codex CLI 版 Ralph 自动循环入口：`scripts/ralph/run_codex_ralph.sh` 默认按 `scripts/ralph/prd.json` 剩余 `passes=false` 数量循环，每轮只把一个 story 交给 `codex exec`，并在无进展、Codex 失败、达到最大轮数或全部完成时停止；`--check` 可查看下一条 story，`--print-prompt` 可预览单轮提示词，配套 `scripts/ralph/run_codex_ralph.test.sh` 不调用 Codex 也能自检 runner 结构。当前网站前端稳定性 PRD 已全部完成。
+- 2026-05-02 网站前端稳定性 Ralph 循环已完成 `FE-STAB-001`：新增 `scripts/ralph/frontend_stability_proof.sh`，作为后续 story 复用的本地 proof runner，顺序执行 `npm --prefix frontend test`、`npm --prefix frontend run build` 和 `git diff --check`，不依赖生产数据、密钥或运行中的后端。
 - 2026-05-01 已修复小程序家长上传页手动题框最小尺寸过大问题：旧逻辑在拖拽缩放时强制 `72px` 下限、保存时又强制 `0.08` 归一化宽高，整页照片缩到手机预览区后会让小题框无法继续缩小。现在题框手势和保存归一化统一走小程序模型 helper，最低可缩到 `16px` 预览尺寸，旋转后也不会把窄题框重新放大到 8%。本地新增回归覆盖小题框缩放、保存和旋转；仍需微信开发者工具或真机手工 smoke 一次小题/窄题框。
 - 2026-05-01 已手动补跑生产“七年级5班”历史失败错题任务 `157/164/171/177/178`：执行前备份生产库 `data/xingrun.db.backup-before-g7c5-rerun-20260501-230224`，其中 `157/164/171/177` 用当前修复后的识别链路原地恢复为 `ready/recognized`；`178` 当前 AI 审稿认为原图含坐标系图象、不适合纯文本转写，已按系统现有几何/配图题逻辑原地恢复为 `is_geometry=1`、保留原图入库，执行前另备份 `data/xingrun.db.backup-before-g7c5-task178-image-preserve-20260501-231129`。最终统一刷新 PDF 前再备份 `data/xingrun.db.backup-before-g7c5-final-pdf-refresh-20260501-231232`，并重建学生 `76/77/78/79` 错题库 PDF。最终 proof 显示 5 个目标 task 均 `ready`、对应记录均 `recognized`、目标任务无剩余 non-ready，王睿博/毛裕宁/邹欣彤/李奕萱对应学生记录失败数均为 0，PDF 均存在且非空。
 - 2026-05-01 已完成一轮小程序稳定性排查并修复一个家长上传提交风险：如果家长切到“语音错因”但没有成功录音，上传任务现在会回退为 `text`/空错因提交，不再拿空 `voiceFilePath` 调用音频 `/upload` 导致整批提交失败。改动只触达 `miniprogram/miniprogram/pages/parent-upload/model.js` 和对应测试；临时 proof `/tmp/xingrun_miniprogram_stability_proof.sh` 已通过 bridge 13 条测试、bridge `tsc` build、小程序 40 条测试、活代码陈旧 `AI 框选` 扫描和 `git diff --check`。未触碰生产数据，仍需真机 smoke。
@@ -166,8 +178,8 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 最值得继续做的是人工打开 `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260502-190040.pdf` 全文扫一遍，确认三棱锥外接球例题、线面平行、线面垂直、面面垂直、围魏救赵和体积计算迁移这些口径符合老师原课。
-- 如果继续按 Ralph 模式处理网站前端稳定性，下一步从 `scripts/ralph/prd.json` 的 `FE-STAB-001` 开始，只做一个 story，验证通过后再把该 story 标记为 `passes=true` 并提交。
+- 若要检查网站前端稳定性 Ralph 状态，可在项目根目录执行 `scripts/ralph/run_codex_ralph.sh --check`；当前 PRD 已无剩余 story，不要在未新增 story 前继续自动循环。
+- 如果继续按 Ralph 模式处理网站前端稳定性，当前 `scripts/ralph/prd.json` 已无 `passes=false` story；下一轮需要先补新 PRD 或新 story，再按一轮一个 story 执行。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
 - 小程序下一次真机/开发者工具 smoke 时，优先覆盖“切到语音错因但不录音/录音失败后仍提交”、真实录音 + 题图提交、错题本 `查看 PDF` 打开和大图补框上传四条链路。
 - GitHub push 仍待网络/权限恢复后补做：本机 `github.com:443` 当前连接超时，生产机 deploy key 可 fetch 但 push 报 read-only。当前本地 `develop/master` 和生产机 `master(a284f58)` 已包含 legacy uploads fallback，远端 `origin/develop/origin/master` 仍停在 `367cf98`。
@@ -220,7 +232,6 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
-- 这份空间几何复习计划来自飞书智能纪要而非逐字人工校对转写；纪要中部分图形字母和题面关系可能有识别偏差。纪要给出的 5、7、8 底面外接圆半径写成 `√7/3`，与余弦定理、正弦定理和后续表面积结果不一致，本轮课程包按可校验计算改为 `7√3/3`。
 - 这份角度单位复习计划来自本地 `faster-whisper base` 对 62 分钟企业微信 Opus 录音的分段转写；原始转写噪声较重，已按稳定出现的“角度、度分秒、周角/平角、角名、角平分线、角关系表达”主线整理，正式发给学生前建议老师快速核对课堂原题字母、题面数据和单位换算例子。
 - 用户本轮点名的文件名为 `7633721706604170168_record_audio`，本地实际找到并处理的是 `7631121683310742458_record_audio.m4a` 及其同名前缀转写稿；若还有另一个 `763372...` 录音，需要补传或放到仓库后重新生成。当前几何复习计划基于已有 Whisper 转写稿整理，转写中有较多识别噪声，正式发给学生前建议老师快速核对外角、角平分线、凸凹型、全等相似对应点等课堂表述。
 - 智能错题练习 PDF 当前虽然已经在生产 `master(31747f5)` 上带着“浏览器子进程环境净化”修复上线，并通过了 PM2 环境复现 proof，但运行时依赖仍是服务器上的 `/snap/bin/chromium`。如果后续继续出现新的 Chromium 自身崩溃，优先考虑给生产机安装 Playwright 官方 Chromium 或继续收口渲染进程启动参数，而不是恢复已经按用户要求删除的 ReportLab fallback。
@@ -323,7 +334,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`develop`
+- 当前分支：`ralph/website-frontend-stability`
 - 当前仍有用户未跟踪文件 `Note May 1, 2026.pdf`；不要纳入小程序稳定性提交。
 - `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
 - 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。

@@ -58,8 +58,11 @@ import {
   defaultStageLabelGroups,
   formatClassFeedbackStudentCopyText,
   generateClassFeedbackTask,
+  hasCompleteClassFeedbackGeneratedContent,
+  isClassFeedbackTaskGenerating,
   loadClassFeedbackLabels,
   loadClassFeedbackTask,
+  normalizeClassFeedbackTaskResponse,
   saveClassFeedbackTaskDraft,
   type ClassFeedbackStageNotes,
   type ClassFeedbackStudentCard,
@@ -68,6 +71,13 @@ import {
   type ClassFeedbackStageName,
   type StageLabelGroup,
 } from './classFeedbackGeneration';
+import {
+  getReviewLessonTaskMessage,
+  getReviewLessonTaskState,
+  hasReviewLessonOutput,
+  isReviewLessonPending,
+  normalizeReviewLessonsResponse,
+} from './reviewGenerationAsync';
 
 // --- Types ---
 
@@ -396,6 +406,10 @@ function canOpenWorkspacePage(user: CurrentUser, page: Page): boolean {
   return getVisibleWorkspacePages(user).includes(page);
 }
 
+function getWorkspacePageFallback(user: CurrentUser, page: Page): Page {
+  return canOpenWorkspacePage(user, page) ? page : 'dashboard';
+}
+
 function syncMemberScopedClassSelection(
   role: Role,
   classes: ClassItem[],
@@ -699,20 +713,27 @@ function buildAuthedPath(path: string): string {
   return `${path}${separator}token=${encodeURIComponent(token)}`;
 }
 
-export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
-  const isFormData = options?.body instanceof FormData;
+interface ApiFetchOptions extends RequestInit {
+  reloadOnUnauthorized?: boolean;
+}
+
+export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOptions): Promise<T> {
+  const { reloadOnUnauthorized = true, ...fetchOptions } = options ?? {};
+  const isFormData = fetchOptions.body instanceof FormData;
   const token = getToken();
   const res = await fetch(path, {
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { 'X-Auth-Token': token } : {}),
-      ...(options?.headers ?? {}),
+      ...(fetchOptions.headers ?? {}),
     },
-    ...options,
+    ...fetchOptions,
   });
   if (res.status === 401) {
     removeLocalStorageItem('xr_token');
-    window.location.reload();
+    if (reloadOnUnauthorized) {
+      window.location.reload();
+    }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -2085,8 +2106,8 @@ const ReviewDocumentHistory = ({
     if (!quiet) {
       setLoading(true);
     }
-    return apiFetch<Lesson[]>('/api/review-plans')
-      .then(setLessons)
+    return apiFetch<unknown>('/api/review-plans')
+      .then((payload) => setLessons(normalizeReviewLessonsResponse(payload)))
       .catch(console.error)
       .finally(() => {
         if (!quiet) {
@@ -2099,7 +2120,7 @@ const ReviewDocumentHistory = ({
     void load();
   }, [load, refreshToken]);
 
-  const hasPendingLesson = lessons.some((lesson) => lesson.record_status === 'pending');
+  const hasPendingLesson = lessons.some(isReviewLessonPending);
 
   useEffect(() => {
     if (!hasPendingLesson) {
@@ -2142,18 +2163,22 @@ const ReviewDocumentHistory = ({
                 className="group flex h-full flex-col rounded-2xl border border-sky-100/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70"
               >
                 {(() => {
-                  const statusLabel = lesson.record_status === 'pending'
+                  const taskState = getReviewLessonTaskState(lesson);
+                  const taskMessage = getReviewLessonTaskMessage(lesson);
+                  const statusLabel = taskState === 'pending'
                     ? '生成中'
-                    : lesson.record_status === 'failed'
+                    : taskState === 'failed'
                       ? '生成失败'
-                      : lesson.pdf_path
+                      : taskState === 'missing-output'
+                        ? '待刷新'
+                        : hasReviewLessonOutput(lesson)
                         ? '已生成'
                         : '无 PDF';
-                  const statusDotClass = lesson.record_status === 'pending'
+                  const statusDotClass = taskState === 'pending'
                     ? 'bg-amber-500'
-                    : lesson.record_status === 'failed'
+                    : taskState === 'failed'
                       ? 'bg-rose-500'
-                      : lesson.pdf_path
+                      : hasReviewLessonOutput(lesson)
                         ? 'bg-emerald-500'
                         : 'bg-slate-300 dark:bg-slate-600';
 
@@ -2196,19 +2221,24 @@ const ReviewDocumentHistory = ({
                         </div>
                       </dl>
 
-                      {lesson.record_status === 'pending' && (
+                      {taskState === 'pending' && (
                         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-                          可离开页面，完成后会出现在列表中
+                          {taskMessage || '可离开页面，完成后会出现在列表中'}
                         </div>
                       )}
-                      {lesson.record_status === 'failed' && (
+                      {taskState === 'failed' && (
                         <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50/90 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-                          {lesson.generation_error || '生成失败'}
+                          {taskMessage || '生成失败'}
+                        </div>
+                      )}
+                      {taskState === 'missing-output' && (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                          {taskMessage}
                         </div>
                       )}
 
                       <div className="mt-4 flex flex-wrap justify-end gap-1">
-                        {lesson.pdf_path && (
+                        {hasReviewLessonOutput(lesson) && (
                           <>
                             <a
                               href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
@@ -2444,6 +2474,19 @@ const ClassFeedbackGenerationPage = ({
     [classFeedbackPeriodYear],
   );
 
+  const resetClassFeedbackWorkspaceState = useCallback((statusMessage = '先选择班级和反馈阶段，再汇总阶段素材。') => {
+    setActiveClassFeedbackTaskId(null);
+    setCurrentTaskStatus('draft');
+    setTeacherNameLabel(currentUser.display_name);
+    setClassFeedbackSummary('');
+    setClassFeedbackStatusTags([]);
+    setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
+    setClassFeedbackStudents([]);
+    setMatchedLessonCount(0);
+    classFeedbackDraftSnapshotRef.current = '';
+    setClassFeedbackStatusMessage(statusMessage);
+  }, [currentUser.display_name]);
+
   const loadRosterOnly = useCallback(async (classId: number) => {
     const roster = await listClassStudents(classId);
     setClassFeedbackStudents(createEmptyClassFeedbackStudentCards(roster.students));
@@ -2454,10 +2497,14 @@ const ClassFeedbackGenerationPage = ({
     async (taskId: number, classId: number) => {
     setIsRefreshingTask(true);
     try {
-      const [task, roster] = await Promise.all([
+      const [rawTask, roster] = await Promise.all([
         loadClassFeedbackTask(taskId),
         listClassStudents(classId),
       ]);
+      const task = normalizeClassFeedbackTaskResponse(rawTask);
+      if (!task) {
+        throw new Error('反馈任务响应格式异常，请刷新后重试。');
+      }
       const hydratedStudents = buildClassFeedbackStudentCards({
         roster: roster.students,
         task,
@@ -2478,11 +2525,15 @@ const ClassFeedbackGenerationPage = ({
       setClassFeedbackSummary(hydratedSummary);
       setCurrentTaskStatus(task.status);
       classFeedbackDraftSnapshotRef.current = buildClassFeedbackDraftSnapshot(hydratedSummary, hydratedStudents);
+      const isGeneratingTask = isClassFeedbackTaskGenerating(task);
       setClassFeedbackStatusMessage(
-        task.status === 'confirmed'
+        isGeneratingTask
+          ? '课堂反馈仍在生成中，请稍后点击刷新任务。'
+          : task.status === 'confirmed'
           ? `已确认 ${roster.students.length} 名学生反馈，可直接复制内容。`
             : `已同步 ${roster.students.length} 名学生，可补充阶段备注并生成草稿。`,
         );
+      return task;
       } finally {
         setIsRefreshingTask(false);
       }
@@ -2523,8 +2574,19 @@ const ClassFeedbackGenerationPage = ({
       return;
     }
 
-    setSelectedClassId((current) => syncMemberScopedClassSelection(currentUser.role, classes, current));
-  }, [classes, classesLoading, currentUser.role]);
+    const nextClassId = syncMemberScopedClassSelection(currentUser.role, classes, selectedClassId);
+    if (nextClassId === selectedClassId) {
+      return;
+    }
+
+    resetClassFeedbackWorkspaceState('班级权限已变化，请重新同步反馈任务。');
+    setTeacherNameLabel(
+      nextClassId
+        ? classes.find((item) => item.id === nextClassId)?.teacher_name || currentUser.display_name
+        : currentUser.display_name,
+    );
+    setSelectedClassId(nextClassId);
+  }, [classes, classesLoading, currentUser.display_name, currentUser.role, resetClassFeedbackWorkspaceState, selectedClassId]);
 
   useEffect(() => {
     if (classesLoading || currentUser.role === 'member' || selectedClassId === null) {
@@ -2535,8 +2597,9 @@ const ClassFeedbackGenerationPage = ({
       return;
     }
 
+    resetClassFeedbackWorkspaceState('班级权限已变化，请重新同步反馈任务。');
     setSelectedClassId(null);
-  }, [classes, classesLoading, currentUser.role, selectedClassId]);
+  }, [classes, classesLoading, currentUser.role, resetClassFeedbackWorkspaceState, selectedClassId]);
 
   useEffect(() => {
     if (!selectedClassId) {
@@ -2571,18 +2634,10 @@ const ClassFeedbackGenerationPage = ({
 
   const handleClassChange = async (nextClassId: number | null) => {
     setSelectedClassId(nextClassId);
-    setActiveClassFeedbackTaskId(null);
-    setCurrentTaskStatus('draft');
+    resetClassFeedbackWorkspaceState();
     setTeacherNameLabel(nextClassId ? classes.find((item) => item.id === nextClassId)?.teacher_name || currentUser.display_name : currentUser.display_name);
-    setClassFeedbackSummary('');
-    setClassFeedbackStatusTags([]);
-    setClassFeedbackStageNotes(createEmptyClassFeedbackStageNotes());
-    classFeedbackDraftSnapshotRef.current = '';
-    setMatchedLessonCount(0);
 
     if (!nextClassId) {
-      setClassFeedbackStudents([]);
-      setClassFeedbackStatusMessage('先选择班级和反馈阶段，再汇总阶段素材。');
       return;
     }
 
@@ -2769,7 +2824,7 @@ const ClassFeedbackGenerationPage = ({
 
     setIsGeneratingClassFeedback(true);
     try {
-      const generated = await generateClassFeedbackTask(activeClassFeedbackTaskId, {
+      const rawGenerated = await generateClassFeedbackTask(activeClassFeedbackTaskId, {
         classStatusTags: classFeedbackStatusTags,
         classStatusNote: classFeedbackStageNotes.classStatusNote,
         parentFeedbackNote: classFeedbackStageNotes.parentFeedbackNote,
@@ -2781,7 +2836,19 @@ const ClassFeedbackGenerationPage = ({
           note: student.highlightNote,
         })),
       });
-      await hydrateClassFeedbackTask(generated.id, selectedClassId);
+      const generated = normalizeClassFeedbackTaskResponse(rawGenerated, { fallbackClassId: selectedClassId });
+      if (!generated) {
+        throw new Error('反馈任务响应格式异常，请刷新后重试。');
+      }
+      const hydratedTask = await hydrateClassFeedbackTask(generated.id, selectedClassId);
+      if (isClassFeedbackTaskGenerating(hydratedTask)) {
+        setClassFeedbackStatusMessage('课堂反馈仍在生成中，请稍后点击刷新任务。');
+        return;
+      }
+      if (!hasCompleteClassFeedbackGeneratedContent(hydratedTask, classFeedbackStudents.length)) {
+        setClassFeedbackStatusMessage('反馈任务已返回，但生成内容不完整，请点击刷新任务确认。');
+        return;
+      }
       setClassFeedbackStatusMessage(`已生成班级总评和 ${classFeedbackStudents.length} 名学生反馈草稿。`);
     } catch (error) {
       setClassFeedbackStatusMessage(error instanceof Error ? error.message : '生成课堂反馈失败，请重试。');
@@ -4466,6 +4533,12 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   const [taSubmitting, setTaSubmitting] = useState(false);
   const [taDeletingId, setTaDeletingId] = useState<string | null>(null);
   const teacherAliasMemberOptions = users.filter((user) => user.username && user.role !== 'super_owner');
+  const organizationRequestRefreshLocked = organizationRequestsLoading || organizationActingId !== null;
+  const organizationInviteRefreshLocked = organizationInviteLoading || organizationInviteResetting;
+  const organizationListRefreshLocked = organizationsLoading || deletingOrgId !== null;
+  const approvalRefreshLocked = loading || actingId !== null;
+  const memberRefreshLocked = usersLoading || bindingSummaryLoading || roleSavingUserId !== null || visiblePageSavingUserId !== null || displayNameSavingUserId !== null || deletingUserId !== null;
+  const teacherAliasActionLocked = taSubmitting || taDeletingId !== null;
 
   const loadItems = useCallback(async () => {
     if (!hasOwnerAccess(currentUser.role)) {
@@ -4907,7 +4980,11 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 审核新机构的开通申请。通过后，申请人会自动成为该机构的首位管理员，并生成当前唯一有效的邀请码与邀请链接。
               </p>
             </div>
-            <button onClick={() => loadOrganizationRequests().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button
+              onClick={() => loadOrganizationRequests().catch(() => undefined)}
+              disabled={organizationRequestRefreshLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               刷新机构申请
             </button>
           </div>
@@ -4990,6 +5067,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
             </div>
             <button
               onClick={() => loadOrganizationInvite().catch(() => undefined)}
+              disabled={organizationInviteRefreshLocked}
               className={workspaceSecondaryButtonClass}
             >
               刷新邀请信息
@@ -5023,7 +5101,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
               </div>
               <button
                 onClick={() => void handleResetOrganizationInvite()}
-                disabled={organizationInviteResetting}
+                disabled={organizationInviteRefreshLocked}
                 className={workspacePrimaryButtonClass}
               >
                 {organizationInviteResetting ? '重置中...' : '重置邀请码'}
@@ -5046,7 +5124,11 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 查看已经开通的机构规模，快速确认负责人、成员和班级是否已正常落库。
               </p>
             </div>
-            <button onClick={() => loadOrganizations().catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button
+              onClick={() => loadOrganizations().catch(() => undefined)}
+              disabled={organizationListRefreshLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               刷新机构列表
             </button>
           </div>
@@ -5174,6 +5256,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
               </div>
               <button
                 onClick={() => loadItems().catch(() => undefined)}
+                disabled={approvalRefreshLocked}
                 className={workspaceSecondaryButtonClass}
               >
                 刷新列表
@@ -5257,7 +5340,11 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面。
               </p>
             </div>
-            <button onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)} className={workspaceSecondaryButtonClass}>
+            <button
+              onClick={() => Promise.all([loadUsers(), loadBindingSummaries()]).catch(() => undefined)}
+              disabled={memberRefreshLocked}
+              className={workspaceSecondaryButtonClass}
+            >
               刷新成员
             </button>
           </div>
@@ -5551,7 +5638,12 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">讲师映射</h4>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">管理企业微信 ID 到讲师中文名的映射（咨询助手自动识别用）</p>
           </div>
-          <button type="button" className={workspacePrimaryButtonClass} onClick={openTeacherAliasCreate}>
+          <button
+            type="button"
+            className={workspacePrimaryButtonClass}
+            disabled={teacherAliasActionLocked}
+            onClick={openTeacherAliasCreate}
+          >
             <PlusCircle className="h-4 w-4" />
             添加
           </button>
@@ -5590,13 +5682,18 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                       </td>
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{entry.aliases.slice(1).join('、') || '—'}</td>
                       <td className="px-5 py-3 text-right">
-                        <button type="button" className="mr-2 text-sky-600 hover:text-sky-500 dark:text-sky-400" onClick={() => openTeacherAliasEdit(entry)}>
+                        <button
+                          type="button"
+                          className="mr-2 text-sky-600 hover:text-sky-500 disabled:opacity-40 dark:text-sky-400"
+                          disabled={teacherAliasActionLocked}
+                          onClick={() => openTeacherAliasEdit(entry)}
+                        >
                           <Pencil className="inline h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
                           className="text-red-500 hover:text-red-400 disabled:opacity-40"
-                          disabled={taDeletingId === entry.wecom_userid}
+                          disabled={teacherAliasActionLocked || taDeletingId === entry.wecom_userid}
                           onClick={() => handleTeacherAliasDelete(entry.wecom_userid)}
                         >
                           <Trash2 className="inline h-3.5 w-3.5" />
@@ -6290,8 +6387,8 @@ const ClassManagementPage = ({
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
   const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
-  const pageRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
-  const assignmentRefreshLocked = classInteractionLocked || hasTeacherBindingSavingRows;
+  const pageRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
+  const assignmentRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
   const canManageClassTeachers = hasStaffAccess(currentUser.role);
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
@@ -6832,7 +6929,7 @@ const ClassManagementPage = ({
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => loadPage(expandedClassId).catch(() => undefined)}
+              onClick={() => loadPage(expandedClassId, { preserveStateOnError: true }).catch(() => undefined)}
               disabled={pageRefreshLocked}
               className={workspaceSecondaryButtonClass}
             >
@@ -7207,7 +7304,7 @@ const ClassManagementPage = ({
                           </div>
                           <button
                             type="button"
-                            onClick={() => loadPage(editingClass.id).catch(() => undefined)}
+                            onClick={() => loadPage(editingClass.id, { preserveStateOnError: true }).catch(() => undefined)}
                             disabled={assignmentRefreshLocked}
                             className={workspaceSecondaryButtonClass}
                           >
@@ -9162,6 +9259,7 @@ export default function App() {
   const [calendarCustomItems, setCalendarCustomItems] = useState<CourseCalendarCustomItemRecord[]>([]);
   const [calendarCustomSchedules, setCalendarCustomSchedules] = useState<CourseCalendarCustomScheduleRecord[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState('');
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getCurrentWeekTuesday(getTodayIsoDate()));
   const [calendarPageStepDays, setCalendarPageStepDays] = useState(6);
 
@@ -9252,27 +9350,13 @@ export default function App() {
     let cancelled = false;
     setAuthReady(false);
 
-    apiFetch<CurrentUser>('/api/me')
+    apiFetch<CurrentUser>('/api/me', { reloadOnUnauthorized: false })
       .then((user) => {
         if (cancelled) {
           return;
         }
         setCurrentUser(user);
-        setActivePage((page) => {
-          if (page === 'credit' && !hasOwnerAccess(user.role)) {
-            return 'dashboard';
-          }
-          if (page === 'accounts' && !hasStaffAccess(user.role)) {
-            return 'dashboard';
-          }
-          if (page === 'classes' && !canOpenWorkspacePage(user, 'classes')) {
-            return 'dashboard';
-          }
-          if (!canOpenWorkspacePage(user, page)) {
-            return 'dashboard';
-          }
-          return page;
-        });
+        setActivePage((page) => getWorkspacePageFallback(user, page));
       })
       .catch(() => {
         if (cancelled) {
@@ -9300,6 +9384,7 @@ export default function App() {
       setCalendarCustomItems([]);
       setCalendarCustomSchedules([]);
       setCalendarLoading(false);
+      setCalendarError('');
       setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
       return;
     }
@@ -9310,6 +9395,7 @@ export default function App() {
 
     let cancelled = false;
     setCalendarLoading(true);
+    setCalendarError('');
 
     Promise.all([
       apiFetch<ClassItem[]>('/api/classes'),
@@ -9327,7 +9413,12 @@ export default function App() {
         setCalendarCustomSchedules(customSchedulePayload.items);
         setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
       })
-      .catch(console.error)
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) {
+          setCalendarError(error instanceof Error ? error.message : '课程日历加载失败，请刷新重试。');
+        }
+      })
       .finally(() => {
         if (!cancelled) {
           setCalendarLoading(false);
@@ -9338,6 +9429,14 @@ export default function App() {
       cancelled = true;
     };
   }, [authReady, currentUser, token]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setActivePage('dashboard');
+      return;
+    }
+    setActivePage((page) => getWorkspacePageFallback(currentUser, page));
+  }, [currentUser]);
 
   const handleLogin = (t: string) => {
     clearJoinInvitePathIfNeeded();
@@ -9385,13 +9484,21 @@ export default function App() {
     setPublicAuthModal('login');
   };
 
+  const navigateWorkspacePage = useCallback((page: Page) => {
+    if (!currentUser) {
+      setActivePage('dashboard');
+      return;
+    }
+    setActivePage(getWorkspacePageFallback(currentUser, page));
+  }, [currentUser]);
+
   const handleReviewGenerationSuccess = () => {
-    setActivePage('review-generation');
+    navigateWorkspacePage('review-generation');
   };
 
   const handleOpenClassBinding = (target: ClassBindingTarget) => {
     setClassBindingTarget(target);
-    setActivePage('classes');
+    navigateWorkspacePage('classes');
     setMobileNavOpen(false);
   };
 
@@ -9427,7 +9534,12 @@ export default function App() {
           item,
         ]);
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '新增课程排期失败');
+        }
+      });
   };
 
   const handleDeleteCalendarSchedule = (scheduleId: number) => {
@@ -9437,7 +9549,12 @@ export default function App() {
       .then(() => {
         setCalendarSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '删除课程排期失败');
+        }
+      });
   };
 
   const handleCreateCalendarCustomItem = (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => {
@@ -9491,7 +9608,12 @@ export default function App() {
           item,
         ]);
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '新增自定义事项排期失败');
+        }
+      });
   };
 
   const handleDeleteCalendarCustomSchedule = (scheduleId: number) => {
@@ -9501,7 +9623,12 @@ export default function App() {
       .then(() => {
         setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (typeof window !== 'undefined') {
+          window.alert(error instanceof Error ? error.message : '删除自定义事项排期失败');
+        }
+      });
   };
 
   const pageTitle: Record<Page, string> = {
@@ -9585,6 +9712,8 @@ export default function App() {
     );
   }
 
+  const activeWorkspacePage = getWorkspacePageFallback(currentUser, activePage);
+
   return (
     <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
@@ -9595,11 +9724,11 @@ export default function App() {
       <div className="relative flex min-h-[100svh] sm:min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
           <Sidebar
-            activePage={activePage}
+            activePage={activeWorkspacePage}
             currentUser={currentUser}
             onLogout={handleLogout}
-            setActivePage={setActivePage}
-            compact={activePage === 'calendar'}
+            setActivePage={navigateWorkspacePage}
+            compact={activeWorkspacePage === 'calendar'}
             onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
           />
         </div>
@@ -9628,10 +9757,10 @@ export default function App() {
                   <X size={18} />
                 </button>
                 <Sidebar
-                  activePage={activePage}
+                  activePage={activeWorkspacePage}
                   currentUser={currentUser}
                   onLogout={handleLogout}
-                  setActivePage={setActivePage}
+                  setActivePage={navigateWorkspacePage}
                   onNavigate={() => setMobileNavOpen(false)}
                   mobile={true}
                   onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
@@ -9640,9 +9769,9 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', activePage === 'calendar' ? 'lg:pl-24' : 'lg:pl-72')}>
+        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' ? 'lg:pl-24' : 'lg:pl-72')}>
           <Header
-            title={pageTitle[activePage]}
+            title={pageTitle[activeWorkspacePage]}
             onGoHome={() => setShowLanding(true)}
             isDark={isDark}
             onToggleDarkMode={() => setIsDark((current) => !current)}
@@ -9651,16 +9780,16 @@ export default function App() {
           <div className="flex-1">
             <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
               <motion.div
-                key={activePage}
+                key={activeWorkspacePage}
                 initial={isMobileViewport ? false : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 0, y: -6 }}
                 transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
               >
-                {activePage === 'dashboard' && (
+                {activeWorkspacePage === 'dashboard' && (
                   <WorkspaceDashboard
                     currentUser={currentUser}
-                    setActivePage={setActivePage}
+                    setActivePage={navigateWorkspacePage}
                     styles={{
                       pageClass: workspacePageClass,
                       cardClass: workspaceCardClass,
@@ -9670,10 +9799,12 @@ export default function App() {
                     canOpenAccounts={hasStaffAccess(currentUser.role)}
                   />
                 )}
-                {activePage === 'review-generation' && <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />}
-                {activePage === 'class-feedback-generation' && <ClassFeedbackGenerationPage currentUser={currentUser} />}
-                {activePage === 'consultation' && <ConsultationPage currentUser={currentUser} />}
-                {activePage === 'calendar' &&
+                {activeWorkspacePage === 'review-generation' && canOpenWorkspacePage(currentUser, 'review-generation') && (
+                  <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />
+                )}
+                {activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage(currentUser, 'class-feedback-generation') && <ClassFeedbackGenerationPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'consultation' && canOpenWorkspacePage(currentUser, 'consultation') && <ConsultationPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'calendar' && canOpenWorkspacePage(currentUser, 'calendar') &&
                   (calendarLoading ? (
                     <div className={`${workspacePageClass}`}>
                       <div className={`${workspaceCardClass} p-8`}>
@@ -9681,36 +9812,46 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    <CourseCalendarPage
-                      anchorDate={calendarAnchorDate}
-                      today={getTodayIsoDate()}
-                      currentUserId={currentUser.id}
-                      currentUserRole={currentUser.role}
-                      classes={calendarClasses}
-                      schedules={calendarSchedules}
-                      customItems={calendarCustomItems}
-                      customSchedules={calendarCustomSchedules}
-                      pageStepDays={calendarPageStepDays}
-                      onPageStepDaysChange={handleCalendarPageStepDaysChange}
-                      onPreviousPage={handlePreviousCalendarPage}
-                      onNextPage={handleNextCalendarPage}
-                      onScheduleClass={handleScheduleCalendarClass}
-                      onScheduleCustomItem={handleScheduleCalendarCustomItem}
-                      onCreateCustomItem={handleCreateCalendarCustomItem}
-                      onDeleteCustomItem={handleDeleteCalendarCustomItem}
-                      onDeleteSchedule={handleDeleteCalendarSchedule}
-                      onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
-                    />
+                    <>
+                      {calendarError && (
+                        <div className={`${workspacePageClass} pb-0`}>
+                          <div className={`${workspaceCardClass} flex items-center gap-2 border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300`}>
+                            <AlertCircle size={16} />
+                            <span>课程日历加载失败：{calendarError}</span>
+                          </div>
+                        </div>
+                      )}
+                      <CourseCalendarPage
+                        anchorDate={calendarAnchorDate}
+                        today={getTodayIsoDate()}
+                        currentUserId={currentUser.id}
+                        currentUserRole={currentUser.role}
+                        classes={calendarClasses}
+                        schedules={calendarSchedules}
+                        customItems={calendarCustomItems}
+                        customSchedules={calendarCustomSchedules}
+                        pageStepDays={calendarPageStepDays}
+                        onPageStepDaysChange={handleCalendarPageStepDaysChange}
+                        onPreviousPage={handlePreviousCalendarPage}
+                        onNextPage={handleNextCalendarPage}
+                        onScheduleClass={handleScheduleCalendarClass}
+                        onScheduleCustomItem={handleScheduleCalendarCustomItem}
+                        onCreateCustomItem={handleCreateCalendarCustomItem}
+                        onDeleteCustomItem={handleDeleteCalendarCustomItem}
+                        onDeleteSchedule={handleDeleteCalendarSchedule}
+                        onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
+                      />
+                    </>
                   ))}
-                {activePage === 'smartWrongQuestions' &&
-                  canAccessSmartWrongQuestions(currentUser.role) &&
+                {activeWorkspacePage === 'smartWrongQuestions' &&
+                  canOpenWorkspacePage(currentUser, 'smartWrongQuestions') &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
-                {activePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
+                {activeWorkspacePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
                   <ClassManagementPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={() => setClassBindingTarget(null)} />
                 )}
-                {activePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
-                {activePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
-                {activePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
+                {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
+                {activeWorkspacePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
               </motion.div>
             </AnimatePresence>
           </div>

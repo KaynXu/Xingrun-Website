@@ -177,6 +177,7 @@ function normalizeBareLatexText(value) {
   }
 
   normalized = normalized.replace(/\\text\{([^{}]+)\}/g, '$1');
+  normalized = normalized.replace(/\\overrightarrow\s*\{([^{}]+)\}/g, '$1');
   normalized = normalized.replace(/\\mathbb\s*\{?([A-Za-z])\}?/g, (_, letter) => MATHBB_SET_MAP[letter] || letter);
   normalized = normalized.replace(/\^\{([^{}]+)\}/g, (_, content) => renderSuperscript(content));
   normalized = normalized.replace(/\^([0-9n()+\-=i])/g, (_, content) => renderSuperscript(content));
