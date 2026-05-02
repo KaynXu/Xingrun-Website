@@ -44,7 +44,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Existing app-storage-guard coverage is the starting point."
     },
     {

@@ -699,20 +699,27 @@ function buildAuthedPath(path: string): string {
   return `${path}${separator}token=${encodeURIComponent(token)}`;
 }
 
-export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
-  const isFormData = options?.body instanceof FormData;
+interface ApiFetchOptions extends RequestInit {
+  reloadOnUnauthorized?: boolean;
+}
+
+export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOptions): Promise<T> {
+  const { reloadOnUnauthorized = true, ...fetchOptions } = options ?? {};
+  const isFormData = fetchOptions.body instanceof FormData;
   const token = getToken();
   const res = await fetch(path, {
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { 'X-Auth-Token': token } : {}),
-      ...(options?.headers ?? {}),
+      ...(fetchOptions.headers ?? {}),
     },
-    ...options,
+    ...fetchOptions,
   });
   if (res.status === 401) {
     removeLocalStorageItem('xr_token');
-    window.location.reload();
+    if (reloadOnUnauthorized) {
+      window.location.reload();
+    }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -9252,7 +9259,7 @@ export default function App() {
     let cancelled = false;
     setAuthReady(false);
 
-    apiFetch<CurrentUser>('/api/me')
+    apiFetch<CurrentUser>('/api/me', { reloadOnUnauthorized: false })
       .then((user) => {
         if (cancelled) {
           return;
