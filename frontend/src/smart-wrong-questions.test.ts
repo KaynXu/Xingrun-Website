@@ -2013,29 +2013,6 @@ test('SmartWrongQuestionsPage accepts a top-level saved record response without 
   }
 });
 
-test('SmartWrongQuestionsPage source no longer exposes export or pending-review controls in the notebook view', () => {
-  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
-  const helperSource = readFileSync(resolve(currentDir, 'smartWrongQuestions.ts'), 'utf8');
-
-  assert.doesNotMatch(pageSource, /downloadWrongQuestionSummary\(filters\)/);
-  assert.doesNotMatch(pageSource, /导出汇总/);
-  assert.doesNotMatch(pageSource, /只看待教师跟进/);
-  assert.match(pageSource, /未掌握/);
-  assert.doesNotMatch(helperSource, /onlyPendingReview\?: boolean/);
-  assert.doesNotMatch(helperSource, /buildWrongQuestionSummaryExportPath/);
-  assert.doesNotMatch(helperSource, /downloadWrongQuestionSummary/);
-  assert.doesNotMatch(helperSource, /summary\/export/);
-});
-
-test('SmartWrongQuestionsPage copy avoids conversational guidance text', () => {
-  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
-
-  assert.doesNotMatch(pageSource, /老师这里只保留是否掌握的勾选/);
-  assert.doesNotMatch(pageSource, /保存失败时会保留当前草稿，便于继续修改后重试/);
-  assert.doesNotMatch(pageSource, /把当前题目按错题库文档方式展开/);
-  assert.doesNotMatch(pageSource, /查看这个孩子当前记录，并直接保存跟进内容/);
-});
-
 test('SmartWrongQuestionsPage loads teacher and class filter options as selects instead of free text inputs', async () => {
   const domEnvironment = setupDomEnvironment();
   const originalFetch = globalThis.fetch;

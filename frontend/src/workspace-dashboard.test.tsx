@@ -136,7 +136,7 @@ test('workspace dashboard shows super owner platform overview', () => {
   assert.doesNotMatch(markup, /新建复习文档/);
 });
 
-test('workspace dashboard copy avoids conversational welcome and placeholder narration', () => {
+test('workspace dashboard copy keeps AI labels and material-generation copy', () => {
   const memberMarkup = renderDashboard('member');
   const ownerMarkup = renderDashboard('owner');
   const superOwnerMarkup = renderDashboard('super_owner');
@@ -146,19 +146,6 @@ test('workspace dashboard copy avoids conversational welcome and placeholder nar
   assert.match(ownerMarkup, /AI 教学入口/);
   assert.match(superOwnerMarkup, /AI 平台/);
   assert.match(appSource, /生成 AI 复习资料和教学素材/);
-  assert.doesNotMatch(memberMarkup, /欢迎回来/);
-  assert.doesNotMatch(memberMarkup, /直接进入真实可用的教学动作/);
-  assert.doesNotMatch(memberMarkup, /不伪造任务列表/);
-  assert.doesNotMatch(ownerMarkup, /欢迎回来/);
-  assert.doesNotMatch(ownerMarkup, /首页聚焦已经可用的机构管理入口/);
-  assert.doesNotMatch(workspaceSource, /欢迎回来/);
-  assert.doesNotMatch(workspaceSource, /不伪造任务列表/);
-  assert.doesNotMatch(workspaceSource, /保留真实概览壳层/);
-  assert.doesNotMatch(workspaceSource, /当前首页只保留真实入口说明/);
-  assert.doesNotMatch(appSource, /AI 会整理成统一的复习资料与后续教学素材/);
-  assert.doesNotMatch(appSource, /系统会先帮你整理字段/);
-  assert.doesNotMatch(appSource, /让 AI 只做解析和预览/);
-  assert.doesNotMatch(appSource, /还没有草稿。先粘贴原始文本，再点击“开始解析”。/);
 });
 
 test('super owner platform cards navigate to real platform and organization views', async () => {

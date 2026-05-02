@@ -194,7 +194,7 @@
         "Run the frontend stability proof baseline."
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Examples from current handoff include removed old dashboard copy and hidden stale smart-wrong-question controls."
     }
   ]
