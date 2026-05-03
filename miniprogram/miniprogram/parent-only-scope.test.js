@@ -63,6 +63,10 @@ test('mini program serverUrl uses the production HTTPS domain instead of a raw I
 test('parent upload page exposes crop-first multi-image controls', () => {
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
 
+  assert.equal(uploadTemplate.includes('class="panel-card upload-flow-panel"'), true);
+  assert.equal(uploadTemplate.includes('class="upload-section upload-image-section"'), true);
+  assert.equal(uploadTemplate.includes('class="upload-section upload-box-section"'), true);
+  assert.equal(uploadTemplate.includes('class="reason-card upload-section upload-reason-section"'), true);
   assert.equal(uploadTemplate.includes('AI 框选'), false);
   assert.equal(uploadTemplate.includes('补加框'), true);
   assert.equal(uploadTemplate.includes('删除当前'), true);
@@ -108,10 +112,18 @@ test('parent upload submit button stays on one line on narrow screens', () => {
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
   const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
 
+  assert.equal(uploadTemplate.includes('class="submit-panel"'), true);
+  assert.equal(uploadTemplate.includes('class="submit-title"'), true);
+  assert.equal(uploadTemplate.includes('class="submit-desc"'), true);
   assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.match(uploadStyles, /\.bottom-action-bar\s*\{[^}]*padding:\s*0 30rpx calc\(30rpx \+ env\(safe-area-inset-bottom\)\);/s);
+  assert.match(uploadStyles, /\.submit-panel\s*\{[^}]*display:\s*flex;/s);
+  assert.match(uploadStyles, /\.submit-panel\s*\{[^}]*flex-direction:\s*column;/s);
   assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*width:\s*100%;/s);
   assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*white-space:\s*nowrap;/s);
   assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
+  assert.match(uploadStyles, /\.submit-title\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(uploadStyles, /\.submit-desc\s*\{[^}]*word-break:\s*break-all;/s);
 });
 
 test('parent upload controls that mutate the draft are disabled during submission stages', () => {

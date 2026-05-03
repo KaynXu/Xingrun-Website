@@ -10,24 +10,46 @@
     <text class="state-desc">{{errorMessage}}</text>
   </view>
 
-  <view wx:if="{{binding}}" class="panel-card">
-    <text class="field-label">错题图片</text>
-    <button class="ghost-btn picker-btn" disabled="{{submitting || cropExporting}}" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
-
-    <scroll-view wx:if="{{imageItems.length}}" class="thumb-strip" scroll-x="true" show-scrollbar="false">
-      <view
-        wx:for="{{imageItems}}"
-        wx:key="id"
-        class="thumb-item {{item.id === selectedImageId ? 'thumb-item-active' : ''}}"
-        data-image-id="{{item.id}}"
-        bindtap="selectImage"
-      >
-        <image class="thumb-image" src="{{item.localPath}}" mode="aspectFill" />
+  <view wx:if="{{binding}}" class="panel-card upload-flow-panel">
+    <view class="upload-section upload-image-section">
+      <view class="upload-section-head">
+        <text class="section-kicker">01</text>
+        <view class="upload-section-copy">
+          <text class="upload-section-title">选择错题图片</text>
+          <text class="upload-section-desc">拍照、继续追加或从相册多选，先把要整理的题图放进来。</text>
+        </view>
       </view>
-    </scroll-view>
+      <button class="ghost-btn picker-btn" disabled="{{submitting || cropExporting}}" bindtap="chooseImages">{{imageItems.length ? '继续拍照 / 继续选图' : '拍照 / 选择图片'}}</button>
 
-    <view wx:if="{{currentImage}}" class="crop-stage-shell">
-      <view class="crop-stage" style="width: {{stageWidth}}px; height: {{stageHeight}}px;">
+      <scroll-view wx:if="{{imageItems.length}}" class="thumb-strip" scroll-x="true" show-scrollbar="false">
+        <view
+          wx:for="{{imageItems}}"
+          wx:key="id"
+          class="thumb-item {{item.id === selectedImageId ? 'thumb-item-active' : ''}}"
+          data-image-id="{{item.id}}"
+          bindtap="selectImage"
+        >
+          <image class="thumb-image" src="{{item.localPath}}" mode="aspectFill" />
+        </view>
+      </scroll-view>
+
+      <view wx:if="{{currentImage}}" class="selected-image-context">
+        <text class="selected-image-title">已选择 {{imageItems.length}} 张图片</text>
+        <text class="selected-image-desc">{{currentStatusText}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{currentImage}}" class="upload-section upload-box-section">
+      <view class="upload-section-head">
+        <text class="section-kicker">02</text>
+        <view class="upload-section-copy">
+          <text class="upload-section-title">框出每一道错题</text>
+          <text class="upload-section-desc">拖动题框调整范围，补加框和旋转是普通工具，删除题框单独放在下方。</text>
+        </view>
+      </view>
+
+      <view class="crop-stage-shell">
+        <view class="crop-stage" style="width: {{stageWidth}}px; height: {{stageHeight}}px;">
         <image
           wx:if="{{imagePath}}"
           class="crop-image"
@@ -68,22 +90,31 @@
           <view wx:if="{{item.active}}" class="crop-grid crop-grid-h1"></view>
           <view wx:if="{{item.active}}" class="crop-grid crop-grid-h2"></view>
         </view>
-      </view>
-
-      <text class="status-hint">{{currentStatusText}}</text>
-
-      <view class="box-action-group">
-        <view class="box-tool-row">
-          <button class="ghost-btn tool-btn" disabled="{{submitting || cropExporting}}" bindtap="addManualBox">补加框</button>
-          <button class="ghost-btn tool-btn" disabled="{{submitting || cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
         </view>
-        <view class="box-danger-row">
-          <button class="danger-btn delete-box-btn" disabled="{{submitting || cropExporting}}" bindtap="removeActiveBox">删除当前题框</button>
+
+        <text class="status-hint">{{currentStatusText}}</text>
+
+        <view class="box-action-group">
+          <view class="box-tool-row">
+            <button class="ghost-btn tool-btn" disabled="{{submitting || cropExporting}}" bindtap="addManualBox">补加框</button>
+            <button class="ghost-btn tool-btn" disabled="{{submitting || cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
+          </view>
+          <view class="box-danger-row">
+            <button class="danger-btn delete-box-btn" disabled="{{submitting || cropExporting}}" bindtap="removeActiveBox">删除当前题框</button>
+          </view>
         </view>
       </view>
     </view>
 
-    <view wx:if="{{activeBox}}" class="reason-card">
+    <view wx:if="{{activeBox}}" class="reason-card upload-section upload-reason-section">
+      <view class="upload-section-head reason-section-head">
+        <text class="section-kicker">03</text>
+        <view class="upload-section-copy">
+          <text class="upload-section-title">补充错因和专题</text>
+          <text class="upload-section-desc">每个题框可以单独填写，没想好也可以先保留未分类。</text>
+        </view>
+      </view>
+
       <text class="field-label topic-label">专题分类</text>
       <picker mode="selector" range="{{topicCategoryOptions}}" disabled="{{submitting || cropExporting}}" bindchange="handleActiveBoxTopicChange">
         <view class="topic-picker">{{activeBox.topicCategory || '未分类'}}</view>
@@ -138,13 +169,17 @@
       </view>
     </view>
 
-    <view wx:if="{{uploadStageText}}" class="upload-stage {{uploadStage === 'failed' || uploadStage === 'partial_failed' ? 'upload-stage-error' : 'upload-stage-active'}}">
+    <view wx:if="{{uploadStageText}}" class="upload-stage upload-progress-card {{uploadStage === 'failed' || uploadStage === 'partial_failed' ? 'upload-stage-error' : 'upload-stage-active'}}">
       <text class="upload-stage-title">{{uploadStageTitle || '上传进度'}}</text>
       <text class="upload-stage-desc">{{uploadStageText}}</text>
     </view>
 
     <view class="bottom-action-bar">
-      <button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting || cropExporting}}" bindtap="submitUpload">统一提交所有错题</button>
+      <view class="submit-panel">
+        <text class="submit-title">准备好后统一提交</text>
+        <text class="submit-desc">提交后会显示识别进度，草稿在失败或处理中会保留。</text>
+        <button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting || cropExporting}}" bindtap="submitUpload">统一提交所有错题</button>
+      </view>
     </view>
   </view>
 

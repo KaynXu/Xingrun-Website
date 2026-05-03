@@ -150,8 +150,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parent upload page now has a guided visual flow for image input, selected image context, manual box tools, reason/topic entry, task progress, and a safe-area-aware submit panel. Existing crop/manual box/task polling behavior is unchanged; visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_006_proof.sh."
     },
     {
       "id": "MP-VISUAL-007",

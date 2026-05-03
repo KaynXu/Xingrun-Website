@@ -251,6 +251,13 @@ check('parent-bind: lookup, existing binding, and bind confirmation hierarchy', 
 });
 
 check('parent-upload: photo, box, reason, progress, and submit sections stay distinct', () => {
+  expectIncludes(pages.upload.wxml, 'class="panel-card upload-flow-panel"');
+  expectIncludes(pages.upload.wxml, 'class="upload-section upload-image-section"');
+  expectIncludes(pages.upload.wxml, 'class="upload-section upload-box-section"');
+  expectIncludes(pages.upload.wxml, 'class="selected-image-context"');
+  expectIncludes(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"');
+  expectIncludes(pages.upload.wxml, 'class="upload-stage upload-progress-card');
+  expectIncludes(pages.upload.wxml, 'class="submit-panel"');
   expectIncludes(pages.upload.wxml, 'class="ghost-btn picker-btn"');
   expectIncludes(pages.upload.wxml, 'bindtap="chooseImages"');
   expectIncludes(pages.upload.wxml, 'class="crop-stage-shell"');
@@ -260,13 +267,22 @@ check('parent-upload: photo, box, reason, progress, and submit sections stay dis
   expectIncludes(pages.upload.wxml, '补加框');
   expectIncludes(pages.upload.wxml, '删除当前题框');
   expectIncludes(pages.upload.wxml, '顺时针旋转');
-  expectIncludes(pages.upload.wxml, 'class="reason-card"');
-  expectIncludes(pages.upload.wxml, 'class="upload-stage {{uploadStage');
+  expectIncludes(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"');
+  expectIncludes(pages.upload.wxml, 'class="upload-stage upload-progress-card {{uploadStage');
   expectIncludes(pages.upload.wxml, 'class="bottom-action-bar"');
   expectIncludes(pages.upload.wxml, 'class="primary-btn submit-btn"');
+  expectOrder(pages.upload.wxml, 'class="upload-section upload-image-section"', 'class="upload-section upload-box-section"');
   expectOrder(pages.upload.wxml, 'class="ghost-btn picker-btn"', 'class="box-action-group"');
-  expectOrder(pages.upload.wxml, 'class="box-action-group"', 'class="reason-card"');
-  expectOrder(pages.upload.wxml, 'class="upload-stage {{uploadStage', 'class="primary-btn submit-btn"');
+  expectOrder(pages.upload.wxml, 'class="box-action-group"', 'class="reason-card upload-section upload-reason-section"');
+  expectOrder(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"', 'class="upload-stage upload-progress-card');
+  expectOrder(pages.upload.wxml, 'class="upload-stage upload-progress-card', 'class="primary-btn submit-btn"');
+  expectRule(pages.upload.wxss, '.upload-flow-panel', 'padding: 0;');
+  expectRule(pages.upload.wxss, '.upload-section', 'padding: 30rpx;');
+  expectRule(pages.upload.wxss, '.upload-section-head', 'display: flex;');
+  expectRule(pages.upload.wxss, '.selected-image-context', 'display: flex;');
+  expectRule(pages.upload.wxss, '.upload-progress-card', 'margin: 0 30rpx 22rpx;');
+  expectRule(pages.upload.wxss, '.submit-panel', 'display: flex;');
+  expectRule(pages.upload.wxss, '.submit-panel', 'flex-direction: column;');
 });
 
 check('parent-upload: destructive box action is visually separated from final submit', () => {
@@ -309,12 +325,15 @@ check('parent-upload: bottom submit area has narrow-screen and safe-area spacing
   expectRule(uploadStyles, '.parent-page', 'padding: 28rpx;');
   expectRule(uploadStyles, '.parent-page', 'box-sizing: border-box;');
   expectRule(uploadStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + env(safe-area-inset-bottom));');
+  expectRule(pages.upload.wxss, '.bottom-action-bar', 'padding: 0 30rpx calc(30rpx + env(safe-area-inset-bottom));');
   expectRule(pages.upload.wxss, '.submit-btn', 'width: 100%;');
   expectRule(pages.upload.wxss, '.submit-btn', 'line-height: 84rpx;');
   expectRule(pages.upload.wxss, '.submit-btn', 'white-space: nowrap;');
   expectRule(pages.upload.wxss, '.submit-btn', 'box-sizing: border-box;');
   expectRule(pages.upload.wxss, '.picker-btn', 'width: 100%;');
   expectRule(pages.upload.wxss, '.picker-btn', 'white-space: nowrap;');
+  expectRule(pages.upload.wxss, '.submit-title', 'white-space: nowrap;');
+  expectRule(pages.upload.wxss, '.submit-desc', 'word-break: break-all;');
 });
 
 check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierarchy', () => {
