@@ -64,8 +64,8 @@
         "Run the new visual proof through a temporary script and run scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added scripts/ralph/miniprogram_visual_polish_proof.sh; proof covers parent-home, parent-bind, parent-upload, and parent-wrongbook visual structure/action hierarchy contracts without requiring WeChat devtools or services."
     },
     {
       "id": "MP-VISUAL-002",

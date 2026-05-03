@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+run() {
+  echo
+  echo ">>> $*"
+  "$@"
+}
+
+cd "$ROOT_DIR"
+
+run node --test miniprogram/miniprogram/parent-only-scope.test.js
+
+echo
+echo ">>> mini program visual structure contracts"
+node <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = process.cwd();
+const miniRoot = path.join(root, 'miniprogram/miniprogram');
+
+const pages = {
+  home: {
+    name: 'parent-home',
+    wxml: read('pages/parent-home/index.wxml'),
+    wxss: read('pages/parent-home/index.wxss'),
+  },
+  bind: {
+    name: 'parent-bind',
+    wxml: read('pages/parent-bind/index.wxml'),
+    wxss: read('pages/parent-bind/index.wxss'),
+  },
+  upload: {
+    name: 'parent-upload',
+    wxml: read('pages/parent-upload/index.wxml'),
+    wxss: read('pages/parent-upload/index.wxss'),
+  },
+  wrongbook: {
+    name: 'parent-wrongbook',
+    wxml: read('pages/parent-wrongbook/index.wxml'),
+    wxss: read('pages/parent-wrongbook/index.wxss'),
+  },
+};
+
+let failures = 0;
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(miniRoot, relativePath), 'utf8');
+}
+
+function check(label, assertion) {
+  try {
+    assertion();
+    console.log(`ok - ${label}`);
+  } catch (error) {
+    failures += 1;
+    console.error(`visual contract failed: ${label}`);
+    console.error(`  ${error.message}`);
+  }
+}
+
+function expectIncludes(text, needle) {
+  if (!text.includes(needle)) {
+    throw new Error(`missing text: ${needle}`);
+  }
+}
+
+function expectNotIncludes(text, needle) {
+  if (text.includes(needle)) {
+    throw new Error(`unexpected text: ${needle}`);
+  }
+}
+
+function expectMatch(text, pattern) {
+  if (!pattern.test(text)) {
+    throw new Error(`missing pattern: ${pattern}`);
+  }
+}
+
+function expectOrder(text, before, after) {
+  const beforeIndex = text.indexOf(before);
+  const afterIndex = text.indexOf(after);
+  if (beforeIndex === -1) {
+    throw new Error(`missing ordered text: ${before}`);
+  }
+  if (afterIndex === -1) {
+    throw new Error(`missing ordered text: ${after}`);
+  }
+  if (beforeIndex >= afterIndex) {
+    throw new Error(`expected "${before}" before "${after}"`);
+  }
+}
+
+function selectorBody(styles, selector) {
+  const bodies = [];
+  const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rulePattern.exec(styles)) !== null) {
+    const selectors = match[1].split(',').map((item) => item.trim());
+    if (selectors.includes(selector)) {
+      bodies.push(match[2]);
+    }
+  }
+  return bodies.join('\n');
+}
+
+function expectRule(styles, selector, declaration) {
+  const body = selectorBody(styles, selector);
+  if (!body) {
+    throw new Error(`missing selector: ${selector}`);
+  }
+  if (!body.includes(declaration)) {
+    throw new Error(`${selector} missing declaration: ${declaration}`);
+  }
+}
+
+function expectNoPrimaryInBlock(text, startNeedle, endNeedle) {
+  const start = text.indexOf(startNeedle);
+  const end = text.indexOf(endNeedle, start);
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error(`could not locate block ${startNeedle}`);
+  }
+  const block = text.slice(start, end);
+  if (block.includes('primary-btn')) {
+    throw new Error(`${startNeedle} should not contain a primary button`);
+  }
+}
+
+function checkPageShell(page) {
+  check(`${page.name}: page shell and card primitives`, () => {
+    expectRule(page.wxss, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'min-height: 100vh;');
+    expectRule(page.wxss, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'padding: 28rpx;');
+    expectRule(page.wxss, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'box-sizing: border-box;');
+    expectMatch(page.wxss, /border-radius:\s*(24|28|32)rpx;/);
+    expectMatch(page.wxss, /box-shadow:\s*0\s+\d+rpx\s+\d+rpx\s+rgba/);
+  });
+}
+
+for (const page of Object.values(pages)) {
+  checkPageShell(page);
+}
+
+check('parent-home: primary and secondary actions are grouped by child card', () => {
+  expectIncludes(pages.home.wxml, 'class="hero-card"');
+  expectIncludes(pages.home.wxml, 'class="hero-badge"');
+  expectIncludes(pages.home.wxml, 'class="state-card"');
+  expectIncludes(pages.home.wxml, '<button class="primary-btn" bindtap="goBindMore">去绑定孩子</button>');
+  expectIncludes(pages.home.wxml, 'class="binding-actions"');
+  expectIncludes(pages.home.wxml, 'class="ghost-btn mini-btn"');
+  expectIncludes(pages.home.wxml, 'class="primary-btn mini-btn"');
+  expectOrder(pages.home.wxml, '查看错题本', '上传错题');
+  expectRule(pages.home.wxss, '.binding-actions', 'flex-direction: column;');
+  expectRule(pages.home.wxss, '.binding-actions', 'width: 100%;');
+  expectRule(pages.home.wxss, '.mini-btn', 'width: 100%;');
+  expectRule(pages.home.wxss, '.mini-btn', 'white-space: nowrap;');
+});
+
+check('parent-bind: lookup, existing binding, and bind confirmation hierarchy', () => {
+  expectIncludes(pages.bind.wxml, 'class="field-input"');
+  expectIncludes(pages.bind.wxml, '<button class="primary-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生</button>');
+  expectIncludes(pages.bind.wxml, 'class="section-head"');
+  expectIncludes(pages.bind.wxml, '<button class="ghost-btn" size="mini" bindtap="goHome">去上传</button>');
+  expectIncludes(pages.bind.wxml, 'class="student-card"');
+  expectIncludes(pages.bind.wxml, 'class="primary-btn mini-btn"');
+  expectIncludes(pages.bind.wxml, '绑定这个孩子');
+  expectRule(pages.bind.wxss, '.section-head', 'flex-direction: column;');
+  expectRule(pages.bind.wxss, '.student-card', 'flex-direction: column;');
+  expectRule(pages.bind.wxss, '.mini-btn', 'width: 100%;');
+  expectRule(pages.bind.wxss, '.mini-btn', 'white-space: nowrap;');
+});
+
+check('parent-upload: photo, box, reason, progress, and submit sections stay distinct', () => {
+  expectIncludes(pages.upload.wxml, 'class="ghost-btn picker-btn"');
+  expectIncludes(pages.upload.wxml, 'bindtap="chooseImages"');
+  expectIncludes(pages.upload.wxml, 'class="crop-stage-shell"');
+  expectIncludes(pages.upload.wxml, 'class="action-row"');
+  expectIncludes(pages.upload.wxml, '补加框');
+  expectIncludes(pages.upload.wxml, '删除当前');
+  expectIncludes(pages.upload.wxml, '顺时针旋转');
+  expectIncludes(pages.upload.wxml, 'class="reason-card"');
+  expectIncludes(pages.upload.wxml, 'class="upload-stage {{uploadStage');
+  expectIncludes(pages.upload.wxml, 'class="primary-btn submit-btn"');
+  expectOrder(pages.upload.wxml, 'class="ghost-btn picker-btn"', 'class="action-row"');
+  expectOrder(pages.upload.wxml, 'class="action-row"', 'class="reason-card"');
+  expectOrder(pages.upload.wxml, 'class="upload-stage {{uploadStage', 'class="primary-btn submit-btn"');
+});
+
+check('parent-upload: destructive box action is visually separated from final submit', () => {
+  expectMatch(pages.upload.wxml, /<button class="ghost-btn compact-btn"[^>]*bindtap="removeActiveBox">删除当前<\/button>/);
+  expectMatch(pages.upload.wxml, /<button class="primary-btn submit-btn"[^>]*bindtap="submitUpload">统一提交所有错题<\/button>/);
+  expectNoPrimaryInBlock(pages.upload.wxml, '<view class="action-row">', '</view>');
+  expectOrder(pages.upload.wxml, '删除当前', '统一提交所有错题');
+  expectRule(pages.upload.wxss, '.action-row', 'display: flex;');
+  expectRule(pages.upload.wxss, '.action-row', 'align-items: stretch;');
+  expectRule(pages.upload.wxss, '.compact-btn', 'flex: 1;');
+  expectRule(pages.upload.wxss, '.compact-btn', 'min-width: 0;');
+  expectRule(pages.upload.wxss, '.compact-btn', 'white-space: nowrap;');
+});
+
+check('parent-upload: bottom submit area has narrow-screen and safe-area spacing rules', () => {
+  expectRule(pages.upload.wxss, '.parent-page', 'padding: 28rpx;');
+  expectRule(pages.upload.wxss, '.parent-page', 'box-sizing: border-box;');
+  expectRule(pages.upload.wxss, '.submit-btn', 'width: 100%;');
+  expectRule(pages.upload.wxss, '.submit-btn', 'line-height: 84rpx;');
+  expectRule(pages.upload.wxss, '.submit-btn', 'white-space: nowrap;');
+  expectRule(pages.upload.wxss, '.submit-btn', 'box-sizing: border-box;');
+  expectRule(pages.upload.wxss, '.picker-btn', 'width: 100%;');
+  expectRule(pages.upload.wxss, '.picker-btn', 'white-space: nowrap;');
+});
+
+check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierarchy', () => {
+  expectIncludes(pages.wrongbook.wxml, 'class="upload-status-card');
+  expectIncludes(pages.wrongbook.wxml, 'class="library-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="library-btn"');
+  expectIncludes(pages.wrongbook.wxml, '查看 PDF');
+  expectIncludes(pages.wrongbook.wxml, 'PDF 暂未就绪');
+  expectIncludes(pages.wrongbook.wxml, 'class="state-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="topic-chip');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="edit-topic-btn"');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-question"');
+  expectRule(pages.wrongbook.wxss, '.library-card', 'flex-direction: column;');
+  expectRule(pages.wrongbook.wxss, '.library-btn', 'width: 100%;');
+  expectRule(pages.wrongbook.wxss, '.library-btn', 'white-space: nowrap;');
+  expectRule(pages.wrongbook.wxss, '.item-top', 'flex-wrap: wrap;');
+  expectRule(pages.wrongbook.wxss, '.item-question', 'white-space: pre-wrap;');
+  expectRule(pages.wrongbook.wxss, '.item-question', 'word-break: break-all;');
+});
+
+check('parent-wrongbook: topic edit actions keep secondary and save actions grouped', () => {
+  expectIncludes(pages.wrongbook.wxml, 'class="topic-edit-actions"');
+  expectIncludes(pages.wrongbook.wxml, 'class="topic-action-btn"');
+  expectIncludes(pages.wrongbook.wxml, 'class="topic-action-btn topic-save-btn"');
+  expectOrder(pages.wrongbook.wxml, 'cancelEditTopicCategory', 'saveTopicCategory');
+  expectRule(pages.wrongbook.wxss, '.topic-edit-actions', 'display: flex;');
+  expectRule(pages.wrongbook.wxss, '.topic-action-btn', 'flex: 1;');
+  expectRule(pages.wrongbook.wxss, '.topic-save-btn', 'background: #2375d8;');
+});
+
+check('parent-facing templates avoid prototype-only wording', () => {
+  const forbidden = [
+    /原型/,
+    /prototype/i,
+    /\bdemo\b/i,
+    /调试/,
+    /\bdebug\b/i,
+    /内部测试/,
+    /测试页面/,
+    /临时页面/,
+    /占位/,
+    /TODO/,
+    /FIXME/,
+  ];
+  for (const page of Object.values(pages)) {
+    for (const pattern of forbidden) {
+      if (pattern.test(page.wxml)) {
+        throw new Error(`${page.name} template contains prototype-only wording: ${pattern}`);
+      }
+    }
+  }
+  expectNotIncludes(pages.upload.wxml, 'AI 框选');
+});
+
+if (failures > 0) {
+  process.exit(1);
+}
+
+console.log('mini program visual structure contracts passed');
+NODE
+
+echo
+echo "mini program visual polish proof passed"

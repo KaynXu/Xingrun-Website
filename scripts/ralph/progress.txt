@@ -24,11 +24,12 @@ Visual direction:
 - Small-screen layouts must not clip, overlap, jump, or force awkward button wrapping.
 
 Baseline proof:
-- MP-VISUAL-001 creates scripts/ralph/miniprogram_visual_polish_proof.sh.
-- After MP-VISUAL-001, every story must run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh.
+- scripts/ralph/miniprogram_visual_polish_proof.sh is now the visual polish proof runner.
+- Every later story must run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh.
 
 Status:
 - Archived completed upload stability PRD to scripts/ralph/archive/miniprogram_upload_2_stability_prd_20260503.json.
 - Archived completed upload stability progress to scripts/ralph/archive/miniprogram_upload_2_stability_progress_20260503.txt.
 - Active PRD is now mini program visual refresh.
-- Next story: MP-VISUAL-001 Create mini program visual polish proof runner.
+- MP-VISUAL-001 completed: added a local visual proof runner that checks parent-home, parent-bind, parent-upload, and parent-wrongbook page structure, primary/secondary action hierarchy, destructive action separation, bottom submit spacing, narrow-screen button rules, and prototype-only wording without WeChat devtools or backend services.
+- Next story: MP-VISUAL-002 Define production mini program visual system.
