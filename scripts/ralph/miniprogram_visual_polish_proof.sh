@@ -337,22 +337,46 @@ check('parent-upload: bottom submit area has narrow-screen and safe-area spacing
 });
 
 check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierarchy', () => {
+  expectIncludes(pages.wrongbook.wxml, 'class="hero-card wrongbook-hero"');
+  expectIncludes(pages.wrongbook.wxml, '星润错题本');
+  expectIncludes(pages.wrongbook.wxml, 'class="hero-stat-row"');
   expectIncludes(pages.wrongbook.wxml, 'class="upload-status-card');
   expectIncludes(pages.wrongbook.wxml, 'class="library-card"');
   expectIncludes(pages.wrongbook.wxml, 'class="primary-btn library-btn"');
+  expectIncludes(pages.wrongbook.wxml, 'class="ghost-btn library-btn library-btn-pending"');
+  expectIncludes(pages.wrongbook.wxml, 'class="library-state-tag');
+  expectIncludes(pages.wrongbook.wxml, 'class="library-actions"');
   expectIncludes(pages.wrongbook.wxml, '查看 PDF');
   expectIncludes(pages.wrongbook.wxml, 'PDF 暂未就绪');
-  expectIncludes(pages.wrongbook.wxml, 'class="state-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="panel-card filter-panel"');
+  expectIncludes(pages.wrongbook.wxml, 'class="state-card loading-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="state-card error-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="state-card empty-card"');
+  expectIncludes(pages.wrongbook.wxml, '重新加载');
   expectIncludes(pages.wrongbook.wxml, 'class="topic-chip');
   expectIncludes(pages.wrongbook.wxml, 'class="item-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-card-head"');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-section-label">题目预览</text>');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-section-label">错因简述</text>');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-status-card"');
   expectIncludes(pages.wrongbook.wxml, 'class="edit-topic-btn"');
   expectIncludes(pages.wrongbook.wxml, 'class="item-question"');
+  expectRule(pages.wrongbook.wxss, '.wrongbook-hero', 'display: flex;');
+  expectRule(pages.wrongbook.wxss, '.hero-stat-row', 'flex-wrap: wrap;');
+  expectRule(pages.wrongbook.wxss, '.library-actions', 'flex-direction: column;');
   expectRule(pages.wrongbook.wxss, '.library-card', 'flex-direction: column;');
   expectRule(pages.wrongbook.wxss, '.library-btn', 'width: 100%;');
   expectRule(pages.wrongbook.wxss, '.library-btn', 'white-space: nowrap;');
+  expectRule(pages.wrongbook.wxss, '.library-btn-pending', 'background: #eef5ff;');
+  expectRule(pages.wrongbook.wxss, '.filter-panel', 'padding: 24rpx;');
+  expectRule(pages.wrongbook.wxss, '.item-card', 'flex-direction: column;');
   expectRule(pages.wrongbook.wxss, '.item-top', 'flex-wrap: wrap;');
+  expectRule(pages.wrongbook.wxss, '.item-section', 'min-width: 0;');
+  expectRule(pages.wrongbook.wxss, '.item-section-label', 'letter-spacing: 0;');
+  expectRule(pages.wrongbook.wxss, '.item-status-card', 'white-space: pre-wrap;');
   expectRule(pages.wrongbook.wxss, '.item-question', 'white-space: pre-wrap;');
   expectRule(pages.wrongbook.wxss, '.item-question', 'word-break: break-all;');
+  expectRule(pages.wrongbook.wxss, '.state-action-btn', 'width: 100%;');
 });
 
 check('parent-wrongbook: topic edit actions keep secondary and save actions grouped', () => {

@@ -157,6 +157,38 @@ test('parent wrongbook page exposes question text and a pdf entry button', () =>
   assert.equal(wrongbookTemplate.includes('item.questionPreviewText'), true);
 });
 
+test('parent wrongbook page uses a finished learning-record hierarchy', () => {
+  const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
+  const wrongbookStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxss'), 'utf8');
+
+  assert.match(wrongbookTemplate, /class="hero-card wrongbook-hero"/);
+  assert.match(wrongbookTemplate, /class="hero-badge">星润错题本<\/text>/);
+  assert.match(wrongbookTemplate, /class="hero-stat-row"/);
+  assert.match(wrongbookTemplate, /class="library-state-tag/);
+  assert.match(wrongbookTemplate, /class="library-actions"/);
+  assert.match(wrongbookTemplate, /class="primary-btn library-btn"[^>]*wx:if="{{libraryPdfReady}}"/);
+  assert.match(wrongbookTemplate, /class="ghost-btn library-btn library-btn-pending"[^>]*wx:else/);
+  assert.match(wrongbookTemplate, /class="panel-card filter-panel"/);
+  assert.match(wrongbookTemplate, /class="item-card-head"/);
+  assert.match(wrongbookTemplate, /class="item-section-label">题目预览<\/text>/);
+  assert.match(wrongbookTemplate, /class="item-section-label">错因简述<\/text>/);
+  assert.match(wrongbookTemplate, /class="item-status-card"/);
+  assert.match(wrongbookTemplate, /class="state-card loading-card"/);
+  assert.match(wrongbookTemplate, /class="state-card empty-card"/);
+  assert.match(wrongbookTemplate, /class="ghost-btn state-action-btn" bindtap="onShow">重新加载<\/button>/);
+
+  assert.match(wrongbookStyles, /\.wrongbook-hero\s*\{[^}]*display:\s*flex;/s);
+  assert.match(wrongbookStyles, /\.hero-stat-row\s*\{[^}]*flex-wrap:\s*wrap;/s);
+  assert.match(wrongbookStyles, /\.library-actions\s*\{[^}]*flex-direction:\s*column;/s);
+  assert.match(wrongbookStyles, /\.library-btn-pending\s*\{[^}]*background:\s*#eef5ff;/s);
+  assert.match(wrongbookStyles, /\.filter-panel\s*\{[^}]*padding:\s*24rpx;/s);
+  assert.match(wrongbookStyles, /\.item-card\s*\{[^}]*flex-direction:\s*column;/s);
+  assert.match(wrongbookStyles, /\.item-section\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(wrongbookStyles, /\.item-section-label\s*\{[^}]*letter-spacing:\s*0;/s);
+  assert.match(wrongbookStyles, /\.item-status-card\s*\{[^}]*white-space:\s*pre-wrap;/s);
+  assert.match(wrongbookStyles, /\.state-action-btn\s*\{[^}]*width:\s*100%;/s);
+});
+
 test('parent upload and wrongbook pages expose primary topic category controls', () => {
   const uploadSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.js'), 'utf8');
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');

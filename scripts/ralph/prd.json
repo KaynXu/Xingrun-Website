@@ -167,8 +167,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parent wrongbook now opens with a Xingrun wrongbook learning-record hero, separates upload progress, PDF status/action, topic filters, and wrong question cards, uses ghost styling for not-ready PDF actions, and locks designed loading/error/empty states plus card section hierarchy in visual proof."
     },
     {
       "id": "MP-VISUAL-008",
