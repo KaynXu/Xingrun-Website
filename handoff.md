@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-03 已撤回上一轮“小程序隐藏 AI quota 技术错误”的展示兜底，家长端继续展示底层 AI 错误，方便现场判断 provider 问题。生产只读诊断已确认：当前 `.env.runtime` 生效配置为 `provider=n1n / vision_provider=n1n / vision_model=gpt-5.5`，N1N chat `gpt-4o` 和 vision `gpt-5.5/gpt-4o` 最小真实调用均返回 `403 local:insufficient_quota`；临时覆盖 `XR_PROVIDER=deepseek` 后 DeepSeek 文本调用可返回 `OK`，但图片识别仍因 N1N 额度不足失败。结论：当前家长上传 AI 识别失败是 N1N provider 额度/账号问题，不是小程序上传、bridge、Redis/RQ 或本地代码识别流程问题。
 - 2026-05-03 当前 Ralph “小程序家长上传 2.0 稳定性”已完成本地自动验收：`scripts/ralph/prd.json` 的 `MP-UPLOAD-001` 到 `MP-UPLOAD-012` 均为 `passes=true`；范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke。
 - 2026-05-03 `MP-UPLOAD-012` 已完成：新增最终验收脚本 `scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh`，显式检查选图、补框、文字/语音错因、裁切导出、提交、任务接收、ready/failed/pending 轮询、错题本刷新、PDF 未就绪、活代码无当前 AI 框选能力、PRD 全 story `passes=true`，并串起定向小程序/bridge/网站测试和共享基线 proof。
 - 2026-05-03 `MP-UPLOAD-011` 已完成：新增生产上传链路 smoke runbook `docs/production-upload-pipeline-smoke-runbook.md` 和本地校验脚本 `scripts/ralph/production_upload_smoke_runbook_proof.sh`，覆盖 PM2、Redis、RQ worker、Flask、bridge、上传大小限制、任务状态、错题本/PDF 检查，以及 pending、enqueue 失败、413、PDF refresh 失败的处理口径；runbook 中会写缓存刷新/修复类命令的 mutation 标签，自动 proof 不访问或修改生产。
@@ -175,6 +176,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
 - 小程序上传 2.0 稳定性 Ralph 已无下一条自动 story；后续只剩手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
 - 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
