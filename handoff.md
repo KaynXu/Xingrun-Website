@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-03 已按用户截图重渲染生产学生梁纾瑞（student_id=175）错题库 PDF：目标记录 `wechat-e4b350ccb2c1e9e6`（上传时间 `2026-04-21 23:09:11`）数据库题目 LaTeX 本身正确，旧 PDF 是 2026-04-21 生成的 ReportLab fallback，导致 `\left / \omega / \pi` 等公式显示异常。已先备份生产库 `data/xingrun.db.backup-before-student175-rerender-20260503-210758` 和旧 PDF `data/pdfs/wrong_question_libraries/student-175.pdf.backup-before-rerender-20260503-210758`，再用当前 `.venv` 重建 `data/pdfs/wrong_question_libraries/student-175.pdf`；新 PDF 为 HeadlessChrome/Skia 输出，大小 305765 bytes，PyMuPDF 本地抽查 4 页且不含 `≤ft` 或裸 `\left` 残留。
 - 2026-05-03 已查看 Ralph 近两天工作并完成发布：Ralph 的网站前端稳定性归档工作和“小程序家长上传 2.0 稳定性”已从 `develop` 合入 `master`，远端 `master` 当前为 `c3a6c1c Merge branch 'develop'`，生产机 `/home/ubuntu/Xingrun-Website` 已 fast-forward 到该提交；生产已完成 `frontend` build、`miniprogram/backend` build，并重启 `xingrun / xingrun-bridge / xingrun-rq-worker`，后端根路由和 bridge `/healthz` 均通过本机检查。
 - 2026-05-03 已撤回上一轮“小程序隐藏 AI quota 技术错误”的展示兜底，家长端继续展示底层 AI 错误，方便现场判断 provider 问题。生产只读诊断已确认：当前 `.env.runtime` 生效配置为 `provider=n1n / vision_provider=n1n / vision_model=gpt-5.5`，N1N chat `gpt-4o` 和 vision `gpt-5.5/gpt-4o` 最小真实调用均返回 `403 local:insufficient_quota`；临时覆盖 `XR_PROVIDER=deepseek` 后 DeepSeek 文本调用可返回 `OK`，但图片识别仍因 N1N 额度不足失败。结论：当前家长上传 AI 识别失败是 N1N provider 额度/账号问题，不是小程序上传、bridge、Redis/RQ 或本地代码识别流程问题。
 - 2026-05-03 当前 Ralph “小程序家长上传 2.0 稳定性”已完成本地自动验收：`scripts/ralph/prd.json` 的 `MP-UPLOAD-001` 到 `MP-UPLOAD-012` 均为 `passes=true`；范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke。
