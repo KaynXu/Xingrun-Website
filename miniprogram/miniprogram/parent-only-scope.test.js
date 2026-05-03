@@ -192,6 +192,30 @@ test('parent mini program pages stack action areas for narrow phone screens', ()
   assertRuleIncludes(wrongbookStyles, '.library-btn', 'white-space: nowrap;');
 });
 
+test('parent bind page uses official card hierarchy for lookup, existing children, and bind confirmation', () => {
+  const bindTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxml'), 'utf8');
+  const bindStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxss'), 'utf8');
+
+  assert.match(bindTemplate, /<view class="panel-card invite-panel">/);
+  assert.match(bindTemplate, /class="field-group"/);
+  assert.match(bindTemplate, /class="primary-btn lookup-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生<\/button>/);
+  assert.match(bindTemplate, /class="bound-child-card"/);
+  assert.match(bindTemplate, /class="bound-child-name"/);
+  assert.match(bindTemplate, /class="bound-child-meta"/);
+  assert.match(bindTemplate, /class="panel-card class-result"/);
+  assert.match(bindTemplate, /class="class-result-title"/);
+  assert.match(bindTemplate, /class="student-info"/);
+  assert.match(bindTemplate, /class="state-card empty-student-card"/);
+
+  assert.match(bindStyles, /\.invite-panel\s*\{[^}]*gap:\s*22rpx;/s);
+  assert.match(bindStyles, /\.lookup-btn\s*\{[^}]*width:\s*100%;/s);
+  assert.match(bindStyles, /\.bound-child-card,\s*\.student-card\s*\{[^}]*display:\s*flex;/s);
+  assert.match(bindStyles, /\.bound-child-card,\s*\.student-card\s*\{[^}]*flex-direction:\s*column;/s);
+  assert.match(bindStyles, /\.bound-child-name,\s*\.bound-child-meta,\s*\.class-result-title,\s*\.student-name,\s*\.student-meta\s*\{[^}]*word-break:\s*break-all;/s);
+  assert.match(bindStyles, /\.student-info\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(bindStyles, /\.empty-student-card\s*\{[^}]*background:\s*#f8fbff;/s);
+});
+
 test('parent-facing primary actions appear before nearby secondary follow-up actions', () => {
   const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');

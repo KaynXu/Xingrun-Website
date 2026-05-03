@@ -132,8 +132,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parent bind page now uses an official invite lookup panel, structured already-bound child cards, class result cards, per-student bind confirmation cards, a designed no-students state, and narrow-screen wrapping rules for long class/student text without changing binding APIs."
     },
     {
       "id": "MP-VISUAL-006",

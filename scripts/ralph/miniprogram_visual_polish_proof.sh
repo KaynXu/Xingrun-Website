@@ -218,15 +218,34 @@ check('parent-home: primary and secondary actions are grouped by child card', ()
 });
 
 check('parent-bind: lookup, existing binding, and bind confirmation hierarchy', () => {
+  expectIncludes(pages.bind.wxml, 'class="panel-card invite-panel"');
+  expectIncludes(pages.bind.wxml, 'class="field-group"');
   expectIncludes(pages.bind.wxml, 'class="field-input"');
-  expectIncludes(pages.bind.wxml, '<button class="primary-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生</button>');
+  expectIncludes(pages.bind.wxml, '<button class="primary-btn lookup-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生</button>');
   expectIncludes(pages.bind.wxml, 'class="section-head"');
   expectIncludes(pages.bind.wxml, '<button class="ghost-btn" size="mini" bindtap="goHome">去上传</button>');
+  expectIncludes(pages.bind.wxml, 'class="bound-child-card"');
+  expectIncludes(pages.bind.wxml, 'class="bound-child-name"');
+  expectIncludes(pages.bind.wxml, 'class="bound-child-meta"');
+  expectIncludes(pages.bind.wxml, 'class="panel-card class-result"');
+  expectIncludes(pages.bind.wxml, 'class="class-result-title"');
   expectIncludes(pages.bind.wxml, 'class="student-card"');
+  expectIncludes(pages.bind.wxml, 'class="student-info"');
   expectIncludes(pages.bind.wxml, 'class="primary-btn mini-btn"');
+  expectIncludes(pages.bind.wxml, 'class="state-card empty-student-card"');
   expectIncludes(pages.bind.wxml, '绑定这个孩子');
+  expectRule(pages.bind.wxss, '.invite-panel', 'gap: 22rpx;');
+  expectRule(pages.bind.wxss, '.lookup-btn', 'width: 100%;');
   expectRule(pages.bind.wxss, '.section-head', 'flex-direction: column;');
+  expectRule(pages.bind.wxss, '.bound-child-card', 'flex-direction: column;');
   expectRule(pages.bind.wxss, '.student-card', 'flex-direction: column;');
+  expectRule(pages.bind.wxss, '.student-info', 'min-width: 0;');
+  expectRule(pages.bind.wxss, '.bound-child-name', 'word-break: break-all;');
+  expectRule(pages.bind.wxss, '.bound-child-meta', 'word-break: break-all;');
+  expectRule(pages.bind.wxss, '.class-result-title', 'word-break: break-all;');
+  expectRule(pages.bind.wxss, '.student-name', 'word-break: break-all;');
+  expectRule(pages.bind.wxss, '.student-meta', 'word-break: break-all;');
+  expectRule(pages.bind.wxss, '.empty-student-card', 'background: #f8fbff;');
   expectRule(pages.bind.wxss, '.mini-btn', 'width: 100%;');
   expectRule(pages.bind.wxss, '.mini-btn', 'white-space: nowrap;');
 });
