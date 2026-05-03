@@ -6,7 +6,6 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-03 已补小程序家长上传失败汇总兜底：当任务失败只带 `Error code: 403 / user quota is not enough / local:insufficient_quota` 等 AI 网关技术错误、没有 `parent_error_message` 时，家长上传页和错题本页会显示“上传任务暂时无法完成，请稍后重试。”，不再把 request id、quota、底层 JSON 直接暴露给家长；正常业务错误和后端家长友好文案仍原样展示。
 - 2026-05-03 当前 Ralph “小程序家长上传 2.0 稳定性”已完成本地自动验收：`scripts/ralph/prd.json` 的 `MP-UPLOAD-001` 到 `MP-UPLOAD-012` 均为 `passes=true`；范围锁定家长上传、bridge、网站上传任务、worker 状态、错题本/PDF 刷新和生产 smoke。
 - 2026-05-03 `MP-UPLOAD-012` 已完成：新增最终验收脚本 `scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh`，显式检查选图、补框、文字/语音错因、裁切导出、提交、任务接收、ready/failed/pending 轮询、错题本刷新、PDF 未就绪、活代码无当前 AI 框选能力、PRD 全 story `passes=true`，并串起定向小程序/bridge/网站测试和共享基线 proof。
 - 2026-05-03 `MP-UPLOAD-011` 已完成：新增生产上传链路 smoke runbook `docs/production-upload-pipeline-smoke-runbook.md` 和本地校验脚本 `scripts/ralph/production_upload_smoke_runbook_proof.sh`，覆盖 PM2、Redis、RQ worker、Flask、bridge、上传大小限制、任务状态、错题本/PDF 检查，以及 pending、enqueue 失败、413、PDF refresh 失败的处理口径；runbook 中会写缓存刷新/修复类命令的 mutation 标签，自动 proof 不访问或修改生产。
@@ -176,7 +175,6 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 若真机仍出现截图里的 `user quota is not enough`，先处理 AI 服务额度/密钥或切换可用 vision provider；本轮只修复小程序展示兜底，不能替代服务商额度恢复。生产机只读检查时当前 `master` 仍停在 `7d5908b88`，尚未包含本地 `develop` 上的小程序上传 2.0 完整硬化，需要按 release 流程发布后才会进入生产包/服务。
 - 小程序上传 2.0 稳定性 Ralph 已无下一条自动 story；后续只剩手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
 - 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。
