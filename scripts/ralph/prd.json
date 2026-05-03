@@ -201,8 +201,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added WeChat narrow-runtime guardrails and structural proof coverage: shared parent page shells now cap width at 100vw, hide horizontal overflow, reserve page bottom safe-area padding with constant/env fallbacks, keep shared button primitives min-width 0/max-width 100%/text-overflow clip, and upload bottom actions include constant/env safe-area padding. Visual and upload stability proofs passed through /tmp/xingrun_mp_visual_009_proof.sh."
     },
     {
       "id": "MP-VISUAL-010",

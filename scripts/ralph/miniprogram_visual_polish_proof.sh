@@ -354,7 +354,9 @@ check('parent-upload: bottom submit area has narrow-screen and safe-area spacing
   const uploadStyles = combinedStyles(pages.upload);
   expectRule(uploadStyles, '.parent-page', 'padding: 28rpx;');
   expectRule(uploadStyles, '.parent-page', 'box-sizing: border-box;');
+  expectRule(sharedStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));');
   expectRule(uploadStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + env(safe-area-inset-bottom));');
+  expectRule(pages.upload.wxss, '.bottom-action-bar', 'padding: 0 30rpx calc(30rpx + constant(safe-area-inset-bottom));');
   expectRule(pages.upload.wxss, '.bottom-action-bar', 'padding: 0 30rpx calc(30rpx + env(safe-area-inset-bottom));');
   expectRule(pages.upload.wxss, '.submit-btn', 'width: 100%;');
   expectRule(pages.upload.wxss, '.submit-btn', 'line-height: 84rpx;');
@@ -364,6 +366,36 @@ check('parent-upload: bottom submit area has narrow-screen and safe-area spacing
   expectRule(pages.upload.wxss, '.picker-btn', 'white-space: nowrap;');
   expectRule(pages.upload.wxss, '.submit-title', 'white-space: nowrap;');
   expectRule(pages.upload.wxss, '.submit-desc', 'word-break: break-all;');
+});
+
+check('parent-facing pages: WeChat narrow runtime width and clipping guardrails', () => {
+  expectRule(sharedStyles, 'page', 'max-width: 100vw;');
+  expectRule(sharedStyles, 'page', 'overflow-x: hidden;');
+  expectRule(sharedStyles, '.parent-page', 'width: 100%;');
+  expectRule(sharedStyles, '.parent-page', 'max-width: 100vw;');
+  expectRule(sharedStyles, '.parent-page', 'overflow-x: hidden;');
+  expectRule(sharedStyles, '.parent-page', 'padding-bottom: calc(28rpx + constant(safe-area-inset-bottom));');
+  expectRule(sharedStyles, '.parent-page', 'padding-bottom: calc(28rpx + env(safe-area-inset-bottom));');
+  expectRule(sharedStyles, '.wrongbook-page', 'width: 100%;');
+  expectRule(sharedStyles, '.wrongbook-page', 'max-width: 100vw;');
+  expectRule(sharedStyles, '.wrongbook-page', 'overflow-x: hidden;');
+  expectRule(sharedStyles, '.wrongbook-page', 'padding-bottom: calc(28rpx + constant(safe-area-inset-bottom));');
+  expectRule(sharedStyles, '.wrongbook-page', 'padding-bottom: calc(28rpx + env(safe-area-inset-bottom));');
+  expectRule(sharedStyles, '.primary-btn', 'min-width: 0;');
+  expectRule(sharedStyles, '.primary-btn', 'max-width: 100%;');
+  expectRule(sharedStyles, '.primary-btn', 'text-overflow: clip;');
+  expectRule(sharedStyles, '.ghost-btn', 'min-width: 0;');
+  expectRule(sharedStyles, '.danger-btn', 'min-width: 0;');
+
+  for (const page of Object.values(pages)) {
+    const styles = combinedStyles(page);
+    for (const selector of ['.primary-btn', '.submit-btn', '.lookup-btn', '.library-btn', '.success-action-btn']) {
+      const body = selectorBody(styles, selector);
+      if (/(^|[;\s])(?:width|min-width):\s*\d+rpx\b/.test(body)) {
+        throw new Error(`${page.name} ${selector} uses a fixed rpx width`);
+      }
+    }
+  }
 });
 
 check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierarchy', () => {

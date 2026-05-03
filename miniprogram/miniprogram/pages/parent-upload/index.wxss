@@ -475,6 +475,7 @@
 
 .bottom-action-bar {
   margin-top: 0;
+  padding: 0 30rpx calc(30rpx + constant(safe-area-inset-bottom));
   padding: 0 30rpx calc(30rpx + env(safe-area-inset-bottom));
 }
 

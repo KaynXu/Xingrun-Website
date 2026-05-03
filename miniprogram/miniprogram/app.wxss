@@ -1,15 +1,24 @@
 page {
+  width: 100%;
+  max-width: 100vw;
   background: #f6fbff;
   font-family: -apple-system, 'PingFang SC', sans-serif;
   color: #10233f;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .parent-page,
 .wrongbook-page {
+  width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
   padding: 28rpx;
+  padding-bottom: calc(28rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(28rpx + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f6fbff 0%, #eef6ff 100%);
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .hero-card,
@@ -18,6 +27,8 @@ page {
 .binding-card,
 .library-card,
 .upload-status-card {
+  width: 100%;
+  max-width: 100%;
   margin-bottom: 24rpx;
   padding: 30rpx;
   border-radius: 28rpx;
@@ -82,10 +93,14 @@ page {
 .ghost-btn,
 .danger-btn,
 .icon-btn {
+  min-width: 0;
+  max-width: 100%;
   margin-top: 22rpx;
   border-radius: 22rpx;
   font-size: 28rpx;
   font-weight: 600;
+  overflow: visible;
+  text-overflow: clip;
   box-sizing: border-box;
 }
 
@@ -197,5 +212,6 @@ page {
 
 .bottom-action-bar {
   margin-top: 22rpx;
+  padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
   padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
 }

@@ -271,6 +271,38 @@ test('parent mini program pages stack action areas for narrow phone screens', ()
   assertRuleIncludes(wrongbookStyles, '.library-btn', 'white-space: nowrap;');
 });
 
+test('parent mini program pages include WeChat narrow runtime guardrails', () => {
+  const appStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'app.wxss'), 'utf8');
+  const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
+
+  const assertRuleIncludes = (styles, selector, declaration) => {
+    assert.equal(
+      styles
+        .split('}')
+        .some((rule) => {
+          const [selectors, body = ''] = rule.split('{');
+          return selectors.includes(selector) && body.includes(declaration);
+        }),
+      true,
+      `${selector} should include ${declaration}`,
+    );
+  };
+
+  assertRuleIncludes(appStyles, 'page', 'max-width: 100vw;');
+  assertRuleIncludes(appStyles, 'page', 'overflow-x: hidden;');
+  assertRuleIncludes(appStyles, '.parent-page', 'max-width: 100vw;');
+  assertRuleIncludes(appStyles, '.parent-page', 'padding-bottom: calc(28rpx + constant(safe-area-inset-bottom));');
+  assertRuleIncludes(appStyles, '.parent-page', 'padding-bottom: calc(28rpx + env(safe-area-inset-bottom));');
+  assertRuleIncludes(appStyles, '.wrongbook-page', 'max-width: 100vw;');
+  assertRuleIncludes(appStyles, '.wrongbook-page', 'padding-bottom: calc(28rpx + constant(safe-area-inset-bottom));');
+  assertRuleIncludes(appStyles, '.wrongbook-page', 'padding-bottom: calc(28rpx + env(safe-area-inset-bottom));');
+  assertRuleIncludes(appStyles, '.primary-btn', 'min-width: 0;');
+  assertRuleIncludes(appStyles, '.primary-btn', 'max-width: 100%;');
+  assertRuleIncludes(appStyles, '.primary-btn', 'text-overflow: clip;');
+  assertRuleIncludes(appStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));');
+  assertRuleIncludes(uploadStyles, '.bottom-action-bar', 'padding: 0 30rpx calc(30rpx + constant(safe-area-inset-bottom));');
+});
+
 test('parent bind page uses official card hierarchy for lookup, existing children, and bind confirmation', () => {
   const bindTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxml'), 'utf8');
   const bindStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxss'), 'utf8');
