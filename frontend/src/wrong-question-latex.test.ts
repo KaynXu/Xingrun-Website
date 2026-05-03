@@ -116,3 +116,28 @@ test('buildWrongQuestionLatexPreviewModel turns literal newline escapes back int
   assert.match(preview.html, /<br \/><br \/>/);
   assert.match(preview.html, /katex/);
 });
+
+test('buildWrongQuestionLatexPreviewModel repairs malformed escape sequences and readable bare latex fragments', () => {
+  const malformedText = '已知函数 f(x)='
+    + '\f'
+    + 'rac{x^2+1}{2}，且 '
+    + '\t'
+    + 'ext{lim}_{x '
+    + '\t'
+    + 'o 3^-}f(x) '
+    + '\n'
+    + 'eq 1，向量 '
+    + String.raw`\overrightarrow{AB}`
+    + ' 长度为 '
+    + String.raw`\sqrt{16}`
+    + '。';
+
+  const preview = buildWrongQuestionLatexPreviewModel(malformedText);
+
+  assert.equal(preview.errors.length, 0);
+  assert.doesNotMatch(preview.html, /\\(?:frac|text|to|neq|overrightarrow|sqrt)/);
+  assert.match(preview.html, /\(x²\+1\)\/\(2\)/);
+  assert.match(preview.html, /lim/);
+  assert.match(preview.html, /≠/);
+  assert.match(preview.html, /向量 AB 长度为 √\(16\)/);
+});

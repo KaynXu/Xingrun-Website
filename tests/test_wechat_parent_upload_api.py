@@ -310,6 +310,55 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["recognition_status"], "failed")
         self.assertEqual(record["recognition_error"], "题目识别失败")
 
+    def test_worker_keeps_recognized_record_visible_when_pdf_rebuild_fails(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            child_raw_reason_text="我把乘法和加法一起从左往右算了",
+        )
+
+        from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
+
+        with patch("wrong_question_upload_worker.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+             patch(
+                 "wrong_question_upload_worker.ai_processor.classify_wrong_question_reason",
+                 return_value={
+                     "display_text": "方法问题｜先算了加法，忽略乘法优先",
+                     "primary_error_type": "方法问题",
+                     "secondary_error_summary": "先算了加法，忽略乘法优先",
+                 },
+             ), \
+             patch("wrong_question_upload_worker._rebuild_student_wrong_question_library", side_effect=RuntimeError("renderer crashed while rebuilding student pdf")):
+            result = process_wechat_wrong_question_upload_task(task["id"])
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error_message"], "renderer crashed while rebuilding student pdf")
+        self.assertNotEqual(result["record_id"], "")
+        record = lesson_manager.get_wechat_wrong_question_submission(result["record_id"])
+        self.assertEqual(record["image_url"], "https://files.example.com/record.png")
+        self.assertEqual(record["recognition_status"], "recognized")
+        self.assertEqual(record["question_text"], "计算 $2+3\\times4$ 的结果。")
+
+        status = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(status.status_code, 200)
+        payload = status.get_json()["task"]
+        self.assertEqual(payload["state"], "failed")
+        self.assertEqual(payload["record_id"], record["id"])
+        self.assertEqual(payload["record_status"], "recognized")
+        self.assertEqual(payload["parent_error_message"], "错题已保存，PDF 暂时生成失败，请稍后再查看。")
+        self.assertEqual(payload["maintainer_error_detail"], "renderer crashed while rebuilding student pdf")
+
     def test_wechat_service_can_fetch_parent_scoped_upload_task(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
         binding = lesson_manager.bind_parent_to_student(
@@ -337,7 +386,165 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["task"]["id"], task["id"])
         self.assertEqual(response.get_json()["task"]["status"], "pending")
+        self.assertEqual(response.get_json()["task"]["state"], "pending")
+        self.assertEqual(response.get_json()["task"]["retryable"], False)
         self.assertEqual(forbidden.status_code, 404)
+
+    def test_wechat_service_reports_stale_pending_upload_task(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            child_raw_reason_text="",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wechat_wrong_question_upload_tasks
+                SET created_at='2000-01-01 00:00:00', updated_at='2000-01-01 00:00:00'
+                WHERE id=?
+                """,
+                (task["id"],),
+            )
+
+        response = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["task"]["status"], "pending")
+        self.assertEqual(payload["task"]["state"], "pending")
+        self.assertEqual(payload["task"]["is_stale"], True)
+        self.assertEqual(payload["task"]["retryable"], False)
+
+    def test_wechat_service_reports_ready_failed_and_missing_record_upload_task_states(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        ready_task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/ready.png",
+            child_raw_reason_text="",
+        )
+        ready_record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/ready.png",
+            recognition_status="recognized",
+        )
+        lesson_manager.update_wechat_wrong_question_upload_task(
+            ready_task["id"],
+            status="ready",
+            record_id=ready_record["id"],
+        )
+        failed_task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/failed.png",
+            child_raw_reason_text="",
+        )
+        lesson_manager.update_wechat_wrong_question_upload_task(
+            failed_task["id"],
+            status="failed",
+            error_message="题图太模糊",
+            retryable=False,
+        )
+        missing_record_task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/missing.png",
+            child_raw_reason_text="",
+        )
+        lesson_manager.update_wechat_wrong_question_upload_task(
+            missing_record_task["id"],
+            status="ready",
+            record_id="wechat-missing-record",
+        )
+
+        ready = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{ready_task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+        failed = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{failed_task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+        missing = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{missing_record_task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(ready.status_code, 200)
+        self.assertEqual(ready.get_json()["task"]["state"], "ready")
+        self.assertEqual(ready.get_json()["task"]["record_status"], "recognized")
+        self.assertEqual(ready.get_json()["task"]["retryable"], False)
+        self.assertEqual(failed.status_code, 200)
+        self.assertEqual(failed.get_json()["task"]["state"], "failed")
+        self.assertEqual(failed.get_json()["task"]["error_message"], "题图太模糊")
+        self.assertEqual(failed.get_json()["task"]["retryable"], False)
+        self.assertEqual(missing.status_code, 200)
+        self.assertEqual(missing.get_json()["task"]["status"], "ready")
+        self.assertEqual(missing.get_json()["task"]["state"], "missing_record")
+        self.assertEqual(missing.get_json()["task"]["record_missing"], True)
+        self.assertEqual(missing.get_json()["task"]["retryable"], True)
+
+    def test_wechat_upload_enqueue_failure_leaves_retryable_failed_task(self):
+        self.client.post(
+            "/api/wechat/login",
+            headers=self.service_headers(),
+            json={"open_id": "openid-1", "nickname_snapshot": "Alice 妈妈"},
+        )
+        bind = self.client.post(
+            "/api/wechat/bind-student",
+            headers=self.service_headers(),
+            json={
+                "open_id": "openid-1",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(bind.status_code, 200)
+        binding = bind.get_json()["binding"]
+
+        with patch("app.enqueue_wechat_wrong_question_upload_task", side_effect=RuntimeError("queue unavailable")):
+            upload = self.client.post(
+                "/api/wechat/wrong-questions",
+                headers=self.service_headers(),
+                json={
+                    "open_id": "openid-1",
+                    "binding_id": binding["id"],
+                    "image_url": "https://files.example.com/record.png",
+                },
+            )
+
+        self.assertEqual(upload.status_code, 502)
+        payload = upload.get_json()
+        self.assertEqual(payload["error"], "上传任务暂时无法入队，请稍后重试")
+        self.assertEqual(payload["retryable"], True)
+        self.assertEqual(payload["task"]["status"], "failed")
+        self.assertEqual(payload["task"]["state"], "failed")
+        self.assertEqual(payload["task"]["retryable"], True)
+        self.assertEqual(payload["task"]["error_message"], "queue unavailable")
+
+        status = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{payload['task']['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.get_json()["task"]["status"], "failed")
+        self.assertEqual(status.get_json()["task"]["retryable"], True)
 
     def test_wechat_service_can_fetch_latest_parent_bindings(self):
         self.client.post(
@@ -620,6 +827,18 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         record = lesson_manager.get_wechat_wrong_question_submission(result["record_id"])
         self.assertEqual(record["recognition_status"], "failed")
         self.assertEqual(record["recognition_error"], "题目识别失败，请重新识别")
+
+        status = self.client.get(
+            f"/api/wechat/wrong-question-upload-tasks/{task['id']}",
+            headers=self.service_headers(),
+            query_string={"open_id": "openid-1"},
+        )
+
+        self.assertEqual(status.status_code, 200)
+        payload = status.get_json()["task"]
+        self.assertEqual(payload["record_status"], "failed")
+        self.assertEqual(payload["parent_error_message"], "错题处理失败，原图已保留，老师稍后可查看。")
+        self.assertEqual(payload["maintainer_error_detail"], "题目识别失败，请重新识别")
 
     def test_wechat_child_library_endpoint_returns_shared_pdf_url(self):
         self.client.post(

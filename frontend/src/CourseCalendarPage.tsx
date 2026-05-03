@@ -42,8 +42,8 @@ export interface CourseCalendarPageProps {
   onPageStepDaysChange: (dayCount: number) => void;
   onPreviousPage: (dayCount: number) => void;
   onNextPage: (dayCount: number) => void;
-  onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
-  onScheduleCustomItem: (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void;
+  onScheduleClass: (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void | Promise<void>;
+  onScheduleCustomItem: (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes?: number) => void | Promise<void>;
   onCreateCustomItem: (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => Promise<CourseCalendarCustomItemRecord>;
   onDeleteCustomItem: (itemId: number) => void;
   onDeleteSchedule: (scheduleId: number) => void;
@@ -85,13 +85,6 @@ interface JoinedCustomSchedule {
   startText: string;
   displayRange: string;
   visibility: 'private' | 'organization';
-}
-
-interface TeacherScheduleSummary {
-  date: string;
-  timeBlock: CourseCalendarTimeBlock;
-  teacherName: string;
-  schedules: JoinedCourseCalendarSchedule[];
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -192,31 +185,9 @@ function EmptyDropZone({ onCreateCustomItem }: { onCreateCustomItem: () => void 
   );
 }
 
-function AddCustomItemRow({ onCreateCustomItem }: { onCreateCustomItem: () => void }): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onCreateCustomItem}
-      className="inline-flex h-7 w-full items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-600 transition hover:border-sky-200 hover:bg-sky-100 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
-      aria-label="添加自定义事项"
-    >
-      <Plus className="h-4 w-4" />
-    </button>
-  );
-}
-
 interface ScheduleCardProps {
   schedule: JoinedCourseCalendarSchedule;
   onOpenSchedule: (schedule: JoinedCourseCalendarSchedule) => void;
-}
-
-function formatScheduleSummaryLine(schedule: JoinedCourseCalendarSchedule): string {
-  return [
-    schedule.subject || '未设置科目',
-    schedule.teacherName || '未分配教师',
-    schedule.className,
-    schedule.displayRange,
-  ].filter(Boolean).join(' · ');
 }
 
 function ScheduleCard({ schedule, onOpenSchedule }: ScheduleCardProps): React.JSX.Element {
@@ -225,7 +196,6 @@ function ScheduleCard({ schedule, onOpenSchedule }: ScheduleCardProps): React.JS
       type="button"
       onClick={() => onOpenSchedule(schedule)}
       className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
-      title={formatScheduleSummaryLine(schedule)}
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-tight text-slate-900 dark:text-white">{schedule.className}</p>
@@ -234,59 +204,6 @@ function ScheduleCard({ schedule, onOpenSchedule }: ScheduleCardProps): React.JS
       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
         <span className="truncate">{schedule.teacherName || '未分配教师'}</span>
         <span className="shrink-0 truncate">{[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || schedule.startText}</span>
-      </div>
-    </button>
-  );
-}
-
-function buildTeacherScheduleSummaries(
-  schedules: JoinedCourseCalendarSchedule[],
-  date: string,
-  timeBlock: CourseCalendarTimeBlock,
-): TeacherScheduleSummary[] {
-  const grouped = schedules.reduce((result, schedule) => {
-    const teacherName = schedule.teacherName || '未分配教师';
-    const current = result.get(teacherName) || [];
-    current.push(schedule);
-    result.set(teacherName, current);
-    return result;
-  }, new Map<string, JoinedCourseCalendarSchedule[]>());
-
-  return Array.from(grouped.entries())
-    .sort(([left], [right]) => left.localeCompare(right, 'zh-Hans'))
-    .map(([teacherName, teacherSchedules]) => ({
-      date,
-      timeBlock,
-      teacherName,
-      schedules: teacherSchedules,
-    }));
-}
-
-function TeacherSummaryCard({
-  summary,
-  onOpenSummary,
-}: {
-  summary: TeacherScheduleSummary;
-  onOpenSummary: (summary: TeacherScheduleSummary) => void;
-}): React.JSX.Element {
-  const summaryTitle = summary.schedules.map(formatScheduleSummaryLine).join('\n');
-
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenSummary(summary)}
-      className="w-full overflow-hidden rounded-xl border border-sky-100 bg-white/92 px-2.5 py-2 text-left shadow-[0_10px_30px_rgba(47,128,237,0.08)] transition hover:bg-sky-50/80 dark:border-white/10 dark:bg-slate-800/90 dark:shadow-[0_16px_32px_rgba(2,6,23,0.28)] dark:hover:bg-slate-800"
-      title={summaryTitle}
-    >
-      <div className={cn('space-y-1', summary.schedules.length > 2 ? 'max-h-12 overflow-y-auto overscroll-contain pr-1' : 'overflow-hidden')}>
-        {summary.schedules.map((schedule) => (
-          <p
-            key={schedule.id}
-            className="truncate whitespace-nowrap text-xs font-semibold leading-tight text-slate-900 dark:text-white"
-          >
-            {formatScheduleSummaryLine(schedule)}
-          </p>
-        ))}
       </div>
     </button>
   );
@@ -332,54 +249,6 @@ function OpenedCourseScheduleModal({ schedule, onClose, onDeleteSchedule }: Open
             className="inline-flex h-11 items-center justify-center rounded-xl bg-rose-500 px-5 text-sm font-bold text-white transition hover:bg-rose-600"
           >
             删除
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OpenedTeacherSummaryModal({
-  summary,
-  onClose,
-}: {
-  summary: TeacherScheduleSummary;
-  onClose: () => void;
-}): React.JSX.Element {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-      <div className="w-full max-w-xl rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-500 dark:text-sky-300">老师排课</p>
-            <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">{summary.teacherName}</h2>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              {formatWeekdayLabel(summary.date)} {formatDayLabel(summary.date)} · {summary.timeBlock}
-            </p>
-          </div>
-          <Clock className="h-6 w-6 shrink-0 text-sky-500 dark:text-sky-300" />
-        </div>
-        <div className="mt-5 space-y-2">
-          {summary.schedules.map((schedule) => (
-            <div
-              key={schedule.id}
-              className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3 text-sm dark:border-white/10 dark:bg-white/5"
-            >
-              <p className="font-bold text-slate-900 dark:text-white">{schedule.className}</p>
-              <p className="mt-1 font-semibold text-cyan-700 dark:text-cyan-200">{schedule.displayRange}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {[schedule.grade, schedule.subject].filter(Boolean).join(' · ') || '未设置科目'}
-              </p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-11 items-center justify-center rounded-xl border border-sky-100 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
-          >
-            关闭
           </button>
         </div>
       </div>
@@ -445,25 +314,13 @@ export function CourseCalendarPage({
   const visibleDates = getCalendarPageDates(anchorDate, visibleDayCount);
   const visibleDateSet = new Set(visibleDates);
   const joinedSchedules = joinClassesAndSchedules(classes, schedules);
+  const visibleSchedules = joinedSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
+  const joinedCustomSchedules = buildJoinedCustomSchedules(customSchedules);
+  const visibleCustomSchedules = joinedCustomSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
   const teacherOptions = getTeacherOptions(classes);
   const [teacherFilter, setTeacherFilter] = React.useState('');
   const [subjectFilter, setSubjectFilter] = React.useState('');
   const canFilterCourses = currentUserRole !== 'member';
-  const showTeacherSummaries = canFilterCourses && !teacherFilter;
-  const visibleSchedules = joinedSchedules.filter((schedule) => {
-    if (!visibleDateSet.has(schedule.date)) {
-      return false;
-    }
-    if (canFilterCourses && teacherFilter && schedule.teacherName !== teacherFilter) {
-      return false;
-    }
-    if (canFilterCourses && subjectFilter && schedule.subject !== subjectFilter) {
-      return false;
-    }
-    return true;
-  });
-  const joinedCustomSchedules = buildJoinedCustomSchedules(customSchedules);
-  const visibleCustomSchedules = joinedCustomSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
   const classOptions = getClassOptions(classes).filter((courseClass) => {
     if (canFilterCourses && teacherFilter && courseClass.teacher_name !== teacherFilter) {
       return false;
@@ -482,7 +339,6 @@ export function CourseCalendarPage({
   const [customNote, setCustomNote] = React.useState('');
   const [customVisibility, setCustomVisibility] = React.useState<'private' | 'organization'>('private');
   const [openedCourseSchedule, setOpenedCourseSchedule] = React.useState<JoinedCourseCalendarSchedule | null>(null);
-  const [openedTeacherSummary, setOpenedTeacherSummary] = React.useState<TeacherScheduleSummary | null>(null);
   const [openedCustomSchedule, setOpenedCustomSchedule] = React.useState<JoinedCustomSchedule | null>(null);
   const [pendingCustomCreate, setPendingCustomCreate] = React.useState<PendingCustomCreate | null>(null);
   const [isCalendarExpanded, setIsCalendarExpanded] = React.useState(false);
@@ -551,12 +407,18 @@ export function CourseCalendarPage({
     if (!pendingDrop) {
       return;
     }
-    if (pendingDrop.itemType === 'class') {
-      onScheduleClass(pendingDrop.itemId, pendingDrop.date, pendingDrop.timeBlock, selectedOffsetMinutes);
-    } else {
-      onScheduleCustomItem(pendingDrop.itemId, pendingDrop.date, pendingDrop.timeBlock, selectedOffsetMinutes);
-    }
+    const scheduleDrop = pendingDrop;
     setPendingDrop(null);
+    try {
+      const result = scheduleDrop.itemType === 'class'
+        ? onScheduleClass(scheduleDrop.itemId, scheduleDrop.date, scheduleDrop.timeBlock, selectedOffsetMinutes)
+        : onScheduleCustomItem(scheduleDrop.itemId, scheduleDrop.date, scheduleDrop.timeBlock, selectedOffsetMinutes);
+      void Promise.resolve(result).catch((error) => {
+        console.error(error);
+      });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const resetCustomForm = () => {
@@ -582,8 +444,8 @@ export function CourseCalendarPage({
   };
 
   return (
-    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.15),transparent_26%),radial-gradient(circle_at_90%_10%,rgba(47,128,237,0.14),transparent_24%),linear-gradient(180deg,#F7FBFF_0%,#EEF7FF_100%)] px-3 py-5 text-slate-900 md:px-4 md:py-6 dark:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),radial-gradient(circle_at_85%_15%,rgba(59,130,246,0.14),transparent_22%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="mx-auto max-w-[1760px]">
+    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.15),transparent_26%),radial-gradient(circle_at_90%_10%,rgba(47,128,237,0.14),transparent_24%),linear-gradient(180deg,#F7FBFF_0%,#EEF7FF_100%)] px-4 py-5 text-slate-900 md:px-6 md:py-6 dark:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),radial-gradient(circle_at_85%_15%,rgba(59,130,246,0.14),transparent_22%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <div className="mx-auto max-w-[1600px]">
         <div className={cn(
           'rounded-[2rem] border border-sky-100/90 bg-white/82 shadow-[0_28px_90px_rgba(47,128,237,0.1)] dark:border-white/10 dark:bg-slate-900/78 dark:shadow-[0_30px_80px_rgba(2,6,23,0.42)]',
           isCalendarExpanded ? 'overflow-visible' : 'overflow-hidden backdrop-blur-sm',
@@ -606,7 +468,7 @@ export function CourseCalendarPage({
               </div>
 
               <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-center">
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm dark:border-white/10 dark:bg-white/5">
+                <div className="inline-flex w-full min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-white px-2 py-2 shadow-sm sm:w-auto dark:border-white/10 dark:bg-white/5">
                   <button
                     type="button"
                     onClick={() => onPreviousPage(normalizedPageStepDays)}
@@ -615,7 +477,7 @@ export function CourseCalendarPage({
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </button>
-                  <div className="min-w-72 px-2 text-center">
+                  <div className="min-w-0 flex-1 px-2 text-center sm:min-w-72">
                     <p className="whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white">
                       {getCalendarPageRangeLabel(anchorDate, visibleDayCount)}
                     </p>
@@ -686,8 +548,8 @@ export function CourseCalendarPage({
             </div>
           </div>
 
-          <div className="space-y-5 px-3 py-5 md:px-4 xl:px-4 xl:py-6">
-            <div className={cn('grid gap-4', isCalendarExpanded ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_240px]')}>
+          <div className="space-y-5 px-4 py-5 md:px-5 xl:px-6 xl:py-6">
+            <div className={cn('grid gap-5', isCalendarExpanded ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_240px]')}>
               <div className={cn(
                 'rounded-[1.75rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(239,248,255,0.9)_100%)] p-4 shadow-[0_18px_48px_rgba(47,128,237,0.05)] md:p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.72)_100%)] dark:shadow-[0_20px_50px_rgba(2,6,23,0.35)]',
                 isCalendarExpanded && 'fixed inset-3 z-50 overflow-hidden md:inset-5',
@@ -757,8 +619,6 @@ export function CourseCalendarPage({
                           {dailyBuckets.map(({ date, blocks, customBlocks }) => {
                             const blockCards = blocks[timeBlock];
                             const customBlockCards = customBlocks[timeBlock];
-                            const teacherSummaries = showTeacherSummaries ? buildTeacherScheduleSummaries(blockCards, date, timeBlock) : [];
-                            const slotCardCount = (showTeacherSummaries ? teacherSummaries.length : blockCards.length) + customBlockCards.length;
                             return (
                               <div
                                 key={`${date}-${timeBlock}`}
@@ -773,24 +633,16 @@ export function CourseCalendarPage({
                                     : 'border-sky-100 bg-white/92 dark:border-white/10 dark:bg-white/5',
                                 )}
                               >
-                                <div className={cn('max-h-full space-y-2', slotCardCount > 1 ? 'overflow-y-auto overscroll-contain pr-1' : 'overflow-hidden')}>
-                                  {slotCardCount > 0 ? (
+                                <div className="max-h-full space-y-2 overflow-hidden">
+                                  {blockCards.length + customBlockCards.length > 0 ? (
                                     <>
-                                      {showTeacherSummaries
-                                        ? teacherSummaries.map((summary) => (
-                                          <TeacherSummaryCard
-                                            key={`${summary.teacherName}-${date}-${timeBlock}`}
-                                            summary={summary}
-                                            onOpenSummary={setOpenedTeacherSummary}
-                                          />
-                                        ))
-                                        : blockCards.map((schedule) => (
-                                          <ScheduleCard
-                                            key={schedule.id}
-                                            schedule={schedule}
-                                            onOpenSchedule={setOpenedCourseSchedule}
-                                          />
-                                        ))}
+                                      {blockCards.map((schedule) => (
+                                        <ScheduleCard
+                                          key={schedule.id}
+                                          schedule={schedule}
+                                          onOpenSchedule={setOpenedCourseSchedule}
+                                        />
+                                      ))}
                                       {customBlockCards.map((schedule) => (
                                         <CustomScheduleCard
                                           key={`custom-${schedule.id}`}
@@ -798,7 +650,6 @@ export function CourseCalendarPage({
                                           onOpenNote={setOpenedCustomSchedule}
                                         />
                                       ))}
-                                      <AddCustomItemRow onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
                                     </>
                                   ) : (
                                     <EmptyDropZone onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
@@ -834,8 +685,6 @@ export function CourseCalendarPage({
                         {COURSE_CALENDAR_TIME_BLOCKS.map((timeBlock) => {
                           const blockCards = blocks[timeBlock];
                           const customBlockCards = customBlocks[timeBlock];
-                          const teacherSummaries = showTeacherSummaries ? buildTeacherScheduleSummaries(blockCards, date, timeBlock) : [];
-                          const slotCardCount = (showTeacherSummaries ? teacherSummaries.length : blockCards.length) + customBlockCards.length;
                           return (
                             <div
                               key={`${date}-${timeBlock}`}
@@ -854,23 +703,15 @@ export function CourseCalendarPage({
                                 <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">拖入排课</p>
                               </div>
                               <div className="space-y-2">
-                                {slotCardCount > 0 ? (
+                                {blockCards.length + customBlockCards.length > 0 ? (
                                   <>
-                                    {showTeacherSummaries
-                                      ? teacherSummaries.map((summary) => (
-                                        <TeacherSummaryCard
-                                          key={`${summary.teacherName}-${date}-${timeBlock}`}
-                                          summary={summary}
-                                          onOpenSummary={setOpenedTeacherSummary}
-                                        />
-                                      ))
-                                      : blockCards.map((schedule) => (
-                                        <ScheduleCard
-                                          key={schedule.id}
-                                          schedule={schedule}
-                                          onOpenSchedule={setOpenedCourseSchedule}
-                                        />
-                                      ))}
+                                    {blockCards.map((schedule) => (
+                                      <ScheduleCard
+                                        key={schedule.id}
+                                        schedule={schedule}
+                                        onOpenSchedule={setOpenedCourseSchedule}
+                                      />
+                                    ))}
                                     {customBlockCards.map((schedule) => (
                                       <CustomScheduleCard
                                         key={`custom-${schedule.id}`}
@@ -878,7 +719,6 @@ export function CourseCalendarPage({
                                         onOpenNote={setOpenedCustomSchedule}
                                       />
                                     ))}
-                                    <AddCustomItemRow onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
                                   </>
                                 ) : (
                                   <EmptyDropZone onCreateCustomItem={() => setPendingCustomCreate({ date, timeBlock })} />
@@ -916,8 +756,8 @@ export function CourseCalendarPage({
                         className="cursor-grab rounded-2xl border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,248,255,0.88)_100%)] p-3 active:cursor-grabbing dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82)_0%,rgba(30,41,59,0.55)_100%)]"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">{courseClass.name}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className={cn('truncate font-semibold text-slate-900 dark:text-white')}>{courseClass.name}</p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               {COURSE_CALENDAR_TIME_BLOCKS[0]}
                             </p>
@@ -985,7 +825,7 @@ export function CourseCalendarPage({
                   </button>
                 </div>
 
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 max-h-[320px] space-y-3 overflow-y-auto overscroll-contain pr-1">
                   {customItems.length > 0 ? (
                     customItems.map((item) => {
                       const isOrganizationVisible = item.visibility === 'organization';
@@ -1123,12 +963,6 @@ export function CourseCalendarPage({
           schedule={openedCourseSchedule}
           onClose={() => setOpenedCourseSchedule(null)}
           onDeleteSchedule={onDeleteSchedule}
-        />
-      )}
-      {openedTeacherSummary && (
-        <OpenedTeacherSummaryModal
-          summary={openedTeacherSummary}
-          onClose={() => setOpenedTeacherSummary(null)}
         />
       )}
       {openedCustomSchedule && (

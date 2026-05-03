@@ -108,7 +108,7 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
   assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
@@ -129,7 +129,7 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
   assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
@@ -588,7 +588,7 @@ test('approval member cards link teacher class binding into class management', (
   assert.match(approvalBlock[0], /绑定班级/);
   assert.match(approvalBlock[0], /onOpenClassBinding\(\{ teacherUserId: user\.id, teacherName: user\.name \}\)/);
   assert.match(source, /const \[classBindingTarget, setClassBindingTarget\] = useState<ClassBindingTarget \| null>\(null\);/);
-  assert.match(source, /setClassBindingTarget\(target\);\s*setActivePage\('classes'\);/);
+  assert.match(source, /setClassBindingTarget\(target\);\s*navigateWorkspacePage\('classes'\);/);
   assert.match(source, /<ApprovalPage currentUser=\{currentUser\} onOpenClassBinding=\{handleOpenClassBinding\} \/>/);
   assert.match(source, /<ClassManagementPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
   assert.match(classManagementBlock[0], /classBindingTarget\?\.teacherName/);
@@ -675,8 +675,8 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
   assert.match(classManagementBlock[0], /const hasTeacherBindingSavingRows = Object\.values\(teacherBindingSavingByClassId\)\.some\(Boolean\);/);
   assert.match(classManagementBlock[0], /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /const pageRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
   assert.match(classManagementBlock[0], /disabled=\{pageRefreshLocked\}[\s\S]*刷新列表/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*新建班级/);
@@ -787,6 +787,38 @@ test('class management source keeps delete and save buttons inside the teacher c
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /<div className=\{`\$\{workspaceCardClass\} space-y-5 p-5`\}>[\s\S]*删除当前班级[\s\S]*保存班级/);
   assert.doesNotMatch(classManagementBlock[0], /<div className="flex flex-col gap-3 border-t border-sky-100\/80 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-white\/10">[\s\S]*删除当前班级[\s\S]*保存班级/);
+});
+
+test('class management source preserves expanded edit cards during manual refresh failures', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+
+  assert.ok(classManagementBlock);
+  assert.match(classManagementBlock[0], /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /const assignmentRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => loadPage\(expandedClassId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => loadPage\(editingClass\.id, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
+});
+
+test('account administration source disables refresh and teacher alias actions while mutations run', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+
+  assert.ok(approvalBlock);
+  assert.match(approvalBlock[0], /const organizationRequestRefreshLocked = organizationRequestsLoading \|\| organizationActingId !== null;/);
+  assert.match(approvalBlock[0], /const organizationInviteRefreshLocked = organizationInviteLoading \|\| organizationInviteResetting;/);
+  assert.match(approvalBlock[0], /const organizationListRefreshLocked = organizationsLoading \|\| deletingOrgId !== null;/);
+  assert.match(approvalBlock[0], /const approvalRefreshLocked = loading \|\| actingId !== null;/);
+  assert.match(approvalBlock[0], /const memberRefreshLocked = usersLoading \|\| bindingSummaryLoading \|\| roleSavingUserId !== null \|\| visiblePageSavingUserId !== null \|\| displayNameSavingUserId !== null \|\| deletingUserId !== null;/);
+  assert.match(approvalBlock[0], /const teacherAliasActionLocked = taSubmitting \|\| taDeletingId !== null;/);
+  assert.match(approvalBlock[0], /disabled=\{organizationRequestRefreshLocked\}[\s\S]*刷新机构申请/);
+  assert.match(approvalBlock[0], /disabled=\{organizationInviteRefreshLocked\}[\s\S]*刷新邀请信息/);
+  assert.match(approvalBlock[0], /disabled=\{organizationListRefreshLocked\}[\s\S]*刷新机构列表/);
+  assert.match(approvalBlock[0], /disabled=\{approvalRefreshLocked\}[\s\S]*刷新列表/);
+  assert.match(approvalBlock[0], /disabled=\{memberRefreshLocked\}[\s\S]*刷新成员/);
+  assert.match(approvalBlock[0], /disabled=\{teacherAliasActionLocked\}[\s\S]*添加/);
+  assert.match(approvalBlock[0], /disabled=\{teacherAliasActionLocked\}[\s\S]*openTeacherAliasEdit\(entry\)/);
+  assert.match(approvalBlock[0], /disabled=\{teacherAliasActionLocked \|\| taDeletingId === entry\.wecom_userid\}[\s\S]*handleTeacherAliasDelete\(entry\.wecom_userid\)/);
 });
 
 test('login source includes password reset and first-login class claim entry points', () => {

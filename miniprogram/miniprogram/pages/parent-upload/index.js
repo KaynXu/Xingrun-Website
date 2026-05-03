@@ -9,17 +9,89 @@ const {
 const {
   addManualBoxToImage,
   appendLocalImages,
+  buildBoxTouchFrame,
   buildImageRotationPlan,
   buildUploadExportPlan,
   buildUploadJobs,
   buildUploadTaskSummary,
   getSubmitBlockers,
+  normalizeDisplayBoxFrame,
   rotateImageBoxesClockwise,
 } = require('./model');
 
 const TASK_POLL_INTERVAL_MS = 2000;
 const TASK_POLL_MAX_ATTEMPTS = 12;
+const UPLOAD_TASK_RECOVERY_KEY_PREFIX = 'xr_parent_upload_tasks_v1';
 const TOPIC_CATEGORY_OPTIONS = ['未分类', '计算', '经济', '浓度', '工程', '行程', '几何', '数论', '自定义'];
+const UPLOAD_TASK_STATUS_MAP = {
+  pending: true,
+  processing: true,
+  ready: true,
+  failed: true,
+};
+
+function buildUploadTaskRecoveryStorageKey(openId, bindingId) {
+  return `${UPLOAD_TASK_RECOVERY_KEY_PREFIX}:${String(openId || '').trim()}:${Number(bindingId) || 0}`;
+}
+
+function buildPendingUploadTask(taskId) {
+  return {
+    id: taskId,
+    status: 'pending',
+  };
+}
+
+function isTerminalUploadTask(task) {
+  const status = String((task && task.status) || '').trim();
+  return status === 'ready' || status === 'failed';
+}
+
+function normalizeRecoveryTaskEntry(task) {
+  if (!task || typeof task !== 'object') {
+    return null;
+  }
+  const id = task.id;
+  if (id === undefined || id === null || !String(id).trim()) {
+    return null;
+  }
+  const status = String(task.status || 'pending').trim();
+  return {
+    id,
+    status: UPLOAD_TASK_STATUS_MAP[status] ? status : 'pending',
+    imageId: String(task.imageId || ''),
+    boxId: String(task.boxId || ''),
+    topicCategory: String(task.topicCategory || '未分类').trim() || '未分类',
+    acceptedAt: String(task.acceptedAt || ''),
+  };
+}
+
+function parseRecoveryRecord(rawValue) {
+  const record = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+  if (!record || typeof record !== 'object' || !Array.isArray(record.tasks)) {
+    throw new Error('invalid recovery record');
+  }
+  return record;
+}
+
+function normalizeFetchedUploadTask(taskId, payloadTask, previousTask) {
+  const fallbackTask = previousTask || buildPendingUploadTask(taskId);
+  if (!payloadTask || typeof payloadTask !== 'object') {
+    return fallbackTask;
+  }
+  const payloadTaskId = payloadTask.id;
+  if (payloadTaskId === undefined || payloadTaskId === null || String(payloadTaskId) !== String(taskId)) {
+    return fallbackTask;
+  }
+  const status = String(payloadTask.status || '').trim();
+  if (!UPLOAD_TASK_STATUS_MAP[status]) {
+    return fallbackTask;
+  }
+  return {
+    ...payloadTask,
+    id: taskId,
+    status,
+  };
+}
 
 Page({
   data: {
@@ -31,6 +103,10 @@ Page({
     currentStatusText: '',
     displayBoxes: [],
     submitting: false,
+    cropExporting: false,
+    uploadStage: '',
+    uploadStageTitle: '',
+    uploadStageText: '',
     successTaskIds: [],
     uploadTaskSummary: null,
     errorMessage: '',
@@ -120,6 +196,9 @@ Page({
         binding,
         errorMessage: binding ? '' : '没有找到这个孩子的最新绑定关系，请先重新绑定。',
       });
+      if (binding) {
+        await this.restoreAcceptedUploadTasks(session.openId, binding);
+      }
     } catch (error) {
       this.setData({
         binding: null,
@@ -144,6 +223,178 @@ Page({
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
+  },
+
+  setUploadStage(uploadStage, uploadStageText, uploadStageTitle) {
+    this.setData({
+      uploadStage,
+      uploadStageText,
+      uploadStageTitle: uploadStageTitle || '上传进度',
+    });
+  },
+
+  isInteractionLocked() {
+    return Boolean(this.data.submitting || this.data.cropExporting);
+  },
+
+  setUploadStageFromSummary(summary) {
+    const currentSummary = summary || {};
+    const state = String(currentSummary.state || 'pending');
+    if (state === 'ready') {
+      this.setUploadStage('ready', '识别完成，错题本已更新。', currentSummary.title || '识别完成');
+      return;
+    }
+    if (state === 'background') {
+      this.setUploadStage('background', currentSummary.description || '服务器会在后台继续识别，稍后可回错题本查看。', currentSummary.title || '后台继续识别');
+      return;
+    }
+    if (state === 'partial_failed') {
+      this.setUploadStage('partial_failed', `${currentSummary.title || '部分识别失败'}：${currentSummary.description || '部分题目识别失败，其他题目仍保留。'}`, currentSummary.title || '部分识别失败');
+      return;
+    }
+    if (state === 'failed') {
+      this.setUploadStage('failed', `${currentSummary.title || '识别失败'}：${currentSummary.description || '请重新拍清楚一点。'}`, currentSummary.title || '识别失败');
+      return;
+    }
+    this.setUploadStage('recognizing', `服务器正在识别错题，${currentSummary.description || '完成后会进入错题本。'}`, currentSummary.title || '正在识别');
+  },
+
+  readAcceptedUploadTasks(openId, binding) {
+    const bindingId = binding && binding.id;
+    const key = buildUploadTaskRecoveryStorageKey(openId, bindingId);
+    let record;
+    let rawValue;
+    if (typeof wx === 'undefined' || typeof wx.getStorageSync !== 'function') {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '无法读取本机保存的上传进度，请稍后回错题本刷新。',
+      };
+    }
+
+    try {
+      rawValue = wx.getStorageSync(key);
+    } catch (_error) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '无法读取本机保存的上传进度，请稍后回错题本刷新。',
+      };
+    }
+
+    if (rawValue === '' || rawValue === undefined || rawValue === null) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '',
+      };
+    }
+
+    try {
+      record = parseRecoveryRecord(rawValue);
+    } catch (_error) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '无法读取本机保存的上传进度，请稍后回错题本刷新。',
+      };
+    }
+
+    if (String(record.openId || '') !== String(openId || '') || Number(record.bindingId || 0) !== Number(bindingId || 0)) {
+      return {
+        key,
+        tasks: [],
+        errorMessage: '',
+      };
+    }
+
+    return {
+      key,
+      tasks: record.tasks.map(normalizeRecoveryTaskEntry).filter(Boolean),
+      errorMessage: '',
+    };
+  },
+
+  persistAcceptedUploadTasks(openId, binding, tasks) {
+    const bindingId = binding && binding.id;
+    const key = buildUploadTaskRecoveryStorageKey(openId, bindingId);
+    const metadataById = this.uploadTaskRecoveryTasksById || {};
+    const activeTasks = (Array.isArray(tasks) ? tasks : [])
+      .map((task) => {
+        const metadata = metadataById[String(task && task.id)] || {};
+        return normalizeRecoveryTaskEntry({
+          ...metadata,
+          ...task,
+        });
+      })
+      .filter((task) => task && !isTerminalUploadTask(task));
+
+    if (!activeTasks.length) {
+      if (typeof wx !== 'undefined' && typeof wx.removeStorageSync === 'function') {
+        try {
+          wx.removeStorageSync(key);
+        } catch (_error) {
+          return;
+        }
+      }
+      return;
+    }
+
+    this.uploadTaskRecoveryTasksById = activeTasks.reduce((result, task) => {
+      result[String(task.id)] = task;
+      return result;
+    }, {});
+
+    if (typeof wx === 'undefined' || typeof wx.setStorageSync !== 'function') {
+      return;
+    }
+
+    try {
+      wx.setStorageSync(key, {
+        version: 1,
+        openId,
+        bindingId: Number(bindingId) || 0,
+        child: {
+          studentName: String((binding && binding.studentName) || ''),
+          className: String((binding && binding.className) || ''),
+        },
+        tasks: activeTasks,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (_error) {
+      this.setUploadStage('background', '本机暂时不能保存上传进度，请稍后回错题本刷新。', '上传进度待刷新');
+    }
+  },
+
+  async restoreAcceptedUploadTasks(openId, binding) {
+    const recovered = this.readAcceptedUploadTasks(openId, binding);
+    const tasks = recovered.tasks || [];
+    if (recovered.errorMessage) {
+      this.setUploadStage('background', recovered.errorMessage, '上传进度待刷新');
+      return null;
+    }
+    if (!tasks.length) {
+      return null;
+    }
+
+    this.uploadTaskRecoveryTasksById = tasks.reduce((result, task) => {
+      result[String(task.id)] = task;
+      return result;
+    }, {});
+
+    const taskIds = tasks.map((task) => task.id);
+    this.setData({
+      successTaskIds: taskIds,
+      uploadTaskSummary: buildUploadTaskSummary(tasks),
+      errorMessage: '',
+    });
+    this.setUploadStage('background', `找到 ${taskIds.length} 条此前已接收的上传任务，正在刷新状态。`, '正在恢复上传进度');
+    const summary = await this.pollUploadTasks(openId, taskIds);
+    this.setData({
+      successTaskIds: taskIds,
+      uploadTaskSummary: summary,
+    });
+    return summary;
   },
 
   getCurrentImageFrom(imageItems, selectedImageId) {
@@ -361,6 +612,9 @@ Page({
   },
 
   chooseImages() {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     wx.chooseImage({
       count: 9,
       sizeType: ['original'],
@@ -385,6 +639,9 @@ Page({
   },
 
   async selectImage(event) {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     const selectedImageId = String(event.currentTarget.dataset.imageId || '');
     if (!selectedImageId || selectedImageId === this.data.selectedImageId) {
       return;
@@ -393,6 +650,9 @@ Page({
   },
 
   async addManualBox() {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     if (!this.data.selectedImageId) {
       return;
     }
@@ -407,6 +667,9 @@ Page({
   },
 
   async selectBox(event) {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     const boxId = String(event.currentTarget.dataset.boxId || '');
     if (!boxId || !this.data.currentImage) {
       return;
@@ -605,6 +868,9 @@ Page({
   },
 
   async removeActiveBox() {
+    if (this.isInteractionLocked()) {
+      return;
+    }
     if (!this.data.selectedImageId || !this.data.currentImage) {
       return;
     }
@@ -612,14 +878,18 @@ Page({
     const currentImageId = this.data.currentImage.id;
     const imageItems = this.data.imageItems.map((item) => {
       let boxes;
+      let activeBoxIndex;
+      let nextActiveBoxIndex;
       if (item.id !== currentImageId) {
         return item;
       }
+      activeBoxIndex = (item.boxes || []).findIndex((box) => box.id === item.activeBoxId);
       boxes = (item.boxes || []).filter((box) => box.id !== item.activeBoxId);
+      nextActiveBoxIndex = activeBoxIndex >= 0 ? Math.min(activeBoxIndex, boxes.length - 1) : 0;
       return {
         ...item,
         boxes,
-        activeBoxId: boxes[0] ? boxes[0].id : '',
+        activeBoxId: boxes[nextActiveBoxIndex] ? boxes[nextActiveBoxIndex].id : '',
       };
     });
     await this.commitImageItems(imageItems, this.data.selectedImageId, false);
@@ -635,12 +905,16 @@ Page({
       return;
     }
 
-    const normalizedBox = {
-      x: (nextLeft - this.data.imageLeft) / this.data.imageWidth,
-      y: (nextTop - this.data.imageTop) / this.data.imageHeight,
-      width: nextWidth / this.data.imageWidth,
-      height: nextHeight / this.data.imageHeight,
-    };
+    const normalizedBox = normalizeDisplayBoxFrame({
+      left: nextLeft,
+      top: nextTop,
+      width: nextWidth,
+      height: nextHeight,
+      imageLeft: this.data.imageLeft,
+      imageTop: this.data.imageTop,
+      imageWidth: this.data.imageWidth,
+      imageHeight: this.data.imageHeight,
+    });
 
     const imageItems = this.data.imageItems.map((item) => {
       if (item.id !== currentImage.id) {
@@ -654,10 +928,10 @@ Page({
           }
           return {
             ...box,
-            x: Math.max(0, Math.min(normalizedBox.x, 1)),
-            y: Math.max(0, Math.min(normalizedBox.y, 1)),
-            width: Math.max(0.08, Math.min(normalizedBox.width, 1)),
-            height: Math.max(0.08, Math.min(normalizedBox.height, 1)),
+            x: normalizedBox.x,
+            y: normalizedBox.y,
+            width: normalizedBox.width,
+            height: normalizedBox.height,
           };
         }),
         activeBoxId: boxId,
@@ -668,6 +942,10 @@ Page({
   },
 
   onBoxTouchStart(event) {
+    if (this.isInteractionLocked()) {
+      this.touchState = null;
+      return;
+    }
     const touch = event.touches[0];
     const boxId = String(event.currentTarget.dataset.boxId || '');
     const mode = String(event.currentTarget.dataset.mode || 'move');
@@ -689,46 +967,35 @@ Page({
   },
 
   onBoxTouchMove(event) {
+    if (this.isInteractionLocked()) {
+      this.touchState = null;
+      return;
+    }
     if (!this.touchState) {
       return;
     }
 
     const touch = event.touches[0];
+    if (!touch) {
+      return;
+    }
     const deltaX = touch.clientX - this.touchState.startX;
     const deltaY = touch.clientY - this.touchState.startY;
-    const minSize = 72;
-    const imageRight = this.data.imageLeft + this.data.imageWidth;
-    const imageBottom = this.data.imageTop + this.data.imageHeight;
+    const nextFrame = buildBoxTouchFrame({
+      mode: this.touchState.mode,
+      startLeft: this.touchState.left,
+      startTop: this.touchState.top,
+      startWidth: this.touchState.width,
+      startHeight: this.touchState.height,
+      deltaX,
+      deltaY,
+      imageLeft: this.data.imageLeft,
+      imageTop: this.data.imageTop,
+      imageWidth: this.data.imageWidth,
+      imageHeight: this.data.imageHeight,
+    });
 
-    let nextLeft = this.touchState.left;
-    let nextTop = this.touchState.top;
-    let nextWidth = this.touchState.width;
-    let nextHeight = this.touchState.height;
-
-    if (this.touchState.mode === 'move') {
-      nextLeft = this.touchState.left + deltaX;
-      nextTop = this.touchState.top + deltaY;
-      nextLeft = Math.max(this.data.imageLeft, Math.min(nextLeft, imageRight - nextWidth));
-      nextTop = Math.max(this.data.imageTop, Math.min(nextTop, imageBottom - nextHeight));
-    } else if (this.touchState.mode === 'resize-se') {
-      nextWidth = Math.max(minSize, Math.min(this.touchState.width + deltaX, imageRight - this.touchState.left));
-      nextHeight = Math.max(minSize, Math.min(this.touchState.height + deltaY, imageBottom - this.touchState.top));
-    } else if (this.touchState.mode === 'resize-sw') {
-      nextLeft = Math.max(this.data.imageLeft, Math.min(this.touchState.left + deltaX, this.touchState.left + this.touchState.width - minSize));
-      nextWidth = this.touchState.width + (this.touchState.left - nextLeft);
-      nextHeight = Math.max(minSize, Math.min(this.touchState.height + deltaY, imageBottom - this.touchState.top));
-    } else if (this.touchState.mode === 'resize-ne') {
-      nextTop = Math.max(this.data.imageTop, Math.min(this.touchState.top + deltaY, this.touchState.top + this.touchState.height - minSize));
-      nextWidth = Math.max(minSize, Math.min(this.touchState.width + deltaX, imageRight - this.touchState.left));
-      nextHeight = this.touchState.height + (this.touchState.top - nextTop);
-    } else if (this.touchState.mode === 'resize-nw') {
-      nextLeft = Math.max(this.data.imageLeft, Math.min(this.touchState.left + deltaX, this.touchState.left + this.touchState.width - minSize));
-      nextTop = Math.max(this.data.imageTop, Math.min(this.touchState.top + deltaY, this.touchState.top + this.touchState.height - minSize));
-      nextWidth = this.touchState.width + (this.touchState.left - nextLeft);
-      nextHeight = this.touchState.height + (this.touchState.top - nextTop);
-    }
-
-    this.updateBoxDisplay(this.touchState.boxId, nextLeft, nextTop, nextWidth, nextHeight);
+    this.updateBoxDisplay(this.touchState.boxId, nextFrame.left, nextFrame.top, nextFrame.width, nextFrame.height);
   },
 
   onBoxTouchEnd() {
@@ -754,9 +1021,13 @@ Page({
     if (!currentImage || !currentImage.localPath) {
       return;
     }
+    if (this.isInteractionLocked()) {
+      return;
+    }
 
     this.setData({
       errorMessage: '',
+      cropExporting: true,
     });
 
     try {
@@ -790,6 +1061,10 @@ Page({
       this.setData({
         errorMessage: error instanceof Error ? error.message : '旋转图片失败，请稍后重试。',
       });
+    } finally {
+      this.setData({
+        cropExporting: false,
+      });
     }
   },
 
@@ -819,7 +1094,9 @@ Page({
 
   async submitUpload() {
     let jobs;
-    if (this.data.submitting) {
+    const successTaskIds = [];
+    const acceptedUploadTasks = [];
+    if (this.isInteractionLocked()) {
       return;
     }
     if (!this.data.binding || !this.data.binding.id) {
@@ -854,7 +1131,6 @@ Page({
 
     try {
       const session = await ensureParentSession(wx, app.globalData.serverUrl);
-      const successTaskIds = [];
       let currentJob;
       let imageItem;
       let croppedPath;
@@ -865,20 +1141,33 @@ Page({
       app.globalData.parentSession = session;
 
       for (currentJob of jobs) {
+        const jobIndex = successTaskIds.length + 1;
+        const jobLabel = `第 ${jobIndex}/${jobs.length} 题`;
         imageItem = this.data.imageItems.find((item) => item.id === currentJob.imageId);
         if (!imageItem) {
           continue;
         }
-        croppedPath = await this.exportBoxCrop(imageItem, currentJob.box);
+        this.setUploadStage('preparing_crop', `正在裁切${jobLabel}，请勿退出页面。`, '正在准备题图');
+        this.setData({ cropExporting: true });
+        try {
+          croppedPath = await this.exportBoxCrop(imageItem, currentJob.box);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '裁切图片失败，请重试。';
+          throw new Error(`${jobLabel}裁切失败：${message}`);
+        } finally {
+          this.setData({ cropExporting: false });
+        }
         childReasonAudioUrl = '';
 
         if (currentJob.childReasonInputMode === 'voice') {
+          this.setUploadStage('uploading_audio', `正在上传${jobLabel}的语音说明。`, '正在上传语音');
           audioPayload = await uploadParentReasonAudio(wx, app.globalData.serverUrl, {
             filePath: currentJob.voiceFilePath,
           });
           childReasonAudioUrl = String(audioPayload.audioUrl || '').trim();
         }
 
+        this.setUploadStage('uploading_image', `正在上传${jobLabel}题图并提交识别任务。`, '正在上传题图');
         payload = await submitParentWrongQuestion(wx, app.globalData.serverUrl, {
           openId: session.openId,
           bindingId: this.data.binding.id,
@@ -888,7 +1177,29 @@ Page({
           childReasonAudioUrl,
           topicCategory: currentJob.topicCategory,
         });
-        successTaskIds.push((payload.task && payload.task.id) || '');
+        const taskId = (payload.task && payload.task.id) || '';
+        if (!String(taskId).trim()) {
+          throw new Error('服务器没有返回上传任务编号，请稍后重试。');
+        }
+        successTaskIds.push(taskId);
+        acceptedUploadTasks.push({
+          id: taskId,
+          status: 'pending',
+          imageId: currentJob.imageId,
+          boxId: currentJob.boxId,
+          topicCategory: currentJob.topicCategory,
+          acceptedAt: new Date().toISOString(),
+        });
+        this.uploadTaskRecoveryTasksById = acceptedUploadTasks.reduce((result, task) => {
+          result[String(task.id)] = task;
+          return result;
+        }, {});
+        this.persistAcceptedUploadTasks(session.openId, this.data.binding, acceptedUploadTasks);
+        this.setData({
+          successTaskIds: successTaskIds.slice(),
+          uploadTaskSummary: buildUploadTaskSummary(acceptedUploadTasks),
+        });
+        this.setUploadStage('task_accepted', `${jobLabel}已接收${taskId ? `，任务 ${taskId}` : ''}。`, '任务已接收');
       }
 
       this.setData({
@@ -909,14 +1220,27 @@ Page({
         successTaskIds,
         uploadTaskSummary,
       });
+      const hasFailedTasks = uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed';
       wx.showToast({
-        title: uploadTaskSummary.state === 'failed' ? '识别失败' : '已提交',
-        icon: uploadTaskSummary.state === 'failed' ? 'none' : 'success',
+        title: hasFailedTasks ? uploadTaskSummary.title : '已提交',
+        icon: hasFailedTasks ? 'none' : 'success',
       });
     } catch (error) {
-      this.setData({
-        errorMessage: error instanceof Error ? error.message : '上传失败',
-      });
+      const errorMessage = error instanceof Error ? error.message : '上传失败';
+      if (successTaskIds.length) {
+        const uploadTaskSummary = buildUploadTaskSummary(acceptedUploadTasks, { background: true });
+        this.setData({
+          errorMessage,
+          successTaskIds,
+          uploadTaskSummary,
+        });
+        this.setUploadStage('background', `已接收 ${successTaskIds.length} 条上传任务，后续提交中断：${errorMessage}。已接收的任务会继续保留，可稍后回错题本查看。`, '部分任务已接收');
+      } else {
+        this.setData({
+          errorMessage,
+        });
+        this.setUploadStage('failed', `上传中断：${errorMessage}`, '上传失败');
+      }
     } finally {
       this.setData({ submitting: false });
     }
@@ -930,28 +1254,66 @@ Page({
 
   async pollUploadTasks(openId, taskIds) {
     const ids = (Array.isArray(taskIds) ? taskIds : []).filter((id) => id !== undefined && id !== null && String(id).trim());
-    let tasks = ids.map((id) => ({ id, status: 'pending' }));
+    let tasks = ids.map((id) => buildPendingUploadTask(id));
     let summary = buildUploadTaskSummary(tasks);
     this.setData({ uploadTaskSummary: summary });
+    this.setUploadStageFromSummary(summary);
 
     for (let attempt = 0; attempt < TASK_POLL_MAX_ATTEMPTS; attempt += 1) {
+      const previousTasksById = tasks.reduce((result, task) => {
+        result[String(task.id)] = task;
+        return result;
+      }, {});
       tasks = await Promise.all(ids.map(async (taskId) => {
-        const payload = await fetchWrongQuestionUploadTask(wx, app.globalData.serverUrl, {
-          openId,
-          taskId,
-        });
-        return payload.task || { id: taskId, status: 'pending' };
+        const previousTask = previousTasksById[String(taskId)] || buildPendingUploadTask(taskId);
+        try {
+          const payload = await fetchWrongQuestionUploadTask(wx, app.globalData.serverUrl, {
+            openId,
+            taskId,
+          });
+          return normalizeFetchedUploadTask(taskId, payload && payload.task, previousTask);
+        } catch (_error) {
+          return previousTask;
+        }
       }));
       summary = buildUploadTaskSummary(tasks);
       this.setData({ uploadTaskSummary: summary });
+      this.persistAcceptedUploadTasks(openId, this.data.binding, tasks);
+      this.setUploadStageFromSummary(summary);
 
-      if (summary.state === 'ready' || summary.state === 'failed') {
+      if ((summary.state === 'ready' || summary.state === 'failed' || summary.state === 'partial_failed') && summary.pendingCount === 0) {
         return summary;
       }
       await this.waitForUploadTaskPoll();
     }
 
+    summary = buildUploadTaskSummary(tasks, { background: true });
+    this.setData({ uploadTaskSummary: summary });
+    this.persistAcceptedUploadTasks(openId, this.data.binding, tasks);
+    this.setUploadStageFromSummary(summary);
     return summary;
+  },
+
+  openChildWrongbook() {
+    const binding = this.data.binding || {};
+    const studentId = Number(binding.studentId || binding.student_id || 0) || 0;
+    const studentName = String(binding.studentName || binding.student_name || '').trim();
+    const taskIds = (this.data.successTaskIds || [])
+      .filter((id) => id !== undefined && id !== null && String(id).trim())
+      .map((id) => String(id).trim())
+      .join(',');
+    const query = [`studentId=${studentId}`];
+    if (!studentId) {
+      wx.showToast({ title: '没有找到孩子信息', icon: 'none' });
+      return;
+    }
+    if (studentName) {
+      query.push(`studentName=${encodeURIComponent(studentName)}`);
+    }
+    if (taskIds) {
+      query.push(`uploadTaskIds=${encodeURIComponent(taskIds)}`);
+    }
+    wx.navigateTo({ url: `/pages/parent-wrongbook/index?${query.join('&')}` });
   },
 
   backHome() {

@@ -1,10 +1,15 @@
 <view class="wrongbook-page">
-  <view wx:if="{{libraryPdfUrl && items.length}}" class="library-card">
+  <view wx:if="{{uploadStatusText}}" class="upload-status-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'upload-status-error' : ''}}">
+    <text class="upload-status-title">{{uploadTaskSummary.title || '上传进度'}}</text>
+    <text class="upload-status-desc">{{uploadStatusText}}</text>
+  </view>
+
+  <view wx:if="{{libraryPdfUrl || libraryPdfStatusText}}" class="library-card">
     <view class="library-copy">
       <text class="library-title">学生错题库 PDF</text>
-      <text class="library-desc">按当前孩子的错题记录生成，可直接预览。</text>
+      <text class="library-desc">{{libraryPdfStatusText || '按当前孩子的错题记录生成，可直接预览。'}}</text>
     </view>
-    <button class="library-btn" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">查看 PDF</button>
+    <button class="library-btn" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">{{libraryPdfReady ? '查看 PDF' : 'PDF 暂未就绪'}}</button>
   </view>
 
   <view wx:if="{{loading}}" class="state-card">
@@ -41,6 +46,7 @@
         <view class="item-top">
           <text class="tag topic-tag">专题：{{item.topicCategory || '未分类'}}</text>
           <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
+          <text wx:if="{{item.recognitionStatusText}}" class="tag status-tag {{item.recognitionStatus === 'failed' ? 'failed-tag' : 'pending-tag'}}">{{item.recognitionStatus === 'failed' ? '识别失败' : '识别中'}}</text>
           <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
         </view>
         <view wx:if="{{editingTopicRecordId === item.id}}" class="topic-edit-card">
@@ -54,6 +60,7 @@
           </view>
         </view>
         <button wx:else class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
+        <text wx:if="{{item.recognitionStatusText}}" class="item-status">{{item.recognitionStatusText}}</text>
         <text wx:if="{{item.questionPreviewText}}" class="item-question">{{item.questionPreviewText}}</text>
         <text wx:if="{{item.errorSummary}}" class="item-summary">{{item.errorSummary}}</text>
         <text class="item-date">{{item.dateStr}}</text>

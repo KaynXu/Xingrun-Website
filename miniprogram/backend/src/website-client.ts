@@ -1,6 +1,13 @@
 interface WebsiteRequestOptions {
   method?: string;
   body?: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
+const WRONG_QUESTION_UPLOAD_WEBSITE_TIMEOUT_MS = 25000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function getWebsiteBridgeConfig() {
@@ -10,13 +17,68 @@ function getWebsiteBridgeConfig() {
   };
 }
 
-async function readWebsiteError(response: Response): Promise<string> {
-  const payload = await response.json().catch(() => null);
-  if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error.trim()) {
-    return payload.error.trim();
+export class WebsiteRequestError extends Error {
+  statusCode: number;
+  retryable: boolean;
+  payload: Record<string, unknown>;
+
+  constructor(message: string, options: {
+    statusCode: number;
+    retryable: boolean;
+    payload?: Record<string, unknown>;
+  }) {
+    super(message);
+    this.name = 'WebsiteRequestError';
+    this.statusCode = options.statusCode;
+    this.retryable = options.retryable;
+    this.payload = options.payload || {};
+  }
+}
+
+function getWebsitePayloadMessage(payload: unknown, fallbackMessage: string) {
+  if (isRecord(payload)) {
+    if (typeof payload.error === 'string' && payload.error.trim()) {
+      return payload.error.trim();
+    }
+    if (typeof payload.message === 'string' && payload.message.trim()) {
+      return payload.message.trim();
+    }
   }
 
-  return `网站接口请求失败：HTTP ${response.status}`;
+  return fallbackMessage;
+}
+
+function getWebsitePayloadRetryable(payload: unknown, statusCode: number) {
+  if (isRecord(payload) && typeof payload.retryable === 'boolean') {
+    return payload.retryable;
+  }
+  return statusCode >= 500;
+}
+
+function buildWebsiteErrorPayload(payload: unknown, message: string, retryable: boolean) {
+  const body = isRecord(payload) ? { ...payload } : {};
+  body.error = message;
+  body.retryable = retryable;
+  return body;
+}
+
+function isTimeoutError(error: unknown) {
+  const source = error && typeof error === 'object' ? error as { name?: unknown; message?: unknown } : {};
+  const name = String(source.name || '');
+  const message = String(source.message || '');
+  return name === 'AbortError' || name === 'TimeoutError' || /timeout|aborted/i.test(message);
+}
+
+function getMalformedResponseMessage(path: string) {
+  return path === '/api/wechat/wrong-questions'
+    ? '网站上传接口返回异常，请稍后重试'
+    : '网站接口返回异常，请稍后重试';
+}
+
+function getTimeoutMessage(path: string) {
+  return path === '/api/wechat/wrong-questions'
+    ? '网站上传接口超时，请稍后重试'
+    : '网站接口超时，请稍后重试';
 }
 
 async function requestWebsite<T>(path: string, options: WebsiteRequestOptions = {}): Promise<T> {
@@ -28,20 +90,74 @@ async function requestWebsite<T>(path: string, options: WebsiteRequestOptions = 
     throw new Error('缺少 WEBSITE_API_BASE_URL 配置');
   }
 
-  const response = await fetch(`${config.baseUrl}${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Wechat-Service-Token': config.token,
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const controller = Number(options.timeoutMs || 0) > 0 ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), Number(options.timeoutMs))
+    : null;
+  let response: Response;
 
-  if (!response.ok) {
-    throw new Error(await readWebsiteError(response));
+  try {
+    response = await fetch(`${config.baseUrl}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Wechat-Service-Token': config.token,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller ? controller.signal : undefined,
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      const message = getTimeoutMessage(path);
+      throw new WebsiteRequestError(message, {
+        statusCode: 504,
+        retryable: true,
+        payload: { error: message, retryable: true },
+      });
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 
-  return response.json() as Promise<T>;
+  const responseText = await response.text();
+  let payload: unknown = {};
+  if (responseText.trim()) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch (_error) {
+      if (!response.ok) {
+        const message = `网站接口请求失败：HTTP ${response.status}`;
+        const retryable = response.status >= 500;
+        throw new WebsiteRequestError(message, {
+          statusCode: response.status,
+          retryable,
+          payload: { error: message, retryable },
+        });
+      }
+
+      const message = getMalformedResponseMessage(path);
+      throw new WebsiteRequestError(message, {
+        statusCode: 502,
+        retryable: true,
+        payload: { error: message, retryable: true },
+      });
+    }
+  }
+
+  if (!response.ok) {
+    const message = getWebsitePayloadMessage(payload, `网站接口请求失败：HTTP ${response.status}`);
+    const retryable = getWebsitePayloadRetryable(payload, response.status);
+    throw new WebsiteRequestError(message, {
+      statusCode: response.status,
+      retryable,
+      payload: buildWebsiteErrorPayload(payload, message, retryable),
+    });
+  }
+
+  return payload as T;
 }
 
 export interface WebsiteWechatAccount {
@@ -103,6 +219,8 @@ export interface WebsiteWrongQuestionUploadTask {
   status: string;
   record_id?: string;
   error_message?: string;
+  parent_error_message?: string;
+  maintainer_error_detail?: string;
 }
 
 export async function loginParentWechatAccount(input: {
@@ -189,6 +307,7 @@ export async function submitWechatWrongQuestionToWebsite(input: {
 }) {
   return requestWebsite<{ task: WebsiteWrongQuestionUploadTask; student_library_pdf_url?: string }>('/api/wechat/wrong-questions', {
     method: 'POST',
+    timeoutMs: WRONG_QUESTION_UPLOAD_WEBSITE_TIMEOUT_MS,
     body: {
       open_id: input.openId,
       binding_id: input.bindingId,

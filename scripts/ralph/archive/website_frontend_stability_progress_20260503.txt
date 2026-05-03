@@ -1,0 +1,33 @@
+# Ralph Progress Log
+Started: 2026-05-02
+---
+
+Current PRD: website frontend stability hardening.
+
+Scope:
+- Website frontend only: frontend/ Vite + React workspace.
+- Do not include WeChat mini program stability in this PRD.
+- Do not include backend worker reliability or production data repair in this PRD.
+- Each iteration should complete one user story from scripts/ralph/prd.json.
+
+Baseline proof for every completed story:
+- npm --prefix frontend test
+- npm --prefix frontend run build
+- git diff --check
+
+Status:
+- FE-STAB-001 passes: added scripts/ralph/frontend_stability_proof.sh as the shared frontend baseline proof runner.
+- FE-STAB-002 passes: App bootstrap auth check no longer triggers a full reload for stale tokens; storage guard coverage now includes blocked storage, stale token removal failure, and direct storage-read source guards.
+- FE-STAB-003 passes: App course calendar API failures now clear loading, show a page-level load error for list refresh failures, and alert on schedule/custom schedule save or delete failures; course-calendar tests cover list load failure, save failure, and delete/refresh failure paths.
+- FE-STAB-004 passes: App workspace navigation now resolves disallowed selected tabs through a shared dashboard fallback, uses the guarded navigation setter for sidebar/dashboard shortcuts, and source assertions cover owner/admin/member/staff plus unauthenticated paths.
+- FE-STAB-005 passes: Course calendar tests now cover empty schedules, missing teacher/subject labels, long class names, no-match filters, cancel/failed drop recovery, expanded-mode scroll guardrails, and independent right-side list scrolling; CourseCalendarPage now clears pending drops before invoking schedule callbacks, catches failed callbacks, truncates draggable course names, and gives custom item cards their own bounded scroll list.
+- FE-STAB-006 passes: Smart wrong question notebook tests now cover failed detail load, failed review save, failed PDF refresh, failed selected-record delete, failed practice-sheet generation, and practice-history PDF links from pdf_path; SmartWrongQuestionsPage now falls back to pdfPath/downloadUrl when building authenticated practice PDF links.
+- FE-STAB-007 passes: Class feedback tests now cover generate/save/confirm failure handlers and accessible class/member selection changes; App clears stale class feedback task, draft, student, and status state when a previously selected class falls out of the current accessible class list, while failed generate/save/confirm actions keep the current draft state and release their busy flags.
+- FE-STAB-008 passes: Review generation history now normalizes malformed polling payloads, keeps pending/failed/missing-output task states distinct, and hides PDF actions until a completed record has a PDF path; class feedback task hydration/generation now normalizes task payloads, treats pending/generating responses as refreshable, and avoids success copy when generated content is incomplete.
+- FE-STAB-009 passes: Class management manual refresh now preserves the expanded edit card on refresh failures, refresh locks include loading states, and account administration refresh/teacher-alias actions are disabled while related loads or mutations are in flight; account-card/workspace-navigation source assertions cover create, save, delete, refresh, invite, approval, and teacher-binding locks.
+- FE-STAB-010 passes: Mobile workspace performance tests now cover the authenticated shell plus course calendar and smart wrong questions tall-page scroll guardrails; CourseCalendarPage mobile pager now uses a shrinkable full-width control on narrow screens while preserving the tablet/desktop stable range width.
+- FE-STAB-011 passes: wrongQuestionLatex now degrades bare `\overrightarrow{...}` fragments to readable text after repairing malformed transport escapes; wrong-question library and practice-sheet PDF markup tests cover malformed/bare math, missing optional reason/note fields, geometry image records, geometry placeholders, and non-empty question blocks.
+- FE-STAB-012 passes: added frontend-stale-code-guard.test.ts to scan active website frontend source files for documented removed dashboard copy, smart wrong-question guidance copy, and stale summary-export/pending-review paths while excluding test files, docs, miniprogram files, and generated output; duplicate scattered source assertions were folded into the shared guard.
+- Added scripts/ralph/run_codex_ralph.sh for optional Codex CLI auto-loop execution; --check and --print-prompt modes validate the next story without invoking Codex.
+- Upgraded the local Codex CLI from 0.118.0 to 0.128.0 after 0.118.0 rejected gpt-5.5; scripts/ralph/run_codex_ralph.sh now defaults to gpt-5.5 again.
+- Next story: none; all website frontend stability stories in this PRD pass.

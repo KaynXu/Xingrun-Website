@@ -374,6 +374,37 @@
   color: #60738f;
 }
 
+.upload-stage {
+  margin-top: 22rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 18rpx;
+  border: 2rpx solid rgba(35, 117, 216, 0.1);
+  background: #f4f9ff;
+}
+
+.upload-stage-error {
+  border-color: rgba(214, 68, 68, 0.12);
+  background: #fff5f5;
+}
+
+.upload-stage-title,
+.upload-stage-desc {
+  display: block;
+}
+
+.upload-stage-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #10233f;
+}
+
+.upload-stage-desc {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: #60738f;
+}
+
 .state-title {
   font-size: 30rpx;
   font-weight: 600;

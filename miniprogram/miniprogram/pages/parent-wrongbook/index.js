@@ -3,8 +3,10 @@ const {
   ensureParentSession,
   fetchChildWrongQuestionLibrary,
   fetchChildWrongQuestions,
+  fetchWrongQuestionUploadTask,
   updateChildWrongQuestionTopicCategory,
 } = require('../../utils/parentApi');
+const { buildUploadTaskSummary } = require('../parent-upload/model');
 const { normalizeWrongQuestionLatexPreviewText } = require('./latex-preview');
 
 const TOPIC_CATEGORY_OPTIONS = ['未分类', '计算', '经济', '浓度', '工程', '行程', '几何', '数论', '自定义'];
@@ -16,7 +18,12 @@ Page({
     loading: true,
     errorMessage: '',
     items: [],
+    uploadTaskIds: [],
+    uploadTaskSummary: null,
+    uploadStatusText: '',
     libraryPdfUrl: '',
+    libraryPdfReady: false,
+    libraryPdfStatusText: '',
     openingPdf: false,
     topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
     topicSummaries: [],
@@ -30,7 +37,8 @@ Page({
   onLoad(query) {
     const studentId = Number(query.studentId || 0);
     const studentName = decodeURIComponent(query.studentName || '');
-    this.setData({ studentId, studentName });
+    const uploadTaskIds = parseUploadTaskIds(query.uploadTaskIds);
+    this.setData({ studentId, studentName, uploadTaskIds });
     wx.setNavigationBarTitle({ title: studentName ? `${studentName}的错题本` : '错题本' });
   },
 
@@ -42,6 +50,7 @@ Page({
 
     try {
       const session = await ensureParentSession(wx, app.globalData.serverUrl);
+      const uploadTaskSummary = await this.refreshUploadTaskSummary(session.openId);
       const payload = await fetchChildWrongQuestions(wx, app.globalData.serverUrl, {
         openId: session.openId,
         studentId,
@@ -49,13 +58,16 @@ Page({
       const libraryPayload = await fetchChildWrongQuestionLibrary(wx, app.globalData.serverUrl, {
         openId: session.openId,
         studentId,
-      }).catch(() => null);
+      }).catch(() => ({ loadError: true }));
       const items = (payload.items || []).map(normalizeItem);
+      const pdfState = normalizeLibraryPdfState(app.globalData.serverUrl, libraryPayload, uploadTaskSummary, items.length);
       this.setData({
         items,
         topicSummaries: buildTopicSummaries(items),
         displayedItems: filterItemsByTopic(items, this.data.activeTopicCategory),
-        libraryPdfUrl: normalizeLibraryPdfUrl(app.globalData.serverUrl, libraryPayload),
+        libraryPdfUrl: pdfState.url,
+        libraryPdfReady: pdfState.ready,
+        libraryPdfStatusText: pdfState.statusText,
       });
     } catch (error) {
       this.setData({
@@ -68,7 +80,14 @@ Page({
 
   async openWrongQuestionLibraryPdf() {
     const pdfUrl = String(this.data.libraryPdfUrl || '').trim();
-    if (!pdfUrl || this.data.openingPdf) {
+    if (this.data.openingPdf) {
+      return;
+    }
+    if (!pdfUrl) {
+      wx.showToast({
+        title: this.data.libraryPdfStatusText || 'PDF 暂时不可用，请稍后刷新。',
+        icon: 'none',
+      });
       return;
     }
 
@@ -88,6 +107,39 @@ Page({
     } finally {
       this.setData({ openingPdf: false });
     }
+  },
+
+  async refreshUploadTaskSummary(openId) {
+    const ids = this.data.uploadTaskIds || [];
+    if (!ids.length) {
+      this.setData({
+        uploadTaskSummary: null,
+        uploadStatusText: '',
+      });
+      return null;
+    }
+
+    const tasks = await Promise.all(ids.map(async (taskId) => {
+      try {
+        const payload = await fetchWrongQuestionUploadTask(wx, app.globalData.serverUrl, {
+          openId,
+          taskId,
+        });
+        return normalizeUploadTask(taskId, payload && payload.task);
+      } catch (_error) {
+        return { id: taskId, status: 'processing' };
+      }
+    }));
+    const hasPendingTask = tasks.some((task) => {
+      const status = String((task && task.status) || '').trim();
+      return status !== 'ready' && status !== 'failed';
+    });
+    const summary = buildUploadTaskSummary(tasks, hasPendingTask ? { background: true } : undefined);
+    this.setData({
+      uploadTaskSummary: summary,
+      uploadStatusText: summary.description || '',
+    });
+    return summary;
   },
 
   selectTopicFilter(event) {
@@ -178,16 +230,61 @@ function normalizeItem(item) {
   const createdAt = String(raw.created_at || '');
   const dateStr = createdAt ? createdAt.slice(0, 10) : '';
   const analysis = raw.analysis && typeof raw.analysis === 'object' ? raw.analysis : {};
+  const recognitionStatus = normalizeRecognitionStatus(raw);
   return {
     id: String(raw.id || ''),
     imageUrl: String(raw.image_url || ''),
-    questionPreviewText: normalizeWrongQuestionLatexPreviewText(String(raw.question_text || '').trim()),
+    questionPreviewText: recognitionStatus === 'recognized'
+      ? normalizeWrongQuestionLatexPreviewText(String(raw.question_text || '').trim())
+      : '',
     errorType: String(analysis.selected_error_type || raw.primary_error_type || ''),
     errorSummary: String(analysis.student_note || raw.secondary_error_summary || ''),
     topicCategory: normalizeTopicCategory(String(raw.topic_category || raw.topicCategory || analysis.topic_category || analysis.topicCategory || '')),
+    recognitionStatus,
+    recognitionStatusText: buildRecognitionStatusText(raw, recognitionStatus),
     isMastered: raw.is_mastered === true || raw.archive_status === 'archived',
     dateStr,
   };
+}
+
+function parseUploadTaskIds(value) {
+  return decodeURIComponent(String(value || ''))
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeUploadTask(taskId, payloadTask) {
+  const source = payloadTask && typeof payloadTask === 'object' ? payloadTask : {};
+  const state = String(source.state || source.status || 'processing').trim();
+  const status = state === 'ready' || state === 'failed' || state === 'pending' || state === 'processing'
+    ? state
+    : 'processing';
+  return {
+    ...source,
+    id: taskId,
+    status,
+  };
+}
+
+function normalizeRecognitionStatus(raw) {
+  const status = String((raw && (raw.recognition_status || raw.recognitionStatus)) || '').trim();
+  if (status) {
+    return status;
+  }
+  return String((raw && raw.question_text) || '').trim() ? 'recognized' : 'pending';
+}
+
+function buildRecognitionStatusText(raw, recognitionStatus) {
+  const status = String(recognitionStatus || '').trim();
+  const error = String((raw && (raw.recognition_error || raw.recognitionError)) || '').trim();
+  if (status === 'failed') {
+    return error ? `识别失败，原图已保留。原因：${error}` : '识别失败，原图已保留，老师会查看。';
+  }
+  if (status !== 'recognized') {
+    return '服务器仍在识别，完成后会补上题目文本。';
+  }
+  return '';
 }
 
 function normalizeTopicCategory(value) {
@@ -222,17 +319,46 @@ function filterItemsByTopic(items, topicCategory) {
   return (items || []).filter((item) => normalizeTopicCategory(item.topicCategory) === normalizedTopic);
 }
 
-function normalizeLibraryPdfUrl(serverUrl, payload) {
+function normalizeLibraryPdfState(serverUrl, payload, uploadTaskSummary, itemCount) {
   const source = payload && typeof payload === 'object' ? payload : {};
-  const totalItems = Number(source.total_items || 0) || 0;
+  const totalItems = Number(source.total_items !== undefined ? source.total_items : itemCount) || 0;
   const pdfUrl = String(source.pdf_url || '').trim();
-  if (!pdfUrl || totalItems <= 0) {
-    return '';
+  const uploadState = String((uploadTaskSummary && uploadTaskSummary.state) || '').trim();
+  if (pdfUrl && totalItems > 0) {
+    return {
+      url: /^https?:\/\//i.test(pdfUrl)
+        ? pdfUrl
+        : `${String(serverUrl || '').replace(/\/+$/, '')}${pdfUrl.startsWith('/') ? pdfUrl : `/${pdfUrl}`}`,
+      ready: true,
+      statusText: '',
+    };
   }
-  if (/^https?:\/\//i.test(pdfUrl)) {
-    return pdfUrl;
+  if (uploadState === 'background' || uploadState === 'pending') {
+    return {
+      url: '',
+      ready: false,
+      statusText: 'PDF 会在识别完成后生成，请稍后刷新错题本。',
+    };
   }
-  return `${String(serverUrl || '').replace(/\/+$/, '')}${pdfUrl.startsWith('/') ? pdfUrl : `/${pdfUrl}`}`;
+  if (source.loadError) {
+    return {
+      url: '',
+      ready: false,
+      statusText: 'PDF 状态暂时无法刷新，请稍后重试。',
+    };
+  }
+  if (totalItems > 0 && !pdfUrl) {
+    return {
+      url: '',
+      ready: false,
+      statusText: 'PDF 暂时不可用，请稍后刷新错题本。',
+    };
+  }
+  return {
+    url: '',
+    ready: false,
+    statusText: '',
+  };
 }
 
 function downloadFile(url) {
@@ -247,7 +373,7 @@ function downloadFile(url) {
         reject(new Error('PDF 下载失败，请稍后再试'));
       },
       fail: (error) => {
-        reject(new Error((error && error.errMsg) || 'PDF 下载失败，请稍后再试'));
+        reject(new Error('PDF 下载失败，请稍后刷新错题本再试'));
       },
     });
   });
@@ -260,7 +386,7 @@ function openDocument(filePath) {
       showMenu: true,
       success: resolve,
       fail: (error) => {
-        reject(new Error((error && error.errMsg) || 'PDF 打开失败'));
+        reject(new Error('PDF 打开失败，请稍后重试或联系老师查看。'));
       },
     });
   });

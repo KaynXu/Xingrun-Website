@@ -85,7 +85,7 @@ test('parent upload image picker button stays readable on narrow screens', () =>
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
   const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
 
-  assert.match(uploadTemplate, /<button class="ghost-btn picker-btn" bindtap="chooseImages">/);
+  assert.match(uploadTemplate, /<button class="ghost-btn picker-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="chooseImages">/);
   assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*width:\s*100%;/s);
   assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*white-space:\s*nowrap;/s);
   assert.match(uploadStyles, /\.picker-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
@@ -95,10 +95,23 @@ test('parent upload submit button stays on one line on narrow screens', () => {
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
   const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
 
-  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
   assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*width:\s*100%;/s);
   assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*white-space:\s*nowrap;/s);
   assert.match(uploadStyles, /\.submit-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
+});
+
+test('parent upload controls that mutate the draft are disabled during submission stages', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+
+  assert.match(uploadTemplate, /<button class="ghost-btn picker-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="chooseImages">/);
+  assert.match(uploadTemplate, /<button class="ghost-btn compact-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="addManualBox">补加框<\/button>/);
+  assert.match(uploadTemplate, /<button class="ghost-btn compact-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="removeActiveBox">删除当前<\/button>/);
+  assert.match(uploadTemplate, /<button class="ghost-btn compact-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转<\/button>/);
+  assert.match(uploadTemplate, /<button[^>]*disabled="{{submitting \|\| cropExporting}}"[^>]*bindtap="switchActiveBoxReasonMode"[\s\S]*文字输入[\s\S]*<\/button>/);
+  assert.match(uploadTemplate, /<button[^>]*disabled="{{submitting \|\| cropExporting}}"[^>]*bindtap="switchActiveBoxReasonMode"[\s\S]*语音说明[\s\S]*<\/button>/);
+  assert.match(uploadTemplate, /<button class="ghost-btn voice-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="toggleActiveBoxVoiceRecording">/);
+  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
 });
 
 test('parent wrongbook page exposes question text and a pdf entry button', () => {

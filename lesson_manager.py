@@ -2009,6 +2009,7 @@ def init_db():
             status                    TEXT NOT NULL DEFAULT 'pending',
             record_id                 TEXT NOT NULL DEFAULT '',
             error_message             TEXT NOT NULL DEFAULT '',
+            retryable                 INTEGER NOT NULL DEFAULT 0,
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -2284,6 +2285,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
+        _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "course_calendar_custom_items", "visibility", "TEXT NOT NULL DEFAULT 'private'")
@@ -6013,28 +6015,49 @@ def update_wechat_wrong_question_upload_task(
     status: str,
     record_id: str = "",
     error_message: str = "",
+    retryable: Optional[bool] = None,
 ) -> Optional[dict]:
     normalized_status = (status or "").strip()
     if normalized_status not in WECHAT_WRONG_QUESTION_UPLOAD_TASK_STATUSES:
         raise ValueError("upload task status is invalid")
 
     with get_conn() as conn:
-        conn.execute(
-            """
-            UPDATE wechat_wrong_question_upload_tasks
-            SET status=?,
-                record_id=?,
-                error_message=?,
-                updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (
-                normalized_status,
-                (record_id or "").strip(),
-                (error_message or "").strip(),
-                int(task_id or 0),
-            ),
-        )
+        if retryable is None:
+            conn.execute(
+                """
+                UPDATE wechat_wrong_question_upload_tasks
+                SET status=?,
+                    record_id=?,
+                    error_message=?,
+                    updated_at=datetime('now','localtime')
+                WHERE id=?
+                """,
+                (
+                    normalized_status,
+                    (record_id or "").strip(),
+                    (error_message or "").strip(),
+                    int(task_id or 0),
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE wechat_wrong_question_upload_tasks
+                SET status=?,
+                    record_id=?,
+                    error_message=?,
+                    retryable=?,
+                    updated_at=datetime('now','localtime')
+                WHERE id=?
+                """,
+                (
+                    normalized_status,
+                    (record_id or "").strip(),
+                    (error_message or "").strip(),
+                    1 if retryable else 0,
+                    int(task_id or 0),
+                ),
+            )
         refreshed = conn.execute(
             "SELECT * FROM wechat_wrong_question_upload_tasks WHERE id=?",
             (int(task_id or 0),),

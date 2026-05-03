@@ -8,7 +8,9 @@ const {
   buildUploadTaskSummary,
   appendLocalImages,
   addManualBoxToImage,
+  buildBoxTouchFrame,
   getSubmitBlockers,
+  normalizeDisplayBoxFrame,
   rotateImageBoxesClockwise,
 } = require('./model');
 
@@ -87,19 +89,95 @@ test('buildUploadJobs creates one upload job per box across all images', () => {
   assert.equal(jobs[2].topicCategory, '周期问题');
 });
 
-test('buildUploadTaskSummary reports failed task messages before success', () => {
+test('buildUploadJobs falls back to text mode when a voice box has no recording file', () => {
+  const jobs = buildUploadJobs([
+    {
+      id: 'img_1',
+      localPath: 'a.jpg',
+      boxes: [
+        {
+          id: 'box_1',
+          x: 0.1,
+          y: 0.2,
+          width: 0.4,
+          height: 0.3,
+          childReasonInputMode: 'voice',
+          voiceFilePath: '',
+        },
+      ],
+    },
+  ]);
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].childReasonInputMode, 'text');
+  assert.equal(jobs[0].voiceFilePath, '');
+});
+
+test('buildUploadTaskSummary reports partial failure when some accepted tasks succeed', () => {
   const summary = buildUploadTaskSummary([
     { id: 1, status: 'ready' },
     { id: 2, status: 'failed', error_message: '题目识别失败，请重新拍清楚一点' },
   ]);
 
   assert.deepEqual(summary, {
-    state: 'failed',
-    title: '识别失败',
+    state: 'partial_failed',
+    title: '部分识别失败',
     description: '1 条识别失败：题目识别失败，请重新拍清楚一点',
     readyCount: 1,
     failedCount: 1,
     pendingCount: 0,
+  });
+});
+
+test('buildUploadTaskSummary prefers concise parent failure messages', () => {
+  const summary = buildUploadTaskSummary([
+    {
+      id: 1,
+      status: 'failed',
+      error_message: 'renderer crashed while rebuilding student pdf',
+      parent_error_message: '错题已保存，PDF 暂时生成失败，请稍后再查看。',
+    },
+  ]);
+
+  assert.deepEqual(summary, {
+    state: 'failed',
+    title: '识别失败',
+    description: '1 条识别失败：错题已保存，PDF 暂时生成失败，请稍后再查看。',
+    readyCount: 0,
+    failedCount: 1,
+    pendingCount: 0,
+  });
+});
+
+test('buildUploadTaskSummary reports failed when every accepted task fails', () => {
+  const summary = buildUploadTaskSummary([
+    { id: 1, status: 'failed', error_message: '题图太模糊' },
+    { id: 2, status: 'failed', error_message: '题图太模糊' },
+  ]);
+
+  assert.deepEqual(summary, {
+    state: 'failed',
+    title: '识别失败',
+    description: '2 条识别失败：题图太模糊',
+    readyCount: 0,
+    failedCount: 2,
+    pendingCount: 0,
+  });
+});
+
+test('buildUploadTaskSummary reports background processing after the polling window ends', () => {
+  const summary = buildUploadTaskSummary([
+    { id: 1, status: 'ready' },
+    { id: 2, status: 'processing' },
+  ], { background: true });
+
+  assert.deepEqual(summary, {
+    state: 'background',
+    title: '后台继续识别',
+    description: '已完成 1 条，还有 1 条在后台继续识别，稍后可回错题本查看。',
+    readyCount: 1,
+    failedCount: 0,
+    pendingCount: 1,
   });
 });
 
@@ -176,6 +254,62 @@ test('buildUploadExportPlan limits oversized crops before upload', () => {
   });
 });
 
+test('buildUploadExportPlan keeps landscape exports within existing upload limits', () => {
+  const plan = buildUploadExportPlan({
+    cropWidth: 4200,
+    cropHeight: 3000,
+  });
+
+  assert.deepEqual(plan, {
+    outputWidth: 1792,
+    outputHeight: 1280,
+    quality: 0.82,
+  });
+});
+
+test('buildBoxTouchFrame lets parents shrink a crop box to a small printed question', () => {
+  const frame = buildBoxTouchFrame({
+    mode: 'resize-se',
+    startLeft: 10,
+    startTop: 20,
+    startWidth: 180,
+    startHeight: 120,
+    deltaX: -400,
+    deltaY: -400,
+    imageLeft: 0,
+    imageTop: 0,
+    imageWidth: 240,
+    imageHeight: 320,
+  });
+
+  assert.deepEqual(frame, {
+    left: 10,
+    top: 20,
+    width: 16,
+    height: 16,
+  });
+});
+
+test('normalizeDisplayBoxFrame saves small crop boxes without forcing eight percent of the image', () => {
+  const box = normalizeDisplayBoxFrame({
+    left: 10,
+    top: 20,
+    width: 16,
+    height: 16,
+    imageLeft: 0,
+    imageTop: 0,
+    imageWidth: 240,
+    imageHeight: 320,
+  });
+
+  assert.deepEqual(box, {
+    x: 10 / 240,
+    y: 20 / 320,
+    width: 16 / 240,
+    height: 16 / 320,
+  });
+});
+
 test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate system', () => {
   const next = rotateImageBoxesClockwise({
     id: 'img_1',
@@ -194,4 +328,22 @@ test('rotateImageBoxesClockwise keeps the same boxes in the rotated coordinate s
   ]);
   assert.equal(next.activeBoxId, 'box_2');
   assert.equal(next.contentVersion, 1);
+});
+
+test('rotateImageBoxesClockwise keeps narrow boxes after parents adjust small questions', () => {
+  const next = rotateImageBoxesClockwise({
+    id: 'img_1',
+    localPath: 'a.jpg',
+    contentVersion: 0,
+    boxes: [
+      { id: 'box_1', x: 0.2, y: 0.3, width: 0.02, height: 0.03 },
+    ],
+    activeBoxId: 'box_1',
+  });
+
+  assert.equal(next.boxes[0].id, 'box_1');
+  assert.equal(Math.round(next.boxes[0].x * 100), 67);
+  assert.equal(next.boxes[0].y, 0.2);
+  assert.equal(next.boxes[0].width, 0.03);
+  assert.equal(next.boxes[0].height, 0.02);
 });
