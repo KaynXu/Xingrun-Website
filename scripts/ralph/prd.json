@@ -219,8 +219,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh. The final guardrail checks PRD pass state, parent-home/parent-bind/parent-upload/parent-wrongbook visual system and action hierarchy contracts, button placement/destructive/safe-area/narrow-screen constraints through the visual proof, active page prototype wording, and absence of website frontend/backend/bridge working tree changes, then runs the visual polish and upload stability proofs."
     }
   ]
 }
