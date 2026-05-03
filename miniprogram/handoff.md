@@ -5,7 +5,8 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-03 当前“小程序家长上传 2.0 稳定性”Ralph PRD 在项目根目录 `scripts/ralph/prd.json`；`MP-UPLOAD-001` 到 `MP-UPLOAD-012` 已全部完成，本地自动验收已收口。
+- 2026-05-03 当前活跃 Ralph 队列已切换为“小程序视觉正式版升级”：新的 `scripts/ralph/prd.json` 只聚焦微信小程序前端 `miniprogram/miniprogram/`，目标是让家长端页面更好看、更像正式产品，尤其锁定按钮位置、主次操作排列、底部操作区、小屏不换行/不重叠；旧“小程序家长上传 2.0 稳定性”PRD/进度已归档到 `scripts/ralph/archive/miniprogram_upload_2_stability_prd_20260503.json` 和 `scripts/ralph/archive/miniprogram_upload_2_stability_progress_20260503.txt`。`scripts/ralph/run_codex_ralph.sh --check` 当前下一条为 `MP-VISUAL-001`。
+- 2026-05-03 “小程序家长上传 2.0 稳定性”Ralph PRD 已归档；`MP-UPLOAD-001` 到 `MP-UPLOAD-012` 已全部完成，本地自动验收已收口。
 - 2026-05-03 `MP-UPLOAD-012` 已完成：新增最终验收脚本 `scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh`，显式检查选图、补框、文字/语音错因、裁切导出、提交、任务接收、ready/failed/pending 轮询、错题本刷新、PDF 未就绪、活代码无当前 AI 框选能力、PRD 全 story `passes=true`，并串起定向小程序/bridge/网站测试和共享基线 proof。
 - 2026-05-03 `MP-UPLOAD-011` 已完成：新增生产上传链路 smoke runbook `docs/production-upload-pipeline-smoke-runbook.md` 和本地校验脚本 `scripts/ralph/production_upload_smoke_runbook_proof.sh`，覆盖 PM2、Redis/RQ worker、Flask、bridge、上传大小限制、任务状态、错题本/PDF 检查，以及 pending、enqueue 失败、413、PDF refresh 失败处理；自动 proof 只校验本地引用和基线，不访问生产。
 - 2026-05-03 `MP-UPLOAD-010` 已完成：家长上传成功卡片新增“查看错题本 / 刷新进度”，会把已接收 task id 带到孩子错题本；家长错题本进入时先刷新 ready/failed/background 上传任务，再拉错题记录和 PDF 状态，识别失败或仍在处理的卡片不会展示 AI 成功题干，PDF 未就绪、缺 `pdf_url`、下载失败和打开失败都会给可恢复提示。
