@@ -139,7 +139,9 @@
       <text class="upload-stage-desc">{{uploadStageText}}</text>
     </view>
 
-    <button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting || cropExporting}}" bindtap="submitUpload">统一提交所有错题</button>
+    <view class="bottom-action-bar">
+      <button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting || cropExporting}}" bindtap="submitUpload">统一提交所有错题</button>
+    </view>
   </view>
 
   <view wx:if="{{successTaskIds.length}}" class="state-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : 'success-card'}}">

@@ -44,6 +44,7 @@ const pages = {
     wxss: read('pages/parent-wrongbook/index.wxss'),
   },
 };
+const sharedStyles = read('app.wxss');
 
 let failures = 0;
 
@@ -107,6 +108,10 @@ function selectorBody(styles, selector) {
   return bodies.join('\n');
 }
 
+function combinedStyles(page) {
+  return `${sharedStyles}\n${page.wxss}`;
+}
+
 function expectRule(styles, selector, declaration) {
   const body = selectorBody(styles, selector);
   if (!body) {
@@ -114,6 +119,13 @@ function expectRule(styles, selector, declaration) {
   }
   if (!body.includes(declaration)) {
     throw new Error(`${selector} missing declaration: ${declaration}`);
+  }
+}
+
+function expectNoSharedButtonRule(styles, selector) {
+  const body = selectorBody(styles, selector);
+  if (body) {
+    throw new Error(`${selector} should be defined by app.wxss, not by page wxss`);
   }
 }
 
@@ -131,17 +143,37 @@ function expectNoPrimaryInBlock(text, startNeedle, endNeedle) {
 
 function checkPageShell(page) {
   check(`${page.name}: page shell and card primitives`, () => {
-    expectRule(page.wxss, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'min-height: 100vh;');
-    expectRule(page.wxss, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'padding: 28rpx;');
-    expectRule(page.wxss, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'box-sizing: border-box;');
-    expectMatch(page.wxss, /border-radius:\s*(24|28|32)rpx;/);
-    expectMatch(page.wxss, /box-shadow:\s*0\s+\d+rpx\s+\d+rpx\s+rgba/);
+    const styles = combinedStyles(page);
+    expectRule(styles, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'min-height: 100vh;');
+    expectRule(styles, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'padding: 28rpx;');
+    expectRule(styles, page.name === 'parent-wrongbook' ? '.wrongbook-page' : '.parent-page', 'box-sizing: border-box;');
+    expectMatch(styles, /border-radius:\s*(24|28|32)rpx;/);
+    expectMatch(styles, /box-shadow:\s*0\s+\d+rpx\s+\d+rpx\s+rgba/);
   });
 }
 
 for (const page of Object.values(pages)) {
   checkPageShell(page);
 }
+
+check('shared visual system: primitives live in app.wxss', () => {
+  expectRule(sharedStyles, '.parent-page', 'background: linear-gradient(180deg, #f6fbff 0%, #eef6ff 100%);');
+  expectRule(sharedStyles, '.hero-card', 'border-radius: 28rpx;');
+  expectRule(sharedStyles, '.state-card', 'box-shadow: 0 16rpx 48rpx rgba(45, 87, 140, 0.08);');
+  expectRule(sharedStyles, '.section-title', 'color: #10233f;');
+  expectRule(sharedStyles, '.primary-btn', 'background: #2375d8;');
+  expectRule(sharedStyles, '.ghost-btn', 'background: #eef5ff;');
+  expectRule(sharedStyles, '.icon-btn', 'width: 72rpx;');
+  expectRule(sharedStyles, '.tag', 'border-radius: 999rpx;');
+  expectRule(sharedStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + env(safe-area-inset-bottom));');
+});
+
+check('shared visual system: primary and secondary button colors are not scattered in page wxss', () => {
+  for (const page of Object.values(pages)) {
+    expectNoSharedButtonRule(page.wxss, '.primary-btn');
+    expectNoSharedButtonRule(page.wxss, '.ghost-btn');
+  }
+});
 
 check('parent-home: primary and secondary actions are grouped by child card', () => {
   expectIncludes(pages.home.wxml, 'class="hero-card"');
@@ -182,6 +214,7 @@ check('parent-upload: photo, box, reason, progress, and submit sections stay dis
   expectIncludes(pages.upload.wxml, '顺时针旋转');
   expectIncludes(pages.upload.wxml, 'class="reason-card"');
   expectIncludes(pages.upload.wxml, 'class="upload-stage {{uploadStage');
+  expectIncludes(pages.upload.wxml, 'class="bottom-action-bar"');
   expectIncludes(pages.upload.wxml, 'class="primary-btn submit-btn"');
   expectOrder(pages.upload.wxml, 'class="ghost-btn picker-btn"', 'class="action-row"');
   expectOrder(pages.upload.wxml, 'class="action-row"', 'class="reason-card"');
@@ -201,8 +234,10 @@ check('parent-upload: destructive box action is visually separated from final su
 });
 
 check('parent-upload: bottom submit area has narrow-screen and safe-area spacing rules', () => {
-  expectRule(pages.upload.wxss, '.parent-page', 'padding: 28rpx;');
-  expectRule(pages.upload.wxss, '.parent-page', 'box-sizing: border-box;');
+  const uploadStyles = combinedStyles(pages.upload);
+  expectRule(uploadStyles, '.parent-page', 'padding: 28rpx;');
+  expectRule(uploadStyles, '.parent-page', 'box-sizing: border-box;');
+  expectRule(uploadStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + env(safe-area-inset-bottom));');
   expectRule(pages.upload.wxss, '.submit-btn', 'width: 100%;');
   expectRule(pages.upload.wxss, '.submit-btn', 'line-height: 84rpx;');
   expectRule(pages.upload.wxss, '.submit-btn', 'white-space: nowrap;');
@@ -214,7 +249,7 @@ check('parent-upload: bottom submit area has narrow-screen and safe-area spacing
 check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierarchy', () => {
   expectIncludes(pages.wrongbook.wxml, 'class="upload-status-card');
   expectIncludes(pages.wrongbook.wxml, 'class="library-card"');
-  expectIncludes(pages.wrongbook.wxml, 'class="library-btn"');
+  expectIncludes(pages.wrongbook.wxml, 'class="primary-btn library-btn"');
   expectIncludes(pages.wrongbook.wxml, '查看 PDF');
   expectIncludes(pages.wrongbook.wxml, 'PDF 暂未就绪');
   expectIncludes(pages.wrongbook.wxml, 'class="state-card"');
@@ -233,11 +268,10 @@ check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierar
 check('parent-wrongbook: topic edit actions keep secondary and save actions grouped', () => {
   expectIncludes(pages.wrongbook.wxml, 'class="topic-edit-actions"');
   expectIncludes(pages.wrongbook.wxml, 'class="topic-action-btn"');
-  expectIncludes(pages.wrongbook.wxml, 'class="topic-action-btn topic-save-btn"');
+  expectIncludes(pages.wrongbook.wxml, 'class="primary-btn topic-action-btn topic-save-btn"');
   expectOrder(pages.wrongbook.wxml, 'cancelEditTopicCategory', 'saveTopicCategory');
   expectRule(pages.wrongbook.wxss, '.topic-edit-actions', 'display: flex;');
   expectRule(pages.wrongbook.wxss, '.topic-action-btn', 'flex: 1;');
-  expectRule(pages.wrongbook.wxss, '.topic-save-btn', 'background: #2375d8;');
 });
 
 check('parent-facing templates avoid prototype-only wording', () => {

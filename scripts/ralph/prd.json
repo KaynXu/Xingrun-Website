@@ -80,8 +80,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Shared mini program visual primitives now live in app.wxss for page shells, cards, headings, primary/secondary/icon buttons, state tags, and safe-area-aware bottom action bars. Page wxss no longer owns scattered primary/secondary button definitions; visual proof locks the shared system and upload baseline still passes."
     },
     {
       "id": "MP-VISUAL-003",

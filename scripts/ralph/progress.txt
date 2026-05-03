@@ -32,4 +32,5 @@ Status:
 - Archived completed upload stability progress to scripts/ralph/archive/miniprogram_upload_2_stability_progress_20260503.txt.
 - Active PRD is now mini program visual refresh.
 - MP-VISUAL-001 completed: added a local visual proof runner that checks parent-home, parent-bind, parent-upload, and parent-wrongbook page structure, primary/secondary action hierarchy, destructive action separation, bottom submit spacing, narrow-screen button rules, and prototype-only wording without WeChat devtools or backend services.
-- Next story: MP-VISUAL-002 Define production mini program visual system.
+- MP-VISUAL-002 completed: shared visual primitives now live in miniprogram/miniprogram/app.wxss for page shells, cards, headings, primary/secondary/icon buttons, state tags, and safe-area-aware bottom action bars. Page-level wxss keeps upload crop/canvas and page-specific layout rules, but no longer owns scattered primary/secondary button definitions. The visual proof now locks this contract and the upload stability baseline still passes.
+- Next story: MP-VISUAL-003 Standardize button position and action hierarchy.

@@ -9,7 +9,7 @@
       <text class="library-title">学生错题库 PDF</text>
       <text class="library-desc">{{libraryPdfStatusText || '按当前孩子的错题记录生成，可直接预览。'}}</text>
     </view>
-    <button class="library-btn" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">{{libraryPdfReady ? '查看 PDF' : 'PDF 暂未就绪'}}</button>
+    <button class="primary-btn library-btn" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">{{libraryPdfReady ? '查看 PDF' : 'PDF 暂未就绪'}}</button>
   </view>
 
   <view wx:if="{{loading}}" class="state-card">
@@ -56,7 +56,7 @@
           <input class="topic-input" value="{{editingTopicCategory}}" placeholder="自定义专题，如周期问题" bindinput="handleCustomTopicInput" />
           <view class="topic-edit-actions">
             <button class="topic-action-btn" bindtap="cancelEditTopicCategory">取消</button>
-            <button class="topic-action-btn topic-save-btn" loading="{{savingTopic}}" bindtap="saveTopicCategory">保存</button>
+            <button class="primary-btn topic-action-btn topic-save-btn" loading="{{savingTopic}}" bindtap="saveTopicCategory">保存</button>
           </view>
         </view>
         <button wx:else class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
