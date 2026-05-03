@@ -115,8 +115,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parent home now uses Xingrun parent identity, designed empty state, bound-child count/context, child card class/teacher metadata, progress hint copy, and narrow-screen wrapping rules for long names and metadata."
     },
     {
       "id": "MP-VISUAL-005",
