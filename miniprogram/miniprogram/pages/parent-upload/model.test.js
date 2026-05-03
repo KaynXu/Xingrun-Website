@@ -149,6 +149,25 @@ test('buildUploadTaskSummary prefers concise parent failure messages', () => {
   });
 });
 
+test('buildUploadTaskSummary hides technical AI quota errors from parents', () => {
+  const summary = buildUploadTaskSummary([
+    {
+      id: 1,
+      status: 'failed',
+      error_message: "Error code: 403 - {'error': {'message': 'user quota is not enough (request id: 20260503101115101291001RFkwiow)', 'type': 'new_api_error', 'code': 'local:insufficient_quota'}}",
+    },
+  ]);
+
+  assert.deepEqual(summary, {
+    state: 'failed',
+    title: '识别失败',
+    description: '1 条识别失败：上传任务暂时无法完成，请稍后重试。',
+    readyCount: 0,
+    failedCount: 1,
+    pendingCount: 0,
+  });
+});
+
 test('buildUploadTaskSummary reports failed when every accepted task fails', () => {
   const summary = buildUploadTaskSummary([
     { id: 1, status: 'failed', error_message: '题图太模糊' },

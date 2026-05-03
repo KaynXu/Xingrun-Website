@@ -230,6 +230,26 @@ function buildUploadJobs(imageItems) {
   }, []);
 }
 
+function buildUploadTaskFailureMessage(task) {
+  const source = task && typeof task === 'object' ? task : {};
+  const parentMessage = String(source.parent_error_message || source.parentErrorMessage || '').trim();
+  if (parentMessage) {
+    return parentMessage;
+  }
+
+  const rawMessage = String(source.error_message || source.errorMessage || '').trim();
+  if (!rawMessage) {
+    return '请重新拍清楚一点';
+  }
+  if (/insufficient[_:\s-]*quota|user quota is not enough/i.test(rawMessage)) {
+    return '上传任务暂时无法完成，请稍后重试。';
+  }
+  if (/Error code:\s*\d+|new_api_error|request id:/i.test(rawMessage)) {
+    return '上传任务处理失败，请稍后查看。';
+  }
+  return rawMessage;
+}
+
 function buildUploadTaskSummary(tasks, options) {
   const list = Array.isArray(tasks) ? tasks : [];
   const readyCount = list.filter((task) => String(task.status || '') === 'ready').length;
@@ -238,13 +258,7 @@ function buildUploadTaskSummary(tasks, options) {
   const pendingCount = Math.max(0, list.length - readyCount - failedCount);
 
   if (failedCount) {
-    const message = String(
-      failedTasks[0].parent_error_message
-      || failedTasks[0].parentErrorMessage
-      || failedTasks[0].error_message
-      || failedTasks[0].errorMessage
-      || '请重新拍清楚一点',
-    ).trim();
+    const message = buildUploadTaskFailureMessage(failedTasks[0]);
     const hasAcceptedItems = readyCount > 0 || pendingCount > 0;
     const pendingMessage = pendingCount
       ? `；${pendingCount} 条还在${options && options.background ? '后台继续识别，稍后可回错题本查看' : '服务器继续识别'}`
