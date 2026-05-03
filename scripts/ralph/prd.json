@@ -184,8 +184,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Unified parent-facing non-happy-path state anatomy across home, bind, upload, and wrongbook: shared state markers now cover loading, empty, processing, success, and error states; upload progress/result and wrongbook upload/item recognition states use marker + title/body structure; home error now has a retry action. Visual and upload stability proofs passed through /tmp/xingrun_mp_visual_008_proof.sh."
     },
     {
       "id": "MP-VISUAL-009",

@@ -5,18 +5,21 @@
     <text class="hero-subtitle">选择孩子后上传新的错题图片，或查看已经整理好的错题本和处理进度。</text>
   </view>
 
-  <view wx:if="{{loading}}" class="state-card">
+  <view wx:if="{{loading}}" class="state-card loading-card">
+    <text class="state-marker state-marker-loading">加载中</text>
     <text class="state-title">正在加载孩子信息</text>
     <text class="state-desc">请稍候，已绑定的孩子会显示在这里。</text>
   </view>
 
   <view wx:elif="{{errorMessage}}" class="state-card error-card">
+    <text class="state-marker state-marker-error">需要处理</text>
     <text class="state-title">页面暂时无法打开</text>
     <text class="state-desc">{{errorMessage}}</text>
+    <button class="ghost-btn state-action-btn" bindtap="onShow">重新加载</button>
   </view>
 
   <view wx:elif="{{!bindings.length}}" class="state-card empty-card">
-    <text class="empty-kicker">下一步</text>
+    <text class="state-marker state-marker-empty">下一步</text>
     <text class="state-title">还没有绑定孩子</text>
     <text class="state-desc">请输入老师提供的班级邀请码，完成绑定后即可上传错题。</text>
     <button class="primary-btn" bindtap="goBindMore">去绑定孩子</button>

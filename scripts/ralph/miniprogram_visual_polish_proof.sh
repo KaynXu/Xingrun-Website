@@ -189,9 +189,9 @@ check('parent-home: primary and secondary actions are grouped by child card', ()
   expectIncludes(pages.home.wxml, 'class="hero-badge"');
   expectIncludes(pages.home.wxml, '星润家长端');
   expectIncludes(pages.home.wxml, '孩子错题与上传入口');
-  expectIncludes(pages.home.wxml, 'class="state-card"');
+  expectMatch(pages.home.wxml, /class="state-card /);
   expectIncludes(pages.home.wxml, 'class="state-card empty-card"');
-  expectIncludes(pages.home.wxml, 'class="empty-kicker"');
+  expectIncludes(pages.home.wxml, 'class="state-marker state-marker-empty"');
   expectIncludes(pages.home.wxml, '<button class="primary-btn" bindtap="goBindMore">去绑定孩子</button>');
   expectIncludes(pages.home.wxml, 'class="panel-copy"');
   expectIncludes(pages.home.wxml, '已绑定 {{bindings.length}} 个孩子');
@@ -204,7 +204,6 @@ check('parent-home: primary and secondary actions are grouped by child card', ()
   expectIncludes(pages.home.wxml, 'class="primary-btn mini-btn"');
   expectOrderWithinBlock(pages.home.wxml, 'class="binding-actions"', '</view>', '上传错题', '查看错题本');
   expectRule(pages.home.wxss, '.empty-card', 'border: 2rpx solid rgba(35, 117, 216, 0.12);');
-  expectRule(pages.home.wxss, '.empty-kicker', 'border-radius: 999rpx;');
   expectRule(pages.home.wxss, '.panel-copy', 'min-width: 0;');
   expectRule(pages.home.wxss, '.binding-info', 'min-width: 0;');
   expectRule(pages.home.wxss, '.binding-meta-stack', 'gap: 6rpx;');
@@ -232,7 +231,7 @@ check('parent-bind: lookup, existing binding, and bind confirmation hierarchy', 
   expectIncludes(pages.bind.wxml, 'class="student-card"');
   expectIncludes(pages.bind.wxml, 'class="student-info"');
   expectIncludes(pages.bind.wxml, 'class="primary-btn mini-btn"');
-  expectIncludes(pages.bind.wxml, 'class="state-card empty-student-card"');
+  expectIncludes(pages.bind.wxml, 'class="state-card empty-card empty-student-card"');
   expectIncludes(pages.bind.wxml, '绑定这个孩子');
   expectRule(pages.bind.wxss, '.invite-panel', 'gap: 22rpx;');
   expectRule(pages.bind.wxss, '.lookup-btn', 'width: 100%;');
@@ -256,7 +255,7 @@ check('parent-upload: photo, box, reason, progress, and submit sections stay dis
   expectIncludes(pages.upload.wxml, 'class="upload-section upload-box-section"');
   expectIncludes(pages.upload.wxml, 'class="selected-image-context"');
   expectIncludes(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"');
-  expectIncludes(pages.upload.wxml, 'class="upload-stage upload-progress-card');
+  expectIncludes(pages.upload.wxml, 'class="state-card upload-stage upload-progress-card');
   expectIncludes(pages.upload.wxml, 'class="submit-panel"');
   expectIncludes(pages.upload.wxml, 'class="ghost-btn picker-btn"');
   expectIncludes(pages.upload.wxml, 'bindtap="chooseImages"');
@@ -268,14 +267,14 @@ check('parent-upload: photo, box, reason, progress, and submit sections stay dis
   expectIncludes(pages.upload.wxml, '删除当前题框');
   expectIncludes(pages.upload.wxml, '顺时针旋转');
   expectIncludes(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"');
-  expectIncludes(pages.upload.wxml, 'class="upload-stage upload-progress-card {{uploadStage');
+  expectIncludes(pages.upload.wxml, 'class="state-card upload-stage upload-progress-card {{uploadStage');
   expectIncludes(pages.upload.wxml, 'class="bottom-action-bar"');
   expectIncludes(pages.upload.wxml, 'class="primary-btn submit-btn"');
   expectOrder(pages.upload.wxml, 'class="upload-section upload-image-section"', 'class="upload-section upload-box-section"');
   expectOrder(pages.upload.wxml, 'class="ghost-btn picker-btn"', 'class="box-action-group"');
   expectOrder(pages.upload.wxml, 'class="box-action-group"', 'class="reason-card upload-section upload-reason-section"');
-  expectOrder(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"', 'class="upload-stage upload-progress-card');
-  expectOrder(pages.upload.wxml, 'class="upload-stage upload-progress-card', 'class="primary-btn submit-btn"');
+  expectOrder(pages.upload.wxml, 'class="reason-card upload-section upload-reason-section"', 'class="state-card upload-stage upload-progress-card');
+  expectOrder(pages.upload.wxml, 'class="state-card upload-stage upload-progress-card', 'class="primary-btn submit-btn"');
   expectRule(pages.upload.wxss, '.upload-flow-panel', 'padding: 0;');
   expectRule(pages.upload.wxss, '.upload-section', 'padding: 30rpx;');
   expectRule(pages.upload.wxss, '.upload-section-head', 'display: flex;');
@@ -320,6 +319,37 @@ check('parent-upload: success actions make progress or wrongbook the primary nex
   expectRule(pages.upload.wxss, '.success-action-btn', 'white-space: nowrap;');
 });
 
+check('parent-facing pages: unified state card anatomy for loading, empty, processing, success, and error', () => {
+  expectRule(sharedStyles, '.state-marker', 'border-radius: 999rpx;');
+  expectRule(sharedStyles, '.state-marker-loading', 'background: #e9f5ff;');
+  expectRule(sharedStyles, '.state-marker-empty', 'background: #e9f5ff;');
+  expectRule(sharedStyles, '.state-marker-processing', 'background: #fff7e6;');
+  expectRule(sharedStyles, '.state-marker-success', 'background: #e8faf0;');
+  expectRule(sharedStyles, '.state-marker-error', 'background: #fff1f0;');
+  expectRule(sharedStyles, '.state-action-btn', 'white-space: nowrap;');
+
+  expectMatch(pages.home.wxml, /class="state-card loading-card"[\s\S]*class="state-marker state-marker-loading"/);
+  expectMatch(pages.home.wxml, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  expectMatch(pages.home.wxml, /class="ghost-btn state-action-btn" bindtap="onShow">重新加载<\/button>/);
+  expectMatch(pages.home.wxml, /class="state-card empty-card"[\s\S]*class="state-marker state-marker-empty"/);
+
+  expectMatch(pages.bind.wxml, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  expectMatch(pages.bind.wxml, /class="state-card empty-card empty-student-card"[\s\S]*class="state-marker state-marker-empty"/);
+
+  expectMatch(pages.upload.wxml, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  expectIncludes(pages.upload.wxml, 'class="state-card upload-stage upload-progress-card');
+  expectIncludes(pages.upload.wxml, "class=\"state-marker {{uploadStage === 'failed' || uploadStage === 'partial_failed' ? 'state-marker-error' : uploadStage === 'ready' ? 'state-marker-success' : 'state-marker-processing'}}\"");
+  expectIncludes(pages.upload.wxml, 'class="state-card upload-result-card');
+  expectIncludes(pages.upload.wxml, "class=\"state-marker {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'state-marker-error' : uploadTaskSummary.state === 'ready' ? 'state-marker-success' : 'state-marker-processing'}}\"");
+
+  expectIncludes(pages.wrongbook.wxml, 'class="state-card upload-status-card');
+  expectIncludes(pages.wrongbook.wxml, "class=\"state-marker {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'state-marker-error' : 'state-marker-processing'}}\"");
+  expectMatch(pages.wrongbook.wxml, /class="state-card loading-card"[\s\S]*class="state-marker state-marker-loading"/);
+  expectMatch(pages.wrongbook.wxml, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  expectMatch(pages.wrongbook.wxml, /class="state-card empty-card"[\s\S]*class="state-marker state-marker-empty"/);
+  expectIncludes(pages.wrongbook.wxml, "class=\"state-marker item-status-marker {{item.recognitionStatus === 'failed' ? 'state-marker-error' : 'state-marker-processing'}}\"");
+});
+
 check('parent-upload: bottom submit area has narrow-screen and safe-area spacing rules', () => {
   const uploadStyles = combinedStyles(pages.upload);
   expectRule(uploadStyles, '.parent-page', 'padding: 28rpx;');
@@ -340,7 +370,7 @@ check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierar
   expectIncludes(pages.wrongbook.wxml, 'class="hero-card wrongbook-hero"');
   expectIncludes(pages.wrongbook.wxml, '星润错题本');
   expectIncludes(pages.wrongbook.wxml, 'class="hero-stat-row"');
-  expectIncludes(pages.wrongbook.wxml, 'class="upload-status-card');
+  expectIncludes(pages.wrongbook.wxml, 'class="state-card upload-status-card');
   expectIncludes(pages.wrongbook.wxml, 'class="library-card"');
   expectIncludes(pages.wrongbook.wxml, 'class="primary-btn library-btn"');
   expectIncludes(pages.wrongbook.wxml, 'class="ghost-btn library-btn library-btn-pending"');
@@ -358,7 +388,7 @@ check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierar
   expectIncludes(pages.wrongbook.wxml, 'class="item-card-head"');
   expectIncludes(pages.wrongbook.wxml, 'class="item-section-label">题目预览</text>');
   expectIncludes(pages.wrongbook.wxml, 'class="item-section-label">错因简述</text>');
-  expectIncludes(pages.wrongbook.wxml, 'class="item-status-card"');
+  expectIncludes(pages.wrongbook.wxml, 'class="item-status-card ');
   expectIncludes(pages.wrongbook.wxml, 'class="edit-topic-btn"');
   expectIncludes(pages.wrongbook.wxml, 'class="item-question"');
   expectRule(pages.wrongbook.wxss, '.wrongbook-hero', 'display: flex;');
@@ -376,7 +406,6 @@ check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierar
   expectRule(pages.wrongbook.wxss, '.item-status-card', 'white-space: pre-wrap;');
   expectRule(pages.wrongbook.wxss, '.item-question', 'white-space: pre-wrap;');
   expectRule(pages.wrongbook.wxss, '.item-question', 'word-break: break-all;');
-  expectRule(pages.wrongbook.wxss, '.state-action-btn', 'width: 100%;');
 });
 
 check('parent-wrongbook: topic edit actions keep secondary and save actions grouped', () => {

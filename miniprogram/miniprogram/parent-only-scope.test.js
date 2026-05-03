@@ -172,7 +172,7 @@ test('parent wrongbook page uses a finished learning-record hierarchy', () => {
   assert.match(wrongbookTemplate, /class="item-card-head"/);
   assert.match(wrongbookTemplate, /class="item-section-label">题目预览<\/text>/);
   assert.match(wrongbookTemplate, /class="item-section-label">错因简述<\/text>/);
-  assert.match(wrongbookTemplate, /class="item-status-card"/);
+  assert.match(wrongbookTemplate, /class="item-status-card /);
   assert.match(wrongbookTemplate, /class="state-card loading-card"/);
   assert.match(wrongbookTemplate, /class="state-card empty-card"/);
   assert.match(wrongbookTemplate, /class="ghost-btn state-action-btn" bindtap="onShow">重新加载<\/button>/);
@@ -186,7 +186,42 @@ test('parent wrongbook page uses a finished learning-record hierarchy', () => {
   assert.match(wrongbookStyles, /\.item-section\s*\{[^}]*min-width:\s*0;/s);
   assert.match(wrongbookStyles, /\.item-section-label\s*\{[^}]*letter-spacing:\s*0;/s);
   assert.match(wrongbookStyles, /\.item-status-card\s*\{[^}]*white-space:\s*pre-wrap;/s);
-  assert.match(wrongbookStyles, /\.state-action-btn\s*\{[^}]*width:\s*100%;/s);
+});
+
+test('parent pages use unified state card anatomy for non-happy paths', () => {
+  const appStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'app.wxss'), 'utf8');
+  const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
+  const bindTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxml'), 'utf8');
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
+
+  assert.match(appStyles, /\.state-marker\s*\{[^}]*border-radius:\s*999rpx;/s);
+  assert.match(appStyles, /\.state-marker-loading\s*\{[^}]*background:\s*#e9f5ff;/s);
+  assert.match(appStyles, /\.state-marker-empty\s*\{[^}]*background:\s*#e9f5ff;/s);
+  assert.match(appStyles, /\.state-marker-processing\s*\{[^}]*background:\s*#fff7e6;/s);
+  assert.match(appStyles, /\.state-marker-success\s*\{[^}]*background:\s*#e8faf0;/s);
+  assert.match(appStyles, /\.state-marker-error\s*\{[^}]*background:\s*#fff1f0;/s);
+
+  assert.match(homeTemplate, /class="state-card loading-card"[\s\S]*class="state-marker state-marker-loading"/);
+  assert.match(homeTemplate, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  assert.match(homeTemplate, /class="ghost-btn state-action-btn" bindtap="onShow">重新加载<\/button>/);
+  assert.match(homeTemplate, /class="state-card empty-card"[\s\S]*class="state-marker state-marker-empty"/);
+
+  assert.match(bindTemplate, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  assert.match(bindTemplate, /class="state-card empty-card empty-student-card"[\s\S]*class="state-marker state-marker-empty"/);
+
+  assert.match(uploadTemplate, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  assert.match(uploadTemplate, /class="state-card upload-stage upload-progress-card/);
+  assert.match(uploadTemplate, /class="state-marker {{uploadStage === 'failed' \|\| uploadStage === 'partial_failed' \? 'state-marker-error' : uploadStage === 'ready' \? 'state-marker-success' : 'state-marker-processing'}}"/);
+  assert.match(uploadTemplate, /class="state-card upload-result-card/);
+  assert.match(uploadTemplate, /class="state-marker {{uploadTaskSummary.state === 'failed' \|\| uploadTaskSummary.state === 'partial_failed' \? 'state-marker-error' : uploadTaskSummary.state === 'ready' \? 'state-marker-success' : 'state-marker-processing'}}"/);
+
+  assert.match(wrongbookTemplate, /class="state-card upload-status-card/);
+  assert.match(wrongbookTemplate, /class="state-marker {{uploadTaskSummary.state === 'failed' \|\| uploadTaskSummary.state === 'partial_failed' \? 'state-marker-error' : 'state-marker-processing'}}"/);
+  assert.match(wrongbookTemplate, /class="state-card loading-card"[\s\S]*class="state-marker state-marker-loading"/);
+  assert.match(wrongbookTemplate, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
+  assert.match(wrongbookTemplate, /class="state-card empty-card"[\s\S]*class="state-marker state-marker-empty"/);
+  assert.match(wrongbookTemplate, /class="item-status-card {{item.recognitionStatus === 'failed' \? 'item-status-error' : 'item-status-processing'}}"[\s\S]*class="state-marker item-status-marker {{item.recognitionStatus === 'failed' \? 'state-marker-error' : 'state-marker-processing'}}"/);
 });
 
 test('parent upload and wrongbook pages expose primary topic category controls', () => {
@@ -249,7 +284,7 @@ test('parent bind page uses official card hierarchy for lookup, existing childre
   assert.match(bindTemplate, /class="panel-card class-result"/);
   assert.match(bindTemplate, /class="class-result-title"/);
   assert.match(bindTemplate, /class="student-info"/);
-  assert.match(bindTemplate, /class="state-card empty-student-card"/);
+  assert.match(bindTemplate, /class="state-card empty-card empty-student-card"/);
 
   assert.match(bindStyles, /\.invite-panel\s*\{[^}]*gap:\s*22rpx;/s);
   assert.match(bindStyles, /\.lookup-btn\s*\{[^}]*width:\s*100%;/s);

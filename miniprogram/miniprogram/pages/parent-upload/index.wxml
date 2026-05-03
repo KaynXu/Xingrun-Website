@@ -6,6 +6,7 @@
   </view>
 
   <view wx:if="{{errorMessage}}" class="state-card error-card">
+    <text class="state-marker state-marker-error">需要处理</text>
     <text class="state-title">这次上传没成功</text>
     <text class="state-desc">{{errorMessage}}</text>
   </view>
@@ -169,9 +170,10 @@
       </view>
     </view>
 
-    <view wx:if="{{uploadStageText}}" class="upload-stage upload-progress-card {{uploadStage === 'failed' || uploadStage === 'partial_failed' ? 'upload-stage-error' : 'upload-stage-active'}}">
-      <text class="upload-stage-title">{{uploadStageTitle || '上传进度'}}</text>
-      <text class="upload-stage-desc">{{uploadStageText}}</text>
+    <view wx:if="{{uploadStageText}}" class="state-card upload-stage upload-progress-card {{uploadStage === 'failed' || uploadStage === 'partial_failed' ? 'error-card' : uploadStage === 'ready' ? 'success-card' : 'processing-card'}}">
+      <text class="state-marker {{uploadStage === 'failed' || uploadStage === 'partial_failed' ? 'state-marker-error' : uploadStage === 'ready' ? 'state-marker-success' : 'state-marker-processing'}}">{{uploadStage === 'failed' || uploadStage === 'partial_failed' ? '需要处理' : uploadStage === 'ready' ? '已完成' : '处理中'}}</text>
+      <text class="state-title upload-stage-title">{{uploadStageTitle || '上传进度'}}</text>
+      <text class="state-desc upload-stage-desc">{{uploadStageText}}</text>
     </view>
 
     <view class="bottom-action-bar">
@@ -183,7 +185,8 @@
     </view>
   </view>
 
-  <view wx:if="{{successTaskIds.length}}" class="state-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : 'success-card'}}">
+  <view wx:if="{{successTaskIds.length}}" class="state-card upload-result-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : uploadTaskSummary.state === 'ready' ? 'success-card' : 'processing-card'}}">
+    <text class="state-marker {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'state-marker-error' : uploadTaskSummary.state === 'ready' ? 'state-marker-success' : 'state-marker-processing'}}">{{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? '需要处理' : uploadTaskSummary.state === 'ready' ? '已完成' : '处理中'}}</text>
     <text class="state-title">{{uploadTaskSummary.title || '已提交'}}</text>
     <text class="state-desc">{{uploadTaskSummary.description || '服务器正在识别。'}}</text>
     <view class="success-actions">

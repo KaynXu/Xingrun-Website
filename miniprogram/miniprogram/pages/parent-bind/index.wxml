@@ -20,6 +20,7 @@
   </view>
 
   <view wx:if="{{errorMessage}}" class="state-card error-card">
+    <text class="state-marker state-marker-error">需要处理</text>
     <text class="state-title">暂时无法继续</text>
     <text class="state-desc">{{errorMessage}}</text>
   </view>
@@ -58,7 +59,8 @@
         </button>
       </view>
     </view>
-    <view wx:else class="state-card empty-student-card">
+    <view wx:else class="state-card empty-card empty-student-card">
+      <text class="state-marker state-marker-empty">暂无学生</text>
       <text class="state-title">这个班级暂时没有可绑定学生</text>
       <text class="state-desc">请确认邀请码是否来自孩子所在班级，或联系老师补充学生名单。</text>
     </view>

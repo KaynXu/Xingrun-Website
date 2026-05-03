@@ -33,17 +33,6 @@
   background: #f8fbff;
 }
 
-.empty-kicker {
-  display: inline-block;
-  margin-bottom: 16rpx;
-  padding: 6rpx 14rpx;
-  border-radius: 999rpx;
-  background: #e9f5ff;
-  color: #2375d8;
-  font-size: 22rpx;
-  font-weight: 600;
-}
-
 .binding-meta-stack {
   display: flex;
   flex-direction: column;

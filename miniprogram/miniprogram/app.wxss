@@ -140,6 +140,61 @@ page {
   background: #f4f9ff;
 }
 
+.loading-card,
+.empty-card {
+  background: #f8fbff;
+}
+
+.processing-card {
+  border: 2rpx solid rgba(173, 104, 0, 0.12);
+  background: #fffaf0;
+}
+
+.state-marker {
+  display: inline-block;
+  margin-bottom: 16rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.state-marker-loading {
+  background: #e9f5ff;
+  color: #2375d8;
+}
+
+.state-marker-empty {
+  background: #e9f5ff;
+  color: #2375d8;
+}
+
+.state-marker-processing {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
+.state-marker-success {
+  background: #e8faf0;
+  color: #1d8348;
+}
+
+.state-marker-error {
+  background: #fff1f0;
+  color: #c0392b;
+}
+
+.state-action-btn {
+  width: 100%;
+  margin-top: 22rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
 .bottom-action-bar {
   margin-top: 22rpx;
   padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
