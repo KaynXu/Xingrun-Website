@@ -98,8 +98,8 @@
         "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parent-facing action hierarchy is now standardized: child cards show upload as the primary action before wrongbook, upload box tools separate add/rotate from the danger delete action, success/progress next-step uses a primary wrongbook/progress button, and visual/upload proof scripts lock narrow-screen no-wrap and destructive separation."
     },
     {
       "id": "MP-VISUAL-004",

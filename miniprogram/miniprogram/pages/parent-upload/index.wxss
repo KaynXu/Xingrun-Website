@@ -226,11 +226,23 @@
   color: #dbe7ff;
 }
 
-.action-row {
+.box-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.box-tool-row {
   display: flex;
   align-items: stretch;
   gap: 12rpx;
-  margin-top: 18rpx;
+}
+
+.box-danger-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
 }
 
 .picker-btn {
@@ -250,7 +262,7 @@
   box-sizing: border-box;
 }
 
-.compact-btn {
+.tool-btn {
   flex: 1;
   margin-top: 0;
   min-width: 0;
@@ -258,6 +270,34 @@
   line-height: 72rpx;
   padding: 0 12rpx;
   font-size: 24rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.delete-box-btn {
+  min-width: 220rpx;
+  max-width: 100%;
+  margin-top: 0;
+  height: 72rpx;
+  line-height: 72rpx;
+  padding: 0 22rpx;
+  font-size: 24rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.success-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 22rpx;
+}
+
+.success-action-btn {
+  width: 100%;
+  margin-top: 0;
+  padding: 0 24rpx;
+  line-height: 72rpx;
   white-space: nowrap;
   box-sizing: border-box;
 }

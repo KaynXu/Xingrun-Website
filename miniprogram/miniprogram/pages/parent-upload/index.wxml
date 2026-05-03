@@ -72,10 +72,14 @@
 
       <text class="status-hint">{{currentStatusText}}</text>
 
-      <view class="action-row">
-        <button class="ghost-btn compact-btn" disabled="{{submitting || cropExporting}}" bindtap="addManualBox">补加框</button>
-        <button class="ghost-btn compact-btn" disabled="{{submitting || cropExporting}}" bindtap="removeActiveBox">删除当前</button>
-        <button class="ghost-btn compact-btn" disabled="{{submitting || cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
+      <view class="box-action-group">
+        <view class="box-tool-row">
+          <button class="ghost-btn tool-btn" disabled="{{submitting || cropExporting}}" bindtap="addManualBox">补加框</button>
+          <button class="ghost-btn tool-btn" disabled="{{submitting || cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转</button>
+        </view>
+        <view class="box-danger-row">
+          <button class="danger-btn delete-box-btn" disabled="{{submitting || cropExporting}}" bindtap="removeActiveBox">删除当前题框</button>
+        </view>
       </view>
     </view>
 
@@ -147,8 +151,10 @@
   <view wx:if="{{successTaskIds.length}}" class="state-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : 'success-card'}}">
     <text class="state-title">{{uploadTaskSummary.title || '已提交'}}</text>
     <text class="state-desc">{{uploadTaskSummary.description || '服务器正在识别。'}}</text>
-    <button class="ghost-btn" bindtap="openChildWrongbook">查看错题本 / 刷新进度</button>
-    <button class="ghost-btn" bindtap="backHome">返回家长主页</button>
+    <view class="success-actions">
+      <button class="primary-btn success-action-btn" bindtap="openChildWrongbook">查看错题本 / 刷新进度</button>
+      <button class="ghost-btn success-action-btn" bindtap="backHome">返回家长主页</button>
+    </view>
   </view>
 
   <canvas

@@ -70,15 +70,28 @@ test('parent upload page exposes crop-first multi-image controls', () => {
   assert.equal(uploadTemplate.includes('拍照或从相册里选一张图片'), false);
 });
 
-test('parent upload action buttons keep a stable single-row layout on narrow screens', () => {
+test('parent upload box tools keep stable hierarchy on narrow screens', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
   const uploadStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxss'), 'utf8');
 
-  assert.match(uploadStyles, /\.action-row\s*\{[^}]*display:\s*flex;/s);
-  assert.match(uploadStyles, /\.action-row\s*\{[^}]*align-items:\s*stretch;/s);
-  assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*flex:\s*1/s);
-  assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*height:\s*72rpx;/s);
-  assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*line-height:\s*72rpx;/s);
-  assert.match(uploadStyles, /\.compact-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+  const toolRow = uploadTemplate.slice(
+    uploadTemplate.indexOf('<view class="box-tool-row">'),
+    uploadTemplate.indexOf('</view>', uploadTemplate.indexOf('<view class="box-tool-row">')),
+  );
+  assert.equal(toolRow.includes('addManualBox'), true);
+  assert.equal(toolRow.includes('rotateCurrentImageClockwise'), true);
+  assert.equal(toolRow.includes('removeActiveBox'), false);
+  assert.match(uploadTemplate, /<button class="danger-btn delete-box-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="removeActiveBox">删除当前题框<\/button>/);
+  assert.match(uploadStyles, /\.box-action-group\s*\{[^}]*display:\s*flex;/s);
+  assert.match(uploadStyles, /\.box-action-group\s*\{[^}]*flex-direction:\s*column;/s);
+  assert.match(uploadStyles, /\.box-tool-row\s*\{[^}]*display:\s*flex;/s);
+  assert.match(uploadStyles, /\.box-tool-row\s*\{[^}]*align-items:\s*stretch;/s);
+  assert.match(uploadStyles, /\.tool-btn\s*\{[^}]*flex:\s*1/s);
+  assert.match(uploadStyles, /\.tool-btn\s*\{[^}]*height:\s*72rpx;/s);
+  assert.match(uploadStyles, /\.tool-btn\s*\{[^}]*line-height:\s*72rpx;/s);
+  assert.match(uploadStyles, /\.tool-btn\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(uploadStyles, /\.box-danger-row\s*\{[^}]*justify-content:\s*flex-end;/s);
+  assert.match(uploadStyles, /\.delete-box-btn\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 
 test('parent upload image picker button stays readable on narrow screens', () => {
@@ -105,9 +118,9 @@ test('parent upload controls that mutate the draft are disabled during submissio
   const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
 
   assert.match(uploadTemplate, /<button class="ghost-btn picker-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="chooseImages">/);
-  assert.match(uploadTemplate, /<button class="ghost-btn compact-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="addManualBox">补加框<\/button>/);
-  assert.match(uploadTemplate, /<button class="ghost-btn compact-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="removeActiveBox">删除当前<\/button>/);
-  assert.match(uploadTemplate, /<button class="ghost-btn compact-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转<\/button>/);
+  assert.match(uploadTemplate, /<button class="ghost-btn tool-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="addManualBox">补加框<\/button>/);
+  assert.match(uploadTemplate, /<button class="danger-btn delete-box-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="removeActiveBox">删除当前题框<\/button>/);
+  assert.match(uploadTemplate, /<button class="ghost-btn tool-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="rotateCurrentImageClockwise">顺时针旋转<\/button>/);
   assert.match(uploadTemplate, /<button[^>]*disabled="{{submitting \|\| cropExporting}}"[^>]*bindtap="switchActiveBoxReasonMode"[\s\S]*文字输入[\s\S]*<\/button>/);
   assert.match(uploadTemplate, /<button[^>]*disabled="{{submitting \|\| cropExporting}}"[^>]*bindtap="switchActiveBoxReasonMode"[\s\S]*语音说明[\s\S]*<\/button>/);
   assert.match(uploadTemplate, /<button class="ghost-btn voice-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="toggleActiveBoxVoiceRecording">/);
@@ -177,4 +190,24 @@ test('parent mini program pages stack action areas for narrow phone screens', ()
   assertRuleIncludes(wrongbookStyles, '.library-card', 'flex-direction: column;');
   assertRuleIncludes(wrongbookStyles, '.library-btn', 'width: 100%;');
   assertRuleIncludes(wrongbookStyles, '.library-btn', 'white-space: nowrap;');
+});
+
+test('parent-facing primary actions appear before nearby secondary follow-up actions', () => {
+  const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+  const homeActions = homeTemplate.slice(
+    homeTemplate.indexOf('class="binding-actions"'),
+    homeTemplate.indexOf('</view>', homeTemplate.indexOf('class="binding-actions"')),
+  );
+  const successActions = uploadTemplate.slice(
+    uploadTemplate.indexOf('<view class="success-actions">'),
+    uploadTemplate.indexOf('</view>', uploadTemplate.indexOf('<view class="success-actions">')),
+  );
+
+  assert.ok(homeActions.indexOf('上传错题') >= 0, 'home child card should include upload action');
+  assert.ok(homeActions.indexOf('查看错题本') >= 0, 'home child card should include wrongbook action');
+  assert.ok(homeActions.indexOf('上传错题') < homeActions.indexOf('查看错题本'));
+  assert.match(successActions, /class="primary-btn success-action-btn"[^>]*bindtap="openChildWrongbook"/);
+  assert.match(successActions, /class="ghost-btn success-action-btn"[^>]*bindtap="backHome"/);
+  assert.ok(successActions.indexOf('openChildWrongbook') < successActions.indexOf('backHome'));
 });

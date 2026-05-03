@@ -95,6 +95,19 @@ function expectOrder(text, before, after) {
   }
 }
 
+function blockBetween(text, startNeedle, endNeedle) {
+  const start = text.indexOf(startNeedle);
+  const end = text.indexOf(endNeedle, start);
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error(`could not locate block ${startNeedle}`);
+  }
+  return text.slice(start, end);
+}
+
+function expectOrderWithinBlock(text, startNeedle, endNeedle, before, after) {
+  expectOrder(blockBetween(text, startNeedle, endNeedle), before, after);
+}
+
 function selectorBody(styles, selector) {
   const bodies = [];
   const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
@@ -130,12 +143,7 @@ function expectNoSharedButtonRule(styles, selector) {
 }
 
 function expectNoPrimaryInBlock(text, startNeedle, endNeedle) {
-  const start = text.indexOf(startNeedle);
-  const end = text.indexOf(endNeedle, start);
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error(`could not locate block ${startNeedle}`);
-  }
-  const block = text.slice(start, end);
+  const block = blockBetween(text, startNeedle, endNeedle);
   if (block.includes('primary-btn')) {
     throw new Error(`${startNeedle} should not contain a primary button`);
   }
@@ -163,6 +171,7 @@ check('shared visual system: primitives live in app.wxss', () => {
   expectRule(sharedStyles, '.section-title', 'color: #10233f;');
   expectRule(sharedStyles, '.primary-btn', 'background: #2375d8;');
   expectRule(sharedStyles, '.ghost-btn', 'background: #eef5ff;');
+  expectRule(sharedStyles, '.danger-btn', 'background: #fff1f0;');
   expectRule(sharedStyles, '.icon-btn', 'width: 72rpx;');
   expectRule(sharedStyles, '.tag', 'border-radius: 999rpx;');
   expectRule(sharedStyles, '.bottom-action-bar', 'padding-bottom: calc(24rpx + env(safe-area-inset-bottom));');
@@ -183,7 +192,7 @@ check('parent-home: primary and secondary actions are grouped by child card', ()
   expectIncludes(pages.home.wxml, 'class="binding-actions"');
   expectIncludes(pages.home.wxml, 'class="ghost-btn mini-btn"');
   expectIncludes(pages.home.wxml, 'class="primary-btn mini-btn"');
-  expectOrder(pages.home.wxml, '查看错题本', '上传错题');
+  expectOrderWithinBlock(pages.home.wxml, 'class="binding-actions"', '</view>', '上传错题', '查看错题本');
   expectRule(pages.home.wxss, '.binding-actions', 'flex-direction: column;');
   expectRule(pages.home.wxss, '.binding-actions', 'width: 100%;');
   expectRule(pages.home.wxss, '.mini-btn', 'width: 100%;');
@@ -208,29 +217,54 @@ check('parent-upload: photo, box, reason, progress, and submit sections stay dis
   expectIncludes(pages.upload.wxml, 'class="ghost-btn picker-btn"');
   expectIncludes(pages.upload.wxml, 'bindtap="chooseImages"');
   expectIncludes(pages.upload.wxml, 'class="crop-stage-shell"');
-  expectIncludes(pages.upload.wxml, 'class="action-row"');
+  expectIncludes(pages.upload.wxml, 'class="box-action-group"');
+  expectIncludes(pages.upload.wxml, 'class="box-tool-row"');
+  expectIncludes(pages.upload.wxml, 'class="box-danger-row"');
   expectIncludes(pages.upload.wxml, '补加框');
-  expectIncludes(pages.upload.wxml, '删除当前');
+  expectIncludes(pages.upload.wxml, '删除当前题框');
   expectIncludes(pages.upload.wxml, '顺时针旋转');
   expectIncludes(pages.upload.wxml, 'class="reason-card"');
   expectIncludes(pages.upload.wxml, 'class="upload-stage {{uploadStage');
   expectIncludes(pages.upload.wxml, 'class="bottom-action-bar"');
   expectIncludes(pages.upload.wxml, 'class="primary-btn submit-btn"');
-  expectOrder(pages.upload.wxml, 'class="ghost-btn picker-btn"', 'class="action-row"');
-  expectOrder(pages.upload.wxml, 'class="action-row"', 'class="reason-card"');
+  expectOrder(pages.upload.wxml, 'class="ghost-btn picker-btn"', 'class="box-action-group"');
+  expectOrder(pages.upload.wxml, 'class="box-action-group"', 'class="reason-card"');
   expectOrder(pages.upload.wxml, 'class="upload-stage {{uploadStage', 'class="primary-btn submit-btn"');
 });
 
 check('parent-upload: destructive box action is visually separated from final submit', () => {
-  expectMatch(pages.upload.wxml, /<button class="ghost-btn compact-btn"[^>]*bindtap="removeActiveBox">删除当前<\/button>/);
+  const toolBlock = blockBetween(pages.upload.wxml, '<view class="box-tool-row">', '</view>');
+  if (toolBlock.includes('removeActiveBox')) {
+    throw new Error('delete action should not be inside the main box tool row');
+  }
+  expectMatch(toolBlock, /<button class="ghost-btn tool-btn"[^>]*bindtap="addManualBox">补加框<\/button>/);
+  expectMatch(toolBlock, /<button class="ghost-btn tool-btn"[^>]*bindtap="rotateCurrentImageClockwise">顺时针旋转<\/button>/);
+  expectMatch(pages.upload.wxml, /<view class="box-danger-row">[\s\S]*<button class="danger-btn delete-box-btn"[^>]*bindtap="removeActiveBox">删除当前题框<\/button>[\s\S]*<\/view>/);
   expectMatch(pages.upload.wxml, /<button class="primary-btn submit-btn"[^>]*bindtap="submitUpload">统一提交所有错题<\/button>/);
-  expectNoPrimaryInBlock(pages.upload.wxml, '<view class="action-row">', '</view>');
-  expectOrder(pages.upload.wxml, '删除当前', '统一提交所有错题');
-  expectRule(pages.upload.wxss, '.action-row', 'display: flex;');
-  expectRule(pages.upload.wxss, '.action-row', 'align-items: stretch;');
-  expectRule(pages.upload.wxss, '.compact-btn', 'flex: 1;');
-  expectRule(pages.upload.wxss, '.compact-btn', 'min-width: 0;');
-  expectRule(pages.upload.wxss, '.compact-btn', 'white-space: nowrap;');
+  expectNoPrimaryInBlock(pages.upload.wxml, '<view class="box-action-group">', '<view wx:if="{{activeBox}}"');
+  expectOrder(pages.upload.wxml, '顺时针旋转', '删除当前题框');
+  expectOrder(pages.upload.wxml, '删除当前题框', '统一提交所有错题');
+  expectRule(pages.upload.wxss, '.box-action-group', 'display: flex;');
+  expectRule(pages.upload.wxss, '.box-action-group', 'flex-direction: column;');
+  expectRule(pages.upload.wxss, '.box-tool-row', 'display: flex;');
+  expectRule(pages.upload.wxss, '.box-tool-row', 'align-items: stretch;');
+  expectRule(pages.upload.wxss, '.tool-btn', 'flex: 1;');
+  expectRule(pages.upload.wxss, '.tool-btn', 'min-width: 0;');
+  expectRule(pages.upload.wxss, '.tool-btn', 'white-space: nowrap;');
+  expectRule(pages.upload.wxss, '.box-danger-row', 'display: flex;');
+  expectRule(pages.upload.wxss, '.box-danger-row', 'justify-content: flex-end;');
+  expectRule(pages.upload.wxss, '.delete-box-btn', 'white-space: nowrap;');
+});
+
+check('parent-upload: success actions make progress or wrongbook the primary next step', () => {
+  expectIncludes(pages.upload.wxml, 'class="success-actions"');
+  expectMatch(pages.upload.wxml, /<button class="primary-btn success-action-btn"[^>]*bindtap="openChildWrongbook">查看错题本 \/ 刷新进度<\/button>/);
+  expectMatch(pages.upload.wxml, /<button class="ghost-btn success-action-btn"[^>]*bindtap="backHome">返回家长主页<\/button>/);
+  expectOrderWithinBlock(pages.upload.wxml, '<view class="success-actions">', '</view>', 'openChildWrongbook', 'backHome');
+  expectRule(pages.upload.wxss, '.success-actions', 'display: flex;');
+  expectRule(pages.upload.wxss, '.success-actions', 'flex-direction: column;');
+  expectRule(pages.upload.wxss, '.success-action-btn', 'width: 100%;');
+  expectRule(pages.upload.wxss, '.success-action-btn', 'white-space: nowrap;');
 });
 
 check('parent-upload: bottom submit area has narrow-screen and safe-area spacing rules', () => {

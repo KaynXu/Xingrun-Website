@@ -80,6 +80,7 @@ page {
 
 .primary-btn,
 .ghost-btn,
+.danger-btn,
 .icon-btn {
   margin-top: 22rpx;
   border-radius: 22rpx;
@@ -99,6 +100,11 @@ page {
   color: #2375d8;
 }
 
+.danger-btn {
+  background: #fff1f0;
+  color: #c0392b;
+}
+
 .icon-btn {
   display: flex;
   align-items: center;
@@ -111,6 +117,7 @@ page {
 
 .primary-btn::after,
 .ghost-btn::after,
+.danger-btn::after,
 .icon-btn::after {
   border: none;
 }

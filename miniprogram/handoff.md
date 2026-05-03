@@ -5,7 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-03 当前活跃 Ralph 队列为“小程序视觉正式版升级”：新的 `scripts/ralph/prd.json` 只聚焦微信小程序前端 `miniprogram/miniprogram/`，目标是让家长端页面更好看、更像正式产品，尤其锁定按钮位置、主次操作排列、底部操作区、小屏不换行/不重叠；旧“小程序家长上传 2.0 稳定性”PRD/进度已归档到 `scripts/ralph/archive/miniprogram_upload_2_stability_prd_20260503.json` 和 `scripts/ralph/archive/miniprogram_upload_2_stability_progress_20260503.txt`。`MP-VISUAL-001` 和 `MP-VISUAL-002` 已完成；共享视觉 primitives 已集中到 `miniprogram/miniprogram/app.wxss`，`scripts/ralph/run_codex_ralph.sh --check` 当前下一条为 `MP-VISUAL-003`。
+- 2026-05-03 当前活跃 Ralph 队列为“小程序视觉正式版升级”：新的 `scripts/ralph/prd.json` 只聚焦微信小程序前端 `miniprogram/miniprogram/`，目标是让家长端页面更好看、更像正式产品，尤其锁定按钮位置、主次操作排列、底部操作区、小屏不换行/不重叠；旧“小程序家长上传 2.0 稳定性”PRD/进度已归档到 `scripts/ralph/archive/miniprogram_upload_2_stability_prd_20260503.json` 和 `scripts/ralph/archive/miniprogram_upload_2_stability_progress_20260503.txt`。`MP-VISUAL-001`、`MP-VISUAL-002` 和 `MP-VISUAL-003` 已完成；共享视觉 primitives 已集中到 `miniprogram/miniprogram/app.wxss`，按钮层级已锁定为孩子卡片主操作优先、上传工具与删除隔离、成功态错题本/进度为主操作；`scripts/ralph/run_codex_ralph.sh --check` 当前下一条为 `MP-VISUAL-004`。
 - 2026-05-03 “小程序家长上传 2.0 稳定性”Ralph PRD 已归档；`MP-UPLOAD-001` 到 `MP-UPLOAD-012` 已全部完成，本地自动验收已收口。
 - 2026-05-03 `MP-UPLOAD-012` 已完成：新增最终验收脚本 `scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh`，显式检查选图、补框、文字/语音错因、裁切导出、提交、任务接收、ready/failed/pending 轮询、错题本刷新、PDF 未就绪、活代码无当前 AI 框选能力、PRD 全 story `passes=true`，并串起定向小程序/bridge/网站测试和共享基线 proof。
 - 2026-05-03 `MP-UPLOAD-011` 已完成：新增生产上传链路 smoke runbook `docs/production-upload-pipeline-smoke-runbook.md` 和本地校验脚本 `scripts/ralph/production_upload_smoke_runbook_proof.sh`，覆盖 PM2、Redis/RQ worker、Flask、bridge、上传大小限制、任务状态、错题本/PDF 检查，以及 pending、enqueue 失败、413、PDF refresh 失败处理；自动 proof 只校验本地引用和基线，不访问生产。
@@ -21,7 +21,7 @@
 - 家长错题本页已恢复学生级 `查看 PDF`，bridge 仍保留 `GET /wechat/parent/children/:studentId/wrong-question-library`。
 - 家长错题本页的题目卡片现在已补上轻量 LaTeX 可读化：`pages/parent-wrongbook/latex-preview.js` 会把 `$...$`、`\frac`、`\sqrt`、`\mathbb{R}`、上下标等源码转成普通文本预览，避免小程序列表里直接显示公式源码；顶部 `查看 PDF` 仍是服务器上的正式版排版。
 - 家长错题本页的 LaTeX 预处理 helper 这一版已改成更保守的小程序兼容写法，不再依赖 `Array.from` 或 `String.fromCharCode` 这类本项目此前未在小程序侧使用过的 API，优先避免微信运行时白屏。
-- 家长上传页当前是手动补框模式：`补加框 / 删除当前 / 顺时针旋转`，每个题框可选填写文字或语音错因，再统一提交。
+- 家长上传页当前是手动补框模式：`补加框 / 顺时针旋转` 是同组普通工具，`删除当前题框` 已拆成独立 danger 操作；每个题框可选填写文字或语音错因，再统一提交。
 - 家长上传页手动框选已补稳定性：大竖图/大横图会按预览区稳定布局，旋转后当前图片和小题框选中状态保持，删除当前框后选中同位置的下一框，裁切失败会标明第几题且保留草稿，裁切/旋转导出期间会锁住手势和重复提交。
 - 家长上传页手动题框的最小缩放限制已从旧的 `72px`/`0.08` 归一化下限收小为 `16px` 预览尺寸；保存和旋转都不会再把家长调好的小题框强制放大，便于框单道小题或较窄题目。
 - 家长上传页现在允许“切到语音错因但未成功录音”的题目继续提交：生成上传任务时只有存在 `voiceFilePath` 才保留 `voice` 模式，否则回退为 `text`/空错因，避免拿空音频路径调用 `/upload` 导致整批提交失败。
@@ -33,6 +33,7 @@
 - 家长首页、家长绑定页和家长错题本页的关键操作区已改成窄屏优先布局：孩子卡片、学生绑定卡片和错题库 PDF 入口不再横向挤压，操作按钮改为全宽单行，优先降低安卓/鸿蒙/微信容器窄屏下的换行和误触风险。
 
 ## 本轮完成
+- 2026-05-03 已完成 `MP-VISUAL-003`：家长首页孩子卡片改为主操作 `上传错题` 在前、次操作 `查看错题本` 在后；上传页把 `补加框 / 顺时针旋转` 归为普通工具，把 `删除当前题框` 拆成独立 danger 操作；上传成功态把 `查看错题本 / 刷新进度` 设为主操作、`返回家长主页` 设为次操作。`scripts/ralph/miniprogram_visual_polish_proof.sh` 已新增对应结构检查，临时 proof `/tmp/xingrun_mp_visual_003_proof.sh` 串跑视觉 proof 和上传稳定性 proof 通过。
 - 2026-05-03 已完成 `MP-VISUAL-002`：`app.wxss` 现在统一承载家长端页面背景、卡片、标题、主/次/icon 按钮、状态标签和 safe-area bottom action bar；页面 wxss 保留页面专属布局和上传裁切/画布规则，不再各自定义 `.primary-btn` / `.ghost-btn` 主色。`scripts/ralph/miniprogram_visual_polish_proof.sh` 已新增共享视觉 system 和按钮样式集中化检查。
 - 2026-05-03 已完成 `MP-VISUAL-001`：新增 `scripts/ralph/miniprogram_visual_polish_proof.sh`，本地检查 parent-home、parent-bind、parent-upload、parent-wrongbook 的页面结构、主次按钮层级、删除动作隔离、底部提交/窄屏按钮规则和原型/调试类文案残留；该 proof 不依赖微信开发者工具、真机、生产数据、密钥、Redis/RQ 或 Flask。
 - 2026-05-03 已完成 `MP-UPLOAD-012`：最终 guardrail `scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh` 会先检查验收覆盖清单和活代码 AI 框选残留，再运行上传页/错题本/parentApi、bridge、网站上传 API/worker 定向测试，并强制 PRD 全 story 为 `passes=true` 后才报告完成。
@@ -67,7 +68,7 @@
 - 这轮超大图片上传修复已用本地自动测试覆盖导出尺寸规划，但还没有让真实小课家长重新拍一张原图提交来确认线上不再触发 `413`。
 
 ## 下一步
-- 当前 Ralph 下一条自动 story 是 `MP-VISUAL-003 Standardize button position and action hierarchy`；后续视觉 story 必须同时跑 `scripts/ralph/miniprogram_visual_polish_proof.sh` 和 `scripts/ralph/miniprogram_upload_stability_proof.sh`。
+- 当前 Ralph 下一条自动 story 是 `MP-VISUAL-004 Polish parent home into a finished entry screen`；后续视觉 story 必须同时跑 `scripts/ralph/miniprogram_visual_polish_proof.sh` 和 `scripts/ralph/miniprogram_upload_stability_proof.sh`。
 - 下一步只做手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
 - 在目标服务器上先安装新依赖并用一段“中文叙述 + 英文字母/公式”真实短录音走一遍家长上传转录，确认模型首次下载、常驻内存、自动识别结果和单次转录时延都能接受；如果 `base` 效果不够，再单独评估是否升到 `small`。
 - 在微信开发者工具或真机打开家长上传页，确认顶部“拍照 / 继续选图”和底部“统一提交所有错题”在窄屏和长文案状态下都不再换行。

@@ -33,8 +33,8 @@
         <text class="binding-meta">{{item.className || '未命名班级'}}</text>
       </view>
       <view class="binding-actions">
-        <button class="ghost-btn mini-btn" data-student-id="{{item.studentId}}" data-student-name="{{item.studentName}}" bindtap="goWrongbook">查看错题本</button>
         <button class="primary-btn mini-btn" data-binding-id="{{item.id}}" bindtap="goUpload">上传错题</button>
+        <button class="ghost-btn mini-btn" data-student-id="{{item.studentId}}" data-student-name="{{item.studentName}}" bindtap="goWrongbook">查看错题本</button>
       </view>
     </view>
   </view>
