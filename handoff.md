@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-05 Task 3 已完成“超级管理员本周错题活跃数据总结”前端数据模型：`frontend/src/smartWrongQuestions.ts` 新增 weekly activity summary 的 class/teacher/student/summary TypeScript 接口、`buildWeeklyWrongQuestionActivitySummaryPath()` 和 `normalizeWeeklyWrongQuestionActivitySummaryResponse()`，支持可选机构过滤、snake_case/camelCase 周字段和三类列表归一化；定向前端测试与 `git diff --check` 已通过。后续继续接入网页智能错题超级管理员面板。
 - 2026-05-05 Task 2 review follow-up 已完成：加强 `WeeklyWrongQuestionActivitySummaryApiTestCase.test_organization_id_filter_limits_summary`，在 API 过滤用例中新增另一个机构/班级/学生/同周 recognized 错题记录，并断言按 `self.organization_id` 查询时其他机构班级和学生不会出现在响应里；生产 API 行为无需修改。
 - 2026-05-05 Task 2 已完成“超级管理员本周错题活跃数据总结”Flask API：新增 `GET /api/admin/wrong-question-activity-summary`，仅 `super_owner` 可访问，复用 `_weekly_range()` 和 `lesson_manager.list_weekly_wrong_question_activity_summary()`，支持 `week_start` 校验与可选 `organization_id` 过滤；API 回归覆盖超级管理员访问、机构过滤、owner 403 和非法日期 400。后续仍需继续接入网页智能错题前端面板。
 - 2026-05-05 Task 1 已完成“超级管理员本周错题活跃数据总结”的后端 store 聚合：`lesson_manager.list_weekly_wrong_question_activity_summary()` 已按周边界、机构过滤、错题识别状态、`organization_name`、活跃待跟进数、学生 recognized 历史总题数、学生本周专题频率 top 1-3 和三类列表排序口径落地；新增 `tests/test_weekly_wrong_question_activity_summary.py` 覆盖班级/老师/学生聚合、organization 过滤、契约字段和专题频率。后续仍需继续做 Flask API 和前端 UI。

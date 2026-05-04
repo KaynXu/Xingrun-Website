@@ -10,6 +10,7 @@ import { JSDOM } from 'jsdom';
 import {
   applyWrongQuestionReviewDraft,
   buildMemberStudentNotebookSummaries,
+  buildWeeklyWrongQuestionActivitySummaryPath,
   buildWeeklyWrongQuestionFollowupArchivePath,
   buildWeeklyWrongQuestionFollowupMessagePath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
@@ -27,6 +28,7 @@ import {
   hydrateWrongQuestionReviewDraftFromDetail,
   isDownstreamWrongQuestionRecord,
   isWechatMiniProgramWrongQuestionRecord,
+  normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
@@ -577,6 +579,17 @@ test('weekly followup path builders keep the feature web-only', () => {
   );
 });
 
+test('weekly activity summary path builder supports optional organization filtering', () => {
+  assert.equal(
+    buildWeeklyWrongQuestionActivitySummaryPath('2026-05-04'),
+    '/api/admin/wrong-question-activity-summary?week_start=2026-05-04',
+  );
+  assert.equal(
+    buildWeeklyWrongQuestionActivitySummaryPath('2026-05-04', 12),
+    '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=12',
+  );
+});
+
 test('normalizeWeeklyWrongQuestionFollowupResponse preserves cached messages', () => {
   const payload = normalizeWeeklyWrongQuestionFollowupResponse({
     class_id: 42,
@@ -632,6 +645,57 @@ test('normalizeWeeklyWrongQuestionFollowupResponse falls back for malformed nume
   assert.equal(payload.items[0]?.weeklyQuestionCount, 0);
   assert.equal(payload.items[0]?.totalActiveQuestionCount, 0);
   assert.equal(payload.items[0]?.message?.id, 0);
+});
+
+test('normalizeWeeklyWrongQuestionActivitySummaryResponse preserves class teacher and student lists', () => {
+  const normalized = normalizeWeeklyWrongQuestionActivitySummaryResponse({
+    week_start: '2026-05-04',
+    week_end: '2026-05-10',
+    class_items: [
+      {
+        organization_id: 1,
+        organization_name: '星润',
+        class_id: 15,
+        class_name: '五年级3班',
+        weekly_question_count: 18,
+        uploading_student_count: 6,
+        latest_created_at: '2026-05-04 18:32:00',
+      },
+    ],
+    teacher_items: [
+      {
+        organization_id: 1,
+        organization_name: '星润',
+        teacher_user_id: 9,
+        teacher_name: '王老师',
+        class_count: 2,
+        weekly_question_count: 31,
+        involved_student_count: 12,
+        pending_followup_count: 5,
+      },
+    ],
+    student_items: [
+      {
+        organization_id: 1,
+        organization_name: '星润',
+        class_id: 15,
+        class_name: '七年级5班',
+        student_id: 76,
+        student_name: '王睿博',
+        weekly_question_count: 7,
+        total_question_count: 24,
+        topic_categories: ['几何', '计算'],
+        latest_created_at: '2026-05-04 18:32:00',
+      },
+    ],
+  });
+
+  assert.equal(normalized.weekStart, '2026-05-04');
+  assert.equal(normalized.weekEnd, '2026-05-10');
+  assert.equal(normalized.classItems[0]?.className, '五年级3班');
+  assert.equal(normalized.classItems[0]?.uploadingStudentCount, 6);
+  assert.equal(normalized.teacherItems[0]?.pendingFollowupCount, 5);
+  assert.equal(normalized.studentItems[0]?.topicCategories.join('、'), '几何、计算');
 });
 
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
