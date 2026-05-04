@@ -369,6 +369,95 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
             )
         return record
 
+    def _ready_practice_sheet(self, *, record: dict, created_at: str, pdf_path: str = "/tmp/practice.pdf") -> dict:
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.teacher_user_id,
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(record["id"])],
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": record["id"],
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "下次我会先 ______。",
+                }
+            ],
+            pdf_path=pdf_path,
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_practice_sheets SET created_at=?, updated_at=? WHERE id=?",
+                (created_at, created_at, sheet["id"]),
+            )
+        saved = lesson_manager.get_wrong_question_practice_sheet(sheet["id"])
+        self.assertIsNotNone(saved)
+        return saved
+
+    def test_list_weekly_followups_uses_ready_practice_sheet_before_raw_wrong_questions(self):
+        alice_record = self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/alice-practice.png",
+            created_at="2026-04-03 09:00:00",
+            topic_category="计算",
+            secondary_error_summary="符号细节不稳定",
+        )
+        sheet = self._ready_practice_sheet(
+            record=alice_record,
+            created_at="2026-04-08 12:00:00",
+            pdf_path="/tmp/alice-practice.pdf",
+        )
+        bob_record = self._recognized_record(
+            binding_id=self.bob_binding["id"],
+            image_url="https://files.example.com/bob-candidate.png",
+            created_at="2026-04-07 11:00:00",
+            topic_category="几何",
+            secondary_error_summary="角度关系没有标完整",
+        )
+
+        students = lesson_manager.list_weekly_wrong_question_followup_students(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            week_start_date="2026-04-06",
+            week_end_date="2026-04-12",
+        )
+
+        by_name = {item["student_name"]: item for item in students}
+        self.assertEqual(by_name["Alice"]["status"], "has_practice_sheet")
+        self.assertEqual(by_name["Alice"]["practice_sheet"]["id"], sheet["id"])
+        self.assertEqual(by_name["Alice"]["practice_sheet"]["status"], "ready")
+        self.assertEqual(by_name["Alice"]["practice_sheet"]["pdf_path"], "/tmp/alice-practice.pdf")
+        self.assertEqual(by_name["Alice"]["weekly_question_count"], 1)
+        self.assertEqual(by_name["Alice"]["source_record_ids"], [alice_record["id"]])
+        self.assertEqual(by_name["Alice"]["topic_categories"], ["计算"])
+
+        self.assertEqual(by_name["Bob"]["status"], "needs_practice_sheet")
+        self.assertEqual(by_name["Bob"]["candidate_question_count"], 1)
+        self.assertEqual(by_name["Bob"]["recommended_category"], "几何")
+        self.assertIn("几何", by_name["Bob"]["recommendation_reason"])
+        self.assertEqual(by_name["Bob"]["candidate_record_ids"], [bob_record["id"]])
+
+    def test_list_weekly_followups_excludes_questions_older_than_six_months_from_candidates(self):
+        self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/alice-old.png",
+            created_at="2025-09-01 09:00:00",
+            topic_category="计算",
+            secondary_error_summary="这条错题已经超过半年",
+        )
+
+        students = lesson_manager.list_weekly_wrong_question_followup_students(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            week_start_date="2026-04-06",
+            week_end_date="2026-04-12",
+        )
+
+        by_name = {item["student_name"]: item for item in students}
+        self.assertEqual(by_name["Alice"]["status"], "no_practice_needed")
+        self.assertEqual(by_name["Alice"]["candidate_question_count"], 0)
+        self.assertEqual(by_name["Alice"]["candidate_record_ids"], [])
+
     def test_list_weekly_wrong_question_followup_students_groups_active_recognized_records_by_student(self):
         alice_week_one = self._recognized_record(
             binding_id=self.alice_binding["id"],
@@ -585,11 +674,15 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
             week_end_date="2026-04-12",
         )
 
-        self.assertEqual(len(students), 1)
-        self.assertEqual(students[0]["weekly_question_count"], 2)
-        self.assertEqual(students[0]["source_record_ids"], [end_boundary["id"], start_boundary["id"]])
-        self.assertNotIn(before_week["id"], students[0]["source_record_ids"])
-        self.assertNotIn(after_week["id"], students[0]["source_record_ids"])
+        by_name = {item["student_name"]: item for item in students}
+        self.assertEqual(by_name["Alice"]["status"], "needs_practice_sheet")
+        self.assertEqual(by_name["Alice"]["weekly_question_count"], 3)
+        self.assertEqual(
+            by_name["Alice"]["source_record_ids"],
+            [end_boundary["id"], start_boundary["id"], before_week["id"]],
+        )
+        self.assertNotIn(after_week["id"], by_name["Alice"]["source_record_ids"])
+        self.assertEqual(by_name["Bob"]["status"], "no_practice_needed")
         with lesson_manager.get_conn() as conn:
             indexes = {
                 row["name"]
