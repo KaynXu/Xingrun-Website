@@ -14,6 +14,161 @@ import lesson_manager
 import ai_processor
 
 
+class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        lesson_manager.DB_PATH = Path(self.temp_dir.name) / "xingrun.db"
+        lesson_manager.init_db()
+
+        import app as app_module
+
+        app_module.CFG_PATH = Path(self.temp_dir.name) / "config.json"
+        app_module.app.config["TESTING"] = True
+        self.app_module = app_module
+        self.client = app_module.app.test_client()
+        org_request = lesson_manager.create_organization_request(
+            "每周跟进测试机构",
+            "weekly_api_owner",
+            "每周跟进负责人",
+            "owner-pass",
+            recovery_phone="13800000001",
+        )
+        super_owner = lesson_manager.get_user_by_username("Kayn")
+        lesson_manager.approve_organization_request(org_request["id"], super_owner["id"])
+        login = self.client.post(
+            "/api/login",
+            json={"username": "weekly_api_owner", "password": "owner-pass"},
+        )
+        self.assertEqual(login.status_code, 200)
+        login_payload = login.get_json()
+        self.owner = login_payload["user"]
+        self.token = login_payload["token"]
+        self.headers = {"X-Auth-Token": self.token}
+        self.class_id = lesson_manager.save_class(
+            "六年级 3 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=self.owner["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(self.class_id, self.owner["id"])
+        self.student = lesson_manager.create_student_for_class(self.class_id, "周同学")
+        self.parent_account = lesson_manager.upsert_parent_wechat_account(openid="openid-weekly-api")
+        self.binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=self.parent_account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        self.record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=self.binding["id"],
+            image_url="https://files.example.com/weekly-api.png",
+            recognition_status="recognized",
+            topic_category="计算",
+            secondary_error_summary="通分时漏乘分子",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=?, student_library_pdf_path=? WHERE id=?",
+                ("2026-04-08 09:30:00", "/tmp/student-weekly.pdf", self.record["id"]),
+            )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_get_weekly_followups_returns_students_without_miniprogram_key(self):
+        response = self.client.get(
+            f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["class_id"], self.class_id)
+        self.assertEqual(payload["class_name"], "六年级 3 班")
+        self.assertEqual(payload["week_start_date"], "2026-04-06")
+        self.assertEqual(payload["week_end_date"], "2026-04-12")
+        self.assertEqual(payload["total"], 1)
+        self.assertNotIn("miniprogram", payload)
+        item = payload["items"][0]
+        self.assertEqual(item["student_name"], "周同学")
+        self.assertEqual(item["source_record_ids"], [self.record["id"]])
+        self.assertIsNone(item["message"])
+        self.assertNotIn("miniprogram", item)
+
+    def test_post_weekly_followup_message_generates_and_caches_message(self):
+        with mock.patch(
+            "app.ai_processor.generate_weekly_wrong_question_followup_message",
+            return_value="周同学妈妈，这周计算题先盯通分这个小点。",
+        ) as generate_message:
+            response = self.client.post(
+                "/api/wrong-question-followups/weekly/messages",
+                json={
+                    "class_id": self.class_id,
+                    "student_id": self.student["id"],
+                    "week_start": "2026-04-08",
+                },
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["message"]["message_text"], "周同学妈妈，这周计算题先盯通分这个小点。")
+        generate_kwargs = generate_message.call_args.kwargs
+        self.assertEqual(generate_kwargs["student_name"], "周同学")
+        self.assertEqual(generate_kwargs["class_name"], "六年级 3 班")
+        self.assertFalse(generate_kwargs["has_practice_sheet"])
+
+        cached = lesson_manager.get_weekly_wrong_question_followup_message(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            week_start_date="2026-04-06",
+            style="warm",
+        )
+        self.assertEqual(cached["message_text"], "周同学妈妈，这周计算题先盯通分这个小点。")
+        self.assertEqual(cached["source_record_ids"], [self.record["id"]])
+
+        list_response = self.client.get(
+            f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
+            headers=self.headers,
+        )
+        self.assertEqual(
+            list_response.get_json()["items"][0]["message"]["message_text"],
+            "周同学妈妈，这周计算题先盯通分这个小点。",
+        )
+
+    def test_weekly_followup_inaccessible_class_returns_404(self):
+        org_request = lesson_manager.create_organization_request(
+            "外部机构",
+            "weekly_external_owner",
+            "外部负责人",
+            "owner-pass",
+            recovery_phone="13900000000",
+        )
+        other_owner, _ = lesson_manager.approve_organization_request(org_request["id"], self.owner["id"])
+        other_class_id = lesson_manager.save_class(
+            "外部班级",
+            organization_id=other_owner["organization_id"],
+        )
+
+        get_response = self.client.get(
+            f"/api/wrong-question-followups/weekly?class_id={other_class_id}&week_start=2026-04-08",
+            headers=self.headers,
+        )
+        post_response = self.client.post(
+            "/api/wrong-question-followups/weekly/messages",
+            json={
+                "class_id": other_class_id,
+                "student_id": self.student["id"],
+                "week_start": "2026-04-08",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(get_response.status_code, 404)
+        self.assertEqual(post_response.status_code, 404)
+
+
 class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
