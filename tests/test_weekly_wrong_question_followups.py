@@ -4,12 +4,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import lesson_manager
+import ai_processor
 
 
 class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
@@ -259,6 +261,39 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
                 for row in conn.execute("PRAGMA index_list(wrong_question_submissions)").fetchall()
             }
         self.assertIn("idx_wrong_question_submissions_weekly_followup", indexes)
+
+
+class WeeklyWrongQuestionFollowupAiTestCase(unittest.TestCase):
+    def test_generate_weekly_wrong_question_followup_message_uses_teacher_wechat_prompt(self):
+        client = mock.Mock()
+        client.chat.completions.create.return_value.choices = [
+            mock.Mock(
+                message=mock.Mock(
+                    content="王睿博妈妈，我刚看了下孩子这周的错题，几何第一步还需要再收一下。"
+                )
+            )
+        ]
+
+        with mock.patch("ai_processor._get_client", return_value=client):
+            message = ai_processor.generate_weekly_wrong_question_followup_message(
+                student_name="王睿博",
+                class_name="七年级 5 班",
+                teacher_name="Kayn",
+                weekly_question_count=3,
+                total_active_question_count=12,
+                topic_categories=["几何", "计算"],
+                representative_reason_summaries=["几何读图第一步容易断"],
+                has_practice_sheet=True,
+            )
+
+        self.assertIn("王睿博妈妈", message)
+        call_kwargs = client.chat.completions.create.call_args.kwargs
+        sent_messages = call_kwargs["messages"]
+        sent_prompt = "\n".join(str(item["content"]) for item in sent_messages)
+        self.assertIn("像老师真实发给家长的微信", sent_prompt)
+        self.assertIn("不要写成报告", sent_prompt)
+        self.assertIn("小程序", sent_prompt)
+        self.assertIn("不提", sent_prompt)
 
 
 if __name__ == "__main__":

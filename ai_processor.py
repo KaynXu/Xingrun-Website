@@ -376,6 +376,18 @@ items 中每一项必须包含：
 16. 示例：若题目出现“定义域 [m-4,3m]、x∈[0,3m]、f(x) 单调递减、比较 f(x+1) 与 f(2x-m)”，不要写“复习函数定义和性质”；可以写“本题先核对两个自变量 x+1、2x-m 是否都落在 ______，再利用 f(x) 单调递减把 f(x+1)>f(2x-m) 转成 ______ 的不等式。”
 17. title 控制在 8 到 24 个字。"""
 
+WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT = """你是老师微信沟通助手。
+你会收到学生本周错题概况，请写一段老师可以直接发给家长的微信。
+
+要求：
+1. 像老师真实发给家长的微信，语气自然、具体、温和。
+2. 不要写成报告、通知、AI 总结或系统分析。
+3. 避免报告感表达，比如“本周错题主要集中在”“建议家长配合”“知识薄弱点”“提升能力”。
+4. 控制在 2 到 3 段微信可直接发送的短段落。
+5. 不提小程序、系统、AI、后台、数据分析。
+6. 如果有练习单，可以自然说“我这边也配了一份小练习/巩固练习”，不要说小程序里生成了什么。
+7. 可以称呼“某某妈妈/爸爸”，但不要过度客套。"""
+
 _WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
     "",
     "无法识别",
@@ -803,6 +815,51 @@ def generate_wrong_question_practice_sheet_material(
     if include_usage:
         return normalized, _usage_dict(response)
     return normalized
+
+
+def generate_weekly_wrong_question_followup_message(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_name: str,
+    weekly_question_count: int,
+    total_active_question_count: int,
+    topic_categories: list[str],
+    representative_reason_summaries: list[str],
+    has_practice_sheet: bool,
+) -> str:
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "student_name": str(student_name or "").strip(),
+                        "class_name": str(class_name or "").strip(),
+                        "teacher_name": str(teacher_name or "").strip(),
+                        "weekly_question_count": int(weekly_question_count or 0),
+                        "total_active_question_count": int(total_active_question_count or 0),
+                        "topic_categories": [str(item).strip() for item in topic_categories if str(item).strip()],
+                        "representative_reason_summaries": [
+                            str(item).strip()
+                            for item in representative_reason_summaries
+                            if str(item).strip()
+                        ],
+                        "has_practice_sheet": bool(has_practice_sheet),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        temperature=0.5,
+    )
+    content = str(response.choices[0].message.content or "").strip()
+    if not content:
+        raise ValueError("weekly wrong question followup message generation failed")
+    return content
 
 
 # ─── 生成复习计划的提示词 ───────────────────────────────────────────────────────
