@@ -2658,12 +2658,19 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       if (input === '/api/classes') {
         return createJsonResponse([
           { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 43, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
         ]);
       }
 
       if (input === '/api/classes/42/students') {
         return createJsonResponse({
           students: [{ id: 501, name: '王睿博' }],
+        });
+      }
+
+      if (input === '/api/classes/43/students') {
+        return createJsonResponse({
+          students: [{ id: 601, name: '李同学' }],
         });
       }
 
@@ -2789,6 +2796,15 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       assert.match(pageText, /网页智能错题/);
       assert.match(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
       assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04'));
+    });
+
+    await selectNotebookClass(domEnvironment.container, '43');
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.doesNotMatch(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
+      assert.doesNotMatch(pageText, /重新生成话术/);
+      assert.equal(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly/messages' && call.init?.method === 'POST'), false);
     });
   } finally {
     if (root) {

@@ -514,6 +514,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [loadList]);
 
   useEffect(() => {
+    setWeeklyFollowupItems([]);
+    setWeeklyFollowupNotice('');
+    setWeeklyFollowupError('');
+    setGeneratingWeeklyFollowupStudentId(null);
+  }, [activeWeeklyFollowupClassId, weeklyFollowupWeekStart]);
+
+  useEffect(() => {
     if (!usesStudentNotebook || hasStaffScope) {
       return;
     }
