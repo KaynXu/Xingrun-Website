@@ -19,7 +19,9 @@
 }
 
 .field-input {
+  display: block;
   width: 100%;
+  height: 88rpx;
   min-height: 88rpx;
   line-height: 88rpx;
   padding: 0 24rpx;

@@ -236,6 +236,9 @@ check('parent-bind: lookup, existing binding, and bind confirmation hierarchy', 
   expectIncludes(pages.bind.wxml, 'class="state-card empty-card empty-student-card"');
   expectIncludes(pages.bind.wxml, '绑定这个孩子');
   expectRule(pages.bind.wxss, '.invite-panel', 'gap: 22rpx;');
+  expectRule(pages.bind.wxss, '.field-input', 'display: block;');
+  expectRule(pages.bind.wxss, '.field-input', 'height: 88rpx;');
+  expectRule(pages.bind.wxss, '.field-input', 'line-height: 88rpx;');
   expectRule(pages.bind.wxss, '.lookup-btn', 'width: 100%;');
   expectRule(pages.bind.wxss, '.section-head', 'flex-direction: column;');
   expectRule(pages.bind.wxss, '.bound-child-card', 'flex-direction: column;');
