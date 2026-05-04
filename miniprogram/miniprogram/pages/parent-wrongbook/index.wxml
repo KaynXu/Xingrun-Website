@@ -1,69 +1,113 @@
 <view class="wrongbook-page">
-  <view wx:if="{{uploadStatusText}}" class="upload-status-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'upload-status-error' : ''}}">
-    <text class="upload-status-title">{{uploadTaskSummary.title || '上传进度'}}</text>
-    <text class="upload-status-desc">{{uploadStatusText}}</text>
+  <view class="hero-card wrongbook-hero">
+    <text class="hero-badge">星润错题本</text>
+    <text class="hero-title">{{studentName || '孩子'}}的学习记录</text>
+    <text class="hero-subtitle">{{showPrimaryTopicCategory ? '查看错题整理进度、专题分类和学生错题库 PDF。' : '查看错题整理进度和学生错题库 PDF。'}}</text>
+    <view class="hero-stat-row">
+      <view class="hero-stat-pill">
+        <text class="hero-stat-value">{{items.length}}</text>
+        <text class="hero-stat-label">错题记录</text>
+      </view>
+      <view class="hero-stat-pill">
+        <text class="hero-stat-value">{{displayedItems.length}}</text>
+        <text class="hero-stat-label">当前显示</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{uploadStatusText}}" class="state-card upload-status-card {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'error-card' : 'processing-card'}}">
+    <text class="state-marker {{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? 'state-marker-error' : 'state-marker-processing'}}">{{uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed' ? '需要处理' : '处理中'}}</text>
+    <text class="state-title upload-status-title">{{uploadTaskSummary.title || '上传进度'}}</text>
+    <text class="state-desc upload-status-desc">{{uploadStatusText}}</text>
   </view>
 
   <view wx:if="{{libraryPdfUrl || libraryPdfStatusText}}" class="library-card">
     <view class="library-copy">
+      <text class="library-state-tag {{libraryPdfReady ? 'library-state-ready' : 'library-state-pending'}}">{{libraryPdfReady ? 'PDF 已生成' : 'PDF 生成状态'}}</text>
       <text class="library-title">学生错题库 PDF</text>
       <text class="library-desc">{{libraryPdfStatusText || '按当前孩子的错题记录生成，可直接预览。'}}</text>
     </view>
-    <button class="library-btn" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">{{libraryPdfReady ? '查看 PDF' : 'PDF 暂未就绪'}}</button>
+    <view class="library-actions">
+      <button class="primary-btn library-btn" wx:if="{{libraryPdfReady}}" loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">查看 PDF</button>
+      <button class="ghost-btn library-btn library-btn-pending" wx:else loading="{{openingPdf}}" bindtap="openWrongQuestionLibraryPdf">PDF 暂未就绪</button>
+    </view>
   </view>
 
-  <view wx:if="{{loading}}" class="state-card">
-    <text class="state-title">加载中</text>
-    <text class="state-desc">正在拉取错题记录</text>
+  <view wx:if="{{loading}}" class="state-card loading-card">
+    <text class="state-marker state-marker-loading">加载中</text>
+    <text class="state-title">正在读取错题记录</text>
+    <text class="state-desc">请稍候，已整理的题目和 PDF 状态会一起刷新。</text>
   </view>
 
   <view wx:elif="{{errorMessage}}" class="state-card error-card">
-    <text class="state-title">加载失败</text>
+    <text class="state-marker state-marker-error">需要处理</text>
+    <text class="state-title">错题本暂时无法打开</text>
     <text class="state-desc">{{errorMessage}}</text>
+    <button class="ghost-btn state-action-btn" bindtap="onShow">重新加载</button>
   </view>
 
-  <view wx:elif="{{!items.length}}" class="state-card">
+  <view wx:elif="{{!items.length}}" class="state-card empty-card">
+    <text class="state-marker state-marker-empty">暂无记录</text>
     <text class="state-title">还没有错题记录</text>
-    <text class="state-desc">上传第一道错题后就会在这里显示。</text>
+    <text class="state-desc">上传第一道错题后，题图、识别进度和 PDF 状态会在这里显示。</text>
   </view>
 
   <view wx:else class="item-list">
-    <scroll-view class="topic-scroll" scroll-x="true" show-scrollbar="false">
-      <button
-        wx:for="{{topicSummaries}}"
-        wx:key="topicCategory"
-        class="topic-chip {{activeTopicCategory === item.topicCategory ? 'topic-chip-active' : ''}}"
-        data-topic="{{item.topicCategory}}"
-        bindtap="selectTopicFilter"
-      >
-        {{item.topicCategory}} {{item.count}}
-      </button>
-    </scroll-view>
+    <view wx:if="{{showPrimaryTopicCategory}}" class="panel-card filter-panel">
+      <view class="filter-head">
+        <text class="filter-title">专题筛选</text>
+        <text class="filter-desc">当前显示 {{displayedItems.length}} / {{items.length}} 条</text>
+      </view>
+      <scroll-view class="topic-scroll" scroll-x="true" show-scrollbar="false">
+        <button
+          wx:for="{{topicSummaries}}"
+          wx:key="topicCategory"
+          class="topic-chip {{activeTopicCategory === item.topicCategory ? 'topic-chip-active' : ''}}"
+          data-topic="{{item.topicCategory}}"
+          bindtap="selectTopicFilter"
+        >
+          {{item.topicCategory}} {{item.count}}
+        </button>
+      </scroll-view>
+    </view>
 
     <view wx:for="{{displayedItems}}" wx:key="id" class="item-card">
-      <image wx:if="{{item.imageUrl}}" class="item-img" src="{{item.imageUrl}}" mode="aspectFill" />
-      <view class="item-body">
+      <view class="item-card-head">
         <view class="item-top">
-          <text class="tag topic-tag">专题：{{item.topicCategory || '未分类'}}</text>
+          <text wx:if="{{showPrimaryTopicCategory}}" class="tag topic-tag">专题：{{item.topicCategory || '未分类'}}</text>
           <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
           <text wx:if="{{item.recognitionStatusText}}" class="tag status-tag {{item.recognitionStatus === 'failed' ? 'failed-tag' : 'pending-tag'}}">{{item.recognitionStatus === 'failed' ? '识别失败' : '识别中'}}</text>
           <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
         </view>
-        <view wx:if="{{editingTopicRecordId === item.id}}" class="topic-edit-card">
+        <text class="item-date">{{item.dateStr}}</text>
+      </view>
+      <view wx:if="{{item.imageUrl}}" class="item-media">
+        <image class="item-img" src="{{item.imageUrl}}" mode="aspectFill" />
+      </view>
+      <view class="item-body">
+        <view wx:if="{{showPrimaryTopicCategory && editingTopicRecordId === item.id}}" class="topic-edit-card">
           <picker mode="selector" range="{{topicCategoryOptions}}" bindchange="handleTopicCategoryChange">
             <view class="topic-picker">{{editingTopicCategory || '未分类'}}</view>
           </picker>
           <input class="topic-input" value="{{editingTopicCategory}}" placeholder="自定义专题，如周期问题" bindinput="handleCustomTopicInput" />
           <view class="topic-edit-actions">
             <button class="topic-action-btn" bindtap="cancelEditTopicCategory">取消</button>
-            <button class="topic-action-btn topic-save-btn" loading="{{savingTopic}}" bindtap="saveTopicCategory">保存</button>
+            <button class="primary-btn topic-action-btn topic-save-btn" loading="{{savingTopic}}" bindtap="saveTopicCategory">保存</button>
           </view>
         </view>
-        <button wx:else class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
-        <text wx:if="{{item.recognitionStatusText}}" class="item-status">{{item.recognitionStatusText}}</text>
-        <text wx:if="{{item.questionPreviewText}}" class="item-question">{{item.questionPreviewText}}</text>
-        <text wx:if="{{item.errorSummary}}" class="item-summary">{{item.errorSummary}}</text>
-        <text class="item-date">{{item.dateStr}}</text>
+        <button wx:if="{{showPrimaryTopicCategory && editingTopicRecordId !== item.id}}" class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
+        <view wx:if="{{item.recognitionStatusText}}" class="item-status-card {{item.recognitionStatus === 'failed' ? 'item-status-error' : 'item-status-processing'}}">
+          <text class="state-marker item-status-marker {{item.recognitionStatus === 'failed' ? 'state-marker-error' : 'state-marker-processing'}}">{{item.recognitionStatus === 'failed' ? '需要处理' : '处理中'}}</text>
+          <text class="item-status-text">{{item.recognitionStatusText}}</text>
+        </view>
+        <view wx:if="{{item.questionPreviewText}}" class="item-section">
+          <text class="item-section-label">题目预览</text>
+          <text class="item-question">{{item.questionPreviewText}}</text>
+        </view>
+        <view wx:if="{{item.errorSummary}}" class="item-section">
+          <text class="item-section-label">错因简述</text>
+          <text class="item-summary">{{item.errorSummary}}</text>
+        </view>
       </view>
     </view>
   </view>

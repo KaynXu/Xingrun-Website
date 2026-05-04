@@ -2,32 +2,44 @@
 Started: 2026-05-03
 ---
 
-Current PRD: mini program parent upload 2.0 stability hardening.
+Current PRD: mini program visual refresh and production polish.
 
 Scope:
-- WeChat mini program parent upload flow: select image, manual box, crop export, optional text/voice reason, submit, polling, recovery, wrongbook refresh, and PDF entry.
-- Bridge upload proxy behavior under miniprogram/backend/ where it directly affects parent upload reliability.
-- Website WeChat upload task API, queue/worker task semantics, wrong-question record preservation, and PDF refresh behavior where they directly affect parent upload reliability.
+- WeChat mini program frontend only: miniprogram/miniprogram/.
+- Main surfaces: parent-home, parent-bind, parent-upload, parent-wrongbook, PDF/progress entry points, and shared parent-facing visual states.
+- Core goal: make the mini program look like a formal, polished education product instead of a prototype.
+- Button placement and action arrangement are core requirements, not incidental styling.
+- Do not work on website React frontend under frontend/.
+- Do not change bridge/backend/API behavior unless the user explicitly approves a separate non-visual change.
 - Do not reintroduce AI box selection.
-- Do not redesign unrelated mini program screens or add unrelated product features.
-- Each iteration should complete one user story from scripts/ralph/prd.json.
+- Each iteration should complete exactly one user story from scripts/ralph/prd.json.
 
-Baseline proof for every completed story:
-- scripts/ralph/miniprogram_upload_stability_proof.sh
+Visual direction:
+- Warm, clean, trustworthy, mobile-first education product.
+- Clear hierarchy: page title, context, content, primary action, secondary actions, state feedback.
+- One clear dominant primary action per section.
+- Secondary actions stay near the related content and visually quieter.
+- Destructive actions stay separated from submit/continue actions.
+- Bottom action areas must be stable, safe-area-aware, and not cover important content.
+- Small-screen layouts must not clip, overlap, jump, or force awkward button wrapping.
+
+Baseline proof:
+- scripts/ralph/miniprogram_visual_polish_proof.sh is now the visual polish proof runner.
+- Every later story must run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh.
 
 Status:
-- Archived the completed website frontend stability Ralph PRD and progress log under scripts/ralph/archive/.
-- MP-UPLOAD-001 passes: added scripts/ralph/miniprogram_upload_stability_proof.sh as the shared mini program upload stability baseline proof runner.
-- MP-UPLOAD-002 passes: parent upload now shows explicit stages for crop export, optional audio upload, image upload/task acceptance, recognition polling, background processing, ready, partial failure, and failed states. Draft-mutating upload controls are disabled only while submitting and release after failure/completion. Baseline proof is still scripts/ralph/miniprogram_upload_stability_proof.sh.
-- MP-UPLOAD-003 passes: parent upload task polling no longer collapses the whole batch on one status request failure; malformed task payloads stay pending under the original task id, mixed ready/failed/pending batches keep polling pending tasks, and max-attempt exhaustion reports accepted uploads continuing in the background.
-- MP-UPLOAD-004 passes: parent upload now persists accepted task ids under a scoped parent/child recovery key with child and image/box metadata, restores pending tasks on page reopen by polling status without re-uploading crops, clears recovered tasks only after ready/failed terminal states, and shows a recoverable message for corrupted/unavailable local storage.
-- MP-UPLOAD-005 passes: manual crop and box interaction is covered for large portrait/landscape photos, rotated images, tiny boxes, switching images, deleting the selected box, export failures, and multiple-box export. Crop export failures now name the failing item without clearing the draft, selected image/box state stays stable after rotate/export failure/delete, and crop export locks conflicting gestures plus duplicate submit actions while preserving the existing 1280 x 1792 / quality 0.82 limits.
-- MP-UPLOAD-006 passes: parentApi now uses scoped shorter timeouts for audio upload, compressed image task submission, and task status refresh. Oversized compressed images get a specific non-retryable draft-preserving message; transient 5xx, network, and timeout failures get retryable draft-preserving messages; the upload page keeps the original draft after a retryable failure and clears it only after a later accepted retry.
-- MP-UPLOAD-007 passes: bridge upload proxy now preserves website accepted task payloads even when optional task fields are missing, maps website 400/413/502/timeout/malformed responses into structured retryable or final bridge responses, and parentApi keeps structured bridge error metadata for parent-facing handling.
-- MP-UPLOAD-008 passes: website upload task API now returns stable task status fields for pending, stale pending, ready, failed, and missing-record states; task payloads include retryable/is_stale/record_status/record_missing, image-only submission remains valid, unauthorized task status access remains hidden, and enqueue failure persists a retryable failed task before returning 502.
-- MP-UPLOAD-009 passes: worker/API/data coverage now preserves the original submitted image and teacher-visible record when recognition succeeds but student-library PDF rebuild fails; recognition/processing failures still keep an image-backed failed record. Failed task payloads now include concise parent_error_message and raw maintainer_error_detail, and the mini program upload summary prefers the concise parent-facing reason over low-level errors.
-- MP-UPLOAD-010 passes: parent upload success now links directly to the child's wrongbook with accepted task ids preserved; parent wrongbook refreshes ready/failed/background upload task status before loading records, labels failed or still-processing cards without implying AI success, and surfaces PDF not-ready, missing pdf_url, download failure, and openDocument failure as recoverable parent-visible messages.
-- MP-UPLOAD-011 passes: added docs/production-upload-pipeline-smoke-runbook.md and scripts/ralph/production_upload_smoke_runbook_proof.sh. The runbook gives read-only production checks for PM2 services, Redis, RQ worker, Flask, bridge, upload limits, sample task status, wrongbook/PDF metadata, and explicitly labeled PDF cache/repair mutations; troubleshooting now covers pending tasks, enqueue failures, 413s, and PDF refresh failures.
-- MP-UPLOAD-012 passes: added scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh as the final 2.0 acceptance guardrail. It locks the documented upload contract with fixture checks for select image, create box, optional voice/text reason, crop/export, submit, task acceptance, polling ready/failed/still-pending, wrongbook refresh, and PDF not-ready behavior; it also verifies active code has no current AI box selection path, every PRD story is passes=true, targeted mini program/bridge/website tests pass, and the shared baseline still passes.
-- Final 2.0 status: local automated acceptance is complete for MP-UPLOAD-001 through MP-UPLOAD-012.
-- Next story: none in this PRD. Remaining work is manual smoke only: WeChat devtools or real device upload flow, real voice + image submission through production Redis/RQ worker, wrongbook refresh, and PDF openDocument.
+- Archived completed upload stability PRD to scripts/ralph/archive/miniprogram_upload_2_stability_prd_20260503.json.
+- Archived completed upload stability progress to scripts/ralph/archive/miniprogram_upload_2_stability_progress_20260503.txt.
+- Active PRD is now mini program visual refresh.
+- MP-VISUAL-001 completed: added a local visual proof runner that checks parent-home, parent-bind, parent-upload, and parent-wrongbook page structure, primary/secondary action hierarchy, destructive action separation, bottom submit spacing, narrow-screen button rules, and prototype-only wording without WeChat devtools or backend services.
+- MP-VISUAL-002 completed: shared visual primitives now live in miniprogram/miniprogram/app.wxss for page shells, cards, headings, primary/secondary/icon buttons, state tags, and safe-area-aware bottom action bars. Page-level wxss keeps upload crop/canvas and page-specific layout rules, but no longer owns scattered primary/secondary button definitions. The visual proof now locks this contract and the upload stability baseline still passes.
+- MP-VISUAL-003 completed: parent home child cards now put the primary upload action before the secondary wrongbook action; upload box actions now group add/rotate as normal tools and isolate delete as a danger action; upload success state now makes wrongbook/progress the primary next step and return-home secondary. Visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_003_proof.sh.
+- MP-VISUAL-004 completed: parent home now presents Xingrun parent identity, a designed no-child empty state, bound-child count/context, child cards with class and teacher metadata, a concise progress hint, and narrow-screen wrapping rules for long names and metadata. Visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_004_behavior_proof.sh before marking the story complete.
+- MP-VISUAL-005 completed: parent-bind now has an official invite lookup panel, structured already-bound child cards, class result cards, per-student bind confirmation cards, a designed no-students state, and narrow-screen wrapping rules for long class/student text. Visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_005_proof.sh before marking the story complete.
+- MP-VISUAL-006 completed: parent-upload now has a guided upload flow with separate image input, selected-image context, manual box tool, reason/topic, task progress, and safe-area-aware submit sections. Visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_006_proof.sh before marking the story complete.
+- MP-VISUAL-007 completed: parent-wrongbook now opens as a child learning-record page with a Xingrun wrongbook hero, upload progress kept separate from PDF entry, ready/not-ready PDF actions visually distinguished, topic filters in a formal panel, wrong-question cards split into header/media/status/question/error sections, and designed loading/error/empty states. Visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_007_proof.sh before marking the story complete.
+- MP-VISUAL-008 completed: parent-home, parent-bind, parent-upload, and parent-wrongbook now use a shared state marker treatment for loading, empty, processing, success, and error states. Upload progress/result cards and wrongbook upload/recognition status cards now follow marker + title + description structure, and home load errors include a clear retry action. Visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_008_proof.sh before marking the story complete.
+- MP-VISUAL-009 completed: shared parent page shells now cap width at 100vw, hide horizontal overflow, and reserve page bottom safe-area padding with both constant() and env() fallbacks for WeChat/iOS containers. Shared button primitives now carry min-width 0, max-width 100%, visible overflow, and text-overflow clip so primary/secondary/danger buttons do not depend on risky fixed rpx widths; the upload bottom action bar also has constant()/env() safe-area padding. Visual proof now locks WeChat narrow-runtime guardrails across parent-home, parent-bind, parent-upload, and parent-wrongbook; upload stability proof still passes. Automated proof passed through /tmp/xingrun_mp_visual_009_proof.sh.
+- MP-VISUAL-010 completed: added scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh as the final local acceptance guardrail. It checks PRD pass state, parent-home/parent-bind/parent-upload/parent-wrongbook visual system and action hierarchy, one-primary/destructive/bottom/safe-area/narrow-screen contracts through the visual proof, active page prototype/debug/internal-test wording, and absence of website frontend/backend/bridge working tree changes, then runs the visual polish and upload stability proofs.
+- Manual checks remaining after automated visual refresh: open parent-home, parent-bind, parent-upload, and parent-wrongbook in WeChat devtools and at least one real narrow phone container, preferably small iPhone plus Android/HarmonyOS WeChat, then visually confirm long student/class names, button labels, upload bottom action safe-area spacing, PDF entry, topic edit controls, and complete upload-to-wrongbook/PDF flow are readable and tap-safe. These are not automated proof.
+- Next story: <none>. Mini program visual refresh PRD is complete in local automated proof; next work is manual WeChat devtools/real-device smoke only.

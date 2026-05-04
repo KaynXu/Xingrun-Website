@@ -5,18 +5,22 @@
     <text class="hero-subtitle">老师把班级邀请码发给家长，家长输入后就能从网站已有学生名单里选择孩子。</text>
   </view>
 
-  <view class="panel-card">
-    <text class="field-label">班级邀请码</text>
-    <input
-      class="field-input"
-      placeholder="请输入老师发来的邀请码"
-      value="{{inviteCode}}"
-      bindinput="handleInviteInput"
-    />
-    <button class="primary-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生</button>
+  <view class="panel-card invite-panel">
+    <view class="field-group">
+      <text class="field-label">班级邀请码</text>
+      <text class="field-help">用于确认老师发布的班级，再从班级学生名单里选择孩子。</text>
+      <input
+        class="field-input"
+        placeholder="请输入老师发来的邀请码"
+        value="{{inviteCode}}"
+        bindinput="handleInviteInput"
+      />
+    </view>
+    <button class="primary-btn lookup-btn" loading="{{loading}}" bindtap="previewInvite">查看班级和学生</button>
   </view>
 
   <view wx:if="{{errorMessage}}" class="state-card error-card">
+    <text class="state-marker state-marker-error">需要处理</text>
     <text class="state-title">暂时无法继续</text>
     <text class="state-desc">{{errorMessage}}</text>
   </view>
@@ -27,19 +31,20 @@
       <button class="ghost-btn" size="mini" bindtap="goHome">去上传</button>
     </view>
     <view class="binding-list">
-      <view wx:for="{{existingBindings}}" wx:key="id" class="binding-chip">
-        <text>{{item.studentName || '未命名学生'}} · {{item.className || '未命名班级'}}</text>
+      <view wx:for="{{existingBindings}}" wx:key="id" class="bound-child-card">
+        <text class="bound-child-name">{{item.studentName || '未命名学生'}}</text>
+        <text class="bound-child-meta">已绑定班级：{{item.className || '未命名班级'}}</text>
       </view>
     </view>
   </view>
 
-  <view wx:if="{{preview}}" class="panel-card">
-    <text class="section-title">{{preview.class_name || '已找到班级'}}</text>
+  <view wx:if="{{preview}}" class="panel-card class-result">
+    <text class="class-result-title">{{preview.class_name || '已找到班级'}}</text>
     <text class="section-subtitle">请选择这次要绑定的孩子，一位家长可以重复绑定多个孩子。</text>
 
-    <view class="student-list">
+    <view wx:if="{{preview.students && preview.students.length}}" class="student-list">
       <view wx:for="{{preview.students}}" wx:key="id" class="student-card">
-        <view>
+        <view class="student-info">
           <text class="student-name">{{item.name}}</text>
           <text class="student-meta">学生 ID {{item.id}}</text>
         </view>
@@ -53,6 +58,11 @@
           绑定这个孩子
         </button>
       </view>
+    </view>
+    <view wx:else class="state-card empty-card empty-student-card">
+      <text class="state-marker state-marker-empty">暂无学生</text>
+      <text class="state-title">这个班级暂时没有可绑定学生</text>
+      <text class="state-desc">请确认邀请码是否来自孩子所在班级，或联系老师补充学生名单。</text>
     </view>
   </view>
 </view>

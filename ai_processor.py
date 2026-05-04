@@ -359,11 +359,11 @@ items 中每一项必须包含：
 
 严格规则：
 1. 不要直接给出原题答案，不要提示孩子该怎样把这道题一步一步做对。
-2. 生成内容主要依据孩子自述错因、顶层错因分类和补充备注；题目内容只用于确认错因语境，不要把重点放在讲题上。
+2. 生成内容主要依据孩子自述错因、顶层错因分类和补充备注；题目内容必须用于提取本题的对象、条件、问法或符号，让填空题具像到这道题，但不要把重点放在讲题上。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
-6. reason_blank_prompt 聚焦“这题为什么错”，但不要把孩子没说过或题目里没明确给出的细节硬写成确定事实；如果信息不足，就用“条件、关键词、知识点、检查顺序、计算步骤”这类通用说法轻轻引导。
+6. reason_blank_prompt 聚焦“这题为什么错”，优先把孩子语音/文字里提到的具体遗漏、误判、步骤顺序写进填空句；不要把孩子没说过或题目里没明确给出的细节硬写成确定事实。
 7. improvement_summary_prompt 聚焦“接下来怎么补、以后先提醒自己什么”，仍然要写成挖空题，不要变成解题教学，也不要替孩子把计划写得过满过细。
 8. 每个书写区正文控制在 1 到 2 句，2 到 3 个 ______ 空格即可；不要为了凑空格写成长段反思。
 9. 不要在挖空题后面再追加纯写字线、自由总结、长段说明或“请写一写”的作文式提示。
@@ -372,7 +372,21 @@ items 中每一项必须包含：
 12. 如果是方法问题，优先围绕先判断方法是否合适、有没有用对思路来轻量组织提示。
 13. 如果是知识点问题，优先围绕先回忆规则、定义或判断依据，再写一句接下来怎么补。
 14. 句子要自然，适合小学/初中学生抄写和填写，不要出现工程术语。
-15. title 控制在 8 到 24 个字。"""
+15. 像复习计划里的填空题一样，把空放在“本题具体要核对的词、条件、关系、范围、单位、顺序”上；避免只写“这题可能因为对 ______ 的性质理解不透彻”这种泛化句。
+16. 示例：若题目出现“定义域 [m-4,3m]、x∈[0,3m]、f(x) 单调递减、比较 f(x+1) 与 f(2x-m)”，不要写“复习函数定义和性质”；可以写“本题先核对两个自变量 x+1、2x-m 是否都落在 ______，再利用 f(x) 单调递减把 f(x+1)>f(2x-m) 转成 ______ 的不等式。”
+17. title 控制在 8 到 24 个字。"""
+
+WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT = """你是老师微信沟通助手。
+你会收到学生本周错题概况，请写一段老师可以直接发给家长的微信。
+
+要求：
+1. 像老师真实发给家长的微信，语气自然、具体、温和。
+2. 不要写成报告、通知、AI 总结或系统分析。
+3. 避免报告感表达，比如“本周错题主要集中在”“建议家长配合”“知识薄弱点”“提升能力”。
+4. 控制在 2 到 3 段微信可直接发送的短段落。
+5. 不提小程序、系统、AI、后台、数据分析。
+6. 如果有练习单，可以自然说“我这边也配了一份小练习/巩固练习”，不要说小程序里生成了什么。
+7. 可以称呼“某某妈妈/爸爸”，但不要过度客套。"""
 
 _WRONG_QUESTION_TEXT_FAILURE_MARKERS = {
     "",
@@ -801,6 +815,51 @@ def generate_wrong_question_practice_sheet_material(
     if include_usage:
         return normalized, _usage_dict(response)
     return normalized
+
+
+def generate_weekly_wrong_question_followup_message(
+    *,
+    student_name: str,
+    class_name: str,
+    teacher_name: str,
+    weekly_question_count: int,
+    total_active_question_count: int,
+    topic_categories: list[str],
+    representative_reason_summaries: list[str],
+    has_practice_sheet: bool,
+) -> str:
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "student_name": str(student_name or "").strip(),
+                        "class_name": str(class_name or "").strip(),
+                        "teacher_name": str(teacher_name or "").strip(),
+                        "weekly_question_count": int(weekly_question_count or 0),
+                        "total_active_question_count": int(total_active_question_count or 0),
+                        "topic_categories": [str(item).strip() for item in topic_categories if str(item).strip()],
+                        "representative_reason_summaries": [
+                            str(item).strip()
+                            for item in representative_reason_summaries
+                            if str(item).strip()
+                        ],
+                        "has_practice_sheet": bool(has_practice_sheet),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        temperature=0.5,
+    )
+    content = str(response.choices[0].message.content or "").strip()
+    if not content:
+        raise ValueError("weekly wrong question followup message generation failed")
+    return content
 
 
 # ─── 生成复习计划的提示词 ───────────────────────────────────────────────────────

@@ -297,6 +297,42 @@ test('parent topic category bridge forwards parent edits to the website', async 
   }
 });
 
+test('parent topic category suggestions bridge forwards parent openid to the website', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const websiteCalls: Array<{ url: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.startsWith('https://website.example')) {
+      websiteCalls.push({ url, init });
+      if (url.includes('/api/wechat/primary-topic-category-suggestions?')) {
+        return createJsonResponse({
+          items: ['周期问题', '几何模型'],
+        });
+      }
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  try {
+    const server = await startTestServer(t);
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${baseUrl}/wechat/parent/primary-topic-category-suggestions?openId=openid-parent-1&topicCategory=%E5%91%A8%E6%9C%9F`);
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload.items, ['周期问题', '几何模型']);
+    assert.equal(websiteCalls.length, 1);
+    assert.equal(websiteCalls[0]?.url, 'https://website.example/api/wechat/primary-topic-category-suggestions?open_id=openid-parent-1&topic_category=%E5%91%A8%E6%9C%9F');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('parent upload bridge stores the file locally and forwards the generated image url to the website', async (t) => {
   const originalFetch = globalThis.fetch;
   const uploadedFiles: string[] = [];

@@ -11,6 +11,7 @@ import {
   getWrongQuestionLibraryForChildOnWebsite,
   getWrongQuestionUploadTaskOnWebsite,
   listParentBindingsOnWebsite,
+  listPrimaryTopicCategorySuggestionsOnWebsite,
   listWrongQuestionsForChildOnWebsite,
   loginParentWechatAccount,
   previewParentClassBinding,
@@ -210,6 +211,24 @@ export function createApp() {
 
     try {
       const payload = await listParentBindingsOnWebsite({ openId });
+      res.json(payload);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/wechat/parent/primary-topic-category-suggestions', async (req, res) => {
+    const openId = String(req.query?.openId ?? req.query?.open_id ?? '').trim();
+    const topicCategory = String(req.query?.topicCategory ?? req.query?.topic_category ?? '').trim();
+    if (!openId) {
+      res.status(400).json({ error: 'openId required' });
+      return;
+    }
+
+    try {
+      const payload = await listPrimaryTopicCategorySuggestionsOnWebsite({ openId, topicCategory });
       res.json(payload);
     } catch (error) {
       res.status(500).json({

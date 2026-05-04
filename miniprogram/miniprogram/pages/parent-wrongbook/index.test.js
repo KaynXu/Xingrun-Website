@@ -205,7 +205,7 @@ test('onShow keeps background-processing uploads visible and explains PDF is not
   });
 
   assert.equal(page.data.uploadTaskSummary.state, 'background');
-  assert.match(page.data.uploadStatusText, /后台继续识别/);
+  assert.match(page.data.uploadStatusText, /(?:后台|云端).*识别/);
   assert.equal(page.data.libraryPdfReady, false);
   assert.match(page.data.libraryPdfStatusText, /识别完成后/);
 });
@@ -244,6 +244,87 @@ test('onShow surfaces missing pdf_url as a recoverable PDF state', async () => {
   assert.equal(page.data.libraryPdfReady, false);
   assert.equal(page.data.libraryPdfUrl, '');
   assert.match(page.data.libraryPdfStatusText, /PDF 暂时不可用/);
+});
+
+test('onLoad and onShow keep topic controls primary-only', async () => {
+  const pageConfig = loadWrongbookPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: '9001', status: 'ready' } }),
+    fetchChildWrongQuestions: async () => ({
+      items: [
+        {
+          id: 'record-1',
+          image_url: 'https://files.example.com/record.png',
+          question_text: '计算 1+1。',
+          recognition_status: 'recognized',
+          topic_category: '周期问题',
+          created_at: '2026-05-03 10:00:00',
+        },
+      ],
+    }),
+    fetchChildWrongQuestionLibrary: async () => ({
+      total_items: 1,
+      pdf_url: '',
+    }),
+    updateChildWrongQuestionTopicCategory: async () => {
+      throw new Error('middle-school topic edits should be hidden');
+    },
+  });
+
+  const middlePage = createPageInstance(pageConfig);
+  await withWx(async () => {
+    middlePage.onLoad({
+      studentId: '101',
+      studentName: 'Bob',
+      className: encodeURIComponent('初一 1 班'),
+      classGrade: encodeURIComponent('初一'),
+    });
+    await middlePage.onShow();
+  });
+
+  assert.equal(middlePage.data.showPrimaryTopicCategory, false);
+  assert.deepEqual(middlePage.data.topicSummaries, []);
+  assert.equal(middlePage.data.displayedItems.length, 1);
+
+  const primaryPage = createPageInstance(pageConfig);
+  await withWx(async () => {
+    primaryPage.onLoad({
+      studentId: '102',
+      studentName: 'Alice',
+      className: encodeURIComponent('六年级 1 班'),
+      classGrade: encodeURIComponent('六年级'),
+    });
+    await primaryPage.onShow();
+  });
+
+  assert.equal(primaryPage.data.showPrimaryTopicCategory, true);
+  assert.equal(primaryPage.data.topicSummaries.some((item) => item.topicCategory === '周期问题'), true);
+});
+
+test('saveTopicCategory ignores non-primary pages', async () => {
+  let updateCalled = false;
+  const pageConfig = loadWrongbookPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: '9001', status: 'ready' } }),
+    fetchChildWrongQuestions: async () => ({ items: [] }),
+    fetchChildWrongQuestionLibrary: async () => ({ total_items: 0, pdf_url: '' }),
+    updateChildWrongQuestionTopicCategory: async () => {
+      updateCalled = true;
+      return { ok: true };
+    },
+  });
+  const page = createPageInstance(pageConfig, {
+    showPrimaryTopicCategory: false,
+    editingTopicRecordId: 'record-1',
+    editingTopicCategory: '周期问题',
+  });
+
+  await withWx(async () => {
+    await page.saveTopicCategory();
+  });
+
+  assert.equal(updateCalled, false);
+  assert.equal(page.data.savingTopic, false);
 });
 
 test('openWrongQuestionLibraryPdf shows recovery messages for not-ready, download, and open failures', async () => {

@@ -1,4 +1,217 @@
 page {
-  background: #f5f5f5;
+  width: 100%;
+  max-width: 100vw;
+  background: #f6fbff;
   font-family: -apple-system, 'PingFang SC', sans-serif;
+  color: #10233f;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.parent-page,
+.wrongbook-page {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100vh;
+  padding: 28rpx;
+  padding-bottom: calc(28rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(28rpx + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #f6fbff 0%, #eef6ff 100%);
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.hero-card,
+.panel-card,
+.state-card,
+.binding-card,
+.library-card,
+.upload-status-card {
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 24rpx;
+  padding: 30rpx;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 16rpx 48rpx rgba(45, 87, 140, 0.08);
+  box-sizing: border-box;
+}
+
+.hero-badge {
+  display: inline-block;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: #e9f5ff;
+  color: #2375d8;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+
+.hero-title {
+  display: block;
+  margin-top: 18rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #10233f;
+}
+
+.hero-subtitle,
+.section-subtitle,
+.state-desc,
+.binding-meta,
+.student-meta,
+.library-desc,
+.upload-status-desc {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: #60738f;
+}
+
+.panel-title,
+.section-title,
+.state-title,
+.field-label,
+.binding-name,
+.student-name,
+.library-title,
+.upload-status-title {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #10233f;
+}
+
+.state-title,
+.binding-name,
+.student-name {
+  font-size: 30rpx;
+}
+
+.primary-btn,
+.ghost-btn,
+.danger-btn,
+.icon-btn {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 22rpx;
+  border-radius: 22rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  overflow: visible;
+  text-overflow: clip;
+  box-sizing: border-box;
+}
+
+.primary-btn {
+  background: #2375d8;
+  color: #ffffff;
+}
+
+.ghost-btn,
+.icon-btn {
+  background: #eef5ff;
+  color: #2375d8;
+}
+
+.danger-btn {
+  background: #fff1f0;
+  color: #c0392b;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  line-height: 72rpx;
+}
+
+.primary-btn::after,
+.ghost-btn::after,
+.danger-btn::after,
+.icon-btn::after {
+  border: none;
+}
+
+.tag {
+  display: inline-block;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.error-card {
+  border: 2rpx solid rgba(214, 68, 68, 0.12);
+  background: #fff5f5;
+}
+
+.success-card {
+  border: 2rpx solid rgba(35, 117, 216, 0.1);
+  background: #f4f9ff;
+}
+
+.loading-card,
+.empty-card {
+  background: #f8fbff;
+}
+
+.processing-card {
+  border: 2rpx solid rgba(173, 104, 0, 0.12);
+  background: #fffaf0;
+}
+
+.state-marker {
+  display: inline-block;
+  margin-bottom: 16rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.state-marker-loading {
+  background: #e9f5ff;
+  color: #2375d8;
+}
+
+.state-marker-empty {
+  background: #e9f5ff;
+  color: #2375d8;
+}
+
+.state-marker-processing {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
+.state-marker-success {
+  background: #e8faf0;
+  color: #1d8348;
+}
+
+.state-marker-error {
+  background: #fff1f0;
+  color: #c0392b;
+}
+
+.state-action-btn {
+  width: 100%;
+  margin-top: 22rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.bottom-action-bar {
+  margin-top: 22rpx;
+  padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
 }

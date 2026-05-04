@@ -289,11 +289,15 @@ test('removeActiveBox keeps the current image and selects the next neighboring b
 });
 
 test('submitUpload exposes each parent-visible upload stage without real network calls', async () => {
+  let statusRefreshCalls = 0;
   const pageConfig = loadUploadPage({
     ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
     uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
     submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
-    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+    fetchWrongQuestionUploadTask: async () => {
+      statusRefreshCalls += 1;
+      return { task: { id: 9001, status: 'ready' } };
+    },
   });
   const page = createPageInstance(pageConfig, createReadyUploadData());
   page.exportBoxCrop = async () => '/tmp/crop.jpg';
@@ -314,15 +318,14 @@ test('submitUpload exposes each parent-visible upload stage without real network
     'uploading_audio',
     'uploading_image',
     'task_accepted',
-    'recognizing',
-    'ready',
   ]);
   assert.match(stageUpdates[0].text, /裁切第 1\/1 题/);
   assert.match(stageUpdates[1].text, /语音说明/);
   assert.match(stageUpdates[2].text, /题图/);
   assert.match(stageUpdates[3].text, /已接收/);
-  assert.match(stageUpdates[4].text, /服务器正在识别/);
-  assert.match(stageUpdates[5].text, /错题本已更新/);
+  assert.equal(statusRefreshCalls, 0);
+  assert.equal(page.data.uploadTaskSummary.state, 'background');
+  assert.match(page.data.uploadTaskSummary.description, /可以先离开本页/);
   assert.equal(page.data.submitting, false);
 });
 
@@ -385,6 +388,94 @@ test('submitUpload reports crop export failure by item without clearing the draf
   assert.match(page.data.uploadStageText, /第 2\/2 题裁切失败/);
 });
 
+test('onShow exposes topic controls only for primary bindings and merges website suggestions', async () => {
+  const suggestionRequests = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [
+      {
+        id: 21,
+        studentName: 'Alice',
+        className: '六年级 1 班',
+        classGrade: '六年级',
+      },
+      {
+        id: 22,
+        studentName: 'Bob',
+        className: '初一 1 班',
+        classGrade: '初一',
+      },
+    ],
+    fetchParentTopicCategorySuggestions: async (_wx, _serverUrl, params) => {
+      suggestionRequests.push(params);
+      return { items: ['周期问题', '几何'] };
+    },
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+
+  const primaryPage = createPageInstance(pageConfig);
+  primaryPage.options = { bindingId: '21' };
+  await withWx(async () => {
+    await primaryPage.onShow();
+  }, {
+    getStorageSync() {
+      return '';
+    },
+  });
+
+  assert.equal(primaryPage.data.showPrimaryTopicCategory, true);
+  assert.deepEqual(suggestionRequests, [{ openId: 'openid-parent-1', topicCategory: '' }]);
+  assert.equal(primaryPage.data.topicCategoryOptions.includes('周期问题'), true);
+  assert.equal(primaryPage.data.topicCategoryOptions.at(-1), '自定义');
+
+  const middlePage = createPageInstance(pageConfig);
+  middlePage.options = { bindingId: '22' };
+  await withWx(async () => {
+    await middlePage.onShow();
+  }, {
+    getStorageSync() {
+      return '';
+    },
+  });
+
+  assert.equal(middlePage.data.showPrimaryTopicCategory, false);
+  assert.equal(suggestionRequests.length, 1);
+});
+
+test('submitUpload sends unclassified topic for non-primary bindings', async () => {
+  const submittedTopics = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => {
+      throw new Error('voice should not upload for text boxes');
+    },
+    submitParentWrongQuestion: async (_wx, _serverUrl, params) => {
+      submittedTopics.push(params.topicCategory);
+      return { task: { id: 9001, status: 'pending' } };
+    },
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    ...createTwoBoxUploadData(),
+    binding: {
+      id: 22,
+      studentName: 'Bob',
+      className: '初一 1 班',
+      classGrade: '初一',
+    },
+    showPrimaryTopicCategory: false,
+  });
+  page.exportBoxCrop = async (_imageItem, box) => `/tmp/${box.id}.jpg`;
+
+  await withWx(async () => {
+    await page.submitUpload();
+  });
+
+  assert.deepEqual(submittedTopics, ['未分类', '未分类']);
+});
+
 test('submitUpload keeps the original draft and allows retry after a retryable upload failure', async () => {
   let submitCalls = 0;
   const pageConfig = loadUploadPage({
@@ -424,7 +515,8 @@ test('submitUpload keeps the original draft and allows retry after a retryable u
 
   assert.equal(submitCalls, 3);
   assert.deepEqual(page.data.successTaskIds, [9001, 9001]);
-  assert.equal(page.data.uploadStage, 'ready');
+  assert.equal(page.data.uploadTaskSummary.state, 'background');
+  assert.match(page.data.uploadTaskSummary.description, /可以先离开本页/);
   assert.equal(page.data.imageItems.length, 0);
 });
 
@@ -512,7 +604,8 @@ test('pollUploadTasks exposes background processing when tasks remain pending', 
   });
 
   assert.equal(page.data.uploadStage, 'background');
-  assert.match(page.data.uploadStageText, /后台继续识别/);
+  assert.match(page.data.uploadStageText, /云端继续识别/);
+  assert.match(page.data.uploadStageText, /可以先离开本页/);
 });
 
 test('pollUploadTasks exposes partial failure separately from total failure', async () => {
@@ -591,12 +684,12 @@ test('pollUploadTasks reports mixed ready failed and pending tasks as partial ba
     assert.equal(summary.readyCount, 1);
     assert.equal(summary.failedCount, 1);
     assert.equal(summary.pendingCount, 1);
-    assert.match(summary.description, /1 条还在后台继续识别/);
+    assert.match(summary.description, /1 条还在云端继续识别/);
   });
 
   assert.deepEqual(page.data.successTaskIds, [9001, 9002, 9003]);
   assert.equal(page.data.uploadStage, 'partial_failed');
-  assert.match(page.data.uploadStageText, /后台继续识别/);
+  assert.match(page.data.uploadStageText, /云端继续识别/);
 });
 
 test('pollUploadTasks treats malformed task payloads as pending with the original task id', async () => {
@@ -616,7 +709,7 @@ test('pollUploadTasks treats malformed task payloads as pending with the origina
 
   assert.deepEqual(page.data.successTaskIds, [9001]);
   assert.equal(page.data.uploadStage, 'background');
-  assert.match(page.data.uploadStageText, /后台继续识别/);
+  assert.match(page.data.uploadStageText, /云端继续识别/);
 });
 
 test('restoreAcceptedUploadTasks resumes pending stored tasks without re-uploading cropped images', async () => {
@@ -688,7 +781,7 @@ test('restoreAcceptedUploadTasks resumes pending stored tasks without re-uploadi
   assert.ok(requestedTaskIds.includes(9002));
   assert.deepEqual(page.data.successTaskIds, [9001, 9002]);
   assert.equal(page.data.uploadStage, 'background');
-  assert.match(page.data.uploadStageText, /后台继续识别/);
+  assert.match(page.data.uploadStageText, /云端继续识别/);
   assert.equal(storedWrites.at(-1).tasks.length, 1);
   assert.equal(storedWrites.at(-1).tasks[0].id, 9001);
   assert.equal(storedWrites.at(-1).child.studentName, 'Alice');

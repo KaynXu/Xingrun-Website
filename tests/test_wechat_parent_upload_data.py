@@ -193,6 +193,12 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
 
         self.assertEqual(suggestions, ["周期问题"])
 
+        all_suggestions = lesson_manager.list_primary_topic_category_suggestions(
+            organization_id=self.organization_id,
+            topic_category="",
+        )
+        self.assertEqual(all_suggestions, ["周期问题"])
+
     def test_save_wechat_wrong_question_review_only_updates_mastery_state(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-parent-1")
         binding = lesson_manager.bind_parent_to_student(

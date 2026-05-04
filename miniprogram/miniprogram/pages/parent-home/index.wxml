@@ -1,21 +1,25 @@
 <view class="parent-page">
   <view class="hero-card">
-    <text class="hero-badge">家长主页</text>
-    <text class="hero-title">查看错题本或上传新的错题</text>
-    <text class="hero-subtitle">请选择需要操作的孩子，进入后可以查看已有错题，也可以继续上传新的错题图片。</text>
+    <text class="hero-badge">星润家长端</text>
+    <text class="hero-title">孩子错题与上传入口</text>
+    <text class="hero-subtitle">选择孩子后上传新的错题图片，或查看已经整理好的错题本和处理进度。</text>
   </view>
 
-  <view wx:if="{{loading}}" class="state-card">
+  <view wx:if="{{loading}}" class="state-card loading-card">
+    <text class="state-marker state-marker-loading">加载中</text>
     <text class="state-title">正在加载孩子信息</text>
     <text class="state-desc">请稍候，已绑定的孩子会显示在这里。</text>
   </view>
 
   <view wx:elif="{{errorMessage}}" class="state-card error-card">
+    <text class="state-marker state-marker-error">需要处理</text>
     <text class="state-title">页面暂时无法打开</text>
     <text class="state-desc">{{errorMessage}}</text>
+    <button class="ghost-btn state-action-btn" bindtap="onShow">重新加载</button>
   </view>
 
-  <view wx:elif="{{!bindings.length}}" class="state-card">
+  <view wx:elif="{{!bindings.length}}" class="state-card empty-card">
+    <text class="state-marker state-marker-empty">下一步</text>
     <text class="state-title">还没有绑定孩子</text>
     <text class="state-desc">请输入老师提供的班级邀请码，完成绑定后即可上传错题。</text>
     <button class="primary-btn" bindtap="goBindMore">去绑定孩子</button>
@@ -23,18 +27,25 @@
 
   <view wx:else class="binding-list">
     <view class="panel-head">
-      <text class="panel-title">选择孩子</text>
+      <view class="panel-copy">
+        <text class="panel-title">孩子学习入口</text>
+        <text class="panel-desc">已绑定 {{bindings.length}} 个孩子，先选择孩子，再上传错题或查看错题本。</text>
+      </view>
       <button class="ghost-btn mini-btn" bindtap="goBindMore">绑定更多孩子</button>
     </view>
 
     <view wx:for="{{bindings}}" wx:key="id" class="binding-card">
-      <view>
+      <view class="binding-info">
         <text class="binding-name">{{item.studentName || '未命名学生'}}</text>
-        <text class="binding-meta">{{item.className || '未命名班级'}}</text>
+        <view class="binding-meta-stack">
+          <text class="binding-meta">{{item.className || '未命名班级'}}</text>
+          <text class="binding-meta">任课老师：{{item.teacherName || '任课老师待补充'}}</text>
+        </view>
+        <text class="binding-hint">上传后可在错题本查看整理进度。</text>
       </view>
       <view class="binding-actions">
-        <button class="ghost-btn mini-btn" data-student-id="{{item.studentId}}" data-student-name="{{item.studentName}}" bindtap="goWrongbook">查看错题本</button>
         <button class="primary-btn mini-btn" data-binding-id="{{item.id}}" bindtap="goUpload">上传错题</button>
+        <button class="ghost-btn mini-btn" data-student-id="{{item.studentId}}" data-student-name="{{item.studentName}}" data-class-name="{{item.className}}" data-class-grade="{{item.classGrade}}" bindtap="goWrongbook">查看错题本</button>
       </view>
     </view>
   </view>

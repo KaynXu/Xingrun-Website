@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -19,7 +20,8 @@ import threading
 import urllib.error
 import urllib.request
 import webbrowser
-from datetime import date, datetime
+import zipfile
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic, sleep
 from typing import Optional, Set
@@ -101,6 +103,7 @@ from lesson_manager import (
     get_parent_student_binding_for_student,
     get_or_create_active_class_invite,
     get_lesson,
+    get_weekly_wrong_question_followup_message,
     get_wrong_question_practice_sheet,
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
@@ -130,6 +133,7 @@ from lesson_manager import (
     list_students_for_class,
     list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
+    list_weekly_wrong_question_followup_students,
     list_registration_requests_for_actor,
     list_unbound_classes_for_user_claim,
     list_users_for_actor,
@@ -172,6 +176,7 @@ from lesson_manager import (
     update_user_profile,
     resolve_teacher_username_to_user_id,
     update_user_role,
+    upsert_weekly_wrong_question_followup_message,
     upsert_parent_wechat_account,
     get_teacher_alias_entries,
     upsert_teacher_alias,
@@ -1482,6 +1487,65 @@ def _filter_classes_for_user(user, classes: list[dict]) -> list[dict]:
     return [item for item in classes if item.get("id") in owned_class_ids]
 
 
+def _parse_week_start(raw_value: str) -> date:
+    value = str(raw_value or "").strip()
+    selected = date.today() if not value else date.fromisoformat(value)
+    return selected - timedelta(days=selected.weekday())
+
+
+def _weekly_range(raw_week_start: str) -> tuple[str, str]:
+    week_start = _parse_week_start(raw_week_start)
+    week_end = week_start + timedelta(days=6)
+    return week_start.isoformat(), week_end.isoformat()
+
+
+def _safe_archive_filename_part(value: str) -> str:
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "-", str(value or "")).strip()
+    return cleaned or "未命名"
+
+
+def _require_accessible_class(user: dict, class_id: int) -> Optional[dict]:
+    cls = get_class(class_id)
+    if not cls:
+        return None
+    scoped = _filter_classes_for_user(user, [cls])
+    return scoped[0] if scoped else None
+
+
+def _weekly_followup_message_payload(message: Optional[dict]) -> Optional[dict]:
+    if not isinstance(message, dict):
+        return None
+    payload = dict(message)
+    payload.pop("source_record_ids_json", None)
+    return payload
+
+
+def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
+    source_record_ids = [
+        str(record_id).strip()
+        for record_id in item.get("source_record_ids", [])
+        if str(record_id or "").strip()
+    ]
+    student_id = int(item.get("student_id") or 0)
+    return {
+        "organization_id": item.get("organization_id"),
+        "class_id": item.get("class_id"),
+        "class_name": item.get("class_name"),
+        "student_id": item.get("student_id"),
+        "student_name": item.get("student_name"),
+        "teacher_user_id": item.get("teacher_user_id"),
+        "teacher_name": item.get("teacher_name"),
+        "weekly_question_count": item.get("weekly_question_count"),
+        "total_active_question_count": item.get("total_active_question_count"),
+        "topic_categories": item.get("topic_categories") or [],
+        "representative_reason_summaries": item.get("representative_reason_summaries") or [],
+        "latest_created_at": item.get("latest_created_at"),
+        "source_record_ids": source_record_ids,
+        "message": _weekly_followup_message_payload(message),
+        "student_library_pdf_url": f"/api/wechat/student-libraries/{student_id}",
+    }
+
+
 def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
     if not isinstance(lesson, dict):
         return None
@@ -2313,6 +2377,182 @@ def api_admin_user_delete(user_id):
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
+
+
+@app.route("/api/wrong-question-followups/weekly", methods=["GET"])
+def api_weekly_wrong_question_followups():
+    user, error = _require_auth()
+    if error:
+        return error
+    class_id = request.args.get("class_id", 0, type=int)
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        week_start_date, week_end_date = _weekly_range(request.args.get("week_start", ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    items = list_weekly_wrong_question_followup_students(
+        organization_id=organization_id,
+        class_id=class_id,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+    )
+    payload_items = []
+    for item in items:
+        message = get_weekly_wrong_question_followup_message(
+            organization_id=organization_id,
+            class_id=class_id,
+            student_id=int(item.get("student_id") or 0),
+            week_start_date=week_start_date,
+            style="warm",
+        )
+        payload_items.append(_weekly_followup_item_payload(item, message))
+
+    return jsonify(
+        {
+            "class_id": class_id,
+            "class_name": cls.get("name"),
+            "week_start_date": week_start_date,
+            "week_end_date": week_end_date,
+            "items": payload_items,
+            "total": len(payload_items),
+        }
+    )
+
+
+@app.route("/api/wrong-question-followups/weekly/class-pdf-archive", methods=["GET"])
+def api_weekly_wrong_question_followup_class_pdf_archive():
+    user, error = _require_auth()
+    if error:
+        return error
+    class_id = request.args.get("class_id", 0, type=int)
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        week_start_date, week_end_date = _weekly_range(request.args.get("week_start", ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    items = list_weekly_wrong_question_followup_students(
+        organization_id=organization_id,
+        class_id=class_id,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+    )
+    buffer = io.BytesIO()
+    successful_count = 0
+    failed_student_names = []
+    used_filenames: dict[str, int] = {}
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in items:
+            student_id = int(item.get("student_id") or 0)
+            student_name = str(item.get("student_name") or "").strip() or "未命名"
+            try:
+                refreshed_pdf_path = _refresh_student_wrong_question_library_cache(student_id)
+                pdf_path = Path(str(refreshed_pdf_path or ""))
+                if not pdf_path.exists():
+                    raise FileNotFoundError(str(pdf_path))
+                base_name = f"{_safe_archive_filename_part(student_name)}-错题本"
+                name_count = used_filenames.get(base_name, 0) + 1
+                used_filenames[base_name] = name_count
+                archive_name = f"{base_name}.pdf" if name_count == 1 else f"{base_name}-{name_count}.pdf"
+                archive.write(pdf_path, archive_name)
+                successful_count += 1
+            except Exception:
+                logger.exception("Failed to add weekly wrong question library pdf to archive")
+                failed_student_names.append(student_name)
+        if failed_student_names:
+            notes = ["以下学生错题本 PDF 打包失败：", *failed_student_names]
+            archive.writestr("打包说明.txt", "\n".join(notes).encode("utf-8"))
+    buffer.seek(0)
+
+    download_name = (
+        f"{_safe_archive_filename_part(str(cls.get('name') or '班级'))}"
+        f"-{week_start_date}-错题本合集.zip"
+    )
+    response = send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_name,
+    )
+    response.headers["X-XR-Archive-Success-Count"] = str(successful_count)
+    response.headers["X-XR-Archive-Failed-Count"] = str(len(failed_student_names))
+    return response
+
+
+@app.route("/api/wrong-question-followups/weekly/messages", methods=["POST"])
+def api_weekly_wrong_question_followup_message_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    try:
+        class_id = int(data.get("class_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "class_id must be numeric"}), 400
+    try:
+        student_id = int(data.get("student_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "student_id must be numeric"}), 400
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        week_start_date, week_end_date = _weekly_range(str(data.get("week_start") or ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    items = list_weekly_wrong_question_followup_students(
+        organization_id=organization_id,
+        class_id=class_id,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+    )
+    item = next((entry for entry in items if int(entry.get("student_id") or 0) == student_id), None)
+    if not item:
+        return jsonify({"error": "not found"}), 404
+
+    practice_sheets = list_wrong_question_practice_sheets_for_student(student_id)
+    message_text = ai_processor.generate_weekly_wrong_question_followup_message(
+        student_name=str(item.get("student_name") or ""),
+        class_name=str(item.get("class_name") or ""),
+        teacher_name=str(item.get("teacher_name") or ""),
+        weekly_question_count=int(item.get("weekly_question_count") or 0),
+        total_active_question_count=int(item.get("total_active_question_count") or 0),
+        topic_categories=item.get("topic_categories") or [],
+        representative_reason_summaries=item.get("representative_reason_summaries") or [],
+        has_practice_sheet=bool(practice_sheets),
+    )
+    message = upsert_weekly_wrong_question_followup_message(
+        organization_id=organization_id,
+        class_id=class_id,
+        student_id=student_id,
+        teacher_user_id=int(item.get("teacher_user_id") or 0),
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+        style="warm",
+        message_text=message_text,
+        source_record_ids=item.get("source_record_ids") or [],
+        generated_by=int(user["id"]),
+    )
+    return jsonify({"ok": True, "message": _weekly_followup_message_payload(message)})
 
 
 @app.route("/api/wrong-questions", methods=["GET"])

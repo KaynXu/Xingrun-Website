@@ -10,6 +10,8 @@ import { JSDOM } from 'jsdom';
 import {
   applyWrongQuestionReviewDraft,
   buildMemberStudentNotebookSummaries,
+  buildWeeklyWrongQuestionFollowupArchivePath,
+  buildWeeklyWrongQuestionFollowupsPath,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewDraft,
@@ -22,6 +24,7 @@ import {
   hydrateWrongQuestionReviewDraftFromDetail,
   isDownstreamWrongQuestionRecord,
   isWechatMiniProgramWrongQuestionRecord,
+  normalizeWeeklyWrongQuestionFollowupResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
@@ -138,6 +141,12 @@ function setupDomEnvironment(): {
 } {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost/',
+  });
+  Object.defineProperty(dom.window.navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async () => undefined,
+    },
   });
   const restoreCallbacks = [
     setGlobalValue('window', dom.window),
@@ -491,6 +500,16 @@ test('SmartWrongQuestionsPage wires primary topic summaries and topic category s
   assert.match(pageSource, /\/api\/wrong-questions\/\$\{encodeURIComponent\(selectedRecord\.id\)\}\/topic-category/);
 });
 
+test('SmartWrongQuestionsPage wires weekly followup UI only into the web smart wrong question page', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /每周跟进/);
+  assert.match(pageSource, /buildWeeklyWrongQuestionFollowupArchivePath/);
+  assert.match(pageSource, /extractGeneratedWeeklyFollowupMessage/);
+  assert.doesNotMatch(pageSource, /extractWeeklyFollowupItem/);
+  assert.doesNotMatch(pageSource, /小程序老师端/);
+});
+
 test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => {
   assert.equal(
     buildWrongQuestionQuery({
@@ -528,6 +547,75 @@ test('record detail and review paths keep roomId when the downstream contract re
     buildWrongQuestionReviewPath('record-1', 'ROOM A/1'),
     '/api/wrong-questions/record-1/review?roomId=ROOM%20A%2F1',
   );
+});
+
+test('weekly followup path builders keep the feature web-only', () => {
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupsPath(42, '2026-05-04'),
+    '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04',
+  );
+
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupArchivePath(42, '2026-05-04'),
+    '/api/wrong-question-followups/weekly/class-pdf-archive?class_id=42&week_start=2026-05-04',
+  );
+});
+
+test('normalizeWeeklyWrongQuestionFollowupResponse preserves cached messages', () => {
+  const payload = normalizeWeeklyWrongQuestionFollowupResponse({
+    class_id: 42,
+    class_name: '六年级 1 班',
+    week_start_date: '2026-05-04',
+    week_end_date: '2026-05-10',
+    total: 1,
+    items: [
+      {
+        student_id: 501,
+        student_name: '王睿博',
+        wrong_question_count: 3,
+        topic_categories: ['计算', '应用题'],
+        primary_error_types: ['审题遗漏'],
+        student_library_pdf_url: '/api/wechat/student-libraries/501',
+        message: {
+          id: 7,
+          message_text: '王睿博妈妈，我刚看了下孩子这周错题。',
+          source_record_ids: ['record-a', 'record-b'],
+          created_at: '2026-05-04T08:00:00Z',
+          updated_at: '2026-05-04T08:30:00Z',
+        },
+      },
+    ],
+  });
+
+  assert.equal(payload.items[0]?.studentName, '王睿博');
+  assert.equal(payload.items[0]?.message?.messageText, '王睿博妈妈，我刚看了下孩子这周错题。');
+  assert.equal(payload.items[0]?.studentLibraryPdfUrl, '/api/wechat/student-libraries/501');
+});
+
+test('normalizeWeeklyWrongQuestionFollowupResponse falls back for malformed numeric fields', () => {
+  const payload = normalizeWeeklyWrongQuestionFollowupResponse({
+    class_id: 'not-a-class',
+    total: 'not-a-total',
+    items: [
+      {
+        student_id: 'not-a-student',
+        student_name: '王睿博',
+        weekly_question_count: 'not-a-count',
+        total_active_question_count: 'not-active-count',
+        message: {
+          id: 'not-a-message',
+          message_text: '本周继续稳住计算步骤。',
+        },
+      },
+    ],
+  });
+
+  assert.equal(payload.classId, 0);
+  assert.equal(payload.total, 1);
+  assert.equal(payload.items[0]?.studentId, 0);
+  assert.equal(payload.items[0]?.weeklyQuestionCount, 0);
+  assert.equal(payload.items[0]?.totalActiveQuestionCount, 0);
+  assert.equal(payload.items[0]?.message?.id, 0);
 });
 
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
@@ -2544,6 +2632,357 @@ test('SmartWrongQuestionsPage renders class-based student notebooks for owner ac
       assert.match(pageText, /Alice/);
       assert.match(pageText, /Bob/);
       assert.match(pageText, /1题/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage loads weekly followup items from the web API for the selected class and week', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 43, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 501, name: '王睿博' }],
+        });
+      }
+
+      if (input === '/api/classes/43/students') {
+        return createJsonResponse({
+          students: [{ id: 601, name: '李同学' }],
+        });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            makeNotebookApiRecord({
+              id: 'weekly-record-a',
+              student_id: 501,
+              student_name: '王睿博',
+              class_id: 42,
+              class_display_name: '六年级 1 班',
+              teacher_user_id: 7,
+              teacher_display_name: 'Kayn',
+            }),
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/weekly-record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse(makeNotebookApiRecord({
+          id: 'weekly-record-a',
+          student_id: 501,
+          student_name: '王睿博',
+          class_id: 42,
+          class_display_name: '六年级 1 班',
+          teacher_user_id: 7,
+          teacher_display_name: 'Kayn',
+        }));
+      }
+
+      if (input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04') {
+        return createJsonResponse({
+          class_id: 42,
+          class_name: '六年级 1 班',
+          week_start_date: '2026-05-04',
+          week_end_date: '2026-05-10',
+          total: 1,
+          items: [
+            {
+              student_id: 501,
+              student_name: '王睿博',
+              weekly_question_count: 3,
+              total_active_question_count: 5,
+              topic_categories: ['计算'],
+              representative_reason_summaries: ['审题遗漏'],
+              source_record_ids: ['weekly-record-a'],
+              student_library_pdf_url: '/api/wechat/student-libraries/501',
+              message: {
+                id: 7,
+                message_text: '王睿博妈妈，我刚看了下孩子这周错题。',
+                source_record_ids: ['weekly-record-a'],
+              },
+            },
+          ],
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周跟进'));
+      assert.ok(followupButton instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const weekInput = domEnvironment.container.querySelector('input[aria-label="周次"]') as HTMLInputElement | null;
+    assert.ok(weekInput instanceof HTMLInputElement);
+
+    await act(async () => {
+      weekInput.value = '2026-05-04';
+      weekInput.dispatchEvent(new Event('input', { bubbles: true }));
+      weekInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const loadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('查看跟进清单'));
+    assert.ok(loadButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /网页智能错题/);
+      assert.match(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04'));
+    });
+
+    await selectNotebookClass(domEnvironment.container, '43');
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.doesNotMatch(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
+      assert.doesNotMatch(pageText, /重新生成话术/);
+      assert.equal(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly/messages' && call.init?.method === 'POST'), false);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage updates one weekly followup card after generating a message response', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 501, name: '王睿博' }],
+        });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            makeNotebookApiRecord({
+              id: 'weekly-record-a',
+              student_id: 501,
+              student_name: '王睿博',
+              class_id: 42,
+              class_display_name: '六年级 1 班',
+              teacher_user_id: 7,
+              teacher_display_name: 'Kayn',
+            }),
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/weekly-record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse(makeNotebookApiRecord({
+          id: 'weekly-record-a',
+          student_id: 501,
+          student_name: '王睿博',
+          class_id: 42,
+          class_display_name: '六年级 1 班',
+          teacher_user_id: 7,
+          teacher_display_name: 'Kayn',
+        }));
+      }
+
+      if (input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04') {
+        return createJsonResponse({
+          class_id: 42,
+          class_name: '六年级 1 班',
+          week_start_date: '2026-05-04',
+          week_end_date: '2026-05-10',
+          total: 1,
+          items: [
+            {
+              student_id: 501,
+              student_name: '王睿博',
+              weekly_question_count: 3,
+              total_active_question_count: 5,
+              topic_categories: ['计算'],
+              representative_reason_summaries: ['审题遗漏'],
+              source_record_ids: ['weekly-record-a'],
+              student_library_pdf_url: '/api/wechat/student-libraries/501',
+              message: null,
+            },
+          ],
+        });
+      }
+
+      if (input === '/api/wrong-question-followups/weekly/messages' && init?.method === 'POST') {
+        return createJsonResponse({
+          ok: true,
+          message: {
+            id: 8,
+            message_text: '王睿博妈妈，这周我会重点盯一下计算步骤。',
+            source_record_ids: [501, 'weekly-record-a'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const button = Array.from(domEnvironment.container.querySelectorAll('button')).find((candidate) => candidate.textContent?.includes('每周跟进'));
+      assert.ok(button instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const weekInput = domEnvironment.container.querySelector('input[aria-label="周次"]') as HTMLInputElement | null;
+    assert.ok(weekInput instanceof HTMLInputElement);
+
+    await act(async () => {
+      weekInput.value = '2026-05-04';
+      weekInput.dispatchEvent(new Event('input', { bubbles: true }));
+      weekInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const loadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('查看跟进清单'));
+    assert.ok(loadButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /生成话术/);
+      assert.doesNotMatch(pageText, /王睿博妈妈，这周我会重点盯一下计算步骤。/);
+    });
+
+    const generateButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成话术'));
+    assert.ok(generateButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      generateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /王睿博妈妈，这周我会重点盯一下计算步骤。/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly/messages' && call.init?.method === 'POST'));
     });
   } finally {
     if (root) {

@@ -6,6 +6,7 @@ const {
   cacheParentBinding,
   classifyParentReason,
   ensureParentSession,
+  fetchParentTopicCategorySuggestions,
   fetchParentBindings,
   fetchChildWrongQuestionLibrary,
   fetchWrongQuestionUploadTask,
@@ -109,6 +110,7 @@ test('normalizeParentBinding and upsertParentBinding keep canonical ids for pare
     id: '21',
     class_id: '8',
     class_name: '六年级 1 班',
+    class_grade: '六年级',
     student_id: '101',
     student_name: 'Alice',
     teacher_user_id: '5',
@@ -125,6 +127,7 @@ test('normalizeParentBinding and upsertParentBinding keep canonical ids for pare
     openId: '',
     classId: 8,
     className: '六年级 1 班',
+    classGrade: '六年级',
     studentId: 101,
     studentName: 'Alice',
     teacherUserId: 5,
@@ -133,6 +136,36 @@ test('normalizeParentBinding and upsertParentBinding keep canonical ids for pare
   });
 
   assert.deepEqual(upsertParentBinding([first], second), [second]);
+});
+
+test('fetchParentTopicCategorySuggestions reads primary topic options from the bridge', async () => {
+  let capturedRequest = null;
+  const wxApi = {
+    request({ url, method, data, success }) {
+      capturedRequest = { url, method, data };
+      success({
+        statusCode: 200,
+        data: {
+          items: ['周期问题', '几何模型'],
+        },
+      });
+    },
+  };
+
+  const payload = await fetchParentTopicCategorySuggestions(wxApi, 'https://example.com', {
+    openId: 'openid-parent-1',
+    topicCategory: '周期',
+  });
+
+  assert.deepEqual(capturedRequest, {
+    url: 'https://example.com/wechat/parent/primary-topic-category-suggestions',
+    method: 'GET',
+    data: {
+      openId: 'openid-parent-1',
+      topicCategory: '周期',
+    },
+  });
+  assert.deepEqual(payload.items, ['周期问题', '几何模型']);
 });
 
 test('bindParentStudent caches multiple children and resolveParentEntryPath follows binding presence', async () => {
