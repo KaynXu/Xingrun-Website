@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-05 已在已确认设计稿基础上新增“超级管理员本周错题活跃数据总结”实现计划：`docs/superpowers/plans/2026-05-05-weekly-wrong-question-activity-summary.md`。计划按 TDD 拆为后端汇总函数、超级管理员 API、前端数据模型、网页智能错题超级管理员面板、最终验证和 handoff；实现目标仍是三块自然列举列表，不做 AI 总结、图表、导出或自动提醒。
 - 2026-05-05 已按用户确认方向新增下一阶段“每周错题练习跟进”设计稿：`docs/superpowers/specs/2026-05-05-practice-based-weekly-wrong-question-followup-design.md`。新口径把跟进对象从“本周原始错题/学生错题本”改为“老师本周生成的错题练习 PDF”；老师已生成练习时 AI 根据练习单写微信话术，未生成练习时支持单个或批量让 AI 自动补生成；AI 自动生成会按最近未练、未掌握数量和易反复错题动态选择分类；已掌握错题按基础题 60 天、易反复题 30 天复现；错题 6 个月后软归档，退出日常练习和每周跟进但历史仍可查。
 - 2026-05-04 已收口用户截图里的家长上传页状态重复和“提交成功/后台识别”语义冲突：任务被服务器接收后不再继续用上传页长轮询和按钮 loading 圈卡住家长，页面只保留下方结果卡；上方进度卡只在任务尚未接收前显示。结果文案统一为“已接收，云端识别中”，明确“可以先离开本页，稍后回错题本查看”，其中“已接收”只表示云端拿到任务，真正识别完成仍以错题本/刷新进度为准。proof `/tmp/xingrun_parent_upload_background_status_proof.sh` 已通过：定向小程序状态测试、视觉 polish proof、上传稳定性 proof、bridge parent upload tests、bridge build、网站上传 API/data tests 和 `git diff --check`。
 - 2026-05-04 已完成小程序“补充错因和专题”小学范围收口：专题仍写入官网共享错题字段 `topic_category`，网站/小程序编辑同一条错题记录会同步；家长上传页和错题本页现在只在小学班级展示专题分类、筛选和修改入口，初高中班级不显示专题控件，上传时固定提交 `未分类`。小程序 binding 现在读取官网返回的 `class_grade` 辅助判断学段；bridge 新增 `/wechat/parent/primary-topic-category-suggestions`，小学端会合并官网已有小学自定义专题到选项里。
@@ -190,7 +191,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 请先 review `docs/superpowers/specs/2026-05-04-weekly-wrong-question-activity-summary-design.md`，确认“本周活跃班级/老师/学生”三列表口径无误；确认后再进入实现计划，优先补超级管理员专用汇总接口和智能错题页入口。
+- 超级管理员本周错题活跃数据总结已进入实现计划阶段；下一步按 `docs/superpowers/plans/2026-05-05-weekly-wrong-question-activity-summary.md` 执行，优先补 `lesson_manager.list_weekly_wrong_question_activity_summary()` 和 `GET /api/admin/wrong-question-activity-summary`，再接入网页智能错题 `本周数据总结` 面板。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
 - 小程序上传 2.0 稳定性 Ralph 已无下一条自动 story；后续只剩手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
