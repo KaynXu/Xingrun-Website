@@ -2487,7 +2487,6 @@ def api_weekly_wrong_question_followup_class_pdf_archive():
     )
     response.headers["X-XR-Archive-Success-Count"] = str(successful_count)
     response.headers["X-XR-Archive-Failed-Count"] = str(len(failed_student_names))
-    response.headers["X-XR-Archive-Failed-Students"] = ",".join(failed_student_names)
     return response
 
 

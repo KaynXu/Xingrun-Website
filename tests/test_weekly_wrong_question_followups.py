@@ -170,7 +170,7 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["X-XR-Archive-Success-Count"], "1")
         self.assertEqual(response.headers["X-XR-Archive-Failed-Count"], "1")
-        self.assertIn("失败同学", response.headers["X-XR-Archive-Failed-Students"])
+        self.assertNotIn("X-XR-Archive-Failed-Students", response.headers)
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
             self.assertIn("周同学-错题本.pdf", archive.namelist())
             self.assertIn("打包说明.txt", archive.namelist())
