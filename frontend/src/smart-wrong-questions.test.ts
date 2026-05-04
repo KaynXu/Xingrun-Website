@@ -10,6 +10,8 @@ import { JSDOM } from 'jsdom';
 import {
   applyWrongQuestionReviewDraft,
   buildMemberStudentNotebookSummaries,
+  buildWeeklyWrongQuestionFollowupArchivePath,
+  buildWeeklyWrongQuestionFollowupsPath,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewDraft,
@@ -22,6 +24,7 @@ import {
   hydrateWrongQuestionReviewDraftFromDetail,
   isDownstreamWrongQuestionRecord,
   isWechatMiniProgramWrongQuestionRecord,
+  normalizeWeeklyWrongQuestionFollowupResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
@@ -528,6 +531,49 @@ test('record detail and review paths keep roomId when the downstream contract re
     buildWrongQuestionReviewPath('record-1', 'ROOM A/1'),
     '/api/wrong-questions/record-1/review?roomId=ROOM%20A%2F1',
   );
+});
+
+test('weekly followup path builders keep the feature web-only', () => {
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupsPath(42, '2026-05-04'),
+    '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04',
+  );
+
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupArchivePath(42, '2026-05-04'),
+    '/api/wrong-question-followups/weekly/class-pdf-archive?class_id=42&week_start=2026-05-04',
+  );
+});
+
+test('normalizeWeeklyWrongQuestionFollowupResponse preserves cached messages', () => {
+  const payload = normalizeWeeklyWrongQuestionFollowupResponse({
+    class_id: 42,
+    class_name: '六年级 1 班',
+    week_start_date: '2026-05-04',
+    week_end_date: '2026-05-10',
+    total: 1,
+    items: [
+      {
+        student_id: 501,
+        student_name: '王睿博',
+        wrong_question_count: 3,
+        topic_categories: ['计算', '应用题'],
+        primary_error_types: ['审题遗漏'],
+        student_library_pdf_url: '/api/wechat/student-libraries/501',
+        message: {
+          id: 7,
+          message_text: '王睿博妈妈，我刚看了下孩子这周错题。',
+          source_record_ids: ['record-a', 'record-b'],
+          created_at: '2026-05-04T08:00:00Z',
+          updated_at: '2026-05-04T08:30:00Z',
+        },
+      },
+    ],
+  });
+
+  assert.equal(payload.items[0]?.studentName, '王睿博');
+  assert.equal(payload.items[0]?.message?.messageText, '王睿博妈妈，我刚看了下孩子这周错题。');
+  assert.equal(payload.items[0]?.studentLibraryPdfUrl, '/api/wechat/student-libraries/501');
 });
 
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
