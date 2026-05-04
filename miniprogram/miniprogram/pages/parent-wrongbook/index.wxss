@@ -166,12 +166,20 @@
 }
 
 .topic-scroll {
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  width: 100%;
 }
 
 .topic-chip {
-  display: inline-block;
-  margin: 0 12rpx 12rpx 0;
+  display: flex;
+  flex: 1 1 calc(50% - 6rpx);
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
   padding: 0 22rpx;
   height: 60rpx;
   line-height: 60rpx;
@@ -180,6 +188,10 @@
   color: #2375d8;
   font-size: 22rpx;
   font-weight: 600;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   box-shadow: 0 6rpx 20rpx rgba(45, 87, 140, 0.08);
 }
 

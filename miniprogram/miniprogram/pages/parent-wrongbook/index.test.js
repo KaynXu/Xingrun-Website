@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
+
+const PAGE_DIR = __dirname;
 
 function loadWrongbookPage(parentApi) {
   const pagePath = require.resolve('./index');
@@ -299,6 +303,24 @@ test('onLoad and onShow keep topic controls primary-only', async () => {
 
   assert.equal(primaryPage.data.showPrimaryTopicCategory, true);
   assert.equal(primaryPage.data.topicSummaries.some((item) => item.topicCategory === '周期问题'), true);
+});
+
+test('topic filter chips fill the panel without horizontal scrolling', () => {
+  const template = fs.readFileSync(path.join(PAGE_DIR, 'index.wxml'), 'utf8');
+  const styles = fs.readFileSync(path.join(PAGE_DIR, 'index.wxss'), 'utf8');
+  const styleBlock = (selector) => {
+    const match = styles.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([\\s\\S]*?)\\}`));
+    assert.ok(match, `${selector} rule should exist`);
+    return match[1];
+  };
+  const topicScrollStyles = styleBlock('.topic-scroll');
+  const topicChipStyles = styleBlock('.topic-chip');
+
+  assert.equal(template.includes('scroll-x="true"'), false);
+  assert.match(topicScrollStyles, /display:\s*flex;/);
+  assert.match(topicScrollStyles, /width:\s*100%;/);
+  assert.match(topicChipStyles, /flex:\s*1\s+1\s+calc\(50%\s*-\s*6rpx\);/);
+  assert.match(topicChipStyles, /min-width:\s*0;/);
 });
 
 test('saveTopicCategory ignores non-primary pages', async () => {
