@@ -178,9 +178,49 @@ function getCurrentMondayDateInputValue(): string {
   return `${date.getFullYear()}-${month}-${dayOfMonth}`;
 }
 
-function extractWeeklyFollowupItem(response: unknown): WeeklyWrongQuestionFollowupItem | null {
-  const source = isObjectRecord(response) && isObjectRecord(response.item) ? response.item : response;
-  return normalizeWeeklyWrongQuestionFollowupResponse({ items: [source] }).items[0] ?? null;
+function parseWeeklyFollowupMessageId(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+function normalizeWeeklyFollowupSourceRecordIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean);
+}
+
+function extractGeneratedWeeklyFollowupMessage(response: unknown): WeeklyWrongQuestionFollowupItem['message'] {
+  if (!isObjectRecord(response) || !isObjectRecord(response.message)) {
+    return null;
+  }
+
+  const message = response.message;
+  const messageText = typeof message.message_text === 'string'
+    ? message.message_text
+    : typeof message.messageText === 'string'
+      ? message.messageText
+      : '';
+  const sourceRecordIds = Object.prototype.hasOwnProperty.call(message, 'source_record_ids')
+    ? normalizeWeeklyFollowupSourceRecordIds(message.source_record_ids)
+    : normalizeWeeklyFollowupSourceRecordIds(message.sourceRecordIds);
+
+  return {
+    id: parseWeeklyFollowupMessageId(message.id),
+    messageText,
+    sourceRecordIds,
+  };
 }
 
 function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
@@ -958,15 +998,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           student_id: studentId,
         }),
       });
-      const responseItem = extractWeeklyFollowupItem(response);
-      if (responseItem) {
+      const responseMessage = extractGeneratedWeeklyFollowupMessage(response);
+      if (responseMessage) {
         setWeeklyFollowupItems((current) => current.map((item) => {
           if (item.studentId !== studentId) {
             return item;
           }
-          return responseItem.studentId === studentId
-            ? responseItem
-            : { ...item, message: responseItem.message ?? item.message };
+          return {
+            ...item,
+            message: responseMessage,
+          };
         }));
       }
       setWeeklyFollowupNotice('已生成家长沟通话术。');
