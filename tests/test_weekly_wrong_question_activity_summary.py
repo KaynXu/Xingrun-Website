@@ -288,6 +288,41 @@ class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
         self.assertEqual([item["student_name"] for item in payload["student_items"]], ["Alice"])
 
     def test_organization_id_filter_limits_summary(self):
+        other_org_request = lesson_manager.create_organization_request(
+            "活跃 API 另一个机构",
+            "activity_api_other_owner",
+            "活跃 API 另一个负责人",
+            "owner-pass",
+            recovery_phone="13800000004",
+        )
+        super_owner = lesson_manager.get_user_by_username("Kayn")
+        other_owner, _invite = lesson_manager.approve_organization_request(other_org_request["id"], super_owner["id"])
+        other_class_id = lesson_manager.save_class(
+            "三年级1班",
+            subject="数学",
+            grade="三年级",
+            organization_id=other_owner["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(other_class_id, other_owner["id"])
+        other_student = lesson_manager.create_student_for_class(other_class_id, "Other")
+        other_parent = lesson_manager.upsert_parent_wechat_account(openid="openid-activity-api-other")
+        other_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=other_parent["id"],
+            class_id=other_class_id,
+            student_id=other_student["id"],
+        )
+        other_record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=other_binding["id"],
+            image_url="https://files.example.com/activity-api-other.png",
+            recognition_status="recognized",
+            topic_category="几何",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-05-04 10:00:00", other_record["id"]),
+            )
+
         response = self.client.get(
             f"/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id={self.organization_id}",
             headers=self.super_headers,
@@ -296,6 +331,10 @@ class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual([item["organization_id"] for item in payload["class_items"]], [self.organization_id])
+        self.assertEqual([item["class_name"] for item in payload["class_items"]], ["五年级3班"])
+        self.assertNotIn("三年级1班", [item["class_name"] for item in payload["class_items"]])
+        self.assertEqual([item["student_name"] for item in payload["student_items"]], ["Alice"])
+        self.assertNotIn("Other", [item["student_name"] for item in payload["student_items"]])
 
     def test_owner_cannot_get_weekly_activity_summary(self):
         response = self.client.get(
