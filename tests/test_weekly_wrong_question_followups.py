@@ -287,6 +287,8 @@ class WeeklyWrongQuestionFollowupAiTestCase(unittest.TestCase):
             )
 
         self.assertIn("王睿博妈妈", message)
+        for forbidden_output_phrase in ["小程序", "系统", "AI", "后台", "数据分析"]:
+            self.assertNotIn(forbidden_output_phrase, message)
         call_kwargs = client.chat.completions.create.call_args.kwargs
         sent_messages = call_kwargs["messages"]
         sent_prompt = "\n".join(str(item["content"]) for item in sent_messages)
