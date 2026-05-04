@@ -2490,6 +2490,147 @@ def api_weekly_wrong_question_followup_class_pdf_archive():
     return response
 
 
+def _weekly_followup_item_for_student(items: list[dict], student_id: int) -> Optional[dict]:
+    for item in items:
+        if int(item.get("student_id") or 0) == int(student_id or 0):
+            return item
+    return None
+
+
+def _create_weekly_followup_practice_sheet_from_item(user: dict, item: dict) -> dict:
+    record_ids = [str(record_id or "").strip() for record_id in (item.get("candidate_record_ids") or [])]
+    selected_records = []
+    for record_id in record_ids:
+        if not record_id:
+            continue
+        record = get_wechat_wrong_question_submission(record_id)
+        if record:
+            selected_records.append(record)
+    if not selected_records:
+        raise ValueError("no practice candidates")
+    sheet = create_pending_wrong_question_practice_sheet(
+        created_by=int(user["id"]),
+        selected_records=selected_records,
+    )
+    _start_wrong_question_practice_generation_thread(
+        sheet_id=int(sheet["id"]),
+        user={
+            "id": int(user["id"]),
+            "organization_id": int(user["organization_id"]),
+        },
+    )
+    return sheet
+
+
+@app.route("/api/wrong-question-followups/weekly/practice-sheets", methods=["POST"])
+def api_weekly_wrong_question_followup_practice_sheet_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    if not has_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+    try:
+        class_id = int(data.get("class_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "class_id must be numeric"}), 400
+    try:
+        student_id = int(data.get("student_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "student_id must be numeric"}), 400
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        week_start_date, week_end_date = _weekly_range(data.get("week_start", ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    items = list_weekly_wrong_question_followup_students(
+        organization_id=organization_id,
+        class_id=class_id,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+    )
+    item = _weekly_followup_item_for_student(items, student_id)
+    if not item:
+        return jsonify({"error": "student followup not found"}), 404
+    if item.get("status") != "needs_practice_sheet":
+        return jsonify({"error": "student does not need a weekly practice sheet"}), 409
+    try:
+        sheet = _create_weekly_followup_practice_sheet_from_item(user, item)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({
+        "id": sheet["id"],
+        "status": sheet["status"],
+        "student_id": sheet["student_id"],
+        "sheet": _serialize_wrong_question_practice_sheet_for_response(sheet),
+    }), 202
+
+
+@app.route("/api/wrong-question-followups/weekly/practice-sheets/batch", methods=["POST"])
+def api_weekly_wrong_question_followup_practice_sheet_batch_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    if not has_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+    try:
+        class_id = int(data.get("class_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "class_id must be numeric"}), 400
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        week_start_date, week_end_date = _weekly_range(data.get("week_start", ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    items = list_weekly_wrong_question_followup_students(
+        organization_id=organization_id,
+        class_id=class_id,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+    )
+    created_items = []
+    skipped_count = 0
+    for item in items:
+        if item.get("status") != "needs_practice_sheet":
+            skipped_count += 1
+            continue
+        try:
+            sheet = _create_weekly_followup_practice_sheet_from_item(user, item)
+        except ValueError:
+            skipped_count += 1
+            continue
+        created_items.append({
+            "id": sheet["id"],
+            "status": sheet["status"],
+            "student_id": sheet["student_id"],
+            "sheet": _serialize_wrong_question_practice_sheet_for_response(sheet),
+        })
+    return jsonify({
+        "items": created_items,
+        "created_count": len(created_items),
+        "skipped_count": skipped_count,
+    }), 202
+
+
 @app.route("/api/wrong-question-followups/weekly/messages", methods=["POST"])
 def api_weekly_wrong_question_followup_message_create():
     user, error = _require_auth()

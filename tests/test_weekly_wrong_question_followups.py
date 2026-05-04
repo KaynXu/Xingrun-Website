@@ -248,6 +248,103 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["error"], "student_id must be numeric")
 
+    @mock.patch("app._start_wrong_question_practice_generation_thread")
+    @mock.patch("app.has_api_key", return_value=True)
+    def test_post_weekly_practice_sheet_creates_pending_sheet_for_student_without_weekly_sheet(
+        self,
+        _mock_has_api_key,
+        mock_start_thread,
+    ):
+        response = self.client.post(
+            "/api/wrong-question-followups/weekly/practice-sheets",
+            json={
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+                "week_start": "2026-04-08",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "pending")
+        saved = lesson_manager.get_wrong_question_practice_sheet(payload["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["student_id"], self.student["id"])
+        self.assertEqual(
+            [item["wrong_question_record_id"] for item in saved["items"]],
+            [self.record["id"]],
+        )
+        mock_start_thread.assert_called_once()
+        self.assertEqual(mock_start_thread.call_args.kwargs["sheet_id"], payload["id"])
+
+    @mock.patch("app._start_wrong_question_practice_generation_thread")
+    @mock.patch("app.has_api_key", return_value=True)
+    def test_post_weekly_practice_sheet_batch_skips_students_with_existing_sheet(
+        self,
+        _mock_has_api_key,
+        mock_start_thread,
+    ):
+        second_student = lesson_manager.create_student_for_class(self.class_id, "批量同学")
+        second_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=self.parent_account["id"],
+            class_id=self.class_id,
+            student_id=second_student["id"],
+        )
+        second_record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=second_binding["id"],
+            image_url="https://files.example.com/weekly-batch.png",
+            recognition_status="recognized",
+            topic_category="几何",
+            secondary_error_summary="角度关系没标完整",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-04-09 10:00:00", second_record["id"]),
+            )
+        existing_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(self.record["id"])],
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            existing_sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": self.record["id"],
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "下次我会先 ______。",
+                }
+            ],
+            pdf_path="/tmp/existing-weekly-practice.pdf",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_practice_sheets SET created_at=? WHERE id=?",
+                ("2026-04-08 12:00:00", existing_sheet["id"]),
+            )
+
+        response = self.client.post(
+            "/api/wrong-question-followups/weekly/practice-sheets/batch",
+            json={
+                "class_id": self.class_id,
+                "week_start": "2026-04-08",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["skipped_count"], 1)
+        self.assertEqual(payload["items"][0]["student_id"], second_student["id"])
+        created_sheet = lesson_manager.get_wrong_question_practice_sheet(payload["items"][0]["id"])
+        self.assertEqual(
+            [item["wrong_question_record_id"] for item in created_sheet["items"]],
+            [second_record["id"]],
+        )
+        mock_start_thread.assert_called_once()
+
     def test_super_owner_weekly_followup_uses_selected_class_organization(self):
         response = self.client.get(
             f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
