@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-04 已把错题练习生成的错因/改进填空提示词从泛化引导改为“具像到本题”：`ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT` 现在要求结合题面对象、条件、问法、符号，以及孩子语音/文字里的具体遗漏、误判和步骤顺序来生成类似复习计划的填空题，并加入定义域/单调性示例避免继续输出“性质理解不透彻”这类泛句。proof `/tmp/xingrun_concrete_wrong_question_blanks_proof.sh` 已通过：`tests.test_ai_processor_prompt`、`tests.test_wrong_question_practice_store`、`tests.test_wrong_question_practice_async_api`、`py_compile ai_processor.py`、`git diff --check`。
 - 2026-05-04 已定位用户截图“语音没有识别出有效内容，请再录一次”：现场手机仍在跑旧小程序包，旧包会先调用 `/wechat/parent/reason-transcriptions` 并把空 `transcript_text` 当作本地失败拦截。当前修复分支 `fix/legacy-voice-transcription-fallback` 已把 bridge 旧预转写兼容接口改为立即返回非空占位文本 `语音说明已上传，老师端会继续处理。`，并把旧 `/wechat/parent/reason-classifications` 改为立即回显输入文本、不再调用网站 AI，避免旧包继续等转写/归类。新版异步上传链路不受影响。latest proof `/tmp/xingrun_legacy_voice_fallback_proof_20260504.sh` 已通过：bridge 19 条测试、bridge build、家长小程序上传相关 71 条测试、`git diff --check`。
 - 2026-05-04 已修复小程序家长上传语音错因的同步转写超时阻塞：当前小程序 `transcribeParentReason()` 兼容函数改为立即返回空转写，不再发 `/wechat/parent/reason-transcriptions`；新版上传链路仍是先上传语音文件 URL 和题图任务，后台 `xingrun-rq-worker` 负责语音转写、错因分析、题图识别和 PDF 刷新。旧包兼容接口的最新行为以上一条为准，不再返回空 `transcript_text`。proof `/tmp/xingrun_async_voice_upload_proof.sh` 已通过：家长小程序测试 71 条、bridge 测试 20 条、bridge build、网站微信上传/错因 flow 56 条、Python compile、`git diff --check`。
 - 2026-05-04 已在设计稿基础上新增实现计划：`docs/superpowers/plans/2026-05-04-weekly-wrong-question-followup-implementation.md`。计划按 TDD 拆为后端存储/周汇总查询、AI 微信话术生成、Flask 跟进 API、班级错题本 zip 下载、网页智能错题前端模型与 UI、最终验证和交接；实施范围仍明确为网页智能错题内使用，不新增小程序老师端、不做订阅消息推送。
