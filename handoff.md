@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-04
+最后更新：2026-05-05
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-05 已按用户确认方向新增下一阶段“每周错题练习跟进”设计稿：`docs/superpowers/specs/2026-05-05-practice-based-weekly-wrong-question-followup-design.md`。新口径把跟进对象从“本周原始错题/学生错题本”改为“老师本周生成的错题练习 PDF”；老师已生成练习时 AI 根据练习单写微信话术，未生成练习时支持单个或批量让 AI 自动补生成；AI 自动生成会按最近未练、未掌握数量和易反复错题动态选择分类；已掌握错题按基础题 60 天、易反复题 30 天复现；错题 6 个月后软归档，退出日常练习和每周跟进但历史仍可查。
 - 2026-05-04 已收口用户截图里的家长上传页状态重复和“提交成功/后台识别”语义冲突：任务被服务器接收后不再继续用上传页长轮询和按钮 loading 圈卡住家长，页面只保留下方结果卡；上方进度卡只在任务尚未接收前显示。结果文案统一为“已接收，云端识别中”，明确“可以先离开本页，稍后回错题本查看”，其中“已接收”只表示云端拿到任务，真正识别完成仍以错题本/刷新进度为准。proof `/tmp/xingrun_parent_upload_background_status_proof.sh` 已通过：定向小程序状态测试、视觉 polish proof、上传稳定性 proof、bridge parent upload tests、bridge build、网站上传 API/data tests 和 `git diff --check`。
 - 2026-05-04 已完成小程序“补充错因和专题”小学范围收口：专题仍写入官网共享错题字段 `topic_category`，网站/小程序编辑同一条错题记录会同步；家长上传页和错题本页现在只在小学班级展示专题分类、筛选和修改入口，初高中班级不显示专题控件，上传时固定提交 `未分类`。小程序 binding 现在读取官网返回的 `class_grade` 辅助判断学段；bridge 新增 `/wechat/parent/primary-topic-category-suggestions`，小学端会合并官网已有小学自定义专题到选项里。
 - 2026-05-04 当前活跃 Ralph 队列“小程序视觉正式版升级”已完成：新的 `scripts/ralph/prd.json` 只聚焦微信小程序前端 `miniprogram/miniprogram/`，`MP-VISUAL-001` 到 `MP-VISUAL-010` 均已完成；共享视觉 primitives 已集中到 `miniprogram/miniprogram/app.wxss`，家长首页/绑定页/上传页/错题本页已按正式产品视觉和按钮层级收口，最终 guardrail `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh` 已串起 PRD pass gate、视觉验收、上传稳定性和网站/后端改动防线；`scripts/ralph/run_codex_ralph.sh --check` 当前无下一条自动 story。
