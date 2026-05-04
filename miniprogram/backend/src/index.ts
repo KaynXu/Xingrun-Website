@@ -8,7 +8,6 @@ import { fileURLToPath } from 'url';
 import { upload } from './upload.js';
 import {
   bindParentStudentOnWebsite,
-  classifyParentReasonOnWebsite,
   getWrongQuestionLibraryForChildOnWebsite,
   getWrongQuestionUploadTaskOnWebsite,
   listParentBindingsOnWebsite,
@@ -226,7 +225,7 @@ export function createApp() {
       return;
     }
 
-    res.json({ transcript_text: '' });
+    res.json({ transcript_text: '语音说明已上传，老师端会继续处理。' });
   });
 
   app.post('/wechat/parent/reason-classifications', async (req, res) => {
@@ -236,14 +235,11 @@ export function createApp() {
       return;
     }
 
-    try {
-      const payload = await classifyParentReasonOnWebsite({ childReasonText });
-      res.json(payload);
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    res.json({
+      display_text: childReasonText,
+      primary_error_type: '',
+      secondary_error_summary: '',
+    });
   });
 
   app.post('/wechat/parent/wrong-questions', upload.single('file'), async (req, res) => {
