@@ -1520,12 +1520,6 @@ def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
         if str(record_id or "").strip()
     ]
     student_id = int(item.get("student_id") or 0)
-    student_library_pdf_url = None
-    for record_id in source_record_ids:
-        record = get_wechat_wrong_question_submission(record_id)
-        if record and str(record.get("student_library_pdf_path") or "").strip():
-            student_library_pdf_url = f"/api/wechat/student-libraries/{student_id}"
-            break
     return {
         "organization_id": item.get("organization_id"),
         "class_id": item.get("class_id"),
@@ -1541,7 +1535,7 @@ def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
         "latest_created_at": item.get("latest_created_at"),
         "source_record_ids": source_record_ids,
         "message": _weekly_followup_message_payload(message),
-        "student_library_pdf_url": student_library_pdf_url,
+        "student_library_pdf_url": f"/api/wechat/student-libraries/{student_id}",
     }
 
 
@@ -2389,13 +2383,14 @@ def api_weekly_wrong_question_followups():
     cls = _require_accessible_class(user, class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
     try:
         week_start_date, week_end_date = _weekly_range(request.args.get("week_start", ""))
     except ValueError:
         return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
 
     items = list_weekly_wrong_question_followup_students(
-        organization_id=int(user.get("organization_id") or cls.get("organization_id") or 0),
+        organization_id=organization_id,
         class_id=class_id,
         week_start_date=week_start_date,
         week_end_date=week_end_date,
@@ -2403,7 +2398,7 @@ def api_weekly_wrong_question_followups():
     payload_items = []
     for item in items:
         message = get_weekly_wrong_question_followup_message(
-            organization_id=int(user.get("organization_id") or item.get("organization_id") or 0),
+            organization_id=organization_id,
             class_id=class_id,
             student_id=int(item.get("student_id") or 0),
             week_start_date=week_start_date,
@@ -2440,13 +2435,14 @@ def api_weekly_wrong_question_followup_message_create():
     cls = _require_accessible_class(user, class_id)
     if not cls:
         return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
     try:
         week_start_date, week_end_date = _weekly_range(str(data.get("week_start") or ""))
     except ValueError:
         return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
 
     items = list_weekly_wrong_question_followup_students(
-        organization_id=int(user.get("organization_id") or cls.get("organization_id") or 0),
+        organization_id=organization_id,
         class_id=class_id,
         week_start_date=week_start_date,
         week_end_date=week_end_date,
@@ -2467,7 +2463,7 @@ def api_weekly_wrong_question_followup_message_create():
         has_practice_sheet=bool(practice_sheets),
     )
     message = upsert_weekly_wrong_question_followup_message(
-        organization_id=int(user.get("organization_id") or item.get("organization_id") or 0),
+        organization_id=organization_id,
         class_id=class_id,
         student_id=student_id,
         teacher_user_id=int(item.get("teacher_user_id") or 0),

@@ -35,6 +35,13 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         )
         super_owner = lesson_manager.get_user_by_username("Kayn")
         lesson_manager.approve_organization_request(org_request["id"], super_owner["id"])
+        super_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(super_login.status_code, 200)
+        self.super_owner = super_login.get_json()["user"]
+        self.super_headers = {"X-Auth-Token": super_login.get_json()["token"]}
         login = self.client.post(
             "/api/login",
             json={"username": "weekly_api_owner", "password": "owner-pass"},
@@ -67,8 +74,8 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         )
         with lesson_manager.get_conn() as conn:
             conn.execute(
-                "UPDATE wrong_question_submissions SET created_at=?, student_library_pdf_path=? WHERE id=?",
-                ("2026-04-08 09:30:00", "/tmp/student-weekly.pdf", self.record["id"]),
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-04-08 09:30:00", self.record["id"]),
             )
 
     def tearDown(self):
@@ -92,6 +99,10 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         self.assertEqual(item["student_name"], "周同学")
         self.assertEqual(item["source_record_ids"], [self.record["id"]])
         self.assertIsNone(item["message"])
+        self.assertEqual(
+            item["student_library_pdf_url"],
+            f"/api/wechat/student-libraries/{self.student['id']}",
+        )
         self.assertNotIn("miniprogram", item)
 
     def test_post_weekly_followup_message_generates_and_caches_message(self):
@@ -136,6 +147,39 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
             list_response.get_json()["items"][0]["message"]["message_text"],
             "周同学妈妈，这周计算题先盯通分这个小点。",
         )
+
+    def test_super_owner_weekly_followup_uses_selected_class_organization(self):
+        response = self.client.get(
+            f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
+            headers=self.super_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["total"], 1)
+
+        with mock.patch(
+            "app.ai_processor.generate_weekly_wrong_question_followup_message",
+            return_value="周同学妈妈，这周先把通分步骤补稳。",
+        ):
+            message_response = self.client.post(
+                "/api/wrong-question-followups/weekly/messages",
+                json={
+                    "class_id": self.class_id,
+                    "student_id": self.student["id"],
+                    "week_start": "2026-04-08",
+                },
+                headers=self.super_headers,
+            )
+
+        self.assertEqual(message_response.status_code, 200)
+        cached = lesson_manager.get_weekly_wrong_question_followup_message(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            week_start_date="2026-04-06",
+            style="warm",
+        )
+        self.assertEqual(cached["message_text"], "周同学妈妈，这周先把通分步骤补稳。")
 
     def test_weekly_followup_inaccessible_class_returns_404(self):
         org_request = lesson_manager.create_organization_request(
