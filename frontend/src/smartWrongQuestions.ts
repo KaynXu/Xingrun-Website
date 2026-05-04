@@ -147,13 +147,20 @@ export type WeeklyWrongQuestionFollowupMessage = {
   id: number;
   messageText: string;
   sourceRecordIds: string[];
+  sourceSheetId?: number | null;
 };
 
 export type WeeklyWrongQuestionFollowupItem = {
   studentId: number;
   studentName: string;
+  status: string;
+  practiceSheet: WrongQuestionPracticeSheetSummary | null;
   weeklyQuestionCount: number;
   totalActiveQuestionCount: number;
+  candidateQuestionCount: number;
+  candidateRecordIds: string[];
+  recommendedCategory: string;
+  recommendationReason: string;
   topicCategories: string[];
   representativeReasonSummaries: string[];
   sourceRecordIds: string[];
@@ -867,8 +874,16 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
       return {
         studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
         studentName: String(item.student_name ?? item.studentName ?? ''),
+        status: String(item.status ?? 'no_practice_needed'),
+        practiceSheet: isObjectRecord(item.practice_sheet ?? item.practiceSheet)
+          ? normalizeWrongQuestionPracticeSheetSummary(item.practice_sheet ?? item.practiceSheet)
+          : null,
         weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
         totalActiveQuestionCount: pickNumberValue(item, ['total_active_question_count', 'totalActiveQuestionCount']) ?? 0,
+        candidateQuestionCount: pickNumberValue(item, ['candidate_question_count', 'candidateQuestionCount']) ?? 0,
+        candidateRecordIds: normalizeStringList(item.candidate_record_ids ?? item.candidateRecordIds),
+        recommendedCategory: String(item.recommended_category ?? item.recommendedCategory ?? ''),
+        recommendationReason: String(item.recommendation_reason ?? item.recommendationReason ?? ''),
         topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
         representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
         sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
@@ -878,6 +893,7 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
               id: pickNumberValue(rawMessage, ['id']) ?? 0,
               messageText: String(rawMessage.message_text ?? rawMessage.messageText ?? ''),
               sourceRecordIds: normalizeStringList(rawMessage.source_record_ids ?? rawMessage.sourceRecordIds),
+              sourceSheetId: pickNumberValue(rawMessage, ['source_sheet_id', 'sourceSheetId']),
             }
           : null,
       };
@@ -895,6 +911,14 @@ export function buildWeeklyWrongQuestionFollowupArchivePath(classId: number, wee
 
 export function buildWeeklyWrongQuestionFollowupMessagePath(): string {
   return '/api/wrong-question-followups/weekly/messages';
+}
+
+export function buildWeeklyWrongQuestionFollowupPracticeSheetPath(): string {
+  return '/api/wrong-question-followups/weekly/practice-sheets';
+}
+
+export function buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath(): string {
+  return '/api/wrong-question-followups/weekly/practice-sheets/batch';
 }
 
 export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): WrongQuestionPracticeSheetSummary {

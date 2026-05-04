@@ -11,6 +11,9 @@ import {
   applyWrongQuestionReviewDraft,
   buildMemberStudentNotebookSummaries,
   buildWeeklyWrongQuestionFollowupArchivePath,
+  buildWeeklyWrongQuestionFollowupMessagePath,
+  buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
+  buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
@@ -503,8 +506,9 @@ test('SmartWrongQuestionsPage wires primary topic summaries and topic category s
 test('SmartWrongQuestionsPage wires weekly followup UI only into the web smart wrong question page', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
-  assert.match(pageSource, /每周跟进/);
+  assert.match(pageSource, /每周练习跟进/);
   assert.match(pageSource, /buildWeeklyWrongQuestionFollowupArchivePath/);
+  assert.match(pageSource, /buildWeeklyWrongQuestionFollowupPracticeSheetPath/);
   assert.match(pageSource, /extractGeneratedWeeklyFollowupMessage/);
   assert.doesNotMatch(pageSource, /extractWeeklyFollowupItem/);
   assert.doesNotMatch(pageSource, /小程序老师端/);
@@ -558,6 +562,18 @@ test('weekly followup path builders keep the feature web-only', () => {
   assert.equal(
     buildWeeklyWrongQuestionFollowupArchivePath(42, '2026-05-04'),
     '/api/wrong-question-followups/weekly/class-pdf-archive?class_id=42&week_start=2026-05-04',
+  );
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupMessagePath(),
+    '/api/wrong-question-followups/weekly/messages',
+  );
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupPracticeSheetPath(),
+    '/api/wrong-question-followups/weekly/practice-sheets',
+  );
+  assert.equal(
+    buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath(),
+    '/api/wrong-question-followups/weekly/practice-sheets/batch',
   );
 });
 
@@ -2725,17 +2741,38 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
             {
               student_id: 501,
               student_name: '王睿博',
+              status: 'has_practice_sheet',
+              practice_sheet: {
+                id: 88,
+                status: 'ready',
+                question_count: 3,
+                pdf_path: '/tmp/wrb.pdf',
+                pdf_url: '/api/wrong-question-practice-sheets/88/pdf',
+              },
               weekly_question_count: 3,
               total_active_question_count: 5,
               topic_categories: ['计算'],
               representative_reason_summaries: ['审题遗漏'],
               source_record_ids: ['weekly-record-a'],
-              student_library_pdf_url: '/api/wechat/student-libraries/501',
               message: {
                 id: 7,
                 message_text: '王睿博妈妈，我刚看了下孩子这周错题。',
                 source_record_ids: ['weekly-record-a'],
               },
+            },
+            {
+              student_id: 502,
+              student_name: '毛同学',
+              status: 'needs_practice_sheet',
+              weekly_question_count: 2,
+              candidate_question_count: 2,
+              recommended_category: '几何',
+              recommendation_reason: '几何可练错题2道，且最近一周没有练过。',
+              topic_categories: ['几何'],
+              representative_reason_summaries: ['角度关系遗漏'],
+              source_record_ids: ['weekly-record-b'],
+              candidate_record_ids: ['weekly-record-b'],
+              message: null,
             },
           ],
         });
@@ -2760,11 +2797,11 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
     await selectNotebookClass(domEnvironment.container, '42');
 
     await waitForAssertion(() => {
-      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周跟进'));
+      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
       assert.ok(followupButton instanceof HTMLButtonElement);
     });
 
-    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周跟进'));
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
     assert.ok(followupButton instanceof HTMLButtonElement);
 
     await act(async () => {
@@ -2794,6 +2831,8 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /网页智能错题/);
+      assert.match(pageText, /让 AI 生成练习/);
+      assert.match(pageText, /批量生成未生成学生练习/);
       assert.match(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
       assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04'));
     });
@@ -2891,12 +2930,19 @@ test('SmartWrongQuestionsPage updates one weekly followup card after generating 
             {
               student_id: 501,
               student_name: '王睿博',
+              status: 'has_practice_sheet',
+              practice_sheet: {
+                id: 89,
+                status: 'ready',
+                question_count: 3,
+                pdf_path: '/tmp/wrb-2.pdf',
+                pdf_url: '/api/wrong-question-practice-sheets/89/pdf',
+              },
               weekly_question_count: 3,
               total_active_question_count: 5,
               topic_categories: ['计算'],
               representative_reason_summaries: ['审题遗漏'],
               source_record_ids: ['weekly-record-a'],
-              student_library_pdf_url: '/api/wechat/student-libraries/501',
               message: null,
             },
           ],
@@ -2933,11 +2979,11 @@ test('SmartWrongQuestionsPage updates one weekly followup card after generating 
     await selectNotebookClass(domEnvironment.container, '42');
 
     await waitForAssertion(() => {
-      const button = Array.from(domEnvironment.container.querySelectorAll('button')).find((candidate) => candidate.textContent?.includes('每周跟进'));
+      const button = Array.from(domEnvironment.container.querySelectorAll('button')).find((candidate) => candidate.textContent?.includes('每周练习跟进'));
       assert.ok(button instanceof HTMLButtonElement);
     });
 
-    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周跟进'));
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
     assert.ok(followupButton instanceof HTMLButtonElement);
 
     await act(async () => {
