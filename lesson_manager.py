@@ -6999,6 +6999,203 @@ def list_weekly_wrong_question_followup_students(
     return students
 
 
+def list_weekly_wrong_question_activity_summary(
+    *,
+    week_start_date: str,
+    week_end_date: str,
+    organization_id: int | None = None,
+    limit: int = 10,
+) -> dict:
+    week_start_bound = f"{(week_start_date or '').strip()} 00:00:00"
+    week_end_bound = f"{(week_end_date or '').strip()} 23:59:59"
+    normalized_limit = max(1, int(limit or 10))
+    where_clauses = [
+        "wqs.source='wechat_mp'",
+        "wqs.recognition_status='recognized'",
+        "wqs.created_at >= ?",
+        "wqs.created_at <= ?",
+        "wqs.organization_id IS NOT NULL",
+        "wqs.class_id IS NOT NULL",
+        "wqs.student_id IS NOT NULL",
+    ]
+    params: list[object] = [week_start_bound, week_end_bound]
+    if organization_id is not None:
+        where_clauses.append("wqs.organization_id=?")
+        params.append(int(organization_id or 0))
+    where_sql = " AND ".join(where_clauses)
+
+    total_where_clauses = [
+        "source='wechat_mp'",
+        "recognition_status='recognized'",
+        "student_id IS NOT NULL",
+    ]
+    total_params: list[object] = []
+    if organization_id is not None:
+        total_where_clauses.append("organization_id=?")
+        total_params.append(int(organization_id or 0))
+    total_where_sql = " AND ".join(total_where_clauses)
+
+    with get_conn() as conn:
+        weekly_rows = conn.execute(
+            f"""
+            SELECT
+                wqs.*,
+                c.name AS class_name,
+                s.name AS student_name,
+                u.display_name AS teacher_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE {where_sql}
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            params,
+        ).fetchall()
+        total_rows = conn.execute(
+            f"""
+            SELECT student_id, COUNT(*) AS total_question_count
+            FROM wrong_question_submissions
+            WHERE {total_where_sql}
+            GROUP BY student_id
+            """,
+            total_params,
+        ).fetchall()
+
+    total_count_by_student_id = {
+        int(row["student_id"]): int(row["total_question_count"] or 0)
+        for row in total_rows
+    }
+    class_items_by_id: dict[int, dict] = {}
+    teacher_items_by_id: dict[int, dict] = {}
+    student_items_by_id: dict[int, dict] = {}
+    class_student_ids: dict[int, set[int]] = {}
+    teacher_class_ids: dict[int, set[int]] = {}
+    teacher_student_ids: dict[int, set[int]] = {}
+
+    for row in weekly_rows:
+        class_id_value = int(row["class_id"])
+        teacher_user_id = int(row["teacher_user_id"])
+        student_id_value = int(row["student_id"])
+        created_at = str(row["created_at"] or "")
+
+        class_item = class_items_by_id.setdefault(
+            class_id_value,
+            {
+                "organization_id": row["organization_id"],
+                "class_id": row["class_id"],
+                "class_name": row["class_name"],
+                "teacher_user_id": row["teacher_user_id"],
+                "teacher_name": row["teacher_name"],
+                "weekly_question_count": 0,
+                "uploading_student_count": 0,
+                "pending_followup_count": 0,
+                "latest_created_at": created_at,
+            },
+        )
+        class_item["weekly_question_count"] += 1
+        if str(row["archive_status"] or "") == "active":
+            class_item["pending_followup_count"] += 1
+        if created_at > str(class_item["latest_created_at"] or ""):
+            class_item["latest_created_at"] = created_at
+        class_student_ids.setdefault(class_id_value, set()).add(student_id_value)
+
+        teacher_item = teacher_items_by_id.setdefault(
+            teacher_user_id,
+            {
+                "organization_id": row["organization_id"],
+                "teacher_user_id": row["teacher_user_id"],
+                "teacher_name": row["teacher_name"],
+                "class_count": 0,
+                "weekly_question_count": 0,
+                "involved_student_count": 0,
+                "pending_followup_count": 0,
+                "latest_created_at": created_at,
+            },
+        )
+        teacher_item["weekly_question_count"] += 1
+        if str(row["archive_status"] or "") == "active":
+            teacher_item["pending_followup_count"] += 1
+        if created_at > str(teacher_item["latest_created_at"] or ""):
+            teacher_item["latest_created_at"] = created_at
+        teacher_class_ids.setdefault(teacher_user_id, set()).add(class_id_value)
+        teacher_student_ids.setdefault(teacher_user_id, set()).add(student_id_value)
+
+        student_item = student_items_by_id.setdefault(
+            student_id_value,
+            {
+                "organization_id": row["organization_id"],
+                "class_id": row["class_id"],
+                "class_name": row["class_name"],
+                "student_id": row["student_id"],
+                "student_name": row["student_name"],
+                "teacher_user_id": row["teacher_user_id"],
+                "teacher_name": row["teacher_name"],
+                "weekly_question_count": 0,
+                "total_question_count": total_count_by_student_id.get(student_id_value, 0),
+                "pending_followup_count": 0,
+                "topic_categories": [],
+                "latest_created_at": created_at,
+            },
+        )
+        student_item["weekly_question_count"] += 1
+        if str(row["archive_status"] or "") == "active":
+            student_item["pending_followup_count"] += 1
+        if created_at > str(student_item["latest_created_at"] or ""):
+            student_item["latest_created_at"] = created_at
+        topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+        if topic_category not in student_item["topic_categories"]:
+            student_item["topic_categories"].append(topic_category)
+
+    for class_id_value, item in class_items_by_id.items():
+        item["uploading_student_count"] = len(class_student_ids.get(class_id_value, set()))
+    for teacher_user_id, item in teacher_items_by_id.items():
+        item["class_count"] = len(teacher_class_ids.get(teacher_user_id, set()))
+        item["involved_student_count"] = len(teacher_student_ids.get(teacher_user_id, set()))
+    for item in student_items_by_id.values():
+        item["topic_categories"] = sorted(item["topic_categories"])
+
+    class_items = sorted(
+        class_items_by_id.values(),
+        key=lambda item: str(item["latest_created_at"] or ""),
+        reverse=True,
+    )
+    class_items = sorted(
+        class_items,
+        key=lambda item: (
+            -int(item["weekly_question_count"] or 0),
+            -int(item["uploading_student_count"] or 0),
+        ),
+    )
+    teacher_items = sorted(
+        teacher_items_by_id.values(),
+        key=lambda item: (
+            -int(item["weekly_question_count"] or 0),
+            -int(item["involved_student_count"] or 0),
+            -int(item["pending_followup_count"] or 0),
+            str(item["teacher_name"] or ""),
+        ),
+    )
+    student_items = sorted(
+        student_items_by_id.values(),
+        key=lambda item: str(item["latest_created_at"] or ""),
+        reverse=True,
+    )
+    student_items = sorted(
+        student_items,
+        key=lambda item: (
+            -int(item["weekly_question_count"] or 0),
+            -int(item["total_question_count"] or 0),
+        ),
+    )
+
+    return {
+        "class_items": class_items[:normalized_limit],
+        "teacher_items": teacher_items[:normalized_limit],
+        "student_items": student_items[:normalized_limit],
+    }
+
+
 def _serialize_wrong_question_practice_sheet_row(row: sqlite3.Row | None) -> Optional[dict]:
     if not row:
         return None
