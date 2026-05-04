@@ -479,6 +479,42 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
         self.assertEqual(fetched["id"], first["id"])
         self.assertEqual(fetched["source_record_ids"], ["record-2", "record-3"])
 
+    def test_upsert_weekly_wrong_question_followup_message_round_trips_source_sheet_id(self):
+        record = self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/alice-practice-source.png",
+            created_at="2026-04-06 09:00:00",
+        )
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.teacher_user_id,
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(record["id"])],
+        )
+        saved = lesson_manager.upsert_weekly_wrong_question_followup_message(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            student_id=self.alice["id"],
+            teacher_user_id=self.teacher_user_id,
+            week_start_date="2026-04-06",
+            week_end_date="2026-04-12",
+            style="warm",
+            message_text="基于练习单的话术",
+            source_record_ids=["record-1"],
+            source_sheet_id=sheet["id"],
+            generated_by=self.teacher_user_id,
+        )
+        fetched = lesson_manager.get_weekly_wrong_question_followup_message(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            student_id=self.alice["id"],
+            week_start_date="2026-04-06",
+            style="warm",
+        )
+
+        self.assertEqual(saved["source_sheet_id"], sheet["id"])
+        self.assertEqual(saved["source_record_ids"], ["record-1"])
+        self.assertEqual(fetched["source_sheet_id"], sheet["id"])
+        self.assertEqual(fetched["source_record_ids"], ["record-1"])
+
     def test_deleting_teacher_referenced_by_followup_message_does_not_fail_fk(self):
         teacher_request = lesson_manager.create_registration_request(
             "weekly_teacher",

@@ -1458,6 +1458,7 @@ def _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn: sql
             style                         TEXT NOT NULL DEFAULT 'warm',
             message_text                  TEXT NOT NULL DEFAULT '',
             source_record_ids_json        TEXT NOT NULL DEFAULT '[]',
+            source_sheet_id               INTEGER DEFAULT NULL REFERENCES wrong_question_practice_sheets(id) ON DELETE SET NULL,
             generated_by                  INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime')),
@@ -1478,6 +1479,7 @@ def _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn: sql
             "style",
             "message_text",
             "source_record_ids_json",
+            "source_sheet_id",
             "generated_by",
             "created_at",
             "updated_at",
@@ -2147,6 +2149,7 @@ def init_db():
             style                         TEXT NOT NULL DEFAULT 'warm',
             message_text                  TEXT NOT NULL DEFAULT '',
             source_record_ids_json        TEXT NOT NULL DEFAULT '[]',
+            source_sheet_id               INTEGER DEFAULT NULL REFERENCES wrong_question_practice_sheets(id) ON DELETE SET NULL,
             generated_by                  INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime')),
@@ -2390,6 +2393,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
@@ -6598,6 +6602,7 @@ def _serialize_weekly_wrong_question_followup_message_row(row: sqlite3.Row | Non
     except json.JSONDecodeError:
         source_record_ids = []
     payload["source_record_ids"] = source_record_ids if isinstance(source_record_ids, list) else []
+    payload["source_sheet_id"] = int(payload["source_sheet_id"]) if payload.get("source_sheet_id") is not None else None
     return payload
 
 
@@ -6642,6 +6647,7 @@ def upsert_weekly_wrong_question_followup_message(
     style: str = "warm",
     message_text: str = "",
     source_record_ids: list[str] | None = None,
+    source_sheet_id: int | None = None,
     generated_by: int | None = None,
 ) -> dict:
     normalized_style = (style or "warm").strip() or "warm"
@@ -6657,14 +6663,15 @@ def upsert_weekly_wrong_question_followup_message(
             INSERT INTO weekly_wrong_question_followup_messages (
                 organization_id, class_id, student_id, teacher_user_id,
                 week_start_date, week_end_date, style, message_text,
-                source_record_ids_json, generated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_record_ids_json, source_sheet_id, generated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(organization_id, class_id, student_id, week_start_date, style)
             DO UPDATE SET
                 teacher_user_id=excluded.teacher_user_id,
                 week_end_date=excluded.week_end_date,
                 message_text=excluded.message_text,
                 source_record_ids_json=excluded.source_record_ids_json,
+                source_sheet_id=excluded.source_sheet_id,
                 generated_by=excluded.generated_by,
                 updated_at=datetime('now','localtime')
             """,
@@ -6678,6 +6685,7 @@ def upsert_weekly_wrong_question_followup_message(
                 normalized_style,
                 (message_text or "").strip(),
                 source_record_ids_json,
+                int(source_sheet_id) if source_sheet_id is not None else None,
                 generated_by,
             ),
         )
