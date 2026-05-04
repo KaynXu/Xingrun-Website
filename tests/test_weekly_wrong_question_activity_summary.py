@@ -95,12 +95,17 @@ class WeeklyWrongQuestionActivitySummaryStoreTestCase(unittest.TestCase):
         )
 
         self.assertEqual([item["class_name"] for item in summary["class_items"]], ["五年级3班", "六年级2班"])
+        self.assertEqual(summary["class_items"][0]["organization_name"], "活跃汇总测试机构")
+        self.assertNotIn("teacher_user_id", summary["class_items"][0])
+        self.assertNotIn("teacher_name", summary["class_items"][0])
+        self.assertNotIn("pending_followup_count", summary["class_items"][0])
         self.assertEqual(summary["class_items"][0]["weekly_question_count"], 4)
         self.assertEqual(summary["class_items"][0]["uploading_student_count"], 2)
         self.assertEqual(summary["class_items"][0]["latest_created_at"], "2026-05-05 12:00:00")
 
         self.assertEqual(len(summary["teacher_items"]), 1)
         teacher = summary["teacher_items"][0]
+        self.assertEqual(teacher["organization_name"], "活跃汇总测试机构")
         self.assertEqual(teacher["teacher_name"], "活跃汇总负责人")
         self.assertEqual(teacher["class_count"], 2)
         self.assertEqual(teacher["weekly_question_count"], 5)
@@ -108,10 +113,64 @@ class WeeklyWrongQuestionActivitySummaryStoreTestCase(unittest.TestCase):
         self.assertEqual(teacher["pending_followup_count"], 4)
 
         self.assertEqual([item["student_name"] for item in summary["student_items"]], ["Alice", "Cindy", "Bob"])
+        self.assertEqual(summary["student_items"][0]["organization_name"], "活跃汇总测试机构")
+        self.assertNotIn("teacher_user_id", summary["student_items"][0])
+        self.assertNotIn("teacher_name", summary["student_items"][0])
+        self.assertNotIn("pending_followup_count", summary["student_items"][0])
         self.assertEqual(summary["student_items"][0]["weekly_question_count"], 3)
         self.assertEqual(summary["student_items"][0]["total_question_count"], 3)
         self.assertEqual(summary["student_items"][0]["topic_categories"], ["几何", "计算"])
         self.assertEqual(summary["student_items"][1]["total_question_count"], 2)
+
+    def test_activity_summary_student_topics_are_top_three_by_weekly_frequency(self):
+        for index in range(4):
+            self._record(
+                binding_id=self.alice_binding["id"],
+                created_at=f"2026-05-04 09:0{index}:00",
+                topic_category="几何",
+            )
+        for index in range(3):
+            self._record(
+                binding_id=self.alice_binding["id"],
+                created_at=f"2026-05-04 10:0{index}:00",
+                topic_category="计算",
+            )
+        for index in range(2):
+            self._record(
+                binding_id=self.alice_binding["id"],
+                created_at=f"2026-05-04 11:0{index}:00",
+                topic_category="应用题",
+            )
+        self._record(binding_id=self.alice_binding["id"], created_at="2026-05-04 12:00:00", topic_category="行程")
+
+        summary = lesson_manager.list_weekly_wrong_question_activity_summary(
+            week_start_date="2026-05-04",
+            week_end_date="2026-05-10",
+        )
+
+        self.assertEqual(summary["student_items"][0]["topic_categories"], ["几何", "计算", "应用题"])
+
+    def test_activity_summary_total_question_count_includes_non_wechat_recognized_history(self):
+        self._record(binding_id=self.alice_binding["id"], created_at="2026-05-04 09:00:00", topic_category="几何")
+        manual_history = self._record(
+            binding_id=self.alice_binding["id"],
+            created_at="2026-04-30 09:00:00",
+            topic_category="计算",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET source='manual' WHERE id=?",
+                (manual_history["id"],),
+            )
+
+        summary = lesson_manager.list_weekly_wrong_question_activity_summary(
+            week_start_date="2026-05-04",
+            week_end_date="2026-05-10",
+        )
+
+        self.assertEqual(summary["student_items"][0]["student_name"], "Alice")
+        self.assertEqual(summary["student_items"][0]["weekly_question_count"], 1)
+        self.assertEqual(summary["student_items"][0]["total_question_count"], 2)
 
     def test_activity_summary_filters_by_organization(self):
         self._record(binding_id=self.alice_binding["id"], created_at="2026-05-04 09:00:00", topic_category="几何")

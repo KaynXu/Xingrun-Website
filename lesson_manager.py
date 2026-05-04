@@ -7025,7 +7025,6 @@ def list_weekly_wrong_question_activity_summary(
     where_sql = " AND ".join(where_clauses)
 
     total_where_clauses = [
-        "source='wechat_mp'",
         "recognition_status='recognized'",
         "student_id IS NOT NULL",
     ]
@@ -7040,10 +7039,12 @@ def list_weekly_wrong_question_activity_summary(
             f"""
             SELECT
                 wqs.*,
+                o.name AS organization_name,
                 c.name AS class_name,
                 s.name AS student_name,
                 u.display_name AS teacher_name
             FROM wrong_question_submissions wqs
+            JOIN organizations o ON o.id = wqs.organization_id
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
@@ -7072,6 +7073,7 @@ def list_weekly_wrong_question_activity_summary(
     class_student_ids: dict[int, set[int]] = {}
     teacher_class_ids: dict[int, set[int]] = {}
     teacher_student_ids: dict[int, set[int]] = {}
+    student_topic_counts: dict[int, dict[str, int]] = {}
 
     for row in weekly_rows:
         class_id_value = int(row["class_id"])
@@ -7083,19 +7085,15 @@ def list_weekly_wrong_question_activity_summary(
             class_id_value,
             {
                 "organization_id": row["organization_id"],
+                "organization_name": row["organization_name"],
                 "class_id": row["class_id"],
                 "class_name": row["class_name"],
-                "teacher_user_id": row["teacher_user_id"],
-                "teacher_name": row["teacher_name"],
                 "weekly_question_count": 0,
                 "uploading_student_count": 0,
-                "pending_followup_count": 0,
                 "latest_created_at": created_at,
             },
         )
         class_item["weekly_question_count"] += 1
-        if str(row["archive_status"] or "") == "active":
-            class_item["pending_followup_count"] += 1
         if created_at > str(class_item["latest_created_at"] or ""):
             class_item["latest_created_at"] = created_at
         class_student_ids.setdefault(class_id_value, set()).add(student_id_value)
@@ -7104,6 +7102,7 @@ def list_weekly_wrong_question_activity_summary(
             teacher_user_id,
             {
                 "organization_id": row["organization_id"],
+                "organization_name": row["organization_name"],
                 "teacher_user_id": row["teacher_user_id"],
                 "teacher_name": row["teacher_name"],
                 "class_count": 0,
@@ -7125,35 +7124,38 @@ def list_weekly_wrong_question_activity_summary(
             student_id_value,
             {
                 "organization_id": row["organization_id"],
+                "organization_name": row["organization_name"],
                 "class_id": row["class_id"],
                 "class_name": row["class_name"],
                 "student_id": row["student_id"],
                 "student_name": row["student_name"],
-                "teacher_user_id": row["teacher_user_id"],
-                "teacher_name": row["teacher_name"],
                 "weekly_question_count": 0,
                 "total_question_count": total_count_by_student_id.get(student_id_value, 0),
-                "pending_followup_count": 0,
                 "topic_categories": [],
                 "latest_created_at": created_at,
             },
         )
         student_item["weekly_question_count"] += 1
-        if str(row["archive_status"] or "") == "active":
-            student_item["pending_followup_count"] += 1
         if created_at > str(student_item["latest_created_at"] or ""):
             student_item["latest_created_at"] = created_at
         topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
-        if topic_category not in student_item["topic_categories"]:
-            student_item["topic_categories"].append(topic_category)
+        topic_counts = student_topic_counts.setdefault(student_id_value, {})
+        topic_counts[topic_category] = topic_counts.get(topic_category, 0) + 1
 
     for class_id_value, item in class_items_by_id.items():
         item["uploading_student_count"] = len(class_student_ids.get(class_id_value, set()))
     for teacher_user_id, item in teacher_items_by_id.items():
         item["class_count"] = len(teacher_class_ids.get(teacher_user_id, set()))
         item["involved_student_count"] = len(teacher_student_ids.get(teacher_user_id, set()))
-    for item in student_items_by_id.values():
-        item["topic_categories"] = sorted(item["topic_categories"])
+    for student_id_value, item in student_items_by_id.items():
+        topic_counts = student_topic_counts.get(student_id_value, {})
+        item["topic_categories"] = [
+            topic
+            for topic, _count in sorted(
+                topic_counts.items(),
+                key=lambda topic_item: (-int(topic_item[1] or 0), str(topic_item[0] or "")),
+            )[:3]
+        ] or [PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED]
 
     class_items = sorted(
         class_items_by_id.values(),
