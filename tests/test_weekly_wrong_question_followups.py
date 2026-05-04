@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -104,6 +106,76 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
             f"/api/wechat/student-libraries/{self.student['id']}",
         )
         self.assertNotIn("miniprogram", item)
+
+    def test_get_weekly_class_pdf_archive_downloads_zip_with_refreshed_student_pdf(self):
+        pdf_path = Path(self.temp_dir.name) / "student.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 weekly student pdf")
+
+        with mock.patch(
+            "app._refresh_student_wrong_question_library_cache",
+            return_value=str(pdf_path),
+        ) as refresh_pdf:
+            response = self.client.get(
+                f"/api/wrong-question-followups/weekly/class-pdf-archive?class_id={self.class_id}&week_start=2026-04-08",
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/zip")
+        self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
+        self.assertEqual(response.headers["X-XR-Archive-Success-Count"], "1")
+        self.assertEqual(response.headers["X-XR-Archive-Failed-Count"], "0")
+        self.assertGreater(len(response.data), 0)
+        refresh_pdf.assert_called_once_with(self.student["id"])
+        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+            self.assertEqual(archive.namelist(), ["周同学-错题本.pdf"])
+            self.assertEqual(archive.read("周同学-错题本.pdf"), b"%PDF-1.4 weekly student pdf")
+
+    def test_get_weekly_class_pdf_archive_tolerates_one_student_pdf_generation_failure(self):
+        second_student = lesson_manager.create_student_for_class(self.class_id, "失败同学")
+        second_binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=self.parent_account["id"],
+            class_id=self.class_id,
+            student_id=second_student["id"],
+        )
+        second_record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=second_binding["id"],
+            image_url="https://files.example.com/weekly-api-second.png",
+            recognition_status="recognized",
+            topic_category="几何",
+            secondary_error_summary="角度关系没有标完整",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-04-09 10:00:00", second_record["id"]),
+            )
+        pdf_path = Path(self.temp_dir.name) / "student.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 successful student pdf")
+
+        def refresh_pdf(student_id):
+            if student_id == self.student["id"]:
+                return str(pdf_path)
+            raise RuntimeError("pdf generation failed")
+
+        with mock.patch(
+            "app._refresh_student_wrong_question_library_cache",
+            side_effect=refresh_pdf,
+        ):
+            response = self.client.get(
+                f"/api/wrong-question-followups/weekly/class-pdf-archive?class_id={self.class_id}&week_start=2026-04-08",
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-XR-Archive-Success-Count"], "1")
+        self.assertEqual(response.headers["X-XR-Archive-Failed-Count"], "1")
+        self.assertIn("失败同学", response.headers["X-XR-Archive-Failed-Students"])
+        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+            self.assertIn("周同学-错题本.pdf", archive.namelist())
+            self.assertIn("打包说明.txt", archive.namelist())
+            self.assertEqual(archive.read("周同学-错题本.pdf"), b"%PDF-1.4 successful student pdf")
+            self.assertIn("失败同学", archive.read("打包说明.txt").decode("utf-8"))
 
     def test_post_weekly_followup_message_generates_and_caches_message(self):
         with mock.patch(

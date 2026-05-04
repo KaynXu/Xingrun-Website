@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -19,6 +20,7 @@ import threading
 import urllib.error
 import urllib.request
 import webbrowser
+import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic, sleep
@@ -1497,6 +1499,11 @@ def _weekly_range(raw_week_start: str) -> tuple[str, str]:
     return week_start.isoformat(), week_end.isoformat()
 
 
+def _safe_archive_filename_part(value: str) -> str:
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "-", str(value or "")).strip()
+    return cleaned or "未命名"
+
+
 def _require_accessible_class(user: dict, class_id: int) -> Optional[dict]:
     cls = get_class(class_id)
     if not cls:
@@ -2416,6 +2423,72 @@ def api_weekly_wrong_question_followups():
             "total": len(payload_items),
         }
     )
+
+
+@app.route("/api/wrong-question-followups/weekly/class-pdf-archive", methods=["GET"])
+def api_weekly_wrong_question_followup_class_pdf_archive():
+    user, error = _require_auth()
+    if error:
+        return error
+    class_id = request.args.get("class_id", 0, type=int)
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        week_start_date, week_end_date = _weekly_range(request.args.get("week_start", ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    items = list_weekly_wrong_question_followup_students(
+        organization_id=organization_id,
+        class_id=class_id,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+    )
+    buffer = io.BytesIO()
+    successful_count = 0
+    failed_student_names = []
+    used_filenames: dict[str, int] = {}
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in items:
+            student_id = int(item.get("student_id") or 0)
+            student_name = str(item.get("student_name") or "").strip() or "未命名"
+            try:
+                refreshed_pdf_path = _refresh_student_wrong_question_library_cache(student_id)
+                pdf_path = Path(str(refreshed_pdf_path or ""))
+                if not pdf_path.exists():
+                    raise FileNotFoundError(str(pdf_path))
+                base_name = f"{_safe_archive_filename_part(student_name)}-错题本"
+                name_count = used_filenames.get(base_name, 0) + 1
+                used_filenames[base_name] = name_count
+                archive_name = f"{base_name}.pdf" if name_count == 1 else f"{base_name}-{name_count}.pdf"
+                archive.write(pdf_path, archive_name)
+                successful_count += 1
+            except Exception:
+                logger.exception("Failed to add weekly wrong question library pdf to archive")
+                failed_student_names.append(student_name)
+        if failed_student_names:
+            notes = ["以下学生错题本 PDF 打包失败：", *failed_student_names]
+            archive.writestr("打包说明.txt", "\n".join(notes).encode("utf-8"))
+    buffer.seek(0)
+
+    download_name = (
+        f"{_safe_archive_filename_part(str(cls.get('name') or '班级'))}"
+        f"-{week_start_date}-错题本合集.zip"
+    )
+    response = send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_name,
+    )
+    response.headers["X-XR-Archive-Success-Count"] = str(successful_count)
+    response.headers["X-XR-Archive-Failed-Count"] = str(len(failed_student_names))
+    response.headers["X-XR-Archive-Failed-Students"] = ",".join(failed_student_names)
+    return response
 
 
 @app.route("/api/wrong-question-followups/weekly/messages", methods=["POST"])
