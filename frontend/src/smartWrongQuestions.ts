@@ -857,25 +857,25 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
   const source = isObjectRecord(payload) ? payload : {};
   const rawItems = Array.isArray(source.items) ? source.items : [];
   return {
-    classId: Number(source.class_id ?? source.classId ?? 0),
+    classId: pickNumberValue(source, ['class_id', 'classId']) ?? 0,
     className: String(source.class_name ?? source.className ?? ''),
     weekStartDate: String(source.week_start_date ?? source.weekStartDate ?? ''),
     weekEndDate: String(source.week_end_date ?? source.weekEndDate ?? ''),
-    total: Number(source.total ?? rawItems.length),
+    total: pickNumberValue(source, ['total']) ?? rawItems.length,
     items: rawItems.filter(isObjectRecord).map((item) => {
       const rawMessage = isObjectRecord(item.message) ? item.message : null;
       return {
-        studentId: Number(item.student_id ?? item.studentId ?? 0),
+        studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
         studentName: String(item.student_name ?? item.studentName ?? ''),
-        weeklyQuestionCount: Number(item.weekly_question_count ?? item.weeklyQuestionCount ?? 0),
-        totalActiveQuestionCount: Number(item.total_active_question_count ?? item.totalActiveQuestionCount ?? 0),
+        weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
+        totalActiveQuestionCount: pickNumberValue(item, ['total_active_question_count', 'totalActiveQuestionCount']) ?? 0,
         topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
         representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
         sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
         studentLibraryPdfUrl: String(item.student_library_pdf_url ?? item.studentLibraryPdfUrl ?? ''),
         message: rawMessage
           ? {
-              id: Number(rawMessage.id ?? 0),
+              id: pickNumberValue(rawMessage, ['id']) ?? 0,
               messageText: String(rawMessage.message_text ?? rawMessage.messageText ?? ''),
               sourceRecordIds: normalizeStringList(rawMessage.source_record_ids ?? rawMessage.sourceRecordIds),
             }

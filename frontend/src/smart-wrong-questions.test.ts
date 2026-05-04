@@ -576,6 +576,32 @@ test('normalizeWeeklyWrongQuestionFollowupResponse preserves cached messages', (
   assert.equal(payload.items[0]?.studentLibraryPdfUrl, '/api/wechat/student-libraries/501');
 });
 
+test('normalizeWeeklyWrongQuestionFollowupResponse falls back for malformed numeric fields', () => {
+  const payload = normalizeWeeklyWrongQuestionFollowupResponse({
+    class_id: 'not-a-class',
+    total: 'not-a-total',
+    items: [
+      {
+        student_id: 'not-a-student',
+        student_name: '王睿博',
+        weekly_question_count: 'not-a-count',
+        total_active_question_count: 'not-active-count',
+        message: {
+          id: 'not-a-message',
+          message_text: '本周继续稳住计算步骤。',
+        },
+      },
+    ],
+  });
+
+  assert.equal(payload.classId, 0);
+  assert.equal(payload.total, 1);
+  assert.equal(payload.items[0]?.studentId, 0);
+  assert.equal(payload.items[0]?.weeklyQuestionCount, 0);
+  assert.equal(payload.items[0]?.totalActiveQuestionCount, 0);
+  assert.equal(payload.items[0]?.message?.id, 0);
+});
+
 test('normalizeWrongQuestionListResponse converts backend object payloads into page-ready camelCase records', () => {
   const normalized = normalizeWrongQuestionListResponse({
     items: [
