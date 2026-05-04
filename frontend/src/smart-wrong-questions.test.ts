@@ -516,6 +516,19 @@ test('SmartWrongQuestionsPage wires weekly followup UI only into the web smart w
   assert.doesNotMatch(pageSource, /小程序老师端/);
 });
 
+test('SmartWrongQuestionsPage wires super owner weekly activity summary without strong ranking copy', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /本周数据总结/);
+  assert.match(pageSource, /buildWeeklyWrongQuestionActivitySummaryPath/);
+  assert.match(pageSource, /normalizeWeeklyWrongQuestionActivitySummaryResponse/);
+  assert.match(pageSource, /currentUser\.role === 'super_owner'/);
+  assert.match(pageSource, /本周活跃班级/);
+  assert.match(pageSource, /本周活跃老师/);
+  assert.match(pageSource, /本周活跃学生/);
+  assert.doesNotMatch(pageSource, /第 1 名|榜首|冠军/);
+});
+
 test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => {
   assert.equal(
     buildWrongQuestionQuery({

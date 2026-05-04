@@ -12,6 +12,7 @@ import {
 } from './App';
 import {
   buildMemberStudentNotebookSummaries,
+  buildWeeklyWrongQuestionActivitySummaryPath,
   buildWeeklyWrongQuestionFollowupArchivePath,
   buildWeeklyWrongQuestionFollowupMessagePath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
@@ -30,6 +31,7 @@ import {
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
+  normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
   normalizeWrongQuestionPracticeSheetListResponse,
   normalizeWrongQuestionRecord,
@@ -37,6 +39,7 @@ import {
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type MemberStudentNotebookSummary,
+  type WeeklyWrongQuestionActivitySummary,
   type WeeklyWrongQuestionFollowupItem,
   type WrongQuestionPracticeSheetListApiResponse,
   type WrongQuestionPracticeSheetSummary,
@@ -69,6 +72,11 @@ type WrongQuestionTeacherFilterOption = {
 };
 
 type WrongQuestionStudentFilterOption = {
+  id: number;
+  name: string;
+};
+
+type WrongQuestionOrganizationOption = {
   id: number;
   name: string;
 };
@@ -255,11 +263,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const hasStaffScope = currentUser.role === 'super_owner' || currentUser.role === 'owner' || currentUser.role === 'admin';
   const isMemberScope = currentUser.role === 'member';
   const usesStudentNotebook = true;
+  const canViewWeeklyActivitySummary = currentUser.role === 'super_owner';
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
   const [records, setRecords] = useState<WrongQuestionRecord[]>([]);
   const [classOptions, setClassOptions] = useState<WrongQuestionClassFilterOption[]>([]);
   const [teacherOptions, setTeacherOptions] = useState<WrongQuestionTeacherFilterOption[]>([]);
   const [studentOptions, setStudentOptions] = useState<WrongQuestionStudentFilterOption[]>([]);
+  const [organizationOptions, setOrganizationOptions] = useState<WrongQuestionOrganizationOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
@@ -293,6 +303,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [creatingPractice, setCreatingPractice] = useState(false);
   const [practiceActionError, setPracticeActionError] = useState('');
   const [practiceActionNotice, setPracticeActionNotice] = useState('');
+  const [weeklyActivityOpen, setWeeklyActivityOpen] = useState(false);
+  const [weeklyActivityWeekStart, setWeeklyActivityWeekStart] = useState(getCurrentMondayDateInputValue);
+  const [weeklyActivityOrganizationId, setWeeklyActivityOrganizationId] = useState<number | null>(null);
+  const [weeklyActivitySummary, setWeeklyActivitySummary] = useState<WeeklyWrongQuestionActivitySummary | null>(null);
+  const [weeklyActivityLoading, setWeeklyActivityLoading] = useState(false);
+  const [weeklyActivityError, setWeeklyActivityError] = useState('');
+  const [weeklyActivityNotice, setWeeklyActivityNotice] = useState('');
   const [weeklyFollowupOpen, setWeeklyFollowupOpen] = useState(false);
   const [weeklyFollowupWeekStart, setWeeklyFollowupWeekStart] = useState(getCurrentMondayDateInputValue);
   const [weeklyFollowupItems, setWeeklyFollowupItems] = useState<WeeklyWrongQuestionFollowupItem[]>([]);
@@ -519,8 +536,46 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [hasStaffScope]);
 
   useEffect(() => {
+    if (!canViewWeeklyActivitySummary) {
+      setOrganizationOptions([]);
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const response = await apiFetch<{ items?: Array<{ id: number; name: string }> }>('/api/admin/organizations');
+        if (!active) {
+          return;
+        }
+
+        setOrganizationOptions((response.items ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+        })));
+      } catch (loadOrganizationsError) {
+        console.error(loadOrganizationsError);
+        if (active) {
+          setOrganizationOptions([]);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [canViewWeeklyActivitySummary]);
+
+  useEffect(() => {
     void loadList(initialFilters);
   }, [loadList]);
+
+  useEffect(() => {
+    setWeeklyActivitySummary(null);
+    setWeeklyActivityError('');
+    setWeeklyActivityNotice('');
+  }, [weeklyActivityWeekStart, weeklyActivityOrganizationId]);
 
   useEffect(() => {
     setWeeklyFollowupItems([]);
@@ -968,6 +1023,27 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleLoadWeeklyActivitySummary = async () => {
+    setWeeklyActivityLoading(true);
+    setWeeklyActivityError('');
+    setWeeklyActivityNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(
+        buildWeeklyWrongQuestionActivitySummaryPath(weeklyActivityWeekStart, weeklyActivityOrganizationId),
+      );
+      const normalized = normalizeWeeklyWrongQuestionActivitySummaryResponse(response);
+      const itemCount = normalized.classItems.length + normalized.teacherItems.length + normalized.studentItems.length;
+      setWeeklyActivitySummary(normalized);
+      setWeeklyActivityNotice(itemCount > 0 ? '已加载本周数据总结。' : '');
+    } catch (loadActivityError) {
+      setWeeklyActivitySummary(null);
+      setWeeklyActivityError(loadActivityError instanceof Error ? loadActivityError.message : '本周数据总结加载失败');
+    } finally {
+      setWeeklyActivityLoading(false);
+    }
+  };
+
   const handleLoadWeeklyFollowups = async () => {
     if (!activeWeeklyFollowupClassId) {
       setWeeklyFollowupError('请选择班级。');
@@ -1130,6 +1206,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     ? buildWrongQuestionAuthedPath(selectedRecord.studentLibraryPdfPath)
     : '';
   const selectedPracticeCount = effectiveSelectedPracticeRecordIds.length;
+  const weeklyActivityHasItems = Boolean(weeklyActivitySummary && (
+    weeklyActivitySummary.classItems.length > 0
+    || weeklyActivitySummary.teacherItems.length > 0
+    || weeklyActivitySummary.studentItems.length > 0
+  ));
   const detailHeader = selectedRecord ? (
     <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1673,6 +1754,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            {canViewWeeklyActivitySummary && (
+              <button
+                type="button"
+                onClick={() => setWeeklyActivityOpen((current) => !current)}
+                className={workspaceSecondaryButtonClass}
+              >
+                本周数据总结
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setWeeklyFollowupOpen((current) => !current)}
@@ -1691,6 +1781,138 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </button>
           </div>
         </div>
+
+        {canViewWeeklyActivitySummary && weeklyActivityOpen && (
+          <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">本周数据总结</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按周查看错题活跃情况</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">周次</span>
+                  <input
+                    aria-label="数据总结周次"
+                    type="date"
+                    value={weeklyActivityWeekStart}
+                    onChange={(event) => setWeeklyActivityWeekStart(event.target.value)}
+                    className={workspaceFieldClass}
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">机构</span>
+                  <select
+                    aria-label="机构"
+                    value={weeklyActivityOrganizationId ?? ''}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      setWeeklyActivityOrganizationId(Number.isFinite(nextValue) && nextValue > 0 ? nextValue : null);
+                    }}
+                    className={workspaceFieldClass}
+                  >
+                    <option value="">全部机构</option>
+                    {organizationOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleLoadWeeklyActivitySummary()}
+                  disabled={weeklyActivityLoading}
+                  className={workspacePrimaryButtonClass}
+                >
+                  {weeklyActivityLoading ? '正在加载' : '加载总结'}
+                </button>
+              </div>
+            </div>
+
+            {weeklyActivityError && (
+              <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                <AlertCircle size={16} />
+                {weeklyActivityError}
+              </div>
+            )}
+
+            {weeklyActivityNotice && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                {weeklyActivityNotice}
+              </div>
+            )}
+
+            {weeklyActivitySummary && !weeklyActivityHasItems && (
+              <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">
+                本周暂无错题活跃数据
+              </p>
+            )}
+
+            {weeklyActivityHasItems && weeklyActivitySummary && (
+              <div className="grid gap-3 xl:grid-cols-3">
+                <section className="space-y-2">
+                  <h5 className="text-sm font-semibold text-slate-900 dark:text-white">本周活跃班级</h5>
+                  {weeklyActivitySummary.classItems.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无班级数据</p>
+                  ) : (
+                    weeklyActivitySummary.classItems.map((item) => (
+                      <article key={`${item.organizationId}-${item.classId}`} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.className || '未命名班级'}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.organizationName || '未标注机构'}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span>{item.weeklyQuestionCount}题</span>
+                          <span>{item.uploadingStudentCount}名学生</span>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </section>
+
+                <section className="space-y-2">
+                  <h5 className="text-sm font-semibold text-slate-900 dark:text-white">本周活跃老师</h5>
+                  {weeklyActivitySummary.teacherItems.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无老师数据</p>
+                  ) : (
+                    weeklyActivitySummary.teacherItems.map((item) => (
+                      <article key={`${item.organizationId}-${item.teacherUserId}`} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.teacherName || '未标注老师'}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.organizationName || '未标注机构'}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span>{item.weeklyQuestionCount}题</span>
+                          <span>{item.classCount}个班级</span>
+                          <span>{item.involvedStudentCount}名学生</span>
+                          <span>{item.pendingFollowupCount}待跟进</span>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </section>
+
+                <section className="space-y-2">
+                  <h5 className="text-sm font-semibold text-slate-900 dark:text-white">本周活跃学生</h5>
+                  {weeklyActivitySummary.studentItems.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无学生数据</p>
+                  ) : (
+                    weeklyActivitySummary.studentItems.map((item) => (
+                      <article key={`${item.organizationId}-${item.classId}-${item.studentId}`} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.studentName || '未命名学生'}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.organizationName || '未标注机构'}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span>本周{item.weeklyQuestionCount}题</span>
+                          <span>累计{item.totalQuestionCount}题</span>
+                          {item.topicCategories.slice(0, 3).map((topic) => (
+                            <span key={topic} className="rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </section>
+              </div>
+            )}
+          </div>
+        )}
 
         {weeklyFollowupOpen && (
           <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
