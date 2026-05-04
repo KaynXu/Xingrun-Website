@@ -148,6 +148,34 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
             "周同学妈妈，这周计算题先盯通分这个小点。",
         )
 
+    def test_post_weekly_followup_message_rejects_non_numeric_class_id(self):
+        response = self.client.post(
+            "/api/wrong-question-followups/weekly/messages",
+            json={
+                "class_id": "abc",
+                "student_id": self.student["id"],
+                "week_start": "2026-04-08",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "class_id must be numeric")
+
+    def test_post_weekly_followup_message_rejects_non_numeric_student_id(self):
+        response = self.client.post(
+            "/api/wrong-question-followups/weekly/messages",
+            json={
+                "class_id": self.class_id,
+                "student_id": "abc",
+                "week_start": "2026-04-08",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "student_id must be numeric")
+
     def test_super_owner_weekly_followup_uses_selected_class_organization(self):
         response = self.client.get(
             f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",

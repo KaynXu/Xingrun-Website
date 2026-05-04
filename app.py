@@ -2426,8 +2426,14 @@ def api_weekly_wrong_question_followup_message_create():
     data, error = _get_json_object_payload()
     if error:
         return error
-    class_id = int(data.get("class_id") or 0)
-    student_id = int(data.get("student_id") or 0)
+    try:
+        class_id = int(data.get("class_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "class_id must be numeric"}), 400
+    try:
+        student_id = int(data.get("student_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "student_id must be numeric"}), 400
     if not class_id:
         return jsonify({"error": "class_id is required"}), 400
     if not student_id:
