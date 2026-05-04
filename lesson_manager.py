@@ -6021,6 +6021,7 @@ def list_parent_student_bindings_for_openid(open_id: str) -> list[dict]:
             SELECT
                 psb.*,
                 c.name AS class_name,
+                c.grade AS class_grade,
                 s.name AS student_name,
                 u.display_name AS teacher_name
             FROM parent_student_bindings psb
@@ -6531,8 +6532,9 @@ def list_primary_topic_category_suggestions(
     topic_category: str,
     limit: int = 5,
 ) -> list[str]:
+    raw_query = (topic_category or "").strip()
     query = normalize_primary_wrong_question_topic_category(topic_category)
-    if query in PRIMARY_WRONG_QUESTION_TOPIC_PRESETS:
+    if raw_query and query in PRIMARY_WRONG_QUESTION_TOPIC_PRESETS:
         return []
 
     with get_conn() as conn:
@@ -6555,7 +6557,7 @@ def list_primary_topic_category_suggestions(
             continue
         if not is_primary_school_class_name(str(row["class_name"] or ""), str(row["class_grade"] or "")):
             continue
-        if not candidate or candidate == query or not _topic_category_matches(candidate, query):
+        if not candidate or (raw_query and (candidate == query or not _topic_category_matches(candidate, query))):
             continue
         suggestions.append(candidate)
         if len(suggestions) >= max(1, int(limit or 5)):

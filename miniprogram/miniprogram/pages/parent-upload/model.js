@@ -247,7 +247,7 @@ function buildUploadTaskSummary(tasks, options) {
     ).trim();
     const hasAcceptedItems = readyCount > 0 || pendingCount > 0;
     const pendingMessage = pendingCount
-      ? `；${pendingCount} 条还在${options && options.background ? '后台继续识别，稍后可回错题本查看' : '服务器继续识别'}`
+      ? `；${pendingCount} 条还在${options && options.background ? '云端继续识别，可以先离开本页，稍后回错题本查看' : '云端继续识别'}`
       : '';
     return {
       state: hasAcceptedItems ? 'partial_failed' : 'failed',
@@ -262,8 +262,8 @@ function buildUploadTaskSummary(tasks, options) {
   if (options && options.background && pendingCount) {
     return {
       state: 'background',
-      title: '后台继续识别',
-      description: `已完成 ${readyCount} 条，还有 ${pendingCount} 条在后台继续识别，稍后可回错题本查看。`,
+      title: '已接收，云端识别中',
+      description: `已完成 ${readyCount} 条，还有 ${pendingCount} 条在云端继续识别。可以先离开本页，稍后回错题本查看。`,
       readyCount,
       failedCount,
       pendingCount,
@@ -284,7 +284,7 @@ function buildUploadTaskSummary(tasks, options) {
   return {
     state: 'pending',
     title: '正在识别',
-    description: `已完成 ${readyCount} 条，还有 ${pendingCount} 条正在服务器识别。`,
+    description: `已完成 ${readyCount} 条，还有 ${pendingCount} 条正在云端识别。`,
     readyCount,
     failedCount,
     pendingCount,

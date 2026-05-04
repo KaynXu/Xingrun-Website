@@ -2,7 +2,7 @@
   <view class="hero-card wrongbook-hero">
     <text class="hero-badge">星润错题本</text>
     <text class="hero-title">{{studentName || '孩子'}}的学习记录</text>
-    <text class="hero-subtitle">查看错题整理进度、专题分类和学生错题库 PDF。</text>
+    <text class="hero-subtitle">{{showPrimaryTopicCategory ? '查看错题整理进度、专题分类和学生错题库 PDF。' : '查看错题整理进度和学生错题库 PDF。'}}</text>
     <view class="hero-stat-row">
       <view class="hero-stat-pill">
         <text class="hero-stat-value">{{items.length}}</text>
@@ -53,7 +53,7 @@
   </view>
 
   <view wx:else class="item-list">
-    <view class="panel-card filter-panel">
+    <view wx:if="{{showPrimaryTopicCategory}}" class="panel-card filter-panel">
       <view class="filter-head">
         <text class="filter-title">专题筛选</text>
         <text class="filter-desc">当前显示 {{displayedItems.length}} / {{items.length}} 条</text>
@@ -74,7 +74,7 @@
     <view wx:for="{{displayedItems}}" wx:key="id" class="item-card">
       <view class="item-card-head">
         <view class="item-top">
-          <text class="tag topic-tag">专题：{{item.topicCategory || '未分类'}}</text>
+          <text wx:if="{{showPrimaryTopicCategory}}" class="tag topic-tag">专题：{{item.topicCategory || '未分类'}}</text>
           <text wx:if="{{item.errorType}}" class="tag error-tag">{{item.errorType}}</text>
           <text wx:if="{{item.recognitionStatusText}}" class="tag status-tag {{item.recognitionStatus === 'failed' ? 'failed-tag' : 'pending-tag'}}">{{item.recognitionStatus === 'failed' ? '识别失败' : '识别中'}}</text>
           <text wx:if="{{item.isMastered}}" class="tag mastered-tag">已掌握</text>
@@ -85,7 +85,7 @@
         <image class="item-img" src="{{item.imageUrl}}" mode="aspectFill" />
       </view>
       <view class="item-body">
-        <view wx:if="{{editingTopicRecordId === item.id}}" class="topic-edit-card">
+        <view wx:if="{{showPrimaryTopicCategory && editingTopicRecordId === item.id}}" class="topic-edit-card">
           <picker mode="selector" range="{{topicCategoryOptions}}" bindchange="handleTopicCategoryChange">
             <view class="topic-picker">{{editingTopicCategory || '未分类'}}</view>
           </picker>
@@ -95,7 +95,7 @@
             <button class="primary-btn topic-action-btn topic-save-btn" loading="{{savingTopic}}" bindtap="saveTopicCategory">保存</button>
           </view>
         </view>
-        <button wx:else class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
+        <button wx:if="{{showPrimaryTopicCategory && editingTopicRecordId !== item.id}}" class="edit-topic-btn" data-record-id="{{item.id}}" bindtap="startEditTopicCategory">修改专题</button>
         <view wx:if="{{item.recognitionStatusText}}" class="item-status-card {{item.recognitionStatus === 'failed' ? 'item-status-error' : 'item-status-processing'}}">
           <text class="state-marker item-status-marker {{item.recognitionStatus === 'failed' ? 'state-marker-error' : 'state-marker-processing'}}">{{item.recognitionStatus === 'failed' ? '需要处理' : '处理中'}}</text>
           <text class="item-status-text">{{item.recognitionStatusText}}</text>

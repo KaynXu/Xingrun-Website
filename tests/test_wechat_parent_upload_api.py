@@ -581,6 +581,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         self.assertEqual(len(payload["bindings"]), 1)
         self.assertEqual(payload["bindings"][0]["class_name"], "六年级 1 班")
+        self.assertEqual(payload["bindings"][0]["class_grade"], "六年级")
         self.assertEqual(payload["bindings"][0]["student_name"], "Alice")
         self.assertEqual(payload["bindings"][0]["teacher_name"], "平台管理员")
 

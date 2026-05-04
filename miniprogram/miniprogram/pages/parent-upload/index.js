@@ -2,10 +2,12 @@ const app = getApp();
 const {
   ensureParentSession,
   fetchParentBindings,
+  fetchParentTopicCategorySuggestions,
   fetchWrongQuestionUploadTask,
   submitParentWrongQuestion,
   uploadParentReasonAudio,
 } = require('../../utils/parentApi');
+const { isPrimarySchoolBinding } = require('../../utils/classScope');
 const {
   addManualBoxToImage,
   appendLocalImages,
@@ -23,6 +25,8 @@ const TASK_POLL_INTERVAL_MS = 2000;
 const TASK_POLL_MAX_ATTEMPTS = 12;
 const UPLOAD_TASK_RECOVERY_KEY_PREFIX = 'xr_parent_upload_tasks_v1';
 const TOPIC_CATEGORY_OPTIONS = ['未分类', '计算', '经济', '浓度', '工程', '行程', '几何', '数论', '自定义'];
+const CUSTOM_TOPIC_OPTION = '自定义';
+const UNCLASSIFIED_TOPIC_CATEGORY = '未分类';
 const UPLOAD_TASK_STATUS_MAP = {
   pending: true,
   processing: true,
@@ -93,6 +97,26 @@ function normalizeFetchedUploadTask(taskId, payloadTask, previousTask) {
   };
 }
 
+function buildTopicCategoryOptions(suggestions) {
+  const seen = {};
+  const options = [];
+  TOPIC_CATEGORY_OPTIONS.forEach((item) => {
+    if (item !== CUSTOM_TOPIC_OPTION && !seen[item]) {
+      seen[item] = true;
+      options.push(item);
+    }
+  });
+  (Array.isArray(suggestions) ? suggestions : []).forEach((item) => {
+    const topic = String(item || '').trim();
+    if (topic && topic !== CUSTOM_TOPIC_OPTION && !seen[topic]) {
+      seen[topic] = true;
+      options.push(topic);
+    }
+  });
+  options.push(CUSTOM_TOPIC_OPTION);
+  return options;
+}
+
 Page({
   data: {
     binding: null,
@@ -123,6 +147,7 @@ Page({
     canvasHeight: 1,
     recordingBoxId: '',
     topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
+    showPrimaryTopicCategory: false,
   },
 
   onLoad() {
@@ -192,17 +217,41 @@ Page({
       });
       const binding = bindings.find((item) => item.id === bindingId) || null;
       app.globalData.parentBindings = bindings;
+      const showPrimaryTopicCategory = isPrimarySchoolBinding(binding);
       this.setData({
         binding,
+        showPrimaryTopicCategory,
+        topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
         errorMessage: binding ? '' : '没有找到这个孩子的最新绑定关系，请先重新绑定。',
       });
       if (binding) {
+        if (showPrimaryTopicCategory) {
+          await this.refreshTopicCategoryOptions(session.openId);
+        }
         await this.restoreAcceptedUploadTasks(session.openId, binding);
       }
     } catch (error) {
       this.setData({
         binding: null,
+        showPrimaryTopicCategory: false,
+        topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
         errorMessage: error instanceof Error ? error.message : '绑定关系同步失败',
+      });
+    }
+  },
+
+  async refreshTopicCategoryOptions(openId) {
+    try {
+      const payload = await fetchParentTopicCategorySuggestions(wx, app.globalData.serverUrl, {
+        openId,
+        topicCategory: '',
+      });
+      this.setData({
+        topicCategoryOptions: buildTopicCategoryOptions(payload && payload.items),
+      });
+    } catch (_error) {
+      this.setData({
+        topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
       });
     }
   },
@@ -245,7 +294,7 @@ Page({
       return;
     }
     if (state === 'background') {
-      this.setUploadStage('background', currentSummary.description || '服务器会在后台继续识别，稍后可回错题本查看。', currentSummary.title || '后台继续识别');
+      this.setUploadStage('background', currentSummary.description || '服务器会在云端继续识别，可以先离开本页，稍后可回错题本查看。', currentSummary.title || '已接收，云端识别中');
       return;
     }
     if (state === 'partial_failed') {
@@ -256,7 +305,7 @@ Page({
       this.setUploadStage('failed', `${currentSummary.title || '识别失败'}：${currentSummary.description || '请重新拍清楚一点。'}`, currentSummary.title || '识别失败');
       return;
     }
-    this.setUploadStage('recognizing', `服务器正在识别错题，${currentSummary.description || '完成后会进入错题本。'}`, currentSummary.title || '正在识别');
+    this.setUploadStage('recognizing', `云端正在识别错题，${currentSummary.description || '完成后会进入错题本。'}`, currentSummary.title || '正在识别');
   },
 
   readAcceptedUploadTasks(openId, binding) {
@@ -460,6 +509,10 @@ Page({
       activeBox,
       currentStatusText: this.buildStatusText(currentImage),
       successTaskIds: [],
+      uploadTaskSummary: null,
+      uploadStage: '',
+      uploadStageTitle: '',
+      uploadStageText: '',
     });
 
     if (shouldReloadStage) {
@@ -720,8 +773,12 @@ Page({
   },
 
   handleActiveBoxTopicChange(event) {
+    if (!this.data.showPrimaryTopicCategory) {
+      return;
+    }
     const index = Number(event && event.detail ? event.detail.value : 0);
-    const nextTopic = TOPIC_CATEGORY_OPTIONS[index] || '未分类';
+    const options = this.data.topicCategoryOptions || TOPIC_CATEGORY_OPTIONS;
+    const nextTopic = options[index] || UNCLASSIFIED_TOPIC_CATEGORY;
     const currentImage = this.data.currentImage;
     if (!currentImage || !currentImage.activeBoxId) {
       return;
@@ -740,7 +797,7 @@ Page({
           }
           return {
             ...box,
-            topicCategory: nextTopic === '自定义' ? '' : nextTopic,
+            topicCategory: nextTopic === CUSTOM_TOPIC_OPTION ? '' : nextTopic,
           };
         }),
       };
@@ -750,6 +807,9 @@ Page({
   },
 
   handleActiveBoxCustomTopicInput(event) {
+    if (!this.data.showPrimaryTopicCategory) {
+      return;
+    }
     const nextTopic = String(event && event.detail ? event.detail.value : '').trim();
     const currentImage = this.data.currentImage;
     if (!currentImage || !currentImage.activeBoxId) {
@@ -1175,7 +1235,7 @@ Page({
           childReasonText: String(currentJob.childRawReasonText || '').trim(),
           childReasonInputMode: currentJob.childReasonInputMode,
           childReasonAudioUrl,
-          topicCategory: currentJob.topicCategory,
+          topicCategory: this.data.showPrimaryTopicCategory ? currentJob.topicCategory : UNCLASSIFIED_TOPIC_CATEGORY,
         });
         const taskId = (payload.task && payload.task.id) || '';
         if (!String(taskId).trim()) {
@@ -1187,7 +1247,7 @@ Page({
           status: 'pending',
           imageId: currentJob.imageId,
           boxId: currentJob.boxId,
-          topicCategory: currentJob.topicCategory,
+          topicCategory: this.data.showPrimaryTopicCategory ? currentJob.topicCategory : UNCLASSIFIED_TOPIC_CATEGORY,
           acceptedAt: new Date().toISOString(),
         });
         this.uploadTaskRecoveryTasksById = acceptedUploadTasks.reduce((result, task) => {
@@ -1195,16 +1255,12 @@ Page({
           return result;
         }, {});
         this.persistAcceptedUploadTasks(session.openId, this.data.binding, acceptedUploadTasks);
-        this.setData({
-          successTaskIds: successTaskIds.slice(),
-          uploadTaskSummary: buildUploadTaskSummary(acceptedUploadTasks),
-        });
         this.setUploadStage('task_accepted', `${jobLabel}已接收${taskId ? `，任务 ${taskId}` : ''}。`, '任务已接收');
       }
 
       this.setData({
         successTaskIds,
-        uploadTaskSummary: buildUploadTaskSummary(successTaskIds.map((id) => ({ id, status: 'pending' }))),
+        uploadTaskSummary: buildUploadTaskSummary(successTaskIds.map((id) => ({ id, status: 'pending' })), { background: true }),
         imageItems: [],
         selectedImageId: '',
         currentImage: null,
@@ -1215,15 +1271,9 @@ Page({
         loadError: false,
         activeBox: null,
       });
-      const uploadTaskSummary = await this.pollUploadTasks(session.openId, successTaskIds);
-      this.setData({
-        successTaskIds,
-        uploadTaskSummary,
-      });
-      const hasFailedTasks = uploadTaskSummary.state === 'failed' || uploadTaskSummary.state === 'partial_failed';
       wx.showToast({
-        title: hasFailedTasks ? uploadTaskSummary.title : '已提交',
-        icon: hasFailedTasks ? 'none' : 'success',
+        title: '已接收',
+        icon: 'none',
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '上传失败';
@@ -1309,6 +1359,12 @@ Page({
     }
     if (studentName) {
       query.push(`studentName=${encodeURIComponent(studentName)}`);
+    }
+    if (binding.className || binding.class_name) {
+      query.push(`className=${encodeURIComponent(String(binding.className || binding.class_name || '').trim())}`);
+    }
+    if (binding.classGrade || binding.class_grade || binding.grade) {
+      query.push(`classGrade=${encodeURIComponent(String(binding.classGrade || binding.class_grade || binding.grade || '').trim())}`);
     }
     if (taskIds) {
       query.push(`uploadTaskIds=${encodeURIComponent(taskIds)}`);

@@ -54,12 +54,21 @@ Page({
   goWrongbook(event) {
     const studentId = Number(event.currentTarget.dataset.studentId || 0);
     const studentName = String(event.currentTarget.dataset.studentName || '');
+    const className = String(event.currentTarget.dataset.className || '');
+    const classGrade = String(event.currentTarget.dataset.classGrade || '');
     if (!studentId) {
       return;
     }
 
+    const query = [`studentId=${studentId}`, `studentName=${encodeURIComponent(studentName)}`];
+    if (className) {
+      query.push(`className=${encodeURIComponent(className)}`);
+    }
+    if (classGrade) {
+      query.push(`classGrade=${encodeURIComponent(classGrade)}`);
+    }
     wx.navigateTo({
-      url: `/pages/parent-wrongbook/index?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}`,
+      url: `/pages/parent-wrongbook/index?${query.join('&')}`,
     });
   },
 });

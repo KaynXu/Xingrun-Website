@@ -115,7 +115,8 @@ test('parent upload submit button stays on one line on narrow screens', () => {
   assert.equal(uploadTemplate.includes('class="submit-panel"'), true);
   assert.equal(uploadTemplate.includes('class="submit-title"'), true);
   assert.equal(uploadTemplate.includes('class="submit-desc"'), true);
-  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.equal(uploadTemplate.includes('loading="{{submitting}}"'), false);
   assert.match(uploadStyles, /\.bottom-action-bar\s*\{[^}]*padding:\s*0 30rpx calc\(30rpx \+ env\(safe-area-inset-bottom\)\);/s);
   assert.match(uploadStyles, /\.submit-panel\s*\{[^}]*display:\s*flex;/s);
   assert.match(uploadStyles, /\.submit-panel\s*\{[^}]*flex-direction:\s*column;/s);
@@ -136,7 +137,7 @@ test('parent upload controls that mutate the draft are disabled during submissio
   assert.match(uploadTemplate, /<button[^>]*disabled="{{submitting \|\| cropExporting}}"[^>]*bindtap="switchActiveBoxReasonMode"[\s\S]*文字输入[\s\S]*<\/button>/);
   assert.match(uploadTemplate, /<button[^>]*disabled="{{submitting \|\| cropExporting}}"[^>]*bindtap="switchActiveBoxReasonMode"[\s\S]*语音说明[\s\S]*<\/button>/);
   assert.match(uploadTemplate, /<button class="ghost-btn voice-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="toggleActiveBoxVoiceRecording">/);
-  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
+  assert.match(uploadTemplate, /<button class="primary-btn submit-btn" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
 });
 
 test('parent upload voice mode prompts children to explain structured reasons', () => {
@@ -211,7 +212,7 @@ test('parent pages use unified state card anatomy for non-happy paths', () => {
   assert.match(bindTemplate, /class="state-card empty-card empty-student-card"[\s\S]*class="state-marker state-marker-empty"/);
 
   assert.match(uploadTemplate, /class="state-card error-card"[\s\S]*class="state-marker state-marker-error"/);
-  assert.match(uploadTemplate, /class="state-card upload-stage upload-progress-card/);
+  assert.match(uploadTemplate, /wx:if="\{\{uploadStageText && !successTaskIds\.length\}\}" class="state-card upload-stage upload-progress-card/);
   assert.match(uploadTemplate, /class="state-marker {{uploadStage === 'failed' \|\| uploadStage === 'partial_failed' \? 'state-marker-error' : uploadStage === 'ready' \? 'state-marker-success' : 'state-marker-processing'}}"/);
   assert.match(uploadTemplate, /class="state-card upload-result-card/);
   assert.match(uploadTemplate, /class="state-marker {{uploadTaskSummary.state === 'failed' \|\| uploadTaskSummary.state === 'partial_failed' \? 'state-marker-error' : uploadTaskSummary.state === 'ready' \? 'state-marker-success' : 'state-marker-processing'}}"/);
@@ -231,11 +232,16 @@ test('parent upload and wrongbook pages expose primary topic category controls',
   const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');
 
   assert.equal(uploadSource.includes('topicCategoryOptions'), true);
+  assert.equal(uploadSource.includes('showPrimaryTopicCategory'), true);
   assert.equal(uploadTemplate.includes('专题分类'), true);
+  assert.match(uploadTemplate, /wx:if="{{showPrimaryTopicCategory}}"[\s\S]*专题分类/);
   assert.equal(uploadTemplate.includes('handleActiveBoxTopicChange'), true);
   assert.equal(wrongbookSource.includes('updateChildWrongQuestionTopicCategory'), true);
   assert.equal(wrongbookSource.includes('topicSummaries'), true);
+  assert.equal(wrongbookSource.includes('showPrimaryTopicCategory'), true);
   assert.equal(wrongbookTemplate.includes('专题'), true);
+  assert.match(wrongbookTemplate, /wx:if="{{showPrimaryTopicCategory}}"[\s\S]*专题筛选/);
+  assert.match(wrongbookTemplate, /wx:if="{{showPrimaryTopicCategory}}"[\s\S]*修改专题/);
   assert.equal(wrongbookTemplate.includes('bindtap="saveTopicCategory"'), true);
 });
 

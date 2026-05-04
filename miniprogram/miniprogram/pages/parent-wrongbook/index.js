@@ -6,6 +6,7 @@ const {
   fetchWrongQuestionUploadTask,
   updateChildWrongQuestionTopicCategory,
 } = require('../../utils/parentApi');
+const { isPrimarySchoolBinding } = require('../../utils/classScope');
 const { buildUploadTaskSummary } = require('../parent-upload/model');
 const { normalizeWrongQuestionLatexPreviewText } = require('./latex-preview');
 
@@ -15,6 +16,9 @@ Page({
   data: {
     studentId: 0,
     studentName: '',
+    className: '',
+    classGrade: '',
+    showPrimaryTopicCategory: false,
     loading: true,
     errorMessage: '',
     items: [],
@@ -37,8 +41,19 @@ Page({
   onLoad(query) {
     const studentId = Number(query.studentId || 0);
     const studentName = decodeURIComponent(query.studentName || '');
+    const className = decodeURIComponent(query.className || '');
+    const classGrade = decodeURIComponent(query.classGrade || '');
     const uploadTaskIds = parseUploadTaskIds(query.uploadTaskIds);
-    this.setData({ studentId, studentName, uploadTaskIds });
+    const showPrimaryTopicCategory = isPrimarySchoolBinding({ className, classGrade });
+    this.setData({
+      studentId,
+      studentName,
+      className,
+      classGrade,
+      showPrimaryTopicCategory,
+      uploadTaskIds,
+      activeTopicCategory: '全部',
+    });
     wx.setNavigationBarTitle({ title: studentName ? `${studentName}的错题本` : '错题本' });
   },
 
@@ -60,11 +75,12 @@ Page({
         studentId,
       }).catch(() => ({ loadError: true }));
       const items = (payload.items || []).map(normalizeItem);
+      const showPrimaryTopicCategory = this.data.showPrimaryTopicCategory;
       const pdfState = normalizeLibraryPdfState(app.globalData.serverUrl, libraryPayload, uploadTaskSummary, items.length);
       this.setData({
         items,
-        topicSummaries: buildTopicSummaries(items),
-        displayedItems: filterItemsByTopic(items, this.data.activeTopicCategory),
+        topicSummaries: showPrimaryTopicCategory ? buildTopicSummaries(items) : [],
+        displayedItems: showPrimaryTopicCategory ? filterItemsByTopic(items, this.data.activeTopicCategory) : items,
         libraryPdfUrl: pdfState.url,
         libraryPdfReady: pdfState.ready,
         libraryPdfStatusText: pdfState.statusText,
@@ -143,6 +159,9 @@ Page({
   },
 
   selectTopicFilter(event) {
+    if (!this.data.showPrimaryTopicCategory) {
+      return;
+    }
     const topicCategory = String((event.currentTarget && event.currentTarget.dataset && event.currentTarget.dataset.topic) || '全部');
     this.setData({
       activeTopicCategory: topicCategory,
@@ -151,6 +170,9 @@ Page({
   },
 
   startEditTopicCategory(event) {
+    if (!this.data.showPrimaryTopicCategory) {
+      return;
+    }
     const recordId = String((event.currentTarget && event.currentTarget.dataset && event.currentTarget.dataset.recordId) || '');
     const matched = (this.data.items || []).find((item) => item.id === recordId);
     if (!matched) {
@@ -170,6 +192,9 @@ Page({
   },
 
   handleTopicCategoryChange(event) {
+    if (!this.data.showPrimaryTopicCategory) {
+      return;
+    }
     const index = Number(event && event.detail ? event.detail.value : 0);
     const nextTopic = TOPIC_CATEGORY_OPTIONS[index] || '未分类';
     this.setData({
@@ -178,12 +203,19 @@ Page({
   },
 
   handleCustomTopicInput(event) {
+    if (!this.data.showPrimaryTopicCategory) {
+      return;
+    }
     this.setData({
       editingTopicCategory: String(event && event.detail ? event.detail.value : '').trim(),
     });
   },
 
   async saveTopicCategory() {
+    if (!this.data.showPrimaryTopicCategory) {
+      this.setData({ savingTopic: false });
+      return;
+    }
     const recordId = String(this.data.editingTopicRecordId || '').trim();
     const topicCategory = String(this.data.editingTopicCategory || '未分类').trim() || '未分类';
     if (!recordId || this.data.savingTopic) {

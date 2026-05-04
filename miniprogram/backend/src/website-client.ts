@@ -178,6 +178,7 @@ export interface WebsiteParentBinding {
   id: number;
   class_id: number;
   class_name?: string;
+  class_grade?: string;
   student_id: number;
   student_name?: string;
   teacher_user_id: number | null;
@@ -272,6 +273,17 @@ export async function listParentBindingsOnWebsite(input: {
   const normalizedOpenId = String(input.openId || '').trim();
   const query = new URLSearchParams({ open_id: normalizedOpenId });
   return requestWebsite<{ bindings: WebsiteParentBinding[] }>(`/api/wechat/bindings?${query.toString()}`);
+}
+
+export async function listPrimaryTopicCategorySuggestionsOnWebsite(input: {
+  openId: string;
+  topicCategory?: string;
+}) {
+  const query = new URLSearchParams({
+    open_id: String(input.openId || '').trim(),
+    topic_category: String(input.topicCategory || '').trim(),
+  });
+  return requestWebsite<{ items: string[] }>(`/api/wechat/primary-topic-category-suggestions?${query.toString()}`);
 }
 
 export async function transcribeParentReasonOnWebsite(input: {

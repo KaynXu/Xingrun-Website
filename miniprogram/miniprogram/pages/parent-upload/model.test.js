@@ -173,8 +173,8 @@ test('buildUploadTaskSummary reports background processing after the polling win
 
   assert.deepEqual(summary, {
     state: 'background',
-    title: '后台继续识别',
-    description: '已完成 1 条，还有 1 条在后台继续识别，稍后可回错题本查看。',
+    title: '已接收，云端识别中',
+    description: '已完成 1 条，还有 1 条在云端继续识别。可以先离开本页，稍后回错题本查看。',
     readyCount: 1,
     failedCount: 0,
     pendingCount: 1,
@@ -200,7 +200,7 @@ test('buildUploadTaskSummary reports ready only after every task is ready', () =
   ]), {
     state: 'pending',
     title: '正在识别',
-    description: '已完成 1 条，还有 1 条正在服务器识别。',
+    description: '已完成 1 条，还有 1 条正在云端识别。',
     readyCount: 1,
     failedCount: 0,
     pendingCount: 1,

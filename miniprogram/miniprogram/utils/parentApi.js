@@ -337,6 +337,7 @@ function normalizeParentBinding(binding) {
     openId: String(source.openId || source.open_id || '').trim(),
     classId: Number(source.classId || source.class_id || 0) || 0,
     className: String(source.className || source.class_name || '').trim(),
+    classGrade: String(source.classGrade || source.class_grade || source.grade || '').trim(),
     studentId: Number(source.studentId || source.student_id || 0) || 0,
     studentName: String(source.studentName || source.student_name || '').trim(),
     teacherUserId: Number(source.teacherUserId || source.teacher_user_id || 0) || 0,
@@ -457,6 +458,17 @@ async function fetchParentBindings(wxApi, serverUrl, params) {
   return setParentBindings(wxApi, payload.bindings || []);
 }
 
+async function fetchParentTopicCategorySuggestions(wxApi, serverUrl, params) {
+  return requestJson(wxApi, {
+    url: `${serverUrl}/wechat/parent/primary-topic-category-suggestions`,
+    method: 'GET',
+    data: {
+      openId: params.openId,
+      topicCategory: String(params.topicCategory || '').trim(),
+    },
+  });
+}
+
 async function transcribeParentReason() {
   return { transcript_text: '' };
 }
@@ -571,6 +583,7 @@ module.exports = {
   previewClassInvite,
   bindParentStudent,
   fetchParentBindings,
+  fetchParentTopicCategorySuggestions,
   transcribeParentReason,
   classifyParentReason,
   uploadParentReasonAudio,
