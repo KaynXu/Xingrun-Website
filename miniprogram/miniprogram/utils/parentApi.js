@@ -457,14 +457,8 @@ async function fetchParentBindings(wxApi, serverUrl, params) {
   return setParentBindings(wxApi, payload.bindings || []);
 }
 
-async function transcribeParentReason(wxApi, serverUrl, params) {
-  return requestJson(wxApi, {
-    url: `${serverUrl}/wechat/parent/reason-transcriptions`,
-    method: 'POST',
-    data: {
-      audioUrl: String(params.audioUrl || '').trim(),
-    },
-  });
+async function transcribeParentReason() {
+  return { transcript_text: '' };
 }
 
 async function classifyParentReason(wxApi, serverUrl, params) {
