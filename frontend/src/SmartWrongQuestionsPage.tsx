@@ -287,6 +287,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const requestVersionRef = useRef(0);
   const detailRequestVersionRef = useRef(0);
   const practiceHistoryRequestVersionRef = useRef(0);
+  const weeklyActivityRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
   const reviewDraftByRecordIdRef = useRef<Record<string, WrongQuestionReviewDraft>>({});
   const recordsRef = useRef(records);
@@ -572,9 +573,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [loadList]);
 
   useEffect(() => {
+    weeklyActivityRequestVersionRef.current += 1;
     setWeeklyActivitySummary(null);
     setWeeklyActivityError('');
     setWeeklyActivityNotice('');
+    setWeeklyActivityLoading(false);
   }, [weeklyActivityWeekStart, weeklyActivityOrganizationId]);
 
   useEffect(() => {
@@ -1024,6 +1027,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   };
 
   const handleLoadWeeklyActivitySummary = async () => {
+    const requestVersion = weeklyActivityRequestVersionRef.current + 1;
+    weeklyActivityRequestVersionRef.current = requestVersion;
     setWeeklyActivityLoading(true);
     setWeeklyActivityError('');
     setWeeklyActivityNotice('');
@@ -1034,13 +1039,23 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       );
       const normalized = normalizeWeeklyWrongQuestionActivitySummaryResponse(response);
       const itemCount = normalized.classItems.length + normalized.teacherItems.length + normalized.studentItems.length;
+      if (requestVersion !== weeklyActivityRequestVersionRef.current) {
+        return;
+      }
+
       setWeeklyActivitySummary(normalized);
       setWeeklyActivityNotice(itemCount > 0 ? '已加载本周数据总结。' : '');
     } catch (loadActivityError) {
+      if (requestVersion !== weeklyActivityRequestVersionRef.current) {
+        return;
+      }
+
       setWeeklyActivitySummary(null);
       setWeeklyActivityError(loadActivityError instanceof Error ? loadActivityError.message : '本周数据总结加载失败');
     } finally {
-      setWeeklyActivityLoading(false);
+      if (requestVersion === weeklyActivityRequestVersionRef.current) {
+        setWeeklyActivityLoading(false);
+      }
     }
   };
 
@@ -1855,9 +1870,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无班级数据</p>
                   ) : (
                     weeklyActivitySummary.classItems.map((item) => (
-                      <article key={`${item.organizationId}-${item.classId}`} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.className || '未命名班级'}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.organizationName || '未标注机构'}</p>
+                      <article key={`${item.organizationId}-${item.classId}`} className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                        <p className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-white">{item.className || '未命名班级'}</p>
+                        <p className="mt-1 min-w-0 break-words text-xs text-slate-500 dark:text-slate-400">{item.organizationName || '未标注机构'}</p>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                           <span>{item.weeklyQuestionCount}题</span>
                           <span>{item.uploadingStudentCount}名学生</span>
@@ -1873,9 +1888,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无老师数据</p>
                   ) : (
                     weeklyActivitySummary.teacherItems.map((item) => (
-                      <article key={`${item.organizationId}-${item.teacherUserId}`} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.teacherName || '未标注老师'}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.organizationName || '未标注机构'}</p>
+                      <article key={`${item.organizationId}-${item.teacherUserId}`} className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                        <p className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-white">{item.teacherName || '未标注老师'}</p>
+                        <p className="mt-1 min-w-0 break-words text-xs text-slate-500 dark:text-slate-400">{item.organizationName || '未标注机构'}</p>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                           <span>{item.weeklyQuestionCount}题</span>
                           <span>{item.classCount}个班级</span>
@@ -1893,9 +1908,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无学生数据</p>
                   ) : (
                     weeklyActivitySummary.studentItems.map((item) => (
-                      <article key={`${item.organizationId}-${item.classId}-${item.studentId}`} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.studentName || '未命名学生'}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.organizationName || '未标注机构'}</p>
+                      <article key={`${item.organizationId}-${item.classId}-${item.studentId}`} className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                        <p className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-white">{item.studentName || '未命名学生'}</p>
+                        <p className="mt-1 min-w-0 break-words text-xs text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.organizationName || '未标注机构'}</p>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                           <span>本周{item.weeklyQuestionCount}题</span>
                           <span>累计{item.totalQuestionCount}题</span>

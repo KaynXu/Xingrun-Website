@@ -75,6 +75,20 @@ function createJsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
@@ -3106,6 +3120,386 @@ test('SmartWrongQuestionsPage updates one weekly followup card after generating 
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /王睿博妈妈，这周我会重点盯一下计算步骤。/);
       assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly/messages' && call.init?.method === 'POST'));
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage loads super owner weekly activity summary with organization filtering', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/organizations') {
+        return createJsonResponse({
+          items: [{ id: 11, name: '星润一号机构' }],
+        });
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [],
+          summary: {
+            total_count: 0,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+            unique_class_count: 0,
+            unique_student_count: 0,
+          },
+        });
+      }
+
+      if (input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04') {
+        return createJsonResponse({
+          week_start: '2026-05-04',
+          week_end: '2026-05-10',
+          class_items: [],
+          teacher_items: [],
+          student_items: [],
+        });
+      }
+
+      if (input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=11') {
+        return createJsonResponse({
+          week_start: '2026-05-04',
+          week_end: '2026-05-10',
+          class_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              weekly_question_count: 4,
+              uploading_student_count: 2,
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+          teacher_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              teacher_user_id: 7,
+              teacher_name: 'Kayn',
+              class_count: 1,
+              weekly_question_count: 4,
+              involved_student_count: 2,
+              pending_followup_count: 3,
+            },
+          ],
+          student_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              student_id: 501,
+              student_name: '王睿博',
+              weekly_question_count: 3,
+              total_question_count: 8,
+              topic_categories: ['计算'],
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '超级管理员',
+            organization_name: '星润Starain',
+            role: 'super_owner',
+          },
+        }),
+      );
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/organizations'));
+      const summaryButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('本周数据总结'));
+      assert.ok(summaryButton instanceof HTMLButtonElement);
+    });
+
+    const summaryButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('本周数据总结'));
+    assert.ok(summaryButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      summaryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const weekInput = domEnvironment.container.querySelector('input[aria-label="数据总结周次"]') as HTMLInputElement | null;
+    assert.ok(weekInput instanceof HTMLInputElement);
+
+    await act(async () => {
+      weekInput.value = '2026-05-04';
+      weekInput.dispatchEvent(new Event('input', { bubbles: true }));
+      weekInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const loadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('加载总结'));
+    assert.ok(loadButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /本周暂无错题活跃数据/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04'));
+    });
+
+    const organizationSelect = domEnvironment.container.querySelector('select[aria-label="机构"]') as HTMLSelectElement | null;
+    assert.ok(organizationSelect instanceof HTMLSelectElement);
+
+    await act(async () => {
+      organizationSelect.value = '11';
+      organizationSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /本周活跃班级/);
+      assert.match(pageText, /六年级 1 班/);
+      assert.match(pageText, /Kayn/);
+      assert.match(pageText, /王睿博/);
+      assert.doesNotMatch(pageText, /本周暂无错题活跃数据/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=11'));
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage ignores stale weekly activity summary responses', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  const firstSummaryResponse = createDeferred<Response>();
+  const secondSummaryResponse = createDeferred<Response>();
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([]);
+      }
+
+      if (input === '/api/admin/organizations') {
+        return createJsonResponse({
+          items: [{ id: 11, name: '星润一号机构' }],
+        });
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [],
+          summary: {
+            total_count: 0,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+            unique_class_count: 0,
+            unique_student_count: 0,
+          },
+        });
+      }
+
+      if (input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04') {
+        return firstSummaryResponse.promise;
+      }
+
+      if (input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=11') {
+        return secondSummaryResponse.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '超级管理员',
+            organization_name: '星润Starain',
+            role: 'super_owner',
+          },
+        }),
+      );
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const summaryButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('本周数据总结'));
+      assert.ok(summaryButton instanceof HTMLButtonElement);
+    });
+
+    const summaryButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('本周数据总结'));
+    assert.ok(summaryButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      summaryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const weekInput = domEnvironment.container.querySelector('input[aria-label="数据总结周次"]') as HTMLInputElement | null;
+    const organizationSelect = domEnvironment.container.querySelector('select[aria-label="机构"]') as HTMLSelectElement | null;
+    const loadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('加载总结'));
+    assert.ok(weekInput instanceof HTMLInputElement);
+    assert.ok(organizationSelect instanceof HTMLSelectElement);
+    assert.ok(loadButton instanceof HTMLButtonElement);
+
+    await waitForAssertion(() => {
+      assert.ok(Array.from(organizationSelect.options).some((option) => option.value === '11'));
+    });
+
+    await act(async () => {
+      weekInput.value = '2026-05-04';
+      weekInput.dispatchEvent(new Event('input', { bubbles: true }));
+      weekInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04'));
+    });
+
+    await act(async () => {
+      organizationSelect.value = '11';
+      organizationSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const currentLoadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('加载总结'));
+      assert.ok(currentLoadButton instanceof HTMLButtonElement);
+      assert.equal(currentLoadButton.disabled, false);
+    });
+
+    const unlockedLoadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('加载总结'));
+    assert.ok(unlockedLoadButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      unlockedLoadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      assert.ok(
+        fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=11'),
+        fetchCalls.map((call) => String(call.input)).join('\n'),
+      );
+    });
+
+    await act(async () => {
+      secondSummaryResponse.resolve(createJsonResponse({
+        week_start: '2026-05-04',
+        week_end: '2026-05-10',
+        class_items: [
+          {
+            organization_id: 11,
+            organization_name: '星润一号机构',
+            class_id: 42,
+            class_name: '新鲜班级',
+            weekly_question_count: 5,
+            uploading_student_count: 2,
+            latest_created_at: '2026-05-12T09:00:00Z',
+          },
+        ],
+        teacher_items: [],
+        student_items: [],
+      }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /新鲜班级/);
+    });
+
+    await act(async () => {
+      firstSummaryResponse.resolve(createJsonResponse({
+        week_start: '2026-05-04',
+        week_end: '2026-05-10',
+        class_items: [
+          {
+            organization_id: 0,
+            organization_name: '过期机构',
+            class_id: 99,
+            class_name: '过期班级',
+            weekly_question_count: 99,
+            uploading_student_count: 9,
+            latest_created_at: '2026-05-05T09:00:00Z',
+          },
+        ],
+        teacher_items: [],
+        student_items: [],
+      }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /新鲜班级/);
+      assert.doesNotMatch(pageText, /过期班级/);
     });
   } finally {
     if (root) {
