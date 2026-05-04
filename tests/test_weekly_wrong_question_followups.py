@@ -83,6 +83,32 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def _ready_practice_sheet_for_record(self, record: dict | None = None, *, pdf_path: str = "/tmp/weekly-practice.pdf") -> dict:
+        source_record = record or self.record
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(source_record["id"])],
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": source_record["id"],
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "下次我会先 ______。",
+                }
+            ],
+            pdf_path=pdf_path,
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_practice_sheets SET created_at=?, updated_at=? WHERE id=?",
+                ("2026-04-08 12:00:00", "2026-04-08 12:00:00", sheet["id"]),
+            )
+        saved = lesson_manager.get_wrong_question_practice_sheet(sheet["id"])
+        self.assertIsNotNone(saved)
+        return saved
+
     def test_get_weekly_followups_returns_students_without_miniprogram_key(self):
         response = self.client.get(
             f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
@@ -107,18 +133,15 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         )
         self.assertNotIn("miniprogram", item)
 
-    def test_get_weekly_class_pdf_archive_downloads_zip_with_refreshed_student_pdf(self):
-        pdf_path = Path(self.temp_dir.name) / "student.pdf"
-        pdf_path.write_bytes(b"%PDF-1.4 weekly student pdf")
+    def test_get_weekly_class_pdf_archive_downloads_zip_with_ready_practice_sheet_pdf(self):
+        pdf_path = Path(self.temp_dir.name) / "practice.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 weekly practice pdf")
+        self._ready_practice_sheet_for_record(pdf_path=str(pdf_path))
 
-        with mock.patch(
-            "app._refresh_student_wrong_question_library_cache",
-            return_value=str(pdf_path),
-        ) as refresh_pdf:
-            response = self.client.get(
-                f"/api/wrong-question-followups/weekly/class-pdf-archive?class_id={self.class_id}&week_start=2026-04-08",
-                headers=self.headers,
-            )
+        response = self.client.get(
+            f"/api/wrong-question-followups/weekly/class-pdf-archive?class_id={self.class_id}&week_start=2026-04-08",
+            headers=self.headers,
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/zip")
@@ -126,12 +149,14 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         self.assertEqual(response.headers["X-XR-Archive-Success-Count"], "1")
         self.assertEqual(response.headers["X-XR-Archive-Failed-Count"], "0")
         self.assertGreater(len(response.data), 0)
-        refresh_pdf.assert_called_once_with(self.student["id"])
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-            self.assertEqual(archive.namelist(), ["周同学-错题本.pdf"])
-            self.assertEqual(archive.read("周同学-错题本.pdf"), b"%PDF-1.4 weekly student pdf")
+            self.assertEqual(archive.namelist(), ["周同学-错题练习.pdf"])
+            self.assertEqual(archive.read("周同学-错题练习.pdf"), b"%PDF-1.4 weekly practice pdf")
 
-    def test_get_weekly_class_pdf_archive_tolerates_one_student_pdf_generation_failure(self):
+    def test_get_weekly_class_pdf_archive_skips_missing_practice_sheet_pdf(self):
+        pdf_path = Path(self.temp_dir.name) / "practice.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 successful practice pdf")
+        self._ready_practice_sheet_for_record(pdf_path=str(pdf_path))
         second_student = lesson_manager.create_student_for_class(self.class_id, "失败同学")
         second_binding = lesson_manager.bind_parent_to_student(
             parent_wechat_account_id=self.parent_account["id"],
@@ -150,37 +175,44 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
                 "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
                 ("2026-04-09 10:00:00", second_record["id"]),
             )
-        pdf_path = Path(self.temp_dir.name) / "student.pdf"
-        pdf_path.write_bytes(b"%PDF-1.4 successful student pdf")
+        self._ready_practice_sheet_for_record(second_record, pdf_path=str(Path(self.temp_dir.name) / "missing.pdf"))
 
-        def refresh_pdf(student_id):
-            if student_id == self.student["id"]:
-                return str(pdf_path)
-            raise RuntimeError("pdf generation failed")
-
-        with mock.patch(
-            "app._refresh_student_wrong_question_library_cache",
-            side_effect=refresh_pdf,
-        ):
-            response = self.client.get(
-                f"/api/wrong-question-followups/weekly/class-pdf-archive?class_id={self.class_id}&week_start=2026-04-08",
-                headers=self.headers,
-            )
+        response = self.client.get(
+            f"/api/wrong-question-followups/weekly/class-pdf-archive?class_id={self.class_id}&week_start=2026-04-08",
+            headers=self.headers,
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["X-XR-Archive-Success-Count"], "1")
         self.assertEqual(response.headers["X-XR-Archive-Failed-Count"], "1")
         self.assertNotIn("X-XR-Archive-Failed-Students", response.headers)
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-            self.assertIn("周同学-错题本.pdf", archive.namelist())
+            self.assertIn("周同学-错题练习.pdf", archive.namelist())
             self.assertIn("打包说明.txt", archive.namelist())
-            self.assertEqual(archive.read("周同学-错题本.pdf"), b"%PDF-1.4 successful student pdf")
+            self.assertEqual(archive.read("周同学-错题练习.pdf"), b"%PDF-1.4 successful practice pdf")
             self.assertIn("失败同学", archive.read("打包说明.txt").decode("utf-8"))
 
-    def test_post_weekly_followup_message_generates_and_caches_message(self):
+    def test_post_weekly_followup_message_rejects_student_without_weekly_practice_sheet(self):
+        with mock.patch("app.ai_processor.generate_weekly_wrong_question_followup_message") as generate_message:
+            response = self.client.post(
+                "/api/wrong-question-followups/weekly/messages",
+                json={
+                    "class_id": self.class_id,
+                    "student_id": self.student["id"],
+                    "week_start": "2026-04-08",
+                },
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["error"], "weekly practice sheet is required")
+        generate_message.assert_not_called()
+
+    def test_post_weekly_followup_message_generates_and_caches_practice_based_message(self):
+        sheet = self._ready_practice_sheet_for_record()
         with mock.patch(
             "app.ai_processor.generate_weekly_wrong_question_followup_message",
-            return_value="周同学妈妈，这周计算题先盯通分这个小点。",
+            return_value="周同学妈妈，我这周给他整理了一份错题练习，先盯通分这个小点。",
         ) as generate_message:
             response = self.client.post(
                 "/api/wrong-question-followups/weekly/messages",
@@ -195,11 +227,14 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["message"]["message_text"], "周同学妈妈，这周计算题先盯通分这个小点。")
+        self.assertEqual(payload["message"]["message_text"], "周同学妈妈，我这周给他整理了一份错题练习，先盯通分这个小点。")
         generate_kwargs = generate_message.call_args.kwargs
         self.assertEqual(generate_kwargs["student_name"], "周同学")
         self.assertEqual(generate_kwargs["class_name"], "六年级 3 班")
-        self.assertFalse(generate_kwargs["has_practice_sheet"])
+        self.assertTrue(generate_kwargs["has_practice_sheet"])
+        self.assertEqual(generate_kwargs["practice_sheet_question_count"], 1)
+        self.assertEqual(generate_kwargs["practice_sheet_topic_categories"], ["计算"])
+        self.assertEqual(generate_kwargs["practice_sheet_reason_summaries"], ["通分时漏乘分子"])
 
         cached = lesson_manager.get_weekly_wrong_question_followup_message(
             organization_id=self.owner["organization_id"],
@@ -208,8 +243,9 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
             week_start_date="2026-04-06",
             style="warm",
         )
-        self.assertEqual(cached["message_text"], "周同学妈妈，这周计算题先盯通分这个小点。")
+        self.assertEqual(cached["message_text"], "周同学妈妈，我这周给他整理了一份错题练习，先盯通分这个小点。")
         self.assertEqual(cached["source_record_ids"], [self.record["id"]])
+        self.assertEqual(cached["source_sheet_id"], sheet["id"])
 
         list_response = self.client.get(
             f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
@@ -217,7 +253,7 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         )
         self.assertEqual(
             list_response.get_json()["items"][0]["message"]["message_text"],
-            "周同学妈妈，这周计算题先盯通分这个小点。",
+            "周同学妈妈，我这周给他整理了一份错题练习，先盯通分这个小点。",
         )
 
     def test_post_weekly_followup_message_rejects_non_numeric_class_id(self):
@@ -346,6 +382,7 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         mock_start_thread.assert_called_once()
 
     def test_super_owner_weekly_followup_uses_selected_class_organization(self):
+        self._ready_practice_sheet_for_record()
         response = self.client.get(
             f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
             headers=self.super_headers,

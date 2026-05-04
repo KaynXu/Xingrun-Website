@@ -1535,8 +1535,14 @@ def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
         "student_name": item.get("student_name"),
         "teacher_user_id": item.get("teacher_user_id"),
         "teacher_name": item.get("teacher_name"),
+        "status": item.get("status") or "no_practice_needed",
+        "practice_sheet": _serialize_wrong_question_practice_sheet_for_response(item.get("practice_sheet")),
         "weekly_question_count": item.get("weekly_question_count"),
         "total_active_question_count": item.get("total_active_question_count"),
+        "candidate_question_count": item.get("candidate_question_count") or 0,
+        "candidate_record_ids": item.get("candidate_record_ids") or [],
+        "recommended_category": item.get("recommended_category") or "",
+        "recommendation_reason": item.get("recommendation_reason") or "",
         "topic_categories": item.get("topic_categories") or [],
         "representative_reason_summaries": item.get("representative_reason_summaries") or [],
         "latest_created_at": item.get("latest_created_at"),
@@ -2454,30 +2460,33 @@ def api_weekly_wrong_question_followup_class_pdf_archive():
     used_filenames: dict[str, int] = {}
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for item in items:
-            student_id = int(item.get("student_id") or 0)
             student_name = str(item.get("student_name") or "").strip() or "未命名"
+            sheet = item.get("practice_sheet") if isinstance(item.get("practice_sheet"), dict) else None
+            if not sheet:
+                continue
             try:
-                refreshed_pdf_path = _refresh_student_wrong_question_library_cache(student_id)
-                pdf_path = Path(str(refreshed_pdf_path or ""))
+                if str(sheet.get("status") or "") != "ready":
+                    raise FileNotFoundError(str(sheet.get("pdf_path") or ""))
+                pdf_path = Path(str(sheet.get("pdf_path") or ""))
                 if not pdf_path.exists():
                     raise FileNotFoundError(str(pdf_path))
-                base_name = f"{_safe_archive_filename_part(student_name)}-错题本"
+                base_name = f"{_safe_archive_filename_part(student_name)}-错题练习"
                 name_count = used_filenames.get(base_name, 0) + 1
                 used_filenames[base_name] = name_count
                 archive_name = f"{base_name}.pdf" if name_count == 1 else f"{base_name}-{name_count}.pdf"
                 archive.write(pdf_path, archive_name)
                 successful_count += 1
             except Exception:
-                logger.exception("Failed to add weekly wrong question library pdf to archive")
+                logger.exception("Failed to add weekly wrong question practice pdf to archive")
                 failed_student_names.append(student_name)
         if failed_student_names:
-            notes = ["以下学生错题本 PDF 打包失败：", *failed_student_names]
+            notes = ["以下学生错题练习 PDF 打包失败：", *failed_student_names]
             archive.writestr("打包说明.txt", "\n".join(notes).encode("utf-8"))
     buffer.seek(0)
 
     download_name = (
         f"{_safe_archive_filename_part(str(cls.get('name') or '班级'))}"
-        f"-{week_start_date}-错题本合集.zip"
+        f"-{week_start_date}-错题练习合集.zip"
     )
     response = send_file(
         buffer,
@@ -2669,8 +2678,10 @@ def api_weekly_wrong_question_followup_message_create():
     item = next((entry for entry in items if int(entry.get("student_id") or 0) == student_id), None)
     if not item:
         return jsonify({"error": "not found"}), 404
+    sheet = item.get("practice_sheet") if isinstance(item.get("practice_sheet"), dict) else None
+    if item.get("status") != "has_practice_sheet" or not sheet or str(sheet.get("status") or "") != "ready":
+        return jsonify({"error": "weekly practice sheet is required"}), 409
 
-    practice_sheets = list_wrong_question_practice_sheets_for_student(student_id)
     message_text = ai_processor.generate_weekly_wrong_question_followup_message(
         student_name=str(item.get("student_name") or ""),
         class_name=str(item.get("class_name") or ""),
@@ -2679,7 +2690,11 @@ def api_weekly_wrong_question_followup_message_create():
         total_active_question_count=int(item.get("total_active_question_count") or 0),
         topic_categories=item.get("topic_categories") or [],
         representative_reason_summaries=item.get("representative_reason_summaries") or [],
-        has_practice_sheet=bool(practice_sheets),
+        has_practice_sheet=True,
+        practice_sheet_question_count=int(sheet.get("question_count") or item.get("weekly_question_count") or 0),
+        practice_sheet_topic_categories=sheet.get("topic_categories") or item.get("topic_categories") or [],
+        practice_sheet_reason_summaries=sheet.get("representative_reason_summaries") or item.get("representative_reason_summaries") or [],
+        practice_sheet_item_summaries=sheet.get("representative_reason_summaries") or item.get("representative_reason_summaries") or [],
     )
     message = upsert_weekly_wrong_question_followup_message(
         organization_id=organization_id,
@@ -2691,6 +2706,7 @@ def api_weekly_wrong_question_followup_message_create():
         style="warm",
         message_text=message_text,
         source_record_ids=item.get("source_record_ids") or [],
+        source_sheet_id=int(sheet.get("id") or 0),
         generated_by=int(user["id"]),
     )
     return jsonify({"ok": True, "message": _weekly_followup_message_payload(message)})

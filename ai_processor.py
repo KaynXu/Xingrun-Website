@@ -827,6 +827,10 @@ def generate_weekly_wrong_question_followup_message(
     topic_categories: list[str],
     representative_reason_summaries: list[str],
     has_practice_sheet: bool,
+    practice_sheet_question_count: int = 0,
+    practice_sheet_topic_categories: list[str] | None = None,
+    practice_sheet_reason_summaries: list[str] | None = None,
+    practice_sheet_item_summaries: list[str] | None = None,
 ) -> str:
     client = _get_client()
     response = client.chat.completions.create(
@@ -849,6 +853,22 @@ def generate_weekly_wrong_question_followup_message(
                             if str(item).strip()
                         ],
                         "has_practice_sheet": bool(has_practice_sheet),
+                        "practice_sheet_question_count": int(practice_sheet_question_count or 0),
+                        "practice_sheet_topic_categories": [
+                            str(item).strip()
+                            for item in (practice_sheet_topic_categories or [])
+                            if str(item).strip()
+                        ],
+                        "practice_sheet_reason_summaries": [
+                            str(item).strip()
+                            for item in (practice_sheet_reason_summaries or [])
+                            if str(item).strip()
+                        ],
+                        "practice_sheet_item_summaries": [
+                            str(item).strip()
+                            for item in (practice_sheet_item_summaries or [])
+                            if str(item).strip()
+                        ],
                     },
                     ensure_ascii=False,
                 ),
