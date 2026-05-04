@@ -322,9 +322,9 @@ WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
     "审题问题",
 ]
 
-WRONG_QUESTION_REASON_CLASSIFICATION_PROMPT = """你是错因归类助手。
+WRONG_QUESTION_REASON_CLASSIFICATION_PROMPT = """你是错因分析助手。
 你会收到孩子自己描述“为什么错”，以及可选的题目文本。
-你必须把孩子的描述归类到以下固定顶层分类之一：
+你必须先把孩子的描述归类到以下固定顶层分类之一，再结合题目文本整理出老师和孩子都能直接使用的结构化错因分析：
 - 知识点问题
 - 细节问题
 - 方法问题
@@ -332,13 +332,16 @@ WRONG_QUESTION_REASON_CLASSIFICATION_PROMPT = """你是错因归类助手。
 
 只返回 JSON，不要输出额外解释。
 返回字段必须包含：
-- display_text: string，老师可直接阅读的自然中文，概括孩子出错的核心原因，删除口头禅和无效内容，不超过 30 个字
+- display_text: string，老师可直接阅读的自然中文，概括孩子出错的核心原因，删除口头禅和无效内容，20 到 60 个字
 - primary_error_type: string，且必须是以上固定分类之一
 - secondary_error_summary: string，补充细节备注，允许出现单位、符号、书写、漏条件等具体表现，不要复述顶层分类名称，18 到 40 个字
+- core_issue: string，核心错因，必须结合本题说清“错在什么理解、判断或步骤上”，40 到 90 个字
+- key_omission: string，关键遗漏，说明孩子没有抓住的条件、定义、限制、检查动作或题目要求，40 到 90 个字
+- next_step: string，后续操作，写成下次做同类题可执行的 1 到 2 步提醒，40 到 90 个字
 
 规则：
 - 优先依据孩子自己的描述归类，不要编造不存在的学习问题
-- 如果孩子描述太模糊，也要根据最可能原因给出最稳妥的归类
+- 如果孩子描述太模糊，也要结合题目文本给出最稳妥的分析，但必须用“可能”“需要检查”这类谨慎表述
 - display_text 不得使用清洗后、原始转写等工程词汇"""
 
 WRONG_QUESTION_PRACTICE_SHEET_PROMPT = """你是错题练习设计助手。
@@ -646,16 +649,28 @@ def classify_wrong_question_reason(child_reason_text: str, *, question_text: str
     display_text = str(payload.get("display_text") or "").strip()
     primary_error_type = str(payload.get("primary_error_type") or "").strip()
     secondary_error_summary = str(payload.get("secondary_error_summary") or "").strip()
+    core_issue = str(payload.get("core_issue") or "").strip()
+    key_omission = str(payload.get("key_omission") or "").strip()
+    next_step = str(payload.get("next_step") or "").strip()
 
     if primary_error_type not in WRONG_QUESTION_ERROR_TYPE_OPTIONS:
         raise ValueError("wrong question reason classification failed")
     if not secondary_error_summary:
         raise ValueError("wrong question reason classification failed")
+    if not core_issue:
+        core_issue = display_text or secondary_error_summary
+    if not key_omission:
+        key_omission = secondary_error_summary
+    if not next_step:
+        next_step = "下次先圈出题目条件和要求，再按步骤检查关键知识点是否用对。"
 
     return {
         "display_text": display_text or f"{primary_error_type}｜{secondary_error_summary}",
         "primary_error_type": primary_error_type,
         "secondary_error_summary": secondary_error_summary,
+        "core_issue": core_issue,
+        "key_omission": key_omission,
+        "next_step": next_step,
     }
 
 

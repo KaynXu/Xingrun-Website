@@ -10,6 +10,9 @@ export interface WrongQuestionAnalysis {
   selectedActions?: string[];
   selectedReasons?: string[];
   studentNote?: string;
+  coreIssue?: string;
+  keyOmission?: string;
+  nextStep?: string;
 }
 
 export interface WrongQuestionReviewDraft {
@@ -64,6 +67,9 @@ export interface WrongQuestionRecord {
   parentNote: string;
   childReasonText?: string;
   childReasonInputMode?: string;
+  reasonCoreIssue?: string;
+  reasonKeyOmission?: string;
+  reasonNextStep?: string;
   topicCategory?: string;
   primaryErrorType?: string;
   causeNote?: string;
@@ -241,6 +247,9 @@ function normalizeWrongQuestionAnalysis(rawAnalysis: unknown): WrongQuestionAnal
   const selectedErrorType = pickStringValue(source, ['selectedErrorType', 'selected_error_type']);
   const topicCategory = pickStringValue(source, ['topicCategory', 'topic_category']);
   const studentNote = pickStringValue(source, ['studentNote', 'student_note']);
+  const coreIssue = pickStringValue(source, ['coreIssue', 'core_issue']);
+  const keyOmission = pickStringValue(source, ['keyOmission', 'key_omission']);
+  const nextStep = pickStringValue(source, ['nextStep', 'next_step']);
 
   const analysis: WrongQuestionAnalysis = {
     questionCategory: pickStringValue(source, ['questionCategory', 'question_category']),
@@ -283,6 +292,18 @@ function normalizeWrongQuestionAnalysis(rawAnalysis: unknown): WrongQuestionAnal
     analysis.studentNote = studentNote;
   }
 
+  if (coreIssue) {
+    analysis.coreIssue = coreIssue;
+  }
+
+  if (keyOmission) {
+    analysis.keyOmission = keyOmission;
+  }
+
+  if (nextStep) {
+    analysis.nextStep = nextStep;
+  }
+
   return analysis;
 }
 
@@ -301,6 +322,9 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const studentLibraryPdfPath = pickStringValue(source, ['studentLibraryPdfPath', 'student_library_pdf_path']);
   const childReasonText = pickStringValue(source, ['childReasonText', 'child_reason_text', 'childRawReasonText', 'child_raw_reason_text']);
   const childReasonInputMode = pickStringValue(source, ['childReasonInputMode', 'child_reason_input_mode']);
+  const reasonCoreIssue = pickStringValue(source, ['reasonCoreIssue', 'reason_core_issue', 'childReasonCoreIssue', 'child_reason_core_issue']);
+  const reasonKeyOmission = pickStringValue(source, ['reasonKeyOmission', 'reason_key_omission', 'childReasonKeyOmission', 'child_reason_key_omission']);
+  const reasonNextStep = pickStringValue(source, ['reasonNextStep', 'reason_next_step', 'childReasonNextStep', 'child_reason_next_step']);
   const topicCategory = pickStringValue(source, ['topicCategory', 'topic_category'])
     || normalizeWrongQuestionAnalysis(source.analysis).topicCategory
     || '';
@@ -353,6 +377,24 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
 
     if (childReasonInputMode) {
       record.childReasonInputMode = childReasonInputMode;
+    }
+
+    if (reasonCoreIssue) {
+      record.reasonCoreIssue = reasonCoreIssue;
+    } else if (record.analysis.coreIssue?.trim()) {
+      record.reasonCoreIssue = record.analysis.coreIssue.trim();
+    }
+
+    if (reasonKeyOmission) {
+      record.reasonKeyOmission = reasonKeyOmission;
+    } else if (record.analysis.keyOmission?.trim()) {
+      record.reasonKeyOmission = record.analysis.keyOmission.trim();
+    }
+
+    if (reasonNextStep) {
+      record.reasonNextStep = reasonNextStep;
+    } else if (record.analysis.nextStep?.trim()) {
+      record.reasonNextStep = record.analysis.nextStep.trim();
     }
 
     record.topicCategory = normalizeWrongQuestionTopicCategory(topicCategory);

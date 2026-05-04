@@ -583,7 +583,7 @@ test('uploadParentReasonAudio parses the upload response', async () => {
   });
 });
 
-test('transcribeParentReason posts the uploaded audio url', async () => {
+test('transcribeParentReason returns immediately without waiting for server transcription', async () => {
   let capturedRequest = null;
   const wxApi = {
     request({ url, method, data, success }) {
@@ -601,14 +601,8 @@ test('transcribeParentReason posts the uploaded audio url', async () => {
     audioUrl: 'https://example.com/files/voice-reason.mp3',
   });
 
-  assert.deepEqual(capturedRequest, {
-    url: 'https://example.com/wechat/parent/reason-transcriptions',
-    method: 'POST',
-    data: {
-      audioUrl: 'https://example.com/files/voice-reason.mp3',
-    },
-  });
-  assert.equal(payload.transcript_text, '我把加法看成减法了');
+  assert.equal(capturedRequest, null);
+  assert.equal(payload.transcript_text, '');
 });
 
 test('classifyParentReason posts the normalized child reason text', async () => {

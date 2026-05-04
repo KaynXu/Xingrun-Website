@@ -16,7 +16,6 @@ import {
   loginParentWechatAccount,
   previewParentClassBinding,
   submitWechatWrongQuestionToWebsite,
-  transcribeParentReasonOnWebsite,
   updateWrongQuestionTopicCategoryOnWebsite,
   WebsiteRequestError,
 } from './website-client.js';
@@ -227,14 +226,7 @@ export function createApp() {
       return;
     }
 
-    try {
-      const payload = await transcribeParentReasonOnWebsite({ audioUrl });
-      res.json(payload);
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    res.json({ transcript_text: '' });
   });
 
   app.post('/wechat/parent/reason-classifications', async (req, res) => {

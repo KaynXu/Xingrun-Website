@@ -716,17 +716,15 @@ test('parent upload task bridge forwards task status requests to the website', a
   }
 });
 
-test('parent reason transcription bridge forwards the audio url to the website', async (t) => {
+test('parent reason transcription bridge returns immediately without calling website transcription', async (t) => {
   const originalFetch = globalThis.fetch;
+  const websiteCalls: string[] = [];
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url === 'https://website.example/api/wechat/reason-transcriptions') {
-      const body = JSON.parse(String(init?.body || '{}'));
-      assert.equal(body.audio_url, 'https://example.com/files/voice-reason.mp3');
-      return createJsonResponse({
-        transcript_text: '我把加法看成减法了',
-      });
+      websiteCalls.push(String(init?.body || ''));
+      return new Promise<Response>(() => {});
     }
 
     return originalFetch(input as RequestInfo | URL, init);
@@ -737,19 +735,27 @@ test('parent reason transcription bridge forwards the audio url to the website',
     const address = server.address();
     assert.ok(address && typeof address === 'object');
     const baseUrl = `http://127.0.0.1:${address.port}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120);
 
-    const response = await fetch(`${baseUrl}/wechat/parent/reason-transcriptions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        audioUrl: 'https://example.com/files/voice-reason.mp3',
-      }),
-    });
+    try {
+      const response = await fetch(`${baseUrl}/wechat/parent/reason-transcriptions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          audioUrl: 'https://example.com/files/voice-reason.mp3',
+        }),
+        signal: controller.signal,
+      });
 
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).transcript_text, '我把加法看成减法了');
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).transcript_text, '');
+      assert.deepEqual(websiteCalls, []);
+    } finally {
+      clearTimeout(timeout);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

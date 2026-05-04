@@ -1345,9 +1345,13 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "teacher_user_id",
             "image_url",
             "child_raw_reason_text",
+            "child_reason_transcript",
             "child_reason_input_mode",
             "primary_error_type",
             "secondary_error_summary",
+            "child_reason_core_issue",
+            "child_reason_key_omission",
+            "child_reason_next_step",
             "topic_category",
             "archive_status",
             "archived_at",
@@ -1384,9 +1388,13 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
             image_url                 TEXT NOT NULL,
             child_raw_reason_text     TEXT NOT NULL DEFAULT '',
+            child_reason_transcript   TEXT NOT NULL DEFAULT '',
             child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
             primary_error_type        TEXT NOT NULL DEFAULT '',
             secondary_error_summary   TEXT NOT NULL DEFAULT '',
+            child_reason_core_issue   TEXT NOT NULL DEFAULT '',
+            child_reason_key_omission TEXT NOT NULL DEFAULT '',
+            child_reason_next_step    TEXT NOT NULL DEFAULT '',
             topic_category            TEXT NOT NULL DEFAULT '未分类',
             archive_status            TEXT NOT NULL DEFAULT 'active',
             archived_at               TEXT DEFAULT '',
@@ -1975,9 +1983,13 @@ def init_db():
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
             image_url                 TEXT NOT NULL,
             child_raw_reason_text     TEXT NOT NULL DEFAULT '',
+            child_reason_transcript   TEXT NOT NULL DEFAULT '',
             child_reason_input_mode   TEXT NOT NULL DEFAULT 'text',
             primary_error_type        TEXT NOT NULL DEFAULT '',
             secondary_error_summary   TEXT NOT NULL DEFAULT '',
+            child_reason_core_issue   TEXT NOT NULL DEFAULT '',
+            child_reason_key_omission TEXT NOT NULL DEFAULT '',
+            child_reason_next_step    TEXT NOT NULL DEFAULT '',
             topic_category            TEXT NOT NULL DEFAULT '未分类',
             archive_status            TEXT NOT NULL DEFAULT 'active',
             archived_at               TEXT DEFAULT '',
@@ -2271,9 +2283,13 @@ def init_db():
         _backfill_class_feedback_task_organization_scope(conn, default_org["id"])
         _ensure_class_feedback_task_integrity_guards(conn)
         _ensure_column(conn, "wrong_question_submissions", "child_raw_reason_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "child_reason_transcript", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
         _ensure_column(conn, "wrong_question_submissions", "primary_error_type", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "secondary_error_summary", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "child_reason_core_issue", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "child_reason_key_omission", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "child_reason_next_step", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wrong_question_submissions", "archive_status", "TEXT NOT NULL DEFAULT 'active'")
         _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
@@ -6070,9 +6086,13 @@ def create_wechat_wrong_question_submission(
     binding_id: int,
     image_url: str,
     child_raw_reason_text: str = "",
+    child_reason_transcript: str = "",
     child_reason_input_mode: str = "text",
     primary_error_type: str = "",
     secondary_error_summary: str = "",
+    child_reason_core_issue: str = "",
+    child_reason_key_omission: str = "",
+    child_reason_next_step: str = "",
     topic_category: str = PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
     recognition_status: str = "pending",
     is_geometry: bool = False,
@@ -6107,11 +6127,13 @@ def create_wechat_wrong_question_submission(
             INSERT INTO wrong_question_submissions (
                 id, organization_id, source, parent_wechat_account_id, binding_id,
                 class_id, student_id, teacher_user_id, image_url,
-                child_raw_reason_text, child_reason_input_mode,
-                primary_error_type, secondary_error_summary, topic_category, archive_status, status,
+                child_raw_reason_text, child_reason_transcript, child_reason_input_mode,
+                primary_error_type, secondary_error_summary,
+                child_reason_core_issue, child_reason_key_omission, child_reason_next_step,
+                topic_category, archive_status, status,
                 recognition_status, is_geometry, question_text, question_text_edited,
                 question_text_source, recognition_error, student_library_pdf_path
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 record_id,
@@ -6123,9 +6145,13 @@ def create_wechat_wrong_question_submission(
                 binding_row["teacher_user_id"],
                 normalized_image_url,
                 (child_raw_reason_text or "").strip(),
+                (child_reason_transcript or child_raw_reason_text or "").strip(),
                 normalized_reason_input_mode,
                 (primary_error_type or "").strip(),
                 (secondary_error_summary or "").strip(),
+                (child_reason_core_issue or "").strip(),
+                (child_reason_key_omission or "").strip(),
+                (child_reason_next_step or "").strip(),
                 normalized_topic_category,
                 (recognition_status or "pending").strip() or "pending",
                 1 if is_geometry else 0,
@@ -6197,6 +6223,9 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         "error_type": str(row["primary_error_type"] or ""),
         "selected_error_type": str(row["primary_error_type"] or ""),
         "student_note": str(row["secondary_error_summary"] or ""),
+        "core_issue": str(row["child_reason_core_issue"] or ""),
+        "key_omission": str(row["child_reason_key_omission"] or ""),
+        "next_step": str(row["child_reason_next_step"] or ""),
         "topic_category": topic_category,
         "topicCategory": topic_category,
     }

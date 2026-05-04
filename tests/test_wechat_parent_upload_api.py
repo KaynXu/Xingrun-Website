@@ -167,9 +167,12 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
              patch(
                  "wrong_question_upload_worker.ai_processor.classify_wrong_question_reason",
                  return_value={
-                     "display_text": "方法问题｜先算了加法，忽略乘法优先",
+                     "display_text": "先算了加法，忽略乘法优先",
                      "primary_error_type": "方法问题",
                      "secondary_error_summary": "先算了加法，忽略乘法优先",
+                     "core_issue": "把加法和乘法按从左到右处理，运算顺序判断错误。",
+                     "key_omission": "没有先检查乘法优先级，也没有把题目中的运算结构拆开。",
+                     "next_step": "以后先圈出乘除法，再按先乘除后加减的顺序逐步计算。",
                  },
              ), \
              patch("wrong_question_upload_worker._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
@@ -184,9 +187,13 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["class_id"], self.class_id)
         self.assertEqual(record["student_id"], self.student["id"])
         self.assertEqual(record["recognition_status"], "recognized")
-        self.assertEqual(record["child_raw_reason_text"], "方法问题｜先算了加法，忽略乘法优先")
+        self.assertEqual(record["child_raw_reason_text"], "我把乘法和加法一起从左往右算了")
+        self.assertEqual(record["child_reason_transcript"], "我把乘法和加法一起从左往右算了")
         self.assertEqual(record["primary_error_type"], "方法问题")
         self.assertEqual(record["secondary_error_summary"], "先算了加法，忽略乘法优先")
+        self.assertEqual(record["child_reason_core_issue"], "把加法和乘法按从左到右处理，运算顺序判断错误。")
+        self.assertEqual(record["child_reason_key_omission"], "没有先检查乘法优先级，也没有把题目中的运算结构拆开。")
+        self.assertEqual(record["child_reason_next_step"], "以后先圈出乘除法，再按先乘除后加减的顺序逐步计算。")
         self.assertEqual(record["topic_category"], "周期问题")
         self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
 
@@ -632,10 +639,13 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         with patch(
             "app.ai_processor.classify_wrong_question_reason",
             return_value={
-                "display_text": "方法问题｜先算了加法，忽略乘法优先",
-                "primary_error_type": "方法问题",
-                "secondary_error_summary": "先算了加法，忽略乘法优先",
-            },
+                 "display_text": "方法问题｜先算了加法，忽略乘法优先",
+                 "primary_error_type": "方法问题",
+                 "secondary_error_summary": "先算了加法，忽略乘法优先",
+                 "core_issue": "没有按运算优先级处理，导致先算了加法。",
+                 "key_omission": "没有先标出乘法部分，也没有检查题目中的运算顺序。",
+                 "next_step": "以后先圈出乘除法，再按运算顺序一步一步计算。",
+             },
         ) as classify_mock:
             response = self.client.post(
                 "/api/wechat/reason-classifications",
@@ -648,6 +658,9 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(payload["display_text"], "方法问题｜先算了加法，忽略乘法优先")
         self.assertEqual(payload["primary_error_type"], "方法问题")
         self.assertEqual(payload["secondary_error_summary"], "先算了加法，忽略乘法优先")
+        self.assertEqual(payload["core_issue"], "没有按运算优先级处理，导致先算了加法。")
+        self.assertEqual(payload["key_omission"], "没有先标出乘法部分，也没有检查题目中的运算顺序。")
+        self.assertEqual(payload["next_step"], "以后先圈出乘除法，再按运算顺序一步一步计算。")
         classify_mock.assert_called_once_with("我把乘法和加法一起从左往右算了")
 
     def test_wechat_service_no_longer_exposes_wrong_question_box_detection(self):

@@ -3597,6 +3597,9 @@ def api_wechat_reason_classifications():
         "display_text": result.get("display_text") or child_reason_text,
         "primary_error_type": result["primary_error_type"],
         "secondary_error_summary": result["secondary_error_summary"],
+        "core_issue": result.get("core_issue") or "",
+        "key_omission": result.get("key_omission") or "",
+        "next_step": result.get("next_step") or "",
     })
 
 

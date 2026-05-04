@@ -114,6 +114,14 @@ test('parent upload controls that mutate the draft are disabled during submissio
   assert.match(uploadTemplate, /<button class="primary-btn submit-btn" loading="{{submitting}}" disabled="{{submitting \|\| cropExporting}}" bindtap="submitUpload">统一提交所有错题<\/button>/);
 });
 
+test('parent upload voice mode prompts children to explain structured reasons', () => {
+  const uploadTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.wxml'), 'utf8');
+
+  assert.match(uploadTemplate, /讲清这题的核心错因/);
+  assert.match(uploadTemplate, /说出自己漏掉的条件、定义或检查步骤/);
+  assert.match(uploadTemplate, /下次做这类题准备先做什么/);
+});
+
 test('parent wrongbook page exposes question text and a pdf entry button', () => {
   const wrongbookSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.js'), 'utf8');
   const wrongbookTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxml'), 'utf8');

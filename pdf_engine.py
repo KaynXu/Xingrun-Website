@@ -578,6 +578,9 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
                 or record.get("cause_note")
                 or ""
             ),
+            "core_issue": str(record.get("child_reason_core_issue") or record.get("core_issue") or ""),
+            "key_omission": str(record.get("child_reason_key_omission") or record.get("key_omission") or ""),
+            "next_step": str(record.get("child_reason_next_step") or record.get("next_step") or ""),
             "image_data_url": "",
         }
 

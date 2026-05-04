@@ -888,6 +888,9 @@ test('normalizeWrongQuestionRecord keeps wechat mini-program review fields for l
     child_raw_reason_text: '我把单位换算漏掉了',
     primary_error_type: '审题问题',
     secondary_error_summary: '孩子忽略了题目里的单位换算要求。',
+    child_reason_core_issue: '没有把单位条件和计算步骤连起来检查。',
+    child_reason_key_omission: '漏掉了题目里先换算单位的要求。',
+    child_reason_next_step: '下次先圈出单位，再统一单位后列式。',
     archive_status: 'archived',
     analysis: {
       error_type: '审题问题',
@@ -899,6 +902,9 @@ test('normalizeWrongQuestionRecord keeps wechat mini-program review fields for l
   assert.equal(normalized.childReasonText, '我把单位换算漏掉了');
   assert.equal(normalized.primaryErrorType, '审题问题');
   assert.equal(normalized.causeNote, '孩子忽略了题目里的单位换算要求。');
+  assert.equal(normalized.reasonCoreIssue, '没有把单位条件和计算步骤连起来检查。');
+  assert.equal(normalized.reasonKeyOmission, '漏掉了题目里先换算单位的要求。');
+  assert.equal(normalized.reasonNextStep, '下次先圈出单位，再统一单位后列式。');
   assert.equal(normalized.isMastered, true);
   assert.equal(getWrongQuestionSourceLabel(normalized.source), '微信小程序');
   assert.equal(isWechatMiniProgramWrongQuestionRecord(normalized), true);

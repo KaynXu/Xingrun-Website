@@ -1187,6 +1187,25 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-500 dark:text-slate-400">{selectedRecord.causeNote || selectedRecord.analysis.studentNote || '暂无备注'}</p>
             </div>
           </div>
+          {(selectedRecord.reasonCoreIssue || selectedRecord.reasonKeyOmission || selectedRecord.reasonNextStep) ? (
+            <div className={`${workspaceCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI 错因分析</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">核心错因</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{selectedRecord.reasonCoreIssue || '暂无'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">关键遗漏</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{selectedRecord.reasonKeyOmission || '暂无'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">后续操作</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{selectedRecord.reasonNextStep || '暂无'}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
