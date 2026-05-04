@@ -12,6 +12,9 @@ import {
 } from './App';
 import {
   buildMemberStudentNotebookSummaries,
+  buildWeeklyWrongQuestionFollowupArchivePath,
+  buildWeeklyWrongQuestionFollowupMessagePath,
+  buildWeeklyWrongQuestionFollowupsPath,
   buildWrongQuestionDetailPath,
   buildWrongQuestionPracticeSheetsPath,
   buildWrongQuestionReviewDraft,
@@ -25,12 +28,14 @@ import {
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isWechatMiniProgramWrongQuestionRecord,
+  normalizeWeeklyWrongQuestionFollowupResponse,
   normalizeWrongQuestionPracticeSheetListResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type MemberStudentNotebookSummary,
+  type WeeklyWrongQuestionFollowupItem,
   type WrongQuestionPracticeSheetListApiResponse,
   type WrongQuestionPracticeSheetSummary,
   type WrongQuestionFilters,
@@ -163,6 +168,21 @@ function buildWrongQuestionAuthedPath(path: string): string {
   return `${normalizedPath}${separator}token=${encodeURIComponent(token)}`;
 }
 
+function getCurrentMondayDateInputValue(): string {
+  const date = new Date();
+  const day = date.getDay();
+  const daysSinceMonday = day === 0 ? 6 : day - 1;
+  date.setDate(date.getDate() - daysSinceMonday);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${dayOfMonth}`;
+}
+
+function extractWeeklyFollowupItem(response: unknown): WeeklyWrongQuestionFollowupItem | null {
+  const source = isObjectRecord(response) && isObjectRecord(response.item) ? response.item : response;
+  return normalizeWeeklyWrongQuestionFollowupResponse({ items: [source] }).items[0] ?? null;
+}
+
 function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
   if (!isObjectRecord(response)) {
     return undefined;
@@ -226,6 +246,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [creatingPractice, setCreatingPractice] = useState(false);
   const [practiceActionError, setPracticeActionError] = useState('');
   const [practiceActionNotice, setPracticeActionNotice] = useState('');
+  const [weeklyFollowupOpen, setWeeklyFollowupOpen] = useState(false);
+  const [weeklyFollowupWeekStart, setWeeklyFollowupWeekStart] = useState(getCurrentMondayDateInputValue);
+  const [weeklyFollowupItems, setWeeklyFollowupItems] = useState<WeeklyWrongQuestionFollowupItem[]>([]);
+  const [weeklyFollowupLoading, setWeeklyFollowupLoading] = useState(false);
+  const [weeklyFollowupError, setWeeklyFollowupError] = useState('');
+  const [weeklyFollowupNotice, setWeeklyFollowupNotice] = useState('');
+  const [generatingWeeklyFollowupStudentId, setGeneratingWeeklyFollowupStudentId] = useState<number | null>(null);
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -264,6 +291,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const activeNotebookClassId = hasStaffScope
     ? (selectedStaffClassOption?.id ?? null)
     : selectedClassId;
+  const activeWeeklyFollowupClassId = selectedClassId ?? selectedStaffClassOption?.id ?? null;
   const memberNotebookSummaries = useMemo<MemberStudentNotebookSummary[]>(() => {
     if (!usesStudentNotebook) {
       return [];
@@ -884,6 +912,102 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleLoadWeeklyFollowups = async () => {
+    if (!activeWeeklyFollowupClassId) {
+      setWeeklyFollowupError('请选择班级。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    setWeeklyFollowupLoading(true);
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(
+        buildWeeklyWrongQuestionFollowupsPath(activeWeeklyFollowupClassId, weeklyFollowupWeekStart),
+      );
+      const normalized = normalizeWeeklyWrongQuestionFollowupResponse(response);
+      setWeeklyFollowupItems(normalized.items);
+      setWeeklyFollowupNotice(normalized.items.length > 0 ? `已加载 ${normalized.items.length} 名学生。` : '本周暂无待跟进学生。');
+    } catch (loadWeeklyError) {
+      setWeeklyFollowupItems([]);
+      setWeeklyFollowupError(loadWeeklyError instanceof Error ? loadWeeklyError.message : '每周跟进清单加载失败');
+    } finally {
+      setWeeklyFollowupLoading(false);
+    }
+  };
+
+  const handleGenerateWeeklyFollowupMessage = async (studentId: number) => {
+    if (!activeWeeklyFollowupClassId) {
+      setWeeklyFollowupError('请选择班级。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    setGeneratingWeeklyFollowupStudentId(studentId);
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(buildWeeklyWrongQuestionFollowupMessagePath(), {
+        method: 'POST',
+        body: JSON.stringify({
+          class_id: activeWeeklyFollowupClassId,
+          week_start: weeklyFollowupWeekStart,
+          student_id: studentId,
+        }),
+      });
+      const responseItem = extractWeeklyFollowupItem(response);
+      if (responseItem) {
+        setWeeklyFollowupItems((current) => current.map((item) => {
+          if (item.studentId !== studentId) {
+            return item;
+          }
+          return responseItem.studentId === studentId
+            ? responseItem
+            : { ...item, message: responseItem.message ?? item.message };
+        }));
+      }
+      setWeeklyFollowupNotice('已生成家长沟通话术。');
+    } catch (generateError) {
+      setWeeklyFollowupError(generateError instanceof Error ? generateError.message : '家长沟通话术生成失败');
+    } finally {
+      setGeneratingWeeklyFollowupStudentId(null);
+    }
+  };
+
+  const handleCopyWeeklyFollowupMessage = async (messageText: string) => {
+    const clipboard = globalThis.navigator?.clipboard;
+    if (!clipboard?.writeText) {
+      setWeeklyFollowupError('当前浏览器不支持复制。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    try {
+      await clipboard.writeText(messageText);
+      setWeeklyFollowupError('');
+      setWeeklyFollowupNotice('已复制。');
+    } catch (copyError) {
+      setWeeklyFollowupError(copyError instanceof Error ? copyError.message : '复制失败');
+      setWeeklyFollowupNotice('');
+    }
+  };
+
+  const handleOpenWeeklyFollowupArchive = () => {
+    if (!activeWeeklyFollowupClassId) {
+      setWeeklyFollowupError('请选择班级。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    const archivePath = buildWrongQuestionAuthedPath(
+      buildWeeklyWrongQuestionFollowupArchivePath(activeWeeklyFollowupClassId, weeklyFollowupWeekStart),
+    );
+    globalThis.window?.open?.(archivePath, '_blank', 'noopener,noreferrer');
+  };
+
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';
   const selectedActionsText = selectedDraft?.selectedActions.join('\n') ?? '';
   const selectedReasonsText = selectedDraft?.selectedReasons.join('\n') ?? '';
@@ -1436,6 +1560,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
+              onClick={() => setWeeklyFollowupOpen((current) => !current)}
+              className={workspaceSecondaryButtonClass}
+            >
+              每周跟进
+            </button>
+            <button
+              type="button"
               onClick={() => void loadList(filters)}
               disabled={loading}
               className={workspaceSecondaryButtonClass}
@@ -1445,6 +1576,118 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </button>
           </div>
         </div>
+
+        {weeklyFollowupOpen && (
+          <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">网页智能错题</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">每周跟进</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">周次</span>
+                  <input
+                    aria-label="周次"
+                    type="date"
+                    value={weeklyFollowupWeekStart}
+                    onChange={(event) => setWeeklyFollowupWeekStart(event.target.value)}
+                    className={workspaceFieldClass}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleLoadWeeklyFollowups()}
+                  disabled={weeklyFollowupLoading}
+                  className={workspacePrimaryButtonClass}
+                >
+                  {weeklyFollowupLoading ? '正在加载' : '查看跟进清单'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenWeeklyFollowupArchive}
+                  className={workspaceSecondaryButtonClass}
+                >
+                  下载本班错题本合集
+                </button>
+              </div>
+            </div>
+
+            {weeklyFollowupError && (
+              <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                <AlertCircle size={16} />
+                {weeklyFollowupError}
+              </div>
+            )}
+
+            {weeklyFollowupNotice && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                {weeklyFollowupNotice}
+              </div>
+            )}
+
+            {weeklyFollowupItems.length > 0 && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {weeklyFollowupItems.map((item) => {
+                  const messageText = item.message?.messageText.trim() ?? '';
+                  const studentPdfUrl = item.studentLibraryPdfUrl ? buildWrongQuestionAuthedPath(item.studentLibraryPdfUrl) : '';
+                  return (
+                    <article key={item.studentId} className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span>{item.weeklyQuestionCount}题</span>
+                            <span>{item.totalActiveQuestionCount}未掌握</span>
+                            {item.topicCategories.slice(0, 3).map((topic) => (
+                              <span key={topic} className="rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                                {topic}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        {studentPdfUrl && (
+                          <a
+                            href={studentPdfUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            打开错题本 PDF
+                          </a>
+                        )}
+                      </div>
+                      {messageText ? (
+                        <p className="mt-4 whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-200">
+                          {messageText}
+                        </p>
+                      ) : null}
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => void handleGenerateWeeklyFollowupMessage(item.studentId)}
+                          disabled={generatingWeeklyFollowupStudentId === item.studentId}
+                          className={workspacePrimaryButtonClass}
+                        >
+                          {generatingWeeklyFollowupStudentId === item.studentId ? '正在生成' : messageText ? '重新生成话术' : '生成话术'}
+                        </button>
+                        {messageText ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyWeeklyFollowupMessage(messageText)}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            复制
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {hasStaffScope && (
           <form className="grid gap-4 lg:grid-cols-3" onSubmit={handleSubmit}>
