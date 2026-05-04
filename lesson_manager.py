@@ -1420,6 +1420,79 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
     conn.execute("DROP TABLE wrong_question_submissions__legacy_feedback")
 
 
+def _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(weekly_wrong_question_followup_messages)").fetchall()
+    if not columns:
+        return
+
+    notnull_by_column = {row["name"]: row["notnull"] for row in columns}
+    foreign_keys = conn.execute("PRAGMA foreign_key_list(weekly_wrong_question_followup_messages)").fetchall()
+    user_delete_by_column = {
+        row["from"]: row["on_delete"]
+        for row in foreign_keys
+        if row["table"] == "users"
+    }
+    if (
+        notnull_by_column.get("teacher_user_id") == 0
+        and user_delete_by_column.get("teacher_user_id") == "SET NULL"
+        and user_delete_by_column.get("generated_by") == "SET NULL"
+    ):
+        return
+
+    conn.execute(
+        """
+        ALTER TABLE weekly_wrong_question_followup_messages
+        RENAME TO weekly_wrong_question_followup_messages__legacy_user_fk
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE weekly_wrong_question_followup_messages (
+            id                            INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id               INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            class_id                      INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                    INTEGER NOT NULL REFERENCES students(id),
+            teacher_user_id               INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            week_start_date               TEXT NOT NULL,
+            week_end_date                 TEXT NOT NULL,
+            style                         TEXT NOT NULL DEFAULT 'warm',
+            message_text                  TEXT NOT NULL DEFAULT '',
+            source_record_ids_json        TEXT NOT NULL DEFAULT '[]',
+            generated_by                  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at                    TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                    TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(organization_id, class_id, student_id, week_start_date, style)
+        )
+        """
+    )
+    copy_columns = [
+        column
+        for column in [
+            "id",
+            "organization_id",
+            "class_id",
+            "student_id",
+            "teacher_user_id",
+            "week_start_date",
+            "week_end_date",
+            "style",
+            "message_text",
+            "source_record_ids_json",
+            "generated_by",
+            "created_at",
+            "updated_at",
+        ]
+        if column in notnull_by_column
+    ]
+    if copy_columns:
+        quoted_columns = ", ".join(f'"{column}"' for column in copy_columns)
+        conn.execute(
+            f'INSERT INTO weekly_wrong_question_followup_messages ({quoted_columns}) '
+            f'SELECT {quoted_columns} FROM "weekly_wrong_question_followup_messages__legacy_user_fk"'
+        )
+    conn.execute("DROP TABLE weekly_wrong_question_followup_messages__legacy_user_fk")
+
+
 def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, str | int]:
     teacher_directory = _get_consultation_teacher_directory()
     serialized = _serialize_consultation_row(row, teacher_directory)
@@ -2068,13 +2141,13 @@ def init_db():
             organization_id               INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             class_id                      INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             student_id                    INTEGER NOT NULL REFERENCES students(id),
-            teacher_user_id               INTEGER NOT NULL REFERENCES users(id),
+            teacher_user_id               INTEGER REFERENCES users(id) ON DELETE SET NULL,
             week_start_date               TEXT NOT NULL,
             week_end_date                 TEXT NOT NULL,
             style                         TEXT NOT NULL DEFAULT 'warm',
             message_text                  TEXT NOT NULL DEFAULT '',
             source_record_ids_json        TEXT NOT NULL DEFAULT '[]',
-            generated_by                  INTEGER REFERENCES users(id),
+            generated_by                  INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE(organization_id, class_id, student_id, week_start_date, style)
@@ -2323,6 +2396,7 @@ def init_db():
         _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "course_calendar_custom_items", "visibility", "TEXT NOT NULL DEFAULT 'private'")
         _ensure_column(conn, "course_calendar_custom_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn)
         _migrate_course_calendar_time_blocks(conn)
         _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn)
         conn.executescript(
@@ -2347,6 +2421,11 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_organization_class_teacher_status
             ON wrong_question_submissions (organization_id, class_id, teacher_user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_weekly_followup
+            ON wrong_question_submissions (
+                organization_id, class_id, source, recognition_status, archive_status, created_at, student_id
+            );
 
             CREATE INDEX IF NOT EXISTS idx_wechat_wrong_question_upload_tasks_parent_status
             ON wechat_wrong_question_upload_tasks (parent_wechat_account_id, status, created_at);
@@ -5287,6 +5366,8 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("UPDATE organization_credit_ledger SET operator_user_id=NULL WHERE operator_user_id=?", (target_user_id,))
         conn.execute("UPDATE xhs_order_redemptions SET redeemed_by_user_id=NULL WHERE redeemed_by_user_id=?", (target_user_id,))
         conn.execute("UPDATE class_feedback_tasks SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
+        conn.execute("UPDATE weekly_wrong_question_followup_messages SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
+        conn.execute("UPDATE weekly_wrong_question_followup_messages SET generated_by=NULL WHERE generated_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (target_user_id, target_user_id))
         conn.execute("DELETE FROM wrong_question_submissions WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE teacher_user_id=?", (target_user_id,))
@@ -6626,6 +6707,8 @@ def list_weekly_wrong_question_followup_students(
     week_start_date: str,
     week_end_date: str,
 ) -> list[dict]:
+    week_start_bound = f"{(week_start_date or '').strip()} 00:00:00"
+    week_end_bound = f"{(week_end_date or '').strip()} 23:59:59"
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -6643,14 +6726,15 @@ def list_weekly_wrong_question_followup_students(
               AND wqs.source='wechat_mp'
               AND wqs.recognition_status='recognized'
               AND wqs.archive_status='active'
-              AND date(wqs.created_at) BETWEEN date(?) AND date(?)
+              AND wqs.created_at >= ?
+              AND wqs.created_at <= ?
             ORDER BY s.name ASC, wqs.created_at DESC, wqs.id DESC
             """,
             (
                 int(organization_id or 0),
                 int(class_id or 0),
-                (week_start_date or "").strip(),
-                (week_end_date or "").strip(),
+                week_start_bound,
+                week_end_bound,
             ),
         ).fetchall()
         total_rows = conn.execute(

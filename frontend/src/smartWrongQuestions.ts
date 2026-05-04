@@ -143,6 +143,33 @@ export interface WrongQuestionPracticeSheetListApiResponse {
   total?: unknown;
 }
 
+export type WeeklyWrongQuestionFollowupMessage = {
+  id: number;
+  messageText: string;
+  sourceRecordIds: string[];
+};
+
+export type WeeklyWrongQuestionFollowupItem = {
+  studentId: number;
+  studentName: string;
+  weeklyQuestionCount: number;
+  totalActiveQuestionCount: number;
+  topicCategories: string[];
+  representativeReasonSummaries: string[];
+  sourceRecordIds: string[];
+  studentLibraryPdfUrl: string;
+  message: WeeklyWrongQuestionFollowupMessage | null;
+};
+
+export type WeeklyWrongQuestionFollowupResponse = {
+  classId: number;
+  className: string;
+  weekStartDate: string;
+  weekEndDate: string;
+  total: number;
+  items: WeeklyWrongQuestionFollowupItem[];
+};
+
 export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionRecord): boolean {
   return record.source === 'wechat_mp';
 }
@@ -209,6 +236,10 @@ function pickStringArrayValue(source: Record<string, unknown>, keys: string[]): 
   }
 
   return [];
+}
+
+function normalizeStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item ?? '').trim()).filter(Boolean) : [];
 }
 
 function normalizeWrongQuestionTopicCategory(value = ''): string {
@@ -820,6 +851,50 @@ export function buildWrongQuestionDetailPath(recordId: string, roomId?: string):
 
 export function buildWrongQuestionReviewPath(recordId: string, roomId?: string): string {
   return `/api/wrong-questions/${encodeURIComponent(recordId)}/review${buildWrongQuestionRoomQuery(roomId)}`;
+}
+
+export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): WeeklyWrongQuestionFollowupResponse {
+  const source = isObjectRecord(payload) ? payload : {};
+  const rawItems = Array.isArray(source.items) ? source.items : [];
+  return {
+    classId: pickNumberValue(source, ['class_id', 'classId']) ?? 0,
+    className: String(source.class_name ?? source.className ?? ''),
+    weekStartDate: String(source.week_start_date ?? source.weekStartDate ?? ''),
+    weekEndDate: String(source.week_end_date ?? source.weekEndDate ?? ''),
+    total: pickNumberValue(source, ['total']) ?? rawItems.length,
+    items: rawItems.filter(isObjectRecord).map((item) => {
+      const rawMessage = isObjectRecord(item.message) ? item.message : null;
+      return {
+        studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
+        studentName: String(item.student_name ?? item.studentName ?? ''),
+        weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
+        totalActiveQuestionCount: pickNumberValue(item, ['total_active_question_count', 'totalActiveQuestionCount']) ?? 0,
+        topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
+        representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
+        sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
+        studentLibraryPdfUrl: String(item.student_library_pdf_url ?? item.studentLibraryPdfUrl ?? ''),
+        message: rawMessage
+          ? {
+              id: pickNumberValue(rawMessage, ['id']) ?? 0,
+              messageText: String(rawMessage.message_text ?? rawMessage.messageText ?? ''),
+              sourceRecordIds: normalizeStringList(rawMessage.source_record_ids ?? rawMessage.sourceRecordIds),
+            }
+          : null,
+      };
+    }),
+  };
+}
+
+export function buildWeeklyWrongQuestionFollowupsPath(classId: number, weekStartDate: string): string {
+  return `/api/wrong-question-followups/weekly?class_id=${encodeURIComponent(String(classId))}&week_start=${encodeURIComponent(weekStartDate)}`;
+}
+
+export function buildWeeklyWrongQuestionFollowupArchivePath(classId: number, weekStartDate: string): string {
+  return `/api/wrong-question-followups/weekly/class-pdf-archive?class_id=${encodeURIComponent(String(classId))}&week_start=${encodeURIComponent(weekStartDate)}`;
+}
+
+export function buildWeeklyWrongQuestionFollowupMessagePath(): string {
+  return '/api/wrong-question-followups/weekly/messages';
 }
 
 export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): WrongQuestionPracticeSheetSummary {

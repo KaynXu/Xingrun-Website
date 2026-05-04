@@ -7,6 +7,7 @@
 
 ### 当前状态
 - 2026-05-04 已按用户确认方向新增“超级管理员本周错题活跃数据总结”设计稿：`docs/superpowers/specs/2026-05-04-weekly-wrong-question-activity-summary-design.md`。第一版聚焦超级管理员在网页智能错题内查看本周活跃班级、活跃老师、活跃学生三块列表，按数量从多到少自然列举，不做强排名、不做 AI 总结、不做图表和导出。
+- 2026-05-04 已完成网页智能错题内“每周错题跟进助手”实现，当前在 `feature/weekly-wrong-question-followup-implementation`：后端新增每周跟进消息缓存表、按班级/周次汇总本周活跃错题学生、AI 生成更像老师真人微信的家长沟通话术、`GET /api/wrong-question-followups/weekly`、`POST /api/wrong-question-followups/weekly/messages` 和班级错题本 zip 下载接口；前端在 `SmartWrongQuestionsPage` 内新增“每周跟进”面板，支持周次选择、加载学生清单、生成/重新生成/复制家长话术、打开单个学生错题本 PDF、下载本班错题本合集。功能仍是网页后台入口，不新增小程序老师端、不做订阅消息推送。latest proof 已通过：`PYTHONPATH=.:/tmp/xingrun_weekly_followup_deps python3 -S -m unittest tests.test_weekly_wrong_question_followups tests.test_wrong_question_practice_async_api tests.test_wechat_parent_upload_api -v` 44 条、`cd frontend && npx tsx --test src/smart-wrong-questions.test.ts` 50 条、`cd frontend && npm test` 233 条、`cd frontend && npm run build`、`git diff --check`。
 - 2026-05-04 已把错题练习生成的错因/改进填空提示词从泛化引导改为“具像到本题”：`ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT` 现在要求结合题面对象、条件、问法、符号，以及孩子语音/文字里的具体遗漏、误判和步骤顺序来生成类似复习计划的填空题，并加入定义域/单调性示例避免继续输出“性质理解不透彻”这类泛句。proof `/tmp/xingrun_concrete_wrong_question_blanks_proof.sh` 已通过：`tests.test_ai_processor_prompt`、`tests.test_wrong_question_practice_store`、`tests.test_wrong_question_practice_async_api`、`py_compile ai_processor.py`、`git diff --check`。
 - 2026-05-04 已定位用户截图“语音没有识别出有效内容，请再录一次”：现场手机仍在跑旧小程序包，旧包会先调用 `/wechat/parent/reason-transcriptions` 并把空 `transcript_text` 当作本地失败拦截。当前修复分支 `fix/legacy-voice-transcription-fallback` 已把 bridge 旧预转写兼容接口改为立即返回非空占位文本 `语音说明已上传，老师端会继续处理。`，并把旧 `/wechat/parent/reason-classifications` 改为立即回显输入文本、不再调用网站 AI，避免旧包继续等转写/归类。新版异步上传链路不受影响。latest proof `/tmp/xingrun_legacy_voice_fallback_proof_20260504.sh` 已通过：bridge 19 条测试、bridge build、家长小程序上传相关 71 条测试、`git diff --check`。
 - 2026-05-04 已修复小程序家长上传语音错因的同步转写超时阻塞：当前小程序 `transcribeParentReason()` 兼容函数改为立即返回空转写，不再发 `/wechat/parent/reason-transcriptions`；新版上传链路仍是先上传语音文件 URL 和题图任务，后台 `xingrun-rq-worker` 负责语音转写、错因分析、题图识别和 PDF 刷新。旧包兼容接口的最新行为以上一条为准，不再返回空 `transcript_text`。proof `/tmp/xingrun_async_voice_upload_proof.sh` 已通过：家长小程序测试 71 条、bridge 测试 20 条、bridge build、网站微信上传/错因 flow 56 条、Python compile、`git diff --check`。
@@ -186,6 +187,7 @@
 
 ### 下一步
 - 请先 review `docs/superpowers/specs/2026-05-04-weekly-wrong-question-activity-summary-design.md`，确认“本周活跃班级/老师/学生”三列表口径无误；确认后再进入实现计划，优先补超级管理员专用汇总接口和智能错题页入口。
+- 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
 - 小程序上传 2.0 稳定性 Ralph 已无下一条自动 story；后续只剩手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
 - 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
