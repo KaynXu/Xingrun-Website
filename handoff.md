@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-05 Task 2 已完成“超级管理员本周错题活跃数据总结”Flask API：新增 `GET /api/admin/wrong-question-activity-summary`，仅 `super_owner` 可访问，复用 `_weekly_range()` 和 `lesson_manager.list_weekly_wrong_question_activity_summary()`，支持 `week_start` 校验与可选 `organization_id` 过滤；API 回归覆盖超级管理员访问、机构过滤、owner 403 和非法日期 400。后续仍需继续接入网页智能错题前端面板。
 - 2026-05-05 Task 1 已完成“超级管理员本周错题活跃数据总结”的后端 store 聚合：`lesson_manager.list_weekly_wrong_question_activity_summary()` 已按周边界、机构过滤、错题识别状态、`organization_name`、活跃待跟进数、学生 recognized 历史总题数、学生本周专题频率 top 1-3 和三类列表排序口径落地；新增 `tests/test_weekly_wrong_question_activity_summary.py` 覆盖班级/老师/学生聚合、organization 过滤、契约字段和专题频率。后续仍需继续做 Flask API 和前端 UI。
 - 2026-05-05 已在已确认设计稿基础上新增“超级管理员本周错题活跃数据总结”实现计划：`docs/superpowers/plans/2026-05-05-weekly-wrong-question-activity-summary.md`。计划按 TDD 拆为后端汇总函数、超级管理员 API、前端数据模型、网页智能错题超级管理员面板、最终验证和 handoff；实现目标仍是三块自然列举列表，不做 AI 总结、图表、导出或自动提醒。
 - 2026-05-05 已实现 `docs/superpowers/specs/2026-05-05-practice-based-weekly-wrong-question-followup-design.md` 的“基于本周错题练习 PDF 的每周跟进”新方案：每周跟进清单优先读取老师已生成的本周错题练习单，未生成但仍有 6 个月内可练错题的学生标记为 `needs_practice_sheet`，网页智能错题里可单个或批量让 AI 补生成练习；AI 家长微信话术现在只基于已就绪的本周练习 PDF 生成并缓存 `source_sheet_id`；班级合集下载改为打包本周练习 PDF；已掌握错题按 30/60 天复现候选、6 个月后软归档退出日常候选。proof `tmp/xingrun_practice_based_weekly_followup_proof_20260505.sh` 已通过：前端全量 233 条测试、前端生产构建、后端相关 52 条 pytest、`miniprogram/backend` TypeScript build 和 `git diff --check`。

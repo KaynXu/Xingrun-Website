@@ -208,3 +208,108 @@ class WeeklyWrongQuestionActivitySummaryStoreTestCase(unittest.TestCase):
         self.assertEqual([item["organization_id"] for item in summary["class_items"]], [self.organization_id])
         self.assertEqual([item["class_name"] for item in summary["class_items"]], ["五年级3班"])
         self.assertEqual([item["student_name"] for item in summary["student_items"]], ["Alice"])
+
+
+class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        lesson_manager.DB_PATH = Path(self.temp_dir.name) / "xingrun.db"
+        lesson_manager.init_db()
+
+        import app as app_module
+
+        app_module.app.config["TESTING"] = True
+        self.client = app_module.app.test_client()
+        super_login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(super_login.status_code, 200)
+        self.super_headers = {"X-Auth-Token": super_login.get_json()["token"]}
+
+        org_request = lesson_manager.create_organization_request(
+            "活跃 API 测试机构",
+            "activity_api_owner",
+            "活跃 API 负责人",
+            "owner-pass",
+            recovery_phone="13800000003",
+        )
+        super_owner = lesson_manager.get_user_by_username("Kayn")
+        owner, _invite = lesson_manager.approve_organization_request(org_request["id"], super_owner["id"])
+        self.organization_id = owner["organization_id"]
+        self.owner_id = owner["id"]
+        owner_login = self.client.post(
+            "/api/login",
+            json={"username": "activity_api_owner", "password": "owner-pass"},
+        )
+        self.assertEqual(owner_login.status_code, 200)
+        self.owner_headers = {"X-Auth-Token": owner_login.get_json()["token"]}
+
+        self.class_id = lesson_manager.save_class(
+            "五年级3班",
+            subject="数学",
+            grade="五年级",
+            organization_id=self.organization_id,
+        )
+        lesson_manager.set_class_teacher_user_id(self.class_id, self.owner_id)
+        student = lesson_manager.create_student_for_class(self.class_id, "Alice")
+        parent = lesson_manager.upsert_parent_wechat_account(openid="openid-activity-api")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=parent["id"],
+            class_id=self.class_id,
+            student_id=student["id"],
+        )
+        record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/activity-api.png",
+            recognition_status="recognized",
+            topic_category="计算",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-05-04 09:00:00", record["id"]),
+            )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_super_owner_can_get_weekly_activity_summary(self):
+        response = self.client.get(
+            "/api/admin/wrong-question-activity-summary?week_start=2026-05-04",
+            headers=self.super_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["week_start"], "2026-05-04")
+        self.assertEqual(payload["week_end"], "2026-05-10")
+        self.assertEqual([item["class_name"] for item in payload["class_items"]], ["五年级3班"])
+        self.assertEqual([item["student_name"] for item in payload["student_items"]], ["Alice"])
+
+    def test_organization_id_filter_limits_summary(self):
+        response = self.client.get(
+            f"/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id={self.organization_id}",
+            headers=self.super_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([item["organization_id"] for item in payload["class_items"]], [self.organization_id])
+
+    def test_owner_cannot_get_weekly_activity_summary(self):
+        response = self.client.get(
+            "/api/admin/wrong-question-activity-summary?week_start=2026-05-04",
+            headers=self.owner_headers,
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_invalid_week_start_returns_400(self):
+        response = self.client.get(
+            "/api/admin/wrong-question-activity-summary?week_start=not-a-date",
+            headers=self.super_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), {"error": "week_start must be YYYY-MM-DD"})
