@@ -330,6 +330,10 @@ test('parent bind page uses official card hierarchy for lookup, existing childre
   assert.match(bindTemplate, /class="state-card empty-card empty-student-card"/);
 
   assert.match(bindStyles, /\.invite-panel\s*\{[^}]*gap:\s*22rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*width:\s*100%;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*min-height:\s*88rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*line-height:\s*88rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*padding:\s*0\s+24rpx;/s);
   assert.match(bindStyles, /\.lookup-btn\s*\{[^}]*width:\s*100%;/s);
   assert.match(bindStyles, /\.bound-child-card,\s*\.student-card\s*\{[^}]*display:\s*flex;/s);
   assert.match(bindStyles, /\.bound-child-card,\s*\.student-card\s*\{[^}]*flex-direction:\s*column;/s);

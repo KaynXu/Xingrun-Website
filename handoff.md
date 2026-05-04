@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-04
+最后更新：2026-05-05
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-05 已修复小程序家长绑定页邀请码输入框文字不可见问题：`parent-bind` 的 `.field-input` 现在显式设置 `width: 100%`、`min-height/line-height: 88rpx` 和水平 padding，避免微信原生 `input` 默认高度裁切输入文字；`parent-only-scope` 已新增样式合同锁定该输入框高度、行高和 padding。本轮未改绑定 API、页面 JS、上传或错题本行为。
 - 2026-05-04 已按用户截图收口小程序家长错题本“专题筛选”按钮宽度和横向滑动问题：`parent-wrongbook` 专题筛选从横向 `scroll-view` 改为面板内 flex 布局，专题 chip 两列等宽撑满容器，长专题名会在按钮内省略，不再让“全部 / 未分类”两个按钮在框里左右滑动；新增页面测试锁定无 `scroll-x` 和撑满布局。latest proof `/tmp/xingrun_wrongbook_topic_filter_layout_proof.sh` 已通过：静态布局合同、错题本页定向测试和 `git diff --check`；最终小程序视觉验收 guardrail 也已通过。
 - 2026-05-04 已按用户截图收口小程序家长首页孩子卡片：`parent-home` 每张孩子卡片左侧只保留学生、班级和任课老师信息，`上传错题 / 查看错题本` 固定到卡片右侧操作列，并删除“上传后可在错题本查看整理进度。”提示句；对应 `parent-only-scope` 和视觉 polish proof 已更新并通过。本轮未改上传、错题本或 bridge 行为。
 - 2026-05-04 已收口用户截图里的家长上传页状态重复和“提交成功/后台识别”语义冲突：任务被服务器接收后不再继续用上传页长轮询和按钮 loading 圈卡住家长，页面只保留下方结果卡；上方进度卡只在任务尚未接收前显示。结果文案统一为“已接收，云端识别中”，明确“可以先离开本页，稍后回错题本查看”，其中“已接收”只表示云端拿到任务，真正识别完成仍以错题本/刷新进度为准。proof `/tmp/xingrun_parent_upload_background_status_proof.sh` 已通过：定向小程序状态测试、视觉 polish proof、上传稳定性 proof、bridge parent upload tests、bridge build、网站上传 API/data tests 和 `git diff --check`。
