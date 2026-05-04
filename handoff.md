@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-04 已按用户截图收口小程序家长首页孩子卡片：`parent-home` 每张孩子卡片左侧只保留学生、班级和任课老师信息，`上传错题 / 查看错题本` 固定到卡片右侧操作列，并删除“上传后可在错题本查看整理进度。”提示句；对应 `parent-only-scope` 和视觉 polish proof 已更新并通过。本轮未改上传、错题本或 bridge 行为。
 - 2026-05-04 已收口用户截图里的家长上传页状态重复和“提交成功/后台识别”语义冲突：任务被服务器接收后不再继续用上传页长轮询和按钮 loading 圈卡住家长，页面只保留下方结果卡；上方进度卡只在任务尚未接收前显示。结果文案统一为“已接收，云端识别中”，明确“可以先离开本页，稍后回错题本查看”，其中“已接收”只表示云端拿到任务，真正识别完成仍以错题本/刷新进度为准。proof `/tmp/xingrun_parent_upload_background_status_proof.sh` 已通过：定向小程序状态测试、视觉 polish proof、上传稳定性 proof、bridge parent upload tests、bridge build、网站上传 API/data tests 和 `git diff --check`。
 - 2026-05-04 已完成小程序“补充错因和专题”小学范围收口：专题仍写入官网共享错题字段 `topic_category`，网站/小程序编辑同一条错题记录会同步；家长上传页和错题本页现在只在小学班级展示专题分类、筛选和修改入口，初高中班级不显示专题控件，上传时固定提交 `未分类`。小程序 binding 现在读取官网返回的 `class_grade` 辅助判断学段；bridge 新增 `/wechat/parent/primary-topic-category-suggestions`，小学端会合并官网已有小学自定义专题到选项里。
 - 2026-05-04 当前活跃 Ralph 队列“小程序视觉正式版升级”已完成：新的 `scripts/ralph/prd.json` 只聚焦微信小程序前端 `miniprogram/miniprogram/`，`MP-VISUAL-001` 到 `MP-VISUAL-010` 均已完成；共享视觉 primitives 已集中到 `miniprogram/miniprogram/app.wxss`，家长首页/绑定页/上传页/错题本页已按正式产品视觉和按钮层级收口，最终 guardrail `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh` 已串起 PRD pass gate、视觉验收、上传稳定性和网站/后端改动防线；`scripts/ralph/run_codex_ralph.sh --check` 当前无下一条自动 story。
@@ -348,6 +349,7 @@
 
 ### 当前工作区
 - 当前分支：`develop`
+- 本轮提交范围只应包含家长首页孩子卡片右侧操作列和对应视觉 guardrail；当前工作区另有非本轮 `parent-wrongbook` 专题筛选未提交改动（`index.wxml` / `index.wxss` / `index.test.js`），会让完整 `miniprogram_visual_acceptance_guardrail_proof.sh` 在上传稳定性子段的 topic chip flex 断言处失败，未纳入本轮提交。
 - `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
 - 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。

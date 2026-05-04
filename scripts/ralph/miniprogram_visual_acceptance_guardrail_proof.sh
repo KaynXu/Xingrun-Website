@@ -216,9 +216,14 @@ check('parent-home uses finished entry hierarchy and one primary action per chil
   expectIncludes(pages.home, 'class="binding-actions"');
   expectIncludes(pages.home, '<button class="primary-btn mini-btn"');
   expectIncludes(pages.home, '<button class="ghost-btn mini-btn"');
+  expectNotIncludes(pages.home, '上传后可在错题本查看整理进度。');
   expectOrder(pages.home, '上传错题', '查看错题本');
   expectOnePrimaryInBlock(pages.home, '<view class="binding-actions">', '</view>', 'parent-home child action group');
+  expectRule(pageStyles.home, '.binding-card', 'flex-direction: row;');
+  expectRule(pageStyles.home, '.binding-card', 'align-items: center;');
+  expectRule(pageStyles.home, '.binding-info', 'flex: 1;');
   expectRule(pageStyles.home, '.binding-actions', 'flex-direction: column;');
+  expectRule(pageStyles.home, '.binding-actions', 'width: 190rpx;');
   expectRule(pageStyles.home, '.mini-btn', 'white-space: nowrap;');
 });
 
@@ -276,12 +281,18 @@ check('parent-wrongbook keeps PDF entry, filters, cards, and topic actions in cl
   expectIncludes(pages.wrongbook, 'class="primary-btn library-btn"');
   expectIncludes(pages.wrongbook, 'class="ghost-btn library-btn library-btn-pending"');
   expectIncludes(pages.wrongbook, 'class="panel-card filter-panel"');
+  expectIncludes(pages.wrongbook, 'class="topic-scroll"');
+  expectNotIncludes(pages.wrongbook, 'scroll-x="true"');
   expectIncludes(pages.wrongbook, 'class="item-card"');
   expectIncludes(pages.wrongbook, 'class="topic-edit-actions"');
   expectOnePrimaryInBlock(pages.wrongbook, '<view class="library-actions">', '</view>', 'parent-wrongbook PDF action group');
   expectOnePrimaryInBlock(pages.wrongbook, '<view class="topic-edit-actions">', '</view>', 'parent-wrongbook topic edit action group');
   expectRule(pageStyles.wrongbook, '.library-actions', 'flex-direction: column;');
   expectRule(pageStyles.wrongbook, '.library-btn', 'white-space: nowrap;');
+  expectRule(pageStyles.wrongbook, '.topic-scroll', 'display: flex;');
+  expectRule(pageStyles.wrongbook, '.topic-scroll', 'width: 100%;');
+  expectRule(pageStyles.wrongbook, '.topic-chip', 'flex: 1 1 calc(50% - 6rpx);');
+  expectRule(pageStyles.wrongbook, '.topic-chip', 'min-width: 0;');
   expectRule(pageStyles.wrongbook, '.item-question', 'word-break: break-all;');
 });
 

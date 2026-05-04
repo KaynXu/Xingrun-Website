@@ -41,7 +41,6 @@
           <text class="binding-meta">{{item.className || '未命名班级'}}</text>
           <text class="binding-meta">任课老师：{{item.teacherName || '任课老师待补充'}}</text>
         </view>
-        <text class="binding-hint">上传后可在错题本查看整理进度。</text>
       </view>
       <view class="binding-actions">
         <button class="primary-btn mini-btn" data-binding-id="{{item.id}}" bindtap="goUpload">上传错题</button>

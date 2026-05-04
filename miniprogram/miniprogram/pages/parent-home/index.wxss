@@ -1,8 +1,15 @@
-.panel-head,
-.binding-card {
+.panel-head {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.binding-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   justify-content: space-between;
   gap: 20rpx;
 }
@@ -18,8 +25,11 @@
   min-width: 0;
 }
 
-.panel-desc,
-.binding-hint {
+.binding-info {
+  flex: 1;
+}
+
+.panel-desc {
   display: block;
   margin-top: 10rpx;
   font-size: 23rpx;
@@ -41,8 +51,7 @@
 }
 
 .binding-name,
-.binding-meta,
-.binding-hint {
+.binding-meta {
   word-break: break-all;
 }
 
@@ -60,6 +69,7 @@
   display: flex;
   flex-direction: column;
   gap: 12rpx;
-  width: 100%;
+  width: 190rpx;
+  align-items: stretch;
   flex-shrink: 0;
 }

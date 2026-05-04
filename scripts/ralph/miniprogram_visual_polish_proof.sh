@@ -198,7 +198,7 @@ check('parent-home: primary and secondary actions are grouped by child card', ()
   expectIncludes(pages.home.wxml, 'class="binding-info"');
   expectIncludes(pages.home.wxml, 'class="binding-meta-stack"');
   expectIncludes(pages.home.wxml, '任课老师：{{item.teacherName || \'任课老师待补充\'}}');
-  expectIncludes(pages.home.wxml, 'class="binding-hint"');
+  expectNotIncludes(pages.home.wxml, '上传后可在错题本查看整理进度。');
   expectIncludes(pages.home.wxml, 'class="binding-actions"');
   expectIncludes(pages.home.wxml, 'class="ghost-btn mini-btn"');
   expectIncludes(pages.home.wxml, 'class="primary-btn mini-btn"');
@@ -206,12 +206,14 @@ check('parent-home: primary and secondary actions are grouped by child card', ()
   expectRule(pages.home.wxss, '.empty-card', 'border: 2rpx solid rgba(35, 117, 216, 0.12);');
   expectRule(pages.home.wxss, '.panel-copy', 'min-width: 0;');
   expectRule(pages.home.wxss, '.binding-info', 'min-width: 0;');
+  expectRule(pages.home.wxss, '.binding-info', 'flex: 1;');
+  expectRule(pages.home.wxss, '.binding-card', 'flex-direction: row;');
+  expectRule(pages.home.wxss, '.binding-card', 'align-items: center;');
   expectRule(pages.home.wxss, '.binding-meta-stack', 'gap: 6rpx;');
-  expectRule(pages.home.wxss, '.binding-hint', 'word-break: break-all;');
   expectRule(pages.home.wxss, '.binding-name', 'word-break: break-all;');
   expectRule(pages.home.wxss, '.binding-meta', 'word-break: break-all;');
   expectRule(pages.home.wxss, '.binding-actions', 'flex-direction: column;');
-  expectRule(pages.home.wxss, '.binding-actions', 'width: 100%;');
+  expectRule(pages.home.wxss, '.binding-actions', 'width: 190rpx;');
   expectRule(pages.home.wxss, '.mini-btn', 'width: 100%;');
   expectRule(pages.home.wxss, '.mini-btn', 'white-space: nowrap;');
 });
@@ -415,6 +417,8 @@ check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierar
   expectIncludes(pages.wrongbook.wxml, 'class="state-card error-card"');
   expectIncludes(pages.wrongbook.wxml, 'class="state-card empty-card"');
   expectIncludes(pages.wrongbook.wxml, '重新加载');
+  expectIncludes(pages.wrongbook.wxml, 'class="topic-scroll"');
+  expectNotIncludes(pages.wrongbook.wxml, 'scroll-x="true"');
   expectIncludes(pages.wrongbook.wxml, 'class="topic-chip');
   expectIncludes(pages.wrongbook.wxml, 'class="item-card"');
   expectIncludes(pages.wrongbook.wxml, 'class="item-card-head"');
@@ -431,6 +435,10 @@ check('parent-wrongbook: PDF entry, status, filters, and cards have clear hierar
   expectRule(pages.wrongbook.wxss, '.library-btn', 'white-space: nowrap;');
   expectRule(pages.wrongbook.wxss, '.library-btn-pending', 'background: #eef5ff;');
   expectRule(pages.wrongbook.wxss, '.filter-panel', 'padding: 24rpx;');
+  expectRule(pages.wrongbook.wxss, '.topic-scroll', 'display: flex;');
+  expectRule(pages.wrongbook.wxss, '.topic-scroll', 'width: 100%;');
+  expectRule(pages.wrongbook.wxss, '.topic-chip', 'flex: 1 1 calc(50% - 6rpx);');
+  expectRule(pages.wrongbook.wxss, '.topic-chip', 'min-width: 0;');
   expectRule(pages.wrongbook.wxss, '.item-card', 'flex-direction: column;');
   expectRule(pages.wrongbook.wxss, '.item-top', 'flex-wrap: wrap;');
   expectRule(pages.wrongbook.wxss, '.item-section', 'min-width: 0;');

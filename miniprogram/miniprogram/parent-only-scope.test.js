@@ -245,8 +245,9 @@ test('parent upload and wrongbook pages expose primary topic category controls',
   assert.equal(wrongbookTemplate.includes('bindtap="saveTopicCategory"'), true);
 });
 
-test('parent mini program pages stack action areas for narrow phone screens', () => {
+test('parent mini program pages keep action areas stable for narrow phone screens', () => {
   const homeStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxss'), 'utf8');
+  const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
   const bindStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxss'), 'utf8');
   const wrongbookStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxss'), 'utf8');
   const assertRuleIncludes = (styles, selector, declaration) => {
@@ -262,8 +263,12 @@ test('parent mini program pages stack action areas for narrow phone screens', ()
     );
   };
 
-  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: column;');
-  assertRuleIncludes(homeStyles, '.binding-actions', 'width: 100%;');
+  assert.equal(homeTemplate.includes('上传后可在错题本查看整理进度。'), false);
+  assert.match(homeTemplate, /class="binding-info"[\s\S]*class="binding-actions"/);
+  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: row;');
+  assertRuleIncludes(homeStyles, '.binding-card', 'align-items: center;');
+  assertRuleIncludes(homeStyles, '.binding-info', 'flex: 1;');
+  assertRuleIncludes(homeStyles, '.binding-actions', 'width: 190rpx;');
   assertRuleIncludes(homeStyles, '.mini-btn', 'width: 100%;');
   assertRuleIncludes(homeStyles, '.mini-btn', 'white-space: nowrap;');
 
