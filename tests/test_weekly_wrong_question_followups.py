@@ -294,6 +294,19 @@ class WeeklyWrongQuestionFollowupAiTestCase(unittest.TestCase):
         self.assertIn("不要写成报告", sent_prompt)
         self.assertIn("小程序", sent_prompt)
         self.assertIn("不提", sent_prompt)
+        self.assertIn("通知", sent_prompt)
+        self.assertIn("AI", sent_prompt)
+        self.assertIn("系统分析", sent_prompt)
+        for report_phrase in [
+            "本周错题主要集中在",
+            "建议家长配合",
+            "知识薄弱点",
+            "提升能力",
+        ]:
+            self.assertIn(report_phrase, sent_prompt)
+        self.assertIn("2 到 3 段微信可直接发送的短段落", sent_prompt)
+        for forbidden_output_phrase in ["系统", "AI", "后台", "数据分析"]:
+            self.assertIn(forbidden_output_phrase, sent_prompt)
 
 
 if __name__ == "__main__":
