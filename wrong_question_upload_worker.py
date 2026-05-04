@@ -76,14 +76,19 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
                 "secondary_error_summary": "孩子暂未填写错因",
             }
         display_text = str(classification.get("display_text") or reason_text).strip()
+        stored_reason_text = reason_text or display_text
 
         record = create_wechat_wrong_question_submission(
             binding_id=int(task["binding_id"]),
             image_url=str(task["image_url"] or ""),
-            child_raw_reason_text=display_text,
+            child_raw_reason_text=stored_reason_text,
+            child_reason_transcript=reason_text,
             child_reason_input_mode=str(task["child_reason_input_mode"] or "text"),
             primary_error_type=str(classification.get("primary_error_type") or ""),
             secondary_error_summary=str(classification.get("secondary_error_summary") or ""),
+            child_reason_core_issue=str(classification.get("core_issue") or display_text),
+            child_reason_key_omission=str(classification.get("key_omission") or ""),
+            child_reason_next_step=str(classification.get("next_step") or ""),
             topic_category=str(task.get("topic_category") or ""),
             recognition_status="recognized",
             is_geometry=bool(recognition.get("is_geometry")),
@@ -106,9 +111,13 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
                     binding_id=int(task["binding_id"]),
                     image_url=str(task["image_url"] or ""),
                     child_raw_reason_text=display_text or reason_text,
+                    child_reason_transcript=reason_text,
                     child_reason_input_mode=str(task["child_reason_input_mode"] or "text"),
                     primary_error_type="待补充",
                     secondary_error_summary="题目识别失败，等待老师查看原图后补充。",
+                    child_reason_core_issue=display_text or reason_text,
+                    child_reason_key_omission="题目识别失败，暂时无法结合题目确认关键遗漏。",
+                    child_reason_next_step="请老师先查看原图和孩子说明，再补充可执行的订正步骤。",
                     topic_category=str(task.get("topic_category") or ""),
                     recognition_status="failed",
                     is_geometry=bool(recognition.get("is_geometry")) if isinstance(recognition, dict) else False,

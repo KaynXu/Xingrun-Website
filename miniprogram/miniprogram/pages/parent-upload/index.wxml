@@ -122,6 +122,12 @@
       />
 
       <view wx:else class="voice-card">
+        <view class="voice-guide">
+          <text class="voice-guide-title">录音时请孩子按三句话说</text>
+          <text class="voice-guide-line">1. 讲清这题的核心错因。</text>
+          <text class="voice-guide-line">2. 说出自己漏掉的条件、定义或检查步骤。</text>
+          <text class="voice-guide-line">3. 下次做这类题准备先做什么。</text>
+        </view>
         <button class="ghost-btn voice-btn" disabled="{{submitting || cropExporting}}" bindtap="toggleActiveBoxVoiceRecording">{{recordingBoxId === activeBox.id ? '结束录音' : '开始录音'}}</button>
         <text wx:if="{{activeBox.voiceFilePath}}" class="voice-status">{{activeBox.voiceFileName || '已录制语音，提交后服务器会自动识别'}}</text>
         <text wx:if="{{activeBox.reasonStatusText}}" class="voice-hint">{{activeBox.reasonStatusText}}</text>

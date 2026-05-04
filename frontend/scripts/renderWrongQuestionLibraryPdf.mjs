@@ -88,6 +88,9 @@ function buildReasonCards(record) {
   const cards = [];
   const childReasonText = String(record.child_reason_text || '').trim();
   const causeNote = String(record.cause_note || '').trim();
+  const coreIssue = String(record.core_issue || '').trim();
+  const keyOmission = String(record.key_omission || '').trim();
+  const nextStep = String(record.next_step || '').trim();
 
   if (childReasonText) {
     cards.push(`
@@ -108,10 +111,34 @@ function buildReasonCards(record) {
   }
 
   if (cards.length === 0) {
-    return '';
+    if (!coreIssue && !keyOmission && !nextStep) {
+      return '';
+    }
   }
 
-  return `<div class="reason-grid">${cards.join('')}</div>`;
+  const analysisRows = [
+    ['核心错因', coreIssue],
+    ['关键遗漏', keyOmission],
+    ['后续操作', nextStep],
+  ].filter(([, value]) => value);
+  const analysisMarkup = analysisRows.length
+    ? `
+      <div class="analysis-card">
+        <div class="analysis-title">AI 错因分析</div>
+        ${analysisRows.map(([label, value]) => `
+          <div class="analysis-row">
+            <div class="analysis-label">${label}</div>
+            <div class="analysis-value">${escapeHtml(value)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `
+    : '';
+
+  return `
+    ${cards.length ? `<div class="reason-grid">${cards.join('')}</div>` : ''}
+    ${analysisMarkup}
+  `;
 }
 
 function buildRecordMarkup(record, index) {
@@ -248,6 +275,41 @@ export async function buildDocumentMarkup(payload) {
             font-size: 14px;
             line-height: 1.75;
             color: #334155;
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
+
+          .analysis-card {
+            margin-top: 12px;
+            border: 1px solid #dbeafe;
+            background: #ffffff;
+            border-radius: 14px;
+            padding: 14px 16px;
+          }
+
+          .analysis-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #64748b;
+          }
+
+          .analysis-row {
+            display: grid;
+            grid-template-columns: 72px minmax(0, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #334155;
+          }
+
+          .analysis-label {
+            font-weight: 700;
+            color: #0f172a;
+          }
+
+          .analysis-value {
             white-space: pre-wrap;
             word-break: break-word;
           }

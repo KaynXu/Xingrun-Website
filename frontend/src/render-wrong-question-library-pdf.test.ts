@@ -28,6 +28,33 @@ test('buildDocumentMarkup renders child reason and note blocks for each wrong qu
   assert.match(markup, /运算顺序放错了位置/);
 });
 
+test('buildDocumentMarkup renders structured reason analysis blocks', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherTitle: '平台管理员',
+    records: [
+      {
+        created_at: '2026-05-04 11:34:06',
+        is_geometry: false,
+        question_text: '已知定义在 $[m-4,3m]$ 上的偶函数。',
+        child_reason_text: '我当时只说自己没有看懂绝对值和定义域。',
+        core_issue: '没有把偶函数定义域关于原点对称和单调区间限制合在一起判断。',
+        key_omission: '漏掉了先由定义域对称求出 m，再检查两个自变量是否落在单调区间内。',
+        next_step: '下次先写定义域约束，再把比较函数值转成比较绝对值或对应区间上的自变量。',
+      },
+    ],
+  });
+
+  assert.match(markup, /AI 错因分析/);
+  assert.match(markup, /核心错因/);
+  assert.match(markup, /关键遗漏/);
+  assert.match(markup, /后续操作/);
+  assert.match(markup, /没有把偶函数定义域关于原点对称/);
+  assert.match(markup, /先由定义域对称求出 m/);
+  assert.match(markup, /比较函数值转成比较绝对值/);
+});
+
 test('buildDocumentMarkup keeps non-empty question blocks for missing notes and geometry records', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
