@@ -716,7 +716,7 @@ test('parent upload task bridge forwards task status requests to the website', a
   }
 });
 
-test('parent reason transcription bridge returns immediately without calling website transcription', async (t) => {
+test('parent reason transcription bridge returns a non-empty legacy fallback without calling website transcription', async (t) => {
   const originalFetch = globalThis.fetch;
   const websiteCalls: string[] = [];
 
@@ -751,7 +751,8 @@ test('parent reason transcription bridge returns immediately without calling web
       });
 
       assert.equal(response.status, 200);
-      assert.equal((await response.json()).transcript_text, '');
+      const payload = await response.json();
+      assert.match(payload.transcript_text, /语音说明已上传/);
       assert.deepEqual(websiteCalls, []);
     } finally {
       clearTimeout(timeout);
@@ -761,19 +762,15 @@ test('parent reason transcription bridge returns immediately without calling web
   }
 });
 
-test('parent reason classification bridge forwards the child reason text to the website', async (t) => {
+test('parent reason classification bridge returns immediately without calling website classification', async (t) => {
   const originalFetch = globalThis.fetch;
+  const websiteCalls: string[] = [];
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url === 'https://website.example/api/wechat/reason-classifications') {
-      const body = JSON.parse(String(init?.body || '{}'));
-      assert.equal(body.child_reason_text, '我把单位换算漏掉了');
-      return createJsonResponse({
-        display_text: '我把单位换算漏掉了',
-        primary_error_type: '细节问题',
-        secondary_error_summary: '单位换算遗漏',
-      });
+      websiteCalls.push(String(init?.body || ''));
+      return new Promise<Response>(() => {});
     }
 
     return originalFetch(input as RequestInfo | URL, init);
@@ -785,20 +782,30 @@ test('parent reason classification bridge forwards the child reason text to the 
     assert.ok(address && typeof address === 'object');
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
-    const response = await fetch(`${baseUrl}/wechat/parent/reason-classifications`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        childReasonText: '我把单位换算漏掉了',
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120);
 
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.primary_error_type, '细节问题');
-    assert.equal(payload.secondary_error_summary, '单位换算遗漏');
+    try {
+      const response = await fetch(`${baseUrl}/wechat/parent/reason-classifications`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          childReasonText: '我把单位换算漏掉了',
+        }),
+        signal: controller.signal,
+      });
+
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.display_text, '我把单位换算漏掉了');
+      assert.equal(payload.primary_error_type, '');
+      assert.equal(payload.secondary_error_summary, '');
+      assert.deepEqual(websiteCalls, []);
+    } finally {
+      clearTimeout(timeout);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
