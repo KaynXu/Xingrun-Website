@@ -178,6 +178,88 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
         self.assertEqual(fetched["id"], first["id"])
         self.assertEqual(fetched["source_record_ids"], ["record-2", "record-3"])
 
+    def test_deleting_teacher_referenced_by_followup_message_does_not_fail_fk(self):
+        teacher_request = lesson_manager.create_registration_request(
+            "weekly_teacher",
+            "Weekly Teacher",
+            "teacher-pass",
+            recovery_phone="13800000000",
+        )
+        teacher = lesson_manager.approve_registration_request(teacher_request["id"], self.teacher_user_id)
+        lesson_manager.upsert_weekly_wrong_question_followup_message(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            student_id=self.alice["id"],
+            teacher_user_id=teacher["id"],
+            week_start_date="2026-04-06",
+            week_end_date="2026-04-12",
+            style="warm",
+            message_text="跟进话术",
+            source_record_ids=["record-1"],
+            generated_by=teacher["id"],
+        )
+
+        lesson_manager.delete_user_for_actor(
+            lesson_manager.get_user_by_id(self.teacher_user_id),
+            teacher["id"],
+        )
+        fetched = lesson_manager.get_weekly_wrong_question_followup_message(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            student_id=self.alice["id"],
+            week_start_date="2026-04-06",
+            style="warm",
+        )
+
+        self.assertIsNotNone(fetched)
+        self.assertIsNone(fetched["teacher_user_id"])
+        self.assertIsNone(fetched["generated_by"])
+
+    def test_weekly_student_query_includes_full_boundary_days_and_has_matching_index(self):
+        before_week = self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/before-week.png",
+            created_at="2026-04-05 23:59:59",
+            topic_category="计算",
+        )
+        start_boundary = self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/start-boundary.png",
+            created_at="2026-04-06 00:00:00",
+            topic_category="计算",
+        )
+        end_boundary = self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/end-boundary.png",
+            created_at="2026-04-12 23:59:59",
+            topic_category="几何",
+        )
+        after_week = self._recognized_record(
+            binding_id=self.alice_binding["id"],
+            image_url="https://files.example.com/after-week.png",
+            created_at="2026-04-13 00:00:00",
+            topic_category="应用题",
+        )
+
+        students = lesson_manager.list_weekly_wrong_question_followup_students(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            week_start_date="2026-04-06",
+            week_end_date="2026-04-12",
+        )
+
+        self.assertEqual(len(students), 1)
+        self.assertEqual(students[0]["weekly_question_count"], 2)
+        self.assertEqual(students[0]["source_record_ids"], [end_boundary["id"], start_boundary["id"]])
+        self.assertNotIn(before_week["id"], students[0]["source_record_ids"])
+        self.assertNotIn(after_week["id"], students[0]["source_record_ids"])
+        with lesson_manager.get_conn() as conn:
+            indexes = {
+                row["name"]
+                for row in conn.execute("PRAGMA index_list(wrong_question_submissions)").fetchall()
+            }
+        self.assertIn("idx_wrong_question_submissions_weekly_followup", indexes)
+
 
 if __name__ == "__main__":
     unittest.main()
