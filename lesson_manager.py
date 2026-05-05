@@ -1458,6 +1458,7 @@ def _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn: sql
             style                         TEXT NOT NULL DEFAULT 'warm',
             message_text                  TEXT NOT NULL DEFAULT '',
             source_record_ids_json        TEXT NOT NULL DEFAULT '[]',
+            source_sheet_id               INTEGER DEFAULT NULL REFERENCES wrong_question_practice_sheets(id) ON DELETE SET NULL,
             generated_by                  INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime')),
@@ -1478,6 +1479,7 @@ def _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn: sql
             "style",
             "message_text",
             "source_record_ids_json",
+            "source_sheet_id",
             "generated_by",
             "created_at",
             "updated_at",
@@ -2147,6 +2149,7 @@ def init_db():
             style                         TEXT NOT NULL DEFAULT 'warm',
             message_text                  TEXT NOT NULL DEFAULT '',
             source_record_ids_json        TEXT NOT NULL DEFAULT '[]',
+            source_sheet_id               INTEGER DEFAULT NULL REFERENCES wrong_question_practice_sheets(id) ON DELETE SET NULL,
             generated_by                  INTEGER REFERENCES users(id) ON DELETE SET NULL,
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime')),
@@ -2390,6 +2393,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
@@ -6598,6 +6602,7 @@ def _serialize_weekly_wrong_question_followup_message_row(row: sqlite3.Row | Non
     except json.JSONDecodeError:
         source_record_ids = []
     payload["source_record_ids"] = source_record_ids if isinstance(source_record_ids, list) else []
+    payload["source_sheet_id"] = int(payload["source_sheet_id"]) if payload.get("source_sheet_id") is not None else None
     return payload
 
 
@@ -6642,6 +6647,7 @@ def upsert_weekly_wrong_question_followup_message(
     style: str = "warm",
     message_text: str = "",
     source_record_ids: list[str] | None = None,
+    source_sheet_id: int | None = None,
     generated_by: int | None = None,
 ) -> dict:
     normalized_style = (style or "warm").strip() or "warm"
@@ -6657,14 +6663,15 @@ def upsert_weekly_wrong_question_followup_message(
             INSERT INTO weekly_wrong_question_followup_messages (
                 organization_id, class_id, student_id, teacher_user_id,
                 week_start_date, week_end_date, style, message_text,
-                source_record_ids_json, generated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_record_ids_json, source_sheet_id, generated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(organization_id, class_id, student_id, week_start_date, style)
             DO UPDATE SET
                 teacher_user_id=excluded.teacher_user_id,
                 week_end_date=excluded.week_end_date,
                 message_text=excluded.message_text,
                 source_record_ids_json=excluded.source_record_ids_json,
+                source_sheet_id=excluded.source_sheet_id,
                 generated_by=excluded.generated_by,
                 updated_at=datetime('now','localtime')
             """,
@@ -6678,6 +6685,7 @@ def upsert_weekly_wrong_question_followup_message(
                 normalized_style,
                 (message_text or "").strip(),
                 source_record_ids_json,
+                int(source_sheet_id) if source_sheet_id is not None else None,
                 generated_by,
             ),
         )
@@ -6702,6 +6710,52 @@ def upsert_weekly_wrong_question_followup_message(
     return _serialize_weekly_wrong_question_followup_message_row(row) or {}
 
 
+def _parse_local_date(value: str) -> date | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _is_recurring_wrong_question(row: sqlite3.Row | dict) -> bool:
+    text = " ".join(
+        str((row[key] if isinstance(row, sqlite3.Row) else row.get(key)) or "")
+        for key in (
+            "topic_category",
+            "secondary_error_summary",
+            "child_raw_reason_text",
+            "child_reason_core_issue",
+            "child_reason_key_omission",
+            "child_reason_next_step",
+        )
+        if (key in row.keys() if isinstance(row, sqlite3.Row) else key in row)
+    )
+    return any(keyword in text for keyword in ("粗心", "符号", "审题", "步骤", "遗漏", "漏"))
+
+
+def _is_wrong_question_candidate_for_week(row: sqlite3.Row, *, week_start: date, six_month_cutoff: date) -> bool:
+    created_date = _parse_local_date(str(row["created_at"] or ""))
+    if created_date is None or created_date < six_month_cutoff or created_date > week_start + timedelta(days=6):
+        return False
+    archive_status = str(row["archive_status"] or "active").strip() or "active"
+    if archive_status != "archived":
+        return True
+    archived_date = _parse_local_date(str(row["archived_at"] or ""))
+    if archived_date is None:
+        return False
+    interval_days = 30 if _is_recurring_wrong_question(row) else 60
+    return archived_date <= week_start - timedelta(days=interval_days)
+
+
+def _weekly_followup_reason_from_category(category: str, count: int, practiced_recently: bool) -> str:
+    if practiced_recently:
+        return f"{category}还有{count}道可练错题；如果其它分类不足，可以继续收这一类。"
+    return f"{category}可练错题{count}道，且最近一周没有练过。"
+
+
 def list_weekly_wrong_question_followup_students(
     *,
     organization_id: int,
@@ -6709,10 +6763,47 @@ def list_weekly_wrong_question_followup_students(
     week_start_date: str,
     week_end_date: str,
 ) -> list[dict]:
+    week_start = _parse_local_date(week_start_date) or date.today()
+    week_end = _parse_local_date(week_end_date) or week_start + timedelta(days=6)
+    six_month_cutoff = week_end - timedelta(days=183)
     week_start_bound = f"{(week_start_date or '').strip()} 00:00:00"
     week_end_bound = f"{(week_end_date or '').strip()} 23:59:59"
+    six_month_cutoff_bound = f"{six_month_cutoff.isoformat()} 00:00:00"
     with get_conn() as conn:
-        rows = conn.execute(
+        student_rows = conn.execute(
+            """
+            SELECT
+                c.name AS class_name,
+                c.organization_id AS class_organization_id,
+                uc.user_id AS class_teacher_user_id,
+                u.display_name AS class_teacher_name,
+                s.id AS student_id,
+                s.name AS student_name,
+                s.organization_id AS student_organization_id
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            JOIN classes c ON c.id = cs.class_id
+            LEFT JOIN user_classes uc ON uc.class_id = c.id
+            LEFT JOIN users u ON u.id = uc.user_id
+            WHERE c.organization_id=?
+              AND c.id=?
+            ORDER BY s.name ASC, s.id ASC, uc.user_id ASC
+            """,
+            (int(organization_id or 0), int(class_id or 0)),
+        ).fetchall()
+        sheet_rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_sheets
+            WHERE organization_id=?
+              AND class_id=?
+              AND created_at >= ?
+              AND created_at <= ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (int(organization_id or 0), int(class_id or 0), week_start_bound, week_end_bound),
+        ).fetchall()
+        candidate_rows = conn.execute(
             """
             SELECT
                 wqs.*,
@@ -6727,7 +6818,6 @@ def list_weekly_wrong_question_followup_students(
               AND wqs.class_id=?
               AND wqs.source='wechat_mp'
               AND wqs.recognition_status='recognized'
-              AND wqs.archive_status='active'
               AND wqs.created_at >= ?
               AND wqs.created_at <= ?
             ORDER BY s.name ASC, wqs.created_at DESC, wqs.id DESC
@@ -6735,7 +6825,7 @@ def list_weekly_wrong_question_followup_students(
             (
                 int(organization_id or 0),
                 int(class_id or 0),
-                week_start_bound,
+                six_month_cutoff_bound,
                 week_end_bound,
             ),
         ).fetchall()
@@ -6752,45 +6842,360 @@ def list_weekly_wrong_question_followup_students(
             """,
             (int(organization_id or 0), int(class_id or 0)),
         ).fetchall()
+        item_rows = conn.execute(
+            """
+            SELECT
+                item.*,
+                wqs.topic_category,
+                wqs.secondary_error_summary,
+                wqs.child_raw_reason_text
+            FROM wrong_question_practice_sheet_items item
+            LEFT JOIN wrong_question_submissions wqs ON wqs.id = item.wrong_question_record_id
+            WHERE item.sheet_id IN (
+                SELECT id
+                FROM wrong_question_practice_sheets
+                WHERE organization_id=?
+                  AND class_id=?
+                  AND created_at >= ?
+                  AND created_at <= ?
+            )
+            ORDER BY item.sheet_id ASC, item.question_order ASC, item.id ASC
+            """,
+            (int(organization_id or 0), int(class_id or 0), week_start_bound, week_end_bound),
+        ).fetchall()
 
     total_count_by_student_id = {
         int(row["student_id"]): int(row["total_active_question_count"] or 0)
         for row in total_rows
     }
-    grouped: dict[int, dict] = {}
-    for row in rows:
+    items_by_sheet_id: dict[int, list[sqlite3.Row]] = {}
+    for row in item_rows:
+        items_by_sheet_id.setdefault(int(row["sheet_id"]), []).append(row)
+
+    latest_sheet_by_student_id: dict[int, dict] = {}
+    practiced_categories_by_student_id: dict[int, set[str]] = {}
+    for row in sheet_rows:
         student_id = int(row["student_id"])
-        summary = grouped.setdefault(
-            student_id,
+        sheet = _serialize_wrong_question_practice_sheet_row(row) or {}
+        sheet_items = items_by_sheet_id.get(int(row["id"]), [])
+        source_record_ids: list[str] = []
+        categories: set[str] = set()
+        reason_summaries: list[str] = []
+        for item in sheet_items:
+            record_id = str(item["wrong_question_record_id"] or "").strip()
+            if record_id:
+                source_record_ids.append(record_id)
+            category = normalize_primary_wrong_question_topic_category(str(item["topic_category"] or item["primary_error_type_snapshot"] or ""))
+            if category:
+                categories.add(category)
+            reason = str(item["cause_note_snapshot"] or item["secondary_error_summary"] or item["child_raw_reason_text"] or item["child_reason_text_snapshot"] or "").strip()
+            if reason and len(reason_summaries) < 3:
+                reason_summaries.append(reason)
+        sheet["source_record_ids"] = source_record_ids
+        sheet["topic_categories"] = sorted(categories)
+        sheet["representative_reason_summaries"] = reason_summaries
+        practiced_categories_by_student_id.setdefault(student_id, set()).update(categories)
+        latest_sheet_by_student_id.setdefault(student_id, sheet)
+
+    candidate_rows_by_student_id: dict[int, list[sqlite3.Row]] = {}
+    for row in candidate_rows:
+        if _is_wrong_question_candidate_for_week(row, week_start=week_start, six_month_cutoff=six_month_cutoff):
+            candidate_rows_by_student_id.setdefault(int(row["student_id"]), []).append(row)
+
+    seen_students: set[int] = set()
+    students: list[dict] = []
+    for row in student_rows:
+        student_id = int(row["student_id"])
+        if student_id in seen_students:
+            continue
+        seen_students.add(student_id)
+        teacher_user_id = row["class_teacher_user_id"]
+        teacher_name = row["class_teacher_name"] or "平台管理员"
+        sheet = latest_sheet_by_student_id.get(student_id)
+        candidates = candidate_rows_by_student_id.get(student_id, [])
+        topic_categories: set[str] = set()
+        reason_summaries: list[str] = []
+        source_record_ids: list[str] = []
+        for candidate in candidates:
+            source_record_ids.append(str(candidate["id"]))
+            category = normalize_primary_wrong_question_topic_category(str(candidate["topic_category"] or ""))
+            if category:
+                topic_categories.add(category)
+            reason = str(candidate["secondary_error_summary"] or candidate["child_raw_reason_text"] or "").strip()
+            if reason and len(reason_summaries) < 3:
+                reason_summaries.append(reason)
+
+        recommended_category = ""
+        recommendation_reason = ""
+        if candidates:
+            grouped_by_category: dict[str, list[sqlite3.Row]] = {}
+            for candidate in candidates:
+                category = normalize_primary_wrong_question_topic_category(str(candidate["topic_category"] or ""))
+                grouped_by_category.setdefault(category, []).append(candidate)
+            practiced_categories = practiced_categories_by_student_id.get(student_id, set())
+            ranked = sorted(
+                grouped_by_category.items(),
+                key=lambda item: (
+                    1 if item[0] not in practiced_categories else 0,
+                    len(item[1]),
+                    min(str(row["created_at"] or "") for row in item[1]),
+                    item[0],
+                ),
+                reverse=True,
+            )
+            if ranked:
+                recommended_category, recommended_rows = ranked[0]
+                recommendation_reason = _weekly_followup_reason_from_category(
+                    recommended_category,
+                    len(recommended_rows),
+                    recommended_category in practiced_categories,
+                )
+
+        if sheet:
+            status = "has_practice_sheet"
+            weekly_question_count = int(sheet.get("question_count") or 0)
+            output_source_record_ids = sheet.get("source_record_ids") or []
+            output_topic_categories = sheet.get("topic_categories") or []
+            output_reasons = sheet.get("representative_reason_summaries") or []
+            latest_created_at = sheet.get("created_at") or ""
+        elif candidates:
+            status = "needs_practice_sheet"
+            weekly_question_count = len(candidates)
+            output_source_record_ids = source_record_ids
+            output_topic_categories = sorted(topic_categories)
+            output_reasons = reason_summaries
+            latest_created_at = str(candidates[0]["created_at"] or "")
+        else:
+            status = "no_practice_needed"
+            weekly_question_count = 0
+            output_source_record_ids = []
+            output_topic_categories = []
+            output_reasons = []
+            latest_created_at = ""
+
+        students.append(
+            {
+                "organization_id": int(row["class_organization_id"] or row["student_organization_id"] or organization_id or 0),
+                "class_id": int(class_id or 0),
+                "class_name": row["class_name"],
+                "student_id": student_id,
+                "student_name": row["student_name"],
+                "teacher_user_id": int(teacher_user_id) if teacher_user_id is not None else 0,
+                "teacher_name": teacher_name,
+                "status": status,
+                "practice_sheet": sheet,
+                "weekly_question_count": weekly_question_count,
+                "total_active_question_count": total_count_by_student_id.get(student_id, len(candidates)),
+                "candidate_question_count": len(candidates),
+                "candidate_record_ids": source_record_ids,
+                "recommended_category": recommended_category,
+                "recommendation_reason": recommendation_reason,
+                "topic_categories": output_topic_categories,
+                "representative_reason_summaries": output_reasons,
+                "latest_created_at": latest_created_at,
+                "source_record_ids": output_source_record_ids,
+            }
+        )
+    return students
+
+
+def list_weekly_wrong_question_activity_summary(
+    *,
+    week_start_date: str,
+    week_end_date: str,
+    organization_id: int | None = None,
+    limit: int = 10,
+) -> dict:
+    week_start_bound = f"{(week_start_date or '').strip()} 00:00:00"
+    week_end_bound = f"{(week_end_date or '').strip()} 23:59:59"
+    normalized_limit = max(1, int(limit or 10))
+    where_clauses = [
+        "wqs.source='wechat_mp'",
+        "wqs.recognition_status='recognized'",
+        "wqs.created_at >= ?",
+        "wqs.created_at <= ?",
+        "wqs.organization_id IS NOT NULL",
+        "wqs.class_id IS NOT NULL",
+        "wqs.student_id IS NOT NULL",
+    ]
+    params: list[object] = [week_start_bound, week_end_bound]
+    if organization_id is not None:
+        where_clauses.append("wqs.organization_id=?")
+        params.append(int(organization_id or 0))
+    where_sql = " AND ".join(where_clauses)
+
+    total_where_clauses = [
+        "recognition_status='recognized'",
+        "student_id IS NOT NULL",
+    ]
+    total_params: list[object] = []
+    if organization_id is not None:
+        total_where_clauses.append("organization_id=?")
+        total_params.append(int(organization_id or 0))
+    total_where_sql = " AND ".join(total_where_clauses)
+
+    with get_conn() as conn:
+        weekly_rows = conn.execute(
+            f"""
+            SELECT
+                wqs.*,
+                o.name AS organization_name,
+                c.name AS class_name,
+                s.name AS student_name,
+                u.display_name AS teacher_name
+            FROM wrong_question_submissions wqs
+            JOIN organizations o ON o.id = wqs.organization_id
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE {where_sql}
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            params,
+        ).fetchall()
+        total_rows = conn.execute(
+            f"""
+            SELECT student_id, COUNT(*) AS total_question_count
+            FROM wrong_question_submissions
+            WHERE {total_where_sql}
+            GROUP BY student_id
+            """,
+            total_params,
+        ).fetchall()
+
+    total_count_by_student_id = {
+        int(row["student_id"]): int(row["total_question_count"] or 0)
+        for row in total_rows
+    }
+    class_items_by_id: dict[int, dict] = {}
+    teacher_items_by_id: dict[int, dict] = {}
+    student_items_by_id: dict[int, dict] = {}
+    class_student_ids: dict[int, set[int]] = {}
+    teacher_class_ids: dict[int, set[int]] = {}
+    teacher_student_ids: dict[int, set[int]] = {}
+    student_topic_counts: dict[int, dict[str, int]] = {}
+
+    for row in weekly_rows:
+        class_id_value = int(row["class_id"])
+        teacher_user_id = int(row["teacher_user_id"])
+        student_id_value = int(row["student_id"])
+        created_at = str(row["created_at"] or "")
+
+        class_item = class_items_by_id.setdefault(
+            class_id_value,
             {
                 "organization_id": row["organization_id"],
+                "organization_name": row["organization_name"],
+                "class_id": row["class_id"],
+                "class_name": row["class_name"],
+                "weekly_question_count": 0,
+                "uploading_student_count": 0,
+                "latest_created_at": created_at,
+            },
+        )
+        class_item["weekly_question_count"] += 1
+        if created_at > str(class_item["latest_created_at"] or ""):
+            class_item["latest_created_at"] = created_at
+        class_student_ids.setdefault(class_id_value, set()).add(student_id_value)
+
+        teacher_item = teacher_items_by_id.setdefault(
+            teacher_user_id,
+            {
+                "organization_id": row["organization_id"],
+                "organization_name": row["organization_name"],
+                "teacher_user_id": row["teacher_user_id"],
+                "teacher_name": row["teacher_name"],
+                "class_count": 0,
+                "weekly_question_count": 0,
+                "involved_student_count": 0,
+                "pending_followup_count": 0,
+                "latest_created_at": created_at,
+            },
+        )
+        teacher_item["weekly_question_count"] += 1
+        if str(row["archive_status"] or "") == "active":
+            teacher_item["pending_followup_count"] += 1
+        if created_at > str(teacher_item["latest_created_at"] or ""):
+            teacher_item["latest_created_at"] = created_at
+        teacher_class_ids.setdefault(teacher_user_id, set()).add(class_id_value)
+        teacher_student_ids.setdefault(teacher_user_id, set()).add(student_id_value)
+
+        student_item = student_items_by_id.setdefault(
+            student_id_value,
+            {
+                "organization_id": row["organization_id"],
+                "organization_name": row["organization_name"],
                 "class_id": row["class_id"],
                 "class_name": row["class_name"],
                 "student_id": row["student_id"],
                 "student_name": row["student_name"],
-                "teacher_user_id": row["teacher_user_id"],
-                "teacher_name": row["teacher_name"],
                 "weekly_question_count": 0,
-                "total_active_question_count": total_count_by_student_id.get(student_id, 0),
+                "total_question_count": total_count_by_student_id.get(student_id_value, 0),
                 "topic_categories": [],
-                "representative_reason_summaries": [],
-                "latest_created_at": row["created_at"],
-                "source_record_ids": [],
+                "latest_created_at": created_at,
             },
         )
-        summary["weekly_question_count"] += 1
-        summary["source_record_ids"].append(row["id"])
+        student_item["weekly_question_count"] += 1
+        if created_at > str(student_item["latest_created_at"] or ""):
+            student_item["latest_created_at"] = created_at
         topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
-        if topic_category not in summary["topic_categories"]:
-            summary["topic_categories"].append(topic_category)
-        reason_summary = (row["secondary_error_summary"] or row["child_raw_reason_text"] or "").strip()
-        if reason_summary and len(summary["representative_reason_summaries"]) < 3:
-            summary["representative_reason_summaries"].append(reason_summary)
+        topic_counts = student_topic_counts.setdefault(student_id_value, {})
+        topic_counts[topic_category] = topic_counts.get(topic_category, 0) + 1
 
-    students = list(grouped.values())
-    for summary in students:
-        summary["topic_categories"] = sorted(summary["topic_categories"])
-    return sorted(students, key=lambda item: str(item["student_name"] or ""))
+    for class_id_value, item in class_items_by_id.items():
+        item["uploading_student_count"] = len(class_student_ids.get(class_id_value, set()))
+    for teacher_user_id, item in teacher_items_by_id.items():
+        item["class_count"] = len(teacher_class_ids.get(teacher_user_id, set()))
+        item["involved_student_count"] = len(teacher_student_ids.get(teacher_user_id, set()))
+    for student_id_value, item in student_items_by_id.items():
+        topic_counts = student_topic_counts.get(student_id_value, {})
+        item["topic_categories"] = [
+            topic
+            for topic, _count in sorted(
+                topic_counts.items(),
+                key=lambda topic_item: (-int(topic_item[1] or 0), str(topic_item[0] or "")),
+            )[:3]
+        ] or [PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED]
+
+    class_items = sorted(
+        class_items_by_id.values(),
+        key=lambda item: str(item["latest_created_at"] or ""),
+        reverse=True,
+    )
+    class_items = sorted(
+        class_items,
+        key=lambda item: (
+            -int(item["weekly_question_count"] or 0),
+            -int(item["uploading_student_count"] or 0),
+        ),
+    )
+    teacher_items = sorted(
+        teacher_items_by_id.values(),
+        key=lambda item: (
+            -int(item["weekly_question_count"] or 0),
+            -int(item["involved_student_count"] or 0),
+            -int(item["pending_followup_count"] or 0),
+            str(item["teacher_name"] or ""),
+        ),
+    )
+    student_items = sorted(
+        student_items_by_id.values(),
+        key=lambda item: str(item["latest_created_at"] or ""),
+        reverse=True,
+    )
+    student_items = sorted(
+        student_items,
+        key=lambda item: (
+            -int(item["weekly_question_count"] or 0),
+            -int(item["total_question_count"] or 0),
+        ),
+    )
+
+    return {
+        "class_items": class_items[:normalized_limit],
+        "teacher_items": teacher_items[:normalized_limit],
+        "student_items": student_items[:normalized_limit],
+    }
 
 
 def _serialize_wrong_question_practice_sheet_row(row: sqlite3.Row | None) -> Optional[dict]:
