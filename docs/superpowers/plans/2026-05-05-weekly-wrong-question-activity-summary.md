@@ -98,7 +98,7 @@ Counting rules:
 - Create: `tests/test_weekly_wrong_question_activity_summary.py`
 - Modify: `lesson_manager.py`
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
 Create `tests/test_weekly_wrong_question_activity_summary.py` with this content:
 
@@ -256,7 +256,7 @@ class WeeklyWrongQuestionActivitySummaryStoreTestCase(unittest.TestCase):
         self.assertEqual([item["student_name"] for item in summary["student_items"]], ["Alice"])
 ```
 
-- [ ] **Step 2: Run store tests to verify they fail**
+- [x] **Step 2: Run store tests to verify they fail**
 
 Run:
 
@@ -266,7 +266,7 @@ python3 -m unittest tests.test_weekly_wrong_question_activity_summary -v
 
 Expected: FAIL with `AttributeError: module 'lesson_manager' has no attribute 'list_weekly_wrong_question_activity_summary'`.
 
-- [ ] **Step 3: Implement the store helper**
+- [x] **Step 3: Implement the store helper**
 
 Add this function near `list_weekly_wrong_question_followup_students()` in `lesson_manager.py`:
 
@@ -501,7 +501,7 @@ def list_weekly_wrong_question_activity_summary(
     }
 ```
 
-- [ ] **Step 4: Run store tests to verify they pass**
+- [x] **Step 4: Run store tests to verify they pass**
 
 Run:
 
@@ -511,7 +511,7 @@ python3 -m unittest tests.test_weekly_wrong_question_activity_summary -v
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit store aggregation**
+- [x] **Step 5: Commit store aggregation**
 
 Run:
 
@@ -528,7 +528,7 @@ git commit -m "feat: add weekly wrong question activity aggregation"
 - Modify: `app.py`
 - Modify: `tests/test_weekly_wrong_question_activity_summary.py`
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 Append this class to `tests/test_weekly_wrong_question_activity_summary.py`:
 
@@ -638,7 +638,7 @@ class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "week_start must be YYYY-MM-DD")
 ```
 
-- [ ] **Step 2: Run API tests to verify they fail**
+- [x] **Step 2: Run API tests to verify they fail**
 
 Run:
 
@@ -648,7 +648,7 @@ python3 -m unittest tests.test_weekly_wrong_question_activity_summary -v
 
 Expected: FAIL with `404` for `/api/admin/wrong-question-activity-summary`.
 
-- [ ] **Step 3: Wire the helper into Flask**
+- [x] **Step 3: Wire the helper into Flask**
 
 In `app.py`, add `list_weekly_wrong_question_activity_summary` to the existing `lesson_manager` import list.
 
@@ -682,7 +682,7 @@ def api_admin_wrong_question_activity_summary():
     )
 ```
 
-- [ ] **Step 4: Run backend focused tests**
+- [x] **Step 4: Run backend focused tests**
 
 Run:
 
@@ -692,7 +692,7 @@ python3 -m unittest tests.test_weekly_wrong_question_activity_summary tests.test
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit API layer**
+- [x] **Step 5: Commit API layer**
 
 Run:
 
@@ -709,7 +709,7 @@ git commit -m "feat: expose weekly activity summary API"
 - Modify: `frontend/src/smartWrongQuestions.ts`
 - Modify: `frontend/src/smart-wrong-questions.test.ts`
 
-- [ ] **Step 1: Write failing model tests**
+- [x] **Step 1: Write failing model tests**
 
 Add imports in `frontend/src/smart-wrong-questions.test.ts`:
 
@@ -784,7 +784,7 @@ test('normalizeWeeklyWrongQuestionActivitySummaryResponse preserves class teache
 });
 ```
 
-- [ ] **Step 2: Run frontend model tests to verify they fail**
+- [x] **Step 2: Run frontend model tests to verify they fail**
 
 Run:
 
@@ -794,7 +794,7 @@ cd frontend && npx tsx --test src/smart-wrong-questions.test.ts
 
 Expected: FAIL with missing exports from `smartWrongQuestions.ts`.
 
-- [ ] **Step 3: Add interfaces, path builder, and normalizer**
+- [x] **Step 3: Add interfaces, path builder, and normalizer**
 
 In `frontend/src/smartWrongQuestions.ts`, add these interfaces near the weekly followup interfaces:
 
@@ -896,7 +896,7 @@ export function normalizeWeeklyWrongQuestionActivitySummaryResponse(payload: unk
 }
 ```
 
-- [ ] **Step 4: Run frontend model tests to verify they pass**
+- [x] **Step 4: Run frontend model tests to verify they pass**
 
 Run:
 
@@ -906,7 +906,7 @@ cd frontend && npx tsx --test src/smart-wrong-questions.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit frontend model**
+- [x] **Step 5: Commit frontend model**
 
 Run:
 
@@ -923,7 +923,7 @@ git commit -m "feat: add weekly activity summary frontend model"
 - Modify: `frontend/src/SmartWrongQuestionsPage.tsx`
 - Modify: `frontend/src/smart-wrong-questions.test.ts`
 
-- [ ] **Step 1: Write failing page wiring tests**
+- [x] **Step 1: Write failing page wiring tests**
 
 Add these source wiring assertions to `frontend/src/smart-wrong-questions.test.ts`:
 
@@ -942,7 +942,7 @@ test('SmartWrongQuestionsPage wires super owner weekly activity summary without 
 });
 ```
 
-- [ ] **Step 2: Run page wiring tests to verify they fail**
+- [x] **Step 2: Run page wiring tests to verify they fail**
 
 Run:
 
@@ -952,7 +952,7 @@ cd frontend && npx tsx --test src/smart-wrong-questions.test.ts
 
 Expected: FAIL because `SmartWrongQuestionsPage.tsx` does not yet import the activity summary helpers or render `本周数据总结`.
 
-- [ ] **Step 3: Add imports and local types**
+- [x] **Step 3: Add imports and local types**
 
 In `frontend/src/SmartWrongQuestionsPage.tsx`, add these imports from `./smartWrongQuestions`:
 
@@ -971,7 +971,7 @@ type WrongQuestionOrganizationOption = {
 };
 ```
 
-- [ ] **Step 4: Add state and loader**
+- [x] **Step 4: Add state and loader**
 
 Inside `SmartWrongQuestionsPage`, add state near the weekly followup state:
 
@@ -1052,7 +1052,7 @@ Add this loader near `handleLoadWeeklyFollowups`:
   }, [canViewWeeklyActivitySummary, weeklyActivityOrganizationId, weeklyActivityWeekStart]);
 ```
 
-- [ ] **Step 5: Render the button and panel**
+- [x] **Step 5: Render the button and panel**
 
 Inside the action button group that currently renders `每周跟进`, add this button before `每周跟进`:
 
@@ -1179,7 +1179,7 @@ Render this panel before the existing `weeklyFollowupOpen` panel:
         )}
 ```
 
-- [ ] **Step 6: Run focused frontend tests**
+- [x] **Step 6: Run focused frontend tests**
 
 Run:
 
@@ -1189,7 +1189,7 @@ cd frontend && npx tsx --test src/smart-wrong-questions.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit page UI**
+- [x] **Step 7: Commit page UI**
 
 Run:
 
@@ -1205,7 +1205,7 @@ git commit -m "feat: render weekly activity summary panel"
 **Files:**
 - Modify: `handoff.md`
 
-- [ ] **Step 1: Run full focused proof through a temporary script**
+- [x] **Step 1: Run full focused proof through a temporary script**
 
 Create and run this temporary script outside the repo:
 
@@ -1244,7 +1244,7 @@ chmod +x "$tmp_script"
 
 Expected: all six sections pass and the last line is `proof passed`.
 
-- [ ] **Step 2: Update handoff**
+- [x] **Step 2: Update handoff**
 
 Add this bullet near the top of `handoff.md`:
 
@@ -1258,7 +1258,7 @@ Replace the current next-step bullet about reviewing `2026-05-04-weekly-wrong-qu
 - 超级管理员本周错题活跃数据总结下一步建议用真实 `super_owner` 账号手工 smoke：打开网页智能错题，展开 `本周数据总结`，切换本周/上周和某个机构，确认班级、老师、学生三块列表的数量与后台数据一致，且页面没有“第 1 名”“榜首”等强排名口吻。
 ```
 
-- [ ] **Step 3: Re-run proof after handoff edit**
+- [x] **Step 3: Re-run proof after handoff edit**
 
 Run:
 
@@ -1268,7 +1268,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit final handoff**
+- [x] **Step 4: Commit final handoff**
 
 Run:
 

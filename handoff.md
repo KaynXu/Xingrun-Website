@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-05 已完成“超级管理员本周错题活跃数据总结”：新增 `lesson_manager.list_weekly_wrong_question_activity_summary()` 与 `GET /api/admin/wrong-question-activity-summary`，仅 `super_owner` 可访问，支持周次和可选机构过滤；网页智能错题为 `super_owner` 新增 `本周数据总结` 面板，展示本周活跃班级、活跃老师、活跃学生三块自然列举列表，不做强排名、AI 总结、图表或导出。面板已加 request-version guard 防止旧响应覆盖新筛选结果，长机构/班级/老师/学生名称已加换行保护。proof `/tmp/xingrun_weekly_activity_summary_proof.sh` 已通过：后端活动汇总 8 条、每周跟进回归 13 条、前端智能错题 55 条、frontend full test 238 条、frontend build、`git diff --check`。
 - 2026-05-05 已在已确认设计稿基础上新增“超级管理员本周错题活跃数据总结”实现计划：`docs/superpowers/plans/2026-05-05-weekly-wrong-question-activity-summary.md`。计划按 TDD 拆为后端汇总函数、超级管理员 API、前端数据模型、网页智能错题超级管理员面板、最终验证和 handoff；实现目标仍是三块自然列举列表，不做 AI 总结、图表、导出或自动提醒。
 - 2026-05-05 已实现 `docs/superpowers/specs/2026-05-05-practice-based-weekly-wrong-question-followup-design.md` 的“基于本周错题练习 PDF 的每周跟进”新方案：每周跟进清单优先读取老师已生成的本周错题练习单，未生成但仍有 6 个月内可练错题的学生标记为 `needs_practice_sheet`，网页智能错题里可单个或批量让 AI 补生成练习；AI 家长微信话术现在只基于已就绪的本周练习 PDF 生成并缓存 `source_sheet_id`；班级合集下载改为打包本周练习 PDF；已掌握错题按 30/60 天复现候选、6 个月后软归档退出日常候选。proof `tmp/xingrun_practice_based_weekly_followup_proof_20260505.sh` 已通过：前端全量 233 条测试、前端生产构建、后端相关 52 条 pytest、`miniprogram/backend` TypeScript build 和 `git diff --check`。
 - 2026-05-05 已按用户确认方向新增下一阶段“每周错题练习跟进”设计稿：`docs/superpowers/specs/2026-05-05-practice-based-weekly-wrong-question-followup-design.md`。新口径把跟进对象从“本周原始错题/学生错题本”改为“老师本周生成的错题练习 PDF”；老师已生成练习时 AI 根据练习单写微信话术，未生成练习时支持单个或批量让 AI 自动补生成；AI 自动生成会按最近未练、未掌握数量和易反复错题动态选择分类；已掌握错题按基础题 60 天、易反复题 30 天复现；错题 6 个月后软归档，退出日常练习和每周跟进但历史仍可查。
@@ -192,8 +193,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 超级管理员本周错题活跃数据总结已进入实现计划阶段；下一步按 `docs/superpowers/plans/2026-05-05-weekly-wrong-question-activity-summary.md` 执行，优先补 `lesson_manager.list_weekly_wrong_question_activity_summary()` 和 `GET /api/admin/wrong-question-activity-summary`，再接入网页智能错题 `本周数据总结` 面板。
-- 本功能下一步建议用真实 owner/admin 账号做一次网页手工 smoke：在智能错题选择一个班级，打开“每周练习跟进”，检查已有练习学生能生成/复制微信话术，未生成练习学生能单个/批量提交 AI 生成，等待练习任务 ready 后重新加载清单，再下载本周练习合集 zip。
+- 超级管理员本周错题活跃数据总结下一步建议用真实 `super_owner` 账号在网页智能错题手工 smoke：打开 `本周数据总结`，分别查看全部机构和指定机构、空数据周次和有数据周次，确认列表数量、机构名、班级/老师/学生文案符合现场使用。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
 - 小程序上传 2.0 稳定性 Ralph 已无下一条自动 story；后续只剩手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。

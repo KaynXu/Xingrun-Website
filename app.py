@@ -133,6 +133,7 @@ from lesson_manager import (
     list_students_for_class,
     list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
+    list_weekly_wrong_question_activity_summary,
     list_weekly_wrong_question_followup_students,
     list_registration_requests_for_actor,
     list_unbound_classes_for_user_claim,
@@ -2247,6 +2248,33 @@ def api_admin_organizations():
     if error:
         return error
     return jsonify({"items": list_organizations()})
+
+
+@app.route("/api/admin/wrong-question-activity-summary", methods=["GET"])
+def api_admin_wrong_question_activity_summary():
+    _, error = _require_super_owner()
+    if error:
+        return error
+    try:
+        week_start_date, week_end_date = _weekly_range(request.args.get("week_start", ""))
+    except ValueError:
+        return jsonify({"error": "week_start must be YYYY-MM-DD"}), 400
+
+    organization_id = request.args.get("organization_id", 0, type=int)
+    summary = list_weekly_wrong_question_activity_summary(
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+        organization_id=organization_id if organization_id else None,
+    )
+    return jsonify(
+        {
+            "week_start": week_start_date,
+            "week_end": week_end_date,
+            "class_items": summary["class_items"],
+            "teacher_items": summary["teacher_items"],
+            "student_items": summary["student_items"],
+        }
+    )
 
 
 @app.route("/api/admin/organizations/<int:org_id>", methods=["DELETE"])
