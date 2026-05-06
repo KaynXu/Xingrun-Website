@@ -5,7 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-005`：家长上传任务轮询已覆盖 parent/openId/binding 本机恢复、页面重开不重传裁切图、状态请求短暂失败不丢任务、ready/failed/pending 混合批次、损坏 storage、stale pending 和 missing-record。`parent-upload` 现在遇到网站返回 `state=missing_record` 且原始 `status=ready` 时，会继续按可恢复后台任务处理，不再误标“识别完成”或清掉恢复记录；`parent-wrongbook` 同步展示错题记录暂未同步的恢复文案。下一条是 `MP-STABILITY-006`。仍需生产 Redis/RQ 和真机错题本/PDF smoke，本地 proof 不等于真机网络证据。
+- 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-006`：已审计 `parent-wrongbook` WXML/WXSS/JS/tests 和 `parentApi` 错题本/PDF 调用。现有定向覆盖已确认错题本会先刷新上传 task ids 再拉错题记录和 PDF metadata，失败任务不展示 AI 成功题干，background/missing-record 上传会继续可见并提示 PDF 未就绪，缺 `pdf_url`、下载失败和 `wx.openDocument` 失败都有可恢复提示。本轮未改运行时代码；下一条是 `MP-STABILITY-007`。仍需生产 Redis/RQ 和真机错题本/PDF smoke，本地 proof 不等于真机网络证据。
 - 2026-05-06 已新增小程序 Ralph Stability Loop 指令：后续稳定性 Ralph 以“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”为真实家长路径，并新增 PDF/LaTeX 独立 gate。Ralph 不能只看小程序 `查看 PDF` 按钮，必须覆盖 PDF metadata、`wx.downloadFile + wx.openDocument` 恢复态、后端学生错题库 PDF 生成、KaTeX 渲染、ReportLab fallback、旧 LaTeX 转义/裸 LaTeX/非法公式 stress case。指令文件是 `scripts/ralph/miniprogram_stability_loop_instructions.md`，设计稿是 `docs/superpowers/specs/2026-05-06-miniprogram-ralph-stability-loop-design.md`，本地流程 proof 是 `scripts/ralph/miniprogram_stability_loop_proof.sh`。
 - 2026-05-06 已按最新 UI 反馈继续收口家长首页孩子卡片：`parent-home` 的孩子卡片现在是左侧信息、右侧操作的紧凑行布局；班级和任课老师合并展示，当前孩子只显示 `当前上传` 标签，不再保留 disabled 的“当前上传孩子”按钮；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；`parent-only-scope`、视觉 polish proof 和最终视觉 guardrail 已更新并通过。
 - 2026-05-06 已完成家长小程序两个底部 Tab 分区：`我的` 用于设置当前上传孩子、查看错题本和新增绑定孩子，`拍照上传` 用于给当前孩子拍照/选图上传错题；`parent-upload` 现在支持 Tab 无 `bindingId` 进入，只有一个孩子时自动选中，多孩子未设置时先选孩子，无绑定时引导去“我的”。本轮只改小程序前端入口、`parent-home`、`parent-upload` 和本地 current binding helper，不改上传 API、bridge 或网站后端。最新 proof 已通过 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh`。
@@ -39,6 +39,7 @@
 - 家长首页、家长绑定页和家长错题本页的关键操作区已改成窄屏优先布局：孩子卡片、学生绑定卡片和错题库 PDF 入口不再横向挤压，操作按钮改为全宽单行，优先降低安卓/鸿蒙/微信容器窄屏下的换行和误触风险。
 
 ## 本轮完成
+- 2026-05-06 已完成 `MP-STABILITY-006`：审计 `parent-wrongbook` WXML/WXSS/JS/tests 和 `parentApi` 错题本/PDF 调用，确认现有定向测试覆盖 ready task 刷新顺序、failed 不展示 AI 成功题干、background/missing-record 可见、PDF 未就绪、缺 `pdf_url`、下载失败和 `openDocument` 失败。未改运行时代码；真机/开发者工具错题本和 PDF 入口 smoke 仍是手工缺口。下一条是 `MP-STABILITY-007`。
 - 2026-05-06 已完成 `MP-STABILITY-005`：审计 `parent-upload` 上传任务恢复和轮询、`parent-wrongbook` 上传进度刷新、`parentApi` 状态请求、网站任务 `state/is_stale/record_missing` payload。新增回归锁定 missing-record 不可误判 ready、stale pending 长时处理文案、错题本 missing-record 恢复展示，并把这些 fixture 纳入 parent upload guardrail。下一条是 `MP-STABILITY-006`。
 - 2026-05-06 已完成 `MP-STABILITY-004`：审计 `miniprogram/miniprogram/utils/parentApi.js` 与 `miniprogram/backend/src` 家长上传代理错误映射；bridge 已覆盖网站 `202/400/413/502/timeout/malformed` 映射，新增 `parentApi` 回归并修复 malformed bridge 2xx 上传响应，确保家长看到草稿保留的可重试提示。
 - 2026-05-06 已完成 `MP-STABILITY-003`：`parent-upload` 的 recorder start/onError 失败会清理 stale recording 状态并写入可恢复提示，不再把语音错因卡停在“录音中”；新增回归覆盖 recorder start 失败、recorder onError、语音上传失败保草稿，以及 parentApi 语音上传 timeout/network/5xx retryable 映射。旧上传验收 guardrail 已要求这些 fixture。
@@ -85,7 +86,7 @@
 - 这轮超大图片上传修复已用本地自动测试覆盖导出尺寸规划，但还没有让真实小课家长重新拍一张原图提交来确认线上不再触发 `413`。
 
 ## 下一步
-- 用户手动继续：`scripts/ralph/run_codex_ralph.sh --check` 查看下一条 `MP-STABILITY-006`，`scripts/ralph/run_codex_ralph.sh 1` 跑一条，或 `scripts/ralph/run_codex_ralph.sh 9` 最多跑剩余队列。
+- 用户手动继续：`scripts/ralph/run_codex_ralph.sh --check` 查看下一条 `MP-STABILITY-007`，`scripts/ralph/run_codex_ralph.sh 1` 跑一条，或 `scripts/ralph/run_codex_ralph.sh 9` 最多跑剩余队列。
 - 后续小程序稳定性 Ralph 先按 `scripts/ralph/miniprogram_stability_loop_instructions.md` 执行；触碰 PDF/LaTeX/worker/runbook 时，除小程序视觉和上传 guardrail 外，还必须跑 `production_upload_smoke_runbook_proof.sh`、后端 PDF/LaTeX unittest 和前端 LaTeX/PDF renderer tests。
 - 当前小程序视觉 Ralph 自动 story 已全部完成；后续只剩微信开发者工具/真机视觉 smoke，并可用 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh` 重新跑本地最终验收。
 - 小程序窄屏/微信运行时还需要手工 smoke：微信开发者工具和至少一台窄屏真机打开 parent-home、parent-bind、parent-upload、parent-wrongbook，确认长学生/班级名、按钮标签、上传底部 safe-area、PDF 入口和专题编辑控件都没有遮挡或误触风险。

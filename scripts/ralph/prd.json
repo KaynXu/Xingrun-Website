@@ -154,8 +154,8 @@
         "Run scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh, scripts/ralph/miniprogram_upload_stability_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Audited parent-wrongbook WXML/WXSS/JS/tests and parentApi wrongbook/PDF calls. Existing focused coverage confirms wrongbook refreshes upload task ids before records/PDF metadata, failed upload tasks do not show AI success copy, background and missing-record uploads stay visible with PDF-not-ready copy, missing pdf_url is recoverable, and openWrongQuestionLibraryPdf handles not-ready, download-failed, and open-failed states. No runtime change was needed; true-device wrongbook/PDF visual smoke remains a manual check."
     },
     {
       "id": "MP-STABILITY-007",
