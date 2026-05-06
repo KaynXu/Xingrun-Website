@@ -170,8 +170,8 @@
         "Run scripts/ralph/production_upload_smoke_runbook_proof.sh, python -m unittest tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt -v, frontend LaTeX/PDF renderer tests, scripts/ralph/miniprogram_upload_stability_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Audited ai_processor.py, pdf_engine.py, frontend wrongQuestionLatex, browser library/practice PDF renderers, backend PDF tests, frontend LaTeX renderer tests, and worker PDF failure coverage. Hardened indexed bare roots such as \\sqrt[3]{8} for both frontend PDF HTML text fallback and ReportLab fallback, while existing tests continue to cover JSON-eaten backslashes, bare LaTeX, \\frac, \\text, \\mathbb{R}, \\left/\\right, powers/subscripts, multi-line formulas, Chinese prose mixed with formulas, geometry/image records, malformed formulas, browser KaTeX rendering, ReportLab fallback, and worker record preservation when PDF rebuild fails."
     },
     {
       "id": "MP-STABILITY-008",

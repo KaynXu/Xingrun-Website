@@ -168,6 +168,7 @@ function normalizeBareLatexText(value) {
 
   for (let loop = 0; loop < 5; loop += 1) {
     const next = normalized
+      .replace(/\\sqrt\[([^[\]]+)\]\{([^{}]+)\}/g, (_, index, content) => `${renderSuperscript(index)}√(${content})`)
       .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
       .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
     if (next === normalized) {

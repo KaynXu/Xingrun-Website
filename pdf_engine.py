@@ -301,6 +301,11 @@ def _normalize_bare_latex_text(text: str) -> str:
 
     for _ in range(5):
         next_value = normalized
+        next_value = re.sub(
+            r'\\sqrt\[([^\[\]]+)\]\{([^{}]+)\}',
+            lambda match: f"{_render_bare_latex_superscript(match.group(1))}√({match.group(2)})",
+            next_value,
+        )
         next_value = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1)/(\2)', next_value)
         next_value = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', next_value)
         if next_value == normalized:
@@ -351,6 +356,11 @@ def _latex_to_readable(text: str) -> str:
         s = m.group(1)
         # \frac{a}{b} → (a)/(b)，递归处理嵌套
         for _ in range(5):
+            s = re.sub(
+                r'\\sqrt\[([^\[\]]+)\]\{([^{}]*)\}',
+                lambda m: f"{_render_bare_latex_superscript(m.group(1))}√({m.group(2)})",
+                s,
+            )
             s2 = re.sub(r'\\frac\{([^{}]*)\}\{([^{}]*)\}', r'(\1)/(\2)', s)
             if s2 == s:
                 break

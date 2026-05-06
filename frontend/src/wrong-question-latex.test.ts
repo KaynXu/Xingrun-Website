@@ -106,6 +106,18 @@ test('buildWrongQuestionLatexPreviewModel normalizes bare latex fragments inside
   assert.match(preview.html, /\/\(/);
 });
 
+test('buildWrongQuestionLatexPreviewModel normalizes indexed roots in bare latex prose', () => {
+  const preview = buildWrongQuestionLatexPreviewModel(
+    String.raw`计算 \sqrt[3]{8} + \sqrt[4]{16}，且 a \in \mathbb{R}。`,
+  );
+
+  assert.equal(preview.errors.length, 0);
+  assert.match(preview.html, /³√\(8\)/);
+  assert.match(preview.html, /⁴√\(16\)/);
+  assert.match(preview.html, /∈ ℝ/);
+  assert.doesNotMatch(preview.html, /\\sqrt|\\mathbb/);
+});
+
 test('buildWrongQuestionLatexPreviewModel turns literal newline escapes back into line breaks without breaking latex commands', () => {
   const preview = buildWrongQuestionLatexPreviewModel(
     '第一步先看条件\\n\\n(2) 若 a > e，证明 $f(3) \\neq 1$。',
