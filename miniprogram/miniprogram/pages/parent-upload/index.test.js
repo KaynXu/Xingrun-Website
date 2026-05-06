@@ -317,6 +317,124 @@ test('chooseImages treats parent cancel as a stable no-op', async () => {
   assert.equal(page.data.errorMessage, '');
 });
 
+test('toggleActiveBoxVoiceRecording recovers when recorder start fails', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const imageItem = {
+    id: 'img_1',
+    localPath: '/tmp/source.jpg',
+    boxes: [
+      {
+        id: 'box_1',
+        x: 0.1,
+        y: 0.2,
+        width: 0.4,
+        height: 0.3,
+        childReasonInputMode: 'text',
+        childReasonText: '',
+      },
+    ],
+    activeBoxId: 'box_1',
+  };
+  const page = createPageInstance(pageConfig, {
+    imageItems: [imageItem],
+    selectedImageId: 'img_1',
+    currentImage: imageItem,
+    activeBox: imageItem.boxes[0],
+  });
+  const recorderManager = {
+    onStop() {},
+    onError() {},
+    stop() {},
+    start() {
+      throw new Error('permission denied');
+    },
+  };
+
+  await withWx(async () => {
+    page.onLoad();
+    assert.doesNotThrow(() => page.toggleActiveBoxVoiceRecording());
+  }, {
+    getSystemInfoSync() {
+      return { windowWidth: 360, windowHeight: 800 };
+    },
+    getRecorderManager() {
+      return recorderManager;
+    },
+  });
+
+  assert.equal(page.data.recordingBoxId, '');
+  assert.equal(page.data.currentImage.boxes[0].childReasonInputMode, 'voice');
+  assert.match(page.data.currentImage.boxes[0].reasonStatusText, /录音启动失败/);
+  assert.match(page.data.errorMessage, /录音启动失败/);
+});
+
+test('recorder onError clears the stale recording hint on the active box', async () => {
+  let recorderErrorHandler = null;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const imageItem = {
+    id: 'img_1',
+    localPath: '/tmp/source.jpg',
+    boxes: [
+      {
+        id: 'box_1',
+        x: 0.1,
+        y: 0.2,
+        width: 0.4,
+        height: 0.3,
+        childReasonInputMode: 'voice',
+        childReasonText: '',
+        voiceFilePath: '',
+        reasonStatusText: '录音中，再点一次结束。',
+      },
+    ],
+    activeBoxId: 'box_1',
+  };
+  const page = createPageInstance(pageConfig, {
+    imageItems: [imageItem],
+    selectedImageId: 'img_1',
+    currentImage: imageItem,
+    activeBox: imageItem.boxes[0],
+    recordingBoxId: 'box_1',
+  });
+
+  await withWx(async () => {
+    page.onLoad();
+    page.recordingTarget = {
+      imageId: 'img_1',
+      boxId: 'box_1',
+    };
+    recorderErrorHandler({ errMsg: 'record:fail auth deny' });
+  }, {
+    getSystemInfoSync() {
+      return { windowWidth: 360, windowHeight: 800 };
+    },
+    getRecorderManager() {
+      return {
+        onStop() {},
+        onError(callback) {
+          recorderErrorHandler = callback;
+        },
+        stop() {},
+        start() {},
+      };
+    },
+  });
+
+  assert.equal(page.data.recordingBoxId, '');
+  assert.match(page.data.currentImage.boxes[0].reasonStatusText, /录音失败/);
+  assert.match(page.data.errorMessage, /录音失败/);
+});
+
 test('submitUpload exposes each parent-visible upload stage without real network calls', async () => {
   let statusRefreshCalls = 0;
   const pageConfig = loadUploadPage({
@@ -378,6 +496,46 @@ test('submitUpload releases the page and shows a specific failed stage after cro
   assert.equal(page.data.uploadStage, 'failed');
   assert.match(page.data.uploadStageText, /裁切图片失败，请重试/);
   assert.match(page.data.errorMessage, /裁切图片失败，请重试/);
+});
+
+test('submitUpload keeps the voice draft when audio upload fails before image submission', async () => {
+  let submitCalls = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => {
+      const error = new Error('网络连接中断，录音还在本机，请检查网络后重试。');
+      error.retryable = true;
+      throw error;
+    },
+    submitParentWrongQuestion: async () => {
+      submitCalls += 1;
+      return { task: { id: 9001, status: 'pending' } };
+    },
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const uploadData = createReadyUploadData();
+  const currentImage = uploadData.imageItems[0];
+  const page = createPageInstance(pageConfig, {
+    ...uploadData,
+    selectedImageId: currentImage.id,
+    currentImage,
+    activeBox: currentImage.boxes[0],
+  });
+  page.exportBoxCrop = async () => '/tmp/crop.jpg';
+
+  await withWx(async () => {
+    await page.submitUpload();
+  });
+
+  assert.equal(submitCalls, 0);
+  assert.equal(page.data.submitting, false);
+  assert.equal(page.data.uploadStage, 'failed');
+  assert.match(page.data.uploadStageText, /录音还在本机/);
+  assert.match(page.data.errorMessage, /录音还在本机/);
+  assert.equal(page.data.imageItems.length, 1);
+  assert.equal(page.data.currentImage.id, 'img_1');
+  assert.equal(page.data.activeBox.id, 'box_1');
+  assert.equal(page.data.activeBox.voiceFilePath, '/tmp/reason.mp3');
 });
 
 test('submitUpload reports crop export failure by item without clearing the draft', async () => {

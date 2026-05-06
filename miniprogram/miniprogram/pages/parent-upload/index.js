@@ -202,12 +202,15 @@ Page({
       this.setData({ recordingBoxId: '' });
       void this.commitImageItems(imageItems, this.data.selectedImageId, false);
     });
-    this.recorderManager.onError((error) => {
+    this.recorderManager.onError(() => {
+      const target = this.recordingTarget;
       this.recordingTarget = null;
+      const message = '录音失败，请重试，也可以不录音直接提交。';
       this.setData({
         recordingBoxId: '',
-        errorMessage: (error && error.errMsg) || '录音失败，请重试。',
+        errorMessage: message,
       });
+      this.markVoiceRecordingFailed(target, message);
     });
   },
 
@@ -323,6 +326,31 @@ Page({
     return new Promise((resolve) => {
       this.setData(data, resolve);
     });
+  },
+
+  markVoiceRecordingFailed(target, message) {
+    if (!target) {
+      return;
+    }
+    const imageItems = this.data.imageItems.map((item) => {
+      if (item.id !== target.imageId) {
+        return item;
+      }
+      return {
+        ...item,
+        boxes: (item.boxes || []).map((box) => {
+          if (box.id !== target.boxId) {
+            return box;
+          }
+          return {
+            ...box,
+            childReasonInputMode: 'voice',
+            reasonStatusText: message,
+          };
+        }),
+      };
+    });
+    void this.commitImageItems(imageItems, this.data.selectedImageId, false);
   },
 
   wait(ms) {
@@ -978,13 +1006,26 @@ Page({
     });
 
     void this.commitImageItems(imageItems, this.data.selectedImageId, false);
-    this.recorderManager.start({
-      duration: 60000,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      encodeBitRate: 96000,
-      format: 'mp3',
-    });
+    try {
+      this.recorderManager.start({
+        duration: 60000,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        encodeBitRate: 96000,
+        format: 'mp3',
+      });
+    } catch (_error) {
+      const message = '录音启动失败，请重试，也可以不录音直接提交。';
+      this.recordingTarget = null;
+      this.setData({
+        recordingBoxId: '',
+        errorMessage: message,
+      });
+      this.markVoiceRecordingFailed({
+        imageId: currentImage.id,
+        boxId: activeBox.id,
+      }, message);
+    }
   },
 
   async removeActiveBox() {

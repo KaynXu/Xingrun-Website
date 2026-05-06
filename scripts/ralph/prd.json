@@ -103,8 +103,8 @@
         "Run scripts/ralph/miniprogram_upload_stability_proof.sh and scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh through a temporary script."
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Audited parent-upload reason mode, text input, voice recording, empty voice recording fallback, upload job construction, and parentApi payload mapping. Hardened recorder start/onError recovery so failed recording attempts clear stale recording state and keep voice input optional. Added coverage for audio upload failure draft retention and parentApi audio timeout/network/5xx retryable mapping; guardrail now requires these fixtures. Backend task acceptance remains image-first with optional child reason text/audio URL, and upload copy stays at task accepted/background processing until backend ready."
     },
     {
       "id": "MP-STABILITY-004",

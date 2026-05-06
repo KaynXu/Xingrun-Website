@@ -524,6 +524,58 @@ test('uploadParentReasonAudio uses a shorter audio timeout and keeps the recordi
   assert.equal(capturedTimeout, 20000);
 });
 
+test('uploadParentReasonAudio maps network failures to a retryable recording-preserving message', async () => {
+  const wxApi = {
+    uploadFile({ fail }) {
+      fail({ errMsg: 'uploadFile:fail network interrupted' });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => uploadParentReasonAudio(wxApi, 'https://example.com', {
+      filePath: '/tmp/mock-audio.mp3',
+    }),
+    (error) => {
+      assert.equal(error.message, '网络连接中断，录音还在本机，请检查网络后重试。');
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
+test('uploadParentReasonAudio maps transient server failures to a retryable recording-preserving message', async () => {
+  const wxApi = {
+    uploadFile({ success }) {
+      success({
+        statusCode: 502,
+        data: JSON.stringify({
+          error: 'bad gateway',
+        }),
+      });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => uploadParentReasonAudio(wxApi, 'https://example.com', {
+      filePath: '/tmp/mock-audio.mp3',
+    }),
+    (error) => {
+      assert.equal(error.message, '服务器暂时没有接住语音，录音还在本机，请稍后重试。');
+      assert.equal(error.statusCode, 502);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
 test('fetchWrongQuestionUploadTask fetches the server task status', async () => {
   let capturedRequest = null;
   const wxApi = {

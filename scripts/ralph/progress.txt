@@ -42,10 +42,12 @@ Status:
 - Active PRD is mini program parent stability with nine MP-STABILITY stories.
 - MP-STABILITY-001 passed: scripts/ralph/miniprogram_stability_loop_proof.sh now directly validates active PRD shape, nine MP-STABILITY stories, parent upload-to-wrongbook-to-PDF scope, stability instruction reference, and visual/upload/PDF/LaTeX/code-review gate coverage.
 - MP-STABILITY-002 passed: parent-upload real-use interaction audit confirmed existing coverage for append/switch image, manual boxes, tiny/narrow resize, rotation, deletion, crop/export failure draft retention, submit retry, and interaction locks. Added a regression and fix so canceling camera/album selection is a stable no-op instead of showing a parent-visible upload failure. Updated visual/upload guardrails so archived visual/upload PRD pass gates can run as reusable baselines under the active MP-STABILITY queue.
-- Next story: MP-STABILITY-003.
+- MP-STABILITY-003 passed: text/voice reason input remains optional; voice mode with no saved recording still falls back to text/image-only submit, recorder start/onError failures now clear stale "recording" UI state, and audio upload timeout/network/5xx failures keep the draft and recording retryable. The parent upload guardrail now explicitly requires these voice recovery fixtures.
+- Next story: MP-STABILITY-004.
 
 Manual checks that cannot be honestly automated here:
 - MP-STABILITY-002 still needs one WeChat DevTools or real narrow-phone upload-page visual smoke for choose image/camera, manual tiny/narrow box resize, rotate, delete, cancel picker, and submit button safe-area behavior; no true-device visual evidence was available in this local run.
+- MP-STABILITY-003 still needs one WeChat DevTools or real-phone smoke for recorder permission denied/start failure, recorder runtime error, no-recording voice mode submit, and audio upload retry; local source tests are not true-device recording evidence.
 - WeChat DevTools screenshots for parent-home, parent-upload, parent-wrongbook, and parent-bind when relevant.
 - At least one real narrow phone smoke for upload, wrongbook refresh, PDF download, and PDF open.
 - Production Redis/RQ worker smoke with a safe parent test account and real task id.
