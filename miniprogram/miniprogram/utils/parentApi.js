@@ -290,6 +290,20 @@ function uploadFile(wxApi, options) {
           try {
             payload = JSON.parse(responseData);
           } catch (_error) {
+            if (statusCode === 413 && errorMessages.oversizeMessage) {
+              reject(createParentApiError(errorMessages.oversizeMessage, {
+                statusCode,
+                retryable: false,
+              }));
+              return;
+            }
+            if ((statusCode >= 500 || (statusCode >= 200 && statusCode < 300)) && errorMessages.serverRetryMessage) {
+              reject(createParentApiError(errorMessages.serverRetryMessage, {
+                statusCode,
+                retryable: true,
+              }));
+              return;
+            }
             reject(createParentApiError(extractRequestErrorMessage(response, '上传返回解析失败'), {
               statusCode,
               retryable: false,

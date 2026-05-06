@@ -498,6 +498,35 @@ test('submitParentWrongQuestion maps network failures to a retryable draft-prese
   );
 });
 
+test('submitParentWrongQuestion maps malformed bridge responses to a retryable draft-preserving message', async () => {
+  const wxApi = {
+    uploadFile({ success }) {
+      success({
+        statusCode: 202,
+        data: 'not json',
+      });
+    },
+    getStorageSync() {
+      return undefined;
+    },
+    setStorageSync() {},
+  };
+
+  await assert.rejects(
+    () => submitParentWrongQuestion(wxApi, 'https://example.com', {
+      openId: 'openid-parent-1',
+      bindingId: 21,
+      filePath: '/tmp/crop.jpg',
+    }),
+    (error) => {
+      assert.equal(error.message, '服务器暂时没有接住上传，草稿已保留，请稍后点“统一提交所有错题”重试。');
+      assert.equal(error.statusCode, 202);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
 test('uploadParentReasonAudio uses a shorter audio timeout and keeps the recording retryable', async () => {
   let capturedTimeout = 0;
   const wxApi = {

@@ -120,8 +120,8 @@
         "Run bridge parent upload tests, parentApi tests, scripts/ralph/miniprogram_upload_stability_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Audited parentApi upload mapping and bridge parent upload proxy coverage. Bridge already preserves website 202 accepted task payloads with optional fields missing and maps 400 validation, 413 final oversize, 502 retryable enqueue, timeout, and malformed website acceptance responses into structured errors. Hardened parentApi malformed bridge 2xx upload responses so parents see the existing draft-preserving retry message instead of raw non-JSON text; 413 malformed upload responses still use the smaller-crop/retake guidance."
     },
     {
       "id": "MP-STABILITY-005",
