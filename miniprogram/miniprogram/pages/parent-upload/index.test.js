@@ -1003,6 +1003,41 @@ test('pollUploadTasks treats malformed task payloads as pending with the origina
   assert.match(page.data.uploadStageText, /云端继续识别/);
 });
 
+test('pollUploadTasks keeps missing-record tasks recoverable instead of marking them ready', async () => {
+  const storedWrites = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async (_wx, _serverUrl, params) => ({
+      task: {
+        id: params.taskId,
+        status: 'ready',
+        state: 'missing_record',
+        record_missing: true,
+        retryable: true,
+      },
+    }),
+  });
+  const page = createPageInstance(pageConfig, createReadyUploadData());
+  page.data.successTaskIds = [9001];
+
+  await withWx(async () => {
+    const summary = await page.pollUploadTasks('openid-parent-1', [9001]);
+    assert.equal(summary.state, 'background');
+    assert.match(summary.description, /错题记录/);
+  }, {
+    setStorageSync(_key, value) {
+      storedWrites.push(value);
+    },
+  });
+
+  assert.deepEqual(page.data.successTaskIds, [9001]);
+  assert.equal(page.data.uploadStage, 'background');
+  assert.match(page.data.uploadStageText, /错题记录/);
+  assert.equal(storedWrites.at(-1).tasks[0].id, 9001);
+});
+
 test('restoreAcceptedUploadTasks resumes pending stored tasks without re-uploading cropped images', async () => {
   const requestedTaskIds = [];
   const storedWrites = [];

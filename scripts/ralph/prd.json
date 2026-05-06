@@ -137,8 +137,8 @@
         "Run scripts/ralph/miniprogram_upload_stability_proof.sh and scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh through a temporary script."
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Audited parent/openId/binding scoped task persistence, page reopen recovery, transient status failures, mixed ready/failed/pending batches, corrupted storage recovery, stale pending copy, and backend missing-record state handling. Hardened parent-upload polling so website tasks with state=missing_record and status=ready remain recoverable/background instead of being marked ready and cleared; parent-upload and parent-wrongbook now surface missing-record copy, and stale pending tasks get long-running recovery copy. Parent upload guardrail now requires these fixtures."
     },
     {
       "id": "MP-STABILITY-006",

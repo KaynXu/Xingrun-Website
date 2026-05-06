@@ -230,12 +230,41 @@ function buildUploadJobs(imageItems) {
   }, []);
 }
 
+function getUploadTaskStatus(task) {
+  const source = task && typeof task === 'object' ? task : {};
+  const state = String(source.state || '').trim();
+  if (state === 'missing_record') {
+    return 'processing';
+  }
+  if (state === 'pending' || state === 'processing' || state === 'ready' || state === 'failed') {
+    return state;
+  }
+  return String(source.status || '').trim();
+}
+
+function isMissingRecordUploadTask(task) {
+  const source = task && typeof task === 'object' ? task : {};
+  return String(source.state || '').trim() === 'missing_record'
+    || source.record_missing === true
+    || source.recordMissing === true;
+}
+
+function isStaleUploadTask(task) {
+  const source = task && typeof task === 'object' ? task : {};
+  const status = getUploadTaskStatus(source);
+  return (source.is_stale === true || source.isStale === true)
+    && status !== 'ready'
+    && status !== 'failed';
+}
+
 function buildUploadTaskSummary(tasks, options) {
   const list = Array.isArray(tasks) ? tasks : [];
-  const readyCount = list.filter((task) => String(task.status || '') === 'ready').length;
-  const failedTasks = list.filter((task) => String(task.status || '') === 'failed');
+  const readyCount = list.filter((task) => getUploadTaskStatus(task) === 'ready' && !isMissingRecordUploadTask(task)).length;
+  const failedTasks = list.filter((task) => getUploadTaskStatus(task) === 'failed');
   const failedCount = failedTasks.length;
   const pendingCount = Math.max(0, list.length - readyCount - failedCount);
+  const missingRecordCount = list.filter(isMissingRecordUploadTask).length;
+  const staleCount = list.filter(isStaleUploadTask).length;
 
   if (failedCount) {
     const message = String(
@@ -246,13 +275,42 @@ function buildUploadTaskSummary(tasks, options) {
       || '请重新拍清楚一点',
     ).trim();
     const hasAcceptedItems = readyCount > 0 || pendingCount > 0;
-    const pendingMessage = pendingCount
-      ? `；${pendingCount} 条还在${options && options.background ? '云端继续识别，可以先离开本页，稍后回错题本查看' : '云端继续识别'}`
-      : '';
+    let pendingMessage = '';
+    if (pendingCount) {
+      if (missingRecordCount) {
+        pendingMessage = `；${missingRecordCount} 条错题记录暂时还没有同步出来`;
+      } else if (staleCount) {
+        pendingMessage = `；${pendingCount} 条还在云端处理，时间比平时久，可以稍后回错题本刷新`;
+      } else {
+        pendingMessage = `；${pendingCount} 条还在${options && options.background ? '云端继续识别，可以先离开本页，稍后回错题本查看' : '云端继续识别'}`;
+      }
+    }
     return {
       state: hasAcceptedItems ? 'partial_failed' : 'failed',
       title: hasAcceptedItems ? '部分识别失败' : '识别失败',
       description: `${failedCount} 条识别失败：${message}${pendingMessage}`,
+      readyCount,
+      failedCount,
+      pendingCount,
+    };
+  }
+
+  if (missingRecordCount) {
+    return {
+      state: options && options.background ? 'background' : 'pending',
+      title: options && options.background ? '错题记录同步中' : '正在同步错题记录',
+      description: `${missingRecordCount} 条上传已接收，但错题记录暂时还没有同步出来。请稍后刷新错题本，任务不会丢失。`,
+      readyCount,
+      failedCount,
+      pendingCount,
+    };
+  }
+
+  if (options && options.background && staleCount) {
+    return {
+      state: 'background',
+      title: '云端处理时间较长',
+      description: `${staleCount} 条上传已接收，但云端处理时间比平时久。任务不会丢失，可以稍后回错题本刷新。`,
       readyCount,
       failedCount,
       pendingCount,

@@ -214,6 +214,42 @@ test('onShow keeps background-processing uploads visible and explains PDF is not
   assert.match(page.data.libraryPdfStatusText, /识别完成后/);
 });
 
+test('onShow keeps missing-record uploads visible as recoverable background work', async () => {
+  const pageConfig = loadWrongbookPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchWrongQuestionUploadTask: async () => ({
+      task: {
+        id: '9004',
+        status: 'ready',
+        state: 'missing_record',
+        record_missing: true,
+        retryable: true,
+      },
+    }),
+    fetchChildWrongQuestions: async () => ({ items: [] }),
+    fetchChildWrongQuestionLibrary: async () => ({
+      total_items: 0,
+      pdf_url: '',
+    }),
+    updateChildWrongQuestionTopicCategory: async () => ({ ok: true }),
+  });
+  const page = createPageInstance(pageConfig);
+
+  await withWx(async () => {
+    page.onLoad({
+      studentId: '101',
+      studentName: 'Alice',
+      uploadTaskIds: '9004',
+    });
+    await page.onShow();
+  });
+
+  assert.equal(page.data.uploadTaskSummary.state, 'background');
+  assert.match(page.data.uploadStatusText, /错题记录/);
+  assert.equal(page.data.libraryPdfReady, false);
+  assert.match(page.data.libraryPdfStatusText, /识别完成后/);
+});
+
 test('onShow surfaces missing pdf_url as a recoverable PDF state', async () => {
   const pageConfig = loadWrongbookPage({
     ensureParentSession: async () => ({ openId: 'openid-parent-1' }),

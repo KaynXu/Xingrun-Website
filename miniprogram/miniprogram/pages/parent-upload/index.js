@@ -88,7 +88,11 @@ function normalizeFetchedUploadTask(taskId, payloadTask, previousTask) {
   if (payloadTaskId === undefined || payloadTaskId === null || String(payloadTaskId) !== String(taskId)) {
     return fallbackTask;
   }
-  const status = String(payloadTask.status || '').trim();
+  const state = String(payloadTask.state || '').trim();
+  let status = UPLOAD_TASK_STATUS_MAP[state] ? state : String(payloadTask.status || '').trim();
+  if (state === 'missing_record' || payloadTask.record_missing === true || payloadTask.recordMissing === true) {
+    status = 'processing';
+  }
   if (!UPLOAD_TASK_STATUS_MAP[status]) {
     return fallbackTask;
   }
