@@ -50,9 +50,9 @@ test('parent home is the my section and no longer exposes upload actions inside 
   const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
 
   assert.equal(homeTemplate.includes('我的孩子'), true);
-  assert.equal(homeTemplate.includes('设置当前上传孩子'), true);
+  assert.equal(homeTemplate.includes('设为上传'), true);
   assert.equal(homeTemplate.includes('上传错题'), false);
-  assert.equal(homeTemplate.includes('查看错题本'), true);
+  assert.equal(homeTemplate.includes('错题本'), true);
 });
 
 test('tab page navigation returns to the my section with switchTab', () => {
@@ -291,11 +291,13 @@ test('parent mini program pages keep action areas stable for narrow phone screen
 
   assert.equal(homeTemplate.includes('上传后可在错题本查看整理进度。'), false);
   assert.match(homeTemplate, /class="binding-info"[\s\S]*class="binding-actions"/);
-  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: column;');
-  assertRuleIncludes(homeStyles, '.binding-card', 'align-items: stretch;');
+  assert.equal(homeTemplate.includes('class="ghost-btn mini-btn current-btn" disabled'), false);
+  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: row;');
+  assertRuleIncludes(homeStyles, '.binding-card', 'align-items: center;');
   assertRuleIncludes(homeStyles, '.binding-info', 'flex: 1;');
-  assertRuleIncludes(homeStyles, '.binding-actions', 'width: 100%;');
-  assertRuleIncludes(homeStyles, '.mini-btn', 'width: 100%;');
+  assertRuleIncludes(homeStyles, '.binding-actions', 'flex: 0 0 auto;');
+  assertRuleIncludes(homeStyles, '.binding-actions', 'align-items: flex-end;');
+  assertRuleIncludes(homeStyles, '.mini-btn', 'min-width: 160rpx;');
   assertRuleIncludes(homeStyles, '.mini-btn', 'white-space: nowrap;');
 
   assertRuleIncludes(bindStyles, '.student-card', 'flex-direction: column;');
@@ -382,9 +384,9 @@ test('parent-facing primary actions appear before nearby secondary follow-up act
     uploadTemplate.indexOf('</view>', uploadTemplate.indexOf('<view class="success-actions">')),
   );
 
-  assert.ok(homeActions.indexOf('设置当前上传孩子') >= 0, 'home child card should include current child action');
-  assert.ok(homeActions.indexOf('查看错题本') >= 0, 'home child card should include wrongbook action');
-  assert.ok(homeActions.indexOf('设置当前上传孩子') < homeActions.indexOf('查看错题本'));
+  assert.ok(homeActions.indexOf('设为上传') >= 0, 'home child card should include current child action');
+  assert.ok(homeActions.indexOf('错题本') >= 0, 'home child card should include wrongbook action');
+  assert.ok(homeActions.indexOf('设为上传') < homeActions.indexOf('错题本'));
   assert.match(successActions, /class="primary-btn success-action-btn"[^>]*bindtap="openChildWrongbook"/);
   assert.match(successActions, /class="ghost-btn success-action-btn"[^>]*bindtap="backHome"/);
   assert.ok(successActions.indexOf('openChildWrongbook') < successActions.indexOf('backHome'));

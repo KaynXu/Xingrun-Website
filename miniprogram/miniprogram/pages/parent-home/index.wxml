@@ -36,17 +36,15 @@
 
     <view wx:for="{{bindings}}" wx:key="id" class="binding-card">
       <view class="binding-info">
-        <text wx:if="{{item.id === currentBindingId}}" class="current-binding-tag">当前上传孩子</text>
-        <text class="binding-name">{{item.studentName || '未命名学生'}}</text>
-        <view class="binding-meta-stack">
-          <text class="binding-meta">{{item.className || '未命名班级'}}</text>
-          <text class="binding-meta">任课老师：{{item.teacherName || '任课老师待补充'}}</text>
+        <view class="binding-name-row">
+          <text class="binding-name">{{item.studentName || '未命名学生'}}</text>
+          <text wx:if="{{item.id === currentBindingId}}" class="current-binding-tag">当前上传</text>
         </view>
+        <text class="binding-meta">{{item.className || '未命名班级'}} · {{item.teacherName || '任课老师待补充'}}</text>
       </view>
       <view class="binding-actions">
-        <button wx:if="{{item.id !== currentBindingId}}" class="primary-btn mini-btn" data-binding-id="{{item.id}}" bindtap="setCurrentBinding">设置当前上传孩子</button>
-        <button wx:else class="ghost-btn mini-btn current-btn" disabled>当前上传孩子</button>
-        <button class="ghost-btn mini-btn" data-student-id="{{item.studentId}}" data-student-name="{{item.studentName}}" data-class-name="{{item.className}}" data-class-grade="{{item.classGrade}}" bindtap="goWrongbook">查看错题本</button>
+        <button wx:if="{{item.id !== currentBindingId}}" class="primary-btn mini-btn" data-binding-id="{{item.id}}" bindtap="setCurrentBinding">设为上传</button>
+        <button class="ghost-btn mini-btn" data-student-id="{{item.studentId}}" data-student-name="{{item.studentName}}" data-class-name="{{item.className}}" data-class-grade="{{item.classGrade}}" bindtap="goWrongbook">错题本</button>
       </view>
     </view>
   </view>

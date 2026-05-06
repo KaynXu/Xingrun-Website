@@ -5,6 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
+- 2026-05-06 已按最新 UI 反馈继续收口家长首页孩子卡片：`parent-home` 的孩子卡片现在是左侧信息、右侧操作的紧凑行布局；班级和任课老师合并展示，当前孩子只显示 `当前上传` 标签，不再保留 disabled 的“当前上传孩子”按钮；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；`parent-only-scope`、视觉 polish proof 和最终视觉 guardrail 已更新并通过。
 - 2026-05-06 已完成家长小程序两个底部 Tab 分区：`我的` 用于设置当前上传孩子、查看错题本和新增绑定孩子，`拍照上传` 用于给当前孩子拍照/选图上传错题；`parent-upload` 现在支持 Tab 无 `bindingId` 进入，只有一个孩子时自动选中，多孩子未设置时先选孩子，无绑定时引导去“我的”。本轮只改小程序前端入口、`parent-home`、`parent-upload` 和本地 current binding helper，不改上传 API、bridge 或网站后端。最新 proof 已通过 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh`。
 - 2026-05-05 已按真机反馈继续修复家长绑定页“班级邀请码”输入框文字被裁切/看不见的问题：`pages/parent-bind/index.wxss` 的 `.field-input` 现在显式设置 `display: block`、`width: 100%`、`height/min-height/line-height: 88rpx` 和水平 padding，不再只依赖微信真机可能不稳定的 `min-height`。`parent-only-scope.test.js` 和视觉 polish proof 已锁定该输入框固定高度合同。未改绑定 JS/API 行为。
 - 2026-05-04 已按用户截图收口家长错题本“专题筛选”两项按钮横向滑动和宽度不满问题：`parent-wrongbook` 的专题筛选不再使用 `scroll-view scroll-x`，改为面板内 flex wrap；专题 chip 按两列等宽撑满容器，长专题名在按钮内省略。定向页面测试已锁定无横向滚动和撑满布局，最终 proof 走 `/tmp/xingrun_wrongbook_topic_filter_layout_proof.sh`。
