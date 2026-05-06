@@ -97,14 +97,16 @@ from pathlib import Path
 root = Path.cwd()
 prd = json.loads((root / "scripts/ralph/prd.json").read_text(encoding="utf-8"))
 stories = prd.get("userStories", [])
+story_ids = [str(story.get("id", "")) for story in stories]
 pending = [story.get("id", "<missing id>") for story in stories if story.get("passes") is not True]
 allow_current = os.environ.get("XR_RALPH_ALLOW_CURRENT_STORY_PENDING") == "1"
 
-if pending and not (allow_current and pending == ["MP-UPLOAD-012"]):
+if story_ids and all(story_id.startswith("MP-STABILITY-") for story_id in story_ids):
+    print(f"ok PRD pass gate: active stability PRD has {len(pending)} pending stories; parent upload guardrail still runs as baseline")
+elif pending and not (allow_current and pending == ["MP-UPLOAD-012"]):
     print("PRD pass gate failed: " + ", ".join(pending))
     sys.exit(1)
-
-if pending:
+elif pending:
     print("ok PRD pass gate: MP-UPLOAD-012 is the only pending story in pre-completion mode")
 else:
     print(f"ok PRD pass gate: all {len(stories)} stories are passes=true")

@@ -86,8 +86,8 @@
         "Run scripts/ralph/miniprogram_upload_stability_proof.sh, scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Audited parent-upload WXML/WXSS/JS/model coverage for choose/take/append image, switch image, manual boxes, tiny/narrow boxes, drag/shrink, rotate, delete, crop/export failure, submit/retry, and interaction locks. Added regression that canceling camera/album selection is a no-op instead of a parent-visible upload failure. True-device upload page visual smoke remains a manual check; local narrow-screen structural guardrails passed."
     },
     {
       "id": "MP-STABILITY-003",

@@ -6,7 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-001`：当前 `scripts/ralph/prd.json` 仍为 9 条 `MP-STABILITY-*` story，产品焦点明确是 `miniprogram/miniprogram/` 家长端，以及真实路径“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”；`scripts/ralph/miniprogram_stability_loop_proof.sh` 现在会直接校验活跃 PRD 队列、scope、稳定性指令引用，以及 visual/upload/PDF/LaTeX/code-review gates，防止漂回网站前端或纯视觉队列。下一条是 `MP-STABILITY-002`。
+- 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-002`：家长上传页真实交互审计已覆盖选图/拍照入口、追加图片、切换当前图片、手动题框、拖动/缩小、小题框/窄题框、旋转、删除、裁切失败保草稿、提交重试和交互锁；本轮修复了取消相机/相册选择时误显示上传失败的问题，并让视觉/上传旧 guardrail 在当前 `MP-STABILITY-*` 队列下作为基线运行。下一条是 `MP-STABILITY-003`。仍需微信开发者工具或真机补一次窄屏上传页视觉 smoke，不要把本地结构 proof 当成真机视觉证据。
 - 2026-05-06 已新增“小程序 Ralph Stability Loop”流程设计和可复制指令，范围按用户修正为“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”，并把 PDF/LaTeX 稳定性列为独立 gate：Ralph 后续检查不能只看小程序 `查看 PDF` 按钮，还必须覆盖错题本 PDF metadata、`wx.downloadFile + wx.openDocument` 失败恢复、后端学生错题库 PDF 生成、KaTeX 浏览器渲染、ReportLab fallback、旧 LaTeX 转义/裸 LaTeX/非法公式等 stress case。新增 `scripts/ralph/miniprogram_stability_loop_instructions.md` 和 `scripts/ralph/miniprogram_stability_loop_proof.sh`，并扩展生产上传 smoke runbook 的 PDF/LaTeX 检查。
 - 2026-05-06 已按最新 UI 反馈继续收口小程序家长首页孩子卡片：`parent-home` 的已绑定孩子卡片从纵向大卡改为左侧孩子信息、右侧紧凑操作列；班级和任课老师合并为一行，当前孩子只用 `当前上传` 标签表达，不再用 disabled 按钮占操作位；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；视觉 polish proof 和小程序视觉总 guardrail 已更新并通过。
 - 2026-05-06 已完成小程序家长端两个底部 Tab 分区：`我的` 负责绑定孩子、设置当前上传孩子和进入错题本，`拍照上传` 支持作为 Tab 无 `bindingId` 进入，自动选中唯一孩子、优先使用已设置孩子，多孩子未选时先展示孩子选择区，无绑定时引导去“我的”绑定。未改绑定 API、上传 API、错题识别、错题本 PDF、bridge 或网站后端语义；最新 proof 已通过小程序视觉总 guardrail 和上传稳定性 proof。

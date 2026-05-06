@@ -5,7 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
-- 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-001`：`scripts/ralph/prd.json` 仍是 9 条 `MP-STABILITY-*` story，明确 focus 在 `miniprogram/miniprogram/` 家长端真实路径“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”。`scripts/ralph/miniprogram_stability_loop_proof.sh` 现在会直接校验活跃 PRD 队列、scope、稳定性指令引用，以及 visual/upload/PDF/LaTeX/code-review gates，防止漂回网站前端或纯视觉队列。下一条是 `MP-STABILITY-002`。
+- 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-002`：家长上传页真实交互审计已覆盖选图/拍照入口、追加图片、切换当前图片、手动题框、拖动/缩小、小题框/窄题框、旋转、删除、裁切失败保草稿、提交重试和交互锁；本轮修复了取消相机/相册选择时误显示上传失败的问题，并让视觉/上传旧 guardrail 在当前 `MP-STABILITY-*` 队列下作为基线运行。下一条是 `MP-STABILITY-003`。仍需微信开发者工具或真机补一次窄屏上传页视觉 smoke，不要把本地结构 proof 当成真机视觉证据。
 - 2026-05-06 已新增小程序 Ralph Stability Loop 指令：后续稳定性 Ralph 以“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”为真实家长路径，并新增 PDF/LaTeX 独立 gate。Ralph 不能只看小程序 `查看 PDF` 按钮，必须覆盖 PDF metadata、`wx.downloadFile + wx.openDocument` 恢复态、后端学生错题库 PDF 生成、KaTeX 渲染、ReportLab fallback、旧 LaTeX 转义/裸 LaTeX/非法公式 stress case。指令文件是 `scripts/ralph/miniprogram_stability_loop_instructions.md`，设计稿是 `docs/superpowers/specs/2026-05-06-miniprogram-ralph-stability-loop-design.md`，本地流程 proof 是 `scripts/ralph/miniprogram_stability_loop_proof.sh`。
 - 2026-05-06 已按最新 UI 反馈继续收口家长首页孩子卡片：`parent-home` 的孩子卡片现在是左侧信息、右侧操作的紧凑行布局；班级和任课老师合并展示，当前孩子只显示 `当前上传` 标签，不再保留 disabled 的“当前上传孩子”按钮；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；`parent-only-scope`、视觉 polish proof 和最终视觉 guardrail 已更新并通过。
 - 2026-05-06 已完成家长小程序两个底部 Tab 分区：`我的` 用于设置当前上传孩子、查看错题本和新增绑定孩子，`拍照上传` 用于给当前孩子拍照/选图上传错题；`parent-upload` 现在支持 Tab 无 `bindingId` 进入，只有一个孩子时自动选中，多孩子未设置时先选孩子，无绑定时引导去“我的”。本轮只改小程序前端入口、`parent-home`、`parent-upload` 和本地 current binding helper，不改上传 API、bridge 或网站后端。最新 proof 已通过 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh`。
@@ -39,6 +39,7 @@
 - 家长首页、家长绑定页和家长错题本页的关键操作区已改成窄屏优先布局：孩子卡片、学生绑定卡片和错题库 PDF 入口不再横向挤压，操作按钮改为全宽单行，优先降低安卓/鸿蒙/微信容器窄屏下的换行和误触风险。
 
 ## 本轮完成
+- 2026-05-06 已完成 `MP-STABILITY-002`：家长上传页取消相机/相册选择现在不会把微信 cancel 当作上传失败展示；新增页面回归锁定 cancel no-op 和 `sourceType: ['camera', 'album']`。`miniprogram_visual_acceptance_guardrail_proof.sh` 与 `parent_upload_2_acceptance_guardrail_proof.sh` 的旧 PRD pass gate 已兼容当前稳定性 PRD，使它们继续作为视觉/上传基线 proof 运行；真机/开发者工具窄屏视觉仍是手工缺口。
 - 2026-05-04 已完成 `MP-VISUAL-010`：新增最终验收脚本 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh`，检查 PRD 全 story pass、四个家长页视觉系统和动作层级、主/次/删除/底部 safe-area/窄屏合同、活跃页面无原型/调试/内部测试文案，以及本轮没有网站前端、网站后端或 bridge 改动；脚本随后串跑视觉 polish proof 和上传稳定性 proof。最终临时 proof `/tmp/xingrun_mp_visual_010_final_proof.sh` 通过后，当前视觉 PRD 无下一条自动 story。
 - 2026-05-04 已完成 `MP-VISUAL-009`：共享 page shell 现在限制 100vw、隐藏横向溢出，并给 parent-home、parent-bind、parent-upload、parent-wrongbook 的页面底部预留 safe-area；共享按钮 primitive 增加 `min-width: 0`、`max-width: 100%` 和 `text-overflow: clip`，上传底部 action bar 补 `constant()/env()` 双 fallback。视觉 proof 新增微信窄屏运行时结构检查，临时 proof `/tmp/xingrun_mp_visual_009_proof.sh` 串跑视觉 proof 和上传稳定性 proof 通过。手工项仍是微信开发者工具/窄屏真机看长文本、按钮、底部 safe-area、PDF 入口和专题编辑控件。
 - 2026-05-04 已完成 `MP-VISUAL-008`：家长首页、绑定页、上传页和错题本页的非正常状态统一为共享状态 marker + 标题 + 说明 + 操作结构；上传进度/结果、错题本上传进度和错题识别中/失败卡片也纳入同一状态层级，首页加载失败补了 `重新加载` 恢复操作。`scripts/ralph/miniprogram_visual_polish_proof.sh` 和 `scripts/ralph/miniprogram_upload_stability_proof.sh` 已通过临时 proof `/tmp/xingrun_mp_visual_008_proof.sh`。

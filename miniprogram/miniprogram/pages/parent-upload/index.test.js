@@ -288,6 +288,35 @@ test('removeActiveBox keeps the current image and selects the next neighboring b
   assert.equal(page.data.activeBox.id, 'box_3');
 });
 
+test('chooseImages treats parent cancel as a stable no-op', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    imageItems: [],
+    selectedImageId: '',
+    errorMessage: '',
+  });
+  let chooseImageOptions = null;
+
+  await withWx(async () => {
+    page.chooseImages();
+    chooseImageOptions.fail({ errMsg: 'chooseImage:fail cancel' });
+  }, {
+    chooseImage(options) {
+      chooseImageOptions = options;
+    },
+  });
+
+  assert.deepEqual(chooseImageOptions.sourceType, ['camera', 'album']);
+  assert.deepEqual(page.data.imageItems, []);
+  assert.equal(page.data.selectedImageId, '');
+  assert.equal(page.data.errorMessage, '');
+});
+
 test('submitUpload exposes each parent-visible upload stage without real network calls', async () => {
   let statusRefreshCalls = 0;
   const pageConfig = loadUploadPage({

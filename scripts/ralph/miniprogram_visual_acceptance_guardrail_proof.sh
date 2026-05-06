@@ -155,9 +155,14 @@ function expectOnePrimaryInBlock(pageText, startNeedle, endNeedle, label) {
   }
 }
 
-check('PRD pass gate is complete or only MP-VISUAL-010 is pending in pre-completion mode', () => {
+check('PRD pass gate is complete for visual PRD or reusable for stability PRD', () => {
   const stories = prd.userStories || [];
+  const storyIds = stories.map((story) => String(story.id || ''));
   const pending = stories.filter((story) => story.passes !== true).map((story) => story.id || '<missing id>');
+  if (storyIds.length && storyIds.every((id) => /^MP-STABILITY-\d{3}$/.test(id))) {
+    console.log(`ok PRD pass gate: active stability PRD has ${pending.length} pending stories; visual contracts still run as baseline`);
+    return;
+  }
   if (pending.length === 0) {
     console.log(`ok PRD pass gate: all ${stories.length} stories are passes=true`);
     return;

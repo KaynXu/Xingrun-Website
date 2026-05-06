@@ -741,6 +741,9 @@ Page({
         });
       },
       fail: (error) => {
+        if (String((error && error.errMsg) || '').toLowerCase().indexOf('cancel') >= 0) {
+          return;
+        }
         this.setData({
           errorMessage: (error && error.errMsg) || '选择图片失败',
         });
