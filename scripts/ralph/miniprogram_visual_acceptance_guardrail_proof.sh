@@ -66,6 +66,9 @@ const pageStyles = {
   upload: read('pages/parent-upload/index.wxss'),
   wrongbook: read('pages/parent-wrongbook/index.wxss'),
 };
+const pageScripts = {
+  upload: read('pages/parent-upload/index.js'),
+};
 const appStyles = read('app.wxss');
 
 function check(label, assertion) {
@@ -305,6 +308,13 @@ check('parent-upload success state makes wrongbook progress primary and home sec
   expectOnePrimaryInBlock(pages.upload, '<view class="success-actions">', '</view>', 'parent-upload success action group');
   expectOrder(pages.upload, 'openChildWrongbook', 'backHome');
   expectRule(pageStyles.upload, '.success-action-btn', 'white-space: nowrap;');
+});
+
+check('parent-upload accepted state does not expose raw task ids to parents', () => {
+  if (/setUploadStage\('task_accepted'[\s\S]{0,180}taskId/.test(pageScripts.upload)) {
+    throw new Error('task_accepted parent-facing copy still includes taskId');
+  }
+  expectIncludes(pageScripts.upload, '云端正在识别');
 });
 
 check('parent-wrongbook keeps PDF entry, filters, cards, and topic actions in clear hierarchy', () => {

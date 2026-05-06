@@ -187,8 +187,8 @@
         "Run scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh and git diff --check through a temporary script."
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Ran the local visual/true-device smoke checklist scope against parent-home, parent-upload, parent-wrongbook, and parent-bind source/structural contracts. No WeChat DevTools, real-phone, video, or user screenshot evidence was available in this local run, so true-device visual stability is not claimed and exact manual checks remain recorded in progress.txt. Found and removed one parent-facing technical leftover: parent-upload no longer shows raw upload task ids in the accepted-stage copy. Added deterministic coverage in parent-upload tests and the visual acceptance guardrail so task_accepted copy cannot include taskId again."
     },
     {
       "id": "MP-STABILITY-009",

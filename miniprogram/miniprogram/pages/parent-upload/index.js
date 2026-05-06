@@ -1360,7 +1360,7 @@ Page({
           return result;
         }, {});
         this.persistAcceptedUploadTasks(session.openId, this.data.binding, acceptedUploadTasks);
-        this.setUploadStage('task_accepted', `${jobLabel}已接收${taskId ? `，任务 ${taskId}` : ''}。`, '任务已接收');
+        this.setUploadStage('task_accepted', `${jobLabel}已接收，云端正在识别。`, '任务已接收');
       }
 
       this.setData({

@@ -470,6 +470,7 @@ test('submitUpload exposes each parent-visible upload stage without real network
   assert.match(stageUpdates[1].text, /语音说明/);
   assert.match(stageUpdates[2].text, /题图/);
   assert.match(stageUpdates[3].text, /已接收/);
+  assert.doesNotMatch(stageUpdates[3].text, /任务\s*9001|9001/);
   assert.equal(statusRefreshCalls, 0);
   assert.equal(page.data.uploadTaskSummary.state, 'background');
   assert.match(page.data.uploadTaskSummary.description, /可以先离开本页/);
