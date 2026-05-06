@@ -210,20 +210,22 @@ check('shared visual system is present for finished parent pages', () => {
 
 check('parent-home uses finished entry hierarchy and one primary action per child section', () => {
   expectIncludes(pages.home, '星润家长端');
+  expectIncludes(pages.home, '我的孩子');
   expectIncludes(pages.home, 'class="hero-card"');
   expectIncludes(pages.home, 'class="state-card empty-card"');
   expectIncludes(pages.home, '<button class="primary-btn" bindtap="goBindMore">去绑定孩子</button>');
   expectIncludes(pages.home, 'class="binding-actions"');
-  expectIncludes(pages.home, '<button class="primary-btn mini-btn"');
+  expectIncludes(pages.home, 'class="primary-btn mini-btn"');
   expectIncludes(pages.home, '<button class="ghost-btn mini-btn"');
+  expectNotIncludes(pages.home, 'bindtap="goUpload"');
   expectNotIncludes(pages.home, '上传后可在错题本查看整理进度。');
-  expectOrder(pages.home, '上传错题', '查看错题本');
+  expectOrder(pages.home, '设置当前上传孩子', '查看错题本');
   expectOnePrimaryInBlock(pages.home, '<view class="binding-actions">', '</view>', 'parent-home child action group');
-  expectRule(pageStyles.home, '.binding-card', 'flex-direction: row;');
-  expectRule(pageStyles.home, '.binding-card', 'align-items: center;');
+  expectRule(pageStyles.home, '.binding-card', 'flex-direction: column;');
+  expectRule(pageStyles.home, '.binding-card', 'align-items: stretch;');
   expectRule(pageStyles.home, '.binding-info', 'flex: 1;');
   expectRule(pageStyles.home, '.binding-actions', 'flex-direction: column;');
-  expectRule(pageStyles.home, '.binding-actions', 'width: 190rpx;');
+  expectRule(pageStyles.home, '.binding-actions', 'width: 100%;');
   expectRule(pageStyles.home, '.mini-btn', 'white-space: nowrap;');
 });
 

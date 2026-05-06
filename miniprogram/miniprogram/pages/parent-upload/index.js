@@ -4,6 +4,8 @@ const {
   fetchParentBindings,
   fetchParentTopicCategorySuggestions,
   fetchWrongQuestionUploadTask,
+  getCurrentParentBindingId,
+  setCurrentParentBindingId,
   submitParentWrongQuestion,
   uploadParentReasonAudio,
 } = require('../../utils/parentApi');
@@ -119,7 +121,10 @@ function buildTopicCategoryOptions(suggestions) {
 
 Page({
   data: {
+    loadingBindings: true,
     binding: null,
+    bindings: [],
+    needsBindingSelection: false,
     imageItems: [],
     selectedImageId: '',
     currentImage: null,
@@ -207,7 +212,12 @@ Page({
   },
 
   async onShow() {
-    const bindingId = Number(this.options.bindingId || 0);
+    const requestedBindingId = Number(this.options.bindingId || 0);
+
+    this.setData({
+      loadingBindings: true,
+      errorMessage: '',
+    });
 
     try {
       const session = await ensureParentSession(wx, app.globalData.serverUrl);
@@ -215,14 +225,27 @@ Page({
       const bindings = await fetchParentBindings(wx, app.globalData.serverUrl, {
         openId: session.openId,
       });
-      const binding = bindings.find((item) => item.id === bindingId) || null;
+      const storedBindingId = getCurrentParentBindingId(wx);
+      let binding = requestedBindingId
+        ? bindings.find((item) => item.id === requestedBindingId) || null
+        : bindings.find((item) => item.id === storedBindingId) || null;
+      if (!binding && !requestedBindingId && bindings.length === 1) {
+        binding = bindings[0];
+      }
+      const needsBindingSelection = !binding && !requestedBindingId && bindings.length > 1;
       app.globalData.parentBindings = bindings;
+      if (binding) {
+        setCurrentParentBindingId(wx, binding.id);
+        app.globalData.currentParentBindingId = binding.id;
+      }
       const showPrimaryTopicCategory = isPrimarySchoolBinding(binding);
       this.setData({
+        bindings,
         binding,
+        needsBindingSelection,
         showPrimaryTopicCategory,
         topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
-        errorMessage: binding ? '' : '没有找到这个孩子的最新绑定关系，请先重新绑定。',
+        errorMessage: requestedBindingId && !binding ? '没有找到这个孩子的最新绑定关系，请先重新绑定。' : '',
       });
       if (binding) {
         if (showPrimaryTopicCategory) {
@@ -232,12 +255,46 @@ Page({
       }
     } catch (error) {
       this.setData({
+        bindings: [],
         binding: null,
+        needsBindingSelection: false,
         showPrimaryTopicCategory: false,
         topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
         errorMessage: error instanceof Error ? error.message : '绑定关系同步失败',
       });
+    } finally {
+      this.setData({ loadingBindings: false });
     }
+  },
+
+  async selectUploadBinding(event) {
+    const bindingId = Number(event.currentTarget.dataset.bindingId || 0);
+    const binding = (this.data.bindings || []).find((item) => item.id === bindingId) || null;
+    if (!binding) {
+      return;
+    }
+
+    setCurrentParentBindingId(wx, binding.id);
+    app.globalData.currentParentBindingId = binding.id;
+    const showPrimaryTopicCategory = isPrimarySchoolBinding(binding);
+    this.setData({
+      binding,
+      needsBindingSelection: false,
+      showPrimaryTopicCategory,
+      topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
+      errorMessage: '',
+    });
+    if (showPrimaryTopicCategory) {
+      const session = app.globalData.parentSession || {};
+      await this.refreshTopicCategoryOptions(session.openId);
+    }
+    if (app.globalData.parentSession && app.globalData.parentSession.openId) {
+      await this.restoreAcceptedUploadTasks(app.globalData.parentSession.openId, binding);
+    }
+  },
+
+  goMySection() {
+    wx.switchTab({ url: '/pages/parent-home/index' });
   },
 
   async refreshTopicCategoryOptions(openId) {
@@ -1373,6 +1430,6 @@ Page({
   },
 
   backHome() {
-    wx.reLaunch({ url: '/pages/parent-home/index' });
+    wx.switchTab({ url: '/pages/parent-home/index' });
   },
 });

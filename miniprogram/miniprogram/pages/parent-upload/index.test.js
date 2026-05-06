@@ -410,6 +410,8 @@ test('onShow exposes topic controls only for primary bindings and merges website
       suggestionRequests.push(params);
       return { items: ['周期问题', '几何'] };
     },
+    getCurrentParentBindingId: () => 0,
+    setCurrentParentBindingId: () => {},
     uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
     submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
     fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
@@ -442,6 +444,108 @@ test('onShow exposes topic controls only for primary bindings and merges website
 
   assert.equal(middlePage.data.showPrimaryTopicCategory, false);
   assert.equal(suggestionRequests.length, 1);
+});
+
+test('onShow auto-selects the only binding when upload opens as a tab', async () => {
+  let storedBindingId = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [{
+      id: 21,
+      studentName: 'Alice',
+      className: '初一 1 班',
+      classGrade: '初一',
+    }],
+    getCurrentParentBindingId: () => storedBindingId,
+    setCurrentParentBindingId: (_wx, bindingId) => {
+      storedBindingId = Number(bindingId) || 0;
+    },
+    fetchParentTopicCategorySuggestions: async () => ({ items: [] }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig);
+  page.options = {};
+
+  await withWx(async () => {
+    await page.onShow();
+  }, {
+    getStorageSync() {
+      return '';
+    },
+    setStorageSync() {},
+  });
+
+  assert.equal(page.data.binding.id, 21);
+  assert.equal(page.data.needsBindingSelection, false);
+  assert.equal(storedBindingId, 21);
+});
+
+test('onShow asks the parent to choose a child when multiple bindings exist and no current child is stored', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [
+      { id: 21, studentName: 'Alice', className: '初一 1 班', classGrade: '初一' },
+      { id: 22, studentName: 'Bob', className: '初一 1 班', classGrade: '初一' },
+    ],
+    getCurrentParentBindingId: () => 0,
+    setCurrentParentBindingId: () => {},
+    fetchParentTopicCategorySuggestions: async () => ({ items: [] }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig);
+  page.options = {};
+
+  await withWx(async () => {
+    await page.onShow();
+  }, {
+    getStorageSync() {
+      return '';
+    },
+    setStorageSync() {},
+  });
+
+  assert.equal(page.data.binding, null);
+  assert.equal(page.data.needsBindingSelection, true);
+  assert.equal(page.data.bindings.length, 2);
+});
+
+test('selectUploadBinding switches upload context without navigating away', async () => {
+  let storedBindingId = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [
+      { id: 21, studentName: 'Alice', className: '初一 1 班', classGrade: '初一' },
+      { id: 22, studentName: 'Bob', className: '初一 1 班', classGrade: '初一' },
+    ],
+    getCurrentParentBindingId: () => storedBindingId,
+    setCurrentParentBindingId: (_wx, bindingId) => {
+      storedBindingId = Number(bindingId) || 0;
+    },
+    fetchParentTopicCategorySuggestions: async () => ({ items: [] }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig);
+  page.options = {};
+
+  await withWx(async () => {
+    await page.onShow();
+    await page.selectUploadBinding({ currentTarget: { dataset: { bindingId: '22' } } });
+  }, {
+    getStorageSync() {
+      return '';
+    },
+    setStorageSync() {},
+  });
+
+  assert.equal(page.data.binding.id, 22);
+  assert.equal(page.data.needsBindingSelection, false);
+  assert.equal(storedBindingId, 22);
 });
 
 test('submitUpload sends unclassified topic for non-primary bindings', async () => {

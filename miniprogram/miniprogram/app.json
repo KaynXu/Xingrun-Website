@@ -12,6 +12,22 @@
     "navigationBarTitleText": "星润错题助手",
     "navigationBarTextStyle": "white"
   },
+  "tabBar": {
+    "color": "#60738f",
+    "selectedColor": "#2375d8",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/parent-home/index",
+        "text": "我的"
+      },
+      {
+        "pagePath": "pages/parent-upload/index",
+        "text": "拍照上传"
+      }
+    ]
+  },
   "style": "v2",
   "sitemapLocation": "sitemap.json"
 }

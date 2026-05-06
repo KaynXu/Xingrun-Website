@@ -28,7 +28,7 @@
   <view wx:if="{{existingBindings.length}}" class="panel-card">
     <view class="section-head">
       <text class="section-title">已绑定孩子</text>
-      <button class="ghost-btn" size="mini" bindtap="goHome">去上传</button>
+      <button class="ghost-btn" size="mini" bindtap="goHome">去我的</button>
     </view>
     <view class="binding-list">
       <view wx:for="{{existingBindings}}" wx:key="id" class="bound-child-card">
