@@ -204,8 +204,8 @@
         "Run the final proof, scripts/ralph/run_codex_ralph.sh --check, and git diff --check through a temporary script."
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added scripts/ralph/miniprogram_stability_acceptance_guardrail_proof.sh as the final stability acceptance guardrail. It verifies the active PRD is the nine-story MP-STABILITY queue, remains scoped to the parent mini program upload-to-wrongbook-to-PDF path, excludes unrelated website/business workflows, requires every MP-STABILITY story to be passes=true before reporting final completion, runs the visual acceptance guardrail, parent upload 2.0 guardrail, stability loop proof, upload stability proof, production smoke runbook proof, backend PDF/LaTeX tests, frontend PDF/LaTeX renderer tests, and git diff --check, and prints the remaining WeChat DevTools, real-phone, production Redis/RQ, and production PDF smoke checks as manual work."
     }
   ]
 }
