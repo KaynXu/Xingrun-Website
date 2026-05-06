@@ -6,7 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-05-06 已确认小程序家长端做成两个底部 Tab 分区：`我的` 负责绑定孩子/新增绑定孩子，`拍照上传` 负责给当前选中的孩子上传错题；设计稿已写入 `docs/superpowers/specs/2026-05-06-miniprogram-parent-two-tab-sections-design.md`。实现尚未开始，下一步应只改小程序前端入口、首页和上传页选择孩子行为，不改绑定 API、上传 API、错题识别或后台任务语义。
+- 2026-05-06 已完成小程序家长端两个底部 Tab 分区：`我的` 负责绑定孩子、设置当前上传孩子和进入错题本，`拍照上传` 支持作为 Tab 无 `bindingId` 进入，自动选中唯一孩子、优先使用已设置孩子，多孩子未选时先展示孩子选择区，无绑定时引导去“我的”绑定。未改绑定 API、上传 API、错题识别、错题本 PDF、bridge 或网站后端语义；最新 proof 已通过小程序视觉总 guardrail 和上传稳定性 proof。
 - 2026-05-05 已按真机反馈继续收口小程序家长绑定页邀请码输入框文字不可见问题：`parent-bind` 的 `.field-input` 现在显式设置 `display: block`、`width: 100%`、`height/min-height/line-height: 88rpx` 和水平 padding，避免微信真机原生 `input` 不按 `min-height` 撑开导致文字被裁切；`parent-only-scope` 和视觉 polish proof 已锁定固定高度合同。本轮未改绑定 API、页面 JS、上传或错题本行为。
 - 2026-05-04 已按用户截图收口小程序家长错题本“专题筛选”按钮宽度和横向滑动问题：`parent-wrongbook` 专题筛选从横向 `scroll-view` 改为面板内 flex 布局，专题 chip 两列等宽撑满容器，长专题名会在按钮内省略，不再让“全部 / 未分类”两个按钮在框里左右滑动；新增页面测试锁定无 `scroll-x` 和撑满布局。latest proof `/tmp/xingrun_wrongbook_topic_filter_layout_proof.sh` 已通过：静态布局合同、错题本页定向测试和 `git diff --check`；最终小程序视觉验收 guardrail 也已通过。
 - 2026-05-04 已按用户截图收口小程序家长首页孩子卡片：`parent-home` 每张孩子卡片左侧只保留学生、班级和任课老师信息，`上传错题 / 查看错题本` 固定到卡片右侧操作列，并删除“上传后可在错题本查看整理进度。”提示句；对应 `parent-only-scope` 和视觉 polish proof 已更新并通过。本轮未改上传、错题本或 bridge 行为。

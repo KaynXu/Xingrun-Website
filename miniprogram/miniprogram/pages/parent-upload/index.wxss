@@ -3,6 +3,34 @@
   overflow: hidden;
 }
 
+.upload-child-panel {
+  padding: 30rpx;
+}
+
+.upload-empty-card {
+  border: 2rpx solid rgba(35, 117, 216, 0.12);
+  background: #f8fbff;
+}
+
+.upload-child-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.upload-child-btn {
+  width: 100%;
+  margin: 0;
+  padding: 0 22rpx;
+  line-height: 78rpx;
+  font-size: 25rpx;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
 .upload-section {
   padding: 30rpx;
   border-bottom: 2rpx solid #edf3fb;

@@ -10,9 +10,11 @@ const {
   fetchParentBindings,
   fetchChildWrongQuestionLibrary,
   fetchWrongQuestionUploadTask,
+  getCurrentParentBindingId,
   getParentBindings,
   normalizeParentBinding,
   resolveParentEntryPath,
+  setCurrentParentBindingId,
   setParentBindings,
   setParentSession,
   submitParentWrongQuestion,
@@ -195,6 +197,16 @@ test('bindParentStudent caches multiple children and resolveParentEntryPath foll
   assert.equal(secondBinding.studentName, 'Bob');
   assert.equal(getParentBindings(wxApi).length, 2);
   assert.equal(resolveParentEntryPath(wxApi), '/pages/parent-home/index');
+});
+
+test('current parent binding helper stores and clears the selected upload child', () => {
+  const wxApi = createWxApi();
+
+  assert.equal(getCurrentParentBindingId(wxApi), 0);
+  setCurrentParentBindingId(wxApi, 21);
+  assert.equal(getCurrentParentBindingId(wxApi), 21);
+  setCurrentParentBindingId(wxApi, 0);
+  assert.equal(getCurrentParentBindingId(wxApi), 0);
 });
 
 test('fetchParentBindings refreshes cached bindings from the server', async () => {

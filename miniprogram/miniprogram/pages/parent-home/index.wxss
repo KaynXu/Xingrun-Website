@@ -8,8 +8,8 @@
 
 .binding-card {
   display: flex;
-  flex-direction: row;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: space-between;
   gap: 20rpx;
 }
@@ -27,6 +27,17 @@
 
 .binding-info {
   flex: 1;
+}
+
+.current-binding-tag {
+  display: inline-block;
+  margin-bottom: 10rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #e8faf0;
+  color: #178b4f;
+  font-size: 22rpx;
+  line-height: 1.3;
 }
 
 .panel-desc {
@@ -65,11 +76,15 @@
   box-sizing: border-box;
 }
 
+.current-btn {
+  color: #178b4f;
+  background: #e8faf0;
+}
+
 .binding-actions {
   display: flex;
   flex-direction: column;
   gap: 12rpx;
-  width: 190rpx;
+  width: 100%;
   align-items: stretch;
-  flex-shrink: 0;
 }

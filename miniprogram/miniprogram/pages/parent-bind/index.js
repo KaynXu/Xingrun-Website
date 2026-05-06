@@ -120,7 +120,7 @@ Page({
       this.setData({ existingBindings });
       wx.showToast({ title: '绑定成功', icon: 'success' });
       setTimeout(() => {
-        wx.reLaunch({ url: '/pages/parent-home/index' });
+        wx.switchTab({ url: '/pages/parent-home/index' });
       }, 250);
     } catch (error) {
       this.setData({
@@ -132,6 +132,6 @@ Page({
   },
 
   goHome() {
-    wx.reLaunch({ url: '/pages/parent-home/index' });
+    wx.switchTab({ url: '/pages/parent-home/index' });
   },
 });

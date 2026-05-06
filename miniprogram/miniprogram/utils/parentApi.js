@@ -1,5 +1,6 @@
 const PARENT_SESSION_KEY = 'xr_parent_session';
 const PARENT_BINDINGS_KEY = 'xr_parent_bindings';
+const CURRENT_PARENT_BINDING_KEY = 'xr_current_parent_binding_id';
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
 const AUDIO_UPLOAD_TIMEOUT_MS = 20000;
@@ -369,6 +370,14 @@ function setParentBindings(wxApi, bindings) {
   return normalized;
 }
 
+function getCurrentParentBindingId(wxApi) {
+  return Number(safeGetStorage(wxApi, CURRENT_PARENT_BINDING_KEY, 0) || 0) || 0;
+}
+
+function setCurrentParentBindingId(wxApi, bindingId) {
+  safeSetStorage(wxApi, CURRENT_PARENT_BINDING_KEY, Number(bindingId) || 0);
+}
+
 function upsertParentBinding(bindings, binding) {
   const normalized = normalizeParentBinding(binding);
   const list = Array.isArray(bindings) ? bindings.map(normalizeParentBinding) : [];
@@ -570,12 +579,15 @@ async function updateChildWrongQuestionTopicCategory(wxApi, serverUrl, params) {
 module.exports = {
   PARENT_SESSION_KEY,
   PARENT_BINDINGS_KEY,
+  CURRENT_PARENT_BINDING_KEY,
   normalizeParentSession,
   normalizeParentBinding,
   getParentSession,
   setParentSession,
   getParentBindings,
   setParentBindings,
+  getCurrentParentBindingId,
+  setCurrentParentBindingId,
   upsertParentBinding,
   cacheParentBinding,
   ensureParentSession,
