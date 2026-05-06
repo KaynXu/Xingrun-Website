@@ -39,8 +39,9 @@ Run commands for the user:
 Status:
 - Archived completed visual refresh PRD to scripts/ralph/archive/miniprogram_visual_refresh_prd_20260506.json.
 - Archived completed visual refresh progress to scripts/ralph/archive/miniprogram_visual_refresh_progress_20260506.txt.
-- Active PRD is now mini program parent stability with nine pending stories.
-- Next story: MP-STABILITY-001.
+- Active PRD is mini program parent stability with nine MP-STABILITY stories.
+- MP-STABILITY-001 passed: scripts/ralph/miniprogram_stability_loop_proof.sh now directly validates active PRD shape, nine MP-STABILITY stories, parent upload-to-wrongbook-to-PDF scope, stability instruction reference, and visual/upload/PDF/LaTeX/code-review gate coverage.
+- Next story: MP-STABILITY-002.
 
 Manual checks that cannot be honestly automated here:
 - WeChat DevTools screenshots for parent-home, parent-upload, parent-wrongbook, and parent-bind when relevant.

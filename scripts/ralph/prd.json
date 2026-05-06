@@ -69,8 +69,8 @@
         "Do not change mini program runtime behavior in this story."
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Proof gate now validates the active mini program stability PRD shape, nine MP-STABILITY stories, parent upload-to-wrongbook-to-PDF scope, stability instructions reference, and visual/upload/PDF/LaTeX/code-review gate coverage."
     },
     {
       "id": "MP-STABILITY-002",

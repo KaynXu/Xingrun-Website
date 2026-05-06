@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DESIGN="$ROOT_DIR/docs/superpowers/specs/2026-05-06-miniprogram-ralph-stability-loop-design.md"
 INSTRUCTIONS="$ROOT_DIR/scripts/ralph/miniprogram_stability_loop_instructions.md"
+PRD_FILE="$ROOT_DIR/scripts/ralph/prd.json"
 RUNBOOK="$ROOT_DIR/docs/production-upload-pipeline-smoke-runbook.md"
 
 require_file() {
@@ -24,6 +25,15 @@ require_executable() {
   echo "ok executable: ${path#$ROOT_DIR/}"
 }
 
+require_command() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "missing command: $name"
+    exit 1
+  fi
+  echo "ok command: $name"
+}
+
 require_text() {
   local path="$1"
   local needle="$2"
@@ -31,6 +41,21 @@ require_text() {
   if ! grep -Fq "$needle" "$path"; then
     echo "missing $label: $needle"
     echo "in file: ${path#$ROOT_DIR/}"
+    exit 1
+  fi
+  echo "ok $label"
+}
+
+require_json_value() {
+  local filter="$1"
+  local expected="$2"
+  local label="$3"
+  local actual
+  actual="$(jq -r "$filter" "$PRD_FILE")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "unexpected $label"
+    echo "expected: $expected"
+    echo "actual: $actual"
     exit 1
   fi
   echo "ok $label"
@@ -44,13 +69,28 @@ run() {
 
 cd "$ROOT_DIR"
 
+require_command jq
 require_file "$DESIGN"
 require_file "$INSTRUCTIONS"
+require_file "$PRD_FILE"
 require_file "$RUNBOOK"
 require_executable "$ROOT_DIR/scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh"
 require_executable "$ROOT_DIR/scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh"
 require_executable "$ROOT_DIR/scripts/ralph/miniprogram_upload_stability_proof.sh"
 require_executable "$ROOT_DIR/scripts/ralph/production_upload_smoke_runbook_proof.sh"
+
+require_json_value '.project' "Xingrun WeChat Mini Program" "active PRD project"
+require_json_value '.branchName' "ralph/miniprogram-parent-stability" "active PRD branch"
+require_json_value '(.userStories | length | tostring)' "9" "exactly nine MP-STABILITY stories"
+require_json_value '([.userStories[].id | test("^MP-STABILITY-[0-9]{3}$")] | all | tostring)' "true" "all story ids are MP-STABILITY"
+require_json_value '([.userStories[].priority] | sort | join(","))' "1,2,3,4,5,6,7,8,9" "story priorities are one through nine"
+require_json_value '([.userStories[].id] | join(","))' "MP-STABILITY-001,MP-STABILITY-002,MP-STABILITY-003,MP-STABILITY-004,MP-STABILITY-005,MP-STABILITY-006,MP-STABILITY-007,MP-STABILITY-008,MP-STABILITY-009" "active stability queue ids"
+require_json_value '([.userStories[].id | startswith("MP-VISUAL-") or startswith("MP-UPLOAD-")] | any | tostring)' "false" "cannot drift back to website frontend or generic visual-only scope"
+require_json_value '([.scope[] | contains("miniprogram/miniprogram/")] | any | tostring)' "true" "PRD primary mini program product scope"
+require_json_value '([.description, (.scope[])] | map(contains("upload-to-wrongbook-to-PDF")) | any | tostring)' "true" "PRD parent upload-to-wrongbook-to-PDF scope"
+require_json_value '([.scope[], .globalRules[]] | map(contains("scripts/ralph/miniprogram_stability_loop_instructions.md")) | any | tostring)' "true" "PRD references stability loop instructions"
+require_json_value '([.userStories[] | select(.id == "MP-STABILITY-001") | .acceptanceCriteria[] | contains("exactly nine MP-STABILITY stories")] | any | tostring)' "true" "MP-STABILITY-001 locks exact queue size"
+require_json_value '([.userStories[] | select(.id == "MP-STABILITY-001") | .acceptanceCriteria[] | contains("generic visual-only scope")] | any | tostring)' "true" "MP-STABILITY-001 locks generic visual-only drift guard"
 
 require_text "$DESIGN" "upload wrong question -> check wrongbook -> generate/download/open PDF" "real parent path"
 require_text "$DESIGN" "PDF And LaTeX Stability Gate" "PDF and LaTeX gate"
@@ -65,6 +105,7 @@ require_text "$DESIGN" "wx.openDocument" "mini program PDF open coverage"
 require_text "$INSTRUCTIONS" "上传错题 -> 查看错题本 -> 生成/下载/打开 PDF" "Ralph prompt real path"
 require_text "$INSTRUCTIONS" "不准猜、不准手打生产码" "Ralph prompt invite code safety"
 require_text "$INSTRUCTIONS" "必须看截图或录屏帧" "Ralph prompt visual evidence"
+require_text "$INSTRUCTIONS" "拍照或选图。" "Ralph prompt upload gate"
 require_text "$INSTRUCTIONS" "小程序 1.3 代码检查" "Ralph prompt code review"
 require_text "$INSTRUCTIONS" "PDF / LaTeX 稳定性" "Ralph prompt PDF and LaTeX"
 require_text "$INSTRUCTIONS" "LaTeX 渲染失败不能让 PDF 生成崩掉" "Ralph prompt LaTeX crash guard"
