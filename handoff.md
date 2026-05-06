@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-06 已新增“小程序 Ralph Stability Loop”流程设计和可复制指令，范围按用户修正为“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”，并把 PDF/LaTeX 稳定性列为独立 gate：Ralph 后续检查不能只看小程序 `查看 PDF` 按钮，还必须覆盖错题本 PDF metadata、`wx.downloadFile + wx.openDocument` 失败恢复、后端学生错题库 PDF 生成、KaTeX 浏览器渲染、ReportLab fallback、旧 LaTeX 转义/裸 LaTeX/非法公式等 stress case。新增 `scripts/ralph/miniprogram_stability_loop_instructions.md` 和 `scripts/ralph/miniprogram_stability_loop_proof.sh`，并扩展生产上传 smoke runbook 的 PDF/LaTeX 检查。
 - 2026-05-06 已按最新 UI 反馈继续收口小程序家长首页孩子卡片：`parent-home` 的已绑定孩子卡片从纵向大卡改为左侧孩子信息、右侧紧凑操作列；班级和任课老师合并为一行，当前孩子只用 `当前上传` 标签表达，不再用 disabled 按钮占操作位；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；视觉 polish proof 和小程序视觉总 guardrail 已更新并通过。
 - 2026-05-06 已完成小程序家长端两个底部 Tab 分区：`我的` 负责绑定孩子、设置当前上传孩子和进入错题本，`拍照上传` 支持作为 Tab 无 `bindingId` 进入，自动选中唯一孩子、优先使用已设置孩子，多孩子未选时先展示孩子选择区，无绑定时引导去“我的”绑定。未改绑定 API、上传 API、错题识别、错题本 PDF、bridge 或网站后端语义；最新 proof 已通过小程序视觉总 guardrail 和上传稳定性 proof。
 - 2026-05-05 已按真机反馈继续收口小程序家长绑定页邀请码输入框文字不可见问题：`parent-bind` 的 `.field-input` 现在显式设置 `display: block`、`width: 100%`、`height/min-height/line-height: 88rpx` 和水平 padding，避免微信真机原生 `input` 不按 `min-height` 撑开导致文字被裁切；`parent-only-scope` 和视觉 polish proof 已锁定固定高度合同。本轮未改绑定 API、页面 JS、上传或错题本行为。
@@ -194,6 +195,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 小程序后续 Ralph 稳定性循环优先使用 `scripts/ralph/miniprogram_stability_loop_instructions.md`；如果 story 触碰 PDF、LaTeX、worker 或生产 runbook，必须额外跑 `scripts/ralph/production_upload_smoke_runbook_proof.sh`、`tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt` 和前端 LaTeX/PDF renderer tests。
 - 请先 review `docs/superpowers/specs/2026-05-04-weekly-wrong-question-activity-summary-design.md`，确认“本周活跃班级/老师/学生”三列表口径无误；确认后再进入实现计划，优先补超级管理员专用汇总接口和智能错题页入口。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。

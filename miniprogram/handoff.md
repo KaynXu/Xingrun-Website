@@ -5,6 +5,7 @@
 这份文件只保留当前仍然有效的状态、下一步、风险和工作区信息，不再追加历史流水。
 
 ## 当前状态
+- 2026-05-06 已新增小程序 Ralph Stability Loop 指令：后续稳定性 Ralph 以“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”为真实家长路径，并新增 PDF/LaTeX 独立 gate。Ralph 不能只看小程序 `查看 PDF` 按钮，必须覆盖 PDF metadata、`wx.downloadFile + wx.openDocument` 恢复态、后端学生错题库 PDF 生成、KaTeX 渲染、ReportLab fallback、旧 LaTeX 转义/裸 LaTeX/非法公式 stress case。指令文件是 `scripts/ralph/miniprogram_stability_loop_instructions.md`，设计稿是 `docs/superpowers/specs/2026-05-06-miniprogram-ralph-stability-loop-design.md`，本地流程 proof 是 `scripts/ralph/miniprogram_stability_loop_proof.sh`。
 - 2026-05-06 已按最新 UI 反馈继续收口家长首页孩子卡片：`parent-home` 的孩子卡片现在是左侧信息、右侧操作的紧凑行布局；班级和任课老师合并展示，当前孩子只显示 `当前上传` 标签，不再保留 disabled 的“当前上传孩子”按钮；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；`parent-only-scope`、视觉 polish proof 和最终视觉 guardrail 已更新并通过。
 - 2026-05-06 已完成家长小程序两个底部 Tab 分区：`我的` 用于设置当前上传孩子、查看错题本和新增绑定孩子，`拍照上传` 用于给当前孩子拍照/选图上传错题；`parent-upload` 现在支持 Tab 无 `bindingId` 进入，只有一个孩子时自动选中，多孩子未设置时先选孩子，无绑定时引导去“我的”。本轮只改小程序前端入口、`parent-home`、`parent-upload` 和本地 current binding helper，不改上传 API、bridge 或网站后端。最新 proof 已通过 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh`。
 - 2026-05-05 已按真机反馈继续修复家长绑定页“班级邀请码”输入框文字被裁切/看不见的问题：`pages/parent-bind/index.wxss` 的 `.field-input` 现在显式设置 `display: block`、`width: 100%`、`height/min-height/line-height: 88rpx` 和水平 padding，不再只依赖微信真机可能不稳定的 `min-height`。`parent-only-scope.test.js` 和视觉 polish proof 已锁定该输入框固定高度合同。未改绑定 JS/API 行为。
@@ -79,6 +80,7 @@
 - 这轮超大图片上传修复已用本地自动测试覆盖导出尺寸规划，但还没有让真实小课家长重新拍一张原图提交来确认线上不再触发 `413`。
 
 ## 下一步
+- 后续小程序稳定性 Ralph 先按 `scripts/ralph/miniprogram_stability_loop_instructions.md` 执行；触碰 PDF/LaTeX/worker/runbook 时，除小程序视觉和上传 guardrail 外，还必须跑 `production_upload_smoke_runbook_proof.sh`、后端 PDF/LaTeX unittest 和前端 LaTeX/PDF renderer tests。
 - 当前小程序视觉 Ralph 自动 story 已全部完成；后续只剩微信开发者工具/真机视觉 smoke，并可用 `scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh` 重新跑本地最终验收。
 - 小程序窄屏/微信运行时还需要手工 smoke：微信开发者工具和至少一台窄屏真机打开 parent-home、parent-bind、parent-upload、parent-wrongbook，确认长学生/班级名、按钮标签、上传底部 safe-area、PDF 入口和专题编辑控件都没有遮挡或误触风险。
 - 下一步只做手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
