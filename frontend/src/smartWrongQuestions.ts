@@ -71,6 +71,7 @@ export interface WrongQuestionRecord {
   reasonKeyOmission?: string;
   reasonNextStep?: string;
   topicCategory?: string;
+  isPrimarySchool?: boolean;
   primaryErrorType?: string;
   causeNote?: string;
   isMastered?: boolean;
@@ -174,6 +175,10 @@ export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionReco
   return record.source === 'wechat_mp';
 }
 
+export function isPrimarySchoolWrongQuestionRecord(record: WrongQuestionRecord): boolean {
+  return isWechatMiniProgramWrongQuestionRecord(record) && record.isPrimarySchool === true;
+}
+
 export function isDownstreamWrongQuestionRecord(record: WrongQuestionRecord): boolean {
   return !isWechatMiniProgramWrongQuestionRecord(record);
 }
@@ -222,6 +227,29 @@ function pickNumberValue(source: Record<string, unknown>, keys: string[]): numbe
   return null;
 }
 
+function pickBooleanValue(source: Record<string, unknown>, keys: string[]): boolean | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value !== 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['0', 'false', 'no', 'off'].includes(normalized)) {
+        return false;
+      }
+    }
+  }
+
+  return null;
+}
+
 function pickStringArrayValue(source: Record<string, unknown>, keys: string[]): string[] {
   for (const key of keys) {
     const value = source[key];
@@ -245,6 +273,33 @@ function normalizeStringList(value: unknown): string[] {
 function normalizeWrongQuestionTopicCategory(value = ''): string {
   const normalized = value.trim();
   return normalized || '未分类';
+}
+
+const PRIMARY_GRADE_PATTERN = /(?:小学|小[一二三四五六123456]|[一二三四五六123456]年级)/;
+const SECONDARY_GRADE_PATTERN = /(?:初中|高中|初[一二三123]|高[一二三123]|[七八九789]年级|十[一二]?年级|1[0-2]年级)/;
+
+function isSecondarySchoolClassLabel(className: string, classNameSnapshot: string): boolean {
+  return SECONDARY_GRADE_PATTERN.test(`${className} ${classNameSnapshot}`);
+}
+
+function inferPrimarySchoolClassLabel(className: string, classNameSnapshot: string): boolean {
+  const text = `${className} ${classNameSnapshot}`;
+  if (SECONDARY_GRADE_PATTERN.test(text)) {
+    return false;
+  }
+  return PRIMARY_GRADE_PATTERN.test(text);
+}
+
+function normalizeWrongQuestionPrimarySchoolFlag(
+  source: Record<string, unknown>,
+  className: string,
+  classNameSnapshot: string,
+): boolean {
+  const explicitValue = pickBooleanValue(source, ['isPrimarySchool', 'is_primary_school']);
+  if (explicitValue !== null) {
+    return explicitValue && !isSecondarySchoolClassLabel(className, classNameSnapshot);
+  }
+  return inferPrimarySchoolClassLabel(className, classNameSnapshot);
 }
 
 function normalizeWrongQuestionMappingStatus(value: string, fallback: WrongQuestionMappingStatus = 'mapped'): WrongQuestionMappingStatus {
@@ -402,6 +457,8 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   }
 
   if (normalizedSource === 'wechat_mp') {
+    record.isPrimarySchool = normalizeWrongQuestionPrimarySchoolFlag(source, className, classNameSnapshot);
+
     if (childReasonText) {
       record.childReasonText = childReasonText;
     }
@@ -493,7 +550,9 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
 
   if (isWechatMiniProgramWrongQuestionRecord(record)) {
     draft.isMastered = Boolean(record.isMastered);
-    draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
+    if (isPrimarySchoolWrongQuestionRecord(record)) {
+      draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
+    }
   }
 
   if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {

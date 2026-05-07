@@ -83,9 +83,9 @@ def normalize_primary_wrong_question_topic_category(value: str = "") -> str:
 
 def is_primary_school_class_name(class_name: str, grade: str = "") -> bool:
     text = f"{class_name or ''} {grade or ''}"
-    if re.search(r"小[一二三四五六123456]", text):
-        return True
-    return bool(re.search(r"[一二三四五六123456]年级", text))
+    if re.search(r"(初中|高中|初[一二三123]|高[一二三123]|[七八九789]年级|十[一二]?年级|1[0-2]年级)", text):
+        return False
+    return bool(re.search(r"(小学|小[一二三四五六123456]|[一二三四五六123456]年级)", text))
 
 
 def _normalize_topic_match_key(value: str) -> str:
@@ -6343,6 +6343,7 @@ def _fetch_wechat_wrong_question_submission_row_by_id(
         SELECT
             wqs.*,
             c.name AS class_display_name,
+            c.grade AS grade,
             s.name AS student_name,
             u.display_name AS teacher_display_name
         FROM wrong_question_submissions wqs
@@ -6362,6 +6363,7 @@ def list_wechat_wrong_question_submissions() -> list[dict]:
             SELECT
                 wqs.*,
                 c.name AS class_display_name,
+                c.grade AS grade,
                 s.name AS student_name,
                 u.display_name AS teacher_display_name
             FROM wrong_question_submissions wqs
@@ -6392,6 +6394,7 @@ def list_wechat_wrong_question_submissions_for_parent_student(
             SELECT
                 wqs.*,
                 c.name AS class_display_name,
+                c.grade AS grade,
                 s.name AS student_name,
                 u.display_name AS teacher_display_name
             FROM wrong_question_submissions wqs

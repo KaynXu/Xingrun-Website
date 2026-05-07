@@ -493,11 +493,49 @@ test('topic helpers summarize and filter primary wrong question topics', () => {
 test('SmartWrongQuestionsPage wires primary topic summaries and topic category saving', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
+  assert.match(pageSource, /isPrimarySchoolWrongQuestionRecord/);
   assert.match(pageSource, /buildWrongQuestionTopicSummaries/);
   assert.match(pageSource, /filterWrongQuestionRecordsByTopic/);
   assert.match(pageSource, /notebookTopicFilter/);
   assert.match(pageSource, /小学专题/);
   assert.match(pageSource, /\/api\/wrong-questions\/\$\{encodeURIComponent\(selectedRecord\.id\)\}\/topic-category/);
+});
+
+test('SmartWrongQuestionsPage hides primary topic UI for non-primary notebook records', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = createNotebookFetch(fetchCalls, {
+      record: makeNotebookApiRecord({
+        id: 'middle-record-a',
+        class_display_name: '九年级 1 班',
+        topic_category: '行程',
+        is_primary_school: false,
+      }),
+    });
+    root = createRoot(domEnvironment.container);
+
+    await renderNotebookForAlice(domEnvironment.container, root);
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.doesNotMatch(pageText, /小学专题/);
+      assert.doesNotMatch(pageText, /专题分类/);
+      assert.doesNotMatch(pageText, /行程/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
 });
 
 test('SmartWrongQuestionsPage wires weekly followup UI only into the web smart wrong question page', () => {

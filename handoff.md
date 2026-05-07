@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-06
+最后更新：2026-05-07
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-07 已修复网站智能错题“小学专题”范围：网站端现在读取/推断 `is_primary_school`，只对小学小程序错题展示专题筛选、题目专题标签和详情里的“小学专题”编辑区；九年级/高一年级等非小学班级不再显示专题 UI。后端只修正学段标记计算并把班级 `grade` 透给本地微信错题序列化，没有新增专题保存接口的后端保险拦截；小程序已有小学范围测试保持通过。proof `/tmp/xingrun_primary_topic_scope_proof.sh` 已通过网站智能错题测试、后端学段判断、小程序上传/错题本专题范围测试和 `git diff --check`。
 - 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-009`：新增最终验收脚本 `scripts/ralph/miniprogram_stability_acceptance_guardrail_proof.sh`，锁定当前九条 `MP-STABILITY` PRD、家长端 `upload-to-wrongbook-to-PDF` 范围、无关网站/业务链路排除、全 story `passes=true` 后才报告最终完成，并串起视觉、上传 2.0、稳定性循环、上传稳定性、生产 smoke runbook、后端 PDF/LaTeX、前端 PDF/LaTeX renderer 和 `git diff --check`。本地自动 Ralph 队列已无下一条；仍需微信开发者工具/真机截图或录屏、生产 Redis/RQ 和生产 PDF 打开 smoke，自动 proof 不等于真机/生产证据。
 - 2026-05-06 已新增“小程序 Ralph Stability Loop”流程设计和可复制指令，范围按用户修正为“上传错题 -> 查看错题本 -> 生成/下载/打开 PDF”，并把 PDF/LaTeX 稳定性列为独立 gate：Ralph 后续检查不能只看小程序 `查看 PDF` 按钮，还必须覆盖错题本 PDF metadata、`wx.downloadFile + wx.openDocument` 失败恢复、后端学生错题库 PDF 生成、KaTeX 浏览器渲染、ReportLab fallback、旧 LaTeX 转义/裸 LaTeX/非法公式等 stress case。新增 `scripts/ralph/miniprogram_stability_loop_instructions.md` 和 `scripts/ralph/miniprogram_stability_loop_proof.sh`，并扩展生产上传 smoke runbook 的 PDF/LaTeX 检查。
 - 2026-05-06 已按最新 UI 反馈继续收口小程序家长首页孩子卡片：`parent-home` 的已绑定孩子卡片从纵向大卡改为左侧孩子信息、右侧紧凑操作列；班级和任课老师合并为一行，当前孩子只用 `当前上传` 标签表达，不再用 disabled 按钮占操作位；非当前孩子右侧显示 `设为上传 / 错题本`，当前孩子只保留 `错题本`。本轮未改上传、绑定、错题本、bridge 或网站后端语义；视觉 polish proof 和小程序视觉总 guardrail 已更新并通过。
