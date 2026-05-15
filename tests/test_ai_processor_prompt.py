@@ -140,6 +140,16 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("$$...$$", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("不要把整道题都改写成纯 LaTeX", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("反斜杠必须写成双反斜杠", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("数轴", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("不要只写“如图所示”", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("A 在 B 左侧", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("重新识别", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("逐条修正", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+
+    def test_wrong_question_quality_review_prompt_separates_blocking_errors_from_suggestions(self):
+        self.assertIn("致命问题", ai_processor.WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT)
+        self.assertIn("可优化建议", ai_processor.WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT)
+        self.assertIn("不要因为没有重绘原图而直接判不通过", ai_processor.WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT)
 
     def test_wrong_question_practice_prompt_focuses_on_reflection_not_solution(self):
         self.assertIn("不要单独生成“下次提醒”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
@@ -207,6 +217,25 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             )
 
         self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.5")
+
+    def test_wrong_question_recognition_retry_instruction_requires_diagram_details(self):
+        fake_client = _FakeClient(
+            {
+                "is_geometry": False,
+                "question_text": "点 A 在点 B 左侧。",
+                "confidence": "high",
+            }
+        )
+        ai_processor._request_wrong_question_recognition_attempt(
+            "https://files.example.com/question.png",
+            revision_feedback="上一版只写了如图所示。",
+            client=fake_client,
+        )
+
+        user_message = fake_client.chat.completions.last_kwargs["messages"][1]["content"][0]["text"]
+        self.assertIn("数轴", user_message)
+        self.assertIn("不要只写“如图所示”", user_message)
+        self.assertIn("图中关键信息", user_message)
 
     def test_wrong_question_latex_checker_uses_valid_stdout_when_node_aborts_after_output(self):
         completed = subprocess.CompletedProcess(

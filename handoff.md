@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-05
+最后更新：2026-05-15
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-15 已优化网站端微信错题 AI 识别/审稿提示词，降低清晰题图因“如图所示”或数轴/示意图文字化不足而被误拦截的概率：识别阶段现在要求非几何题遇到数轴、表格、函数图像、线段示意图等辅助图时，用自然语言补足关键位置关系、数值、标注和问法；审稿阶段现在区分“致命问题”和“可优化建议”，只有条件错误、问法遗漏、混入学生痕迹或 LaTeX 不可渲染等致命问题才判不通过；重试指令也会明确要求补足图中关键信息。proof `/tmp/xingrun_ai_recognition_review_flow_proof.sh` 已通过 `tests.test_ai_processor_prompt`、`tests.test_wrong_question_library_pdf`、`py_compile ai_processor.py` 和 `git diff --check`。
 - 2026-05-05 已按用户“上传并部署”确认完成 release：本地 `develop(7ab36f0)` 已合入 `master(029113f)` 并推送 `origin/master`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已 fast-forward 到 `029113f90`。生产已执行数据库初始化、`frontend` build、`miniprogram/backend` build，并重启 `xingrun / xingrun-bridge / xingrun-rq-worker`；三项 PM2 服务均 online，后端根路由返回 `HTTP/1.1 302 FOUND`，bridge `/healthz` 返回 `HTTP/1.1 200 OK`。release proof `/tmp/xingrun_release_production_proof_20260505.sh` 已通过；发布前本地合并后的 `master` 已跑通前端 233 条测试、前端 production build、后端定向 91 条测试、bridge build 和 `git diff --check`。
 - 2026-05-05 已完成“超级管理员本周错题活跃数据总结”：新增 `lesson_manager.list_weekly_wrong_question_activity_summary()` 与 `GET /api/admin/wrong-question-activity-summary`，仅 `super_owner` 可访问，支持周次和可选机构过滤；网页智能错题为 `super_owner` 新增 `本周数据总结` 面板，展示本周活跃班级、活跃老师、活跃学生三块自然列举列表，不做强排名、AI 总结、图表或导出。面板已加 request-version guard 防止旧响应覆盖新筛选结果，长机构/班级/老师/学生名称已加换行保护。proof `/tmp/xingrun_weekly_activity_summary_proof.sh` 已通过：后端活动汇总 8 条、每周跟进回归 13 条、前端智能错题 55 条、frontend full test 238 条、frontend build、`git diff --check`。
 - 2026-05-05 已在已确认设计稿基础上新增“超级管理员本周错题活跃数据总结”实现计划：`docs/superpowers/plans/2026-05-05-weekly-wrong-question-activity-summary.md`。计划按 TDD 拆为后端汇总函数、超级管理员 API、前端数据模型、网页智能错题超级管理员面板、最终验证和 handoff；实现目标仍是三块自然列举列表，不做 AI 总结、图表、导出或自动提醒。
