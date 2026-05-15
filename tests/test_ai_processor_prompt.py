@@ -145,6 +145,9 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("A 在 B 左侧", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("重新识别", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("逐条修正", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("image_rotation_degrees", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("0、90、180、270", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
+        self.assertIn("顺时针", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
 
     def test_wrong_question_quality_review_prompt_separates_blocking_errors_from_suggestions(self):
         self.assertIn("致命问题", ai_processor.WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT)

@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-15 已完成小程序家长上传错题图片方向自动纠正的本地实现：AI 识别提示词要求先判断原图阅读方向，并返回 `image_rotation_degrees=0/90/180/270`；后台 worker 会把该角度保存到微信错题记录；学生错题库 PDF 渲染几何原题图时会按该角度旋转后再嵌入，避免家长上传横着/竖着的几何题图后 PDF 仍侧着显示。当前只改后端识别/存储/PDF，不改小程序 UI，不迁移既有旧记录。
 - 2026-05-15 已优化网站端微信错题 AI 识别/审稿提示词，降低清晰题图因“如图所示”或数轴/示意图文字化不足而被误拦截的概率：识别阶段现在要求非几何题遇到数轴、表格、函数图像、线段示意图等辅助图时，用自然语言补足关键位置关系、数值、标注和问法；审稿阶段现在区分“致命问题”和“可优化建议”，只有条件错误、问法遗漏、混入学生痕迹或 LaTeX 不可渲染等致命问题才判不通过；重试指令也会明确要求补足图中关键信息。proof `/tmp/xingrun_ai_recognition_review_flow_proof.sh` 已通过 `tests.test_ai_processor_prompt`、`tests.test_wrong_question_library_pdf`、`py_compile ai_processor.py` 和 `git diff --check`。
 - 2026-05-07 已修复网站智能错题“小学专题”范围：网站端现在读取/推断 `is_primary_school`，只对小学小程序错题展示专题筛选、题目专题标签和详情里的“小学专题”编辑区；九年级/高一年级等非小学班级不再显示专题 UI。后端只修正学段标记计算并把班级 `grade` 透给本地微信错题序列化，没有新增专题保存接口的后端保险拦截；小程序已有小学范围测试保持通过。proof `/tmp/xingrun_primary_topic_scope_proof.sh` 已通过网站智能错题测试、后端学段判断、小程序上传/错题本专题范围测试和 `git diff --check`。
 - 2026-05-06 小程序家长端稳定性 Ralph 已完成 `MP-STABILITY-009`：新增最终验收脚本 `scripts/ralph/miniprogram_stability_acceptance_guardrail_proof.sh`，锁定当前九条 `MP-STABILITY` PRD、家长端 `upload-to-wrongbook-to-PDF` 范围、无关网站/业务链路排除、全 story `passes=true` 后才报告最终完成，并串起视觉、上传 2.0、稳定性循环、上传稳定性、生产 smoke runbook、后端 PDF/LaTeX、前端 PDF/LaTeX renderer 和 `git diff --check`。本地自动 Ralph 队列已无下一条；仍需微信开发者工具/真机截图或录屏、生产 Redis/RQ 和生产 PDF 打开 smoke，自动 proof 不等于真机/生产证据。
@@ -198,6 +199,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 用真实小程序/开发者工具上传一张横着或侧着的几何题照片，等后台 worker 完成后打开学生错题库 PDF，确认图片在 PDF 内按可阅读方向显示；如果生产 vision provider 仍是 N1N `503/insufficient_quota` 类问题，需要先恢复可用的 vision provider 再做真实 smoke。
 - 小程序稳定性 Ralph 本地自动队列已完成：可执行 `scripts/ralph/run_codex_ralph.sh --check` 确认 `<promise>COMPLETE</promise>`，或用 `scripts/ralph/miniprogram_stability_acceptance_guardrail_proof.sh` 重跑最终本地验收。
 - 小程序后续 Ralph 稳定性循环优先使用 `scripts/ralph/miniprogram_stability_loop_instructions.md`；如果 story 触碰 PDF、LaTeX、worker 或生产 runbook，必须额外跑 `scripts/ralph/production_upload_smoke_runbook_proof.sh`、`tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt` 和前端 LaTeX/PDF renderer tests。
 - 请先 review `docs/superpowers/specs/2026-05-04-weekly-wrong-question-activity-summary-design.md`，确认“本周活跃班级/老师/学生”三列表口径无误；确认后再进入实现计划，优先补超级管理员专用汇总接口和智能错题页入口。

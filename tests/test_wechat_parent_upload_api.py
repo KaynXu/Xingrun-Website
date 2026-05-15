@@ -58,12 +58,18 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         return {"X-Wechat-Service-Token": "wechat-service-token"}
 
     @staticmethod
-    def recognized_payload(*, is_geometry: bool = False, question_text: str = "计算 $2+3\\times4$ 的结果。") -> dict:
+    def recognized_payload(
+        *,
+        is_geometry: bool = False,
+        question_text: str = "计算 $2+3\\times4$ 的结果。",
+        image_rotation_degrees: int = 0,
+    ) -> dict:
         return {
             "is_geometry": is_geometry,
             "question_text": "" if is_geometry else question_text,
             "confidence": "high",
             "notes": "几何图形题" if is_geometry else "",
+            "image_rotation_degrees": image_rotation_degrees,
         }
 
     def login_owner(self) -> dict:
@@ -163,7 +169,10 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
 
         from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
 
-        with patch("wrong_question_upload_worker.ai_processor.recognize_wrong_question_image", return_value=self.recognized_payload()), \
+        with patch(
+            "wrong_question_upload_worker.ai_processor.recognize_wrong_question_image",
+            return_value=self.recognized_payload(image_rotation_degrees=90),
+        ), \
              patch(
                  "wrong_question_upload_worker.ai_processor.classify_wrong_question_reason",
                  return_value={
@@ -195,6 +204,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["child_reason_key_omission"], "没有先检查乘法优先级，也没有把题目中的运算结构拆开。")
         self.assertEqual(record["child_reason_next_step"], "以后先圈出乘除法，再按先乘除后加减的顺序逐步计算。")
         self.assertEqual(record["topic_category"], "周期问题")
+        self.assertEqual(record["image_rotation_degrees"], 90)
         self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
 
     def test_staff_and_parent_can_update_wrong_question_topic_category(self):

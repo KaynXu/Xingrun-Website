@@ -281,6 +281,7 @@ def _transcribe_audio_path_locally(audio_path: str) -> str:
 
 WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 你需要判断上传图片是否属于几何题或几何体题，并为非几何题提取可直接进入错题库的题目文本。
+识别前必须先根据印刷文字、页边和题目排版判断图片正确阅读方向；如果原图是横着或倒着的，仍按旋正后的方向理解题目。
 题目文本允许“正文 + LaTeX 公式”混合输出：
 - 普通中文、英文和题干说明直接输出为普通文本
 - 行内公式使用 $...$
@@ -296,6 +297,7 @@ WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 - question_text: string
 - confidence: string
 - notes: string
+- image_rotation_degrees: number，只能是 0、90、180、270，表示为了让原始上传图片变成可阅读方向，需要顺时针旋转多少度
 如果是几何题，question_text 返回空字符串。
 如果不是几何题但无法可靠识别题目文本，也要如实返回空字符串，并在 notes 里说明原因。"""
 
@@ -423,6 +425,12 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
     question_text = str(payload.get("question_text") or "").strip()
     confidence = str(payload.get("confidence") or "").strip()
     notes = str(payload.get("notes") or "").strip()
+    try:
+        image_rotation_degrees = int(payload.get("image_rotation_degrees") or 0)
+    except (TypeError, ValueError):
+        image_rotation_degrees = 0
+    if image_rotation_degrees not in {0, 90, 180, 270}:
+        image_rotation_degrees = 0
 
     if is_geometry:
         return {
@@ -430,6 +438,7 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
             "question_text": "",
             "confidence": confidence,
             "notes": notes,
+            "image_rotation_degrees": image_rotation_degrees,
         }
 
     normalized_text = _repair_wrong_question_latex_transport(question_text)
@@ -445,6 +454,7 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
         "question_text": normalized_text,
         "confidence": confidence,
         "notes": notes,
+        "image_rotation_degrees": image_rotation_degrees,
     }
 
 
@@ -461,6 +471,7 @@ def _request_wrong_question_recognition_attempt(
             "上一版识别没有通过质量检查。请根据下面的审稿意见重新识别并重写题目文本：\n"
             f"{revision_feedback}\n\n"
             "只保留原始题目主体，忽略学生手写答案、草稿、订正、批改痕迹和解题过程。"
+            "先判断图片正确阅读方向，并返回原图需要顺时针旋转的 image_rotation_degrees。"
             "如果原题包含数轴、表格、函数图像或示意图，必须用文字补足图中关键信息，不要只写“如图所示”。"
         )
 

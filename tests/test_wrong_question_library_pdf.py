@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import subprocess
@@ -11,6 +12,7 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image as PILImage
 from reportlab.platypus import Paragraph, Table
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +110,46 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertGreater(output_path.stat().st_size, 0)
         urlopen.assert_called_once_with("https://files.example.com/geometry-1.png", timeout=10)
         self.assertRegex(captured_payloads[0]["records"][0]["image_data_url"], r"^data:image/png;base64,")
+
+    def test_generate_student_wrong_question_library_pdf_rotates_geometry_image_data_url(self):
+        source_image = PILImage.new("RGB", (2, 1), "white")
+        source_buffer = io.BytesIO()
+        source_image.save(source_buffer, format="PNG")
+        records = [
+            {
+                "student_name": "Alice",
+                "class_display_name": "六年级 1 班",
+                "teacher_display_name": "平台管理员",
+                "created_at": "2026-04-09 10:00:00",
+                "is_geometry": 1,
+                "question_text": "",
+                "image_url": "https://files.example.com/geometry-rotated.png",
+                "image_rotation_degrees": 90,
+            }
+        ]
+        output_path = self.base / "geometry-rotated-student-1.pdf"
+        captured_payloads = []
+
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake rotated geometry pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("urllib.request.urlopen") as urlopen, patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            urlopen.return_value.__enter__.return_value.read.return_value = source_buffer.getvalue()
+
+            pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                records=records,
+                output_path=str(output_path),
+            )
+
+        data_url = captured_payloads[0]["records"][0]["image_data_url"]
+        encoded_bytes = data_url.split(",", 1)[1]
+        rotated = PILImage.open(io.BytesIO(base64.b64decode(encoded_bytes)))
+        self.assertEqual(rotated.size, (1, 2))
 
     def test_generate_student_wrong_question_library_pdf_skips_image_fetch_for_non_geometry(self):
         records = [
@@ -286,6 +328,29 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         )
 
         self.assertEqual(normalized["question_text"], "解方程：\n$$x^2 + 1 = 0$$\n求 x 的值。")
+
+    def test_recognize_wrong_question_image_normalizes_rotation_degrees(self):
+        geometry = ai_processor._normalize_wrong_question_recognition_result(
+            {
+                "is_geometry": True,
+                "question_text": "",
+                "confidence": "high",
+                "notes": "",
+                "image_rotation_degrees": 90,
+            }
+        )
+        non_geometry = ai_processor._normalize_wrong_question_recognition_result(
+            {
+                "is_geometry": False,
+                "question_text": "计算 $1+1$。",
+                "confidence": "high",
+                "notes": "",
+                "image_rotation_degrees": 45,
+            }
+        )
+
+        self.assertEqual(geometry["image_rotation_degrees"], 90)
+        self.assertEqual(non_geometry["image_rotation_degrees"], 0)
 
     def test_recognize_wrong_question_image_repairs_json_consumed_latex_backslashes(self):
         normalized = ai_processor._normalize_wrong_question_recognition_result(

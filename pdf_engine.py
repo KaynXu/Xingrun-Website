@@ -21,6 +21,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from PIL import Image as PILImage
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
@@ -470,7 +471,29 @@ def _render_item(item: dict, styles: dict, show_answers: bool = False) -> list:
     return result
 
 
-def _fetch_wrong_question_image_bytes(image_url: str) -> bytes | None:
+def _normalize_wrong_question_image_rotation(value: object) -> int:
+    try:
+        degrees = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return degrees if degrees in {0, 90, 180, 270} else 0
+
+
+def _rotate_wrong_question_image_bytes(image_bytes: bytes, image_rotation_degrees: object) -> bytes:
+    degrees = _normalize_wrong_question_image_rotation(image_rotation_degrees)
+    if not degrees:
+        return image_bytes
+    try:
+        with PILImage.open(io.BytesIO(image_bytes)) as source_image:
+            rotated_image = source_image.rotate(-degrees, expand=True)
+            output = io.BytesIO()
+            rotated_image.save(output, format="PNG")
+            return output.getvalue()
+    except Exception:
+        return image_bytes
+
+
+def _fetch_wrong_question_image_bytes(image_url: str, image_rotation_degrees: object = 0) -> bytes | None:
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
         return None
@@ -479,11 +502,13 @@ def _fetch_wrong_question_image_bytes(image_url: str) -> bytes | None:
             image_bytes = response.read()
     except (urllib.error.URLError, ValueError, OSError):
         return None
-    return image_bytes or None
+    if not image_bytes:
+        return None
+    return _rotate_wrong_question_image_bytes(image_bytes, image_rotation_degrees)
 
 
-def _build_wrong_question_image(image_url: str):
-    image_bytes = _fetch_wrong_question_image_bytes(image_url)
+def _build_wrong_question_image(image_url: str, image_rotation_degrees: object = 0):
+    image_bytes = _fetch_wrong_question_image_bytes(image_url, image_rotation_degrees)
     if not image_bytes:
         return None
     try:
@@ -505,11 +530,11 @@ def _build_wrong_question_image(image_url: str):
     return flowable
 
 
-def _build_wrong_question_geometry_image_card(image_url: str, styles: dict):
+def _build_wrong_question_geometry_image_card(image_url: str, styles: dict, image_rotation_degrees: object = 0):
     _ensure_fonts()
     title = Paragraph("几何原题图片", styles["section"])
     caption = Paragraph("保留原图入库，便于按图复盘几何关系。", styles["tip"])
-    geometry_image = _build_wrong_question_image(image_url)
+    geometry_image = _build_wrong_question_image(image_url, image_rotation_degrees)
     if geometry_image is None:
         image_content = Paragraph("图片暂时无法载入，已保留原图记录。", styles["tip"])
     else:
@@ -596,7 +621,7 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
 
         if normalized_record["is_geometry"]:
             image_url = str(record.get("image_url") or "")
-            image_bytes = _fetch_wrong_question_image_bytes(image_url)
+            image_bytes = _fetch_wrong_question_image_bytes(image_url, record.get("image_rotation_degrees"))
             if image_bytes:
                 encoded_bytes = base64.b64encode(image_bytes).decode("ascii")
                 normalized_record["image_data_url"] = (
@@ -819,7 +844,11 @@ def _generate_student_wrong_question_library_pdf_via_reportlab(
         if record.get("is_geometry"):
             story.append(Paragraph("题目内容：几何题按图片入库", styles["body"]))
             story.append(_spacer(0.15))
-            story.append(_build_wrong_question_geometry_image_card(str(record.get("image_url") or ""), styles))
+            story.append(_build_wrong_question_geometry_image_card(
+                str(record.get("image_url") or ""),
+                styles,
+                record.get("image_rotation_degrees"),
+            ))
             story.append(_spacer(0.1))
         else:
             story.append(

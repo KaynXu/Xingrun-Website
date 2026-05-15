@@ -92,6 +92,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
             topic_category=str(task.get("topic_category") or ""),
             recognition_status="recognized",
             is_geometry=bool(recognition.get("is_geometry")),
+            image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0),
             question_text=str(recognition.get("question_text") or ""),
             question_text_source="ai",
         )
@@ -121,6 +122,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
                     topic_category=str(task.get("topic_category") or ""),
                     recognition_status="failed",
                     is_geometry=bool(recognition.get("is_geometry")) if isinstance(recognition, dict) else False,
+                    image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0) if isinstance(recognition, dict) else 0,
                     question_text=str(recognition.get("question_text") or "") if isinstance(recognition, dict) else "",
                     question_text_source="ai",
                     recognition_error=str(exc),
