@@ -554,6 +554,7 @@ test('consultation source renders compact and full flow stage bars', () => {
   assert.match(source, /ConsultationFlowBar/);
   assert.match(source, /compact/);
   assert.match(source, /full/);
+  assert.match(source, /title=\{item\}/);
   assert.match(source, /已加小客服微信/);
   assert.doesNotMatch(source, /'咨询结束'\]/);
   assert.match(source, /成功进班/);
@@ -662,25 +663,29 @@ const ConsultationFlowBar = ({
   const completedSet = new Set(completedStages || []);
   completedSet.add(currentStage);
   return (
-    <div className={mode === 'compact' ? 'flex min-w-[360px] items-center gap-1' : 'grid gap-2 sm:grid-cols-3 xl:grid-cols-6'}>
+    <div className={mode === 'compact' ? 'flex min-w-[280px] items-center gap-2' : 'flex flex-wrap items-center gap-3'}>
       {consultationFlowStages.map((item) => {
         const isCurrent = item === currentStage;
         const isCompleted = completedSet.has(item);
         const className = isCurrent
-          ? 'bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.20),0_8px_24px_rgba(14,165,233,0.28)] scale-[1.04]'
+          ? 'bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.20),0_8px_24px_rgba(14,165,233,0.28)] scale-[1.04]'
           : isCompleted
-            ? 'bg-emerald-50 text-emerald-700 shadow-[0_0_0_1px_rgba(16,185,129,0.20)] dark:bg-emerald-400/10 dark:text-emerald-200'
-            : 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500';
+            ? 'bg-emerald-500 shadow-[0_0_0_1px_rgba(16,185,129,0.20)] dark:bg-emerald-400'
+            : 'bg-slate-300 dark:bg-white/10';
         return (
-          <button
-            key={item}
-            type="button"
-            disabled={!editable}
-            onClick={() => onStageClick?.(item)}
-            className={`whitespace-nowrap rounded-lg px-2 py-1 text-[10px] font-semibold transition ${mode === 'full' ? 'px-3 py-2.5 text-sm' : ''} ${className}`}
-          >
-            {item.replace('已加', '').replace('正在', '')}
-          </button>
+          <React.Fragment key={item}>
+            <button
+              key={item}
+              type="button"
+              title={item}
+              disabled={!editable}
+              onClick={() => onStageClick?.(item)}
+              className={`h-3.5 w-3.5 shrink-0 rounded-full transition ${mode === 'full' ? 'h-4 w-4' : ''} ${className}`}
+            />
+            {item !== consultationFlowStages[consultationFlowStages.length - 1] && (
+              <span className={`h-[2px] min-w-3 flex-1 rounded-full ${isCompleted ? 'bg-emerald-300 dark:bg-emerald-500/60' : 'bg-slate-200 dark:bg-white/10'}`} />
+            )}
+          </React.Fragment>
         );
       })}
     </div>
@@ -731,7 +736,7 @@ Add `classes` and `onImageUploaded` props to `ConsultationModal`. At the top of 
 </section>
 ```
 
-Below existing detail textareas, render fields for `待测试`, `待试听`, and the `成功进班` result capsule. The `成功进班` capsule contains the result dropdown (`成功进班` / `试听失败`) and the class dropdown/manual class controls; do not render a separate `咨询结束` flow capsule. Keep saved end note/status fields available in the edit area when a consultation has been ended, but not as a stage in the flow bar.
+Below existing detail textareas, render fields for `待测试`, `待试听`, and the `成功进班` result capsule. The flow bar itself should use dots with `title={item}` hover names in both compact and full modes. The `成功进班` capsule contains the result dropdown (`成功进班` / `试听失败`) and the class dropdown/manual class controls; do not render a separate `咨询结束` flow capsule. Keep saved end note/status fields available in the edit area when a consultation has been ended, but not as a stage in the flow bar.
 
 For success validation in `handleSubmit`, before `await onSubmit(form)`:
 
