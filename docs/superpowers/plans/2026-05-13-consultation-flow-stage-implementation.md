@@ -136,7 +136,6 @@ CONSULTATION_FLOW_STAGES = (
     "待试听",
     "成功进班",
     "试听失败",
-    "咨询结束",
 )
 CONSULTATION_DEFAULT_FLOW_STAGE = "已加小客服微信"
 CONSULTATION_FLOW_STAGE_DERIVED_STATUS = {
@@ -147,14 +146,13 @@ CONSULTATION_FLOW_STAGE_DERIVED_STATUS = {
     "待试听": "正在跟进",
     "试听失败": "正在跟进",
     "成功进班": "完成",
-    "咨询结束": "完成",
 }
 CONSULTATION_LEGACY_STATUS_STAGE_MAP = {
     "待邀约": "已加小客服微信",
     "跟进中": "正在沟通细节",
     "已报班": "成功进班",
-    "已劝退": "咨询结束",
 }
+CONSULTATION_LEGACY_ENDED_STATUSES = {"已劝退"}
 CONSULTATION_STAGE_API_FIELDS = {
     "flow_stage",
     "completed_stages",
@@ -557,7 +555,9 @@ test('consultation source renders compact and full flow stage bars', () => {
   assert.match(source, /compact/);
   assert.match(source, /full/);
   assert.match(source, /已加小客服微信/);
-  assert.match(source, /咨询结束/);
+  assert.doesNotMatch(source, /'咨询结束'\]/);
+  assert.match(source, /成功进班/);
+  assert.match(source, /试听失败/);
 });
 
 test('consultation modal source includes stage-specific test and trial fields', () => {
@@ -620,10 +620,11 @@ Add matching defaults in `consultationFormDefaults`, normalize in `normalizeCons
 Near `consultationStatusOptions`, add:
 
 ```ts
-const consultationFlowStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听', '成功进班', '试听失败', '咨询结束'];
+const consultationFlowStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听', '成功进班'];
+const consultationResultOptions = ['成功进班', '试听失败'];
 
-function deriveConsultationDisplayStatus(stage: string): string {
-  if (stage === '成功进班' || stage === '咨询结束') return '完成';
+function deriveConsultationDisplayStatus(stage: string, ended = false): string {
+  if (ended || stage === '成功进班') return '完成';
   if (stage === '已加小客服微信' || stage === '已加对应教师微信') return '待跟进';
   return '正在跟进';
 }
@@ -661,7 +662,7 @@ const ConsultationFlowBar = ({
   const completedSet = new Set(completedStages || []);
   completedSet.add(currentStage);
   return (
-    <div className={mode === 'compact' ? 'flex min-w-[420px] items-center gap-1' : 'grid gap-2 sm:grid-cols-4 xl:grid-cols-8'}>
+    <div className={mode === 'compact' ? 'flex min-w-[360px] items-center gap-1' : 'grid gap-2 sm:grid-cols-3 xl:grid-cols-6'}>
       {consultationFlowStages.map((item) => {
         const isCurrent = item === currentStage;
         const isCompleted = completedSet.has(item);
@@ -676,7 +677,7 @@ const ConsultationFlowBar = ({
             type="button"
             disabled={!editable}
             onClick={() => onStageClick?.(item)}
-            className={`whitespace-nowrap rounded-lg px-2 py-1.5 text-[11px] font-semibold transition ${mode === 'full' ? 'px-3 py-3 text-sm' : ''} ${className}`}
+            className={`whitespace-nowrap rounded-lg px-2 py-1 text-[10px] font-semibold transition ${mode === 'full' ? 'px-3 py-2.5 text-sm' : ''} ${className}`}
           >
             {item.replace('已加', '').replace('正在', '')}
           </button>
@@ -730,7 +731,7 @@ Add `classes` and `onImageUploaded` props to `ConsultationModal`. At the top of 
 </section>
 ```
 
-Below existing detail textareas, render fields for `待测试`, `待试听`, `成功进班`, and `咨询结束`. Always keep the controls visible in edit mode when the current stage is that section, and keep saved values visible in view mode.
+Below existing detail textareas, render fields for `待测试`, `待试听`, and the `成功进班` result capsule. The `成功进班` capsule contains the result dropdown (`成功进班` / `试听失败`) and the class dropdown/manual class controls; do not render a separate `咨询结束` flow capsule. Keep saved end note/status fields available in the edit area when a consultation has been ended, but not as a stage in the flow bar.
 
 For success validation in `handleSubmit`, before `await onSubmit(form)`:
 
