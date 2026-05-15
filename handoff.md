@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-15 已完成小程序家长上传错题图片方向自动纠正的本地实现：AI 识别提示词要求先判断原图阅读方向，并返回 `image_rotation_degrees=0/90/180/270`；后台 worker 会把该角度保存到微信错题记录；学生错题库 PDF 渲染几何原题图时会按该角度旋转后再嵌入，避免家长上传横着/竖着的几何题图后 PDF 仍侧着显示。当前只改后端识别/存储/PDF，不改小程序 UI，不迁移既有旧记录。
 - 2026-05-15 已按用户要求发布 AI 错题识别/审稿优化并修复生产现有“当前题目还不能加入错题练习”记录：`master(57af251)` 已推送并部署到生产机 `/home/ubuntu/Xingrun-Website`，生产执行了后端依赖安装、`init_db`、`frontend` build、`miniprogram/backend` build，并重启 `xingrun / xingrun-bridge / xingrun-rq-worker`；三项 PM2 服务 online，后端根路由 `302 FOUND`，bridge `/healthz` `200 OK`。生产库修复前备份为 `data/xingrun.db.backup-before-active-unrecognized-repair-20260515-152414`；38 条 active 但非 recognized 的微信错题已全部改为 `recognized`，因生产 N1N vision `gpt-5.5` 当前返回 `503 无可用渠道`，本轮现有记录全部按 `image_fallback` 保留原图入库并刷新 16 个学生错题库 PDF。最终只读 proof 显示 active 未识别微信错题数为 0，截图对应记录 `wechat-f6774a7edaa5798e` 已为 `recognized / image_fallback / is_geometry=1`。
 - 2026-05-15 已优化网站端微信错题 AI 识别/审稿提示词，降低清晰题图因“如图所示”或数轴/示意图文字化不足而被误拦截的概率：识别阶段现在要求非几何题遇到数轴、表格、函数图像、线段示意图等辅助图时，用自然语言补足关键位置关系、数值、标注和问法；审稿阶段现在区分“致命问题”和“可优化建议”，只有条件错误、问法遗漏、混入学生痕迹或 LaTeX 不可渲染等致命问题才判不通过；重试指令也会明确要求补足图中关键信息。proof `/tmp/xingrun_ai_recognition_review_flow_proof.sh` 已通过 `tests.test_ai_processor_prompt`、`tests.test_wrong_question_library_pdf`、`py_compile ai_processor.py` 和 `git diff --check`。
 - 2026-05-05 已按用户“上传并部署”确认完成 release：本地 `develop(7ab36f0)` 已合入 `master(029113f)` 并推送 `origin/master`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已 fast-forward 到 `029113f90`。生产已执行数据库初始化、`frontend` build、`miniprogram/backend` build，并重启 `xingrun / xingrun-bridge / xingrun-rq-worker`；三项 PM2 服务均 online，后端根路由返回 `HTTP/1.1 302 FOUND`，bridge `/healthz` 返回 `HTTP/1.1 200 OK`。release proof `/tmp/xingrun_release_production_proof_20260505.sh` 已通过；发布前本地合并后的 `master` 已跑通前端 233 条测试、前端 production build、后端定向 91 条测试、bridge build 和 `git diff --check`。
@@ -198,6 +199,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 用真实小程序/开发者工具上传一张横着或侧着的几何题照片，等后台 worker 完成后打开学生错题库 PDF，确认图片在 PDF 内按可阅读方向显示；如果生产 vision provider 仍是 N1N `503/insufficient_quota` 类问题，需要先恢复可用的 vision provider 再做真实 smoke。
 - 超级管理员本周错题活跃数据总结下一步建议用真实 `super_owner` 账号在网页智能错题手工 smoke：打开 `本周数据总结`，分别查看全部机构和指定机构、空数据周次和有数据周次，确认列表数量、机构名、班级/老师/学生文案符合现场使用。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。

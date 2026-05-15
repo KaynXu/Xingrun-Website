@@ -1358,6 +1358,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "status",
             "recognition_status",
             "is_geometry",
+            "image_rotation_degrees",
             "question_text",
             "question_text_edited",
             "question_text_source",
@@ -1401,6 +1402,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             status                    TEXT NOT NULL DEFAULT 'pending',
             recognition_status        TEXT NOT NULL DEFAULT 'pending',
             is_geometry               INTEGER NOT NULL DEFAULT 0,
+            image_rotation_degrees    INTEGER NOT NULL DEFAULT 0,
             question_text             TEXT NOT NULL DEFAULT '',
             question_text_edited      INTEGER NOT NULL DEFAULT 0,
             question_text_source      TEXT NOT NULL DEFAULT 'ai',
@@ -2071,6 +2073,7 @@ def init_db():
             status                    TEXT NOT NULL DEFAULT 'pending',
             recognition_status        TEXT NOT NULL DEFAULT 'pending',
             is_geometry               INTEGER NOT NULL DEFAULT 0,
+            image_rotation_degrees    INTEGER NOT NULL DEFAULT 0,
             question_text             TEXT NOT NULL DEFAULT '',
             question_text_edited      INTEGER NOT NULL DEFAULT 0,
             question_text_source      TEXT NOT NULL DEFAULT 'ai',
@@ -2388,6 +2391,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "archived_at", "TEXT DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "recognition_status", "TEXT NOT NULL DEFAULT 'pending'")
         _ensure_column(conn, "wrong_question_submissions", "is_geometry", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "image_rotation_degrees", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "question_text", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "question_text_edited", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
@@ -6202,6 +6206,7 @@ def create_wechat_wrong_question_submission(
     topic_category: str = PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
     recognition_status: str = "pending",
     is_geometry: bool = False,
+    image_rotation_degrees: int = 0,
     question_text: str = "",
     question_text_source: str = "ai",
     recognition_error: str = "",
@@ -6214,6 +6219,12 @@ def create_wechat_wrong_question_submission(
     if normalized_reason_input_mode not in WECHAT_CHILD_REASON_INPUT_MODES:
         raise ValueError("child_reason_input_mode must be text or voice")
     normalized_topic_category = normalize_primary_wrong_question_topic_category(topic_category)
+    try:
+        normalized_image_rotation_degrees = int(image_rotation_degrees or 0)
+    except (TypeError, ValueError):
+        normalized_image_rotation_degrees = 0
+    if normalized_image_rotation_degrees not in {0, 90, 180, 270}:
+        normalized_image_rotation_degrees = 0
 
     with get_conn() as conn:
         binding_row = conn.execute(
@@ -6237,9 +6248,9 @@ def create_wechat_wrong_question_submission(
                 primary_error_type, secondary_error_summary,
                 child_reason_core_issue, child_reason_key_omission, child_reason_next_step,
                 topic_category, archive_status, status,
-                recognition_status, is_geometry, question_text, question_text_edited,
+                recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
                 question_text_source, recognition_error, student_library_pdf_path
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, 0, ?, ?, ?)
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 record_id,
@@ -6261,6 +6272,7 @@ def create_wechat_wrong_question_submission(
                 normalized_topic_category,
                 (recognition_status or "pending").strip() or "pending",
                 1 if is_geometry else 0,
+                normalized_image_rotation_degrees,
                 (question_text or "").strip(),
                 (question_text_source or "ai").strip() or "ai",
                 (recognition_error or "").strip(),
