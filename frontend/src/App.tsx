@@ -1429,34 +1429,54 @@ const ConsultationProgressCluster = ({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-2 gap-y-2')}>
-      <div className={cn('flex min-w-0 flex-wrap items-center gap-1.5 gap-y-1.5', compact ? 'flex-1' : 'flex-1')}>
+      <div className={cn('flex min-w-0 flex-wrap items-center gap-1.5 gap-y-2', compact ? 'flex-1' : 'flex-1')} aria-label="咨询流程圆点进度条">
         {consultationFlowStages.map((stage, index) => {
           const isCompleted = index < progress.completedStageCount;
           const isActive = progress.activeStageIndex === index;
-          const stageLabel = consultationFlowStageShortLabels[stage];
+          const connectorIsDone = index + 1 < progress.completedStageCount;
           return (
-            <button
-              key={stage}
-              type="button"
-              title={stage}
-              onClick={() => onJumpToEdit?.('progress')}
-              className={cn(
-                'inline-flex shrink-0 items-center justify-center rounded-full border px-2.5 text-[11px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-500/20',
-                compact ? 'h-7 min-w-[2.9rem]' : 'h-7 min-w-[3.1rem]',
-                isActive
-                  ? 'border-sky-500 bg-sky-600 text-white shadow-sm'
-                  : isCompleted
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
-                    : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
-                onJumpToEdit && 'hover:border-sky-300 hover:text-sky-700 dark:hover:text-sky-300',
+            <React.Fragment key={stage}>
+              <button
+                type="button"
+                title={stage}
+                aria-label={stage}
+                onClick={() => onJumpToEdit?.('progress')}
+                className={cn(
+                  'inline-flex shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 dark:focus:ring-sky-500/30 dark:focus:ring-offset-slate-950',
+                  compact ? 'h-8 w-8' : 'h-9 w-9',
+                  onJumpToEdit && 'group',
+                )}
+              >
+                <span
+                  className={cn(
+                    'block rounded-full transition-colors',
+                    compact ? 'h-3.5 w-3.5' : 'h-4 w-4',
+                    isActive
+                      ? 'bg-sky-600 shadow-[0_0_0_4px_rgba(224,242,254,1)] dark:shadow-[0_0_0_4px_rgba(14,165,233,0.2)]'
+                      : isCompleted
+                        ? 'bg-emerald-600 shadow-[0_0_0_3px_rgba(220,252,231,1)] dark:shadow-[0_0_0_3px_rgba(16,185,129,0.18)]'
+                        : 'bg-slate-300 dark:bg-white/20',
+                    onJumpToEdit && 'group-hover:bg-sky-500',
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+              {index < consultationFlowStages.length - 1 && (
+                <span
+                  className={cn(
+                    'h-0.5 rounded-full transition-colors',
+                    compact ? 'w-5 shrink-0' : 'w-7 shrink-0 xl:w-10',
+                    connectorIsDone ? 'bg-emerald-300 dark:bg-emerald-500/60' : isActive ? 'bg-sky-200 dark:bg-sky-500/35' : 'bg-slate-200 dark:bg-white/10',
+                  )}
+                  aria-hidden="true"
+                />
               )}
-            >
-              {stageLabel}
-            </button>
+            </React.Fragment>
           );
         })}
         {progress.result && (
           <>
+            <span className={cn('h-0.5 rounded-full bg-slate-200 dark:bg-white/10', compact ? 'w-5 shrink-0' : 'w-7 shrink-0 xl:w-10')} aria-hidden="true" />
             <button
               type="button"
               title={progress.result}

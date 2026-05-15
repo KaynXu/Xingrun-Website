@@ -220,6 +220,13 @@ test('consultation page source renders shared progress clusters with stage hover
   assert.match(source, /const consultationFollowUpLights = \['待跟进', '正在跟进', '咨询结束'\] as const;/);
   assert.match(source, /type ConsultationEditTarget = 'basic' \| 'content' \| 'progress' \| 'notes';/);
   assert.match(source, /title=\{stage\}/);
+  assert.match(source, /aria-label=\{stage\}/);
+  assert.match(source, /aria-label="咨询流程圆点进度条"/);
+  assert.match(source, /compact \? 'h-3\.5 w-3\.5' : 'h-4 w-4'/);
+  assert.match(source, /w-7 shrink-0 xl:w-10/);
+  assert.match(source, /shadow-\[0_0_0_4px_rgba\(224,242,254,1\)\]/);
+  assert.doesNotMatch(source, /\{stageLabel\}/);
+  assert.doesNotMatch(source, /min-w-\[2\.9rem\]|min-w-\[3\.1rem\]/);
   assert.match(source, /title=\{`状态灯：\$\{progress\.followUpLight\}`\}/);
   assert.match(source, /'☀️ 成功进班'/);
   assert.match(source, /'😭 试听失败'/);
