@@ -154,6 +154,35 @@ async function openNotebookStudent(container: ParentNode, studentName: string): 
   });
 }
 
+function createFixedDateConstructor(fixedIsoDate: string): DateConstructor {
+  const RealDate = Date;
+
+  class FixedDate extends RealDate {
+    constructor(value?: string | number | Date) {
+      if (arguments.length === 0) {
+        super(fixedIsoDate);
+        return;
+      }
+
+      super(value as string | number | Date);
+    }
+
+    static now(): number {
+      return new RealDate(fixedIsoDate).getTime();
+    }
+
+    static parse(value: string): number {
+      return RealDate.parse(value);
+    }
+
+    static UTC(...args: Parameters<typeof Date.UTC>): number {
+      return RealDate.UTC(...args);
+    }
+  }
+
+  return FixedDate as unknown as DateConstructor;
+}
+
 function setupDomEnvironment(): {
   cleanup: () => void;
   container: HTMLDivElement;
@@ -179,6 +208,7 @@ function setupDomEnvironment(): {
     setGlobalValue('Node', dom.window.Node),
     setGlobalValue('Event', dom.window.Event),
     setGlobalValue('MouseEvent', dom.window.MouseEvent),
+    setGlobalValue('Date', createFixedDateConstructor('2026-05-08T12:00:00.000Z')),
     setGlobalValue('localStorage', dom.window.localStorage),
     setGlobalValue('IS_REACT_ACT_ENVIRONMENT' as GlobalKey, true),
   ];
