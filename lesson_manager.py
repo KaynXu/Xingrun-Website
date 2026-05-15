@@ -157,6 +157,9 @@ CONSULTATION_SOURCE_ALIASES = {
     "其他": {"其他"},
 }
 CONSULTATION_FOLLOW_UP_STATUS_OPTIONS = ("待邀约", "跟进中", "已报班", "已劝退")
+CONSULTATION_FLOW_STAGE_OPTIONS = ("已加小客服微信", "已加对应教师微信", "正在沟通细节", "待测试", "待试听")
+CONSULTATION_RESULT_OPTIONS = ("成功进班", "试听失败")
+CONSULTATION_FOLLOW_UP_LIGHT_OPTIONS = ("待跟进", "正在跟进", "咨询结束")
 COURSE_CALENDAR_TIME_BLOCKS = (
     "08:00-10:00",
     "10:00-12:00",
@@ -207,6 +210,11 @@ CONSULTATION_EDITABLE_FIELDS = {
     "截图",
     "跟进状态",
     "跟进备注",
+    "咨询流程阶段",
+    "已完成咨询流程",
+    "咨询结果",
+    "咨询是否结束",
+    "跟进状态灯",
 }
 
 CONSULTATION_API_FIELD_MAP = {
@@ -223,6 +231,11 @@ CONSULTATION_API_FIELD_MAP = {
     "screenshot": "截图",
     "follow_up_status": "跟进状态",
     "follow_up_note": "跟进备注",
+    "flow_stage": "咨询流程阶段",
+    "completed_stages": "已完成咨询流程",
+    "consultation_result": "咨询结果",
+    "consultation_closed": "咨询是否结束",
+    "follow_up_light": "跟进状态灯",
     "created_at": "录入时间",
     "updated_at": "最后更新",
 }
@@ -970,6 +983,25 @@ def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
         if api_field in payload:
             value = payload.get(api_field, "")
             updates[csv_field] = "" if value is None else str(value)
+    if "咨询流程阶段" in updates:
+        stage = updates["咨询流程阶段"].strip()
+        updates["咨询流程阶段"] = stage if stage in CONSULTATION_FLOW_STAGE_OPTIONS else ""
+    if "已完成咨询流程" in updates:
+        completed_stages = []
+        for stage in re.split(r"[,，|/]", updates["已完成咨询流程"]):
+            normalized_stage = stage.strip()
+            if normalized_stage in CONSULTATION_FLOW_STAGE_OPTIONS and normalized_stage not in completed_stages:
+                completed_stages.append(normalized_stage)
+        updates["已完成咨询流程"] = "，".join(completed_stages)
+    if "咨询结果" in updates:
+        result = updates["咨询结果"].strip()
+        updates["咨询结果"] = result if result in CONSULTATION_RESULT_OPTIONS else ""
+    if "咨询是否结束" in updates:
+        closed = updates["咨询是否结束"].strip().lower()
+        updates["咨询是否结束"] = "true" if closed in {"true", "1", "yes", "y", "已结束", "结束", "是"} else ""
+    if "跟进状态灯" in updates:
+        light = updates["跟进状态灯"].strip()
+        updates["跟进状态灯"] = light if light in CONSULTATION_FOLLOW_UP_LIGHT_OPTIONS else ""
     return updates
 
 
@@ -1163,8 +1195,9 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 consultation_subject, need_detail,
                 source_channel, source_channel_note, screenshot, reminder_at,
                 reminder_status, reminder_task_id, follow_up_status, follow_up_note,
+                flow_stage, completed_stages, consultation_result, consultation_closed, follow_up_light,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
@@ -1183,6 +1216,11 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 stored["reminder_task_id"],
                 stored["follow_up_status"],
                 stored["follow_up_note"],
+                stored["flow_stage"],
+                stored["completed_stages"],
+                stored["consultation_result"],
+                stored["consultation_closed"],
+                stored["follow_up_light"],
                 now,
                 now,
             ),
@@ -1242,6 +1280,11 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 screenshot=?,
                 follow_up_status=?,
                 follow_up_note=?,
+                flow_stage=?,
+                completed_stages=?,
+                consultation_result=?,
+                consultation_closed=?,
+                follow_up_light=?,
                 assigned_user_id=?,
                 updated_at=?
             WHERE id=?
@@ -1258,6 +1301,11 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 stored["screenshot"],
                 stored["follow_up_status"],
                 stored["follow_up_note"],
+                stored["flow_stage"],
+                stored["completed_stages"],
+                stored["consultation_result"],
+                stored["consultation_closed"],
+                stored["follow_up_light"],
                 assigned_user_id,
                 now,
                 consultation_id,
@@ -1518,6 +1566,11 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "reminder_task_id": serialized.get("提醒任务ID", ""),
         "follow_up_status": serialized.get("follow_up_status", ""),
         "follow_up_note": serialized.get("follow_up_note", ""),
+        "flow_stage": serialized.get("flow_stage", ""),
+        "completed_stages": serialized.get("completed_stages", ""),
+        "consultation_result": serialized.get("consultation_result", ""),
+        "consultation_closed": serialized.get("consultation_closed", ""),
+        "follow_up_light": serialized.get("follow_up_light", ""),
         "created_at": serialized.get("created_at", ""),
         "updated_at": serialized.get("updated_at", ""),
     }
@@ -1548,6 +1601,11 @@ def _consultation_storage_row_to_public_dict(
     legacy_row["提醒任务ID"] = payload.get("reminder_task_id", "") or ""
     legacy_row["跟进状态"] = payload.get("follow_up_status", "") or ""
     legacy_row["跟进备注"] = payload.get("follow_up_note", "") or ""
+    legacy_row["咨询流程阶段"] = payload.get("flow_stage", "") or ""
+    legacy_row["已完成咨询流程"] = payload.get("completed_stages", "") or ""
+    legacy_row["咨询结果"] = payload.get("consultation_result", "") or ""
+    legacy_row["咨询是否结束"] = str(payload.get("consultation_closed", "") or "")
+    legacy_row["跟进状态灯"] = payload.get("follow_up_light", "") or ""
     legacy_row["录入时间"] = payload.get("created_at", "") or ""
     legacy_row["最后更新"] = payload.get("updated_at", "") or ""
     serialized = _serialize_consultation_row(legacy_row, teacher_directory)
@@ -1587,11 +1645,21 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
             reminder_task_id     TEXT DEFAULT '',
             follow_up_status     TEXT DEFAULT '',
             follow_up_note       TEXT DEFAULT '',
+            flow_stage           TEXT DEFAULT '',
+            completed_stages     TEXT DEFAULT '',
+            consultation_result  TEXT DEFAULT '',
+            consultation_closed  TEXT DEFAULT '',
+            follow_up_light      TEXT DEFAULT '',
             created_at           TEXT DEFAULT (datetime('now','localtime')),
             updated_at           TEXT DEFAULT (datetime('now','localtime'))
         )
         """
     )
+    _ensure_column(conn, "consultations", "flow_stage", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "completed_stages", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "consultation_result", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "consultation_closed", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "follow_up_light", "TEXT DEFAULT ''")
 
 
 def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:

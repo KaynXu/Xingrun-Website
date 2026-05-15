@@ -30,6 +30,7 @@ import {
   Menu,
   Filter,
   ArrowRight,
+  ArrowUp,
   RefreshCw,
   AlertCircle,
   ShieldCheck,
@@ -203,6 +204,11 @@ interface ConsultationRecord {
   screenshot: string;
   follow_up_status: string;
   follow_up_note: string;
+  flow_stage?: string | null;
+  completed_stages?: string[] | string | null;
+  consultation_result?: string | null;
+  consultation_closed?: boolean | string | null;
+  follow_up_light?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1118,6 +1124,25 @@ export function parseConsultationQuickEntry(
 }
 
 const consultationStatusOptions = ['待邀约', '跟进中', '已报班', '已劝退'];
+const consultationFlowStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
+const consultationFollowUpLights = ['待跟进', '正在跟进', '咨询结束'] as const;
+const consultationFlowStageShortLabels: Record<(typeof consultationFlowStages)[number], string> = {
+  已加小客服微信: '客服',
+  已加对应教师微信: '教师',
+  正在沟通细节: '沟通',
+  待测试: '测试',
+  待试听: '试听',
+};
+
+type ConsultationFollowUpLight = (typeof consultationFollowUpLights)[number];
+type ConsultationEditTarget = 'basic' | 'content' | 'progress' | 'notes';
+
+type ConsultationProgressViewModel = {
+  completedStageCount: number;
+  activeStageIndex: number | null;
+  result: '成功进班' | '试听失败' | null;
+  followUpLight: ConsultationFollowUpLight;
+};
 
 function consultationStatusClass(status: string): string {
   if (status === '待邀约') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
@@ -1170,6 +1195,11 @@ const consultationFormDefaults: ConsultationFormValues = {
   screenshot: '',
   follow_up_status: '待邀约',
   follow_up_note: '',
+  flow_stage: '',
+  completed_stages: '',
+  consultation_result: '',
+  consultation_closed: false,
+  follow_up_light: '',
 };
 
 function buildConsultationBatchCreatePayload(fields: Partial<ConsultationFormValues>): ConsultationFormValues {
@@ -1200,6 +1230,11 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     screenshot: record.screenshot ?? '',
     follow_up_status: record.follow_up_status || consultationFormDefaults.follow_up_status,
     follow_up_note: record.follow_up_note ?? '',
+    flow_stage: record.flow_stage ?? '',
+    completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages.join('，') : record.completed_stages ?? '',
+    consultation_result: record.consultation_result ?? '',
+    consultation_closed: record.consultation_closed ?? false,
+    follow_up_light: record.follow_up_light ?? '',
   };
 }
 
@@ -1308,6 +1343,148 @@ function getConsultationSourceLabel(record: ConsultationRecord): string {
   }
   return sourceChannelNote ? `${trimmedSourceChannel} · ${sourceChannelNote}` : trimmedSourceChannel;
 }
+
+function normalizeConsultationFlowStages(rawValue: ConsultationRecord['completed_stages']): string[] {
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((item) => item?.trim()).filter((item): item is string => Boolean(item));
+  }
+
+  if (typeof rawValue !== 'string') {
+    return [];
+  }
+
+  return rawValue
+    .split(/[,，|/]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeConsultationFollowUpLight(rawValue: string | null | undefined): ConsultationFollowUpLight | null {
+  if (rawValue === '待跟进' || rawValue === '正在跟进' || rawValue === '咨询结束') {
+    return rawValue;
+  }
+  return null;
+}
+
+function normalizeConsultationResult(rawValue: string | null | undefined): '成功进班' | '试听失败' | null {
+  if (rawValue === '成功进班' || rawValue === '试听失败') {
+    return rawValue;
+  }
+  return null;
+}
+
+function buildConsultationProgress(record: ConsultationRecord): ConsultationProgressViewModel {
+  const completedStages = normalizeConsultationFlowStages(record.completed_stages);
+  const explicitStage = record.flow_stage?.trim() || '';
+  const explicitResult = normalizeConsultationResult(record.consultation_result);
+  const fallbackResult =
+    explicitResult
+    ?? (record.follow_up_status === '已报班' ? '成功进班' : null)
+    ?? (record.follow_up_status === '已劝退' ? '试听失败' : null);
+  const closed = record.consultation_closed === true || String(record.consultation_closed || '').toLowerCase() === 'true' || record.follow_up_status === '已劝退';
+  const explicitFollowUpLight = normalizeConsultationFollowUpLight(record.follow_up_light);
+  const followUpLight = explicitFollowUpLight ?? (closed ? '咨询结束' : record.follow_up_status === '待邀约' ? '待跟进' : '正在跟进');
+
+  const explicitActiveIndex = consultationFlowStages.findIndex((stage) => stage === explicitStage);
+  const fallbackActiveIndex = fallbackResult
+    ? null
+    : record.follow_up_status === '待邀约'
+      ? 0
+      : record.follow_up_status === '跟进中'
+        ? 2
+        : consultationFlowStages.length - 1;
+  const activeStageIndex = explicitActiveIndex >= 0 ? explicitActiveIndex : fallbackActiveIndex;
+  const completedByExplicitStages = completedStages.reduce((count, stage) => {
+    const stageIndex = consultationFlowStages.findIndex((item) => item === stage);
+    if (stageIndex < 0) {
+      return count;
+    }
+    return Math.max(count, stageIndex + 1);
+  }, 0);
+  const completedByFallback = fallbackResult
+    ? consultationFlowStages.length
+    : activeStageIndex === null
+      ? 0
+      : activeStageIndex;
+
+  return {
+    completedStageCount: Math.max(completedByExplicitStages, completedByFallback),
+    activeStageIndex,
+    result: fallbackResult,
+    followUpLight,
+  };
+}
+
+const ConsultationProgressCluster = ({
+  record,
+  compact = false,
+  onJumpToEdit,
+}: {
+  record: ConsultationRecord;
+  compact?: boolean;
+  onJumpToEdit?: (target: ConsultationEditTarget) => void;
+}) => {
+  const progress = useMemo(() => buildConsultationProgress(record), [record]);
+  const resultLabel = progress.result === '成功进班' ? '☀️ 成功进班' : progress.result === '试听失败' ? '😭 试听失败' : '';
+
+  return (
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-2 gap-y-2')}>
+      <div className={cn('flex min-w-0 flex-wrap items-center gap-1.5 gap-y-1.5', compact ? 'flex-1' : 'flex-1')}>
+        {consultationFlowStages.map((stage, index) => {
+          const isCompleted = index < progress.completedStageCount;
+          const isActive = progress.activeStageIndex === index;
+          const stageLabel = consultationFlowStageShortLabels[stage];
+          return (
+            <button
+              key={stage}
+              type="button"
+              title={stage}
+              onClick={() => onJumpToEdit?.('progress')}
+              className={cn(
+                'inline-flex shrink-0 items-center justify-center rounded-full border px-2.5 text-[11px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-500/20',
+                compact ? 'h-7 min-w-[2.9rem]' : 'h-7 min-w-[3.1rem]',
+                isActive
+                  ? 'border-sky-500 bg-sky-600 text-white shadow-sm'
+                  : isCompleted
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
+                    : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+                onJumpToEdit && 'hover:border-sky-300 hover:text-sky-700 dark:hover:text-sky-300',
+              )}
+            >
+              {stageLabel}
+            </button>
+          );
+        })}
+        {progress.result && (
+          <>
+            <button
+              type="button"
+              title={progress.result}
+              onClick={() => onJumpToEdit?.('progress')}
+              className={cn(
+                'inline-flex shrink-0 items-center justify-center rounded-full bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white',
+                progress.result === '试听失败' && 'bg-rose-600',
+              )}
+            >
+              {resultLabel}
+            </button>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        title={`状态灯：${progress.followUpLight}`}
+        onClick={() => onJumpToEdit?.('progress')}
+        className={cn(
+          'inline-flex h-2.5 w-2.5 shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-500/20',
+          progress.followUpLight === '待跟进' && 'bg-slate-300 dark:bg-slate-500',
+          progress.followUpLight === '正在跟进' && 'bg-emerald-500 shadow-[0_0_0_3px_rgba(220,252,231,0.9)] dark:shadow-[0_0_0_3px_rgba(16,185,129,0.18)]',
+          progress.followUpLight === '咨询结束' && 'bg-rose-500 shadow-[0_0_0_3px_rgba(254,226,226,0.95)] dark:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+        )}
+      />
+    </div>
+  );
+};
 
 export const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
 export const workspaceCardClass =
@@ -3291,6 +3468,7 @@ const ConsultationModal = ({
   submitting,
   error,
   currentUser,
+  initialEditTarget,
   onClose,
   onSubmit,
   onDelete,
@@ -3303,6 +3481,7 @@ const ConsultationModal = ({
   submitting: boolean;
   error: string;
   currentUser: CurrentUser;
+  initialEditTarget?: ConsultationEditTarget | null;
   onClose: () => void;
   onSubmit: (values: ConsultationFormValues) => Promise<void>;
   onDelete?: () => Promise<void>;
@@ -3311,6 +3490,11 @@ const ConsultationModal = ({
   const [form, setForm] = useState<ConsultationFormValues>(toConsultationFormValues(record));
   const [quickEntry, setQuickEntry] = useState('');
   const [parseFeedback, setParseFeedback] = useState('');
+  const formScrollRef = useRef<HTMLFormElement>(null);
+  const basicSectionRef = useRef<HTMLElement>(null);
+  const contentSectionRef = useRef<HTMLElement>(null);
+  const progressSectionRef = useRef<HTMLElement>(null);
+  const notesSectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -3319,6 +3503,22 @@ const ConsultationModal = ({
       setParseFeedback('');
     }
   }, [open, mode, record]);
+
+  useEffect(() => {
+    if (!open || !initialEditTarget) {
+      return;
+    }
+    const targetMap: Record<ConsultationEditTarget, React.RefObject<HTMLElement | null>> = {
+      basic: basicSectionRef,
+      content: contentSectionRef,
+      progress: progressSectionRef,
+      notes: notesSectionRef,
+    };
+    const frameId = window.requestAnimationFrame(() => {
+      targetMap[initialEditTarget]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [open, initialEditTarget]);
 
   if (!open) {
     return null;
@@ -3408,6 +3608,14 @@ const ConsultationModal = ({
   };
 
   const fieldClass = `${workspaceFieldClass} ${readOnly ? 'cursor-default' : ''}`;
+  const completedStageValues = normalizeConsultationFlowStages(form.completed_stages);
+
+  const toggleCompletedStage = (stage: string) => {
+    const nextStages = completedStageValues.includes(stage)
+      ? completedStageValues.filter((item) => item !== stage)
+      : [...completedStageValues, stage];
+    updateField('completed_stages', nextStages.join('，'));
+  };
 
   return (
     <motion.div
@@ -3443,7 +3651,17 @@ const ConsultationModal = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <button
+          type="button"
+          onClick={() => formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="absolute right-4 top-28 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 sm:inline-flex dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700"
+          title="回到顶部"
+          aria-label="回到顶部"
+        >
+          <ArrowUp size={18} />
+        </button>
+
+        <form ref={formScrollRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {error && (
             <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
               <AlertCircle size={16} />
@@ -3491,7 +3709,7 @@ const ConsultationModal = ({
           )}
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
+            <section ref={basicSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、家长微信和咨询老师信息。</p>
@@ -3560,7 +3778,7 @@ const ConsultationModal = ({
               </div>
             </section>
 
-            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
+            <section ref={contentSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">咨询内容</h4>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求和跟进状态。</p>
@@ -3631,7 +3849,86 @@ const ConsultationModal = ({
               ))}
             </datalist>
 
-            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
+            <section ref={progressSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
+              <div>
+                <h4 className="font-semibold text-slate-900 dark:text-white">咨询流程</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">阶段、结果和右侧状态灯会同步显示到咨询列表。</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-3">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">当前阶段</span>
+                  <select
+                    value={form.flow_stage || ''}
+                    onChange={(e) => updateField('flow_stage', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                  >
+                    <option value="">按跟进状态自动判断</option>
+                    {consultationFlowStages.map((stage) => (
+                      <option key={stage} value={stage}>{stage}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">咨询结果</span>
+                  <select
+                    value={form.consultation_result || ''}
+                    onChange={(e) => updateField('consultation_result', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                  >
+                    <option value="">暂未出结果</option>
+                    <option value="成功进班">☀️ 成功进班</option>
+                    <option value="试听失败">😭 试听失败</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">状态灯</span>
+                  <select
+                    value={form.follow_up_light || ''}
+                    onChange={(e) => updateField('follow_up_light', e.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                  >
+                    <option value="">自动判断</option>
+                    {consultationFollowUpLights.map((light) => (
+                      <option key={light} value={light}>{light}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {consultationFlowStages.map((stage) => (
+                  <button
+                    key={stage}
+                    type="button"
+                    title={stage}
+                    onClick={() => toggleCompletedStage(stage)}
+                    disabled={readOnly}
+                    className={cn(
+                      'inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-default disabled:opacity-70',
+                      completedStageValues.includes(stage)
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
+                        : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+                    )}
+                  >
+                    {consultationFlowStageShortLabels[stage as (typeof consultationFlowStages)[number]]}
+                  </button>
+                ))}
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.consultation_closed === true || String(form.consultation_closed || '').toLowerCase() === 'true'}
+                  onChange={(e) => updateField('consultation_closed', e.target.checked)}
+                  disabled={readOnly}
+                  className="h-4 w-4 rounded border-sky-200 text-sky-600 focus:ring-sky-200 dark:border-white/10 dark:bg-slate-900"
+                />
+                咨询已结束
+              </label>
+            </section>
+
+            <section ref={notesSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">咨询详情</span>
@@ -4140,6 +4437,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'view' | 'create' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
+  const [initialEditTarget, setInitialEditTarget] = useState<ConsultationEditTarget | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const loadRequestId = useRef(0);
@@ -4197,9 +4496,19 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 360);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const openCreateModal = () => {
     setSelectedRecord(null);
     setModalMode('create');
+    setInitialEditTarget('basic');
     setModalOpen(true);
     setError('');
   };
@@ -4212,13 +4521,15 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const openViewModal = (record: ConsultationRecord) => {
     setSelectedRecord(record);
     setModalMode('view');
+    setInitialEditTarget(null);
     setModalOpen(true);
     setError('');
   };
 
-  const openEditModal = (record: ConsultationRecord) => {
+  const openEditModal = (record: ConsultationRecord, target: ConsultationEditTarget | null = null) => {
     setSelectedRecord(record);
     setModalMode('edit');
+    setInitialEditTarget(target);
     setModalOpen(true);
     setError('');
   };
@@ -4226,6 +4537,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const closeModal = () => {
     setModalOpen(false);
     setSelectedRecord(null);
+    setInitialEditTarget(null);
     setSubmitting(false);
   };
 
@@ -4286,7 +4598,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Log</p>
           <h3 className={`${workspaceSectionTitleClass} mt-3`}>咨询记录</h3>
           <p className={`${workspaceSectionTextClass} mt-2`}>
-            记录家长咨询、跟进状态和后续备注，搜索后会直接按关键词过滤当前列表。
+            记录家长咨询、流程进度和后续备注，搜索后会直接按关键词过滤当前列表。
           </p>
         </div>
         <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
@@ -4359,9 +4671,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
                         <p className="mt-2 font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
                       </div>
-                      <span className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.08em] ${consultationStatusClass(record.follow_up_status || '')}`}>
-                        {record.follow_up_status || '—'}
-                      </span>
+                      <ConsultationProgressCluster record={record} compact onJumpToEdit={canManage ? (target) => openEditModal(record, target) : undefined} />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -4452,7 +4762,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 <th className="pl-6 pr-3 py-4 font-semibold whitespace-nowrap w-24">年级</th>
                 <th className="pl-3 pr-6 py-4 font-semibold whitespace-nowrap">咨询老师</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询科目 / 来源渠道</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">跟进状态</th>
                 <th className="px-6 py-4 font-semibold whitespace-nowrap">录入 / 更新</th>
                 <th className="px-6 py-4 text-right font-semibold whitespace-nowrap">操作</th>
               </tr>
@@ -4463,7 +4772,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 const needDetail = record.need_detail?.trim();
                 const followUpNote = record.follow_up_note?.trim();
                 return (
-                  <tr key={record.id} className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
+                  <React.Fragment key={record.id}>
+                  <tr className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
                     <td className="px-6 py-4 align-top font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
                     <td className="px-6 py-4 align-top">
                       <div className="space-y-1">
@@ -4490,11 +4800,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p>{getConsultationSourceLabel(record)}</p>
                         {followUpNote && <p>跟进：{followUpNote}</p>}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 align-top">
-                      <span className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.08em] ${consultationStatusClass(record.follow_up_status || '')}`}>
-                        {record.follow_up_status || '—'}
-                      </span>
                     </td>
                     <td className="px-6 py-4 align-top text-sm text-slate-500 dark:text-slate-400">
                       <div className="space-y-1">
@@ -4550,6 +4855,15 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                     </td>
                   </tr>
+                  <tr className="border-t border-sky-50/80 bg-sky-50/30 dark:border-white/5 dark:bg-white/[0.02]">
+                    <td colSpan={7} className="px-6 pb-5 pt-2">
+                      <div className="flex items-center gap-3">
+                        <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">咨询流程</span>
+                        <ConsultationProgressCluster record={record} onJumpToEdit={canManage ? (target) => openEditModal(record, target) : undefined} />
+                      </div>
+                    </td>
+                  </tr>
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -4578,6 +4892,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             submitting={submitting}
             error={error}
             currentUser={currentUser}
+            initialEditTarget={initialEditTarget}
             onClose={closeModal}
             onSubmit={handleSubmit}
             onDelete={canManage ? handleDelete : undefined}
@@ -4585,6 +4900,17 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           />
         )}
       </AnimatePresence>
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-900 dark:text-sky-300 dark:hover:bg-slate-800"
+          title="返回顶部"
+          aria-label="返回顶部"
+        >
+          <ArrowUp size={18} />
+        </button>
+      )}
     </div>
   );
 };

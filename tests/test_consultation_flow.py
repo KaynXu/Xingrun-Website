@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from typing import Optional
 from unittest.mock import patch
 from pathlib import Path
 
@@ -124,7 +125,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertIsNotNone(user)
         return user
 
-    def create_consultation_record(self, assigned_user_id: int | None = None, **overrides: str) -> dict:
+    def create_consultation_record(self, assigned_user_id: Optional[int] = None, **overrides: str) -> dict:
         owner = self.owner_user()
         payload = self.sample_row(**overrides)
         stored = lesson_manager._consultation_row_to_storage(payload, owner["organization_id"])
@@ -307,6 +308,60 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
         remaining_rows = self.read_consultation_storage_rows()
         self.assertEqual(remaining_rows, [])
+
+    def test_create_update_and_list_persist_consultation_progress_fields(self):
+        create_response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "date": "2026-05-15",
+                "parent_wechat_name": "李妈妈",
+                "child_name": "李星辰",
+                "grade": "三年级",
+                "consultation_subject": "数学",
+                "need_detail": "基础薄弱，准备测试",
+                "source_channel": "家长群",
+                "follow_up_status": "跟进中",
+                "flow_stage": "待测试",
+                "completed_stages": "已加小客服微信，已加对应教师微信，正在沟通细节",
+                "consultation_result": "",
+                "consultation_closed": False,
+                "follow_up_light": "正在跟进",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        created = create_response.get_json()
+        self.assertEqual(created["flow_stage"], "待测试")
+        self.assertEqual(created["completed_stages"], "已加小客服微信，已加对应教师微信，正在沟通细节")
+        self.assertEqual(created["follow_up_light"], "正在跟进")
+
+        update_response = self.client.put(
+            f"/api/consultations/{created['id']}",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "flow_stage": "待试听",
+                "completed_stages": "已加小客服微信，已加对应教师微信，正在沟通细节，待测试，待试听",
+                "consultation_result": "试听失败",
+                "consultation_closed": True,
+                "follow_up_light": "咨询结束",
+            },
+        )
+        self.assertEqual(update_response.status_code, 200)
+        updated = update_response.get_json()
+        self.assertEqual(updated["flow_stage"], "待试听")
+        self.assertEqual(updated["consultation_result"], "试听失败")
+        self.assertEqual(updated["consultation_closed"], "true")
+        self.assertEqual(updated["follow_up_light"], "咨询结束")
+
+        rows = self.read_consultation_storage_rows()
+        self.assertEqual(rows[0]["flow_stage"], "待试听")
+        self.assertEqual(rows[0]["consultation_result"], "试听失败")
+        self.assertEqual(rows[0]["consultation_closed"], "true")
+
+        list_response = self.client.get("/api/consultations", headers=self.auth_headers(self.owner_token))
+        self.assertEqual(list_response.status_code, 200)
+        listed = list_response.get_json()[0]
+        self.assertEqual(listed["completed_stages"], "已加小客服微信，已加对应教师微信，正在沟通细节，待测试，待试听")
 
     def test_members_can_view_and_create_but_not_edit_or_delete(self):
         member_token = self.create_member_token()

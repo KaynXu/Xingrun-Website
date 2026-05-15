@@ -211,6 +211,42 @@ test('consultation page source top-aligns desktop cells so the first text rows s
   assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top text-right">/);
 });
 
+test('consultation page source renders shared progress clusters with stage hover titles and follow-up lights', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(source, /const consultationFlowStages = \['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'\];/);
+  assert.match(source, /const consultationFollowUpLights = \['待跟进', '正在跟进', '咨询结束'\] as const;/);
+  assert.match(source, /type ConsultationEditTarget = 'basic' \| 'content' \| 'progress' \| 'notes';/);
+  assert.match(source, /title=\{stage\}/);
+  assert.match(source, /title=\{`状态灯：\$\{progress\.followUpLight\}`\}/);
+  assert.match(source, /'☀️ 成功进班'/);
+  assert.match(source, /'😭 试听失败'/);
+  assert.match(consultationPageBlock[0], /<ConsultationProgressCluster record=\{record\} compact onJumpToEdit=\{canManage \? \(target\) => openEditModal\(record, target\) : undefined\} \/>/);
+  assert.match(consultationPageBlock[0], /<td colSpan=\{7\} className="px-6 pb-5 pt-2">/);
+  assert.doesNotMatch(consultationPageBlock[0], />咨询进度<\/th>/);
+  assert.doesNotMatch(consultationPageBlock[0], /consultationStatusClass\(record\.follow_up_status \|\| ''\)/);
+});
+
+test('consultation modal source provides progress editing anchors and scroll-to-top controls', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationModalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationModalBlock);
+  assert.ok(consultationPageBlock);
+  assert.match(consultationModalBlock[0], /initialEditTarget\?: ConsultationEditTarget \| null;/);
+  assert.match(consultationModalBlock[0], /const progressSectionRef = useRef<HTMLElement>\(null\);/);
+  assert.match(consultationModalBlock[0], /targetMap\[initialEditTarget\]\?\.current\?\.scrollIntoView/);
+  assert.match(consultationModalBlock[0], />咨询流程<\/h4>/);
+  assert.match(consultationModalBlock[0], /<option value="成功进班">☀️ 成功进班<\/option>/);
+  assert.match(consultationModalBlock[0], /<option value="试听失败">😭 试听失败<\/option>/);
+  assert.match(consultationModalBlock[0], /aria-label="回到顶部"/);
+  assert.match(consultationPageBlock[0], /showScrollTop &&/);
+  assert.match(consultationPageBlock[0], /aria-label="返回顶部"/);
+});
+
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
