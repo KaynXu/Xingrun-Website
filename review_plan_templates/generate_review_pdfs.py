@@ -1404,6 +1404,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
         blank_body = Paragraph("<br/>".join([f"{index}. {localize_text(item[0], chinese_only)}" for index, item in enumerate(day["blanks"], start=1)]), styles["body"])
         story.append(make_box(labels["blanks_title"], blank_body, styles, colors.white))
         story.append(Spacer(1, 2 * mm))
+        story.append(CondPageBreak(60 * mm))
         story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, colors.white))
         story.append(Spacer(1, 2 * mm))
 
