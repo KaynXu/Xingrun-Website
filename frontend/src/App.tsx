@@ -5230,51 +5230,66 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       />
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">家长微信</p>
-                        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">家长微信</p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">学生姓名</p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{record.child_name?.trim() || '待补充'}</p>
+                        </div>
                       </div>
-                      <div className="min-h-[120px]">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询老师</p>
-                        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                          {getConsultationTeacherName(record, teacherDirectory)}
-                        </p>
-                        {needDetail && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询详情：{needDetail}</p>}
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{record.consultation_subject || '未填写咨询科目'}</p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
-                        {followUpNote && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">跟进：{followUpNote}</p>}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">咨询老师</p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{getConsultationTeacherName(record, teacherDirectory)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">咨询学科</p>
+                          <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{record.consultation_subject || '未填写'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">来源</p>
+                          <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{getConsultationSourceLabel(record)}</p>
+                        </div>
+                      </div>
+                      {(needDetail || followUpNote) && (
+                        <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                          {needDetail && <p className="line-clamp-2">咨询详情：{needDetail}</p>}
+                          {followUpNote && <p className="line-clamp-2">跟进：{followUpNote}</p>}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="-mx-1 grid grid-cols-2 gap-2 rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">录入时间</p>
+                        <p className="mt-1 truncate text-xs text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">更新时间</p>
+                        <p className="mt-1 truncate text-xs text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
                       </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">录入时间</p>
-                        <p className="mt-2 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
-                      </div>
-                      <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
-                        <p className="mt-2 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className={canManage ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}>
                       {canEditConsultations && (
                         <>
                           <button
                             type="button"
                             onClick={() => openEditModal(record)}
-                            className={`${workspaceSecondaryButtonClass} w-full`}
+                            className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 px-2 text-xs`}
                             disabled={busy}
                           >
-                            <Pencil size={16} />
+                            <Pencil size={14} />
                             编辑
                           </button>
                           <button
                             type="button"
                             onClick={() => handleInlineEndConsultation(record)}
-                            className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-rose-500 px-3 py-2.5 text-xs font-extrabold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
+                            className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-rose-500 px-2 text-xs font-extrabold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
                             disabled={busy}
                           >
                             OVER
@@ -5296,10 +5311,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                                   setDeletingId(null);
                                 }
                               }}
-                              className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                              className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
                               disabled={busy}
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={14} />
                               删除
                             </button>
                           )}
