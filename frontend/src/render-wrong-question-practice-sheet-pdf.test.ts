@@ -139,6 +139,44 @@ test('buildDocumentMarkup renders scheduled answer math through latex preview', 
   assert.doesNotMatch(answerSection, /\$x=2\$/);
 });
 
+test('buildDocumentMarkup puts scheduled error-review blanks before redo questions', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 一周错题练习',
+    schedule: [
+      {
+        dayIndex: 1,
+        date: '2026-05-20',
+        items: [
+          {
+            practiceItemId: 'real-1',
+            itemType: 'real',
+            question_order: 1,
+            is_geometry: false,
+            question_text_snapshot: '解方程 $x+1=3$。',
+            reason_blank_prompt: '先复盘这题错因\n我这题错在 ______，重做前要先检查 ______。',
+            improvement_summary_prompt: '再写下次提醒\n下次看到同类题，先 ______ 再列式。',
+          },
+        ],
+      },
+    ],
+    answerItems: [],
+  });
+
+  const reviewIndex = markup.indexOf('错题复习');
+  const reasonIndex = markup.indexOf('我这题错在');
+  const redoIndex = markup.indexOf('重做原题');
+  const questionIndex = markup.indexOf('解方程');
+
+  assert.ok(reviewIndex > -1);
+  assert.ok(reasonIndex > reviewIndex);
+  assert.ok(redoIndex > reasonIndex);
+  assert.ok(questionIndex > redoIndex);
+  assert.match(markup, /blank-gap/);
+});
+
 test('resolveChromiumLaunchOptions adds hardened chromium flags on linux', async () => {
   const launchOptions = await resolveChromiumLaunchOptions({
     env: {},
