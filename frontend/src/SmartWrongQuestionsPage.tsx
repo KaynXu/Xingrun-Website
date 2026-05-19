@@ -515,6 +515,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   }, []);
 
+  const resetWeeklyFollowupContext = useCallback(() => {
+    weeklyFollowupRequestVersionRef.current += 1;
+    practicePackRequestVersionRef.current += 1;
+    setWeeklyFollowupItems([]);
+    setWeeklyFollowupNotice('');
+    setWeeklyFollowupError('');
+    setWeeklyFollowupLoading(false);
+    setGeneratingWeeklyFollowupStudentId(null);
+    setPracticePackJob(null);
+    setPracticePackGenerating(false);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -594,16 +606,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [weeklyActivityWeekStart, weeklyActivityOrganizationId]);
 
   useEffect(() => {
-    weeklyFollowupRequestVersionRef.current += 1;
-    practicePackRequestVersionRef.current += 1;
-    setWeeklyFollowupItems([]);
-    setWeeklyFollowupNotice('');
-    setWeeklyFollowupError('');
-    setWeeklyFollowupLoading(false);
-    setGeneratingWeeklyFollowupStudentId(null);
-    setPracticePackJob(null);
-    setPracticePackGenerating(false);
-  }, [activeWeeklyFollowupClassId, weeklyFollowupWeekStart]);
+    resetWeeklyFollowupContext();
+  }, [activeWeeklyFollowupClassId, resetWeeklyFollowupContext, weeklyFollowupWeekStart]);
 
   useEffect(() => {
     if (!usesStudentNotebook || hasStaffScope) {
@@ -1401,12 +1405,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     </div>
   );
   const handleMemberClassChange = (value: string) => {
+    resetWeeklyFollowupContext();
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
     setSelectedStudentName(null);
     setSelectedId(null);
   };
   const handleStaffClassChange = (value: string) => {
+    resetWeeklyFollowupContext();
     const nextClassId = value ? Number(value) : null;
     const nextClassOption = Number.isFinite(nextClassId)
       ? visibleClassOptions.find((item) => item.id === nextClassId) ?? null
@@ -2053,7 +2059,10 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     aria-label="周次"
                     type="date"
                     value={weeklyFollowupWeekStart}
-                    onChange={(event) => setWeeklyFollowupWeekStart(event.target.value)}
+                    onChange={(event) => {
+                      resetWeeklyFollowupContext();
+                      setWeeklyFollowupWeekStart(event.target.value);
+                    }}
                     className={workspaceFieldClass}
                   />
                 </label>

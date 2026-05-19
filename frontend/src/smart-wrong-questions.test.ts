@@ -3369,9 +3369,11 @@ test('SmartWrongQuestionsPage ignores stale practice pack create responses after
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
-    await selectNotebookClass(domEnvironment.container, '43');
-
     await act(async () => {
+      const classSelect = getNotebookClassSelect(domEnvironment.container);
+      assert.ok(classSelect instanceof HTMLSelectElement);
+      classSelect.value = '43';
+      classSelect.dispatchEvent(new Event('change', { bubbles: true }));
       createPackResponse.resolve(createJsonResponse({
         reused: false,
         job: {
