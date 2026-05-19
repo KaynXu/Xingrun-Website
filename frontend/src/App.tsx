@@ -1139,8 +1139,7 @@ const consultationResultStages: ConsultationResultStage[] = ['成功进班', '�
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
-  | 'pending-60'
-  | 'pending-over60'
+  | 'pending-over30'
   | 'ended-success'
   | 'ended-unsuccessful';
 
@@ -1153,8 +1152,7 @@ const consultationFilterGroups: Array<{
     items: [
       { key: 'pending-7', label: '一周内' },
       { key: 'pending-30', label: '一月内' },
-      { key: 'pending-60', label: '两月内' },
-      { key: 'pending-over60', label: '60天+' },
+      { key: 'pending-over30', label: '30天+' },
     ],
   },
   {
@@ -1225,8 +1223,14 @@ function getConsultationFilterKey(record: ConsultationRecord, todayIso: string):
   const ageDays = getConsultationAgeDays(record, todayIso);
   if (ageDays <= 7) return 'pending-7';
   if (ageDays <= 30) return 'pending-30';
-  if (ageDays <= 60) return 'pending-60';
-  return 'pending-over60';
+  return 'pending-over30';
+}
+
+function getConsultationOver30SectionLabel(record: ConsultationRecord, todayIso: string): string {
+  const ageDays = getConsultationAgeDays(record, todayIso);
+  if (ageDays <= 60) return '两月内';
+  if (ageDays <= 180) return '半年内';
+  return '半年以上';
 }
 
 function sortConsultationsForFilter(records: ConsultationRecord[], filterKey: ConsultationFilterKey): ConsultationRecord[] {
@@ -5007,6 +5011,17 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       activeFilter,
     );
   }, [records, consultationTodayIso, activeFilter]);
+  const getVisibleRecordSectionLabel = (record: ConsultationRecord, index: number): string | null => {
+    if (activeFilter !== 'pending-over30') {
+      return null;
+    }
+    const label = getConsultationOver30SectionLabel(record, consultationTodayIso);
+    const previousRecord = visibleRecords[index - 1];
+    if (!previousRecord) {
+      return label;
+    }
+    return getConsultationOver30SectionLabel(previousRecord, consultationTodayIso) === label ? null : label;
+  };
 
   const handleInlineStageToggle = async (record: ConsultationRecord, stage: string) => {
     if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
@@ -5200,12 +5215,19 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         ) : (
           <>
             <div className="grid gap-4 p-4 sm:p-5 md:hidden">
-              {visibleRecords.map((record) => {
+              {visibleRecords.map((record, index) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
                 const needDetail = record.need_detail?.trim();
                 const followUpNote = record.follow_up_note?.trim();
+                const sectionLabel = getVisibleRecordSectionLabel(record, index);
                 return (
-                  <article key={record.id} className={`${workspaceSoftCardClass} relative space-y-4 p-4`}>
+                  <React.Fragment key={record.id}>
+                    {sectionLabel && (
+                      <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">
+                        {sectionLabel}
+                      </div>
+                    )}
+                    <article className={`${workspaceSoftCardClass} relative space-y-4 p-4`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
@@ -5321,20 +5343,28 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </>
                       )}
                     </div>
-                  </article>
+                    </article>
+                  </React.Fragment>
                 );
               })}
             </div>
 
             <div className="hidden md:block">
               <div className="space-y-3 p-4">
-                {visibleRecords.map((record) => {
+                {visibleRecords.map((record, index) => {
                   const busy = isBusy && selectedRecord?.id === record.id;
                   const needDetail = record.need_detail?.trim();
                   const followUpNote = record.follow_up_note?.trim();
                   const frozen = isConsultationEnded(record.flow_stage);
+                  const sectionLabel = getVisibleRecordSectionLabel(record, index);
                   return (
-                    <article key={record.id} className="relative overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
+                    <React.Fragment key={record.id}>
+                    {sectionLabel && (
+                      <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">
+                        {sectionLabel}
+                      </div>
+                    )}
+                    <article className="relative overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
                       <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} absolute right-5 top-4 z-10 h-9 w-[7.25rem] px-3 text-xs`}>
                         <Eye size={14} />
                         查看
@@ -5404,6 +5434,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </button>
                       </div>
                     </article>
+                    </React.Fragment>
                   );
                 })}
               </div>
