@@ -153,6 +153,75 @@ function buildItemMarkup(item) {
   `;
 }
 
+function buildScheduledItemMarkup(item, label) {
+  const trainingGoal = String(item.trainingGoal || '').trim();
+  return `
+    <section class="record-page">
+      <div class="record-header">
+        <div class="record-index">${escapeHtml(label)}</div>
+        <div class="record-type">${escapeHtml(item.itemType === 'variant' ? '变式题' : '原错题')}</div>
+      </div>
+      ${trainingGoal ? `<div class="pack-goal">训练目标：${escapeHtml(trainingGoal)}</div>` : ''}
+      <div class="record-label">题目内容</div>
+      ${buildQuestionBlock(item)}
+      ${buildRedoWorkArea()}
+    </section>
+  `;
+}
+
+function buildAnswerItemMarkup(item, index) {
+  const keySteps = Array.isArray(item.keySteps) ? item.keySteps.filter((step) => String(step || '').trim()) : [];
+  const answer = String(item.answer || '').trim();
+  const pitfallReminder = String(item.pitfallReminder || '').trim();
+
+  return `
+    <section class="answer-card">
+      <div class="answer-title">第 ${escapeHtml(index)} 题</div>
+      ${answer ? `<div class="answer-line"><span>答案</span>${escapeHtml(answer)}</div>` : ''}
+      ${
+        keySteps.length > 0
+          ? `
+            <div class="answer-line">
+              <span>关键步骤</span>
+              <ol>
+                ${keySteps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}
+              </ol>
+            </div>
+          `
+          : ''
+      }
+      ${pitfallReminder ? `<div class="answer-line"><span>易错提醒</span>${escapeHtml(pitfallReminder)}</div>` : ''}
+    </section>
+  `;
+}
+
+function buildScheduledBody(schedule, answerItems) {
+  let questionIndex = 0;
+  const dailyMarkup = schedule
+    .map((day) => {
+      const dayItems = Array.isArray(day.items) ? day.items : [];
+      return dayItems
+        .map((item) => {
+          questionIndex += 1;
+          const label = `第 ${day.dayIndex || ''} 天${day.date ? `｜${day.date}` : ''}｜第 ${questionIndex} 题`;
+          return buildScheduledItemMarkup(item, label);
+        })
+        .join('');
+    })
+    .join('');
+
+  const answers = answerItems.length > 0
+    ? `
+      <section class="answer-section">
+        <h1>答案与关键步骤</h1>
+        ${answerItems.map((item, index) => buildAnswerItemMarkup(item, index + 1)).join('')}
+      </section>
+    `
+    : '';
+
+  return `${dailyMarkup}${answers}`;
+}
+
 export async function buildDocumentMarkup(payload) {
   const katexCss = await readFile(katexCssPath, 'utf8');
   const studentName = escapeHtml(payload.studentName || '');
@@ -160,6 +229,14 @@ export async function buildDocumentMarkup(payload) {
   const teacherName = escapeHtml(payload.teacherName || '');
   const title = escapeHtml(payload.title || `${studentName} 错题练习`);
   const items = Array.isArray(payload.items) ? payload.items : [];
+  const schedule = Array.isArray(payload.schedule) ? payload.schedule : [];
+  const answerItems = Array.isArray(payload.answerItems) ? payload.answerItems : items;
+  const packMeta = payload.packMeta && typeof payload.packMeta === 'object' ? payload.packMeta : {};
+  const scheduledQuestionCount = schedule.reduce(
+    (count, day) => count + (Array.isArray(day.items) ? day.items.length : 0),
+    0,
+  );
+  const hasSchedule = schedule.length > 0;
 
   return `
     <!doctype html>
@@ -230,11 +307,28 @@ export async function buildDocumentMarkup(payload) {
             color: #0f172a;
           }
 
+          .record-type {
+            font-size: 12px;
+            font-weight: 700;
+            color: #475569;
+          }
+
           .record-label {
             margin-bottom: 10px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
+          }
+
+          .pack-goal {
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border: 1px solid #dbeafe;
+            border-radius: 10px;
+            background: #f8fbff;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.6;
           }
 
           .geometry-card,
@@ -364,6 +458,55 @@ export async function buildDocumentMarkup(payload) {
             border-radius: 12px;
             background: #ffffff;
           }
+
+          .answer-section {
+            page-break-before: always;
+          }
+
+          .answer-section h1 {
+            margin: 0 0 16px;
+            font-size: 22px;
+            color: #0f172a;
+          }
+
+          .answer-card {
+            break-inside: avoid;
+            margin-bottom: 14px;
+            padding: 14px;
+            border: 1px solid #dbe2ea;
+            border-radius: 10px;
+            background: #ffffff;
+          }
+
+          .answer-title {
+            margin-bottom: 8px;
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f172a;
+          }
+
+          .answer-line {
+            margin-top: 8px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
+
+          .answer-line span {
+            display: inline-block;
+            min-width: 4.5em;
+            margin-right: 8px;
+            color: #64748b;
+            font-weight: 700;
+          }
+
+          .answer-line ol {
+            margin: 6px 0 0 5.2em;
+            padding-left: 18px;
+            white-space: normal;
+          }
         </style>
       </head>
       <body>
@@ -372,9 +515,18 @@ export async function buildDocumentMarkup(payload) {
           <div class="cover-meta">学生：${studentName}</div>
           <div class="cover-meta">班级：${className}</div>
           <div class="cover-meta">老师：${teacherName}</div>
-          <div class="cover-meta">题目数量：${items.length}</div>
+          ${
+            hasSchedule
+              ? `
+                <div class="cover-meta">目标：${escapeHtml(packMeta.target || '')}</div>
+                <div class="cover-meta">题量档位：${escapeHtml(packMeta.volume || '')}</div>
+                <div class="cover-meta">生成日期：${escapeHtml(packMeta.generatedDate || '')}</div>
+              `
+              : ''
+          }
+          <div class="cover-meta">题目数量：${hasSchedule ? scheduledQuestionCount : items.length}</div>
         </section>
-        ${items.map((item) => buildItemMarkup(item)).join('')}
+        ${hasSchedule ? buildScheduledBody(schedule, answerItems) : items.map((item) => buildItemMarkup(item)).join('')}
       </body>
     </html>
   `;

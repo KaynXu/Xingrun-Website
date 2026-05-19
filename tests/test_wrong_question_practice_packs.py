@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 import ai_processor
 import config_runtime
 import lesson_manager
+import pdf_engine
 
 
 class WrongQuestionPracticePackStorageTestCase(unittest.TestCase):
@@ -600,3 +601,29 @@ class WrongQuestionPracticePackAiNormalizationTestCase(unittest.TestCase):
     def test_variant_review_passed_reads_first_conclusion_line(self):
         self.assertTrue(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：通过\n题目可解。"))
         self.assertFalse(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：不通过\n答案不一致。"))
+
+
+class WrongQuestionPracticePackPdfPayloadTestCase(unittest.TestCase):
+    def test_browser_payload_keeps_daily_plan_and_answers(self):
+        items = [
+            {
+                "practice_item_id": "real-1",
+                "item_type": "real",
+                "question_text_snapshot": "解方程 x+1=3。",
+                "answer": "x=2",
+                "key_steps": ["x=3-1", "x=2"],
+                "pitfall_reminder": "移项后要变号。",
+            }
+        ]
+        schedule = [{"day_index": 1, "date": "2026-05-20", "items": items}]
+
+        payload_items = pdf_engine._build_browser_wrong_question_practice_items(items)
+        self.assertEqual(payload_items[0]["practiceItemId"], "real-1")
+        self.assertEqual(payload_items[0]["itemType"], "real")
+        self.assertEqual(payload_items[0]["answer"], "x=2")
+        self.assertEqual(payload_items[0]["keySteps"], ["x=3-1", "x=2"])
+        self.assertEqual(payload_items[0]["pitfallReminder"], "移项后要变号。")
+
+        payload_schedule = pdf_engine._build_browser_wrong_question_practice_schedule(schedule)
+        self.assertEqual(payload_schedule[0]["dayIndex"], 1)
+        self.assertEqual(payload_schedule[0]["items"][0]["practiceItemId"], "real-1")
