@@ -3518,6 +3518,15 @@ const consultationStageDisplayLabel = (stage: string) => {
   return stage;
 };
 
+const consultationStageShortLabel = (stage: string) => {
+  if (stage === '已加小客服微信') return '客';
+  if (stage === '已加对应教师微信') return '教';
+  if (stage === '正在沟通细节') return '沟';
+  if (stage === '待测试') return '测';
+  if (stage === '待试听') return '听';
+  return stage;
+};
+
 const ConsultationStatusLamp = ({ stage }: { stage: string }) => {
   const status = deriveConsultationDisplayStatus(stage);
   const lampClass = stage === '咨询结束'
@@ -3574,7 +3583,14 @@ const ConsultationResultCapsule = ({
         onDoubleClick={onResultDoubleClick}
         className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpAction ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        {resultLabel}
+        {compact ? (
+          <>
+            <span className="hidden min-[520px]:inline">{resultLabel}</span>
+            <span className="min-[520px]:hidden">成/败</span>
+          </>
+        ) : (
+          resultLabel
+        )}
       </button>
       <div className={`${showJumpAction ? 'mr-10' : 'mr-0.5'} relative flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm dark:bg-slate-900/70 dark:text-slate-300`}>
         <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
@@ -3675,7 +3691,14 @@ const ConsultationFlowBar = ({
               onDoubleClick={() => onStageDoubleClick?.(item)}
               className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpActions ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
             >
-              {consultationStageDisplayLabel(item)}
+              {compact ? (
+                <>
+                  <span className="hidden min-[520px]:inline">{consultationStageDisplayLabel(item)}</span>
+                  <span className="min-[520px]:hidden">{consultationStageShortLabel(item)}</span>
+                </>
+              ) : (
+                consultationStageDisplayLabel(item)
+              )}
             </button>
             {showJumpActions && (
               <button
@@ -5131,7 +5154,24 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       )}
 
       <div className={`${workspaceCardClass} p-3 sm:p-4`}>
-        <div className="flex min-w-0 items-center gap-3 overflow-hidden">
+        <select
+          value={activeFilter || ''}
+          onChange={(event) => setActiveFilter((event.target.value || null) as ConsultationFilterKey | null)}
+          className="block h-9 w-full rounded-xl border border-sky-100 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-200 min-[520px]:hidden"
+          aria-label="咨询分类筛选"
+        >
+          <option value="">全部咨询</option>
+          {consultationFilterGroups.map((group) => (
+            <optgroup key={group.title} label={group.title}>
+              {group.items.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}（{consultationFilterCounts[item.key] || 0}）
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <div className="hidden min-w-0 items-center gap-3 overflow-hidden min-[520px]:flex">
           {consultationFilterGroups.map((group) => (
             <div key={group.title} className="flex min-w-0 shrink-0 items-center gap-2">
               <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>
