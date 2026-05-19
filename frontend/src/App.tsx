@@ -5131,11 +5131,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       )}
 
       <div className={`${workspaceCardClass} p-3 sm:p-4`}>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <div className="flex min-w-0 items-center gap-3 overflow-hidden">
           {consultationFilterGroups.map((group) => (
-            <div key={group.title} className="min-w-0">
-              <p className="px-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">{group.title}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
+            <div key={group.title} className="flex min-w-0 shrink-0 items-center gap-2">
+              <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>
+              <div className="flex min-w-0 items-center gap-1.5">
                 {group.items.map((item) => {
                   const active = activeFilter === item.key;
                   const count = consultationFilterCounts[item.key] || 0;
@@ -5144,14 +5144,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       key={item.key}
                       type="button"
                       onClick={() => setActiveFilter((current) => (current === item.key ? null : item.key))}
-                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold transition ${
+                      className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] font-bold transition ${
                         active
                           ? 'border-sky-200 bg-sky-500 text-white shadow-[0_10px_22px_rgba(14,165,233,0.18)]'
                           : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
                       }`}
                     >
-                      <span>{item.label}</span>
-                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'}`}>
+                      <span className="whitespace-nowrap">{item.label}</span>
+                      <span className={`rounded-full px-1 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'}`}>
                         {count}
                       </span>
                     </button>
@@ -5182,13 +5182,16 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 const needDetail = record.need_detail?.trim();
                 const followUpNote = record.follow_up_note?.trim();
                 return (
-                  <article key={record.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+                  <article key={record.id} className={`${workspaceSoftCardClass} relative space-y-4 p-4`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
                         <p className="mt-2 whitespace-nowrap font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
                       </div>
-                      <ConsultationStatusLamp stage={record.flow_stage} />
+                      <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} h-9 px-3 text-xs`}>
+                        <Eye size={14} />
+                        查看
+                      </button>
                     </div>
                     <div className="pb-1">
                       <ConsultationFlowBar
@@ -5234,14 +5237,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <button
-                        type="button"
-                        onClick={() => openViewModal(record)}
-                        className={`${workspaceSecondaryButtonClass} w-full`}
-                      >
-                        <Eye size={16} />
-                        查看
-                      </button>
                       {canEditConsultations && (
                         <>
                           <button
@@ -5301,8 +5296,12 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   const followUpNote = record.follow_up_note?.trim();
                   const frozen = isConsultationEnded(record.flow_stage);
                   return (
-                    <article key={record.id} className="overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-                      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.25rem,1fr))] gap-x-4 gap-y-3 border-b border-sky-50 px-5 py-4 text-sm dark:border-white/10">
+                    <article key={record.id} className="relative overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
+                      <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} absolute right-5 top-4 z-10 h-9 w-[7.25rem] px-3 text-xs`}>
+                        <Eye size={14} />
+                        查看
+                      </button>
+                      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.25rem,1fr))] gap-x-4 gap-y-3 border-b border-sky-50 px-5 py-4 pr-36 text-sm dark:border-white/10">
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">日期</p>
                           <p className="mt-2 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
@@ -5331,13 +5330,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">录入 / 更新</p>
                           <p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.created_at || '—'}</p>
                           <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.updated_at || '—'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">操作</p>
-                          <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} mt-2 h-9 w-full px-3 text-xs`}>
-                            <Eye size={14} />
-                            查看
-                          </button>
                         </div>
                       </div>
                       <div className={`grid grid-cols-[1rem_minmax(0,1fr)_3.75rem_2.25rem] items-center gap-2 bg-slate-50/60 px-5 py-4 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
