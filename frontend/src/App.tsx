@@ -204,11 +204,19 @@ interface ConsultationRecord {
   screenshot: string;
   follow_up_status: string;
   follow_up_note: string;
-  flow_stage?: string | null;
-  completed_stages?: string[] | string | null;
-  consultation_result?: string | null;
-  consultation_closed?: boolean | string | null;
-  follow_up_light?: string | null;
+  flow_stage: string;
+  completed_stages: string[];
+  test_taken: string;
+  test_images: Array<{ url: string; filename: string }>;
+  trial_taken: string;
+  trial_time_slot: string;
+  trial_class_id: number | null;
+  trial_class_manual: string;
+  trial_teacher: string;
+  trial_feedback: string;
+  success_class_id: number | null;
+  success_class_manual: string;
+  end_note: string;
   created_at: string;
   updated_at: string;
 }
@@ -1124,32 +1132,178 @@ export function parseConsultationQuickEntry(
 }
 
 const consultationStatusOptions = ['待邀约', '跟进中', '已报班', '已劝退'];
-const consultationFlowStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
-const consultationFollowUpLights = ['待跟进', '正在跟进', '咨询结束'] as const;
-const consultationFlowStageShortLabels: Record<(typeof consultationFlowStages)[number], string> = {
-  已加小客服微信: '客服',
-  已加对应教师微信: '教师',
-  正在沟通细节: '沟通',
-  待测试: '测试',
-  待试听: '试听',
-};
+const consultationFlowStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听', '成功进班', '试听失败', '咨询结束'];
+const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
+type ConsultationResultStage = '成功进班' | '试听失败';
+const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
+type ConsultationFilterKey =
+  | 'pending-7'
+  | 'pending-30'
+  | 'pending-60'
+  | 'pending-over60'
+  | 'ended-success'
+  | 'ended-unsuccessful';
 
-type ConsultationFollowUpLight = (typeof consultationFollowUpLights)[number];
-type ConsultationEditTarget = 'basic' | 'content' | 'progress' | 'notes';
+const consultationFilterGroups: Array<{
+  title: string;
+  items: Array<{ key: ConsultationFilterKey; label: string }>;
+}> = [
+  {
+    title: '待咨询',
+    items: [
+      { key: 'pending-7', label: '一周内' },
+      { key: 'pending-30', label: '一月内' },
+      { key: 'pending-60', label: '两月内' },
+      { key: 'pending-over60', label: '60天+' },
+    ],
+  },
+  {
+    title: '已结束',
+    items: [
+      { key: 'ended-success', label: '咨询成功' },
+      { key: 'ended-unsuccessful', label: '试听失败/中途结束' },
+    ],
+  },
+];
 
-type ConsultationProgressViewModel = {
-  completedStageCount: number;
-  activeStageIndex: number | null;
-  result: '成功进班' | '试听失败' | null;
-  followUpLight: ConsultationFollowUpLight;
-};
+const consultationFilterLabels = consultationFilterGroups
+  .flatMap((group) => group.items)
+  .reduce((labels, item) => ({ ...labels, [item.key]: item.label }), {} as Record<ConsultationFilterKey, string>);
 
 function consultationStatusClass(status: string): string {
-  if (status === '待邀约') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
-  if (status === '跟进中') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
-  if (status === '已报班') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
-  if (status === '已劝退') return 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300';
+  if (status === '待邀约' || status === '待跟进') return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  if (status === '跟进中' || status === '正在跟进') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
+  if (status === '已报班' || status === '完成') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  if (status === '已劝退') return 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300';
   return 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400';
+}
+
+function deriveConsultationDisplayStatus(stage: string): string {
+  if (stage === '成功进班' || stage === '咨询结束') return '完成';
+  if (stage === '已加小客服微信' || stage === '已加对应教师微信') return '待跟进';
+  return '正在跟进';
+}
+
+function isConsultationEnded(stage: string): boolean {
+  return stage === '咨询结束';
+}
+
+function isConsultationResultStage(stage: string): stage is ConsultationResultStage {
+  return consultationResultStages.includes(stage as ConsultationResultStage);
+}
+
+function getConsultationRecordDateTime(record: ConsultationRecord): number {
+  const parsed = Date.parse(`${record.date || ''}T12:00:00`);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+function getConsultationUpdatedTime(record: ConsultationRecord): number {
+  const normalized = (record.updated_at || '').replace(' ', 'T');
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getConsultationAgeDays(record: ConsultationRecord, todayIso: string): number {
+  const recordTime = getConsultationRecordDateTime(record);
+  if (!Number.isFinite(recordTime)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const todayTime = Date.parse(`${todayIso}T12:00:00`);
+  return Math.max(0, Math.floor((todayTime - recordTime) / 86_400_000));
+}
+
+function consultationHasResult(record: ConsultationRecord, result: ConsultationResultStage): boolean {
+  return record.flow_stage === result || (Array.isArray(record.completed_stages) && record.completed_stages.includes(result));
+}
+
+function getConsultationFilterKey(record: ConsultationRecord, todayIso: string): ConsultationFilterKey {
+  if (isConsultationEnded(record.flow_stage)) {
+    if (consultationHasResult(record, '成功进班')) return 'ended-success';
+    return 'ended-unsuccessful';
+  }
+
+  const ageDays = getConsultationAgeDays(record, todayIso);
+  if (ageDays <= 7) return 'pending-7';
+  if (ageDays <= 30) return 'pending-30';
+  if (ageDays <= 60) return 'pending-60';
+  return 'pending-over60';
+}
+
+function sortConsultationsForFilter(records: ConsultationRecord[], filterKey: ConsultationFilterKey): ConsultationRecord[] {
+  const sorted = [...records];
+  if (filterKey.startsWith('pending-')) {
+    return sorted.sort((a, b) => getConsultationRecordDateTime(a) - getConsultationRecordDateTime(b));
+  }
+  return sorted.sort((a, b) => getConsultationUpdatedTime(b) - getConsultationUpdatedTime(a));
+}
+
+function toggleConsultationStage(form: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (isConsultationEnded(form.flow_stage)) return form;
+  const currentStages = Array.isArray(form.completed_stages) ? form.completed_stages : [];
+  const exists = currentStages.includes(stage);
+  if (form.flow_stage === stage) return form;
+  return { ...form, flow_stage: stage, completed_stages: exists ? currentStages : [...currentStages, stage] };
+}
+
+function toggleConsultationStageLight(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage)) return values;
+  const currentStages = Array.isArray(values.completed_stages) ? values.completed_stages : [];
+  const exists = currentStages.includes(stage);
+  const completed_stages = exists
+    ? currentStages.filter((item) => item !== stage)
+    : [...currentStages, stage];
+  const flow_stage = exists && values.flow_stage === stage
+    ? completed_stages[completed_stages.length - 1] || consultationFlowStages[0]
+    : values.flow_stage || stage;
+  return { ...values, flow_stage, completed_stages };
+}
+
+function moveConsultationStage(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage)) return values;
+  const currentStages = Array.isArray(values.completed_stages) ? values.completed_stages : [];
+  const completed_stages = currentStages.includes(stage) ? currentStages : [...currentStages, stage];
+  return { ...values, flow_stage: stage, completed_stages };
+}
+
+function setConsultationResultStage(values: ConsultationFormValues, stage: ConsultationResultStage): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage)) return values;
+  const currentStages = Array.isArray(values.completed_stages) ? values.completed_stages : [];
+  const withoutResult = currentStages.filter((item) => !isConsultationResultStage(item));
+  return { ...values, flow_stage: stage, completed_stages: [...withoutResult, stage] };
+}
+
+function clearConsultationResultStage(values: ConsultationFormValues): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage)) return values;
+  const completed_stages = (Array.isArray(values.completed_stages) ? values.completed_stages : [])
+    .filter((item) => !isConsultationResultStage(item));
+  const flow_stage = isConsultationResultStage(values.flow_stage)
+    ? completed_stages[completed_stages.length - 1] || consultationFlowStages[0]
+    : values.flow_stage;
+  return { ...values, flow_stage, completed_stages };
+}
+
+function endConsultationValues(values: ConsultationFormValues): ConsultationFormValues {
+  const currentStages = Array.isArray(values.completed_stages) ? values.completed_stages : [];
+  const withCurrentStage = values.flow_stage && values.flow_stage !== '咨询结束' && !currentStages.includes(values.flow_stage)
+    ? [...currentStages, values.flow_stage]
+    : currentStages;
+  return {
+    ...values,
+    flow_stage: '咨询结束',
+    completed_stages: withCurrentStage.includes('咨询结束') ? withCurrentStage : [...withCurrentStage, '咨询结束'],
+  };
+}
+
+function restoreConsultationValues(values: ConsultationFormValues): ConsultationFormValues {
+  const completed_stages = (Array.isArray(values.completed_stages) ? values.completed_stages : [])
+    .filter((item) => item !== '咨询结束');
+  const flow_stage = completed_stages[completed_stages.length - 1] || consultationFlowStages[0];
+  return {
+    ...values,
+    flow_stage,
+    completed_stages,
+    restore_from_end: true,
+  } as ConsultationFormValues;
 }
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
@@ -1195,11 +1349,19 @@ const consultationFormDefaults: ConsultationFormValues = {
   screenshot: '',
   follow_up_status: '待邀约',
   follow_up_note: '',
-  flow_stage: '',
-  completed_stages: '',
-  consultation_result: '',
-  consultation_closed: false,
-  follow_up_light: '',
+  flow_stage: '已加小客服微信',
+  completed_stages: ['已加小客服微信'],
+  test_taken: '',
+  test_images: [],
+  trial_taken: '',
+  trial_time_slot: '',
+  trial_class_id: null,
+  trial_class_manual: '',
+  trial_teacher: '',
+  trial_feedback: '',
+  success_class_id: null,
+  success_class_manual: '',
+  end_note: '',
 };
 
 function buildConsultationBatchCreatePayload(fields: Partial<ConsultationFormValues>): ConsultationFormValues {
@@ -1230,11 +1392,19 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     screenshot: record.screenshot ?? '',
     follow_up_status: record.follow_up_status || consultationFormDefaults.follow_up_status,
     follow_up_note: record.follow_up_note ?? '',
-    flow_stage: record.flow_stage ?? '',
-    completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages.join('，') : record.completed_stages ?? '',
-    consultation_result: record.consultation_result ?? '',
-    consultation_closed: record.consultation_closed ?? false,
-    follow_up_light: record.follow_up_light ?? '',
+    flow_stage: record.flow_stage || consultationFormDefaults.flow_stage,
+    completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages : consultationFormDefaults.completed_stages,
+    test_taken: record.test_taken ?? '',
+    test_images: Array.isArray(record.test_images) ? record.test_images : [],
+    trial_taken: record.trial_taken ?? '',
+    trial_time_slot: record.trial_time_slot ?? '',
+    trial_class_id: record.trial_class_id ?? null,
+    trial_class_manual: record.trial_class_manual ?? '',
+    trial_teacher: record.trial_teacher ?? '',
+    trial_feedback: record.trial_feedback ?? '',
+    success_class_id: record.success_class_id ?? null,
+    success_class_manual: record.success_class_manual ?? '',
+    end_note: record.end_note ?? '',
   };
 }
 
@@ -1254,6 +1424,19 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     screenshot: record.screenshot ?? '',
     follow_up_status: record.follow_up_status ?? '',
     follow_up_note: record.follow_up_note ?? '',
+    flow_stage: record.flow_stage || consultationFormDefaults.flow_stage,
+    completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages : consultationFormDefaults.completed_stages,
+    test_taken: record.test_taken ?? '',
+    test_images: Array.isArray(record.test_images) ? record.test_images : [],
+    trial_taken: record.trial_taken ?? '',
+    trial_time_slot: record.trial_time_slot ?? '',
+    trial_class_id: record.trial_class_id ?? null,
+    trial_class_manual: record.trial_class_manual ?? '',
+    trial_teacher: record.trial_teacher ?? '',
+    trial_feedback: record.trial_feedback ?? '',
+    success_class_id: record.success_class_id ?? null,
+    success_class_manual: record.success_class_manual ?? '',
+    end_note: record.end_note ?? '',
     created_at: record.created_at ?? '',
     updated_at: record.updated_at ?? '',
   };
@@ -1343,168 +1526,6 @@ function getConsultationSourceLabel(record: ConsultationRecord): string {
   }
   return sourceChannelNote ? `${trimmedSourceChannel} · ${sourceChannelNote}` : trimmedSourceChannel;
 }
-
-function normalizeConsultationFlowStages(rawValue: ConsultationRecord['completed_stages']): string[] {
-  if (Array.isArray(rawValue)) {
-    return rawValue.map((item) => item?.trim()).filter((item): item is string => Boolean(item));
-  }
-
-  if (typeof rawValue !== 'string') {
-    return [];
-  }
-
-  return rawValue
-    .split(/[,，|/]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function normalizeConsultationFollowUpLight(rawValue: string | null | undefined): ConsultationFollowUpLight | null {
-  if (rawValue === '待跟进' || rawValue === '正在跟进' || rawValue === '咨询结束') {
-    return rawValue;
-  }
-  return null;
-}
-
-function normalizeConsultationResult(rawValue: string | null | undefined): '成功进班' | '试听失败' | null {
-  if (rawValue === '成功进班' || rawValue === '试听失败') {
-    return rawValue;
-  }
-  return null;
-}
-
-function buildConsultationProgress(record: ConsultationRecord): ConsultationProgressViewModel {
-  const completedStages = normalizeConsultationFlowStages(record.completed_stages);
-  const explicitStage = record.flow_stage?.trim() || '';
-  const explicitResult = normalizeConsultationResult(record.consultation_result);
-  const fallbackResult =
-    explicitResult
-    ?? (record.follow_up_status === '已报班' ? '成功进班' : null)
-    ?? (record.follow_up_status === '已劝退' ? '试听失败' : null);
-  const closed = record.consultation_closed === true || String(record.consultation_closed || '').toLowerCase() === 'true' || record.follow_up_status === '已劝退';
-  const explicitFollowUpLight = normalizeConsultationFollowUpLight(record.follow_up_light);
-  const followUpLight = explicitFollowUpLight ?? (closed ? '咨询结束' : record.follow_up_status === '待邀约' ? '待跟进' : '正在跟进');
-
-  const explicitActiveIndex = consultationFlowStages.findIndex((stage) => stage === explicitStage);
-  const fallbackActiveIndex = fallbackResult
-    ? null
-    : record.follow_up_status === '待邀约'
-      ? 0
-      : record.follow_up_status === '跟进中'
-        ? 2
-        : consultationFlowStages.length - 1;
-  const activeStageIndex = explicitActiveIndex >= 0 ? explicitActiveIndex : fallbackActiveIndex;
-  const completedByExplicitStages = completedStages.reduce((count, stage) => {
-    const stageIndex = consultationFlowStages.findIndex((item) => item === stage);
-    if (stageIndex < 0) {
-      return count;
-    }
-    return Math.max(count, stageIndex + 1);
-  }, 0);
-  const completedByFallback = fallbackResult
-    ? consultationFlowStages.length
-    : activeStageIndex === null
-      ? 0
-      : activeStageIndex;
-
-  return {
-    completedStageCount: Math.max(completedByExplicitStages, completedByFallback),
-    activeStageIndex,
-    result: fallbackResult,
-    followUpLight,
-  };
-}
-
-const ConsultationProgressCluster = ({
-  record,
-  compact = false,
-  onJumpToEdit,
-}: {
-  record: ConsultationRecord;
-  compact?: boolean;
-  onJumpToEdit?: (target: ConsultationEditTarget) => void;
-}) => {
-  const progress = useMemo(() => buildConsultationProgress(record), [record]);
-  const resultLabel = progress.result === '成功进班' ? '☀️ 成功进班' : progress.result === '试听失败' ? '😭 试听失败' : '';
-
-  return (
-    <div className={cn('flex min-w-0 flex-wrap items-center gap-2 gap-y-2')}>
-      <div className={cn('flex min-w-0 flex-wrap items-center gap-1.5 gap-y-2', compact ? 'flex-1' : 'flex-1')} aria-label="咨询流程圆点进度条">
-        {consultationFlowStages.map((stage, index) => {
-          const isCompleted = index < progress.completedStageCount;
-          const isActive = progress.activeStageIndex === index;
-          const connectorIsDone = index + 1 < progress.completedStageCount;
-          return (
-            <React.Fragment key={stage}>
-              <button
-                type="button"
-                title={stage}
-                aria-label={stage}
-                onClick={() => onJumpToEdit?.('progress')}
-                className={cn(
-                  'inline-flex shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 dark:focus:ring-sky-500/30 dark:focus:ring-offset-slate-950',
-                  compact ? 'h-8 w-8' : 'h-9 w-9',
-                  onJumpToEdit && 'group',
-                )}
-              >
-                <span
-                  className={cn(
-                    'block rounded-full transition-colors',
-                    compact ? 'h-3.5 w-3.5' : 'h-4 w-4',
-                    isActive
-                      ? 'bg-sky-600 shadow-[0_0_0_4px_rgba(224,242,254,1)] dark:shadow-[0_0_0_4px_rgba(14,165,233,0.2)]'
-                      : isCompleted
-                        ? 'bg-emerald-600 shadow-[0_0_0_3px_rgba(220,252,231,1)] dark:shadow-[0_0_0_3px_rgba(16,185,129,0.18)]'
-                        : 'bg-slate-300 dark:bg-white/20',
-                    onJumpToEdit && 'group-hover:bg-sky-500',
-                  )}
-                  aria-hidden="true"
-                />
-              </button>
-              {index < consultationFlowStages.length - 1 && (
-                <span
-                  className={cn(
-                    'h-0.5 rounded-full transition-colors',
-                    compact ? 'w-5 shrink-0' : 'w-7 shrink-0 xl:w-10',
-                    connectorIsDone ? 'bg-emerald-300 dark:bg-emerald-500/60' : isActive ? 'bg-sky-200 dark:bg-sky-500/35' : 'bg-slate-200 dark:bg-white/10',
-                  )}
-                  aria-hidden="true"
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
-        {progress.result && (
-          <>
-            <span className={cn('h-0.5 rounded-full bg-slate-200 dark:bg-white/10', compact ? 'w-5 shrink-0' : 'w-7 shrink-0 xl:w-10')} aria-hidden="true" />
-            <button
-              type="button"
-              title={progress.result}
-              onClick={() => onJumpToEdit?.('progress')}
-              className={cn(
-                'inline-flex shrink-0 items-center justify-center rounded-full bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white',
-                progress.result === '试听失败' && 'bg-rose-600',
-              )}
-            >
-              {resultLabel}
-            </button>
-          </>
-        )}
-      </div>
-      <button
-        type="button"
-        title={`状态灯：${progress.followUpLight}`}
-        onClick={() => onJumpToEdit?.('progress')}
-        className={cn(
-          'inline-flex h-2.5 w-2.5 shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-200 dark:focus:ring-sky-500/20',
-          progress.followUpLight === '待跟进' && 'bg-slate-300 dark:bg-slate-500',
-          progress.followUpLight === '正在跟进' && 'bg-emerald-500 shadow-[0_0_0_3px_rgba(220,252,231,0.9)] dark:shadow-[0_0_0_3px_rgba(16,185,129,0.18)]',
-          progress.followUpLight === '咨询结束' && 'bg-rose-500 shadow-[0_0_0_3px_rgba(254,226,226,0.95)] dark:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
-        )}
-      />
-    </div>
-  );
-};
 
 export const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
 export const workspaceCardClass =
@@ -1874,6 +1895,16 @@ const Sidebar = ({
           <MoreVertical size={16} className={cn('shrink-0 text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')} />
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className="fixed bottom-6 right-6 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-[0_18px_35px_rgba(15,23,42,0.25)] transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+        aria-label="回到顶部"
+        title="回到顶部"
+      >
+        <ArrowUp size={20} />
+      </button>
 
       <AnimatePresence>
         {accountSheetOpen && (
@@ -3480,15 +3511,214 @@ const ClassFeedbackGenerationPage = ({
   );
 };
 
+const consultationStageDisplayLabel = (stage: string) => {
+  if (stage === '已加小客服微信') return '客服微信✅';
+  if (stage === '已加对应教师微信') return '教师微信✅';
+  if (stage === '正在沟通细节') return '沟通ing';
+  return stage;
+};
+
+const ConsultationStatusLamp = ({ stage }: { stage: string }) => {
+  const status = deriveConsultationDisplayStatus(stage);
+  const lampClass = stage === '咨询结束'
+    ? 'bg-rose-500 shadow-[0_0_0_3px_rgba(239,68,68,0.13),0_0_10px_rgba(239,68,68,0.34)]'
+    : status === '正在跟进'
+      ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(34,197,94,0.14),0_0_10px_rgba(34,197,94,0.42)]'
+      : 'bg-slate-400 shadow-[0_0_0_3px_rgba(148,163,184,0.12)]';
+  return <span className={`inline-block h-2 w-2 rounded-full ${lampClass}`} title={status} aria-label={status} />;
+};
+
+const ConsultationResultCapsule = ({
+  stage,
+  completedStages,
+  blockedByCurrentProcess = false,
+  compact = false,
+  editable,
+  onResultChange,
+  onResultClick,
+  onResultDoubleClick,
+  showJumpAction = false,
+  onJump,
+}: {
+  stage: string;
+  completedStages: string[];
+  blockedByCurrentProcess?: boolean;
+  compact?: boolean;
+  editable: boolean;
+  onResultChange?: (stage: ConsultationResultStage) => void;
+  onResultClick?: () => void;
+  onResultDoubleClick?: () => void;
+  showJumpAction?: boolean;
+  onJump?: () => void;
+}) => {
+  const completedResultStage = (completedStages || []).find(isConsultationResultStage) || '';
+  const resultStage = isConsultationResultStage(stage) ? stage : completedResultStage;
+  const active = isConsultationResultStage(stage);
+  const completed = Boolean(completedResultStage) && !blockedByCurrentProcess;
+  const resultLabel = resultStage === '试听失败' ? '😢 试听未成' : '☀️ 成功进班';
+  return (
+    <div
+      title={resultStage || '成功进班'}
+      className={`relative flex min-w-0 items-center overflow-hidden rounded-[10px] text-center font-extrabold leading-none transition ${compact ? 'h-8 text-[10px]' : 'h-[42px] text-xs'} ${editable ? 'hover:-translate-y-0.5' : ''} ${
+        active
+          ? 'bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.20),0_8px_24px_rgba(14,165,233,0.28)]'
+          : completed
+            ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-[0_0_0_1px_rgba(16,185,129,0.16)] dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200'
+            : 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500'
+      }`}
+    >
+      <button
+        type="button"
+        disabled={!editable}
+        onClick={onResultClick}
+        onDoubleClick={onResultDoubleClick}
+        className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpAction ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+      >
+        {resultLabel}
+      </button>
+      <div className={`${showJumpAction ? 'mr-10' : 'mr-0.5'} relative flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm dark:bg-slate-900/70 dark:text-slate-300`}>
+        <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
+        <select
+          value={resultStage}
+          disabled={!editable}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => {
+            const value = event.target.value as ConsultationResultStage | '';
+            if (value) onResultChange?.(value);
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+          aria-label="选择咨询结果"
+          title="选择咨询结果"
+        >
+          <option value="">未选择结果</option>
+          <option value="成功进班">☀️ 成功进班</option>
+          <option value="试听失败">😢 试听未成</option>
+        </select>
+      </div>
+      {showJumpAction ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onJump?.();
+          }}
+          className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+          aria-label="跳转到结果编辑栏"
+          title="跳转到结果编辑栏"
+        >
+          <ArrowRight size={14} />
+        </button>
+      ) : null}
+    </div>
+  );
+};
+
+const ConsultationFlowBar = ({
+  stage,
+  completedStages,
+  mode = 'full',
+  editable = false,
+  showJumpActions = false,
+  onStageClick,
+  onStageDoubleClick,
+  onResultChange,
+  onResultClick,
+  onResultDoubleClick,
+  onStageJump,
+}: {
+  stage: string;
+  completedStages: string[];
+  mode?: 'list' | 'full';
+  editable?: boolean;
+  showJumpActions?: boolean;
+  onStageClick?: (stage: string) => void;
+  onStageDoubleClick?: (stage: string) => void;
+  onResultChange?: (stage: ConsultationResultStage) => void;
+  onResultClick?: () => void;
+  onResultDoubleClick?: () => void;
+  onStageJump?: (stage: string) => void;
+}) => {
+  const currentStage = stage || consultationFlowStages[0];
+  const ended = isConsultationEnded(currentStage);
+  const compact = mode === 'list';
+  const completedSet = new Set(completedStages || []);
+  if (!ended && consultationProcessStages.includes(currentStage)) {
+    completedSet.add(currentStage);
+  }
+  const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
+  return (
+    <div className={compact
+      ? 'grid w-full min-w-0 grid-cols-1 gap-1.5 min-[520px]:grid-cols-[repeat(5,minmax(3.85rem,1fr))_minmax(4.7rem,1fr)]'
+      : 'grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[repeat(5,minmax(7rem,1fr))_minmax(8rem,1fr)]'
+    }>
+      {consultationProcessStages.map((item) => {
+        const stageIndex = consultationProcessStages.indexOf(item);
+        const isCurrent = item === currentStage;
+        const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
+        const isCompleted = completedSet.has(item) && !isAfterCurrentProcess;
+        const stageClass = isCurrent
+          ? 'bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.20),0_8px_24px_rgba(14,165,233,0.28)]'
+          : isCompleted
+            ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-[0_0_0_1px_rgba(16,185,129,0.16)] dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200'
+            : 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500';
+        return (
+          <div
+            key={item}
+            title={item}
+            className={`flex min-w-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-[10px] text-center font-extrabold leading-none transition ${compact ? 'h-8 text-[10px]' : 'h-[42px] text-xs'} ${editable ? 'hover:-translate-y-0.5' : ''} ${ended ? 'opacity-60' : ''} ${stageClass}`}
+          >
+            <button
+              type="button"
+              disabled={!editable}
+              onClick={() => onStageClick?.(item)}
+              onDoubleClick={() => onStageDoubleClick?.(item)}
+              className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpActions ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+            >
+              {consultationStageDisplayLabel(item)}
+            </button>
+            {showJumpActions && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onStageJump?.(item);
+                }}
+                className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+                aria-label={`跳转到${item}编辑栏`}
+                title={`跳转到${item}编辑栏`}
+              >
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <ConsultationResultCapsule
+        stage={currentStage}
+        completedStages={completedStages}
+        blockedByCurrentProcess={currentProcessIndex >= 0}
+        compact={compact}
+        editable={editable && !ended}
+        onResultChange={onResultChange}
+        onResultClick={onResultClick}
+        onResultDoubleClick={onResultDoubleClick}
+        showJumpAction={showJumpActions}
+        onJump={() => onStageJump?.(isConsultationResultStage(currentStage) ? currentStage : '成功进班')}
+      />
+    </div>
+  );
+};
+
 const ConsultationModal = ({
   open,
   mode,
   record,
   consultationTeachers,
+  classes,
   submitting,
   error,
   currentUser,
-  initialEditTarget,
   onClose,
   onSubmit,
   onDelete,
@@ -3498,10 +3728,10 @@ const ConsultationModal = ({
   mode: 'view' | 'create' | 'edit';
   record: ConsultationRecord | null;
   consultationTeachers: ConsultationTeacherOption[];
+  classes: ClassItem[];
   submitting: boolean;
   error: string;
   currentUser: CurrentUser;
-  initialEditTarget?: ConsultationEditTarget | null;
   onClose: () => void;
   onSubmit: (values: ConsultationFormValues) => Promise<void>;
   onDelete?: () => Promise<void>;
@@ -3510,42 +3740,31 @@ const ConsultationModal = ({
   const [form, setForm] = useState<ConsultationFormValues>(toConsultationFormValues(record));
   const [quickEntry, setQuickEntry] = useState('');
   const [parseFeedback, setParseFeedback] = useState('');
-  const formScrollRef = useRef<HTMLFormElement>(null);
-  const basicSectionRef = useRef<HTMLElement>(null);
-  const contentSectionRef = useRef<HTMLElement>(null);
-  const progressSectionRef = useRef<HTMLElement>(null);
-  const notesSectionRef = useRef<HTMLElement>(null);
+  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
+  const formScrollRef = useRef<HTMLFormElement | null>(null);
+  const baseInfoRef = useRef<HTMLElement | null>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+  const testSectionRef = useRef<HTMLDivElement | null>(null);
+  const trialSectionRef = useRef<HTMLDivElement | null>(null);
+  const successSectionRef = useRef<HTMLDivElement | null>(null);
+  const endSectionRef = useRef<HTMLLabelElement | null>(null);
 
   useEffect(() => {
     if (open) {
       setForm(toConsultationFormValues(record));
       setQuickEntry('');
       setParseFeedback('');
+      setConfirmRestoreOpen(false);
     }
   }, [open, mode, record]);
-
-  useEffect(() => {
-    if (!open || !initialEditTarget) {
-      return;
-    }
-    const targetMap: Record<ConsultationEditTarget, React.RefObject<HTMLElement | null>> = {
-      basic: basicSectionRef,
-      content: contentSectionRef,
-      progress: progressSectionRef,
-      notes: notesSectionRef,
-    };
-    const frameId = window.requestAnimationFrame(() => {
-      targetMap[initialEditTarget]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    return () => window.cancelAnimationFrame(frameId);
-  }, [open, initialEditTarget]);
 
   if (!open) {
     return null;
   }
 
   const readOnly = mode === 'view';
-  const canEdit = hasStaffAccess(currentUser.role);
+  const stageFrozen = isConsultationEnded(form.flow_stage);
+  const canEdit = hasStaffAccess(currentUser.role) || currentUser.role === 'member';
   const titleMap = {
     view: '查看咨询记录',
     create: '新增咨询记录',
@@ -3573,6 +3792,10 @@ const ConsultationModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly) {
+      return;
+    }
+    if (form.flow_stage === '成功进班' && !form.success_class_id && !form.success_class_manual.trim()) {
+      setParseFeedback('成功进班必须选择或填写班级。');
       return;
     }
     await onSubmit(form);
@@ -3627,15 +3850,41 @@ const ConsultationModal = ({
     );
   };
 
-  const fieldClass = `${workspaceFieldClass} ${readOnly ? 'cursor-default' : ''}`;
-  const completedStageValues = normalizeConsultationFlowStages(form.completed_stages);
-
-  const toggleCompletedStage = (stage: string) => {
-    const nextStages = completedStageValues.includes(stage)
-      ? completedStageValues.filter((item) => item !== stage)
-      : [...completedStageValues, stage];
-    updateField('completed_stages', nextStages.join('，'));
+  const handleStageJump = (stage: string) => {
+    const target = stage === '待测试'
+      ? testSectionRef.current
+      : stage === '待试听' || stage === '试听失败'
+        ? trialSectionRef.current
+        : stage === '成功进班'
+          ? successSectionRef.current
+          : stage === '咨询结束'
+            ? endSectionRef.current
+            : stage === '正在沟通细节'
+              ? contentRef.current
+              : baseInfoRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  const handleSuccessClassChange = (value: string) => {
+    const classId = value ? Number(value) : null;
+    setForm((current) => {
+      const next = { ...current, success_class_id: classId };
+      return classId ? setConsultationResultStage(next, '成功进班') : next;
+    });
+  };
+
+  const handleSuccessManualChange = (value: string) => {
+    setForm((current) => {
+      const next = { ...current, success_class_manual: value };
+      return value.trim() ? setConsultationResultStage(next, '成功进班') : next;
+    });
+  };
+
+  const fieldClass = `${workspaceFieldClass} ${readOnly ? 'cursor-default' : ''}`;
+  const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_images.length > 0;
+  const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
+  const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
+  const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
 
   return (
     <motion.div
@@ -3674,7 +3923,7 @@ const ConsultationModal = ({
         <button
           type="button"
           onClick={() => formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="absolute right-4 top-28 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 sm:inline-flex dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700"
+          className="absolute right-4 top-20 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6 sm:top-24"
           title="回到顶部"
           aria-label="回到顶部"
         >
@@ -3688,6 +3937,74 @@ const ConsultationModal = ({
               {error}
             </div>
           )}
+
+          <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h4 className="font-semibold text-slate-900 dark:text-white">咨询流程</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {readOnly ? '当前咨询的完整流程位置。' : '点击阶段框更新当前流程，未经历阶段保持灰色。'}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <ConsultationStatusLamp stage={form.flow_stage} />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (stageFrozen) {
+                        setConfirmRestoreOpen(true);
+                        return;
+                      }
+                      setForm((current) => endConsultationValues(current));
+                    }}
+                    className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(239,68,68,0.18)] transition hover:bg-rose-600"
+                  >
+                    {stageFrozen ? '已结束' : '咨询结束'}
+                  </button>
+                )}
+              </div>
+            </div>
+            {confirmRestoreOpen && (
+              <div className="rounded-2xl border border-sky-100 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">是否恢复这个咨询？</p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForm((current) => restoreConsultationValues(current));
+                      setConfirmRestoreOpen(false);
+                    }}
+                    className={workspacePrimaryButtonClass}
+                  >
+                    是
+                  </button>
+                  <button type="button" onClick={() => setConfirmRestoreOpen(false)} className={workspaceSecondaryButtonClass}>
+                    否
+                  </button>
+                </div>
+              </div>
+            )}
+            <ConsultationFlowBar
+              mode="full"
+              stage={form.flow_stage}
+              completedStages={form.completed_stages}
+              editable={!readOnly && !stageFrozen}
+              showJumpActions={!readOnly}
+              onStageClick={(stage) => setForm((current) => toggleConsultationStage(current, stage))}
+              onStageDoubleClick={(stage) => setForm((current) => moveConsultationStage(current, stage))}
+              onResultChange={(stage) => setForm((current) => setConsultationResultStage(current, stage))}
+              onResultClick={() => {
+                setForm((current) => (
+                  isConsultationResultStage(current.flow_stage)
+                    ? clearConsultationResultStage(current)
+                    : setConsultationResultStage(current, '成功进班')
+                ));
+              }}
+              onResultDoubleClick={() => setForm((current) => setConsultationResultStage(current, '成功进班'))}
+              onStageJump={handleStageJump}
+            />
+          </section>
 
           {!readOnly && (
             <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
@@ -3729,7 +4046,7 @@ const ConsultationModal = ({
           )}
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <section ref={basicSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
+            <section ref={baseInfoRef} className={`${workspaceSoftCardClass} scroll-mt-6 space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、家长微信和咨询老师信息。</p>
@@ -3798,7 +4115,7 @@ const ConsultationModal = ({
               </div>
             </section>
 
-            <section ref={contentSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
+            <section ref={contentRef} className={`${workspaceSoftCardClass} scroll-mt-6 space-y-4 p-4 sm:p-5`}>
               <div>
                 <h4 className="font-semibold text-slate-900 dark:text-white">咨询内容</h4>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求和跟进状态。</p>
@@ -3869,86 +4186,7 @@ const ConsultationModal = ({
               ))}
             </datalist>
 
-            <section ref={progressSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
-              <div>
-                <h4 className="font-semibold text-slate-900 dark:text-white">咨询流程</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">阶段、结果和右侧状态灯会同步显示到咨询列表。</p>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-3">
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">当前阶段</span>
-                  <select
-                    value={form.flow_stage || ''}
-                    onChange={(e) => updateField('flow_stage', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    <option value="">按跟进状态自动判断</option>
-                    {consultationFlowStages.map((stage) => (
-                      <option key={stage} value={stage}>{stage}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">咨询结果</span>
-                  <select
-                    value={form.consultation_result || ''}
-                    onChange={(e) => updateField('consultation_result', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    <option value="">暂未出结果</option>
-                    <option value="成功进班">☀️ 成功进班</option>
-                    <option value="试听失败">😭 试听失败</option>
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">状态灯</span>
-                  <select
-                    value={form.follow_up_light || ''}
-                    onChange={(e) => updateField('follow_up_light', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    <option value="">自动判断</option>
-                    {consultationFollowUpLights.map((light) => (
-                      <option key={light} value={light}>{light}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {consultationFlowStages.map((stage) => (
-                  <button
-                    key={stage}
-                    type="button"
-                    title={stage}
-                    onClick={() => toggleCompletedStage(stage)}
-                    disabled={readOnly}
-                    className={cn(
-                      'inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-default disabled:opacity-70',
-                      completedStageValues.includes(stage)
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
-                        : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
-                    )}
-                  >
-                    {consultationFlowStageShortLabels[stage as (typeof consultationFlowStages)[number]]}
-                  </button>
-                ))}
-              </div>
-              <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={form.consultation_closed === true || String(form.consultation_closed || '').toLowerCase() === 'true'}
-                  onChange={(e) => updateField('consultation_closed', e.target.checked)}
-                  disabled={readOnly}
-                  className="h-4 w-4 rounded border-sky-200 text-sky-600 focus:ring-sky-200 dark:border-white/10 dark:bg-slate-900"
-                />
-                咨询已结束
-              </label>
-            </section>
-
-            <section ref={notesSectionRef} className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
+            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">咨询详情</span>
@@ -3973,6 +4211,118 @@ const ConsultationModal = ({
                   />
                 </label>
               </div>
+              {(showTestFields || !readOnly) && (
+                <div ref={testSectionRef} className="scroll-mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+                  <h5 className="font-semibold text-slate-900 dark:text-white">待测试</h5>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">是否测试</span>
+                      <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+                        <option value="">未记录</option>
+                        <option value="是">是</option>
+                        <option value="否">否</option>
+                      </select>
+                    </label>
+                    {!readOnly && record && (
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">测试情况图片</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className={workspaceFieldClass}
+                          onChange={async (event) => {
+                            const file = event.target.files?.[0];
+                            if (!file || !record) return;
+                            const payload = new FormData();
+                            payload.append('image', file);
+                            const uploaded = await apiFetch<{ item: ConsultationRecord }>(`/api/consultations/${record.id}/test-images`, {
+                              method: 'POST',
+                              body: payload,
+                            });
+                            setForm(toConsultationFormValues(normalizeConsultationRecord(uploaded.item)));
+                            event.currentTarget.value = '';
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  {form.test_images.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {form.test_images.map((image, index) => (
+                        <a key={`${image.url}-${index}`} href={image.url} target="_blank" rel="noreferrer" className={workspaceSecondaryButtonClass}>
+                          查看图片 {index + 1}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {(showTrialFields || !readOnly) && (
+                <div ref={trialSectionRef} className="scroll-mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+                  <h5 className="font-semibold text-slate-900 dark:text-white">待试听</h5>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">是否试听</span>
+                      <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+                        <option value="">未记录</option>
+                        <option value="是">是</option>
+                        <option value="否">否</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">试听时间段</span>
+                      <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="如：周六 10:00-12:00" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">对应班课</span>
+                      <select value={form.trial_class_id ?? ''} onChange={(e) => updateField('trial_class_id', e.target.value ? Number(e.target.value) : null)} disabled={readOnly} className={fieldClass}>
+                        <option value="">请选择系统班级</option>
+                        {classes.map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
+                      <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="手动输入班课" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">试听教师</span>
+                      <input value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass} />
+                    </label>
+                    <label className="space-y-2 text-sm md:col-span-2">
+                      <span className="text-slate-500 dark:text-slate-400">试听反馈</span>
+                      <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} />
+                    </label>
+                  </div>
+                </div>
+              )}
+              {(showSuccessFields || !readOnly) && (
+                <div ref={successSectionRef} className="scroll-mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
+                  <h5 className="font-semibold text-slate-900 dark:text-white">成功进班</h5>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">进班班级</span>
+                      <select value={form.success_class_id ?? ''} onChange={(e) => handleSuccessClassChange(e.target.value)} disabled={readOnly} className={fieldClass}>
+                        <option value="">请选择系统班级</option>
+                        {classes.map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
+                      <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} />
+                    </label>
+                  </div>
+                </div>
+              )}
+              {(showEndFields || !readOnly) && (
+                <label ref={endSectionRef} className="scroll-mt-6 space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">咨询结束备注</span>
+                  <textarea value={form.end_note} onChange={(e) => updateField('end_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} />
+                </label>
+              )}
               {record && (
                 <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
@@ -3993,7 +4343,7 @@ const ConsultationModal = ({
               {readOnly ? '查看模式下可直接切换到编辑或删除。' : '保存后会刷新列表，不需要跳转到其他页面。'}
             </div>
             <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
-              {readOnly && hasStaffAccess(currentUser.role) && (
+              {readOnly && canEdit && (
                 <>
                   <button
                     type="button"
@@ -4003,15 +4353,17 @@ const ConsultationModal = ({
                     <Pencil size={18} />
                     编辑
                   </button>
-                  <button
-                    type="button"
-                    onClick={onDelete}
-                    disabled={submitting}
-                    className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                  >
-                    <Trash2 size={18} />
-                    删除
-                  </button>
+                  {onDelete && (
+                    <button
+                      type="button"
+                      onClick={onDelete}
+                      disabled={submitting}
+                      className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                    >
+                      <Trash2 size={18} />
+                      删除
+                    </button>
+                  )}
                 </>
               )}
               {readOnly ? (
@@ -4448,8 +4800,10 @@ const ConsultationBatchModal = ({
 
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const canManage = hasStaffAccess(currentUser.role);
+  const canEditConsultations = canManage || currentUser.role === 'member';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
@@ -4457,10 +4811,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'view' | 'create' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
-  const [initialEditTarget, setInitialEditTarget] = useState<ConsultationEditTarget | null>(null);
-  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<ConsultationFilterKey | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [restoreConfirmRecord, setRestoreConfirmRecord] = useState<ConsultationRecord | null>(null);
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
 
@@ -4485,6 +4839,20 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         setLoading(false);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch<ClassItem[]>('/api/classes')
+      .then((items) => {
+        if (active) setClasses(items);
+      })
+      .catch(() => {
+        if (active) setClasses([]);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -4516,19 +4884,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     };
   }, []);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 360);
-    };
-    handleScroll();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   const openCreateModal = () => {
     setSelectedRecord(null);
     setModalMode('create');
-    setInitialEditTarget('basic');
     setModalOpen(true);
     setError('');
   };
@@ -4541,15 +4899,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const openViewModal = (record: ConsultationRecord) => {
     setSelectedRecord(record);
     setModalMode('view');
-    setInitialEditTarget(null);
     setModalOpen(true);
     setError('');
   };
 
-  const openEditModal = (record: ConsultationRecord, target: ConsultationEditTarget | null = null) => {
+  const openEditModal = (record: ConsultationRecord) => {
     setSelectedRecord(record);
     setModalMode('edit');
-    setInitialEditTarget(target);
     setModalOpen(true);
     setError('');
   };
@@ -4557,7 +4913,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const closeModal = () => {
     setModalOpen(false);
     setSelectedRecord(null);
-    setInitialEditTarget(null);
     setSubmitting(false);
   };
 
@@ -4610,6 +4965,111 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const isBusy = submitting || deletingId !== null;
+  const consultationTodayIso = getTodayIsoDate();
+  const consultationFilterCounts = useMemo(() => {
+    const counts = consultationFilterGroups
+      .flatMap((group) => group.items)
+      .reduce((acc, item) => ({ ...acc, [item.key]: 0 }), {} as Record<ConsultationFilterKey, number>);
+    for (const record of records) {
+      counts[getConsultationFilterKey(record, consultationTodayIso)] += 1;
+    }
+    return counts;
+  }, [records, consultationTodayIso]);
+  const visibleRecords = useMemo(() => {
+    if (!activeFilter) {
+      return records;
+    }
+    return sortConsultationsForFilter(
+      records.filter((record) => getConsultationFilterKey(record, consultationTodayIso) === activeFilter),
+      activeFilter,
+    );
+  }, [records, consultationTodayIso, activeFilter]);
+
+  const handleInlineStageToggle = async (record: ConsultationRecord, stage: string) => {
+    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    setError('');
+    const values = toggleConsultationStageLight(toConsultationFormValues(record), stage);
+    await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
+  };
+
+  const handleInlineStageMove = async (record: ConsultationRecord, stage: string) => {
+    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    setError('');
+    const values = moveConsultationStage(toConsultationFormValues(record), stage);
+    await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
+  };
+
+  const handleInlineResultChange = async (record: ConsultationRecord, resultStage: ConsultationResultStage) => {
+    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    if (resultStage === '成功进班' && !record.success_class_id && !record.success_class_manual.trim()) {
+      setError('成功进班必须先选择或填写班级。');
+      return;
+    }
+    setError('');
+    const values = setConsultationResultStage(toConsultationFormValues(record), resultStage);
+    await saveInlineConsultationUpdate(record, values, '更新咨询结果失败');
+  };
+
+  const handleInlineResultClick = async (record: ConsultationRecord) => {
+    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    if (!isConsultationResultStage(record.flow_stage) && !record.success_class_id && !record.success_class_manual.trim()) {
+      setError('成功进班必须先选择或填写班级。');
+      return;
+    }
+    setError('');
+    const formValues = toConsultationFormValues(record);
+    const values = isConsultationResultStage(record.flow_stage)
+      ? clearConsultationResultStage(formValues)
+      : setConsultationResultStage(formValues, '成功进班');
+    await saveInlineConsultationUpdate(record, values, '更新咨询结果失败');
+  };
+
+  const handleInlineEndConsultation = async (record: ConsultationRecord) => {
+    if (!canEditConsultations || isBusy) {
+      return;
+    }
+    if (isConsultationEnded(record.flow_stage)) {
+      setRestoreConfirmRecord(record);
+      return;
+    }
+    setError('');
+    const values = endConsultationValues(toConsultationFormValues(record));
+    await saveInlineConsultationUpdate(record, values, '结束咨询失败');
+  };
+
+  const handleConfirmRestoreConsultation = async () => {
+    if (!restoreConfirmRecord) {
+      return;
+    }
+    const record = restoreConfirmRecord;
+    setRestoreConfirmRecord(null);
+    setError('');
+    const values = restoreConsultationValues(toConsultationFormValues(restoreConfirmRecord));
+    await saveInlineConsultationUpdate(record, values, '恢复咨询失败');
+  };
+
+  const saveInlineConsultationUpdate = async (record: ConsultationRecord, values: ConsultationFormValues, fallbackError: string) => {
+    const optimistic = normalizeConsultationRecord({ ...record, ...values });
+    setRecords((current) => current.map((item) => (item.id === record.id ? optimistic : item)));
+    try {
+      const updated = await apiFetch<ConsultationRecord>(`/api/consultations/${record.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(values),
+      });
+      setRecords((current) => current.map((item) => (item.id === record.id ? normalizeConsultationRecord(updated) : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError);
+      await load(search);
+    }
+  };
 
   return (
     <div className={`${workspacePageClass} space-y-6`}>
@@ -4618,7 +5078,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Log</p>
           <h3 className={`${workspaceSectionTitleClass} mt-3`}>咨询记录</h3>
           <p className={`${workspaceSectionTextClass} mt-2`}>
-            记录家长咨询、流程进度和后续备注，搜索后会直接按关键词过滤当前列表。
+            记录家长咨询、跟进状态和后续备注，搜索后会直接按关键词过滤当前列表。
           </p>
         </div>
         <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
@@ -4670,6 +5130,39 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         </div>
       )}
 
+      <div className={`${workspaceCardClass} p-3 sm:p-4`}>
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+          {consultationFilterGroups.map((group) => (
+            <div key={group.title} className="min-w-0">
+              <p className="px-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">{group.title}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {group.items.map((item) => {
+                  const active = activeFilter === item.key;
+                  const count = consultationFilterCounts[item.key] || 0;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setActiveFilter((current) => (current === item.key ? null : item.key))}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold transition ${
+                        active
+                          ? 'border-sky-200 bg-sky-500 text-white shadow-[0_10px_22px_rgba(14,165,233,0.18)]'
+                          : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'}`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className={`${workspaceCardClass} overflow-hidden`}>
         {loading ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">正在加载咨询记录...</div>
@@ -4677,10 +5170,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
             暂无咨询记录，点击「新增记录」开始录入。
           </div>
+        ) : activeFilter && visibleRecords.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+            当前分类「{consultationFilterLabels[activeFilter]}」暂无咨询记录。
+          </div>
         ) : (
           <>
-            <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden">
-              {records.map((record) => {
+            <div className="grid gap-4 p-4 sm:p-5 md:hidden">
+              {visibleRecords.map((record) => {
                 const busy = isBusy && selectedRecord?.id === record.id;
                 const needDetail = record.need_detail?.trim();
                 const followUpNote = record.follow_up_note?.trim();
@@ -4689,9 +5186,22 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
-                        <p className="mt-2 font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
+                        <p className="mt-2 whitespace-nowrap font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
                       </div>
-                      <ConsultationProgressCluster record={record} compact onJumpToEdit={canManage ? (target) => openEditModal(record, target) : undefined} />
+                      <ConsultationStatusLamp stage={record.flow_stage} />
+                    </div>
+                    <div className="pb-1">
+                      <ConsultationFlowBar
+                        mode="list"
+                        stage={record.flow_stage}
+                        completedStages={record.completed_stages}
+                        editable={canEditConsultations && !busy && !isConsultationEnded(record.flow_stage)}
+                        onStageClick={(stage) => handleInlineStageToggle(record, stage)}
+                        onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
+                        onResultChange={(stage) => handleInlineResultChange(record, stage)}
+                        onResultClick={() => handleInlineResultClick(record)}
+                        onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
+                      />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -4715,11 +5225,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">录入时间</p>
-                        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
+                        <p className="mt-2 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
                       </div>
                       <div className="rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
-                        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
+                        <p className="mt-2 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
                       </div>
                     </div>
 
@@ -4732,7 +5242,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <Eye size={16} />
                         查看
                       </button>
-                      {canManage && (
+                      {canEditConsultations && (
                         <>
                           <button
                             type="button"
@@ -4745,109 +5255,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           </button>
                           <button
                             type="button"
-                            onClick={async () => {
-                              if (!window.confirm('确定删除这条咨询记录吗？')) {
-                                return;
-                              }
-                              setDeletingId(record.id);
-                              try {
-                                await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
-                                await load(search);
-                              } catch (err) {
-                                setError(err instanceof Error ? err.message : '删除咨询记录失败');
-                              } finally {
-                                setDeletingId(null);
-                              }
-                            }}
-                            className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                            onClick={() => handleInlineEndConsultation(record)}
+                            className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-rose-500 px-3 py-2.5 text-xs font-extrabold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
                             disabled={busy}
                           >
-                            <Trash2 size={16} />
-                            删除
+                            OVER
                           </button>
-                        </>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-
-            <div className="hidden 2xl:block">
-              <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-sky-100/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10 dark:text-slate-500">
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">日期</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">家长微信 / 学生姓名</th>
-                <th className="pl-6 pr-3 py-4 font-semibold whitespace-nowrap w-24">年级</th>
-                <th className="pl-3 pr-6 py-4 font-semibold whitespace-nowrap">咨询老师</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">咨询科目 / 来源渠道</th>
-                <th className="px-6 py-4 font-semibold whitespace-nowrap">录入 / 更新</th>
-                <th className="px-6 py-4 text-right font-semibold whitespace-nowrap">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-sky-100/80 dark:divide-white/10">
-              {records.map((record) => {
-                const busy = isBusy && selectedRecord?.id === record.id;
-                const needDetail = record.need_detail?.trim();
-                const followUpNote = record.follow_up_note?.trim();
-                return (
-                  <React.Fragment key={record.id}>
-                  <tr className="group transition-colors hover:bg-sky-50/70 dark:hover:bg-white/5">
-                    <td className="px-6 py-4 align-top font-mono text-sm text-slate-500 dark:text-slate-400">{record.date || '—'}</td>
-                    <td className="px-6 py-4 align-top">
-                      <div className="space-y-1">
-                        <p className="font-medium text-slate-900 dark:text-white">
-                          {record.parent_wechat_name || '—'}
-                        </p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {getConsultationStudentMeta(record)}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="pl-6 pr-3 py-4 align-top whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{record.grade || '—'}</td>
-                    <td className="pl-3 pr-6 py-4 align-top">
-                      <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
-                        <p className="font-medium text-slate-700 dark:text-slate-200">
-                          {getConsultationTeacherName(record, teacherDirectory)}
-                        </p>
-                        {needDetail && <p>咨询详情：{needDetail}</p>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 align-top">
-                      <div className="min-h-[72px] space-y-1 text-sm text-slate-500 dark:text-slate-400">
-                        <p>{record.consultation_subject || '未填写咨询科目'}</p>
-                        <p>{getConsultationSourceLabel(record)}</p>
-                        {followUpNote && <p>跟进：{followUpNote}</p>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 align-top text-sm text-slate-500 dark:text-slate-400">
-                      <div className="space-y-1">
-                        <p>{record.created_at || '—'}</p>
-                        <p>{record.updated_at || '—'}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 align-top text-right">
-                      <div className="flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => openViewModal(record)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                          title="查看"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        {canManage && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(record)}
-                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
-                              title="编辑"
-                              disabled={busy}
-                            >
-                              <Pencil size={16} />
-                            </button>
+                          {canManage && (
                             <button
                               type="button"
                               onClick={async () => {
@@ -4864,30 +5278,105 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                                   setDeletingId(null);
                                 }
                               }}
-                              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                              title="删除"
+                              className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
                               disabled={busy}
                             >
                               <Trash2 size={16} />
+                              删除
                             </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  <tr className="border-t border-sky-50/80 bg-sky-50/30 dark:border-white/5 dark:bg-white/[0.02]">
-                    <td colSpan={7} className="px-6 pb-5 pt-2">
-                      <div className="flex items-center gap-3">
-                        <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">咨询流程</span>
-                        <ConsultationProgressCluster record={record} onJumpToEdit={canManage ? (target) => openEditModal(record, target) : undefined} />
-                      </div>
-                    </td>
-                  </tr>
-                  </React.Fragment>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+
+            <div className="hidden md:block">
+              <div className="space-y-3 p-4">
+                {visibleRecords.map((record) => {
+                  const busy = isBusy && selectedRecord?.id === record.id;
+                  const needDetail = record.need_detail?.trim();
+                  const followUpNote = record.follow_up_note?.trim();
+                  const frozen = isConsultationEnded(record.flow_stage);
+                  return (
+                    <article key={record.id} className="overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
+                      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.25rem,1fr))] gap-x-4 gap-y-3 border-b border-sky-50 px-5 py-4 text-sm dark:border-white/10">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">日期</p>
+                          <p className="mt-2 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">家长微信 / 学生</p>
+                          <p className="mt-2 truncate font-semibold text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
+                          <p className="mt-1 truncate text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">年级</p>
+                          <p className="mt-2 whitespace-nowrap font-semibold text-slate-700 dark:text-slate-200">{record.grade || '—'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">咨询老师</p>
+                          <p className="mt-2 truncate font-semibold text-slate-700 dark:text-slate-200">{getConsultationTeacherName(record, teacherDirectory)}</p>
+                          {needDetail && <p className="mt-1 line-clamp-2 text-slate-500 dark:text-slate-400">咨询详情：{needDetail}</p>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">咨询科目 / 来源</p>
+                          <p className="mt-2 truncate text-slate-600 dark:text-slate-300">{record.consultation_subject || '未填写咨询科目'}</p>
+                          <p className="mt-1 truncate text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
+                          {followUpNote && <p className="mt-1 truncate text-slate-500 dark:text-slate-400">跟进：{followUpNote}</p>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">录入 / 更新</p>
+                          <p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.created_at || '—'}</p>
+                          <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.updated_at || '—'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">操作</p>
+                          <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} mt-2 h-9 w-full px-3 text-xs`}>
+                            <Eye size={14} />
+                            查看
+                          </button>
+                        </div>
+                      </div>
+                      <div className={`grid grid-cols-[1rem_minmax(0,1fr)_3.75rem_2.25rem] items-center gap-2 bg-slate-50/60 px-5 py-4 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+                        <ConsultationStatusLamp stage={record.flow_stage} />
+                        <div className="min-w-0 overflow-visible">
+                          <ConsultationFlowBar
+                            mode="list"
+                            stage={record.flow_stage}
+                            completedStages={record.completed_stages}
+                            editable={canEditConsultations && !busy && !frozen}
+                            onStageClick={(stage) => handleInlineStageToggle(record, stage)}
+                            onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
+                            onResultChange={(stage) => handleInlineResultChange(record, stage)}
+                            onResultClick={() => handleInlineResultClick(record)}
+                            onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleInlineEndConsultation(record)}
+                          className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[10px] bg-rose-500 px-1.5 text-[10px] font-extrabold text-white shadow-[0_10px_20px_rgba(239,68,68,0.18)] transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
+                          disabled={!canEditConsultations || busy}
+                        >
+                          OVER
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(record)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20"
+                          title={frozen ? '查看结束备注' : '编辑这条咨询'}
+                          disabled={!canEditConsultations || busy}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             </div>
           </>
         )}
@@ -4909,28 +5398,38 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             mode={modalMode}
             record={selectedRecord}
             consultationTeachers={consultationTeachers}
+            classes={classes}
             submitting={submitting}
             error={error}
             currentUser={currentUser}
-            initialEditTarget={initialEditTarget}
             onClose={closeModal}
             onSubmit={handleSubmit}
             onDelete={canManage ? handleDelete : undefined}
             onRequestEdit={selectedRecord ? () => openEditModal(selectedRecord) : undefined}
           />
         )}
+        {restoreConfirmRecord && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+            onClick={(event) => event.target === event.currentTarget && setRestoreConfirmRecord(null)}
+          >
+            <div className="w-full max-w-sm rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-slate-900">
+              <p className="text-base font-bold text-slate-900 dark:text-white">是否恢复这个咨询？</p>
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button type="button" onClick={handleConfirmRestoreConsultation} className={workspacePrimaryButtonClass}>
+                  是
+                </button>
+                <button type="button" onClick={() => setRestoreConfirmRecord(null)} className={workspaceSecondaryButtonClass}>
+                  否
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
-      {showScrollTop && (
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-6 right-6 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-900 dark:text-sky-300 dark:hover:bg-slate-800"
-          title="返回顶部"
-          aria-label="返回顶部"
-        >
-          <ArrowUp size={18} />
-        </button>
-      )}
     </div>
   );
 };
@@ -10185,7 +10684,7 @@ export default function App() {
             currentUser={currentUser}
             onLogout={handleLogout}
             setActivePage={navigateWorkspacePage}
-            compact={activeWorkspacePage === 'calendar'}
+            compact={activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation'}
             onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
           />
         </div>
@@ -10226,7 +10725,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' ? 'lg:pl-24' : 'lg:pl-72')}>
+        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation' ? 'lg:pl-24' : 'lg:pl-72')}>
           <Header
             title={pageTitle[activeWorkspacePage]}
             onGoHome={() => setShowLanding(true)}

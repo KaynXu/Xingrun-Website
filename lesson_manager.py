@@ -157,9 +157,48 @@ CONSULTATION_SOURCE_ALIASES = {
     "其他": {"其他"},
 }
 CONSULTATION_FOLLOW_UP_STATUS_OPTIONS = ("待邀约", "跟进中", "已报班", "已劝退")
-CONSULTATION_FLOW_STAGE_OPTIONS = ("已加小客服微信", "已加对应教师微信", "正在沟通细节", "待测试", "待试听")
-CONSULTATION_RESULT_OPTIONS = ("成功进班", "试听失败")
-CONSULTATION_FOLLOW_UP_LIGHT_OPTIONS = ("待跟进", "正在跟进", "咨询结束")
+CONSULTATION_FLOW_STAGES = (
+    "已加小客服微信",
+    "已加对应教师微信",
+    "正在沟通细节",
+    "待测试",
+    "待试听",
+    "成功进班",
+    "试听失败",
+    "咨询结束",
+)
+CONSULTATION_DEFAULT_FLOW_STAGE = "已加小客服微信"
+CONSULTATION_FLOW_STAGE_DERIVED_STATUS = {
+    "已加小客服微信": "待跟进",
+    "已加对应教师微信": "待跟进",
+    "正在沟通细节": "正在跟进",
+    "待测试": "正在跟进",
+    "待试听": "正在跟进",
+    "试听失败": "正在跟进",
+    "成功进班": "完成",
+    "咨询结束": "完成",
+}
+CONSULTATION_LEGACY_STATUS_STAGE_MAP = {
+    "待邀约": "已加小客服微信",
+    "跟进中": "正在沟通细节",
+    "已报班": "成功进班",
+    "已劝退": "咨询结束",
+}
+CONSULTATION_STAGE_API_FIELDS = {
+    "flow_stage",
+    "completed_stages",
+    "test_taken",
+    "test_images",
+    "trial_taken",
+    "trial_time_slot",
+    "trial_class_id",
+    "trial_class_manual",
+    "trial_teacher",
+    "trial_feedback",
+    "success_class_id",
+    "success_class_manual",
+    "end_note",
+}
 COURSE_CALENDAR_TIME_BLOCKS = (
     "08:00-10:00",
     "10:00-12:00",
@@ -210,11 +249,6 @@ CONSULTATION_EDITABLE_FIELDS = {
     "截图",
     "跟进状态",
     "跟进备注",
-    "咨询流程阶段",
-    "已完成咨询流程",
-    "咨询结果",
-    "咨询是否结束",
-    "跟进状态灯",
 }
 
 CONSULTATION_API_FIELD_MAP = {
@@ -231,11 +265,6 @@ CONSULTATION_API_FIELD_MAP = {
     "screenshot": "截图",
     "follow_up_status": "跟进状态",
     "follow_up_note": "跟进备注",
-    "flow_stage": "咨询流程阶段",
-    "completed_stages": "已完成咨询流程",
-    "consultation_result": "咨询结果",
-    "consultation_closed": "咨询是否结束",
-    "follow_up_light": "跟进状态灯",
     "created_at": "录入时间",
     "updated_at": "最后更新",
 }
@@ -970,6 +999,61 @@ def _serialize_consultation_row(row: dict, teacher_directory: Optional[dict[str,
     return serialized
 
 
+def _json_list(value: object) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _normalize_consultation_flow_stage(value: object, legacy_status: str = "") -> str:
+    stage = str(value or "").strip()
+    if stage in CONSULTATION_FLOW_STAGES:
+        return stage
+    mapped = CONSULTATION_LEGACY_STATUS_STAGE_MAP.get((legacy_status or "").strip())
+    return mapped or CONSULTATION_DEFAULT_FLOW_STAGE
+
+
+def _normalize_consultation_completed_stages(value: object, current_stage: str) -> list[str]:
+    seen = set()
+    stages: list[str] = []
+    for raw_stage in _json_list(value):
+        stage = str(raw_stage or "").strip()
+        if stage in CONSULTATION_FLOW_STAGES and stage not in seen:
+            seen.add(stage)
+            stages.append(stage)
+    if current_stage and current_stage not in seen:
+        stages.append(current_stage)
+    return stages
+
+
+def _derive_consultation_follow_up_status(flow_stage: str) -> str:
+    return CONSULTATION_FLOW_STAGE_DERIVED_STATUS.get(flow_stage, "待跟进")
+
+
+def _normalize_optional_int(value: object) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_consultation_stage_updates(data: Optional[dict]) -> dict:
+    payload = data or {}
+    updates: dict = {}
+    for field in CONSULTATION_STAGE_API_FIELDS:
+        if field in payload:
+            updates[field] = payload.get(field)
+    return updates
+
+
 def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
     payload = data or {}
     updates: dict[str, str] = {}
@@ -983,25 +1067,6 @@ def _extract_consultation_updates(data: Optional[dict]) -> dict[str, str]:
         if api_field in payload:
             value = payload.get(api_field, "")
             updates[csv_field] = "" if value is None else str(value)
-    if "咨询流程阶段" in updates:
-        stage = updates["咨询流程阶段"].strip()
-        updates["咨询流程阶段"] = stage if stage in CONSULTATION_FLOW_STAGE_OPTIONS else ""
-    if "已完成咨询流程" in updates:
-        completed_stages = []
-        for stage in re.split(r"[,，|/]", updates["已完成咨询流程"]):
-            normalized_stage = stage.strip()
-            if normalized_stage in CONSULTATION_FLOW_STAGE_OPTIONS and normalized_stage not in completed_stages:
-                completed_stages.append(normalized_stage)
-        updates["已完成咨询流程"] = "，".join(completed_stages)
-    if "咨询结果" in updates:
-        result = updates["咨询结果"].strip()
-        updates["咨询结果"] = result if result in CONSULTATION_RESULT_OPTIONS else ""
-    if "咨询是否结束" in updates:
-        closed = updates["咨询是否结束"].strip().lower()
-        updates["咨询是否结束"] = "true" if closed in {"true", "1", "yes", "y", "已结束", "结束", "是"} else ""
-    if "跟进状态灯" in updates:
-        light = updates["跟进状态灯"].strip()
-        updates["跟进状态灯"] = light if light in CONSULTATION_FOLLOW_UP_LIGHT_OPTIONS else ""
     return updates
 
 
@@ -1184,6 +1249,8 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
     new_row["最后更新"] = now
     for field, value in _extract_consultation_updates(data).items():
         new_row[field] = value
+    new_row.update(_extract_consultation_stage_updates(data))
+    new_row["_require_success_class"] = data.get("flow_stage") == "成功进班"
     if not new_row["日期"]:
         new_row["日期"] = str(date.today())
     stored = _consultation_row_to_storage(new_row, organization_id)
@@ -1195,9 +1262,11 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 consultation_subject, need_detail,
                 source_channel, source_channel_note, screenshot, reminder_at,
                 reminder_status, reminder_task_id, follow_up_status, follow_up_note,
-                flow_stage, completed_stages, consultation_result, consultation_closed, follow_up_light,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, flow_stage, completed_stages_json, test_taken,
+                test_images_json, trial_taken, trial_time_slot, trial_class_id,
+                trial_class_manual, trial_teacher, trial_feedback, success_class_id,
+                success_class_manual, end_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
@@ -1216,13 +1285,21 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 stored["reminder_task_id"],
                 stored["follow_up_status"],
                 stored["follow_up_note"],
+                now,
+                now,
                 stored["flow_stage"],
-                stored["completed_stages"],
-                stored["consultation_result"],
-                stored["consultation_closed"],
-                stored["follow_up_light"],
-                now,
-                now,
+                stored["completed_stages_json"],
+                stored["test_taken"],
+                stored["test_images_json"],
+                stored["trial_taken"],
+                stored["trial_time_slot"],
+                stored["trial_class_id"],
+                stored["trial_class_manual"],
+                stored["trial_teacher"],
+                stored["trial_feedback"],
+                stored["success_class_id"],
+                stored["success_class_manual"],
+                stored["end_note"],
             ),
         )
         row = conn.execute(
@@ -1237,7 +1314,12 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
     return _consultation_storage_row_to_public_dict(row, _get_consultation_teacher_directory())
 
 
-def update_consultation(consultation_id: int, data: dict, organization_id: Optional[int] = None):
+def update_consultation(
+    consultation_id: int,
+    data: dict,
+    organization_id: Optional[int] = None,
+    assigned_user_id: Optional[int] = None,
+):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     teacher_directory = _get_consultation_teacher_directory()
     with get_conn() as conn:
@@ -1251,13 +1333,32 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
         if organization_id is not None:
             query_sql += " AND c.organization_id=?"
             params.append(organization_id)
+        if assigned_user_id is not None:
+            query_sql += " AND c.assigned_user_id=?"
+            params.append(assigned_user_id)
         current = conn.execute(query_sql, params).fetchone()
         if not current:
             return None
 
         public_row = _consultation_storage_row_to_public_dict(current, teacher_directory)
+        frozen_stage_fields = {}
+        restore_from_end = bool(isinstance(data, dict) and data.get("restore_from_end"))
+        if public_row.get("flow_stage") == "咨询结束" and not restore_from_end:
+            frozen_stage_fields = {
+                field: public_row.get(field)
+                for field in CONSULTATION_STAGE_API_FIELDS
+                if field != "end_note"
+            }
         for field, value in _extract_consultation_updates(data).items():
             public_row[field] = value
+        public_row.update(_extract_consultation_stage_updates(data))
+        if frozen_stage_fields:
+            public_row.update(frozen_stage_fields)
+        public_row["_require_success_class"] = data.get("flow_stage") == "成功进班"
+        if "flow_stage" not in data and ("follow_up_status" in data or "跟进状态" in data):
+            legacy_status = data.get("follow_up_status") or data.get("跟进状态") or public_row.get("follow_up_status", "")
+            public_row["flow_stage"] = _normalize_consultation_flow_stage("", legacy_status)
+            public_row["completed_stages"] = [public_row["flow_stage"]]
         stored = _consultation_row_to_storage(public_row, current["organization_id"])
         
         # Get assigned_user_id from data if provided, otherwise keep existing
@@ -1280,12 +1381,20 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 screenshot=?,
                 follow_up_status=?,
                 follow_up_note=?,
-                flow_stage=?,
-                completed_stages=?,
-                consultation_result=?,
-                consultation_closed=?,
-                follow_up_light=?,
                 assigned_user_id=?,
+                flow_stage=?,
+                completed_stages_json=?,
+                test_taken=?,
+                test_images_json=?,
+                trial_taken=?,
+                trial_time_slot=?,
+                trial_class_id=?,
+                trial_class_manual=?,
+                trial_teacher=?,
+                trial_feedback=?,
+                success_class_id=?,
+                success_class_manual=?,
+                end_note=?,
                 updated_at=?
             WHERE id=?
             """,
@@ -1301,12 +1410,20 @@ def update_consultation(consultation_id: int, data: dict, organization_id: Optio
                 stored["screenshot"],
                 stored["follow_up_status"],
                 stored["follow_up_note"],
-                stored["flow_stage"],
-                stored["completed_stages"],
-                stored["consultation_result"],
-                stored["consultation_closed"],
-                stored["follow_up_light"],
                 assigned_user_id,
+                stored["flow_stage"],
+                stored["completed_stages_json"],
+                stored["test_taken"],
+                stored["test_images_json"],
+                stored["trial_taken"],
+                stored["trial_time_slot"],
+                stored["trial_class_id"],
+                stored["trial_class_manual"],
+                stored["trial_teacher"],
+                stored["trial_feedback"],
+                stored["success_class_id"],
+                stored["success_class_manual"],
+                stored["end_note"],
                 now,
                 consultation_id,
             ),
@@ -1332,6 +1449,33 @@ def delete_consultation(consultation_id: int, organization_id: Optional[int] = N
             params.append(organization_id)
         cur = conn.execute(query_sql, params)
     return cur.rowcount > 0
+
+
+def append_consultation_test_image(
+    consultation_id: int,
+    image: dict,
+    organization_id: Optional[int] = None,
+    assigned_user_id: Optional[int] = None,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM consultations WHERE id=?"
+        params: list[object] = [consultation_id]
+        if organization_id is not None:
+            query_sql += " AND organization_id=?"
+            params.append(organization_id)
+        if assigned_user_id is not None:
+            query_sql += " AND assigned_user_id=?"
+            params.append(assigned_user_id)
+        row = conn.execute(query_sql, params).fetchone()
+        if not row:
+            return None
+        images = _json_list(row["test_images_json"])
+        images.append(image)
+        conn.execute(
+            "UPDATE consultations SET test_images_json=?, updated_at=datetime('now','localtime') WHERE id=?",
+            (json.dumps(images, ensure_ascii=False), consultation_id),
+        )
+    return get_consultation(consultation_id, organization_id)
 
 
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
@@ -1548,6 +1692,13 @@ def _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn: sql
 def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, str | int]:
     teacher_directory = _get_consultation_teacher_directory()
     serialized = _serialize_consultation_row(row, teacher_directory)
+    flow_stage = _normalize_consultation_flow_stage(row.get("flow_stage"), serialized.get("follow_up_status", ""))
+    completed_stages = _normalize_consultation_completed_stages(row.get("completed_stages"), flow_stage)
+    trial_class_id = _normalize_optional_int(row.get("trial_class_id"))
+    success_class_id = _normalize_optional_int(row.get("success_class_id"))
+    success_class_manual = str(row.get("success_class_manual") or "").strip()
+    if row.get("_require_success_class") and flow_stage == "成功进班" and not success_class_id and not success_class_manual:
+        raise ValueError("成功进班必须选择或填写班级")
     return {
         "organization_id": organization_id,
         "date": serialized.get("date", ""),
@@ -1564,15 +1715,23 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "reminder_at": serialized.get("提醒时间", ""),
         "reminder_status": serialized.get("提醒状态", ""),
         "reminder_task_id": serialized.get("提醒任务ID", ""),
-        "follow_up_status": serialized.get("follow_up_status", ""),
+        "follow_up_status": _derive_consultation_follow_up_status(flow_stage),
         "follow_up_note": serialized.get("follow_up_note", ""),
-        "flow_stage": serialized.get("flow_stage", ""),
-        "completed_stages": serialized.get("completed_stages", ""),
-        "consultation_result": serialized.get("consultation_result", ""),
-        "consultation_closed": serialized.get("consultation_closed", ""),
-        "follow_up_light": serialized.get("follow_up_light", ""),
         "created_at": serialized.get("created_at", ""),
         "updated_at": serialized.get("updated_at", ""),
+        "flow_stage": flow_stage,
+        "completed_stages_json": json.dumps(completed_stages, ensure_ascii=False),
+        "test_taken": str(row.get("test_taken") or ""),
+        "test_images_json": json.dumps(_json_list(row.get("test_images")), ensure_ascii=False),
+        "trial_taken": str(row.get("trial_taken") or ""),
+        "trial_time_slot": str(row.get("trial_time_slot") or ""),
+        "trial_class_id": trial_class_id,
+        "trial_class_manual": str(row.get("trial_class_manual") or ""),
+        "trial_teacher": str(row.get("trial_teacher") or ""),
+        "trial_feedback": str(row.get("trial_feedback") or ""),
+        "success_class_id": success_class_id,
+        "success_class_manual": success_class_manual,
+        "end_note": str(row.get("end_note") or ""),
     }
 
 
@@ -1601,16 +1760,29 @@ def _consultation_storage_row_to_public_dict(
     legacy_row["提醒任务ID"] = payload.get("reminder_task_id", "") or ""
     legacy_row["跟进状态"] = payload.get("follow_up_status", "") or ""
     legacy_row["跟进备注"] = payload.get("follow_up_note", "") or ""
-    legacy_row["咨询流程阶段"] = payload.get("flow_stage", "") or ""
-    legacy_row["已完成咨询流程"] = payload.get("completed_stages", "") or ""
-    legacy_row["咨询结果"] = payload.get("consultation_result", "") or ""
-    legacy_row["咨询是否结束"] = str(payload.get("consultation_closed", "") or "")
-    legacy_row["跟进状态灯"] = payload.get("follow_up_light", "") or ""
     legacy_row["录入时间"] = payload.get("created_at", "") or ""
     legacy_row["最后更新"] = payload.get("updated_at", "") or ""
     serialized = _serialize_consultation_row(legacy_row, teacher_directory)
     serialized["organization_id"] = payload.get("organization_id")
     serialized["assigned_user_id"] = payload.get("assigned_user_id")
+    flow_stage = _normalize_consultation_flow_stage(payload.get("flow_stage"), payload.get("follow_up_status", ""))
+    serialized["flow_stage"] = flow_stage
+    serialized["completed_stages"] = _normalize_consultation_completed_stages(
+        payload.get("completed_stages_json", "[]"),
+        flow_stage,
+    )
+    serialized["follow_up_status"] = _derive_consultation_follow_up_status(flow_stage)
+    serialized["test_taken"] = payload.get("test_taken", "") or ""
+    serialized["test_images"] = _json_list(payload.get("test_images_json", "[]"))
+    serialized["trial_taken"] = payload.get("trial_taken", "") or ""
+    serialized["trial_time_slot"] = payload.get("trial_time_slot", "") or ""
+    serialized["trial_class_id"] = payload.get("trial_class_id")
+    serialized["trial_class_manual"] = payload.get("trial_class_manual", "") or ""
+    serialized["trial_teacher"] = payload.get("trial_teacher", "") or ""
+    serialized["trial_feedback"] = payload.get("trial_feedback", "") or ""
+    serialized["success_class_id"] = payload.get("success_class_id")
+    serialized["success_class_manual"] = payload.get("success_class_manual", "") or ""
+    serialized["end_note"] = payload.get("end_note", "") or ""
     return serialized
 
 
@@ -1645,21 +1817,24 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
             reminder_task_id     TEXT DEFAULT '',
             follow_up_status     TEXT DEFAULT '',
             follow_up_note       TEXT DEFAULT '',
-            flow_stage           TEXT DEFAULT '',
-            completed_stages     TEXT DEFAULT '',
-            consultation_result  TEXT DEFAULT '',
-            consultation_closed  TEXT DEFAULT '',
-            follow_up_light      TEXT DEFAULT '',
             created_at           TEXT DEFAULT (datetime('now','localtime')),
             updated_at           TEXT DEFAULT (datetime('now','localtime'))
         )
         """
     )
     _ensure_column(conn, "consultations", "flow_stage", "TEXT DEFAULT ''")
-    _ensure_column(conn, "consultations", "completed_stages", "TEXT DEFAULT ''")
-    _ensure_column(conn, "consultations", "consultation_result", "TEXT DEFAULT ''")
-    _ensure_column(conn, "consultations", "consultation_closed", "TEXT DEFAULT ''")
-    _ensure_column(conn, "consultations", "follow_up_light", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "completed_stages_json", "TEXT DEFAULT '[]'")
+    _ensure_column(conn, "consultations", "test_taken", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "test_images_json", "TEXT DEFAULT '[]'")
+    _ensure_column(conn, "consultations", "trial_taken", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "trial_time_slot", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "trial_class_id", "INTEGER")
+    _ensure_column(conn, "consultations", "trial_class_manual", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "trial_teacher", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "trial_feedback", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "success_class_id", "INTEGER")
+    _ensure_column(conn, "consultations", "success_class_manual", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "end_note", "TEXT DEFAULT ''")
 
 
 def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:

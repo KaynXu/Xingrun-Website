@@ -338,8 +338,9 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   assert.match(appSource, /mobileNavOpen/);
   assert.match(appSource, /aria-label="打开导航"/);
   assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
-  assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2 2xl:hidden"/);
-  assert.match(appSource, /className="hidden 2xl:block"/);
+  assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
+  assert.match(appSource, /className="hidden md:block"/);
+  assert.match(appSource, /activePage === 'calendar' \|\| activePage === 'consultation'/);
   assert.match(consultationBlock, /className="grid w-full gap-3 self-start sm:grid-cols-2 lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] xl:grid-cols-3"/);
   assert.match(consultationBlock, /className=\{`\$\{workspaceSecondaryButtonClass\} w-full`\}/);
   assert.match(consultationBlock, /className=\{`\$\{workspacePrimaryButtonClass\} w-full`\}/);
@@ -362,9 +363,10 @@ test('consultation workspace source allows staff edits and uses the new follow-u
   assert.match(appSource, /const consultationStatusOptions = \['待邀约', '跟进中', '已报班', '已劝退'\];/);
   assert.match(appSource, /follow_up_status: '待邀约',/);
   assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{/);
-  assert.match(appSource, /\{readOnly && hasStaffAccess\(currentUser\.role\) && \(/);
+  assert.match(appSource, /const canEdit = hasStaffAccess\(currentUser\.role\) \|\| currentUser\.role === 'member';/);
+  assert.match(appSource, /\{readOnly && canEdit && \(/);
   assert.match(appSource, /const canManage = hasStaffAccess\(currentUser\.role\);/);
-  assert.match(appSource, /\{canManage && \(/);
+  assert.match(appSource, /const canEditConsultations = canManage \|\| currentUser\.role === 'member';/);
   assert.match(appSource, /onDelete=\{canManage \? handleDelete : undefined\}/);
 });
 

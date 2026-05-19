@@ -23,11 +23,12 @@ import webbrowser
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from time import monotonic, sleep
+from time import monotonic, sleep, time
 from typing import Optional, Set
 
-from flask import Flask, abort, redirect, request, send_file, jsonify
+from flask import Flask, abort, redirect, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 from config_runtime import env_controlled_keys, get_runtime_config, load_file_config, write_file_config
 import ai_processor
 import pdf_engine
@@ -62,6 +63,7 @@ from lesson_manager import (
     actor_can_manage_user,
     attach_student_library_pdf_path,
     build_wrong_question_practice_pack_schedule,
+    append_consultation_test_image,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -3732,13 +3734,16 @@ def api_consultation_create():
         assigned_user_id = request.json.get("assigned_user_id")
         if assigned_user_id is None and request.json.get("teacher_id"):
             assigned_user_id = resolve_teacher_username_to_user_id(request.json["teacher_id"])
-    item = create_consultation(request.json or {}, user["organization_id"], assigned_user_id=assigned_user_id)
+    try:
+        item = create_consultation(request.json or {}, user["organization_id"], assigned_user_id=assigned_user_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify(item), 201
 
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["PUT"])
 def api_consultation_update(consultation_id):
-    user, error = _require_staff()
+    user, error = _require_auth()
     if error:
         return error
     data = request.json or {}
@@ -3748,14 +3753,55 @@ def api_consultation_update(consultation_id):
             data["assigned_user_id"] = resolved
         elif not data["teacher_id"]:
             data["assigned_user_id"] = None
-    item = update_consultation(
-        consultation_id,
-        data,
-        None if user.get("role") == "super_owner" else user.get("organization_id"),
-    )
+    try:
+        item = update_consultation(
+            consultation_id,
+            data,
+            None if user.get("role") == "super_owner" else user.get("organization_id"),
+            user["id"] if user.get("role") == "member" else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
+
+
+@app.route("/api/consultations/<int:consultation_id>/test-images", methods=["POST"])
+def api_consultation_test_image_upload(consultation_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    image = request.files.get("image")
+    if image is None or not image.filename:
+        return jsonify({"error": "image is required"}), 400
+    suffix = Path(image.filename).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+        return jsonify({"error": "只支持 png、jpg、jpeg、webp 图片"}), 400
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    original_filename = image.filename
+    filename = f"consultation-test-{consultation_id}-{int(time() * 1000)}-{secure_filename(original_filename)}"
+    save_path = UPLOAD_DIR / filename
+    image.save(save_path)
+    image_payload = {
+        "url": f"/api/consultation-test-images/{filename}",
+        "filename": original_filename,
+    }
+    item = append_consultation_test_image(
+        consultation_id,
+        image_payload,
+        None if user.get("role") == "super_owner" else user.get("organization_id"),
+        user["id"] if user.get("role") == "member" else None,
+    )
+    if not item:
+        save_path.unlink(missing_ok=True)
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"image": image_payload, "item": item}), 201
+
+
+@app.route("/api/consultation-test-images/<path:filename>", methods=["GET"])
+def api_consultation_test_image_file(filename):
+    return send_from_directory(UPLOAD_DIR, filename)
 
 
 @app.route("/api/consultations/<int:consultation_id>", methods=["DELETE"])
