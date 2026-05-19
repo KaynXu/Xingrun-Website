@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import ai_processor
 import config_runtime
 import lesson_manager
 
@@ -474,3 +475,35 @@ class WrongQuestionPracticePackCandidateTestCase(unittest.TestCase):
             for item in day["items"]
         ]
         self.assertEqual(scheduled_ids, ["real-1", "variant-1", "real-2", "variant-2"])
+
+
+class WrongQuestionPracticePackAiNormalizationTestCase(unittest.TestCase):
+    def test_normalize_variant_payload_requires_target_fields(self):
+        payload = {
+            "items": [
+                {
+                    "variant_id": "variant-1",
+                    "source_record_id": "wechat-a",
+                    "question_text": "解方程：x/2 + 1 = 3。",
+                    "training_goal": "去分母时等式两边每一项同乘。",
+                    "answer": "x=4",
+                    "key_steps": ["两边同乘2", "x+2=6", "x=4"],
+                    "pitfall_reminder": "不要只乘含分母的一边。",
+                    "difficulty": "基础",
+                }
+            ]
+        }
+
+        normalized = ai_processor._normalize_wrong_question_practice_pack_variants(
+            payload,
+            expected_count=1,
+            target="去分母",
+        )
+
+        self.assertEqual(normalized[0]["variant_id"], "variant-1")
+        self.assertEqual(normalized[0]["answer"], "x=4")
+        self.assertEqual(normalized[0]["key_steps"], ["两边同乘2", "x+2=6", "x=4"])
+
+    def test_variant_review_passed_reads_first_conclusion_line(self):
+        self.assertTrue(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：通过\n题目可解。"))
+        self.assertFalse(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：不通过\n答案不一致。"))

@@ -165,6 +165,21 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("只需要围绕错因做轻引导", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertNotIn("ai_hint", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
 
+    def test_practice_pack_variant_prompt_requires_same_reason_questions(self):
+        prompt = ai_processor.WRONG_QUESTION_PRACTICE_PACK_VARIANT_PROMPT
+        self.assertIn("同错因变式题", prompt)
+        self.assertIn("不跨错因", prompt)
+        self.assertIn("标准答案", prompt)
+        self.assertIn("关键步骤", prompt)
+        self.assertIn("易错提醒", prompt)
+
+    def test_practice_pack_variant_review_prompt_checks_answer_and_target(self):
+        prompt = ai_processor.WRONG_QUESTION_PRACTICE_PACK_VARIANT_REVIEW_PROMPT
+        self.assertIn("题目可解", prompt)
+        self.assertIn("答案一致", prompt)
+        self.assertIn("目标错因", prompt)
+        self.assertIn("结论：通过", prompt)
+
     def test_wrong_question_practice_reportlab_copy_avoids_fixed_section_labels(self):
         source = (Path(ai_processor.__file__).resolve().parent / "pdf_engine.py").read_text(encoding="utf-8")
         self.assertNotIn('Paragraph("AI 提示"', source)
