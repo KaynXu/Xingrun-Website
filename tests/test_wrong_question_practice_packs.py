@@ -1027,6 +1027,40 @@ class WrongQuestionPracticePackApiTestCase(unittest.TestCase):
         self.assertEqual(download.mimetype, "application/zip")
         download.close()
 
+    def test_list_packs_returns_ready_jobs_with_download_url(self):
+        headers = self._login_headers()
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母漏乘",
+            volume="standard",
+        )
+        zip_path = self.base / "practice-pack.zip"
+        zip_path.write_bytes(b"zip-bytes")
+        lesson_manager.mark_wrong_question_practice_pack_job_status(
+            job["id"],
+            status="ready",
+            zip_path=str(zip_path),
+            generation_error="",
+        )
+
+        response = self.client.get(
+            f"/api/wrong-question-practice-packs?class_id={self.class_id}",
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        items = response.get_json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], job["id"])
+        self.assertEqual(items[0]["target"], "去分母漏乘")
+        self.assertEqual(
+            items[0]["download_url"],
+            f"/api/wrong-question-practice-packs/{job['id']}/download",
+        )
+
     def test_pack_detail_hides_download_url_when_zip_file_is_missing(self):
         headers = self._login_headers()
         job = lesson_manager.create_wrong_question_practice_pack_job(

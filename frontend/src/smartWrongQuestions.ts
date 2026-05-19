@@ -170,6 +170,10 @@ export interface WrongQuestionPracticePackJob {
   students: WrongQuestionPracticePackStudent[];
 }
 
+export interface WrongQuestionPracticePackListApiResponse {
+  items?: unknown[];
+}
+
 export type WeeklyWrongQuestionFollowupMessage = {
   id: number;
   messageText: string;
@@ -1218,8 +1222,20 @@ export function normalizeWrongQuestionPracticePackJobResponse(payload: unknown):
   return { job, reused: source.reused === true };
 }
 
+export function normalizeWrongQuestionPracticePackListResponse(payload: unknown): WrongQuestionPracticePackJob[] {
+  const source = isObjectRecord(payload) ? payload : {};
+  const items = Array.isArray(source.items) ? source.items : [];
+  return items
+    .map((item) => normalizeWrongQuestionPracticePackJobResponse({ job: item }).job)
+    .filter((item): item is WrongQuestionPracticePackJob => item !== null);
+}
+
 export function buildWrongQuestionPracticePackCreatePath(): string {
   return '/api/wrong-question-practice-packs';
+}
+
+export function buildWrongQuestionPracticePackListPath(classId: number): string {
+  return `/api/wrong-question-practice-packs?class_id=${encodeURIComponent(String(classId))}`;
 }
 
 export function buildWrongQuestionPracticePackDetailPath(jobId: number): string {

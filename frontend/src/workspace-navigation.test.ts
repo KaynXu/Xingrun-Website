@@ -340,10 +340,10 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
   assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
   assert.match(appSource, /className="hidden md:block"/);
-  assert.match(appSource, /activePage === 'calendar' \|\| activePage === 'consultation'/);
-  assert.match(consultationBlock, /className="grid w-full gap-3 self-start sm:grid-cols-2 lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] xl:grid-cols-3"/);
-  assert.match(consultationBlock, /className=\{`\$\{workspaceSecondaryButtonClass\} w-full`\}/);
-  assert.match(consultationBlock, /className=\{`\$\{workspacePrimaryButtonClass\} w-full`\}/);
+  assert.match(appSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
+  assert.match(appSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
+  assert.match(appSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
+  assert.match(appSource, /className=\{`\$\{workspacePrimaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
   assert.match(appSource, /whitespace-nowrap/);
   assert.doesNotMatch(consultationBlock, /sm:min-w-\[126px\]/);
   assert.doesNotMatch(appSource, /overflow-x-auto/);

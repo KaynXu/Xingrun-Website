@@ -16,6 +16,7 @@ import {
   buildWrongQuestionPracticePackCreatePath,
   buildWrongQuestionPracticePackDetailPath,
   buildWrongQuestionPracticePackDownloadPath,
+  buildWrongQuestionPracticePackListPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
@@ -687,6 +688,10 @@ test('practice pack path builders target the new practice pack API', () => {
   assert.equal(
     buildWrongQuestionPracticePackCreatePath(),
     '/api/wrong-question-practice-packs',
+  );
+  assert.equal(
+    buildWrongQuestionPracticePackListPath(42),
+    '/api/wrong-question-practice-packs?class_id=42',
   );
   assert.equal(
     buildWrongQuestionPracticePackDetailPath(42),
@@ -3202,6 +3207,124 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       assert.doesNotMatch(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
       assert.doesNotMatch(pageText, /重新生成话术/);
       assert.equal(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly/messages' && call.init?.method === 'POST'), false);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage reloads generated practice pack downloads when weekly followup opens', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({ students: [{ id: 501, name: '王睿博' }] });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            makeNotebookApiRecord({
+              id: 'weekly-record-a',
+              student_id: 501,
+              student_name: '王睿博',
+              class_id: 42,
+              class_display_name: '六年级 1 班',
+              teacher_user_id: 7,
+              teacher_display_name: 'Kayn',
+            }),
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-practice-packs?class_id=42') {
+        return createJsonResponse({
+          items: [
+            {
+              id: 91,
+              status: 'ready',
+              mode: 'reason',
+              target: '去分母漏乘',
+              volume: 'standard',
+              requested_question_count: 10,
+              download_url: '/api/wrong-question-practice-packs/91/download',
+              generation_error: '',
+              students: [],
+            },
+          ],
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+      assert.ok(followupButton instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /去分母漏乘/);
+      assert.match(pageText, /ready/);
+      assert.match(pageText, /10题/);
+      assert.match(pageText, /下载练习包/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-practice-packs?class_id=42'));
     });
   } finally {
     if (root) {
