@@ -158,7 +158,7 @@ export interface WrongQuestionPracticePackStudent {
 }
 
 export interface WrongQuestionPracticePackJob {
-  id: string;
+  id: number;
   status: string;
   mode: WrongQuestionPracticePackMode;
   target: string;
@@ -1137,7 +1137,7 @@ export function normalizeWrongQuestionPracticePackJobResponse(payload: unknown):
   const downloadUrl = pickStringValue(rawJob, ['downloadUrl', 'download_url']);
   const generationError = pickStringValue(rawJob, ['generationError', 'generation_error']);
   const job: WrongQuestionPracticePackJob = {
-    id: pickStringValue(rawJob, ['id']),
+    id: pickNumberValue(rawJob, ['id']) ?? 0,
     status: pickStringValue(rawJob, ['status']) || 'pending',
     mode: normalizeWrongQuestionPracticePackMode(pickStringValue(rawJob, ['mode'])),
     target: pickStringValue(rawJob, ['target']),
@@ -1163,10 +1163,10 @@ export function buildWrongQuestionPracticePackCreatePath(): string {
   return '/api/wrong-question-practice-packs';
 }
 
-export function buildWrongQuestionPracticePackDetailPath(jobId: string): string {
-  return `/api/wrong-question-practice-packs/${encodeURIComponent(jobId)}`;
+export function buildWrongQuestionPracticePackDetailPath(jobId: number): string {
+  return `/api/wrong-question-practice-packs/${encodeURIComponent(String(jobId))}`;
 }
 
-export function buildWrongQuestionPracticePackDownloadPath(jobId: string): string {
-  return `/api/wrong-question-practice-packs/${encodeURIComponent(jobId)}/download`;
+export function buildWrongQuestionPracticePackDownloadPath(jobId: number): string {
+  return `/api/wrong-question-practice-packs/${encodeURIComponent(String(jobId))}/download`;
 }

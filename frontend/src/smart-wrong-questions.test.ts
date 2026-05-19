@@ -621,12 +621,12 @@ test('practice pack path builders target the new practice pack API', () => {
     '/api/wrong-question-practice-packs',
   );
   assert.equal(
-    buildWrongQuestionPracticePackDetailPath('pack/with space?#x'),
-    '/api/wrong-question-practice-packs/pack%2Fwith%20space%3F%23x',
+    buildWrongQuestionPracticePackDetailPath(42),
+    '/api/wrong-question-practice-packs/42',
   );
   assert.equal(
-    buildWrongQuestionPracticePackDownloadPath('pack/with space?#x'),
-    '/api/wrong-question-practice-packs/pack%2Fwith%20space%3F%23x/download',
+    buildWrongQuestionPracticePackDownloadPath(42),
+    '/api/wrong-question-practice-packs/42/download',
   );
 });
 
@@ -634,7 +634,7 @@ test('normalizeWrongQuestionPracticePackJobResponse converts snake_case job fiel
   const normalized = normalizeWrongQuestionPracticePackJobResponse({
     reused: true,
     job: {
-      id: 'pack-42',
+      id: 42,
       status: 'ready',
       mode: 'reason',
       target: '去分母漏乘',
@@ -658,7 +658,7 @@ test('normalizeWrongQuestionPracticePackJobResponse converts snake_case job fiel
   });
 
   assert.equal(normalized.reused, true);
-  assert.equal(normalized.job?.id, 'pack-42');
+  assert.equal(normalized.job?.id, 42);
   assert.equal(normalized.job?.mode, 'reason');
   assert.equal(normalized.job?.volume, 'intensive');
   assert.equal(normalized.job?.requestedQuestionCount, 56);
@@ -2998,13 +2998,13 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
         return createJsonResponse({
           reused: false,
           job: {
-            id: 'pack-42',
+            id: 42,
             status: 'ready',
             mode: 'reason',
             target: '去分母漏乘',
             volume: 'intensive',
             requested_question_count: 16,
-            download_url: '/api/wrong-question-practice-packs/pack-42/download',
+            download_url: '/api/wrong-question-practice-packs/42/download',
             generation_error: '',
             students: [
               {
@@ -3124,7 +3124,7 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       assert.match(pageText, /ready/);
       assert.match(pageText, /16题/);
       assert.match(pageText, /下载练习包/);
-      assert.deepEqual(openedPaths, ['/api/wrong-question-practice-packs/pack-42/download?token=token-123']);
+      assert.deepEqual(openedPaths, ['/api/wrong-question-practice-packs/42/download?token=token-123']);
     });
 
     await selectNotebookClass(domEnvironment.container, '43');
