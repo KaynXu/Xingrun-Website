@@ -190,20 +190,12 @@ class WrongQuestionPracticePackStorageTestCase(unittest.TestCase):
             organization_id=other_owner["organization_id"],
         )
 
+        wrong_scope_user = other_owner
         with self.assertRaises(ValueError):
             lesson_manager.create_wrong_question_practice_pack_job(
                 organization_id=self.owner["organization_id"],
                 class_id=other_class_id,
-                created_by=self.owner["id"],
-                mode="topic",
-                target="几何",
-                volume="light",
-            )
-        with self.assertRaises(ValueError):
-            lesson_manager.create_wrong_question_practice_pack_job(
-                organization_id=other_owner["organization_id"],
-                class_id=other_class_id,
-                created_by=self.owner["id"],
+                created_by=wrong_scope_user["id"],
                 mode="topic",
                 target="几何",
                 volume="light",
@@ -1023,7 +1015,7 @@ class WrongQuestionPracticePackApiTestCase(unittest.TestCase):
 
         detail = self.client.get(f"/api/wrong-question-practice-packs/{job['id']}", headers=headers)
         self.assertEqual(detail.status_code, 200)
-        detail_payload = detail.get_json()
+        detail_payload = detail.get_json()["job"]
         self.assertEqual(
             detail_payload["download_url"],
             f"/api/wrong-question-practice-packs/{job['id']}/download",
@@ -1033,3 +1025,65 @@ class WrongQuestionPracticePackApiTestCase(unittest.TestCase):
         self.assertEqual(download.status_code, 200)
         self.assertEqual(download.data, b"zip-bytes")
         self.assertEqual(download.mimetype, "application/zip")
+        download.close()
+
+    def test_pack_detail_hides_download_url_when_zip_file_is_missing(self):
+        headers = self._login_headers()
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="topic",
+            target="计算",
+            volume="light",
+        )
+        missing_zip = self.base / "missing.zip"
+        lesson_manager.mark_wrong_question_practice_pack_job_status(
+            job["id"],
+            status="ready",
+            zip_path=str(missing_zip),
+            generation_error="",
+        )
+
+        detail = self.client.get(f"/api/wrong-question-practice-packs/{job['id']}", headers=headers)
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.get_json()["job"]["download_url"], "")
+
+    def test_super_owner_can_create_pack_for_accessible_external_organization_class(self):
+        headers = self._login_headers()
+        request = lesson_manager.create_organization_request(
+            "错题包 API 外部机构",
+            "practice_pack_external_owner",
+            "外部机构负责人",
+            "owner-pass",
+            recovery_phone="13800000005",
+        )
+        other_owner, _invite = lesson_manager.approve_organization_request(request["id"], self.owner["id"])
+        other_class_id = lesson_manager.save_class(
+            "九年级 9 班",
+            subject="数学",
+            grade="九年级",
+            organization_id=other_owner["organization_id"],
+        )
+
+        with mock.patch("app.has_api_key", return_value=True), mock.patch(
+            "app._start_wrong_question_practice_pack_thread"
+        ) as start_mock:
+            response = self.client.post(
+                "/api/wrong-question-practice-packs",
+                json={
+                    "class_id": other_class_id,
+                    "mode": "topic",
+                    "target": "几何",
+                    "volume": "light",
+                },
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 202)
+        job_payload = response.get_json()["job"]
+        self.assertEqual(job_payload["organization_id"], other_owner["organization_id"])
+        self.assertEqual(job_payload["class_id"], other_class_id)
+        self.assertEqual(job_payload["created_by"], self.owner["id"])
+        start_mock.assert_called_once()

@@ -1879,7 +1879,9 @@ def _serialize_wrong_question_practice_pack_job_for_response(job: object) -> Opt
         return None
     serialized = dict(job)
     serialized["download_url"] = ""
-    if str(serialized.get("zip_path") or "").strip() and str(serialized.get("status") or "") in {"ready", "partial_failed"}:
+    zip_path_value = str(serialized.get("zip_path") or "").strip()
+    zip_path = Path(zip_path_value) if zip_path_value else None
+    if zip_path is not None and zip_path.is_file() and str(serialized.get("status") or "") in {"ready", "partial_failed"}:
         serialized["download_url"] = f"/api/wrong-question-practice-packs/{serialized['id']}/download"
     return serialized
 
@@ -3317,7 +3319,7 @@ def api_wrong_question_practice_pack_detail(job_id: int):
     serialized = _serialize_wrong_question_practice_pack_job_for_response(job)
     if serialized is None:
         return jsonify({"error": "not found"}), 404
-    return jsonify(serialized)
+    return jsonify({"job": serialized})
 
 
 @app.route("/api/wrong-question-practice-packs/<int:job_id>/download", methods=["GET"])

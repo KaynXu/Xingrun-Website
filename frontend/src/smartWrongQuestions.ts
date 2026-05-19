@@ -143,6 +143,32 @@ export interface WrongQuestionPracticeSheetListApiResponse {
   total?: unknown;
 }
 
+export type WrongQuestionPracticePackMode = 'topic' | 'reason';
+export type WrongQuestionPracticePackVolume = 'light' | 'standard' | 'intensive';
+
+export interface WrongQuestionPracticePackStudent {
+  studentId: number;
+  studentNameSnapshot: string;
+  status: string;
+  requestedQuestionCount: number;
+  realQuestionCount: number;
+  variantQuestionCount: number;
+  pdfPath?: string;
+  generationError?: string;
+}
+
+export interface WrongQuestionPracticePackJob {
+  id: number;
+  status: string;
+  mode: WrongQuestionPracticePackMode;
+  target: string;
+  volume: WrongQuestionPracticePackVolume;
+  requestedQuestionCount: number;
+  downloadUrl?: string;
+  generationError?: string;
+  students: WrongQuestionPracticePackStudent[];
+}
+
 export type WeeklyWrongQuestionFollowupMessage = {
   id: number;
   messageText: string;
@@ -1064,4 +1090,83 @@ export function normalizeWrongQuestionPracticeSheetListResponse(
 
 export function buildWrongQuestionPracticeSheetsPath(studentId: number): string {
   return `/api/wrong-question-practice-sheets?student_id=${encodeURIComponent(String(studentId))}`;
+}
+
+function normalizeWrongQuestionPracticePackMode(value: string): WrongQuestionPracticePackMode {
+  return value === 'reason' ? 'reason' : 'topic';
+}
+
+function normalizeWrongQuestionPracticePackVolume(value: string): WrongQuestionPracticePackVolume {
+  if (value === 'light' || value === 'intensive') {
+    return value;
+  }
+  return 'standard';
+}
+
+function normalizeWrongQuestionPracticePackStudent(rawStudent: unknown): WrongQuestionPracticePackStudent {
+  const source = isObjectRecord(rawStudent) ? rawStudent : {};
+  const pdfPath = pickStringValue(source, ['pdfPath', 'pdf_path']);
+  const generationError = pickStringValue(source, ['generationError', 'generation_error']);
+  const student: WrongQuestionPracticePackStudent = {
+    studentId: pickNumberValue(source, ['studentId', 'student_id']) ?? 0,
+    studentNameSnapshot: pickStringValue(source, ['studentNameSnapshot', 'student_name_snapshot']),
+    status: pickStringValue(source, ['status']) || 'pending',
+    requestedQuestionCount: pickNumberValue(source, ['requestedQuestionCount', 'requested_question_count']) ?? 0,
+    realQuestionCount: pickNumberValue(source, ['realQuestionCount', 'real_question_count']) ?? 0,
+    variantQuestionCount: pickNumberValue(source, ['variantQuestionCount', 'variant_question_count']) ?? 0,
+    generationError,
+  };
+
+  if (pdfPath) {
+    student.pdfPath = pdfPath;
+  }
+
+  return student;
+}
+
+export function normalizeWrongQuestionPracticePackJobResponse(payload: unknown): {
+  job: WrongQuestionPracticePackJob | null;
+  reused: boolean;
+} {
+  const source = isObjectRecord(payload) ? payload : {};
+  const rawJob = isObjectRecord(source.job) ? source.job : null;
+  if (!rawJob) {
+    return { job: null, reused: source.reused === true };
+  }
+
+  const downloadUrl = pickStringValue(rawJob, ['downloadUrl', 'download_url']);
+  const generationError = pickStringValue(rawJob, ['generationError', 'generation_error']);
+  const job: WrongQuestionPracticePackJob = {
+    id: pickNumberValue(rawJob, ['id']) ?? 0,
+    status: pickStringValue(rawJob, ['status']) || 'pending',
+    mode: normalizeWrongQuestionPracticePackMode(pickStringValue(rawJob, ['mode'])),
+    target: pickStringValue(rawJob, ['target']),
+    volume: normalizeWrongQuestionPracticePackVolume(pickStringValue(rawJob, ['volume'])),
+    requestedQuestionCount: pickNumberValue(rawJob, ['requestedQuestionCount', 'requested_question_count']) ?? 0,
+    students: Array.isArray(rawJob.students)
+      ? rawJob.students.map((item) => normalizeWrongQuestionPracticePackStudent(item))
+      : [],
+  };
+
+  if (downloadUrl) {
+    job.downloadUrl = downloadUrl;
+  }
+
+  if (generationError) {
+    job.generationError = generationError;
+  }
+
+  return { job, reused: source.reused === true };
+}
+
+export function buildWrongQuestionPracticePackCreatePath(): string {
+  return '/api/wrong-question-practice-packs';
+}
+
+export function buildWrongQuestionPracticePackDetailPath(jobId: number): string {
+  return `/api/wrong-question-practice-packs/${encodeURIComponent(String(jobId))}`;
+}
+
+export function buildWrongQuestionPracticePackDownloadPath(jobId: number): string {
+  return `/api/wrong-question-practice-packs/${encodeURIComponent(String(jobId))}/download`;
 }

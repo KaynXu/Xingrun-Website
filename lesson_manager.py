@@ -7717,14 +7717,17 @@ def create_wrong_question_practice_pack_job(
             (normalized_class_id,),
         ).fetchone()
         creator_row = conn.execute(
-            "SELECT organization_id FROM users WHERE id=?",
+            "SELECT organization_id, role FROM users WHERE id=?",
             (normalized_created_by,),
         ).fetchone()
         if not class_row or not creator_row:
             raise ValueError("invalid practice pack scope")
         if int(class_row["organization_id"] or 0) != normalized_organization_id:
             raise ValueError("invalid practice pack scope")
-        if int(creator_row["organization_id"] or 0) != normalized_organization_id:
+        if (
+            int(creator_row["organization_id"] or 0) != normalized_organization_id
+            and str(creator_row["role"] or "") != SUPER_OWNER_ROLE
+        ):
             raise ValueError("invalid practice pack scope")
         cursor = conn.execute(
             """

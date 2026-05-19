@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-19 已完成“定向一周错题练习包”本地实现并通过最终 proof：网页智能错题新增 `生成并下载一周练习包`，支持按专题/知识点或错因选择目标、轻量/标准/强化题量档位，后台异步生成班级 practice pack job；每个学生优先使用历史真实错题，不足时 AI 生成同错因变式题并审稿，PDF 排到未来 7 天并附答案页，整班成功 PDF 打成 zip 下载；API 已支持创建/复用、查询状态和下载，前端已处理生成/刷新/切班切周的旧响应竞态。proof：`tmp/proof_targeted_weekly_practice_pack_20260519.sh` 已通过，覆盖后端 practice pack tests、相关错题回归、AI prompt tests、前端 focused tests、frontend full tests、frontend build、py_compile 和 git diff --check。
 - 2026-05-19 已按 Task 2 code quality review 收紧候选和排期：目标练习包候选现在有 `reference_date` 当天上界，归档错题复用 30/60 天复现门槛，reason 模式只匹配错因/分类字段不再靠题干命中，7 天排期改为尊重输入顺序以保留真实题和变式题相邻关系；`tests/test_wrong_question_practice_packs.py` 已补最近归档排除、旧归档易复错题纳入、reason 题干误匹配排除、未来记录排除、real->variant 顺序保留测试。proof：`.venv/bin/python -m unittest tests.test_wrong_question_practice_packs.WrongQuestionPracticePackCandidateTestCase -v`、`.venv/bin/python -m unittest tests.test_wrong_question_practice_packs -v`、`git diff --check` 均通过。
 - 2026-05-19 已按 Task 2 spec compliance review 补强候选测试：`test_topic_mode_selects_historical_matching_records_without_current_week_limit` 现在把匹配几何错题 `created_at` 固定为 `2026-03-01 10:00:00`，并用 `reference_date='2026-05-20'` 查询，确保测试覆盖“非当前周但仍在 183 天窗口内”的历史错题候选。proof：`.venv/bin/python -m unittest tests.test_wrong_question_practice_packs.WrongQuestionPracticePackCandidateTestCase -v`、`.venv/bin/python -m unittest tests.test_wrong_question_practice_packs -v`、`git diff --check` 均通过。
 - 2026-05-19 已完成“定向一周错题练习包”Task 2：`lesson_manager.py` 新增目标方向历史错题候选检索 `list_targeted_wrong_question_practice_candidates()`，按 `topic/reason` 匹配 6 个月内本地微信已识别错题，不跨方向补题；新增 `build_wrong_question_practice_pack_schedule()` 将真实错题排在 AI 变式题前并按 7 天分配；`tests/test_wrong_question_practice_packs.py` 已补候选选择和 7 天排期回归。proof：先跑候选测试确认缺少函数失败，再实现后通过 `.venv/bin/python -m unittest tests.test_wrong_question_practice_packs.WrongQuestionPracticePackCandidateTestCase -v` 和 `.venv/bin/python -m unittest tests.test_wrong_question_practice_packs -v`。
@@ -206,7 +207,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 如果继续实现“定向一周错题练习包”，直接执行 `docs/superpowers/plans/2026-05-19-targeted-weekly-practice-pack.md`，并从最新 `develop` 另拉实现分支；实现时先跑计划里的失败测试，再逐任务提交，最后合回 `develop`。
+- 定向一周错题练习包下一步建议用真实 owner/admin 账号 smoke：选择一个有历史错题的班级，分别按 `按专题/知识点：几何` 和 `按错因：去分母漏乘` 生成标准 10 题练习包，确认生成状态、zip 下载、每个学生 PDF 的 7 天安排、AI 变式题质量和答案页符合老师实际发放需求。
 - 超级管理员本周错题活跃数据总结下一步建议用真实 `super_owner` 账号在网页智能错题手工 smoke：打开 `本周数据总结`，分别查看全部机构和指定机构、空数据周次和有数据周次，确认列表数量、机构名、班级/老师/学生文案符合现场使用。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
