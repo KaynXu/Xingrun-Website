@@ -284,6 +284,11 @@ class WrongQuestionPracticePackCandidateTestCase(unittest.TestCase):
             reason="辅助线入口没找准",
             question_text="如图，证明角相等。",
         )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-03-01 10:00:00", geometry["id"]),
+            )
         self._record(
             topic_category="计算",
             primary_error_type="细节问题",
@@ -298,6 +303,7 @@ class WrongQuestionPracticePackCandidateTestCase(unittest.TestCase):
             mode="topic",
             target="几何",
             limit=10,
+            reference_date="2026-05-20",
         )
 
         self.assertEqual([item["id"] for item in candidates], [geometry["id"]])
