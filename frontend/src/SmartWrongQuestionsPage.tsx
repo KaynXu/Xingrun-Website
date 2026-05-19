@@ -294,6 +294,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const detailRequestVersionRef = useRef(0);
   const practiceHistoryRequestVersionRef = useRef(0);
   const weeklyActivityRequestVersionRef = useRef(0);
+  const weeklyFollowupRequestVersionRef = useRef(0);
+  const practicePackRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
   const reviewDraftByRecordIdRef = useRef<Record<string, WrongQuestionReviewDraft>>({});
   const recordsRef = useRef(records);
@@ -592,9 +594,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [weeklyActivityWeekStart, weeklyActivityOrganizationId]);
 
   useEffect(() => {
+    weeklyFollowupRequestVersionRef.current += 1;
+    practicePackRequestVersionRef.current += 1;
     setWeeklyFollowupItems([]);
     setWeeklyFollowupNotice('');
     setWeeklyFollowupError('');
+    setWeeklyFollowupLoading(false);
     setGeneratingWeeklyFollowupStudentId(null);
     setPracticePackJob(null);
     setPracticePackGenerating(false);
@@ -1079,6 +1084,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
+    const requestVersion = weeklyFollowupRequestVersionRef.current + 1;
+    weeklyFollowupRequestVersionRef.current = requestVersion;
     setWeeklyFollowupLoading(true);
     setWeeklyFollowupError('');
     setWeeklyFollowupNotice('');
@@ -1088,13 +1095,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         buildWeeklyWrongQuestionFollowupsPath(activeWeeklyFollowupClassId, weeklyFollowupWeekStart),
       );
       const normalized = normalizeWeeklyWrongQuestionFollowupResponse(response);
+      if (requestVersion !== weeklyFollowupRequestVersionRef.current) {
+        return;
+      }
       setWeeklyFollowupItems(normalized.items);
       setWeeklyFollowupNotice(normalized.items.length > 0 ? `已加载 ${normalized.items.length} 名学生。` : '本周暂无待跟进学生。');
     } catch (loadWeeklyError) {
+      if (requestVersion !== weeklyFollowupRequestVersionRef.current) {
+        return;
+      }
       setWeeklyFollowupItems([]);
       setWeeklyFollowupError(loadWeeklyError instanceof Error ? loadWeeklyError.message : '每周跟进清单加载失败');
     } finally {
-      setWeeklyFollowupLoading(false);
+      if (requestVersion === weeklyFollowupRequestVersionRef.current) {
+        setWeeklyFollowupLoading(false);
+      }
     }
   };
 
@@ -1210,6 +1225,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
+    const requestVersion = practicePackRequestVersionRef.current + 1;
+    practicePackRequestVersionRef.current = requestVersion;
     setPracticePackGenerating(true);
     setWeeklyFollowupError('');
     setWeeklyFollowupNotice('');
@@ -1225,6 +1242,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         }),
       });
       const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
       setPracticePackJob(normalized.job);
       if (normalized.job?.downloadUrl) {
         globalThis.window?.open?.(buildWrongQuestionAuthedPath(normalized.job.downloadUrl), '_blank', 'noopener,noreferrer');
@@ -1233,9 +1253,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         setWeeklyFollowupNotice(normalized.reused ? '已有同条件练习包正在生成，完成后可下载。' : '正在生成，完成后可下载。');
       }
     } catch (generateError) {
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
       setWeeklyFollowupError(generateError instanceof Error ? generateError.message : '练习包生成失败');
     } finally {
-      setPracticePackGenerating(false);
+      if (requestVersion === practicePackRequestVersionRef.current) {
+        setPracticePackGenerating(false);
+      }
     }
   };
 

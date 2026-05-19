@@ -3146,6 +3146,266 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
   }
 });
 
+test('SmartWrongQuestionsPage ignores stale weekly followup list responses after class changes', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const firstFollowupResponse = createDeferred<Response>();
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 43, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({ students: [{ id: 501, name: '王睿博' }] });
+      }
+
+      if (input === '/api/classes/43/students') {
+        return createJsonResponse({ students: [{ id: 601, name: '李同学' }] });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [],
+          summary: {
+            total_count: 0,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+            unique_class_count: 0,
+            unique_student_count: 0,
+          },
+        });
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/wrong-question-followups/weekly?class_id=42&week_start=')) {
+        return firstFollowupResponse.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+      assert.ok(followupButton instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const loadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('查看跟进清单'));
+    assert.ok(loadButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await selectNotebookClass(domEnvironment.container, '43');
+
+    await act(async () => {
+      firstFollowupResponse.resolve(createJsonResponse({
+        class_id: 42,
+        class_name: '六年级 1 班',
+        total: 1,
+        items: [
+          {
+            student_id: 501,
+            student_name: '王睿博',
+            status: 'needs_practice_sheet',
+            candidate_question_count: 2,
+            weekly_question_count: 2,
+          },
+        ],
+      }));
+      await firstFollowupResponse.promise;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.doesNotMatch(pageText, /王睿博/);
+      assert.doesNotMatch(pageText, /已加载 1 名学生/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage ignores stale practice pack create responses after class changes', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const createPackResponse = createDeferred<Response>();
+  const openedPaths: string[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    Object.defineProperty(domEnvironment.container.ownerDocument.defaultView, 'open', {
+      configurable: true,
+      value: (path: string) => {
+        openedPaths.push(path);
+        return null;
+      },
+    });
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 43, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({ students: [{ id: 501, name: '王睿博' }] });
+      }
+
+      if (input === '/api/classes/43/students') {
+        return createJsonResponse({ students: [{ id: 601, name: '李同学' }] });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [],
+          summary: {
+            total_count: 0,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+            unique_class_count: 0,
+            unique_student_count: 0,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-practice-packs' && init?.method === 'POST') {
+        return createPackResponse.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+      assert.ok(followupButton instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const targetInput = domEnvironment.container.querySelector('input[aria-label="练习包方向"]') as HTMLInputElement | null;
+    const generatePackButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成并下载一周练习包'));
+    assert.ok(targetInput instanceof HTMLInputElement);
+    assert.ok(generatePackButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      setDateInputValue(targetInput, '去分母漏乘');
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await act(async () => {
+      generatePackButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await selectNotebookClass(domEnvironment.container, '43');
+
+    await act(async () => {
+      createPackResponse.resolve(createJsonResponse({
+        reused: false,
+        job: {
+          id: 42,
+          status: 'ready',
+          mode: 'reason',
+          target: '去分母漏乘',
+          volume: 'standard',
+          requested_question_count: 10,
+          download_url: '/api/wrong-question-practice-packs/42/download',
+          students: [],
+        },
+      }));
+      await createPackResponse.promise;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.doesNotMatch(pageText, /练习包已生成，正在打开下载/);
+      assert.doesNotMatch(pageText, /去分母漏乘/);
+      assert.deepEqual(openedPaths, []);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
 test('SmartWrongQuestionsPage updates one weekly followup card after generating a message response', async () => {
   const domEnvironment = setupDomEnvironment();
   const originalFetch = globalThis.fetch;
