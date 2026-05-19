@@ -938,44 +938,53 @@ def _practice_pack_item_from_variant(variant: dict, index: int) -> dict:
     }
 
 
-def _build_wrong_question_practice_pack_zip(job: dict) -> str:
+def _build_wrong_question_practice_pack_zip(job: dict) -> dict:
     job_id = int(job.get("id") or 0)
     zip_path = _wrong_question_practice_pack_zip_path(job_id)
+    temp_zip_path = zip_path.with_suffix(f"{zip_path.suffix}.tmp")
     notes: list[str] = []
     written_count = 0
     used_names: set[str] = set()
 
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for index, student in enumerate(job.get("students") or [], start=1):
-            student_name = str(student.get("student_name_snapshot") or "学生").strip() or "学生"
-            status = str(student.get("status") or "").strip()
-            pdf_path = Path(str(student.get("pdf_path") or "").strip())
-            if status == "ready" and pdf_path.exists():
-                safe_name = _safe_pdf_download_filename_part(student_name, f"student-{student.get('student_id') or index}")
-                archive_name = f"{index:02d}-{safe_name}.pdf"
-                if archive_name in used_names:
-                    archive_name = f"{index:02d}-{safe_name}-{student.get('student_id') or index}.pdf"
-                used_names.add(archive_name)
-                archive.write(pdf_path, archive_name)
-                written_count += 1
-                warning = str(student.get("generation_error") or "").strip()
-                if warning:
-                    notes.append(f"{student_name}：{warning}")
-                continue
+    try:
+        zip_path.unlink(missing_ok=True)
+        temp_zip_path.unlink(missing_ok=True)
+        with zipfile.ZipFile(temp_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for index, student in enumerate(job.get("students") or [], start=1):
+                student_name = str(student.get("student_name_snapshot") or "学生").strip() or "学生"
+                status = str(student.get("status") or "").strip()
+                pdf_path = Path(str(student.get("pdf_path") or "").strip())
+                if status == "ready" and pdf_path.exists():
+                    safe_name = _safe_pdf_download_filename_part(student_name, f"student-{student.get('student_id') or index}")
+                    archive_name = f"{index:02d}-{safe_name}.pdf"
+                    if archive_name in used_names:
+                        archive_name = f"{index:02d}-{safe_name}-{student.get('student_id') or index}.pdf"
+                    used_names.add(archive_name)
+                    archive.write(pdf_path, archive_name)
+                    written_count += 1
+                    warning = str(student.get("generation_error") or "").strip()
+                    if warning:
+                        notes.append(f"{student_name}：{warning}")
+                    continue
 
-            error_message = str(student.get("generation_error") or "").strip()
-            if status == "ready":
-                error_message = error_message or "PDF 文件缺失"
-            else:
-                error_message = error_message or "未生成"
-            notes.append(f"{student_name}：{error_message}")
+                error_message = str(student.get("generation_error") or "").strip()
+                if status == "ready":
+                    error_message = error_message or "PDF 文件缺失"
+                else:
+                    error_message = error_message or "未生成"
+                notes.append(f"{student_name}：{error_message}")
 
-        if written_count <= 0:
-            raise RuntimeError("没有可打包的学生练习 PDF")
-        if notes:
-            archive.writestr("打包说明.txt", "\n".join(notes) + "\n")
+            if written_count <= 0:
+                raise RuntimeError("没有可打包的学生练习 PDF")
+            if notes:
+                archive.writestr("打包说明.txt", "\n".join(notes) + "\n")
+        temp_zip_path.replace(zip_path)
+    except Exception:
+        temp_zip_path.unlink(missing_ok=True)
+        zip_path.unlink(missing_ok=True)
+        raise
 
-    return str(zip_path)
+    return {"zip_path": str(zip_path), "has_partial": bool(notes)}
 
 
 def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
@@ -1127,7 +1136,7 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
 
         refreshed_job = get_wrong_question_practice_pack_job(job_id) or {}
         try:
-            zip_path = _build_wrong_question_practice_pack_zip(refreshed_job)
+            zip_result = _build_wrong_question_practice_pack_zip(refreshed_job)
         except Exception as exc:
             logger.exception("Wrong question practice pack zip generation failed for job %s", job_id)
             mark_wrong_question_practice_pack_job_status(
@@ -1139,13 +1148,13 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
             return
 
         refreshed_students = refreshed_job.get("students") or []
-        final_status = "partial_failed" if any_partial or any(
+        final_status = "partial_failed" if any_partial or bool(zip_result.get("has_partial")) or any(
             str(student.get("status") or "") != "ready" for student in refreshed_students
         ) else "ready"
         mark_wrong_question_practice_pack_job_status(
             job_id,
             status=final_status,
-            zip_path=zip_path,
+            zip_path=str(zip_result.get("zip_path") or ""),
             generation_error="",
         )
     except Exception as exc:

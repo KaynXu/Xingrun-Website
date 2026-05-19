@@ -842,3 +842,67 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
             for item in day["items"]
         ]
         self.assertEqual(len(scheduled_ids), 5)
+
+    def test_zip_reports_missing_ready_pdf_as_partial(self):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        existing_pdf = self.base / "ready.pdf"
+        existing_pdf.write_bytes(b"%PDF-1.4\nready\n")
+        lesson_manager.upsert_wrong_question_practice_pack_job_student(
+            job_id=job["id"],
+            student_id=self.student["id"],
+            student_name_snapshot="王睿博",
+            status="ready",
+            requested_question_count=5,
+            pdf_path=str(existing_pdf),
+        )
+        lesson_manager.upsert_wrong_question_practice_pack_job_student(
+            job_id=job["id"],
+            student_id=self.empty_student["id"],
+            student_name_snapshot="李明",
+            status="ready",
+            requested_question_count=5,
+            pdf_path=str(self.base / "missing.pdf"),
+        )
+
+        result = self.app._build_wrong_question_practice_pack_zip(
+            lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+        )
+
+        self.assertTrue(result["has_partial"])
+        with zipfile.ZipFile(result["zip_path"]) as archive:
+            note = archive.read("打包说明.txt").decode("utf-8")
+        self.assertIn("李明：PDF 文件缺失", note)
+
+    def test_zip_failure_removes_stale_final_zip(self):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        stale_zip = self.app._wrong_question_practice_pack_zip_path(job["id"])
+        stale_zip.write_bytes(b"stale")
+        lesson_manager.upsert_wrong_question_practice_pack_job_student(
+            job_id=job["id"],
+            student_id=self.student["id"],
+            student_name_snapshot="王睿博",
+            status="failed",
+            requested_question_count=5,
+            generation_error="PDF 生成失败",
+        )
+
+        with self.assertRaises(RuntimeError):
+            self.app._build_wrong_question_practice_pack_zip(
+                lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+            )
+
+        self.assertFalse(stale_zip.exists())
