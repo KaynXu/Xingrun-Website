@@ -46,6 +46,36 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved.get("pdf_path"), "/tmp/example.pdf")
         self.assertEqual(saved["generation_error"], "")
 
+    def test_create_pending_lesson_persists_review_generation_resume_context(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+            record_status="transcribing",
+            created_by_user_id=7,
+            review_audio_path="/tmp/lesson.m4a",
+            review_audio_request_key="audio-key",
+            review_request_key="request-key",
+            review_request_id="request-id",
+            review_chat_provider="deepseek",
+            review_chat_model="deepseek-v4-flash",
+            review_same_lesson_materials=["补充材料"],
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["created_by_user_id"], 7)
+        self.assertEqual(saved["review_audio_path"], "/tmp/lesson.m4a")
+        self.assertEqual(saved["review_audio_request_key"], "audio-key")
+        self.assertEqual(saved["review_request_key"], "request-key")
+        self.assertEqual(saved["review_request_id"], "request-id")
+        self.assertEqual(saved["review_chat_provider"], "deepseek")
+        self.assertEqual(saved["review_chat_model"], "deepseek-v4-flash")
+        self.assertEqual(saved["review_same_lesson_materials"], ["补充材料"])
+
     def test_mark_lesson_generation_failed_records_error(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",

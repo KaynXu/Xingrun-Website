@@ -134,6 +134,13 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIsNotNone(lesson)
         self.assertEqual(lesson["record_status"], "transcribing")
         self.assertEqual(lesson["summary"], "")
+        self.assertEqual(lesson["created_by_user_id"], 1)
+        self.assertTrue(lesson["review_audio_path"])
+        self.assertTrue(lesson["review_audio_request_key"])
+        self.assertTrue(lesson["review_request_key"])
+        self.assertTrue(lesson["review_request_id"])
+        self.assertEqual(lesson["review_chat_provider"], "deepseek")
+        self.assertEqual(lesson["review_chat_model"], "deepseek-chat")
 
         mock_transcribe_audio.assert_not_called()
         mock_start_thread.assert_called_once()
@@ -474,6 +481,45 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["pdf_path"], "/tmp/existing.pdf")
         mock_parse_and_generate_plan.assert_not_called()
         mock_generate_pdf.assert_not_called()
+
+    @patch("app._start_review_plan_generation_thread")
+    def test_startup_recovery_requeues_interrupted_audio_review_plan(self, mock_start_thread):
+        audio_path = self.base / "lesson.m4a"
+        audio_path.write_bytes(b"audio")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="",
+            weak_points="斜率判断",
+            class_id=0,
+            record_status="transcribing",
+            created_by_user_id=1,
+            review_audio_path=str(audio_path),
+            review_audio_request_key="audio-key",
+            review_request_key="request-key",
+            review_request_id="request-id",
+            review_chat_provider="deepseek",
+            review_chat_model="deepseek-v4-flash",
+            review_same_lesson_materials=["补充材料"],
+        )
+
+        recovered = app_module._recover_interrupted_review_plan_jobs()
+
+        self.assertEqual(recovered, 1)
+        mock_start_thread.assert_called_once()
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
+        self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
+        self.assertEqual(thread_kwargs["chat_provider"], "deepseek")
+        self.assertEqual(thread_kwargs["chat_model"], "deepseek-v4-flash")
+        self.assertEqual(thread_kwargs["request_key"], "request-key")
+        self.assertEqual(thread_kwargs["request_id"], "request-id")
+        self.assertEqual(thread_kwargs["audio_path"], str(audio_path))
+        self.assertEqual(thread_kwargs["audio_request_key"], "audio-key")
+        self.assertEqual(thread_kwargs["same_lesson_materials"], ["补充材料"])
+        self.assertIn("request-id", app_module._AI_REQUEST_IN_FLIGHT)
 
     @patch("app._run_ai_feature_with_charge", side_effect=RuntimeError("boom"))
     def test_worker_writes_sanitized_ai_error_message(
