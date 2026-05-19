@@ -3406,6 +3406,165 @@ test('SmartWrongQuestionsPage ignores stale practice pack create responses after
   }
 });
 
+test('SmartWrongQuestionsPage ignores stale practice pack refresh responses after class changes', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const refreshPackResponse = createDeferred<Response>();
+  let root: Root | null = null;
+
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+          { id: 43, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({ students: [{ id: 501, name: '王睿博' }] });
+      }
+
+      if (input === '/api/classes/43/students') {
+        return createJsonResponse({ students: [{ id: 601, name: '李同学' }] });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [],
+          summary: {
+            total_count: 0,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 0,
+            unique_class_count: 0,
+            unique_student_count: 0,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-practice-packs' && init?.method === 'POST') {
+        return createJsonResponse({
+          reused: false,
+          job: {
+            id: 42,
+            status: 'processing',
+            mode: 'reason',
+            target: '去分母漏乘',
+            volume: 'standard',
+            requested_question_count: 10,
+            students: [],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-practice-packs/42') {
+        return refreshPackResponse.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+      assert.ok(followupButton instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const targetInput = domEnvironment.container.querySelector('input[aria-label="练习包方向"]') as HTMLInputElement | null;
+    const generatePackButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成并下载一周练习包'));
+    assert.ok(targetInput instanceof HTMLInputElement);
+    assert.ok(generatePackButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      setDateInputValue(targetInput, '去分母漏乘');
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await act(async () => {
+      generatePackButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /去分母漏乘/);
+      assert.match(pageText, /processing/);
+    });
+
+    const refreshButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('刷新状态'));
+    assert.ok(refreshButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await selectNotebookClass(domEnvironment.container, '43');
+
+    await act(async () => {
+      refreshPackResponse.resolve(createJsonResponse({
+        job: {
+          id: 42,
+          status: 'ready',
+          mode: 'reason',
+          target: '去分母漏乘',
+          volume: 'standard',
+          requested_question_count: 10,
+          download_url: '/api/wrong-question-practice-packs/42/download',
+          students: [],
+        },
+      }));
+      await refreshPackResponse.promise;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.doesNotMatch(pageText, /练习包状态已刷新/);
+      assert.doesNotMatch(pageText, /去分母漏乘/);
+      assert.doesNotMatch(pageText, /下载练习包/);
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
 test('SmartWrongQuestionsPage updates one weekly followup card after generating a message response', async () => {
   const domEnvironment = setupDomEnvironment();
   const originalFetch = globalThis.fetch;

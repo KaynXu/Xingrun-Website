@@ -1269,15 +1269,23 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
+    const requestVersion = practicePackRequestVersionRef.current + 1;
+    practicePackRequestVersionRef.current = requestVersion;
     setWeeklyFollowupError('');
     setWeeklyFollowupNotice('');
 
     try {
       const response = await apiFetch<unknown>(buildWrongQuestionPracticePackDetailPath(practicePackJob.id));
       const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
       setPracticePackJob(normalized.job);
       setWeeklyFollowupNotice('练习包状态已刷新。');
     } catch (refreshError) {
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
       setWeeklyFollowupError(refreshError instanceof Error ? refreshError.message : '练习包状态刷新失败');
     }
   };
