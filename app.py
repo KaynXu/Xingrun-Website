@@ -4190,6 +4190,41 @@ def api_lesson_delete(lesson_id):
     return jsonify({"ok": True})
 
 
+def _extract_same_lesson_materials(data) -> list[str]:
+    raw_values: list[object] = []
+    if hasattr(data, "getlist"):
+        raw_values.extend(data.getlist("same_lesson_materials"))
+    else:
+        value = data.get("same_lesson_materials") if isinstance(data, dict) else None
+        if isinstance(value, list):
+            raw_values.extend(value)
+        elif value is not None:
+            raw_values.append(value)
+
+    materials: list[str] = []
+    for value in raw_values:
+        if isinstance(value, str):
+            pieces = [value]
+        else:
+            pieces = [str(value)]
+        for piece in pieces:
+            text = piece.strip()
+            if text:
+                materials.append(text)
+    return materials
+
+
+def _merge_review_plan_materials(primary_text: str, same_lesson_materials: list[str]) -> str:
+    primary = (primary_text or "").strip()
+    materials = [item.strip() for item in same_lesson_materials if item and item.strip()]
+    if not materials:
+        return primary
+    sections = [f"【主课堂材料】\n{primary}"] if primary else []
+    for index, material in enumerate(materials, start=1):
+        sections.append(f"【同一节课补充材料 {index}】\n{material}")
+    return "\n\n".join(sections).strip()
+
+
 @app.route("/api/review-plans", methods=["POST"])
 def api_lesson_create():
     user, error = _require_auth()
@@ -4218,6 +4253,7 @@ def api_lesson_create():
     grade       = data.get("grade", "").strip() or (cls["grade"] if cls else "")
     topic       = data.get("topic", "").strip()
     weak_points = data.get("weak_points", "").strip()
+    same_lesson_materials = _extract_same_lesson_materials(data)
     
     input_type = data.get("input_type", "text")
     raw_text = ""
@@ -4270,6 +4306,7 @@ def api_lesson_create():
         else:
             return jsonify({"error": f"不支持的文件格式 {ext}"}), 400
 
+    raw_text = _merge_review_plan_materials(raw_text, same_lesson_materials)
     if not raw_text:
         return jsonify({"error": "提取的总结内容为空"}), 400
 

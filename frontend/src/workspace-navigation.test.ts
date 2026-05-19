@@ -106,6 +106,14 @@ test('review generation source requires class selection before generation and ca
   assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
 });
 
+test('review generation source submits same lesson supplemental materials', () => {
+  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
+
+  assert.match(lessonInputBlock, /sameLessonMaterials/);
+  assert.match(lessonInputBlock, /same_lesson_materials:\s*sameLessonMaterials/);
+  assert.match(lessonInputBlock, /同一节课补充材料/);
+});
+
 test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {
   const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
 

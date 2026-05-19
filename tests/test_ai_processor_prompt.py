@@ -134,6 +134,14 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("不得超过 30%", ai_processor.PLAN_SYSTEM_PROMPT)
         self.assertIn("至少 70% 的填空题", ai_processor.PLAN_SYSTEM_PROMPT)
 
+    def test_plan_system_prompt_requires_163320_style_method_map(self):
+        for phrase in ["方法主线", "题型入口", "操作步骤", "易错提醒", "典型例题", "老师原话"]:
+            self.assertIn(phrase, ai_processor.PLAN_SYSTEM_PROMPT)
+        self.assertIn("看到什么条件", ai_processor.PLAN_SYSTEM_PROMPT)
+        self.assertIn("先做什么", ai_processor.PLAN_SYSTEM_PROMPT)
+        self.assertIn("同一节课", ai_processor.PLAN_SYSTEM_PROMPT)
+        self.assertIn("多段材料", ai_processor.PLAN_SYSTEM_PROMPT)
+
     def test_wrong_question_recognition_prompt_requests_mixed_latex_output(self):
         self.assertIn("正文 + LaTeX 公式", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
         self.assertIn("$...$", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)

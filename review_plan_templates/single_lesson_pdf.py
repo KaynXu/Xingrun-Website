@@ -17,11 +17,27 @@ def _clean_text(value: object, default: str = "") -> str:
     return text or default
 
 
+def _dedupe_clean_lines(values: object) -> list[str]:
+    lines: list[str] = []
+    if not isinstance(values, list):
+        return lines
+    for value in values:
+        text = _clean_text(value)
+        if text and text not in lines:
+            lines.append(text)
+    return lines
+
+
 def collect_plan_quotes(plan_data: dict) -> list[str]:
     quotes: list[str] = []
+    for text in _dedupe_clean_lines(plan_data.get("quotes")):
+        quotes.append(text)
+    for text in _dedupe_clean_lines(plan_data.get("lesson_info", {}).get("quotes")):
+        if text not in quotes:
+            quotes.append(text)
     for day_data in plan_data.get("days", []):
         phrase = _clean_text(day_data.get("self_test_phrase"))
-        if phrase:
+        if phrase and phrase not in quotes:
             quotes.append(phrase)
         for step in day_data.get("steps", []):
             for item in step.get("items", []):
@@ -34,7 +50,25 @@ def collect_plan_quotes(plan_data: dict) -> list[str]:
                 text = _clean_text(item.get("text"))
                 if text and text not in quotes:
                     quotes.append(text)
-    return quotes[:6] or ["每一个复习日都要完整复习整节课内容。"]
+    return quotes[:12] or ["每一个复习日都要完整复习整节课内容。"]
+
+
+def extract_knowledge_sections(plan_data: dict) -> dict:
+    source = plan_data.get("knowledge_sections")
+    if not isinstance(source, dict):
+        return {}
+    normalized: dict = {}
+    for day, sections in source.items():
+        day_key = _clean_text(day)
+        if not day_key or not isinstance(sections, list):
+            continue
+        normalized_sections = []
+        for section in sections:
+            if isinstance(section, dict):
+                normalized_sections.append(section)
+        if normalized_sections:
+            normalized[day_key] = normalized_sections
+    return normalized
 
 
 def _default_choice(topic: str, day_number: int) -> dict:
@@ -103,9 +137,22 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         tasks.append(phrase)
 
     task_values = tasks[:4] or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
-    blank_values = blanks[:6] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
+    blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
 
-    choice_source = question_pool[(day_number - 1) % len(question_pool)]
+    explicit_choices: list[dict] = []
+    for choice in day_data.get("choices", []) if isinstance(day_data.get("choices"), list) else []:
+        if not isinstance(choice, dict):
+            continue
+        question = _clean_text(choice.get("question"))
+        options = _dedupe_clean_lines(choice.get("options"))
+        answer = _clean_text(choice.get("answer"), "A")
+        if question and options:
+            explicit_choices.append({"question": question, "options": options, "answer": answer})
+
+    if explicit_choices:
+        choice_values = explicit_choices[:2]
+    else:
+        choice_values = [question_pool[(day_number - 1) % len(question_pool)]]
     quote_values = [phrase] if phrase else [task_values[0]]
 
     return {
@@ -115,7 +162,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         "goal": f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
         "tasks": task_values,
         "blanks": blank_values,
-        "choices": [choice_source],
+        "choices": choice_values,
         "quotes": quote_values,
     }
 
@@ -124,7 +171,10 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
     lesson_info = plan_data.get("lesson_info", {})
     topic = _clean_text(lesson_info.get("topic"), "课后")
     weak_points = _clean_text(plan_data.get("weak_points_summary"))
-    full_review_topics = [_clean_text(item) for item in (lesson_info.get("key_categories", []) or []) if _clean_text(item)]
+    full_review_topics = _dedupe_clean_lines(lesson_info.get("key_categories"))
+    for text in _dedupe_clean_lines(plan_data.get("full_review_topics")):
+        if text not in full_review_topics:
+            full_review_topics.append(text)
     lesson = {
         "title": f"{topic}复习计划",
         "subtitle": "",
@@ -138,7 +188,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
     days = [adapt_day(day_data, question_pool, topic) for day_data in plan_data.get("days", [])]
     if not days:
         days = [adapt_day({"day": 1, "label": "第1天", "items": []}, question_pool, topic)]
-    reminders = list(DEFAULT_FINAL_REMINDERS)
+    reminders = _dedupe_clean_lines(plan_data.get("final_reminder_lines")) or list(DEFAULT_FINAL_REMINDERS)
     return lesson, days, reminders
 
 
@@ -152,5 +202,5 @@ def generate_single_lesson_pdf(plan_data: dict, output_path: str) -> str:
         final_reminder_lines=reminders,
         output_path=str(output),
         variant_key="cn",
-        knowledge_sections={},
+        knowledge_sections=extract_knowledge_sections(plan_data),
     )
