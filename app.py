@@ -784,6 +784,57 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
     ).start()
 
 
+def _recover_interrupted_review_plan_jobs() -> int:
+    recovered_count = 0
+    for lesson in list_lessons():
+        record_status = str(lesson.get("record_status") or "").strip()
+        if record_status not in {"pending", "transcribing", "generating"}:
+            continue
+        user_id = int(lesson.get("created_by_user_id") or 0)
+        user = get_user_by_id(user_id) if user_id else None
+        if not user:
+            logger.warning("Review plan recovery skipped for lesson %s: missing user", lesson.get("id"))
+            continue
+        audio_path = str(lesson.get("review_audio_path") or "").strip()
+        if record_status == "transcribing" and (not audio_path or not Path(audio_path).exists()):
+            mark_lesson_generation_failed(int(lesson["id"]), "音频转录中断，请重新上传")
+            continue
+        request_id = str(lesson.get("review_request_id") or "").strip()
+        if request_id:
+            try:
+                _claim_ai_request_identity(
+                    organization_id=int(user["organization_id"]),
+                    request_id=request_id,
+                )
+            except DuplicateAiRequestError:
+                logger.warning("Review plan recovery skipped for duplicate request %s", request_id)
+                continue
+        try:
+            same_lesson_materials = json.loads(
+                str(lesson.get("review_same_lesson_materials_json") or "[]")
+            )
+        except json.JSONDecodeError:
+            same_lesson_materials = []
+        if not isinstance(same_lesson_materials, list):
+            same_lesson_materials = []
+        _start_review_plan_generation_thread(
+            lesson_id=int(lesson["id"]),
+            user={
+                "id": int(user["id"]),
+                "organization_id": int(user["organization_id"]),
+            },
+            chat_provider=str(lesson.get("review_chat_provider") or "") or _default_ai_provider_name(),
+            chat_model=str(lesson.get("review_chat_model") or "") or _default_chat_model_name(),
+            request_key=str(lesson.get("review_request_key") or ""),
+            request_id=request_id or None,
+            audio_path=audio_path,
+            audio_request_key=str(lesson.get("review_audio_request_key") or ""),
+            same_lesson_materials=same_lesson_materials,
+        )
+        recovered_count += 1
+    return recovered_count
+
+
 def _run_wrong_question_practice_generation_job(
     *,
     sheet_id: int,
@@ -4917,6 +4968,14 @@ def api_lesson_create():
             weak_points=weak_points,
             class_id=class_id,
             record_status=initial_record_status,
+            created_by_user_id=int(user["id"]),
+            review_audio_path=audio_path,
+            review_audio_request_key=audio_request_key or "",
+            review_request_key=request_key,
+            review_request_id=request_id,
+            review_chat_provider=chat_provider,
+            review_chat_model=chat_model,
+            review_same_lesson_materials=same_lesson_materials,
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
@@ -5356,6 +5415,9 @@ def _startup_browser_message() -> str:
 
 if __name__ == "__main__":
     init_db()
+    recovered_review_jobs = _recover_interrupted_review_plan_jobs()
+    if recovered_review_jobs:
+        print(f"  已恢复 {recovered_review_jobs} 个未完成复习计划任务")
     if _should_open_browser():
         threading.Thread(target=_open_browser, daemon=True).start()
     print("\n" + "=" * 50)

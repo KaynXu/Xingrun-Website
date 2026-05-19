@@ -2648,6 +2648,14 @@ def init_db():
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "record_status", "TEXT NOT NULL DEFAULT 'ready'")
         _ensure_column(conn, "lessons", "generation_error", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "lessons", "review_audio_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "review_audio_request_key", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "review_request_key", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "review_request_id", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "review_chat_provider", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "review_chat_model", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "lessons", "review_same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
         _bootstrap_account_state(conn)
         default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
         _backfill_student_organization_scope(conn, default_org["id"])
@@ -3407,9 +3415,18 @@ def create_pending_lesson(
     plan: Optional[dict] = None,
     pdf_path: str = "",
     record_status: str = "pending",
+    created_by_user_id: int = 0,
+    review_audio_path: str = "",
+    review_audio_request_key: str = "",
+    review_request_key: str = "",
+    review_request_id: str = "",
+    review_chat_provider: str = "",
+    review_chat_model: str = "",
+    review_same_lesson_materials: Optional[list[str]] = None,
 ) -> int:
     """Create a lesson record in pending state before AI generation completes."""
     plan_content = json.dumps(plan or {}, ensure_ascii=False)
+    same_lesson_materials_json = json.dumps(review_same_lesson_materials or [], ensure_ascii=False)
     with get_conn() as conn:
         organization_id = None
         if class_id:
@@ -3423,8 +3440,10 @@ def create_pending_lesson(
         cur = conn.execute(
             """INSERT INTO lessons
                (date, subject, grade, topic, summary, weak_points,
-                plan_json, pdf_path, class_id, organization_id, record_status, generation_error)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                plan_json, pdf_path, class_id, organization_id, record_status, generation_error,
+                created_by_user_id, review_audio_path, review_audio_request_key, review_request_key,
+                review_request_id, review_chat_provider, review_chat_model, review_same_lesson_materials_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 date_str,
                 subject,
@@ -3438,6 +3457,14 @@ def create_pending_lesson(
                 organization_id,
                 record_status,
                 "",
+                int(created_by_user_id or 0),
+                str(review_audio_path or ""),
+                str(review_audio_request_key or ""),
+                str(review_request_key or ""),
+                str(review_request_id or ""),
+                str(review_chat_provider or ""),
+                str(review_chat_model or ""),
+                same_lesson_materials_json,
             ),
         )
         return cur.lastrowid
@@ -3494,6 +3521,10 @@ def get_lesson(lesson_id: int):
         d = dict(row)
         if d.get("plan_json"):
             d["plan"] = json.loads(d["plan_json"])
+        try:
+            d["review_same_lesson_materials"] = json.loads(d.get("review_same_lesson_materials_json") or "[]")
+        except json.JSONDecodeError:
+            d["review_same_lesson_materials"] = []
         return d
 
 
