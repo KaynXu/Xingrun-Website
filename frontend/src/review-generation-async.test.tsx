@@ -37,7 +37,14 @@ test('review history source hides PDF actions until a completed lesson has outpu
 });
 
 test('review generation page closes composer after async creation succeeds', () => {
-  assert.match(appSource, /const handleFormSuccess = \(\) => \{\s*setComposerOpen\(false\);/);
+  assert.match(appSource, /const handleFormSuccess = \(result: ReviewPlanCreateResponse\) => \{\s*setComposerOpen\(false\);/);
+});
+
+test('review generation page explains duplicate processed uploads', () => {
+  assert.match(appSource, /duplicate\?: boolean;/);
+  assert.match(appSource, /const \[reviewNotice, setReviewNotice\] = useState/);
+  assert.match(appSource, /已复用已有复习文档/);
+  assert.match(appSource, /highlightedLessonId=\{highlightedLessonId\}/);
 });
 
 test('review generation source synchronizes member class selection against accessible classes', () => {

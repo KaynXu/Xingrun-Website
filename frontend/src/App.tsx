@@ -112,6 +112,13 @@ interface Lesson {
   generation_error?: string;
 }
 
+interface ReviewPlanCreateResponse {
+  id: number;
+  success?: boolean;
+  status?: string;
+  duplicate?: boolean;
+}
+
 interface ApiSettings {
   provider: string;
 }
@@ -1824,7 +1831,7 @@ const LessonInput = ({
   onSuccess,
   currentUser,
 }: {
-  onSuccess: () => void;
+  onSuccess: (result: ReviewPlanCreateResponse) => void;
   currentUser: CurrentUser;
 }) => {
   const [subject, setSubject] = useState('');
@@ -1937,8 +1944,9 @@ const LessonInput = ({
     setIsLoading(true);
     setUploadProgress(0);
     try {
+      let result: ReviewPlanCreateResponse;
       if (inputType === 'text') {
-        await apiFetch<{ id: number }>('/api/review-plans', {
+        result = await apiFetch<ReviewPlanCreateResponse>('/api/review-plans', {
           method: 'POST',
           body: JSON.stringify({
             subject,
@@ -1960,9 +1968,9 @@ const LessonInput = ({
         formData.append('weak_points', weakPoints);
         formData.append('same_lesson_materials', sameLessonMaterials);
         if (file) formData.append('upload_file', file);
-        await apiUploadFormWithProgress<{ id: number }>('/api/review-plans', formData, setUploadProgress);
+        result = await apiUploadFormWithProgress<ReviewPlanCreateResponse>('/api/review-plans', formData, setUploadProgress);
       }
-      onSuccess();
+      onSuccess(result);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '提交失败，请重试');
     } finally {
@@ -2161,8 +2169,10 @@ const LessonInput = ({
 
 const ReviewDocumentHistory = ({
   refreshToken = 0,
+  highlightedLessonId = null,
 }: {
   refreshToken?: number;
+  highlightedLessonId?: number | null;
 }) => {
   const REVIEW_HISTORY_PAGE_SIZE = 12;
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -2206,8 +2216,15 @@ const ReviewDocumentHistory = ({
   const paginatedLessons = lessons.slice((currentHistoryPage - 1) * REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage * REVIEW_HISTORY_PAGE_SIZE);
 
   useEffect(() => {
+    if (highlightedLessonId) {
+      const highlightedIndex = lessons.findIndex((lesson) => lesson.id === highlightedLessonId);
+      if (highlightedIndex >= 0) {
+        setHistoryPage(Math.floor(highlightedIndex / REVIEW_HISTORY_PAGE_SIZE) + 1);
+        return;
+      }
+    }
     setHistoryPage(1);
-  }, [lessons]);
+  }, [highlightedLessonId, lessons]);
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('确定删除此课程？相关 PDF 也会被删除。')) return;
@@ -2227,7 +2244,10 @@ const ReviewDocumentHistory = ({
             {paginatedLessons.map((lesson) => (
               <article
                 key={lesson.id}
-                className="group flex h-full flex-col rounded-2xl border border-sky-100/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70"
+                className={cn(
+                  'group flex h-full flex-col rounded-2xl border border-sky-100/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70',
+                  highlightedLessonId === lesson.id && 'border-emerald-300 ring-2 ring-emerald-200 dark:border-emerald-400/60 dark:ring-emerald-400/20',
+                )}
               >
                 {(() => {
                   const taskState = getReviewLessonTaskState(lesson);
@@ -2387,9 +2407,17 @@ const ReviewGenerationPage = ({
 }) => {
   const [composerOpen, setComposerOpen] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+  const [reviewNotice, setReviewNotice] = useState('');
+  const [highlightedLessonId, setHighlightedLessonId] = useState<number | null>(null);
 
-  const handleFormSuccess = () => {
+  const handleFormSuccess = (result: ReviewPlanCreateResponse) => {
     setComposerOpen(false);
+    setHighlightedLessonId(result.id);
+    if (result.duplicate) {
+      setReviewNotice(`这份录音已处理过，已复用已有复习文档 #${result.id}。`);
+    } else {
+      setReviewNotice('');
+    }
     setHistoryRefreshToken((current) => current + 1);
     onSuccess();
   };
@@ -2428,7 +2456,14 @@ const ReviewGenerationPage = ({
         </div>
       )}
 
-      <ReviewDocumentHistory refreshToken={historyRefreshToken} />
+      {reviewNotice && (
+        <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+          <CheckCircle2 size={18} />
+          <span className="text-sm">{reviewNotice}</span>
+        </div>
+      )}
+
+      <ReviewDocumentHistory refreshToken={historyRefreshToken} highlightedLessonId={highlightedLessonId} />
     </div>
   );
 };
