@@ -626,4 +626,5 @@ class WrongQuestionPracticePackPdfPayloadTestCase(unittest.TestCase):
 
         payload_schedule = pdf_engine._build_browser_wrong_question_practice_schedule(schedule)
         self.assertEqual(payload_schedule[0]["dayIndex"], 1)
+        self.assertEqual(payload_schedule[0]["date"], "2026-05-20")
         self.assertEqual(payload_schedule[0]["items"][0]["practiceItemId"], "real-1")
