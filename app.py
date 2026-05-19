@@ -953,8 +953,9 @@ def _build_wrong_question_practice_pack_zip(job: dict) -> dict:
             for index, student in enumerate(job.get("students") or [], start=1):
                 student_name = str(student.get("student_name_snapshot") or "学生").strip() or "学生"
                 status = str(student.get("status") or "").strip()
-                pdf_path = Path(str(student.get("pdf_path") or "").strip())
-                if status == "ready" and pdf_path.exists():
+                pdf_path_value = str(student.get("pdf_path") or "").strip()
+                pdf_path = Path(pdf_path_value) if pdf_path_value else None
+                if status == "ready" and pdf_path is not None and pdf_path.is_file():
                     safe_name = _safe_pdf_download_filename_part(student_name, f"student-{student.get('student_id') or index}")
                     archive_name = f"{index:02d}-{safe_name}.pdf"
                     if archive_name in used_names:

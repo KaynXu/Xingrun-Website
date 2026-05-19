@@ -907,3 +907,42 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
             )
 
         self.assertFalse(stale_zip.exists())
+
+    def test_zip_treats_blank_ready_pdf_path_as_missing(self):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        existing_pdf = self.base / "ready.pdf"
+        existing_pdf.write_bytes(b"%PDF-1.4\nready\n")
+        lesson_manager.upsert_wrong_question_practice_pack_job_student(
+            job_id=job["id"],
+            student_id=self.student["id"],
+            student_name_snapshot="王睿博",
+            status="ready",
+            requested_question_count=5,
+            pdf_path=str(existing_pdf),
+        )
+        lesson_manager.upsert_wrong_question_practice_pack_job_student(
+            job_id=job["id"],
+            student_id=self.empty_student["id"],
+            student_name_snapshot="空路径学生",
+            status="ready",
+            requested_question_count=5,
+            pdf_path="",
+        )
+
+        result = self.app._build_wrong_question_practice_pack_zip(
+            lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+        )
+
+        self.assertTrue(result["has_partial"])
+        with zipfile.ZipFile(result["zip_path"]) as archive:
+            names = archive.namelist()
+            note = archive.read("打包说明.txt").decode("utf-8")
+        self.assertFalse(any(name.endswith(".pdf/") for name in names))
+        self.assertIn("空路径学生：PDF 文件缺失", note)
