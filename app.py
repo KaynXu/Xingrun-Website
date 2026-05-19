@@ -59,6 +59,7 @@ _WRONG_QUESTION_PRACTICE_PDF_RETRY_DELAYS_SECONDS = (1, 3, 5)
 from lesson_manager import (
     actor_can_manage_user,
     attach_student_library_pdf_path,
+    build_wrong_question_practice_pack_schedule,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -104,6 +105,7 @@ from lesson_manager import (
     get_or_create_active_class_invite,
     get_lesson,
     get_weekly_wrong_question_followup_message,
+    get_wrong_question_practice_pack_job,
     get_wrong_question_practice_sheet,
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
@@ -125,6 +127,7 @@ from lesson_manager import (
     list_lessons,
     list_lessons_for_actor,
     list_wrong_question_practice_sheets_for_student,
+    list_targeted_wrong_question_practice_candidates,
     list_organizations,
     list_organization_requests,
     list_parent_student_bindings_for_openid,
@@ -153,6 +156,7 @@ from lesson_manager import (
     save_class,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
+    mark_wrong_question_practice_pack_job_status,
     mark_wrong_question_practice_sheet_failed,
     mark_wrong_question_practice_sheet_succeeded,
     create_monthly_plan_job,
@@ -177,6 +181,7 @@ from lesson_manager import (
     update_user_profile,
     resolve_teacher_username_to_user_id,
     update_user_role,
+    upsert_wrong_question_practice_pack_job_student,
     upsert_weekly_wrong_question_followup_message,
     upsert_parent_wechat_account,
     get_teacher_alias_entries,
@@ -886,6 +891,277 @@ def _run_wrong_question_practice_generation_job(
 def _start_wrong_question_practice_generation_thread(**job_kwargs) -> None:
     threading.Thread(
         target=_run_wrong_question_practice_generation_job,
+        kwargs=job_kwargs,
+        daemon=True,
+    ).start()
+
+
+def _practice_pack_item_from_real_record(record: dict, index: int) -> dict:
+    record_id = str(record.get("id") or "").strip()
+    return {
+        "practice_item_id": f"real-{record_id or index}",
+        "item_type": "real",
+        "wrong_question_record_id": record_id,
+        "question_order": int(index),
+        "source": str(record.get("source") or "wechat_mp").strip() or "wechat_mp",
+        "is_geometry": bool(record.get("is_geometry")),
+        "question_text_snapshot": str(record.get("question_text") or "").strip(),
+        "image_url_snapshot": str(record.get("image_url") or "").strip(),
+        "child_reason_text_snapshot": str(record.get("child_raw_reason_text") or "").strip(),
+        "primary_error_type_snapshot": str(record.get("primary_error_type") or "").strip(),
+        "cause_note_snapshot": str(record.get("secondary_error_summary") or "").strip(),
+    }
+
+
+def _practice_pack_item_from_variant(variant: dict, index: int) -> dict:
+    variant_id = str(variant.get("variant_id") or f"variant-{index}").strip()
+    practice_item_id = f"variant-{variant_id or index}"
+    key_steps = variant.get("key_steps") if isinstance(variant.get("key_steps"), list) else []
+    return {
+        "practice_item_id": practice_item_id,
+        "item_type": "variant",
+        "wrong_question_record_id": practice_item_id,
+        "question_order": int(index),
+        "source": "ai_variant",
+        "is_geometry": bool(variant.get("is_geometry")),
+        "question_text_snapshot": str(variant.get("question_text") or "").strip(),
+        "image_url_snapshot": "",
+        "child_reason_text_snapshot": "",
+        "primary_error_type_snapshot": str(variant.get("training_goal") or "").strip(),
+        "cause_note_snapshot": str(variant.get("pitfall_reminder") or "").strip(),
+        "variant_id": variant_id,
+        "source_record_id": str(variant.get("source_record_id") or "").strip(),
+        "training_goal": str(variant.get("training_goal") or "").strip(),
+        "answer": str(variant.get("answer") or "").strip(),
+        "key_steps": [str(step or "").strip() for step in key_steps if str(step or "").strip()],
+        "pitfall_reminder": str(variant.get("pitfall_reminder") or "").strip(),
+    }
+
+
+def _build_wrong_question_practice_pack_zip(job: dict) -> str:
+    job_id = int(job.get("id") or 0)
+    zip_path = _wrong_question_practice_pack_zip_path(job_id)
+    notes: list[str] = []
+    written_count = 0
+    used_names: set[str] = set()
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for index, student in enumerate(job.get("students") or [], start=1):
+            student_name = str(student.get("student_name_snapshot") or "学生").strip() or "学生"
+            status = str(student.get("status") or "").strip()
+            pdf_path = Path(str(student.get("pdf_path") or "").strip())
+            if status == "ready" and pdf_path.exists():
+                safe_name = _safe_pdf_download_filename_part(student_name, f"student-{student.get('student_id') or index}")
+                archive_name = f"{index:02d}-{safe_name}.pdf"
+                if archive_name in used_names:
+                    archive_name = f"{index:02d}-{safe_name}-{student.get('student_id') or index}.pdf"
+                used_names.add(archive_name)
+                archive.write(pdf_path, archive_name)
+                written_count += 1
+                warning = str(student.get("generation_error") or "").strip()
+                if warning:
+                    notes.append(f"{student_name}：{warning}")
+                continue
+
+            error_message = str(student.get("generation_error") or "").strip()
+            if status == "ready":
+                error_message = error_message or "PDF 文件缺失"
+            else:
+                error_message = error_message or "未生成"
+            notes.append(f"{student_name}：{error_message}")
+
+        if written_count <= 0:
+            raise RuntimeError("没有可打包的学生练习 PDF")
+        if notes:
+            archive.writestr("打包说明.txt", "\n".join(notes) + "\n")
+
+    return str(zip_path)
+
+
+def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
+    try:
+        job = get_wrong_question_practice_pack_job(job_id)
+        if not job or job.get("status") not in {"pending", "failed"}:
+            logger.info("Wrong question practice pack generation skipped for job %s", job_id)
+            return
+
+        mark_wrong_question_practice_pack_job_status(job_id, status="running", zip_path="", generation_error="")
+        class_row = get_class(int(job.get("class_id") or 0)) or {}
+        class_name = str(class_row.get("name") or "").strip()
+        teacher_name = str(user.get("display_name") or user.get("username") or "").strip()
+        requested_count = int(job.get("requested_question_count") or 0)
+        any_partial = False
+
+        for student in list_students_for_class(int(job.get("class_id") or 0)):
+            student_id = int(student.get("id") or 0)
+            student_name = str(student.get("name") or "").strip() or "学生"
+            upsert_wrong_question_practice_pack_job_student(
+                job_id=job_id,
+                student_id=student_id,
+                student_name_snapshot=student_name,
+                status="running",
+                requested_question_count=requested_count,
+            )
+            try:
+                real_candidates = list_targeted_wrong_question_practice_candidates(
+                    organization_id=int(job.get("organization_id") or 0),
+                    class_id=int(job.get("class_id") or 0),
+                    student_id=student_id,
+                    mode=str(job.get("mode") or ""),
+                    target=str(job.get("target") or ""),
+                    limit=requested_count,
+                )
+                if not real_candidates:
+                    any_partial = True
+                    upsert_wrong_question_practice_pack_job_student(
+                        job_id=job_id,
+                        student_id=student_id,
+                        student_name_snapshot=student_name,
+                        status="skipped",
+                        requested_question_count=requested_count,
+                        generation_error="没有匹配方向的历史错题",
+                    )
+                    continue
+
+                missing_count = max(0, requested_count - len(real_candidates))
+                variants: list[dict] = []
+                if missing_count > 0:
+                    generated_variants = ai_processor.generate_wrong_question_practice_pack_variants(
+                        student_name=student_name,
+                        class_name=class_name,
+                        mode=str(job.get("mode") or ""),
+                        target=str(job.get("target") or ""),
+                        requested_count=missing_count,
+                        source_records=real_candidates,
+                    )
+                    for variant in generated_variants or []:
+                        review_text = ai_processor.review_wrong_question_practice_pack_variant(
+                            mode=str(job.get("mode") or ""),
+                            target=str(job.get("target") or ""),
+                            variant=variant,
+                        )
+                        if ai_processor._wrong_question_practice_pack_variant_review_passed(review_text):
+                            variants.append(variant)
+
+                practice_items = [
+                    _practice_pack_item_from_real_record(record, index)
+                    for index, record in enumerate(real_candidates, start=1)
+                ]
+                variant_items = [
+                    _practice_pack_item_from_variant(variant, len(practice_items) + index)
+                    for index, variant in enumerate(variants, start=1)
+                ]
+                practice_items.extend(variant_items)
+                generated = ai_processor.generate_wrong_question_practice_sheet_material(
+                    student_name=student_name,
+                    class_name=class_name,
+                    teacher_name=teacher_name,
+                    items=practice_items,
+                )
+                generated_items = generated.get("items") if isinstance(generated, dict) else []
+                generated_by_id = {
+                    str(item.get("wrong_question_record_id") or "").strip(): item
+                    for item in generated_items
+                    if isinstance(item, dict)
+                }
+                merged_items = []
+                for item in practice_items:
+                    generated_item = generated_by_id.get(str(item.get("wrong_question_record_id") or "").strip(), {})
+                    merged_items.append(
+                        {
+                            **item,
+                            "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
+                            "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
+                            "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                        }
+                    )
+                schedule = build_wrong_question_practice_pack_schedule(
+                    merged_items,
+                    start_date=date.today().isoformat(),
+                )
+                warning = ""
+                if len(merged_items) < requested_count:
+                    any_partial = True
+                    warning = "匹配题量不足，已按可用题生成"
+                title = str((generated or {}).get("title") or "").strip() or f"{student_name} 一周错题练习"
+                pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                    student_name=student_name,
+                    class_name=class_name,
+                    teacher_name=teacher_name,
+                    title=title,
+                    items=merged_items,
+                    output_path=str(_wrong_question_practice_pack_student_pdf_path(job_id, student_id)),
+                    schedule=schedule,
+                    answer_items=merged_items,
+                    pack_meta={
+                        "mode": str(job.get("mode") or ""),
+                        "target": str(job.get("target") or ""),
+                        "volume": str(job.get("volume") or ""),
+                        "requested_question_count": requested_count,
+                    },
+                )
+                upsert_wrong_question_practice_pack_job_student(
+                    job_id=job_id,
+                    student_id=student_id,
+                    student_name_snapshot=student_name,
+                    status="ready",
+                    requested_question_count=requested_count,
+                    real_question_count=len(practice_items) - len(variant_items),
+                    variant_question_count=len(variant_items),
+                    pdf_path=str(pdf_path or "").strip(),
+                    generation_error=warning,
+                )
+            except Exception as exc:
+                any_partial = True
+                logger.exception("Wrong question practice pack student generation failed for job %s student %s", job_id, student_id)
+                upsert_wrong_question_practice_pack_job_student(
+                    job_id=job_id,
+                    student_id=student_id,
+                    student_name_snapshot=student_name,
+                    status="failed",
+                    requested_question_count=requested_count,
+                    generation_error=str(exc) or "生成失败",
+                )
+
+        refreshed_job = get_wrong_question_practice_pack_job(job_id) or {}
+        try:
+            zip_path = _build_wrong_question_practice_pack_zip(refreshed_job)
+        except Exception as exc:
+            logger.exception("Wrong question practice pack zip generation failed for job %s", job_id)
+            mark_wrong_question_practice_pack_job_status(
+                job_id,
+                status="failed",
+                zip_path="",
+                generation_error=str(exc) or "打包失败",
+            )
+            return
+
+        refreshed_students = refreshed_job.get("students") or []
+        final_status = "partial_failed" if any_partial or any(
+            str(student.get("status") or "") != "ready" for student in refreshed_students
+        ) else "ready"
+        mark_wrong_question_practice_pack_job_status(
+            job_id,
+            status=final_status,
+            zip_path=zip_path,
+            generation_error="",
+        )
+    except Exception as exc:
+        logger.exception("Wrong question practice pack generation failed for job %s", job_id)
+        try:
+            mark_wrong_question_practice_pack_job_status(
+                job_id,
+                status="failed",
+                zip_path="",
+                generation_error=str(exc) or "生成失败",
+            )
+        except LookupError:
+            logger.exception("Failed to mark wrong question practice pack job %s as failed", job_id)
+
+
+def _start_wrong_question_practice_pack_thread(**job_kwargs) -> None:
+    threading.Thread(
+        target=_run_wrong_question_practice_pack_job,
         kwargs=job_kwargs,
         daemon=True,
     ).start()
@@ -3744,6 +4020,20 @@ def _wrong_question_practice_sheet_pdf_path(sheet_id: int) -> Path:
     practice_dir = PDF_DIR / "wrong_question_practice_sheets"
     practice_dir.mkdir(parents=True, exist_ok=True)
     return practice_dir / f"sheet-{sheet_id}.pdf"
+
+
+def _wrong_question_practice_pack_dir(job_id: int) -> Path:
+    pack_dir = PDF_DIR / "wrong_question_practice_packs" / f"pack-{job_id}"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    return pack_dir
+
+
+def _wrong_question_practice_pack_student_pdf_path(job_id: int, student_id: int) -> Path:
+    return _wrong_question_practice_pack_dir(job_id) / f"student-{student_id}.pdf"
+
+
+def _wrong_question_practice_pack_zip_path(job_id: int) -> Path:
+    return _wrong_question_practice_pack_dir(job_id) / "practice-pack.zip"
 
 
 def _parse_student_wrong_question_library_updated_at(value: str) -> Optional[datetime]:

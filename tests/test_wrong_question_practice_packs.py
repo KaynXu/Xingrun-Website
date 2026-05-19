@@ -4,7 +4,9 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -639,3 +641,133 @@ class WrongQuestionPracticePackPdfPayloadTestCase(unittest.TestCase):
 
         self.assertEqual(len(payload_schedule), 1)
         self.assertEqual(payload_schedule[0]["dayIndex"], 2)
+
+
+class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({})
+        lesson_manager.init_db()
+
+        import app as app_module
+
+        self.app = app_module
+        self.app.PDF_DIR = self.base / "pdfs"
+        self.owner = lesson_manager.get_user_by_username("Kayn")
+        self.class_id = lesson_manager.save_class("七年级 5 班", subject="数学", grade="七年级")
+        lesson_manager.set_class_teacher_user_id(self.class_id, self.owner["id"])
+        self.student = lesson_manager.create_student_for_class(self.class_id, "王睿博")
+        self.empty_student = lesson_manager.create_student_for_class(self.class_id, "李明")
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-practice-pack-worker")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        self.record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/denominator.png",
+            child_raw_reason_text="去分母时漏乘常数项",
+            primary_error_type="知识点问题",
+            secondary_error_summary="去分母漏乘",
+            topic_category="计算",
+            recognition_status="recognized",
+            question_text="解方程 (x-1)/2=3。",
+        )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    @mock.patch("app.finalize_ai_charge")
+    @mock.patch("app.ensure_feature_credits_available")
+    @mock.patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
+    @mock.patch("ai_processor.review_wrong_question_practice_pack_variant")
+    @mock.patch("ai_processor.generate_wrong_question_practice_pack_variants")
+    @mock.patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_generates_student_pdfs_and_class_zip(
+        self,
+        material_mock,
+        variants_mock,
+        review_mock,
+        pdf_mock,
+        ensure_credits_mock,
+        finalize_charge_mock,
+    ):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        variants_mock.return_value = [
+            {
+                "variant_id": "variant-1",
+                "source_record_id": self.record["id"],
+                "question_text": "解方程 x/2+1=3。",
+                "training_goal": "练习去分母每一项同乘。",
+                "answer": "x=4",
+                "key_steps": ["两边同乘2", "x+2=6", "x=4"],
+                "pitfall_reminder": "不要漏乘常数项。",
+            }
+        ]
+        review_mock.return_value = "结论：通过\n题目可解。"
+
+        def material_side_effect(**kwargs):
+            return {
+                "title": "王睿博 一周错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": str(item.get("wrong_question_record_id") or ""),
+                        "ai_hint": "先找等量关系。",
+                        "reason_blank_prompt": "这题容易错在____。",
+                        "improvement_summary_prompt": "下次先____。",
+                    }
+                    for item in kwargs["items"]
+                ],
+            }
+
+        material_mock.side_effect = material_side_effect
+
+        def pdf_side_effect(**kwargs):
+            output_path = Path(kwargs["output_path"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"%PDF-1.4\npractice pack\n")
+            return str(output_path)
+
+        pdf_mock.side_effect = pdf_side_effect
+
+        self.app._run_wrong_question_practice_pack_job(job_id=job["id"], user=self.owner)
+
+        loaded = lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+        self.assertEqual(loaded["status"], "partial_failed")
+        self.assertTrue(Path(loaded["zip_path"]).exists())
+        students_by_name = {student["student_name_snapshot"]: student for student in loaded["students"]}
+        self.assertEqual(students_by_name["王睿博"]["status"], "ready")
+        self.assertEqual(students_by_name["王睿博"]["real_question_count"], 1)
+        self.assertEqual(students_by_name["王睿博"]["variant_question_count"], 1)
+        self.assertIn("匹配题量不足", students_by_name["王睿博"]["generation_error"])
+        self.assertEqual(students_by_name["李明"]["status"], "skipped")
+        self.assertEqual(students_by_name["李明"]["generation_error"], "没有匹配方向的历史错题")
+
+        variants_mock.assert_called_once()
+        self.assertEqual(variants_mock.call_args.kwargs["requested_count"], 4)
+        review_mock.assert_called_once()
+        pdf_mock.assert_called_once()
+        pdf_kwargs = pdf_mock.call_args.kwargs
+        self.assertEqual(len(pdf_kwargs["schedule"]), 7)
+        self.assertEqual(len(pdf_kwargs["answer_items"]), 2)
+        self.assertEqual(pdf_kwargs["pack_meta"]["mode"], "reason")
+        ensure_credits_mock.assert_not_called()
+        finalize_charge_mock.assert_not_called()
+
+        with zipfile.ZipFile(loaded["zip_path"]) as archive:
+            names = archive.namelist()
+            self.assertTrue(any(name.endswith(".pdf") for name in names))
+            self.assertIn("打包说明.txt", names)
+            note = archive.read("打包说明.txt").decode("utf-8")
+        self.assertIn("李明：没有匹配方向的历史错题", note)
