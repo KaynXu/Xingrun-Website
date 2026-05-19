@@ -49,13 +49,14 @@ test('review generation source defaults to history documents and expands the sha
   assert.match(reviewGenerationBlock, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
   assert.match(reviewGenerationBlock, /新建复习文档/);
   assert.match(reviewGenerationBlock, /生成复习文档/);
-  assert.match(reviewGenerationBlock, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} \/>/);
+  assert.match(reviewGenerationBlock, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} highlightedLessonId=\{highlightedLessonId\} \/>/);
 });
 
 test('review generation source closes the shared composer after successful generation and refreshes history', () => {
   const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
 
-  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(\) => \{\s*setComposerOpen\(false\);\s*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
+  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(result: ReviewPlanCreateResponse\) => \{\s*setComposerOpen\(false\);\s*setHighlightedLessonId\(result\.id\);[\s\S]*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
+  assert.match(reviewGenerationBlock, /这份录音已处理过，已复用已有复习文档/);
   assert.doesNotMatch(reviewGenerationBlock, /setActivePage\('library'\)/);
 });
 
@@ -77,7 +78,8 @@ test('review generation source renders history as paginated cards with explicit 
   assert.match(historyBlock, /const \[historyPage, setHistoryPage\] = useState\(1\);/);
   assert.match(historyBlock, /const totalHistoryPages = Math\.max\(1, Math\.ceil\(lessons\.length \/ REVIEW_HISTORY_PAGE_SIZE\)\);/);
   assert.match(historyBlock, /const paginatedLessons = lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage \* REVIEW_HISTORY_PAGE_SIZE\);/);
-  assert.match(historyBlock, /useEffect\(\(\) => \{\s*setHistoryPage\(1\);\s*\}, \[lessons\]\);/);
+  assert.match(historyBlock, /if \(highlightedLessonId\) \{[\s\S]*setHistoryPage\(Math\.floor\(highlightedIndex \/ REVIEW_HISTORY_PAGE_SIZE\) \+ 1\);[\s\S]*setHistoryPage\(1\);[\s\S]*\}, \[highlightedLessonId, lessons\]\);/);
+  assert.match(historyBlock, /highlightedLessonId === lesson\.id/);
   assert.match(historyBlock, /生成时间/);
   assert.match(historyBlock, /new Date\(lesson\.created_at\)\.toLocaleString\('zh-CN'\)/);
   assert.match(historyBlock, /className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3"/);

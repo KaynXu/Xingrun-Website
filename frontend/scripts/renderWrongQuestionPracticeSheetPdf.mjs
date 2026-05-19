@@ -102,7 +102,7 @@ function extractWritingPromptBody(prompt) {
 }
 
 function renderPromptHtml(prompt) {
-  return escapeHtml(normalizePromptText(prompt))
+  return buildLatexTextBlock(normalizePromptText(prompt))
     .replace(/[_＿]{4,}/g, '<span class="blank-gap"></span>')
     .replaceAll('\n', '<br />');
 }

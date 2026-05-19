@@ -177,6 +177,38 @@ test('buildDocumentMarkup puts scheduled error-review blanks before redo questio
   assert.match(markup, /blank-gap/);
 });
 
+test('buildDocumentMarkup renders latex inside scheduled error-review blanks', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 一周错题练习',
+    schedule: [
+      {
+        dayIndex: 2,
+        date: '2026-05-21',
+        items: [
+          {
+            practiceItemId: 'real-2',
+            itemType: 'real',
+            question_order: 2,
+            is_geometry: false,
+            question_text_snapshot: '求第三个内角。',
+            reason_blank_prompt: '先复盘错因\n第三个角要用 $180^\\circ$ 减去两个已知角，而不是直接写 ______。',
+            improvement_summary_prompt: '下次提醒\n列式时先写 $180^\\circ-40^\\circ-65^\\circ$，再计算。',
+          },
+        ],
+      },
+    ],
+    answerItems: [],
+  });
+
+  const reviewSection = markup.slice(markup.indexOf('错题复习'), markup.indexOf('重做原题'));
+  assert.match(reviewSection, /class="katex"/);
+  assert.doesNotMatch(reviewSection, /\$180\^\\circ/);
+  assert.match(reviewSection, /blank-gap/);
+});
+
 test('resolveChromiumLaunchOptions adds hardened chromium flags on linux', async () => {
   const launchOptions = await resolveChromiumLaunchOptions({
     env: {},
