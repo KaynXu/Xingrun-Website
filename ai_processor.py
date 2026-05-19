@@ -832,19 +832,30 @@ def _wrong_question_practice_pack_target_tokens(target: str) -> list[str]:
 
 
 def _wrong_question_practice_pack_variant_matches_target(item: dict, target: str) -> bool:
-    tokens = _wrong_question_practice_pack_target_tokens(target)
-    if not tokens:
-        return not str(target or "").strip()
-    combined_text = "".join(
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return True
+    compact_target = re.sub(r"[\s,，、/／|｜;；:：\-—_()（）\[\]【】{}]+", "", normalized_target)
+    evidence_text = "".join(
         [
             str(item.get("question_text") or ""),
             str(item.get("training_goal") or ""),
             str(item.get("pitfall_reminder") or ""),
-            str(item.get("answer") or ""),
-            "".join(str(step or "") for step in (item.get("key_steps") or [])),
         ]
     )
-    return any(token in combined_text for token in tokens)
+    if "去分母" in compact_target:
+        has_denominator_evidence = (
+            "去分母" in evidence_text
+            or ("分母" in evidence_text and "同乘" in evidence_text)
+            or ("等式两边" in evidence_text and "同乘" in evidence_text)
+        )
+        if not has_denominator_evidence:
+            return False
+        if "漏乘" in compact_target:
+            return any(token in evidence_text for token in ("漏乘", "每一项", "常数项"))
+        return True
+    tokens = _wrong_question_practice_pack_target_tokens(target)
+    return any(token in evidence_text for token in tokens)
 
 
 def _normalize_wrong_question_practice_pack_variants(

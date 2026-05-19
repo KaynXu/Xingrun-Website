@@ -551,6 +551,52 @@ class WrongQuestionPracticePackAiNormalizationTestCase(unittest.TestCase):
                 target="去分母漏乘",
             )
 
+    def test_normalize_variant_payload_rejects_generic_missed_condition_text(self):
+        payload = {
+            "items": [
+                {
+                    "variant_id": "variant-1",
+                    "source_record_id": "wechat-a",
+                    "question_text": "如图，证明三角形全等。",
+                    "training_goal": "识别对应边和对应角。",
+                    "answer": "可由 SAS 判定全等。",
+                    "key_steps": ["找对应边", "找夹角", "使用 SAS"],
+                    "pitfall_reminder": "不要漏乘已知条件。",
+                    "difficulty": "基础",
+                }
+            ]
+        }
+
+        with self.assertRaises(ValueError):
+            ai_processor._normalize_wrong_question_practice_pack_variants(
+                payload,
+                expected_count=1,
+                target="去分母漏乘",
+            )
+
+    def test_normalize_variant_payload_ignores_key_step_labels_for_target(self):
+        payload = {
+            "items": [
+                {
+                    "variant_id": "variant-1",
+                    "source_record_id": "wechat-a",
+                    "question_text": "如图，证明三角形全等。",
+                    "training_goal": "识别对应边和对应角。",
+                    "answer": "可由 SAS 判定全等。",
+                    "key_steps": ["步骤一：找对应边", "步骤二：找夹角"],
+                    "pitfall_reminder": "不要把非夹角当作夹角。",
+                    "difficulty": "基础",
+                }
+            ]
+        }
+
+        with self.assertRaises(ValueError):
+            ai_processor._normalize_wrong_question_practice_pack_variants(
+                payload,
+                expected_count=1,
+                target="步骤遗漏",
+            )
+
     def test_variant_review_passed_reads_first_conclusion_line(self):
         self.assertTrue(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：通过\n题目可解。"))
         self.assertFalse(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：不通过\n答案不一致。"))
