@@ -108,7 +108,7 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
   assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
@@ -129,7 +129,7 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
   assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
@@ -172,6 +172,84 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
+test('consultation source renders approved v6 flow stage bars', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  assert.match(source, /consultationFlowStages/);
+  assert.match(source, /ConsultationFlowBar/);
+  assert.match(source, /ConsultationStatusLamp/);
+  assert.match(source, /ConsultationResultCapsule/);
+  assert.match(source, /客服微信✅/);
+  assert.match(source, /教师微信✅/);
+  assert.match(source, /沟通ing/);
+  assert.match(source, /☀️ 成功进班/);
+  assert.match(source, /😢 试听未成/);
+  assert.match(source, /full/);
+  assert.match(source, /已加小客服微信/);
+  assert.match(source, /咨询结束/);
+});
+
+test('consultation modal source includes stage-specific test and trial fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /是否测试/);
+  assert.match(modalBlock[0], /测试情况图片/);
+  assert.match(modalBlock[0], /是否试听/);
+  assert.match(modalBlock[0], /试听时间段/);
+  assert.match(modalBlock[0], /若没找到对应班级，可以直接手动输入/);
+  assert.match(modalBlock[0], /试听教师/);
+  assert.match(modalBlock[0], /试听反馈/);
+  assert.match(modalBlock[0], /成功进班必须选择或填写班级/);
+});
+
+test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.ok(flowBarBlock);
+  assert.match(flowBarBlock[0], /showJumpActions/);
+  assert.match(flowBarBlock[0], /onStageJump/);
+  assert.match(flowBarBlock[0], /aria-label=\{`跳转到\$\{item\}编辑栏`\}/);
+  assert.match(modalBlock[0], /const baseInfoRef = useRef<HTMLElement \| null>\(null\);/);
+  assert.match(modalBlock[0], /const testSectionRef = useRef<HTMLDivElement \| null>\(null\);/);
+  assert.match(modalBlock[0], /const trialSectionRef = useRef<HTMLDivElement \| null>\(null\);/);
+  assert.match(modalBlock[0], /const successSectionRef = useRef<HTMLDivElement \| null>\(null\);/);
+  assert.match(modalBlock[0], /const handleStageJump = \(stage: string\) => \{/);
+  assert.match(modalBlock[0], /target\?\.scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\);/);
+  assert.match(modalBlock[0], /showJumpActions=\{!readOnly\}/);
+  assert.match(modalBlock[0], /onStageJump=\{handleStageJump\}/);
+});
+
+test('consultation source restores ended records only after an explicit yes no confirmation', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.ok(modalBlock);
+  assert.match(source, /function restoreConsultationValues\(values: ConsultationFormValues\): ConsultationFormValues/);
+  assert.match(source, /restore_from_end: true/);
+  assert.match(modalBlock[0], /confirmRestoreOpen/);
+  assert.match(modalBlock[0], /是否恢复这个咨询？/);
+  assert.match(modalBlock[0], /是\s*<\/button>/);
+  assert.match(modalBlock[0], /否\s*<\/button>/);
+  assert.match(modalBlock[0], /setForm\(\(current\) => restoreConsultationValues\(current\)\)/);
+  assert.match(consultationPageBlock[0], /const \[restoreConfirmRecord, setRestoreConfirmRecord\] = useState<ConsultationRecord \| null>\(null\);/);
+  assert.match(consultationPageBlock[0], /const handleConfirmRestoreConsultation = async \(\) =>/);
+  assert.match(consultationPageBlock[0], /restoreConsultationValues\(toConsultationFormValues\(restoreConfirmRecord\)\)/);
+  assert.match(consultationPageBlock[0], /是否恢复这个咨询？/);
+});
+
+test('consultation source keeps ai batch parse endpoint unchanged', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
+  assert.ok(batchModalBlock);
+  assert.match(batchModalBlock[0], /apiFetch<ConsultationBatchParseResponse>\('\/api\/consultations\/ai-parse'/);
+  assert.doesNotMatch(batchModalBlock[0], /flow_stage/);
+});
+
 test('consultation page source keeps consultation detail under teacher and follow-up notes in the consultation info block', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
@@ -179,9 +257,9 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.ok(consultationPageBlock);
   assert.match(consultationPageBlock[0], /const needDetail = record\.need_detail\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
-  assert.match(consultationPageBlock[0], /needDetail && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询详情：\{needDetail\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<div className="min-h-\[72px\] space-y-1 text-sm text-slate-500 dark:text-slate-400">/);
-  assert.match(consultationPageBlock[0], /followUpNote && <p>跟进：\{followUpNote\}<\/p>/);
+  assert.match(consultationPageBlock[0], /咨询详情：\{needDetail\}/);
+  assert.match(consultationPageBlock[0], /line-clamp-2 text-slate-500/);
+  assert.match(consultationPageBlock[0], /跟进：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
   assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
@@ -192,10 +270,10 @@ test('consultation page source keeps the desktop grade column on one line with t
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /<th className="pl-6 pr-3 py-4 font-semibold whitespace-nowrap w-24">年级<\/th>/);
-  assert.match(consultationPageBlock[0], /<td className="pl-6 pr-3 py-4 align-top whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">\{record\.grade \|\| '—'\}<\/td>/);
-  assert.match(consultationPageBlock[0], /<th className="pl-3 pr-6 py-4 font-semibold whitespace-nowrap">咨询老师<\/th>/);
-  assert.match(consultationPageBlock[0], /<td className="pl-3 pr-6 py-4 align-top">/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[7rem_minmax\(8rem,1fr\)_4\.5rem_minmax\(10rem,1\.15fr\)_minmax\(8rem,1fr\)_9\.5rem_6\.5rem\]/);
+  assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">年级<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap font-semibold text-slate-700 dark:text-slate-200">\{record\.grade \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">咨询老师<\/p>/);
 });
 
 test('consultation page source top-aligns desktop cells so the first text rows stay visually aligned', () => {
@@ -203,12 +281,36 @@ test('consultation page source top-aligns desktop cells so the first text rows s
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top font-mono text-sm text-slate-500 dark:text-slate-400">/);
-  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top">/);
-  assert.match(consultationPageBlock[0], /<td className="pl-6 pr-3 py-4 align-top whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">/);
-  assert.match(consultationPageBlock[0], /<td className="pl-3 pr-6 py-4 align-top">/);
-  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top text-sm text-slate-500 dark:text-slate-400">/);
-  assert.match(consultationPageBlock[0], /<td className="px-6 py-4 align-top text-right">/);
+  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">\{record\.date \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /items-center gap-3 bg-slate-50\/60 px-5 py-4/);
+});
+
+test('consultation page source keeps desktop and tablet consultations as two-row cards', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const handleInlineStageToggle = async \(record: ConsultationRecord, stage: string\) =>/);
+  assert.match(consultationPageBlock[0], /const handleInlineResultChange = async \(record: ConsultationRecord, resultStage: ConsultationResultStage\) =>/);
+  assert.match(consultationPageBlock[0], /const handleInlineEndConsultation = async \(record: ConsultationRecord\) =>/);
+  assert.match(consultationPageBlock[0], /editable=\{canEditConsultations && !busy && !frozen\}/);
+  assert.match(consultationPageBlock[0], /onStageClick=\{\(stage\) => handleInlineStageToggle\(record, stage\)\}/);
+  assert.match(consultationPageBlock[0], /hidden md:block/);
+  assert.match(consultationPageBlock[0], /md:hidden/);
+  assert.match(consultationPageBlock[0], /咨询结束/);
+  assert.match(source, /window\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)/);
+  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
+  assert.doesNotMatch(consultationPageBlock[0], /2xl:hidden/);
+  assert.doesNotMatch(consultationPageBlock[0], /hidden 2xl:block/);
+
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  assert.ok(flowBarBlock);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(5,minmax\(7rem,1fr\)\)_minmax\(8rem,1fr\)\]/);
+  assert.match(flowBarBlock[0], /onStageDoubleClick/);
+  assert.match(source, /activePage === 'calendar' \|\| activePage === 'consultation'/);
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
@@ -497,8 +599,8 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /border border-rose-200 bg-rose-50 p-4 text-rose-600[^\n]*dark:border-rose-400\/20[^\n]*dark:bg-rose-500\/10[^\n]*dark:text-rose-300/);
   assert.match(appSource, /inline-flex gap-2 rounded-2xl border border-sky-100 bg-white\/85 p-1 shadow-sm[^\n]*dark:border-white\/10[^\n]*dark:bg-white\/5/);
   assert.match(appSource, /min-h-\[320px\][^\n]*border border-sky-100[^\n]*text-slate-700[^\n]*dark:border-white\/10[^\n]*dark:bg-slate-900\/70[^\n]*dark:text-slate-100/);
-  assert.match(appSource, /<tr className="border-b border-sky-100\/80 text-xs uppercase tracking-wider text-slate-400[^\"]*dark:border-white\/10[^\"]*dark:text-slate-500"/);
-  assert.match(appSource, /hover:bg-sky-50\/70[^\"]*dark:hover:bg-white\/5/);
+  assert.match(appSource, /rounded-\[18px\] border border-sky-100 bg-white shadow-\[0_18px_45px_rgba\(15,23,42,0\.06\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(appSource, /bg-slate-50\/60 px-5 py-4 dark:bg-white\/\[0\.03\]/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^"]*dark:border-white\/10[^"]*dark:bg-\[radial-gradient/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);

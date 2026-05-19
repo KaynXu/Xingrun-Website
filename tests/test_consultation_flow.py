@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import io
 import json
 import sys
 import tempfile
@@ -12,6 +15,7 @@ if str(ROOT) not in sys.path:
 import config_runtime
 import credit_manager
 import lesson_manager
+import app as app_module
 from app import app
 
 
@@ -22,6 +26,9 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
         lesson_manager.DB_PATH = self.base / "xingrun.db"
         lesson_manager.CONSULTATION_TEACHERS_JSON_CANDIDATES = [self.base / "teachers.json"]
+        self.original_upload_dir = app_module.UPLOAD_DIR
+        app_module.UPLOAD_DIR = self.base / "uploads"
+        app_module.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
         config_runtime.CFG_PATH = self.base / "config.json"
         config_runtime.write_file_config({})
@@ -31,6 +38,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.owner_token = self.login("Kayn", "xingrun2026")
 
     def tearDown(self):
+        app_module.UPLOAD_DIR = self.original_upload_dir
         self.temp_dir.cleanup()
 
     @staticmethod
@@ -242,7 +250,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(rows_after_update[0]["reminder_at"], "2026-03-12 18:00")
         self.assertEqual(rows_after_update[0]["reminder_status"], "已设置")
         self.assertEqual(rows_after_update[0]["reminder_task_id"], "task-1")
-        self.assertEqual(rows_after_update[0]["follow_up_status"], "跟进中")
+        self.assertEqual(rows_after_update[0]["follow_up_status"], "正在跟进")
+        self.assertEqual(rows_after_update[0]["flow_stage"], "正在沟通细节")
         self.assertEqual(rows_after_update[0]["follow_up_note"], "已经回访")
 
         create_response = self.client.post(
@@ -293,11 +302,12 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(update_response.status_code, 200)
         updated = update_response.get_json()
-        self.assertEqual(updated["follow_up_status"], "已报班")
+        self.assertEqual(updated["follow_up_status"], "完成")
         self.assertEqual(updated["follow_up_note"], "管理员已确认报班")
 
         rows_after_update = self.read_consultation_storage_rows()
-        self.assertEqual(rows_after_update[0]["follow_up_status"], "已报班")
+        self.assertEqual(rows_after_update[0]["follow_up_status"], "完成")
+        self.assertEqual(rows_after_update[0]["flow_stage"], "成功进班")
 
         delete_response = self.client.delete(
             "/api/consultations/1",
@@ -307,6 +317,178 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
         remaining_rows = self.read_consultation_storage_rows()
         self.assertEqual(remaining_rows, [])
+
+    def test_consultation_flow_stage_fields_round_trip_and_derive_follow_up_status(self):
+        response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "赵妈妈",
+                "child_name": "赵小星",
+                "grade": "三年级",
+                "consultation_subject": "数学",
+                "flow_stage": "待试听",
+                "completed_stages": ["已加小客服微信", "已加对应教师微信", "正在沟通细节", "待试听"],
+                "trial_taken": "是",
+                "trial_time_slot": "周六 10:00-12:00",
+                "trial_class_manual": "三年级数学临时试听班",
+                "trial_teacher": "王老师",
+                "trial_feedback": "愿意试听，但需要确认时间",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        created = response.get_json()
+        self.assertEqual(created["flow_stage"], "待试听")
+        self.assertEqual(created["follow_up_status"], "正在跟进")
+        self.assertEqual(created["completed_stages"], ["已加小客服微信", "已加对应教师微信", "正在沟通细节", "待试听"])
+        self.assertEqual(created["trial_time_slot"], "周六 10:00-12:00")
+        self.assertEqual(created["trial_class_manual"], "三年级数学临时试听班")
+        self.assertEqual(created["trial_teacher"], "王老师")
+        self.assertEqual(created["trial_feedback"], "愿意试听，但需要确认时间")
+
+        stored = self.read_consultation_storage_rows()[0]
+        self.assertEqual(stored["flow_stage"], "待试听")
+        self.assertIn("待试听", stored["completed_stages_json"])
+
+    def test_success_stage_requires_existing_or_manual_class(self):
+        missing_class = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "钱妈妈",
+                "child_name": "钱小满",
+                "flow_stage": "成功进班",
+                "completed_stages": ["已加小客服微信", "成功进班"],
+            },
+        )
+        self.assertEqual(missing_class.status_code, 400)
+        self.assertIn("成功进班必须选择或填写班级", missing_class.get_json()["error"])
+
+        class_id = lesson_manager.save_class("三年级数学A班", subject="数学", grade="三年级")
+        with_class = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "钱妈妈",
+                "child_name": "钱小满",
+                "flow_stage": "成功进班",
+                "completed_stages": ["已加小客服微信", "成功进班"],
+                "success_class_id": class_id,
+            },
+        )
+        self.assertEqual(with_class.status_code, 201)
+        payload = with_class.get_json()
+        self.assertEqual(payload["follow_up_status"], "完成")
+        self.assertEqual(payload["success_class_id"], class_id)
+
+    def test_legacy_follow_up_status_maps_to_new_flow_stage_without_lighting_unknown_steps(self):
+        legacy = self.create_consultation_record(**{"跟进状态": "已报班"})
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE consultations SET flow_stage='', completed_stages_json='[]', follow_up_status='已报班' WHERE id=?",
+                (legacy["id"],),
+            )
+
+        response = self.client.get(f"/api/consultations/{legacy['id']}", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["flow_stage"], "成功进班")
+        self.assertEqual(payload["follow_up_status"], "完成")
+        self.assertEqual(payload["completed_stages"], ["成功进班"])
+        self.assertEqual(payload["test_images"], [])
+
+    def test_ended_consultation_freezes_stage_fields_but_allows_end_note_update(self):
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "周妈妈",
+                "child_name": "周小安",
+                "flow_stage": "咨询结束",
+                "completed_stages": ["已加小客服微信", "正在沟通细节", "咨询结束"],
+                "end_note": "首次关闭",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        update = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "flow_stage": "待试听",
+                "completed_stages": ["已加小客服微信", "待试听"],
+                "trial_taken": "是",
+                "trial_feedback": "结束后不应再改流程",
+                "end_note": "补充结束原因",
+            },
+        )
+
+        self.assertEqual(update.status_code, 200)
+        payload = update.get_json()
+        self.assertEqual(payload["flow_stage"], "咨询结束")
+        self.assertEqual(payload["follow_up_status"], "完成")
+        self.assertEqual(payload["completed_stages"], ["已加小客服微信", "正在沟通细节", "咨询结束"])
+        self.assertEqual(payload["trial_taken"], "")
+        self.assertEqual(payload["trial_feedback"], "")
+        self.assertEqual(payload["end_note"], "补充结束原因")
+
+    def test_ended_consultation_can_be_restored_with_explicit_restore_flag(self):
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "林妈妈",
+                "child_name": "林小贝",
+                "flow_stage": "咨询结束",
+                "completed_stages": ["已加小客服微信", "正在沟通细节", "咨询结束"],
+                "end_note": "误触结束",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        restored = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "restore_from_end": True,
+                "flow_stage": "正在沟通细节",
+                "completed_stages": ["已加小客服微信", "正在沟通细节"],
+            },
+        )
+
+        self.assertEqual(restored.status_code, 200)
+        payload = restored.get_json()
+        self.assertEqual(payload["flow_stage"], "正在沟通细节")
+        self.assertEqual(payload["follow_up_status"], "正在跟进")
+        self.assertEqual(payload["completed_stages"], ["已加小客服微信", "正在沟通细节"])
+        self.assertEqual(payload["end_note"], "误触结束")
+
+    def test_owner_uploads_multiple_consultation_test_images(self):
+        created = self.create_consultation_record()
+
+        first = self.client.post(
+            f"/api/consultations/{created['id']}/test-images",
+            headers=self.auth_headers(self.owner_token),
+            data={"image": (io.BytesIO(b"first-image"), "first.png")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post(
+            f"/api/consultations/{created['id']}/test-images",
+            headers=self.auth_headers(self.owner_token),
+            data={"image": (io.BytesIO(b"second-image"), "second.jpg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(second.status_code, 201)
+
+        refreshed = self.client.get(f"/api/consultations/{created['id']}", headers=self.auth_headers(self.owner_token))
+        images = refreshed.get_json()["test_images"]
+        self.assertEqual(len(images), 2)
+        self.assertTrue(images[0]["url"].startswith("/api/consultation-test-images/"))
+        self.assertEqual(images[0]["filename"], "first.png")
 
     def test_members_can_view_and_create_but_not_edit_or_delete(self):
         member_token = self.create_member_token()
@@ -340,15 +522,30 @@ class ConsultationFlowTestCase(unittest.TestCase):
         update_response = self.client.put(
             "/api/consultations/1",
             headers=self.auth_headers(member_token),
-            json={"跟进备注": "成员不能改"},
+            json={"跟进备注": "成员可改自己的咨询", "flow_stage": "正在沟通细节"},
         )
-        self.assertEqual(update_response.status_code, 403)
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.get_json()["follow_up_status"], "正在跟进")
 
         delete_response = self.client.delete(
             "/api/consultations/1",
             headers=self.auth_headers(member_token),
         )
         self.assertEqual(delete_response.status_code, 403)
+
+    def test_member_cannot_update_other_teacher_record(self):
+        member_token = self.create_member_token(username="teacher_a", display_name="Teacher A")
+        other_token = self.create_member_token(username="teacher_b", display_name="Teacher B")
+        other_user = self.user_for_token(other_token)
+        other_assigned = self.create_consultation_record(assigned_user_id=other_user["id"])
+
+        update_other = self.client.put(
+            f"/api/consultations/{other_assigned['id']}",
+            headers=self.auth_headers(member_token),
+            json={"flow_stage": "正在沟通细节"},
+        )
+
+        self.assertEqual(update_other.status_code, 404)
 
     @patch("app.parse_consultation_batch_text")
     def test_members_can_access_ai_parse_endpoint(self, mock_parse):
