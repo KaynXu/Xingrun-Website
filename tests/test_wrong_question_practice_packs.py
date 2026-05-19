@@ -333,6 +333,109 @@ class WrongQuestionPracticePackCandidateTestCase(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in candidates], [denominator["id"]])
 
+    def test_recently_archived_record_is_excluded_from_candidates(self):
+        recent = self._record(
+            topic_category="几何",
+            primary_error_type="方法问题",
+            reason="辅助线入口没找准",
+            question_text="如图，证明角相等。",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET created_at=?, archive_status='archived', archived_at=?
+                WHERE id=?
+                """,
+                ("2026-03-01 10:00:00", "2026-05-15 10:00:00", recent["id"]),
+            )
+
+        candidates = lesson_manager.list_targeted_wrong_question_practice_candidates(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            mode="topic",
+            target="几何",
+            limit=10,
+            reference_date="2026-05-20",
+        )
+
+        self.assertEqual(candidates, [])
+
+    def test_old_archived_recurring_record_can_be_included(self):
+        recurring = self._record(
+            topic_category="几何",
+            primary_error_type="细节问题",
+            reason="符号漏写，步骤遗漏",
+            question_text="如图，证明角相等。",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET created_at=?, archive_status='archived', archived_at=?
+                WHERE id=?
+                """,
+                ("2026-03-01 10:00:00", "2026-04-10 10:00:00", recurring["id"]),
+            )
+
+        candidates = lesson_manager.list_targeted_wrong_question_practice_candidates(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            mode="topic",
+            target="几何",
+            limit=10,
+            reference_date="2026-05-20",
+        )
+
+        self.assertEqual([item["id"] for item in candidates], [recurring["id"]])
+
+    def test_reason_mode_does_not_match_target_from_question_text_only(self):
+        self._record(
+            topic_category="计算",
+            primary_error_type="审题问题",
+            reason="题目问法看漏",
+            question_text="解方程时需要去分母。",
+        )
+
+        candidates = lesson_manager.list_targeted_wrong_question_practice_candidates(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            mode="reason",
+            target="去分母",
+            limit=10,
+            reference_date="2026-05-20",
+        )
+
+        self.assertEqual(candidates, [])
+
+    def test_future_dated_record_is_excluded_by_reference_date(self):
+        future = self._record(
+            topic_category="几何",
+            primary_error_type="方法问题",
+            reason="辅助线入口没找准",
+            question_text="如图，证明角相等。",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                ("2026-06-01 10:00:00", future["id"]),
+            )
+
+        candidates = lesson_manager.list_targeted_wrong_question_practice_candidates(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            mode="topic",
+            target="几何",
+            limit=10,
+            reference_date="2026-05-20",
+        )
+
+        self.assertEqual(candidates, [])
+
     def test_schedule_places_real_questions_before_variants_across_seven_days(self):
         items = [
             {"practice_item_id": "real-1", "item_type": "real"},
@@ -354,3 +457,20 @@ class WrongQuestionPracticePackCandidateTestCase(unittest.TestCase):
             for item in day["items"]
         ]
         self.assertEqual(scheduled_ids, ["real-1", "real-2", "variant-1", "variant-2", "variant-3"])
+
+    def test_schedule_preserves_real_variant_input_adjacency(self):
+        items = [
+            {"practice_item_id": "real-1", "item_type": "real"},
+            {"practice_item_id": "variant-1", "item_type": "variant"},
+            {"practice_item_id": "real-2", "item_type": "real"},
+            {"practice_item_id": "variant-2", "item_type": "variant"},
+        ]
+
+        schedule = lesson_manager.build_wrong_question_practice_pack_schedule(items, start_date="2026-05-20")
+
+        scheduled_ids = [
+            item["practice_item_id"]
+            for day in schedule
+            for item in day["items"]
+        ]
+        self.assertEqual(scheduled_ids, ["real-1", "variant-1", "real-2", "variant-2"])
