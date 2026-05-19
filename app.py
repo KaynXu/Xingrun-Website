@@ -969,7 +969,7 @@ def _build_wrong_question_practice_pack_zip(job: dict) -> dict:
 
                 error_message = str(student.get("generation_error") or "").strip()
                 if status == "ready":
-                    error_message = error_message or "PDF 文件缺失"
+                    error_message = "PDF 文件缺失"
                 else:
                     error_message = error_message or "未生成"
                 notes.append(f"{student_name}：{error_message}")

@@ -869,6 +869,7 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
             status="ready",
             requested_question_count=5,
             pdf_path=str(self.base / "missing.pdf"),
+            generation_error="匹配题量不足，已按可用题生成",
         )
 
         result = self.app._build_wrong_question_practice_pack_zip(
