@@ -1161,7 +1161,7 @@ const consultationFilterGroups: Array<{
     title: '已结束',
     items: [
       { key: 'ended-success', label: '咨询成功' },
-      { key: 'ended-unsuccessful', label: '试听失败/中途结束' },
+      { key: 'ended-unsuccessful', label: '咨询失败' },
     ],
   },
 ];
