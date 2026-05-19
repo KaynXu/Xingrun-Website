@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-17
+最后更新：2026-05-19
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-19 已确认“定向一周错题练习包”新设计方向并写入设计稿 `docs/superpowers/specs/2026-05-19-targeted-weekly-practice-pack-design.md`：把现有“批量生成未生成学生练习”和“下载本周练习合集”合并为 `生成并下载一周练习包`；生成时由老师选择 `按专题/知识点` 或 `按错因`、具体方向和 `轻量/标准/强化` 题量档位；系统不再只看本周错题，而是按目标方向从历史有效错题中选题，真实错题优先，不足时 AI 生成同错因变式题补足，不跨方向补题；每个学生生成一份排好未来 7 天任务的 PDF，最后附答案与关键步骤页，整班下载 zip；体验采用混合式异步生成，快速完成则自动下载，未完成则保留任务状态和稍后下载。
 - 2026-05-19 已把“163320 版更好”的复习计划生成特征接入网页生成链路：`ai_processor.py` 的复习计划 prompt 新增同一节课多段材料合并、6 列教研提取（方法主线/题型入口/操作步骤/易错提醒/典型例题/老师原话）和“看到什么条件→先做什么→再做什么→易错点是什么”的动作链要求；`review_plan_templates/single_lesson_pdf.py` 现在保留更密的方法地图，支持 17 项全课主题、12 条课堂原话、7 个填空、2 个选择题、`knowledge_sections` 和课堂最终提醒透传；网页 `frontend/src/App.tsx` 的复习文档生成表单新增“同一节课补充材料（选填）”，文本和文件模式都会随 `same_lesson_materials` 提交，`app.py` 会把主材料和补充材料合并进同一个 pending lesson summary。同步补了回归测试，并把旧的同步 API 模板用例对齐到当前异步生成链路。proof `tmp/proof_review_plan_163320_quality_flow.sh` 已执行后删除：`py_compile` 通过；后端相关 unittest 35 条通过；前端 workspace navigation source test 29 条通过；`frontend npm run build` 通过（保留既有 chunk size / dynamic import 警告）；`git diff --check` 通过。
 - 2026-05-17 已修复复习计划 PDF 里“选择题”模块在页尾出现空框的问题：`review_plan_templates/generate_review_pdfs.py` 现在会在选择题盒子前做最小剩余空间检查，空间不足时整体换到下一页页首。已重新导出合并版 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260517-175019.pdf`（PDF 输出目录按 `.gitignore` 不入库）。proof 已通过：课程包和生成脚本可 `py_compile`；PDF 14 页，5 个“选择题”标题分别在第 3/5/7/9/11 页页首且同页包含题目正文；关键文本无异常空字符；PyMuPDF 渲染抽查第 1/3/5/14 页没有空白页。
 - 2026-05-17 已按用户确认“新录音 5”和“万象三路 9”是同一节课，把两段智能纪要合并进同一份立体几何复习计划：`review_plan_templates/lesson_pack_solid_geometry_folding_xinluyin5_20260517.py` 主题更新为“立体几何平面化、空间向量、翻折与距离计算”，新增线面角、二面角、点到平面距离、法向量、高考题条件翻译、面面夹角 60 度转线线角、逐句勾条件、例题 1 到 5 重做、耐心与计算能力训练。已导出合并版 PDF `review_plan_templates/pdf_output/review-plan-chinese-only-quote-replay-default-20260517-163320.pdf`（PDF 输出目录按 `.gitignore` 不入库）。proof 已通过：课程包和生成脚本可 `py_compile`；课程包含 5 个复习节点、17 个全课覆盖主题、12 条课堂原话；PDF 14 页，包含 5 个复习日期 `2026-05-18 / 2026-05-19 / 2026-05-24 / 2026-05-31 / 2026-06-16`，关键文本无异常空字符，并用 PyMuPDF 渲染抽查第 1/14 页没有空白页。
@@ -201,6 +202,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 如果继续实现“定向一周错题练习包”，先从设计稿 `docs/superpowers/specs/2026-05-19-targeted-weekly-practice-pack-design.md` 写 implementation plan，再按流程从最新 `develop` 拉实现分支；重点先落 `practice pack job` 数据表、目标方向历史错题检索、AI 同错因变式题生成/审稿、一周分配、学生 PDF 答案页和整班 zip。
 - 超级管理员本周错题活跃数据总结下一步建议用真实 `super_owner` 账号在网页智能错题手工 smoke：打开 `本周数据总结`，分别查看全部机构和指定机构、空数据周次和有数据周次，确认列表数量、机构名、班级/老师/学生文案符合现场使用。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
 - 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
