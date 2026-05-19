@@ -94,6 +94,62 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(days[0]["blanks"][0], ("[ ] 折射率公式->____", "n=c/v"))
         self.assertEqual(days[0]["quotes"], ["注意：易错点：别把质点振动当成随波迁移"])
 
+    def test_adapt_plan_to_review_template_preserves_method_map_density(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, extract_knowledge_sections
+
+        plan_data = {
+            "lesson_info": {
+                "topic": "立体几何",
+                "key_categories": [f"核心主题{i}" for i in range(1, 7)],
+            },
+            "full_review_topics": [f"补充主题{i}" for i in range(7, 18)],
+            "quotes": [f"课堂原话{i}" for i in range(1, 13)],
+            "final_reminder_lines": ["先标数据", "再求法向量"],
+            "days": [
+                {
+                    "day": 1,
+                    "label": "第1天",
+                    "steps": [
+                        {
+                            "title": "复习目标",
+                            "items": [
+                                {"type": "fill", "text": f"方法链填空{i}____", "answer": f"答案{i}"}
+                                for i in range(1, 8)
+                            ],
+                        }
+                    ],
+                    "choices": [
+                        {"question": "选择题1？", "options": ["A. 对", "B. 错", "C. 空", "D. 空"], "answer": "A"},
+                        {"question": "选择题2？", "options": ["A. 错", "B. 对", "C. 空", "D. 空"], "answer": "B"},
+                    ],
+                    "self_test_phrase": "先建系再求法向量",
+                }
+            ],
+            "knowledge_sections": {
+                "第1天": [
+                    {
+                        "title": "线面角动作链",
+                        "mixed": {
+                            "blanks": [("先求____向量", "法")],
+                            "choices": [{"question": "先做什么？", "options": ["A. 建系", "B. 猜"], "answer": "A"}],
+                        },
+                        "oral": {"prompts": ["为什么求法向量？"], "keypoints": ["把平面转成可计算对象"]},
+                    }
+                ]
+            },
+        }
+
+        lesson, days, reminders = adapt_plan_to_review_template(plan_data)
+        knowledge_sections = extract_knowledge_sections(plan_data)
+
+        self.assertEqual(len(lesson["full_review_topics"]), 17)
+        self.assertEqual(lesson["quotes"], [f"课堂原话{i}" for i in range(1, 13)])
+        self.assertEqual(reminders, ["先标数据", "再求法向量"])
+        self.assertEqual(len(days[0]["blanks"]), 7)
+        self.assertEqual(len(days[0]["choices"]), 2)
+        self.assertIn("第1天", knowledge_sections)
+        self.assertEqual(knowledge_sections["第1天"][0]["title"], "线面角动作链")
+
     def test_quote_replay_text_uses_day_quotes_instead_of_static_copy(self):
         from review_plan_templates.generate_review_pdfs import build_labels, build_quote_replay_text
 
@@ -127,9 +183,8 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         token = self.owner_token()
 
         with patch("app.has_api_key", return_value=True), \
-             patch("ai_processor.parse_and_generate_plan", return_value=copy.deepcopy(DEMO_PLAN)), \
-             patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf") as generate_pdf:
-            generate_pdf.return_value = str(self.base / "api-review-plan.pdf")
+             patch("app.ensure_feature_credits_available"), \
+             patch("app._start_review_plan_generation_thread") as start_thread:
 
             response = self.client.post(
                 "/api/review-plans",
@@ -144,7 +199,22 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 202)
+        lesson_id = response.get_json()["id"]
+        start_thread.assert_called_once()
+
+        with patch("app._run_ai_feature_with_charge", return_value=copy.deepcopy(DEMO_PLAN)), \
+             patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf") as generate_pdf:
+            generate_pdf.return_value = str(self.base / "api-review-plan.pdf")
+            app_module._run_review_plan_generation_job(
+                lesson_id=lesson_id,
+                user={"id": 1, "organization_id": 1},
+                chat_provider="deepseek",
+                chat_model="deepseek-chat",
+                request_key=start_thread.call_args.kwargs["request_key"],
+                request_id=start_thread.call_args.kwargs["request_id"],
+            )
+
         generate_pdf.assert_called_once()
 
     def test_cmd_add_uses_review_template_generator(self):
