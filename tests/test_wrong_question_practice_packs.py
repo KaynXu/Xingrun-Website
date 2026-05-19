@@ -1015,7 +1015,7 @@ class WrongQuestionPracticePackApiTestCase(unittest.TestCase):
 
         detail = self.client.get(f"/api/wrong-question-practice-packs/{job['id']}", headers=headers)
         self.assertEqual(detail.status_code, 200)
-        detail_payload = detail.get_json()
+        detail_payload = detail.get_json()["job"]
         self.assertEqual(
             detail_payload["download_url"],
             f"/api/wrong-question-practice-packs/{job['id']}/download",
@@ -1025,6 +1025,30 @@ class WrongQuestionPracticePackApiTestCase(unittest.TestCase):
         self.assertEqual(download.status_code, 200)
         self.assertEqual(download.data, b"zip-bytes")
         self.assertEqual(download.mimetype, "application/zip")
+        download.close()
+
+    def test_pack_detail_hides_download_url_when_zip_file_is_missing(self):
+        headers = self._login_headers()
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="topic",
+            target="计算",
+            volume="light",
+        )
+        missing_zip = self.base / "missing.zip"
+        lesson_manager.mark_wrong_question_practice_pack_job_status(
+            job["id"],
+            status="ready",
+            zip_path=str(missing_zip),
+            generation_error="",
+        )
+
+        detail = self.client.get(f"/api/wrong-question-practice-packs/{job['id']}", headers=headers)
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.get_json()["job"]["download_url"], "")
 
     def test_super_owner_can_create_pack_for_accessible_external_organization_class(self):
         headers = self._login_headers()
