@@ -2141,6 +2141,38 @@ def init_db():
             updated_at                    TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS wrong_question_practice_pack_jobs (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            created_by                INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            mode                      TEXT NOT NULL,
+            target                    TEXT NOT NULL DEFAULT '',
+            volume                    TEXT NOT NULL,
+            requested_question_count  INTEGER NOT NULL DEFAULT 0,
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            zip_path                  TEXT NOT NULL DEFAULT '',
+            generation_error          TEXT NOT NULL DEFAULT '',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_practice_pack_job_students (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id                    INTEGER NOT NULL REFERENCES wrong_question_practice_pack_jobs(id) ON DELETE CASCADE,
+            student_id                INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            student_name_snapshot     TEXT NOT NULL DEFAULT '',
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            requested_question_count  INTEGER NOT NULL DEFAULT 0,
+            real_question_count       INTEGER NOT NULL DEFAULT 0,
+            variant_question_count    INTEGER NOT NULL DEFAULT 0,
+            pdf_path                  TEXT NOT NULL DEFAULT '',
+            generation_error          TEXT NOT NULL DEFAULT '',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(job_id, student_id)
+        );
+
         CREATE TABLE IF NOT EXISTS weekly_wrong_question_followup_messages (
             id                            INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id               INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2443,6 +2475,21 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_practice_sheet_items_sheet_order
             ON wrong_question_practice_sheet_items (sheet_id, question_order, id);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_practice_pack_jobs_lookup
+            ON wrong_question_practice_pack_jobs (
+                organization_id,
+                class_id,
+                created_by,
+                mode,
+                target,
+                volume,
+                status,
+                id
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_practice_pack_students_job
+            ON wrong_question_practice_pack_job_students (job_id, student_id);
 
             CREATE INDEX IF NOT EXISTS idx_weekly_followup_messages_class_week
             ON weekly_wrong_question_followup_messages (organization_id, class_id, week_start_date);
@@ -5391,6 +5438,7 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("UPDATE class_feedback_tasks SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET generated_by=NULL WHERE generated_by=?", (target_user_id,))
+        conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE created_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (target_user_id, target_user_id))
         conn.execute("DELETE FROM wrong_question_submissions WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE teacher_user_id=?", (target_user_id,))
@@ -5746,6 +5794,7 @@ def delete_organization(org_id: int) -> None:
         if org_row["name"] == DEFAULT_ORGANIZATION_NAME:
             raise ValueError("不能删除默认机构")
         conn.execute("DELETE FROM monthly_plan_jobs WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE organization_id=?", (org_id,))
         # 1. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
         # 2. user_classes and class_students (via classes)
@@ -6780,6 +6829,75 @@ def _is_wrong_question_candidate_for_week(row: sqlite3.Row, *, week_start: date,
     return archived_date <= week_start - timedelta(days=interval_days)
 
 
+def _practice_pack_target_text(row: sqlite3.Row | dict) -> str:
+    def value(key: str) -> str:
+        if isinstance(row, sqlite3.Row):
+            return str(row[key] or "") if key in row.keys() else ""
+        return str(row.get(key) or "")
+
+    return " ".join(
+        part.strip()
+        for part in (
+            value("topic_category"),
+            value("primary_error_type"),
+            value("secondary_error_summary"),
+            value("child_raw_reason_text"),
+            value("child_reason_core_issue"),
+            value("child_reason_key_omission"),
+            value("child_reason_next_step"),
+            value("teacher_comment"),
+            value("question_text"),
+        )
+        if part.strip()
+    )
+
+
+def _practice_pack_reason_target_text(row: sqlite3.Row | dict) -> str:
+    def value(key: str) -> str:
+        if isinstance(row, sqlite3.Row):
+            return str(row[key] or "") if key in row.keys() else ""
+        return str(row.get(key) or "")
+
+    return " ".join(
+        part.strip()
+        for part in (
+            value("primary_error_type"),
+            value("secondary_error_summary"),
+            value("child_raw_reason_text"),
+            value("child_reason_core_issue"),
+            value("child_reason_key_omission"),
+            value("child_reason_next_step"),
+            value("teacher_comment"),
+        )
+        if part.strip()
+    )
+
+
+def _practice_pack_record_matches_target(row: sqlite3.Row, *, mode: str, target: str) -> bool:
+    normalized_mode = _normalize_practice_pack_mode(mode)
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return False
+    if normalized_mode == "topic":
+        topic = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+        return normalized_target in topic or topic in normalized_target or normalized_target in _practice_pack_target_text(row)
+    return normalized_target in _practice_pack_reason_target_text(row)
+
+
+def _is_wrong_question_candidate_for_reference(row: sqlite3.Row, *, reference: date, six_month_cutoff: date) -> bool:
+    created_date = _parse_local_date(str(row["created_at"] or ""))
+    if created_date is None or created_date < six_month_cutoff or created_date > reference:
+        return False
+    archive_status = str(row["archive_status"] or "active").strip() or "active"
+    if archive_status != "archived":
+        return True
+    archived_date = _parse_local_date(str(row["archived_at"] or ""))
+    if archived_date is None:
+        return False
+    interval_days = 30 if _is_recurring_wrong_question(row) else 60
+    return archived_date <= reference - timedelta(days=interval_days)
+
+
 def _weekly_followup_reason_from_category(category: str, count: int, practiced_recently: bool) -> str:
     if practiced_recently:
         return f"{category}还有{count}道可练错题；如果其它分类不足，可以继续收这一类。"
@@ -7245,6 +7363,119 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
     return payload
 
 
+PRACTICE_PACK_MODE_OPTIONS = {"topic", "reason"}
+PRACTICE_PACK_VOLUME_COUNTS = {"light": 5, "standard": 10, "intensive": 15}
+PRACTICE_PACK_JOB_STATUSES = {"pending", "running", "ready", "partial_failed", "failed"}
+PRACTICE_PACK_STUDENT_STATUSES = {"pending", "running", "ready", "skipped", "failed"}
+
+
+def _normalize_practice_pack_mode(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized not in PRACTICE_PACK_MODE_OPTIONS:
+        raise ValueError("mode must be topic or reason")
+    return normalized
+
+
+def _normalize_practice_pack_volume(volume: str) -> str:
+    normalized = str(volume or "").strip().lower()
+    if normalized not in PRACTICE_PACK_VOLUME_COUNTS:
+        raise ValueError("volume must be light, standard or intensive")
+    return normalized
+
+
+def _serialize_wrong_question_practice_pack_job_row(row: sqlite3.Row | None) -> Optional[dict]:
+    if not row:
+        return None
+    payload = dict(row)
+    payload["requested_question_count"] = int(payload.get("requested_question_count") or 0)
+    return payload
+
+
+def _serialize_wrong_question_practice_pack_student_row(row: sqlite3.Row | None) -> Optional[dict]:
+    if not row:
+        return None
+    payload = dict(row)
+    for key in ("requested_question_count", "real_question_count", "variant_question_count"):
+        payload[key] = int(payload.get(key) or 0)
+    return payload
+
+
+def list_targeted_wrong_question_practice_candidates(
+    *,
+    organization_id: int,
+    class_id: int,
+    student_id: int,
+    mode: str,
+    target: str,
+    limit: int,
+    reference_date: str = "",
+) -> list[dict]:
+    normalized_mode = _normalize_practice_pack_mode(mode)
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return []
+    reference = _parse_local_date(reference_date) or date.today()
+    six_month_cutoff = reference - timedelta(days=183)
+    six_month_cutoff_bound = f"{six_month_cutoff.isoformat()} 00:00:00"
+    reference_end_bound = f"{reference.isoformat()} 23:59:59"
+    normalized_limit = max(1, int(limit or 1))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.organization_id=?
+              AND wqs.class_id=?
+              AND wqs.student_id=?
+              AND wqs.source='wechat_mp'
+              AND wqs.recognition_status='recognized'
+              AND wqs.created_at >= ?
+              AND wqs.created_at <= ?
+            ORDER BY
+              CASE WHEN wqs.archive_status='active' THEN 0 ELSE 1 END ASC,
+              wqs.created_at DESC,
+              wqs.id DESC
+            """,
+            (
+                int(organization_id or 0),
+                int(class_id or 0),
+                int(student_id or 0),
+                six_month_cutoff_bound,
+                reference_end_bound,
+            ),
+        ).fetchall()
+    matched = [
+        dict(row)
+        for row in rows
+        if _is_wrong_question_candidate_for_reference(row, reference=reference, six_month_cutoff=six_month_cutoff)
+        and _practice_pack_record_matches_target(row, mode=normalized_mode, target=normalized_target)
+    ]
+    return matched[:normalized_limit]
+
+
+def build_wrong_question_practice_pack_schedule(items: list[dict], *, start_date: str) -> list[dict]:
+    start = _parse_local_date(start_date) or date.today()
+    ordered_items = list(items or [])
+    days = [
+        {
+            "day_index": index + 1,
+            "date": (start + timedelta(days=index)).isoformat(),
+            "items": [],
+        }
+        for index in range(7)
+    ]
+    for index, item in enumerate(ordered_items):
+        days[index % 7]["items"].append(item)
+    return days
+
+
 def _fetch_wrong_question_practice_sheet_row_by_id(
     conn: sqlite3.Connection,
     sheet_id: int,
@@ -7490,6 +7721,243 @@ def mark_wrong_question_practice_sheet_failed(sheet_id: int, error_message: str)
             (str(error_message or "").strip(), sheet_id),
         )
     return get_wrong_question_practice_sheet(sheet_id)
+
+
+def create_wrong_question_practice_pack_job(
+    *,
+    organization_id: int,
+    class_id: int,
+    created_by: int,
+    mode: str,
+    target: str,
+    volume: str,
+) -> dict:
+    normalized_mode = _normalize_practice_pack_mode(mode)
+    normalized_volume = _normalize_practice_pack_volume(volume)
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        raise ValueError("target is required")
+    requested_question_count = PRACTICE_PACK_VOLUME_COUNTS[normalized_volume]
+    normalized_organization_id = int(organization_id or 0)
+    normalized_class_id = int(class_id or 0)
+    normalized_created_by = int(created_by or 0)
+    with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT organization_id FROM classes WHERE id=?",
+            (normalized_class_id,),
+        ).fetchone()
+        creator_row = conn.execute(
+            "SELECT organization_id, role FROM users WHERE id=?",
+            (normalized_created_by,),
+        ).fetchone()
+        if not class_row or not creator_row:
+            raise ValueError("invalid practice pack scope")
+        if int(class_row["organization_id"] or 0) != normalized_organization_id:
+            raise ValueError("invalid practice pack scope")
+        if (
+            int(creator_row["organization_id"] or 0) != normalized_organization_id
+            and str(creator_row["role"] or "") != SUPER_OWNER_ROLE
+        ):
+            raise ValueError("invalid practice pack scope")
+        cursor = conn.execute(
+            """
+            INSERT INTO wrong_question_practice_pack_jobs (
+                organization_id, class_id, created_by, mode, target, volume,
+                requested_question_count, status, zip_path, generation_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+            """,
+            (
+                normalized_organization_id,
+                normalized_class_id,
+                normalized_created_by,
+                normalized_mode,
+                normalized_target,
+                normalized_volume,
+                requested_question_count,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM wrong_question_practice_pack_jobs WHERE id=?",
+            (int(cursor.lastrowid),),
+        ).fetchone()
+    serialized = _serialize_wrong_question_practice_pack_job_row(row)
+    return serialized if serialized is not None else {}
+
+
+def get_wrong_question_practice_pack_job(job_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM wrong_question_practice_pack_jobs WHERE id=?",
+            (int(job_id or 0),),
+        ).fetchone()
+        if not row:
+            return None
+        student_rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_pack_job_students
+            WHERE job_id=?
+            ORDER BY student_name_snapshot ASC, student_id ASC
+            """,
+            (int(job_id or 0),),
+        ).fetchall()
+    job = _serialize_wrong_question_practice_pack_job_row(row)
+    if job is None:
+        return None
+    job["students"] = [
+        item
+        for item in (_serialize_wrong_question_practice_pack_student_row(student_row) for student_row in student_rows)
+        if item is not None
+    ]
+    return job
+
+
+def find_active_wrong_question_practice_pack_job(
+    *,
+    organization_id: int,
+    class_id: int,
+    created_by: int,
+    mode: str,
+    target: str,
+    volume: str,
+) -> Optional[dict]:
+    normalized_mode = _normalize_practice_pack_mode(mode)
+    normalized_volume = _normalize_practice_pack_volume(volume)
+    normalized_target = str(target or "").strip()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_pack_jobs
+            WHERE organization_id=?
+              AND class_id=?
+              AND created_by=?
+              AND mode=?
+              AND target=?
+              AND volume=?
+              AND status IN ('pending', 'running', 'ready', 'partial_failed')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                int(organization_id or 0),
+                int(class_id or 0),
+                int(created_by or 0),
+                normalized_mode,
+                normalized_target,
+                normalized_volume,
+            ),
+        ).fetchone()
+    if not row:
+        return None
+    return get_wrong_question_practice_pack_job(int(row["id"]))
+
+
+def mark_wrong_question_practice_pack_job_status(
+    job_id: int,
+    *,
+    status: str,
+    zip_path: str = "",
+    generation_error: str = "",
+) -> Optional[dict]:
+    normalized_status = str(status or "").strip()
+    if normalized_status not in PRACTICE_PACK_JOB_STATUSES:
+        raise ValueError("invalid practice pack job status")
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE wrong_question_practice_pack_jobs
+            SET status=?, zip_path=?, generation_error=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                normalized_status,
+                str(zip_path or "").strip(),
+                str(generation_error or "").strip(),
+                int(job_id or 0),
+            ),
+        )
+    return get_wrong_question_practice_pack_job(job_id)
+
+
+def upsert_wrong_question_practice_pack_job_student(
+    *,
+    job_id: int,
+    student_id: int,
+    student_name_snapshot: str,
+    status: str,
+    requested_question_count: int,
+    real_question_count: int = 0,
+    variant_question_count: int = 0,
+    pdf_path: str = "",
+    generation_error: str = "",
+) -> dict:
+    normalized_status = str(status or "").strip()
+    if normalized_status not in PRACTICE_PACK_STUDENT_STATUSES:
+        raise ValueError("invalid practice pack student status")
+    normalized_job_id = int(job_id or 0)
+    normalized_student_id = int(student_id or 0)
+    with get_conn() as conn:
+        job_row = conn.execute(
+            """
+            SELECT organization_id, class_id
+            FROM wrong_question_practice_pack_jobs
+            WHERE id=?
+            """,
+            (normalized_job_id,),
+        ).fetchone()
+        student_row = conn.execute(
+            """
+            SELECT s.organization_id
+            FROM students s
+            JOIN class_students cs ON cs.student_id=s.id
+            WHERE s.id=? AND cs.class_id=?
+            """,
+            (normalized_student_id, int(job_row["class_id"] or 0) if job_row else 0),
+        ).fetchone()
+        if not job_row or not student_row:
+            raise ValueError("invalid practice pack student scope")
+        if int(student_row["organization_id"] or 0) != int(job_row["organization_id"] or 0):
+            raise ValueError("invalid practice pack student scope")
+        conn.execute(
+            """
+            INSERT INTO wrong_question_practice_pack_job_students (
+                job_id, student_id, student_name_snapshot, status, requested_question_count,
+                real_question_count, variant_question_count, pdf_path, generation_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id, student_id)
+            DO UPDATE SET
+                student_name_snapshot=excluded.student_name_snapshot,
+                status=excluded.status,
+                requested_question_count=excluded.requested_question_count,
+                real_question_count=excluded.real_question_count,
+                variant_question_count=excluded.variant_question_count,
+                pdf_path=excluded.pdf_path,
+                generation_error=excluded.generation_error,
+                updated_at=datetime('now','localtime')
+            """,
+            (
+                normalized_job_id,
+                normalized_student_id,
+                str(student_name_snapshot or "").strip(),
+                normalized_status,
+                int(requested_question_count or 0),
+                int(real_question_count or 0),
+                int(variant_question_count or 0),
+                str(pdf_path or "").strip(),
+                str(generation_error or "").strip(),
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_pack_job_students
+            WHERE job_id=? AND student_id=?
+            """,
+            (normalized_job_id, normalized_student_id),
+        ).fetchone()
+    serialized = _serialize_wrong_question_practice_pack_student_row(row)
+    return serialized if serialized is not None else {}
 
 
 def _create_member_from_invite_row(

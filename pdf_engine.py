@@ -637,6 +637,16 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
     browser_items: list[dict] = []
 
     for item in items:
+        practice_item_id = str(
+            item.get("practice_item_id") or item.get("wrong_question_record_id") or ""
+        ).strip()
+        key_steps = []
+        if isinstance(item.get("key_steps"), list):
+            key_steps = [
+                str(step).strip()
+                for step in item.get("key_steps", [])
+                if str(step).strip()
+            ]
         normalized_item = {
             "question_order": int(item.get("question_order") or 0),
             "wrong_question_record_id": str(item.get("wrong_question_record_id") or ""),
@@ -646,6 +656,13 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
             "reason_blank_prompt": str(item.get("reason_blank_prompt") or ""),
             "improvement_summary_prompt": str(item.get("improvement_summary_prompt") or ""),
             "image_data_url": "",
+            "practiceItemId": practice_item_id,
+            "itemType": str(item.get("item_type") or "real").strip() or "real",
+            "trainingGoal": str(item.get("training_goal") or "").strip(),
+            "answer": str(item.get("answer") or "").strip(),
+            "keySteps": key_steps,
+            "pitfallReminder": str(item.get("pitfall_reminder") or "").strip(),
+            "scheduledDate": str(item.get("scheduled_date") or "").strip(),
         }
 
         if normalized_item["is_geometry"]:
@@ -660,6 +677,23 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
         browser_items.append(normalized_item)
 
     return browser_items
+
+
+def _build_browser_wrong_question_practice_schedule(schedule: list[dict]) -> list[dict]:
+    browser_schedule: list[dict] = []
+
+    for day in schedule:
+        if not isinstance(day, dict):
+            continue
+        browser_schedule.append(
+            {
+                "dayIndex": int(day.get("day_index") or 0),
+                "date": str(day.get("date") or "").strip(),
+                "items": _build_browser_wrong_question_practice_items(day.get("items") or []),
+            }
+        )
+
+    return browser_schedule
 
 
 def _build_browser_renderer_failure_message(*, default_message: str, result: subprocess.CompletedProcess) -> str:
@@ -754,6 +788,9 @@ def _render_wrong_question_practice_sheet_pdf_via_browser(
     title: str,
     items: list[dict],
     output_path: str,
+    schedule: list[dict] | None = None,
+    answer_items: list[dict] | None = None,
+    pack_meta: dict | None = None,
 ) -> str:
     project_root = Path(__file__).resolve().parent
     renderer_script = project_root / "frontend" / "scripts" / "renderWrongQuestionPracticeSheetPdf.mjs"
@@ -764,6 +801,14 @@ def _render_wrong_question_practice_sheet_pdf_via_browser(
         "teacherName": teacher_name,
         "title": title,
         "items": _build_browser_wrong_question_practice_items(items),
+        "schedule": _build_browser_wrong_question_practice_schedule(schedule or []),
+        "answerItems": _build_browser_wrong_question_practice_items(answer_items or items),
+        "packMeta": {
+            "mode": str((pack_meta or {}).get("mode") or "").strip(),
+            "target": str((pack_meta or {}).get("target") or "").strip(),
+            "volume": str((pack_meta or {}).get("volume") or "").strip(),
+            "generatedDate": str((pack_meta or {}).get("generated_date") or "").strip(),
+        },
     }
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as temp_file:
@@ -922,6 +967,9 @@ def generate_wrong_question_practice_sheet_pdf(
     title: str,
     items: list[dict],
     output_path: str,
+    schedule: list[dict] | None = None,
+    answer_items: list[dict] | None = None,
+    pack_meta: dict | None = None,
 ) -> str:
     return _render_wrong_question_practice_sheet_pdf_via_browser(
         student_name=student_name,
@@ -930,6 +978,9 @@ def generate_wrong_question_practice_sheet_pdf(
         title=title,
         items=items,
         output_path=output_path,
+        schedule=schedule,
+        answer_items=answer_items,
+        pack_meta=pack_meta,
     )
 
 
