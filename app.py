@@ -46,6 +46,8 @@ for _d in (DATA_DIR, PDF_DIR, UPLOAD_DIR):
 app = Flask(__name__)
 app.secret_key = "review_plan_local_2026"
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
+REVIEW_PLAN_AUDIO_MAX_BYTES = 100 * 1024 * 1024
+REVIEW_PLAN_AUDIO_MAX_LABEL = "100MB"
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:8080", "http://127.0.0.1:8080",
     "http://localhost:5173", "http://127.0.0.1:5173",
@@ -4793,9 +4795,9 @@ def api_lesson_create():
             save_path = UPLOAD_DIR / f"audio_{ts}{ext}"
             file.save(str(save_path))
             
-            if save_path.stat().st_size > 25 * 1024 * 1024:
+            if save_path.stat().st_size > REVIEW_PLAN_AUDIO_MAX_BYTES:
                 save_path.unlink(missing_ok=True)
-                return jsonify({"error": "音频文件过大（最大 25MB）"}), 400
+                return jsonify({"error": f"音频文件过大（最大 {REVIEW_PLAN_AUDIO_MAX_LABEL}）"}), 400
             audio_path = str(save_path)
             initial_record_status = "transcribing"
         elif ext in {".txt", ".md", ".text"}:
