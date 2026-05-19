@@ -106,3 +106,101 @@ class WrongQuestionPracticePackStorageTestCase(unittest.TestCase):
         self.assertEqual(updated["status"], "ready")
         self.assertEqual(updated["zip_path"], "/tmp/class.zip")
         self.assertEqual(updated["requested_question_count"], 15)
+
+    def test_delete_user_removes_created_pack_job(self):
+        request = lesson_manager.create_registration_request(
+            "pack_creator",
+            "练习包老师",
+            "password123",
+            recovery_phone="13800000001",
+        )
+        creator = lesson_manager.approve_registration_request(request["id"], self.owner["id"])
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=creator["id"],
+            mode="topic",
+            target="计算",
+            volume="light",
+        )
+
+        lesson_manager.delete_user_for_actor(self.owner, creator["id"])
+
+        self.assertIsNone(lesson_manager.get_user_by_username("pack_creator"))
+        self.assertIsNone(lesson_manager.get_wrong_question_practice_pack_job(job["id"]))
+
+    def test_delete_organization_removes_pack_job_student_rows(self):
+        request = lesson_manager.create_organization_request(
+            "错题包测试机构",
+            "pack_org_owner",
+            "练习包负责人",
+            "password123",
+            recovery_phone="13800000002",
+        )
+        other_owner, _invite = lesson_manager.approve_organization_request(request["id"], self.owner["id"])
+        other_class_id = lesson_manager.save_class(
+            "八年级 1 班",
+            subject="数学",
+            grade="八年级",
+            organization_id=other_owner["organization_id"],
+        )
+        other_student = lesson_manager.create_student_for_class(other_class_id, "李明")
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=other_owner["organization_id"],
+            class_id=other_class_id,
+            created_by=other_owner["id"],
+            mode="topic",
+            target="几何",
+            volume="light",
+        )
+        lesson_manager.upsert_wrong_question_practice_pack_job_student(
+            job_id=job["id"],
+            student_id=other_student["id"],
+            student_name_snapshot="李明",
+            status="ready",
+            requested_question_count=5,
+        )
+
+        lesson_manager.delete_organization(other_owner["organization_id"])
+
+        with lesson_manager.get_conn() as conn:
+            org_row = conn.execute(
+                "SELECT id FROM organizations WHERE id=?",
+                (other_owner["organization_id"],),
+            ).fetchone()
+        self.assertIsNone(org_row)
+
+    def test_create_pack_job_rejects_cross_organization_scope(self):
+        request = lesson_manager.create_organization_request(
+            "错题包隔离机构",
+            "pack_scope_owner",
+            "隔离负责人",
+            "password123",
+            recovery_phone="13800000003",
+        )
+        other_owner, _invite = lesson_manager.approve_organization_request(request["id"], self.owner["id"])
+        other_class_id = lesson_manager.save_class(
+            "九年级 2 班",
+            subject="数学",
+            grade="九年级",
+            organization_id=other_owner["organization_id"],
+        )
+
+        with self.assertRaises(ValueError):
+            lesson_manager.create_wrong_question_practice_pack_job(
+                organization_id=self.owner["organization_id"],
+                class_id=other_class_id,
+                created_by=self.owner["id"],
+                mode="topic",
+                target="几何",
+                volume="light",
+            )
+        with self.assertRaises(ValueError):
+            lesson_manager.create_wrong_question_practice_pack_job(
+                organization_id=other_owner["organization_id"],
+                class_id=other_class_id,
+                created_by=self.owner["id"],
+                mode="topic",
+                target="几何",
+                volume="light",
+            )

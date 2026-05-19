@@ -2142,7 +2142,7 @@ def init_db():
             id                        INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-            created_by                INTEGER NOT NULL REFERENCES users(id),
+            created_by                INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             mode                      TEXT NOT NULL,
             target                    TEXT NOT NULL DEFAULT '',
             volume                    TEXT NOT NULL,
@@ -2157,7 +2157,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS wrong_question_practice_pack_job_students (
             id                        INTEGER PRIMARY KEY AUTOINCREMENT,
             job_id                    INTEGER NOT NULL REFERENCES wrong_question_practice_pack_jobs(id) ON DELETE CASCADE,
-            student_id                INTEGER NOT NULL REFERENCES students(id),
+            student_id                INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
             student_name_snapshot     TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
             requested_question_count  INTEGER NOT NULL DEFAULT 0,
@@ -5419,6 +5419,7 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("UPDATE class_feedback_tasks SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET generated_by=NULL WHERE generated_by=?", (target_user_id,))
+        conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE created_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (target_user_id, target_user_id))
         conn.execute("DELETE FROM wrong_question_submissions WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE teacher_user_id=?", (target_user_id,))
@@ -5774,6 +5775,7 @@ def delete_organization(org_id: int) -> None:
         if org_row["name"] == DEFAULT_ORGANIZATION_NAME:
             raise ValueError("不能删除默认机构")
         conn.execute("DELETE FROM monthly_plan_jobs WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE organization_id=?", (org_id,))
         # 1. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
         # 2. user_classes and class_students (via classes)
@@ -7561,7 +7563,24 @@ def create_wrong_question_practice_pack_job(
     if not normalized_target:
         raise ValueError("target is required")
     requested_question_count = PRACTICE_PACK_VOLUME_COUNTS[normalized_volume]
+    normalized_organization_id = int(organization_id or 0)
+    normalized_class_id = int(class_id or 0)
+    normalized_created_by = int(created_by or 0)
     with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT organization_id FROM classes WHERE id=?",
+            (normalized_class_id,),
+        ).fetchone()
+        creator_row = conn.execute(
+            "SELECT organization_id FROM users WHERE id=?",
+            (normalized_created_by,),
+        ).fetchone()
+        if not class_row or not creator_row:
+            raise ValueError("invalid practice pack scope")
+        if int(class_row["organization_id"] or 0) != normalized_organization_id:
+            raise ValueError("invalid practice pack scope")
+        if int(creator_row["organization_id"] or 0) != normalized_organization_id:
+            raise ValueError("invalid practice pack scope")
         cursor = conn.execute(
             """
             INSERT INTO wrong_question_practice_pack_jobs (
@@ -7570,9 +7589,9 @@ def create_wrong_question_practice_pack_job(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
             """,
             (
-                int(organization_id or 0),
-                int(class_id or 0),
-                int(created_by or 0),
+                normalized_organization_id,
+                normalized_class_id,
+                normalized_created_by,
                 normalized_mode,
                 normalized_target,
                 normalized_volume,
