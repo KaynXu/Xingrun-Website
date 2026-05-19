@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   getReviewLessonTaskMessage,
+  getReviewLessonTaskProgress,
   getReviewLessonTaskState,
   hasReviewLessonOutput,
   isReviewLessonPending,
@@ -73,12 +74,56 @@ test('review lesson task state keeps pending polling and failed error copy disti
   assert.ok(pendingLesson);
   assert.equal(getReviewLessonTaskState(pendingLesson), 'pending');
   assert.equal(isReviewLessonPending(pendingLesson), true);
-  assert.equal(getReviewLessonTaskMessage(pendingLesson), '可离开页面，完成后会出现在列表中');
+  assert.equal(getReviewLessonTaskMessage(pendingLesson), '正在生成复习计划，可离开页面');
 
   assert.ok(failedLesson);
   assert.equal(getReviewLessonTaskState(failedLesson), 'failed');
   assert.equal(isReviewLessonPending(failedLesson), false);
   assert.equal(getReviewLessonTaskMessage(failedLesson), 'AI 生成失败，请稍后重试');
+});
+
+test('review lesson task progress distinguishes audio transcription from plan generation', () => {
+  const transcribingLesson = normalizeReviewLessonsResponse([
+    {
+      id: 17,
+      date: '2026-05-02',
+      subject: '数学',
+      grade: '七年级',
+      topic: '整式',
+      summary: '',
+      weak_points: '',
+      pdf_path: '',
+      class_id: 3,
+      created_at: '2026-05-02T12:00:00',
+      record_status: 'transcribing',
+      generation_error: '',
+    },
+  ])[0];
+  const generatingLesson = normalizeReviewLessonsResponse([
+    {
+      id: 18,
+      date: '2026-05-02',
+      subject: '数学',
+      grade: '七年级',
+      topic: '整式',
+      summary: '课堂摘要',
+      weak_points: '',
+      pdf_path: '',
+      class_id: 3,
+      created_at: '2026-05-02T12:00:00',
+      record_status: 'generating',
+      generation_error: '',
+    },
+  ])[0];
+
+  assert.ok(transcribingLesson);
+  assert.equal(getReviewLessonTaskState(transcribingLesson), 'pending');
+  assert.equal(getReviewLessonTaskMessage(transcribingLesson), '录音已上传，正在转写');
+  assert.equal(getReviewLessonTaskProgress(transcribingLesson), 45);
+
+  assert.ok(generatingLesson);
+  assert.equal(getReviewLessonTaskMessage(generatingLesson), '转写完成，正在生成复习计划');
+  assert.equal(getReviewLessonTaskProgress(generatingLesson), 78);
 });
 
 test('review lesson task state refuses completed output until a PDF path is present', () => {

@@ -73,6 +73,7 @@ import {
 } from './classFeedbackGeneration';
 import {
   getReviewLessonTaskMessage,
+  getReviewLessonTaskProgress,
   getReviewLessonTaskState,
   hasReviewLessonOutput,
   isReviewLessonPending,
@@ -740,6 +741,47 @@ export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOpti
     throw new Error((err as { error?: string }).error || res.statusText);
   }
   return res.json() as Promise<T>;
+}
+
+function apiUploadFormWithProgress<T = unknown>(
+  path: string,
+  body: FormData,
+  onProgress: (progress: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    const token = getToken();
+    if (token) {
+      xhr.setRequestHeader('X-Auth-Token', token);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) {
+        return;
+      }
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        removeLocalStorageItem('xr_token');
+        window.location.reload();
+      }
+      let payload: T & { error?: string };
+      try {
+        payload = JSON.parse(xhr.responseText || '{}') as T & { error?: string };
+      } catch {
+        payload = { error: xhr.statusText } as T & { error?: string };
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload.error || xhr.statusText));
+        return;
+      }
+      onProgress(100);
+      resolve(payload);
+    };
+    xhr.onerror = () => reject(new Error('上传失败，请重试'));
+    xhr.send(body);
+  });
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -1794,6 +1836,7 @@ const LessonInput = ({
   const [inputType, setInputType] = useState<'text' | 'file'>('text');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [classesLoading, setClassesLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1892,6 +1935,7 @@ const LessonInput = ({
     }
 
     setIsLoading(true);
+    setUploadProgress(0);
     try {
       if (inputType === 'text') {
         await apiFetch<{ id: number }>('/api/review-plans', {
@@ -1916,7 +1960,7 @@ const LessonInput = ({
         formData.append('weak_points', weakPoints);
         formData.append('same_lesson_materials', sameLessonMaterials);
         if (file) formData.append('upload_file', file);
-        await apiFetch<{ id: number }>('/api/review-plans', { method: 'POST', body: formData });
+        await apiUploadFormWithProgress<{ id: number }>('/api/review-plans', formData, setUploadProgress);
       }
       onSuccess();
     } catch (e: unknown) {
@@ -1937,7 +1981,20 @@ const LessonInput = ({
             exit={{ opacity: 0 }}
             className={`${workspaceCardClass} flex min-h-[60vh] items-center justify-center p-8`}
           >
-            <WorkspaceLoading label="正在生成复习资料..." />
+            <div className="w-full max-w-sm space-y-4">
+              <WorkspaceLoading label={inputType === 'file' ? '正在上传课堂文件...' : '正在生成复习资料...'} />
+              {inputType === 'file' && (
+                <div className="space-y-2">
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-sky-500 transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-center text-xs text-slate-500 dark:text-slate-400">{uploadProgress}%</p>
+                </div>
+              )}
+            </div>
           </motion.div>
         ) : (
           <motion.div
@@ -2175,7 +2232,10 @@ const ReviewDocumentHistory = ({
                 {(() => {
                   const taskState = getReviewLessonTaskState(lesson);
                   const taskMessage = getReviewLessonTaskMessage(lesson);
-                  const statusLabel = taskState === 'pending'
+                  const taskProgress = getReviewLessonTaskProgress(lesson);
+                  const statusLabel = lesson.record_status === 'transcribing'
+                    ? '转写中'
+                    : taskState === 'pending'
                     ? '生成中'
                     : taskState === 'failed'
                       ? '生成失败'
@@ -2232,8 +2292,14 @@ const ReviewDocumentHistory = ({
                       </dl>
 
                       {taskState === 'pending' && (
-                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-                          {taskMessage || '可离开页面，完成后会出现在列表中'}
+                        <div className="mt-4 space-y-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                          <div>{taskMessage || '正在生成复习计划，可离开页面'}</div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-amber-100 dark:bg-white/10">
+                            <div
+                              className="h-full rounded-full bg-amber-500 transition-all"
+                              style={{ width: `${taskProgress}%` }}
+                            />
+                          </div>
                         </div>
                       )}
                       {taskState === 'failed' && (

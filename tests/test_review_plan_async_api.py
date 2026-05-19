@@ -1,4 +1,5 @@
 import gc
+import io
 import sys
 import tempfile
 import unittest
@@ -96,6 +97,49 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertNotIn("topic", thread_kwargs)
         self.assertNotIn("weak_points", thread_kwargs)
         self.assertNotIn("raw_text", thread_kwargs)
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_api_key", return_value=True)
+    @patch("ai_processor.transcribe_audio", side_effect=AssertionError("audio transcription must run in worker"))
+    def test_post_audio_review_plan_returns_202_before_transcription(
+        self,
+        mock_transcribe_audio,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            data={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "weak_points": "斜率判断",
+                "input_type": "audio",
+                "upload_file": (io.BytesIO(b"fake audio bytes"), "lesson.m4a"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "transcribing")
+
+        lesson = lesson_manager.get_lesson(payload["id"])
+        self.assertIsNotNone(lesson)
+        self.assertEqual(lesson["record_status"], "transcribing")
+        self.assertEqual(lesson["summary"], "")
+
+        mock_transcribe_audio.assert_not_called()
+        mock_start_thread.assert_called_once()
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["lesson_id"], payload["id"])
+        self.assertIn("audio_path", thread_kwargs)
+        self.assertIn("audio_request_key", thread_kwargs)
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")

@@ -22,11 +22,13 @@ test('review history source normalizes malformed task polling responses', () => 
 
 test('review history source renders pending and failed status copy', () => {
   assert.match(appSource, /const taskState = getReviewLessonTaskState\(lesson\);/);
+  assert.match(appSource, /lesson\.record_status === 'transcribing'\s*\?\s*'转写中'/);
   assert.match(appSource, /taskState === 'pending'\s*\?\s*'生成中'/);
   assert.match(appSource, /taskState === 'failed'/);
   assert.match(appSource, /'生成失败'/);
   assert.match(appSource, /getReviewLessonTaskMessage\(lesson\)/);
-  assert.match(appSource, /可离开页面，完成后会出现在列表中/);
+  assert.match(appSource, /正在生成复习计划，可离开页面/);
+  assert.match(appSource, /getReviewLessonTaskProgress\(lesson\)/);
 });
 
 test('review history source hides PDF actions until a completed lesson has output', () => {

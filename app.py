@@ -153,6 +153,7 @@ from lesson_manager import (
     save_class,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
+    mark_lesson_transcription_succeeded,
     mark_wrong_question_practice_sheet_failed,
     mark_wrong_question_practice_sheet_succeeded,
     create_monthly_plan_job,
@@ -596,13 +597,70 @@ def _run_review_plan_generation_job(
     chat_model: str,
     request_key: str | None = None,
     request_id: str | None = None,
+    audio_path: str = "",
+    audio_request_key: str | None = None,
+    same_lesson_materials: list[str] | None = None,
 ) -> None:
     try:
         lesson = get_lesson(lesson_id)
         if not lesson:
             logger.warning("Review plan generation skipped: lesson %s not found", lesson_id)
             return
-        if lesson.get("record_status") != "pending":
+        record_status = str(lesson.get("record_status") or "")
+        if record_status == "transcribing":
+            audio_file_path = Path(audio_path) if audio_path else None
+            if not audio_file_path:
+                mark_lesson_generation_failed(lesson_id, "音频转录失败，请重新上传")
+                return
+            try:
+                from ai_processor import transcribe_audio
+                transcription = _run_ai_feature_with_charge(
+                    user=user,
+                    feature_key="audio_transcription",
+                    source_record_type="lesson_upload",
+                    source_record_id=f"upload:{lesson_id}",
+                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(audio_file_path)),
+                    provider="local",
+                    model="faster-whisper-base",
+                    request_key=audio_request_key or request_key,
+                )
+                raw_transcription = str(transcription or "").strip()
+                if not raw_transcription:
+                    mark_lesson_generation_failed(lesson_id, "音频转录失败，请稍后重试")
+                    return
+                merged_summary = _merge_review_plan_materials(raw_transcription, same_lesson_materials or [])
+                mark_lesson_transcription_succeeded(lesson_id, summary=merged_summary)
+                lesson = get_lesson(lesson_id)
+                if not lesson:
+                    logger.warning("Review plan generation skipped after transcription: lesson %s not found", lesson_id)
+                    return
+                record_status = str(lesson.get("record_status") or "")
+            except DuplicateAiRequestError as exc:
+                logger.exception("Review plan audio transcription request rejected for lesson %s", lesson_id)
+                try:
+                    mark_lesson_generation_failed(lesson_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark lesson %s as failed after duplicate transcription request", lesson_id)
+                return
+            except CreditBalanceError as exc:
+                logger.exception("Review plan audio transcription credit preflight failed for lesson %s", lesson_id)
+                try:
+                    mark_lesson_generation_failed(lesson_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark lesson %s as failed after transcription credit error", lesson_id)
+                return
+            except Exception:
+                logger.exception("Review plan audio transcription failed for lesson %s", lesson_id)
+                try:
+                    mark_lesson_generation_failed(lesson_id, "音频转录失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark lesson %s as failed after transcription error", lesson_id)
+                return
+            finally:
+                if audio_file_path:
+                    audio_file_path.unlink(missing_ok=True)
+
+        if record_status not in {"pending", "generating"}:
             logger.info(
                 "Review plan generation skipped for lesson %s with status %s",
                 lesson_id,
@@ -4257,6 +4315,9 @@ def api_lesson_create():
     
     input_type = data.get("input_type", "text")
     raw_text = ""
+    audio_path = ""
+    audio_request_key = None
+    initial_record_status = "pending"
     chat_provider = _default_ai_provider_name()
     chat_model = _default_chat_model_name()
     
@@ -4271,43 +4332,23 @@ def api_lesson_create():
         
         ext = Path(file.filename).suffix.lower()
         if ext in {".mp3", ".m4a", ".mp4", ".wav", ".ogg", ".webm", ".flac"}:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            audio_request_key = _current_audio_upload_request_key()
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             save_path = UPLOAD_DIR / f"audio_{ts}{ext}"
             file.save(str(save_path))
             
             if save_path.stat().st_size > 25 * 1024 * 1024:
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": "音频文件过大（最大 25MB）"}), 400
-                
-            try:
-                from ai_processor import transcribe_audio
-                raw_text = _run_ai_feature_with_charge(
-                    user=user,
-                    feature_key="audio_transcription",
-                    source_record_type="lesson_upload",
-                    source_record_id=f"upload:{_request_payload_fingerprint(include_file_content=True)}",
-                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
-                    provider="local",
-                    model="faster-whisper-base",
-                    request_key=_current_audio_upload_request_key(),
-                )
-            except DuplicateAiRequestError as exc:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": str(exc)}), 409
-            except CreditBalanceError as exc:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": str(exc)}), 402
-            except Exception as e:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": f"音频转录失败：{e}"}), 500
-            save_path.unlink(missing_ok=True)
+            audio_path = str(save_path)
+            initial_record_status = "transcribing"
         elif ext in {".txt", ".md", ".text"}:
             raw_text = file.read().decode("utf-8", errors="replace")
         else:
             return jsonify({"error": f"不支持的文件格式 {ext}"}), 400
 
     raw_text = _merge_review_plan_materials(raw_text, same_lesson_materials)
-    if not raw_text:
+    if not raw_text and not audio_path:
         return jsonify({"error": "提取的总结内容为空"}), 400
 
     request_key = _current_ai_request_key()
@@ -4347,6 +4388,7 @@ def api_lesson_create():
             summary=raw_text,
             weak_points=weak_points,
             class_id=class_id,
+            record_status=initial_record_status,
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
@@ -4358,14 +4400,19 @@ def api_lesson_create():
             chat_model=chat_model,
             request_key=request_key,
             request_id=request_id,
+            audio_path=audio_path,
+            audio_request_key=audio_request_key,
+            same_lesson_materials=same_lesson_materials,
         )
     except Exception:
         if lesson_id:
             db_delete_lesson(lesson_id)
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
         if request_identity_claimed:
             _release_ai_request_identity(request_id)
         raise
-    return jsonify({"id": lesson_id, "success": True, "status": "pending"}), 202
+    return jsonify({"id": lesson_id, "success": True, "status": initial_record_status}), 202
 
 
 @app.route("/api/class-feedback/labels", methods=["GET"])

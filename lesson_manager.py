@@ -3116,6 +3116,7 @@ def create_pending_lesson(
     *,
     plan: Optional[dict] = None,
     pdf_path: str = "",
+    record_status: str = "pending",
 ) -> int:
     """Create a lesson record in pending state before AI generation completes."""
     plan_content = json.dumps(plan or {}, ensure_ascii=False)
@@ -3145,11 +3146,25 @@ def create_pending_lesson(
                 pdf_path or "",
                 class_id if class_id else None,
                 organization_id,
-                "pending",
+                record_status,
                 "",
             ),
         )
         return cur.lastrowid
+
+
+def mark_lesson_transcription_succeeded(lesson_id: int, *, summary: str) -> None:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE lessons
+            SET summary=?, record_status='generating', generation_error=''
+            WHERE id=?
+            """,
+            (summary, lesson_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError("lesson not found")
 
 
 def mark_lesson_generation_succeeded(lesson_id: int, *, plan: dict, pdf_path: str) -> None:
