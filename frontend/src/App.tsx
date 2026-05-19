@@ -5130,31 +5130,31 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               className={`${workspaceFieldClass} w-full rounded-full py-2.5 pl-11 pr-4`}
             />
           </label>
-          <div className="grid w-full gap-3 self-start sm:grid-cols-2 lg:w-[22rem] lg:self-auto xl:w-[24rem] xl:grid-cols-3">
+          <div className={`grid w-full gap-2 self-start lg:w-[22rem] lg:self-auto xl:w-[24rem] ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <button
               type="button"
               onClick={() => load(search).catch(() => undefined)}
-              className={`${workspaceSecondaryButtonClass} w-full`}
+              className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
             >
-              <RefreshCw size={18} />
+              <RefreshCw size={14} />
               刷新
             </button>
             {canManage && (
               <button
                 type="button"
                 onClick={openBatchModal}
-                className={`${workspaceSecondaryButtonClass} w-full`}
+                className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
               >
-                <Cpu size={18} />
+                <Cpu size={14} />
                 AI 批量整理
               </button>
             )}
             <button
               type="button"
               onClick={openCreateModal}
-              className={`${workspacePrimaryButtonClass} w-full`}
+              className={`${workspacePrimaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
             >
-              <PlusCircle size={18} />
+              <PlusCircle size={14} />
               新增记录
             </button>
           </div>
