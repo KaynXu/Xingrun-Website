@@ -3665,7 +3665,7 @@ const ConsultationFlowBar = ({
   const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
   return (
     <div className={compact
-      ? 'grid w-full min-w-0 grid-cols-1 gap-1.5 min-[520px]:grid-cols-[repeat(5,minmax(3.85rem,1fr))_minmax(4.7rem,1fr)]'
+      ? 'grid w-full min-w-0 grid-cols-[repeat(5,minmax(1.75rem,1fr))_minmax(3.8rem,1fr)] gap-1 min-[520px]:grid-cols-[repeat(5,minmax(3.85rem,1fr))_minmax(4.7rem,1fr)] min-[520px]:gap-1.5'
       : 'grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[repeat(5,minmax(7rem,1fr))_minmax(8rem,1fr)]'
     }>
       {consultationProcessStages.map((item) => {
@@ -5154,28 +5154,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       )}
 
       <div className={`${workspaceCardClass} p-3 sm:p-4`}>
-        <select
-          value={activeFilter || ''}
-          onChange={(event) => setActiveFilter((event.target.value || null) as ConsultationFilterKey | null)}
-          className="block h-9 w-full rounded-xl border border-sky-100 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950 dark:text-slate-200 min-[520px]:hidden"
-          aria-label="咨询分类筛选"
-        >
-          <option value="">全部咨询</option>
+        <div className="grid min-w-0 grid-cols-2 gap-2 min-[520px]:flex min-[520px]:items-center min-[520px]:gap-3 min-[520px]:overflow-hidden">
           {consultationFilterGroups.map((group) => (
-            <optgroup key={group.title} label={group.title}>
-              {group.items.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}（{consultationFilterCounts[item.key] || 0}）
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <div className="hidden min-w-0 items-center gap-3 overflow-hidden min-[520px]:flex">
-          {consultationFilterGroups.map((group) => (
-            <div key={group.title} className="flex min-w-0 shrink-0 items-center gap-2">
+            <div key={group.title} className="min-w-0 min-[520px]:flex min-[520px]:shrink-0 min-[520px]:items-center min-[520px]:gap-2">
               <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>
-              <div className="flex min-w-0 items-center gap-1.5">
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 min-[520px]:mt-0 min-[520px]:flex-nowrap min-[520px]:gap-1.5">
                 {group.items.map((item) => {
                   const active = activeFilter === item.key;
                   const count = consultationFilterCounts[item.key] || 0;
@@ -5184,7 +5167,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       key={item.key}
                       type="button"
                       onClick={() => setActiveFilter((current) => (current === item.key ? null : item.key))}
-                      className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] font-bold transition ${
+                      className={`inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-[10px] font-bold transition min-[520px]:gap-1 min-[520px]:px-2 min-[520px]:text-[11px] ${
                         active
                           ? 'border-sky-200 bg-sky-500 text-white shadow-[0_10px_22px_rgba(14,165,233,0.18)]'
                           : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
