@@ -138,6 +138,11 @@ async function selectNotebookClass(container: ParentNode, classId: string): Prom
   });
 }
 
+function setDateInputValue(input: HTMLInputElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  valueSetter?.call(input, value);
+}
+
 async function openNotebookStudent(container: ParentNode, studentName: string): Promise<void> {
   await waitForAssertion(() => {
     const studentButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(studentName));
@@ -2869,6 +2874,54 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
         });
       }
 
+      if (typeof input === 'string' && input.startsWith('/api/wrong-question-followups/weekly?class_id=42&week_start=')) {
+        return createJsonResponse({
+          class_id: 42,
+          class_name: '六年级 1 班',
+          week_start_date: '2026-05-18',
+          week_end_date: '2026-05-24',
+          total: 2,
+          items: [
+            {
+              student_id: 501,
+              student_name: '王睿博',
+              status: 'has_practice_sheet',
+              practice_sheet: {
+                id: 88,
+                status: 'ready',
+                question_count: 3,
+                pdf_path: '/tmp/wrb.pdf',
+                pdf_url: '/api/wrong-question-practice-sheets/88/pdf',
+              },
+              weekly_question_count: 3,
+              total_active_question_count: 5,
+              topic_categories: ['计算'],
+              representative_reason_summaries: ['审题遗漏'],
+              source_record_ids: ['weekly-record-a'],
+              message: {
+                id: 7,
+                message_text: '王睿博妈妈，我刚看了下孩子这周错题。',
+                source_record_ids: ['weekly-record-a'],
+              },
+            },
+            {
+              student_id: 502,
+              student_name: '毛同学',
+              status: 'needs_practice_sheet',
+              weekly_question_count: 2,
+              candidate_question_count: 2,
+              recommended_category: '几何',
+              recommendation_reason: '几何可练错题2道，且最近一周没有练过。',
+              topic_categories: ['几何'],
+              representative_reason_summaries: ['角度关系遗漏'],
+              source_record_ids: ['weekly-record-b'],
+              candidate_record_ids: ['weekly-record-b'],
+              message: null,
+            },
+          ],
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${String(input)}`);
     }) as typeof fetch;
 
@@ -2904,7 +2957,7 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
     assert.ok(weekInput instanceof HTMLInputElement);
 
     await act(async () => {
-      weekInput.value = '2026-05-04';
+      setDateInputValue(weekInput, '2026-05-04');
       weekInput.dispatchEvent(new Event('input', { bubbles: true }));
       weekInput.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -2925,7 +2978,7 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       assert.match(pageText, /让 AI 生成练习/);
       assert.match(pageText, /批量生成未生成学生练习/);
       assert.match(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
-      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04'));
+      assert.ok(fetchCalls.some((call) => typeof call.input === 'string' && call.input.startsWith('/api/wrong-question-followups/weekly?class_id=42&week_start=')));
     });
 
     await selectNotebookClass(domEnvironment.container, '43');
@@ -3040,6 +3093,36 @@ test('SmartWrongQuestionsPage updates one weekly followup card after generating 
         });
       }
 
+      if (typeof input === 'string' && input.startsWith('/api/wrong-question-followups/weekly?class_id=42&week_start=')) {
+        return createJsonResponse({
+          class_id: 42,
+          class_name: '六年级 1 班',
+          week_start_date: '2026-05-18',
+          week_end_date: '2026-05-24',
+          total: 1,
+          items: [
+            {
+              student_id: 501,
+              student_name: '王睿博',
+              status: 'has_practice_sheet',
+              practice_sheet: {
+                id: 89,
+                status: 'ready',
+                question_count: 3,
+                pdf_path: '/tmp/wrb-2.pdf',
+                pdf_url: '/api/wrong-question-practice-sheets/89/pdf',
+              },
+              weekly_question_count: 3,
+              total_active_question_count: 5,
+              topic_categories: ['计算'],
+              representative_reason_summaries: ['审题遗漏'],
+              source_record_ids: ['weekly-record-a'],
+              message: null,
+            },
+          ],
+        });
+      }
+
       if (input === '/api/wrong-question-followups/weekly/messages' && init?.method === 'POST') {
         return createJsonResponse({
           ok: true,
@@ -3086,7 +3169,7 @@ test('SmartWrongQuestionsPage updates one weekly followup card after generating 
     assert.ok(weekInput instanceof HTMLInputElement);
 
     await act(async () => {
-      weekInput.value = '2026-05-04';
+      setDateInputValue(weekInput, '2026-05-04');
       weekInput.dispatchEvent(new Event('input', { bubbles: true }));
       weekInput.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -3136,6 +3219,58 @@ test('SmartWrongQuestionsPage loads super owner weekly activity summary with org
   const domEnvironment = setupDomEnvironment();
   const originalFetch = globalThis.fetch;
   const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  const firstSummaryResponse = {
+    promise: createJsonResponse({
+      week_start: '2026-05-18',
+      week_end: '2026-05-24',
+      class_items: [],
+      teacher_items: [],
+      student_items: [],
+    }),
+  };
+  const secondSummaryResponse = {
+    promise: createJsonResponse({
+      week_start: '2026-05-18',
+      week_end: '2026-05-24',
+      class_items: [
+        {
+          organization_id: 11,
+          organization_name: '星润一号机构',
+          class_id: 42,
+          class_name: '六年级 1 班',
+          weekly_question_count: 4,
+          uploading_student_count: 2,
+          latest_created_at: '2026-05-06T09:00:00Z',
+        },
+      ],
+      teacher_items: [
+        {
+          organization_id: 11,
+          organization_name: '星润一号机构',
+          teacher_user_id: 7,
+          teacher_name: 'Kayn',
+          class_count: 1,
+          weekly_question_count: 4,
+          involved_student_count: 2,
+          pending_followup_count: 3,
+        },
+      ],
+      student_items: [
+        {
+          organization_id: 11,
+          organization_name: '星润一号机构',
+          class_id: 42,
+          class_name: '六年级 1 班',
+          student_id: 501,
+          student_name: '王睿博',
+          weekly_question_count: 3,
+          total_question_count: 8,
+          topic_categories: ['计算'],
+          latest_created_at: '2026-05-06T09:00:00Z',
+        },
+      ],
+    }),
+  };
   let root: Root | null = null;
 
   try {
@@ -3224,6 +3359,146 @@ test('SmartWrongQuestionsPage loads super owner weekly activity summary with org
         });
       }
 
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && input.includes('organization_id=11')) {
+        return createJsonResponse({
+          week_start: '2026-05-18',
+          week_end: '2026-05-24',
+          class_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              weekly_question_count: 4,
+              uploading_student_count: 2,
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+          teacher_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              teacher_user_id: 7,
+              teacher_name: 'Kayn',
+              class_count: 1,
+              weekly_question_count: 4,
+              involved_student_count: 2,
+              pending_followup_count: 3,
+            },
+          ],
+          student_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              student_id: 501,
+              student_name: '王睿博',
+              weekly_question_count: 3,
+              total_question_count: 8,
+              topic_categories: ['计算'],
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && input.includes('organization_id=11')) {
+        return createJsonResponse({
+          week_start: '2026-05-18',
+          week_end: '2026-05-24',
+          class_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              weekly_question_count: 4,
+              uploading_student_count: 2,
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+          teacher_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              teacher_user_id: 7,
+              teacher_name: 'Kayn',
+              class_count: 1,
+              weekly_question_count: 4,
+              involved_student_count: 2,
+              pending_followup_count: 3,
+            },
+          ],
+          student_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              student_id: 501,
+              student_name: '王睿博',
+              weekly_question_count: 3,
+              total_question_count: 8,
+              topic_categories: ['计算'],
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && input.includes('organization_id=11')) {
+        return createJsonResponse({
+          week_start: '2026-05-18',
+          week_end: '2026-05-24',
+          class_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              weekly_question_count: 4,
+              uploading_student_count: 2,
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+          teacher_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              teacher_user_id: 7,
+              teacher_name: 'Kayn',
+              class_count: 1,
+              weekly_question_count: 4,
+              involved_student_count: 2,
+              pending_followup_count: 3,
+            },
+          ],
+          student_items: [
+            {
+              organization_id: 11,
+              organization_name: '星润一号机构',
+              class_id: 42,
+              class_name: '六年级 1 班',
+              student_id: 501,
+              student_name: '王睿博',
+              weekly_question_count: 3,
+              total_question_count: 8,
+              topic_categories: ['计算'],
+              latest_created_at: '2026-05-06T09:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && input.includes('organization_id=11')) {
+        return secondSummaryResponse.promise;
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=')) {
+        return firstSummaryResponse.promise;
+      }
+
       throw new Error(`Unexpected fetch: ${String(input)}`);
     }) as typeof fetch;
 
@@ -3259,7 +3534,7 @@ test('SmartWrongQuestionsPage loads super owner weekly activity summary with org
     assert.ok(weekInput instanceof HTMLInputElement);
 
     await act(async () => {
-      weekInput.value = '2026-05-04';
+      setDateInputValue(weekInput, '2026-05-04');
       weekInput.dispatchEvent(new Event('input', { bubbles: true }));
       weekInput.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -3277,7 +3552,7 @@ test('SmartWrongQuestionsPage loads super owner weekly activity summary with org
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /本周暂无错题活跃数据/);
-      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04'));
+      assert.ok(fetchCalls.some((call) => typeof call.input === 'string' && call.input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && !call.input.includes('organization_id=')));
     });
 
     const organizationSelect = domEnvironment.container.querySelector('select[aria-label="机构"]') as HTMLSelectElement | null;
@@ -3302,7 +3577,7 @@ test('SmartWrongQuestionsPage loads super owner weekly activity summary with org
       assert.match(pageText, /Kayn/);
       assert.match(pageText, /王睿博/);
       assert.doesNotMatch(pageText, /本周暂无错题活跃数据/);
-      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=11'));
+      assert.ok(fetchCalls.some((call) => typeof call.input === 'string' && call.input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && call.input.includes('organization_id=11')));
     });
   } finally {
     if (root) {
@@ -3363,6 +3638,20 @@ test('SmartWrongQuestionsPage ignores stale weekly activity summary responses', 
         return secondSummaryResponse.promise;
       }
 
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && input.includes('organization_id=11')) {
+        return secondSummaryResponse.promise;
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/admin/wrong-question-activity-summary?week_start=')) {
+        return createJsonResponse({
+          week_start: '2026-05-18',
+          week_end: '2026-05-24',
+          class_items: [],
+          teacher_items: [],
+          student_items: [],
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${String(input)}`);
     }) as typeof fetch;
 
@@ -3405,7 +3694,7 @@ test('SmartWrongQuestionsPage ignores stale weekly activity summary responses', 
     });
 
     await act(async () => {
-      weekInput.value = '2026-05-04';
+      setDateInputValue(weekInput, '2026-05-04');
       weekInput.dispatchEvent(new Event('input', { bubbles: true }));
       weekInput.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -3417,7 +3706,7 @@ test('SmartWrongQuestionsPage ignores stale weekly activity summary responses', 
     });
 
     await waitForAssertion(() => {
-      assert.ok(fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04'));
+      assert.ok(fetchCalls.some((call) => typeof call.input === 'string' && call.input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && !call.input.includes('organization_id=')));
     });
 
     await act(async () => {
@@ -3442,7 +3731,7 @@ test('SmartWrongQuestionsPage ignores stale weekly activity summary responses', 
 
     await waitForAssertion(() => {
       assert.ok(
-        fetchCalls.some((call) => call.input === '/api/admin/wrong-question-activity-summary?week_start=2026-05-04&organization_id=11'),
+        fetchCalls.some((call) => typeof call.input === 'string' && call.input.startsWith('/api/admin/wrong-question-activity-summary?week_start=') && call.input.includes('organization_id=11')),
         fetchCalls.map((call) => String(call.input)).join('\n'),
       );
     });
