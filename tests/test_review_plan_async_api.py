@@ -99,6 +99,41 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
+    @patch("app.has_api_key", return_value=True)
+    def test_post_review_plan_merges_same_lesson_materials_into_summary(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        _mock_start_thread,
+    ):
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "高二",
+                "topic": "立体几何",
+                "summary_text": "第一段：翻折问题和平面化。",
+                "same_lesson_materials": [
+                    "第二段：线面角、点到平面距离和法向量。",
+                    "第三段：高考题条件翻译和例题1到5。",
+                ],
+                "input_type": "text",
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        lesson = lesson_manager.get_lesson(response.get_json()["id"])
+        self.assertIn("【主课堂材料】", lesson["summary"])
+        self.assertIn("第一段：翻折问题和平面化。", lesson["summary"])
+        self.assertIn("【同一节课补充材料 1】", lesson["summary"])
+        self.assertIn("第二段：线面角、点到平面距离和法向量。", lesson["summary"])
+        self.assertIn("【同一节课补充材料 2】", lesson["summary"])
+        self.assertIn("第三段：高考题条件翻译和例题1到5。", lesson["summary"])
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:duplicate-review-plan")
     @patch("app.has_api_key", return_value=True)
     def test_post_review_plan_rejects_duplicate_request_key_before_creating_pending_lesson(

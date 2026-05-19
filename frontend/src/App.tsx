@@ -1790,6 +1790,7 @@ const LessonInput = ({
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().split('T')[0]);
   const [weakPoints, setWeakPoints] = useState('');
   const [summaryText, setSummaryText] = useState('');
+  const [sameLessonMaterials, setSameLessonMaterials] = useState('');
   const [inputType, setInputType] = useState<'text' | 'file'>('text');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -1902,6 +1903,7 @@ const LessonInput = ({
             date: lessonDate,
             weak_points: weakPoints,
             summary_text: summaryText,
+            same_lesson_materials: sameLessonMaterials,
           }),
         });
       } else {
@@ -1912,6 +1914,7 @@ const LessonInput = ({
         formData.append('topic', topic);
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
+        formData.append('same_lesson_materials', sameLessonMaterials);
         if (file) formData.append('upload_file', file);
         await apiFetch<{ id: number }>('/api/review-plans', { method: 'POST', body: formData });
       }
@@ -2049,6 +2052,13 @@ const LessonInput = ({
                     value={weakPoints}
                     onChange={(e) => setWeakPoints(e.target.value)}
                     rows={3}
+                    className={`${workspaceFieldClass} resize-none`}
+                  />
+                  <textarea
+                    placeholder="同一节课补充材料（选填）：第二段录音纪要、飞书智能纪要或老师补充说明"
+                    value={sameLessonMaterials}
+                    onChange={(e) => setSameLessonMaterials(e.target.value)}
+                    rows={5}
                     className={`${workspaceFieldClass} resize-none`}
                   />
                 </div>

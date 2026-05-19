@@ -148,13 +148,20 @@ export type WeeklyWrongQuestionFollowupMessage = {
   id: number;
   messageText: string;
   sourceRecordIds: string[];
+  sourceSheetId?: number | null;
 };
 
 export type WeeklyWrongQuestionFollowupItem = {
   studentId: number;
   studentName: string;
+  status: string;
+  practiceSheet: WrongQuestionPracticeSheetSummary | null;
   weeklyQuestionCount: number;
   totalActiveQuestionCount: number;
+  candidateQuestionCount: number;
+  candidateRecordIds: string[];
+  recommendedCategory: string;
+  recommendationReason: string;
   topicCategories: string[];
   representativeReasonSummaries: string[];
   sourceRecordIds: string[];
@@ -170,6 +177,48 @@ export type WeeklyWrongQuestionFollowupResponse = {
   total: number;
   items: WeeklyWrongQuestionFollowupItem[];
 };
+
+export interface WeeklyWrongQuestionActivityClassItem {
+  organizationId: number;
+  organizationName: string;
+  classId: number;
+  className: string;
+  weeklyQuestionCount: number;
+  uploadingStudentCount: number;
+  latestCreatedAt: string;
+}
+
+export interface WeeklyWrongQuestionActivityTeacherItem {
+  organizationId: number;
+  organizationName: string;
+  teacherUserId: number;
+  teacherName: string;
+  classCount: number;
+  weeklyQuestionCount: number;
+  involvedStudentCount: number;
+  pendingFollowupCount: number;
+}
+
+export interface WeeklyWrongQuestionActivityStudentItem {
+  organizationId: number;
+  organizationName: string;
+  classId: number;
+  className: string;
+  studentId: number;
+  studentName: string;
+  weeklyQuestionCount: number;
+  totalQuestionCount: number;
+  topicCategories: string[];
+  latestCreatedAt: string;
+}
+
+export interface WeeklyWrongQuestionActivitySummary {
+  weekStart: string;
+  weekEnd: string;
+  classItems: WeeklyWrongQuestionActivityClassItem[];
+  teacherItems: WeeklyWrongQuestionActivityTeacherItem[];
+  studentItems: WeeklyWrongQuestionActivityStudentItem[];
+}
 
 export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionRecord): boolean {
   return record.source === 'wechat_mp';
@@ -926,8 +975,16 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
       return {
         studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
         studentName: String(item.student_name ?? item.studentName ?? ''),
+        status: String(item.status ?? 'no_practice_needed'),
+        practiceSheet: isObjectRecord(item.practice_sheet ?? item.practiceSheet)
+          ? normalizeWrongQuestionPracticeSheetSummary(item.practice_sheet ?? item.practiceSheet)
+          : null,
         weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
         totalActiveQuestionCount: pickNumberValue(item, ['total_active_question_count', 'totalActiveQuestionCount']) ?? 0,
+        candidateQuestionCount: pickNumberValue(item, ['candidate_question_count', 'candidateQuestionCount']) ?? 0,
+        candidateRecordIds: normalizeStringList(item.candidate_record_ids ?? item.candidateRecordIds),
+        recommendedCategory: String(item.recommended_category ?? item.recommendedCategory ?? ''),
+        recommendationReason: String(item.recommendation_reason ?? item.recommendationReason ?? ''),
         topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
         representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
         sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
@@ -937,6 +994,7 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
               id: pickNumberValue(rawMessage, ['id']) ?? 0,
               messageText: String(rawMessage.message_text ?? rawMessage.messageText ?? ''),
               sourceRecordIds: normalizeStringList(rawMessage.source_record_ids ?? rawMessage.sourceRecordIds),
+              sourceSheetId: pickNumberValue(rawMessage, ['source_sheet_id', 'sourceSheetId']),
             }
           : null,
       };
@@ -954,6 +1012,64 @@ export function buildWeeklyWrongQuestionFollowupArchivePath(classId: number, wee
 
 export function buildWeeklyWrongQuestionFollowupMessagePath(): string {
   return '/api/wrong-question-followups/weekly/messages';
+}
+
+export function buildWeeklyWrongQuestionFollowupPracticeSheetPath(): string {
+  return '/api/wrong-question-followups/weekly/practice-sheets';
+}
+
+export function buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath(): string {
+  return '/api/wrong-question-followups/weekly/practice-sheets/batch';
+}
+
+export function buildWeeklyWrongQuestionActivitySummaryPath(weekStartDate: string, organizationId?: number | null): string {
+  const params = new URLSearchParams({ week_start: weekStartDate });
+  if (typeof organizationId === 'number' && Number.isFinite(organizationId) && organizationId > 0) {
+    params.set('organization_id', String(organizationId));
+  }
+  return `/api/admin/wrong-question-activity-summary?${params.toString()}`;
+}
+
+export function normalizeWeeklyWrongQuestionActivitySummaryResponse(payload: unknown): WeeklyWrongQuestionActivitySummary {
+  const source = isObjectRecord(payload) ? payload : {};
+  const rawClassItems = Array.isArray(source.class_items) ? source.class_items : Array.isArray(source.classItems) ? source.classItems : [];
+  const rawTeacherItems = Array.isArray(source.teacher_items) ? source.teacher_items : Array.isArray(source.teacherItems) ? source.teacherItems : [];
+  const rawStudentItems = Array.isArray(source.student_items) ? source.student_items : Array.isArray(source.studentItems) ? source.studentItems : [];
+  return {
+    weekStart: String(source.week_start ?? source.weekStart ?? ''),
+    weekEnd: String(source.week_end ?? source.weekEnd ?? ''),
+    classItems: rawClassItems.filter(isObjectRecord).map((item) => ({
+      organizationId: pickNumberValue(item, ['organization_id', 'organizationId']) ?? 0,
+      organizationName: String(item.organization_name ?? item.organizationName ?? ''),
+      classId: pickNumberValue(item, ['class_id', 'classId']) ?? 0,
+      className: String(item.class_name ?? item.className ?? ''),
+      weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
+      uploadingStudentCount: pickNumberValue(item, ['uploading_student_count', 'uploadingStudentCount']) ?? 0,
+      latestCreatedAt: String(item.latest_created_at ?? item.latestCreatedAt ?? ''),
+    })),
+    teacherItems: rawTeacherItems.filter(isObjectRecord).map((item) => ({
+      organizationId: pickNumberValue(item, ['organization_id', 'organizationId']) ?? 0,
+      organizationName: String(item.organization_name ?? item.organizationName ?? ''),
+      teacherUserId: pickNumberValue(item, ['teacher_user_id', 'teacherUserId']) ?? 0,
+      teacherName: String(item.teacher_name ?? item.teacherName ?? ''),
+      classCount: pickNumberValue(item, ['class_count', 'classCount']) ?? 0,
+      weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
+      involvedStudentCount: pickNumberValue(item, ['involved_student_count', 'involvedStudentCount']) ?? 0,
+      pendingFollowupCount: pickNumberValue(item, ['pending_followup_count', 'pendingFollowupCount']) ?? 0,
+    })),
+    studentItems: rawStudentItems.filter(isObjectRecord).map((item) => ({
+      organizationId: pickNumberValue(item, ['organization_id', 'organizationId']) ?? 0,
+      organizationName: String(item.organization_name ?? item.organizationName ?? ''),
+      classId: pickNumberValue(item, ['class_id', 'classId']) ?? 0,
+      className: String(item.class_name ?? item.className ?? ''),
+      studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
+      studentName: String(item.student_name ?? item.studentName ?? ''),
+      weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
+      totalQuestionCount: pickNumberValue(item, ['total_question_count', 'totalQuestionCount']) ?? 0,
+      topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
+      latestCreatedAt: String(item.latest_created_at ?? item.latestCreatedAt ?? ''),
+    })),
+  };
 }
 
 export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): WrongQuestionPracticeSheetSummary {
