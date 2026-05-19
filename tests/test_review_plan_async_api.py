@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 import app as app_module
 import config_runtime
+import credit_manager
 import lesson_manager
 from app import app
 
@@ -175,6 +176,68 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("第二段：线面角、点到平面距离和法向量。", lesson["summary"])
         self.assertIn("【同一节课补充材料 2】", lesson["summary"])
         self.assertIn("第三段：高考题条件翻译和例题1到5。", lesson["summary"])
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("ai_processor.parse_and_generate_plan")
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app._current_ai_request_key", return_value="header:processed-review-plan")
+    @patch("app.has_api_key", return_value=True)
+    def test_post_review_plan_returns_existing_lesson_for_processed_duplicate(
+        self,
+        _mock_has_api_key,
+        _mock_request_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+        mock_parse_and_generate_plan,
+        _mock_generate_pdf,
+    ):
+        mock_parse_and_generate_plan.return_value = (
+            {"lesson_info": {"topic": "一次函数"}, "days": []},
+            {
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "input_tokens": 120,
+                "output_tokens": 40,
+            },
+        )
+        credit_manager.apply_manual_adjustment(
+            organization_id=1,
+            actor_user_id=1,
+            amount=40,
+            note="seed duplicate retry credits",
+        )
+        payload = {
+            "date": "2026-04-09",
+            "subject": "数学",
+            "grade": "初二",
+            "topic": "一次函数",
+            "weak_points": "斜率判断",
+            "summary_text": "课堂总结文本",
+            "input_type": "text",
+        }
+
+        first = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json=payload,
+        )
+        self.assertEqual(first.status_code, 202)
+        lesson_id = first.get_json()["id"]
+        app_module._run_review_plan_generation_job(**mock_start_thread.call_args.kwargs)
+
+        second = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json=payload,
+        )
+
+        self.assertEqual(second.status_code, 202)
+        second_payload = second.get_json()
+        self.assertEqual(second_payload["id"], lesson_id)
+        self.assertTrue(second_payload["duplicate"])
+        self.assertEqual(second_payload["status"], "ready")
+        self.assertEqual(mock_start_thread.call_count, 1)
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")

@@ -488,6 +488,25 @@ def _build_review_plan_request_id(*, user_id: int, request_key: str) -> str:
     )
 
 
+def _find_existing_review_plan_lesson_for_request(*, organization_id: int, request_id: str) -> dict | None:
+    usage = get_ai_usage_by_request_id(
+        organization_id=organization_id,
+        request_id=request_id,
+    )
+    if not usage or usage.get("feature_key") != "lesson_plan_generate":
+        return None
+    if usage.get("source_record_type") != "lesson":
+        return None
+    try:
+        lesson_id = int(str(usage.get("source_record_id") or "").strip())
+    except ValueError:
+        return None
+    lesson = get_lesson(lesson_id)
+    if not lesson or int(lesson.get("organization_id") or 0) != organization_id:
+        return None
+    return lesson
+
+
 def _claim_ai_request_identity(*, organization_id: int, request_id: str) -> None:
     now = monotonic()
     with _AI_REQUEST_IN_FLIGHT_LOCK:
@@ -4794,23 +4813,47 @@ def api_lesson_create():
         request_key=request_key,
     )
     request_identity_claimed = False
+    organization_id = int(user["organization_id"])
     try:
         _claim_ai_request_identity(
-            organization_id=int(user["organization_id"]),
+            organization_id=organization_id,
             request_id=request_id,
         )
         request_identity_claimed = True
         ensure_feature_credits_available(
-            organization_id=int(user["organization_id"]),
+            organization_id=organization_id,
             feature_key="lesson_plan_generate",
         )
     except DuplicateAiRequestError as exc:
+        if "已处理" in str(exc):
+            existing_lesson = _find_existing_review_plan_lesson_for_request(
+                organization_id=organization_id,
+                request_id=request_id,
+            )
+            if existing_lesson:
+                if audio_path:
+                    Path(audio_path).unlink(missing_ok=True)
+                status = str(existing_lesson.get("record_status") or "").strip()
+                if not status:
+                    status = "ready" if str(existing_lesson.get("pdf_path") or "").strip() else "pending"
+                return jsonify({
+                    "id": existing_lesson["id"],
+                    "success": True,
+                    "status": status,
+                    "duplicate": True,
+                }), 202
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
         return jsonify({"error": str(exc)}), 409
     except CreditBalanceError as exc:
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
         if request_identity_claimed:
             _release_ai_request_identity(request_id)
         return jsonify({"error": str(exc)}), 402
     except Exception:
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
         if request_identity_claimed:
             _release_ai_request_identity(request_id)
         raise
