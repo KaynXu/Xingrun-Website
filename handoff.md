@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-19 已修正复习计划重复录音的“任务消失”体验：当后端返回 `duplicate:true` 复用已有复习文档时，前端不再静默关闭表单，而是在历史文档上方提示“这份录音已处理过，已复用已有复习文档 #id”，同时刷新历史列表、跳到该文档所在分页并高亮卡片，避免老师误以为 100% 后任务丢失。后端逻辑未改，本轮只改前端显示和回归测试。
 - 2026-05-19 已修正复习计划重复提交误报红色错误：同一份复习计划请求在已处理且 ledger 已落账后再次提交时，后端会根据 `request_id` 找回已有 lesson 并返回 `202 + duplicate + id + status`，前端会按成功路径关闭表单并刷新列表；仍在进行中的重复请求继续返回“正在处理中”避免并发重复跑。同步清理了重复/余额/异常分支里的临时音频文件。proof 临时脚本已执行并删除：`py_compile app.py lesson_manager.py` 通过；后端复习计划异步/重复提交/录音积分相关 unittest 15 条通过；前端复习计划状态测试 11 条通过；`git diff --check` 通过。
 - 2026-05-19 已修复复习计划录音上传“前端超时但后端仍占用”的主链路：`POST /api/review-plans` 遇到音频时不再同步转录，而是先保存录音、创建 `record_status='transcribing'` 的复习计划记录并立即返回 `202`，后台线程再执行本地 faster-whisper 转写，转写成功后把状态推进到 `generating` 并继续生成复习计划/PDF；转写失败会写入 `failed + 音频转录失败，请稍后重试` 并清理临时音频。前端上传文件改为 XHR 以显示真实上传百分比，历史文档卡片会根据 `transcribing/generating/pending/failed` 显示阶段文案和进度条。proof 临时脚本已执行并删除：`py_compile app.py lesson_manager.py` 通过；复习计划异步 API 与录音积分去重后端 unittest 14 条通过；前端复习计划进度/工作区源码测试 40 条通过；`frontend npm run build` 通过（保留既有 dynamic import/chunk size 警告）；`git diff --check` 通过。
 - 2026-05-19 已完成“定向一周错题练习包”本地实现并通过最终 proof：网页智能错题新增 `生成并下载一周练习包`，支持按专题/知识点或错因选择目标、轻量/标准/强化题量档位，后台异步生成班级 practice pack job；每个学生优先使用历史真实错题，不足时 AI 生成同错因变式题并审稿，PDF 排到未来 7 天并附答案页，整班成功 PDF 打成 zip 下载；API 已支持创建/复用、查询状态和下载，前端已处理生成/刷新/切班切周的旧响应竞态。proof 临时脚本已执行后清理，覆盖后端 practice pack tests、相关错题回归、AI prompt tests、前端 focused tests、frontend full tests、frontend build、py_compile 和 git diff --check。
