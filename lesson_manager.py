@@ -7717,7 +7717,30 @@ def upsert_wrong_question_practice_pack_job_student(
     normalized_status = str(status or "").strip()
     if normalized_status not in PRACTICE_PACK_STUDENT_STATUSES:
         raise ValueError("invalid practice pack student status")
+    normalized_job_id = int(job_id or 0)
+    normalized_student_id = int(student_id or 0)
     with get_conn() as conn:
+        job_row = conn.execute(
+            """
+            SELECT organization_id, class_id
+            FROM wrong_question_practice_pack_jobs
+            WHERE id=?
+            """,
+            (normalized_job_id,),
+        ).fetchone()
+        student_row = conn.execute(
+            """
+            SELECT s.organization_id
+            FROM students s
+            JOIN class_students cs ON cs.student_id=s.id
+            WHERE s.id=? AND cs.class_id=?
+            """,
+            (normalized_student_id, int(job_row["class_id"] or 0) if job_row else 0),
+        ).fetchone()
+        if not job_row or not student_row:
+            raise ValueError("invalid practice pack student scope")
+        if int(student_row["organization_id"] or 0) != int(job_row["organization_id"] or 0):
+            raise ValueError("invalid practice pack student scope")
         conn.execute(
             """
             INSERT INTO wrong_question_practice_pack_job_students (
@@ -7736,8 +7759,8 @@ def upsert_wrong_question_practice_pack_job_student(
                 updated_at=datetime('now','localtime')
             """,
             (
-                int(job_id or 0),
-                int(student_id or 0),
+                normalized_job_id,
+                normalized_student_id,
                 str(student_name_snapshot or "").strip(),
                 normalized_status,
                 int(requested_question_count or 0),
@@ -7753,7 +7776,7 @@ def upsert_wrong_question_practice_pack_job_student(
             FROM wrong_question_practice_pack_job_students
             WHERE job_id=? AND student_id=?
             """,
-            (int(job_id or 0), int(student_id or 0)),
+            (normalized_job_id, normalized_student_id),
         ).fetchone()
     serialized = _serialize_wrong_question_practice_pack_student_row(row)
     return serialized if serialized is not None else {}

@@ -204,3 +204,40 @@ class WrongQuestionPracticePackStorageTestCase(unittest.TestCase):
                 target="几何",
                 volume="light",
             )
+
+    def test_pack_job_student_upsert_rejects_cross_organization_student(self):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="topic",
+            target="计算",
+            volume="light",
+        )
+        request = lesson_manager.create_organization_request(
+            "错题包学生隔离机构",
+            "pack_student_scope_owner",
+            "学生隔离负责人",
+            "password123",
+            recovery_phone="13800000004",
+        )
+        other_owner, _invite = lesson_manager.approve_organization_request(request["id"], self.owner["id"])
+        other_class_id = lesson_manager.save_class(
+            "六年级 3 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=other_owner["organization_id"],
+        )
+        other_student = lesson_manager.create_student_for_class(other_class_id, "赵敏")
+
+        with self.assertRaises(ValueError):
+            lesson_manager.upsert_wrong_question_practice_pack_job_student(
+                job_id=job["id"],
+                student_id=other_student["id"],
+                student_name_snapshot="赵敏",
+                status="ready",
+                requested_question_count=5,
+            )
+
+        loaded = lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+        self.assertEqual(loaded["students"], [])
