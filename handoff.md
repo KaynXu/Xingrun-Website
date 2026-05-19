@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-19 已完成本轮生产发布：本地 `develop(fac5ba8)` 已合入 `master(4070ed7)` 并推送，生产机 `/home/ubuntu/Xingrun-Website` 已 fast-forward 到 `4070ed740`；生产 Nginx `/etc/nginx/sites-enabled/xingrun.online` 已备份到 `/etc/nginx/sites-enabled/xingrun.online.backup-before-api-upload-size-20260519-225532`，`/api/` location 的 `client_max_body_size` 已从旧值更新为 `120m` 并 reload，以匹配后端 100MB 录音上限；生产 `npm --prefix frontend run build` 通过，`pm2 restart xingrun` 后 `xingrun` online，本机健康检查返回 `HTTP/1.1 302 FOUND`。发布前/合并后 proof：前端 251 条测试通过、frontend build 通过（保留既有 dynamic import/chunk size 警告）、后端 smoke 72 条通过、`git diff --check` 通过。
 - 2026-05-19 发布前验证发现前端全量测试中 3 条 `workspace-navigation.test.ts` 源码断言仍停在旧复习生成组件形态；已只更新测试断言以匹配当前“重复录音提示 + 高亮历史文档”的实现，不改产品代码。proof：`cd frontend && npx tsx --test src/workspace-navigation.test.ts` 29 条通过。
 - 2026-05-19 已修复一周错题练习包“错题复习”填空区 LaTeX 裸文本问题：填空提示现在复用 KaTeX 预览渲染，`$180^\circ$`、`$x$` 等不会在 PDF 中原样露出；已重新生成样张 `review_plan_templates/pdf_output/practice-pack-sample-wang-20260519.pdf`。proof 临时脚本已执行并删除：前端 practice sheet PDF 渲染测试 7 条通过；样张 PDF 5 页、包含关键文本且 `contains_raw_180_latex=False`；PyMuPDF 渲染抽查第 3 页确认 `180°` 正常显示；`git diff --check` 通过。
 - 2026-05-19 已调整定向一周错题练习包 PDF 的每日排版：排期题页现在先显示“错题复习”填空区，围绕孩子错因做挖空复盘，再显示“重做原题 / 重做变式”和作答横线，避免一打开就直接重做原题；普通单题练习 PDF 既有排版不变。proof 临时脚本已执行并删除：前端 practice sheet PDF 渲染测试 6 条通过；`git diff --check` 通过。
