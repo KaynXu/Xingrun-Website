@@ -133,6 +133,7 @@ from lesson_manager import (
     list_lessons,
     list_lessons_for_actor,
     list_wrong_question_practice_sheets_for_student,
+    list_wrong_question_practice_pack_jobs_for_class,
     list_targeted_wrong_question_practice_candidates,
     list_organizations,
     list_organization_requests,
@@ -3366,6 +3367,33 @@ def api_wrong_question_student_library_refresh(student_id: int):
             "pdf_url": f"/api/wechat/student-libraries/{student_id}",
         }
     )
+
+
+@app.route("/api/wrong-question-practice-packs", methods=["GET"])
+def api_wrong_question_practice_pack_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        class_id = int(request.args.get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    jobs = list_wrong_question_practice_pack_jobs_for_class(
+        organization_id=int(cls.get("organization_id") or user.get("organization_id") or 0),
+        class_id=class_id,
+    )
+    return jsonify({
+        "items": [
+            serialized
+            for serialized in (_serialize_wrong_question_practice_pack_job_for_response(job) for job in jobs)
+            if serialized is not None
+        ]
+    })
 
 
 @app.route("/api/wrong-question-practice-packs", methods=["POST"])

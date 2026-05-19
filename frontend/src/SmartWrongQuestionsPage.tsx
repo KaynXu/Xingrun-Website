@@ -17,6 +17,7 @@ import {
   buildWeeklyWrongQuestionFollowupMessagePath,
   buildWrongQuestionPracticePackCreatePath,
   buildWrongQuestionPracticePackDetailPath,
+  buildWrongQuestionPracticePackListPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
@@ -37,6 +38,7 @@ import {
   normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
   normalizeWrongQuestionPracticePackJobResponse,
+  normalizeWrongQuestionPracticePackListResponse,
   normalizeWrongQuestionPracticeSheetListResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
@@ -46,6 +48,7 @@ import {
   type WeeklyWrongQuestionActivitySummary,
   type WeeklyWrongQuestionFollowupItem,
   type WrongQuestionPracticePackJob,
+  type WrongQuestionPracticePackListApiResponse,
   type WrongQuestionPracticePackMode,
   type WrongQuestionPracticePackVolume,
   type WrongQuestionPracticeSheetListApiResponse,
@@ -332,7 +335,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [practicePackMode, setPracticePackMode] = useState<WrongQuestionPracticePackMode>('topic');
   const [practicePackTarget, setPracticePackTarget] = useState('');
   const [practicePackVolume, setPracticePackVolume] = useState<WrongQuestionPracticePackVolume>('standard');
-  const [practicePackJob, setPracticePackJob] = useState<WrongQuestionPracticePackJob | null>(null);
+  const [practicePackJobs, setPracticePackJobs] = useState<WrongQuestionPracticePackJob[]>([]);
   const [practicePackGenerating, setPracticePackGenerating] = useState(false);
 
   const summary = useMemo(() => {
@@ -538,7 +541,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setWeeklyFollowupError('');
     setWeeklyFollowupLoading(false);
     setGeneratingWeeklyFollowupStudentId(null);
-    setPracticePackJob(null);
+    setPracticePackJobs([]);
     setPracticePackGenerating(false);
   }, []);
 
@@ -1132,6 +1135,41 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleLoadPracticePackJobs = useCallback(async () => {
+    if (!activeWeeklyFollowupClassId) {
+      setPracticePackJobs([]);
+      return;
+    }
+
+    const requestVersion = practicePackRequestVersionRef.current + 1;
+    practicePackRequestVersionRef.current = requestVersion;
+    setWeeklyFollowupError('');
+
+    try {
+      const response = await apiFetch<WrongQuestionPracticePackListApiResponse>(
+        buildWrongQuestionPracticePackListPath(activeWeeklyFollowupClassId),
+      );
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
+      setPracticePackJobs(normalizeWrongQuestionPracticePackListResponse(response));
+    } catch (loadPackError) {
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
+      setPracticePackJobs([]);
+      setWeeklyFollowupError(loadPackError instanceof Error ? loadPackError.message : '练习包列表加载失败');
+    }
+  }, [activeWeeklyFollowupClassId]);
+
+  useEffect(() => {
+    if (!weeklyFollowupOpen || !activeWeeklyFollowupClassId) {
+      return;
+    }
+
+    void handleLoadPracticePackJobs();
+  }, [activeWeeklyFollowupClassId, handleLoadPracticePackJobs, weeklyFollowupOpen]);
+
   const handleGenerateWeeklyFollowupMessage = async (studentId: number) => {
     if (!activeWeeklyFollowupClassId) {
       setWeeklyFollowupError('请选择班级。');
@@ -1264,7 +1302,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       if (requestVersion !== practicePackRequestVersionRef.current) {
         return;
       }
-      setPracticePackJob(normalized.job);
+      const nextJob = normalized.job;
+      if (nextJob) {
+        setPracticePackJobs((current) => [
+          nextJob,
+          ...current.filter((item) => item.id !== nextJob.id),
+        ]);
+      }
       if (normalized.job?.downloadUrl) {
         globalThis.window?.open?.(buildWrongQuestionAuthedPath(normalized.job.downloadUrl), '_blank', 'noopener,noreferrer');
         setWeeklyFollowupNotice('练习包已生成，正在打开下载。');
@@ -1283,8 +1327,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
-  const handleRefreshPracticePackJob = async () => {
-    if (!practicePackJob?.id) {
+  const handleRefreshPracticePackJob = async (jobId: number) => {
+    if (!jobId) {
       return;
     }
 
@@ -1294,12 +1338,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setWeeklyFollowupNotice('');
 
     try {
-      const response = await apiFetch<unknown>(buildWrongQuestionPracticePackDetailPath(practicePackJob.id));
+      const response = await apiFetch<unknown>(buildWrongQuestionPracticePackDetailPath(jobId));
       const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
       if (requestVersion !== practicePackRequestVersionRef.current) {
         return;
       }
-      setPracticePackJob(normalized.job);
+      const nextJob = normalized.job;
+      if (nextJob) {
+        setPracticePackJobs((current) => current.map((item) => (
+          item.id === nextJob.id ? nextJob : item
+        )));
+      }
       setWeeklyFollowupNotice('练习包状态已刷新。');
     } catch (refreshError) {
       if (requestVersion !== practicePackRequestVersionRef.current) {
@@ -1352,9 +1401,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     || weeklyActivitySummary.teacherItems.length > 0
     || weeklyActivitySummary.studentItems.length > 0
   ));
-  const practicePackDownloadUrl = practicePackJob?.downloadUrl
-    ? buildWrongQuestionAuthedPath(practicePackJob.downloadUrl)
-    : '';
   const detailHeader = selectedRecord ? (
     <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -2155,36 +2201,46 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               </div>
             )}
 
-            {practicePackJob && (
-              <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{practicePackJob.target || '未命名练习包'}</p>
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
-                      <span>状态：{practicePackJob.status}</span>
-                      <span>{practicePackJob.requestedQuestionCount}题</span>
+            {practicePackJobs.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">已生成练习包</p>
+                {practicePackJobs.map((practicePackJob) => {
+                  const practicePackDownloadUrl = practicePackJob.downloadUrl
+                    ? buildWrongQuestionAuthedPath(practicePackJob.downloadUrl)
+                    : '';
+                  return (
+                    <div key={practicePackJob.id} className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{practicePackJob.target || '未命名练习包'}</p>
+                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
+                            <span>状态：{practicePackJob.status}</span>
+                            <span>{practicePackJob.requestedQuestionCount}题</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleRefreshPracticePackJob(practicePackJob.id)}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            刷新状态
+                          </button>
+                          {practicePackDownloadUrl ? (
+                            <a
+                              href={practicePackDownloadUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={workspacePrimaryButtonClass}
+                            >
+                              下载练习包
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void handleRefreshPracticePackJob()}
-                      className={workspaceSecondaryButtonClass}
-                    >
-                      刷新状态
-                    </button>
-                    {practicePackDownloadUrl ? (
-                      <a
-                        href={practicePackDownloadUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={workspacePrimaryButtonClass}
-                      >
-                        下载练习包
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
+                  );
+                })}
               </div>
             )}
 
