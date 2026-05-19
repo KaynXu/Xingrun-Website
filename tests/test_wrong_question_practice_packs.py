@@ -241,3 +241,110 @@ class WrongQuestionPracticePackStorageTestCase(unittest.TestCase):
 
         loaded = lesson_manager.get_wrong_question_practice_pack_job(job["id"])
         self.assertEqual(loaded["students"], [])
+
+
+class WrongQuestionPracticePackCandidateTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({})
+        lesson_manager.init_db()
+        self.owner = lesson_manager.get_user_by_username("Kayn")
+        self.class_id = lesson_manager.save_class("七年级 5 班", subject="数学", grade="七年级")
+        lesson_manager.set_class_teacher_user_id(self.class_id, self.owner["id"])
+        self.student = lesson_manager.create_student_for_class(self.class_id, "王睿博")
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-practice-pack-candidates")
+        self.binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _record(self, *, topic_category: str, primary_error_type: str, reason: str, question_text: str):
+        return lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=self.binding["id"],
+            image_url=f"https://files.example.com/{topic_category}-{primary_error_type}.png",
+            child_raw_reason_text=reason,
+            primary_error_type=primary_error_type,
+            secondary_error_summary=reason,
+            topic_category=topic_category,
+            recognition_status="recognized",
+            question_text=question_text,
+        )
+
+    def test_topic_mode_selects_historical_matching_records_without_current_week_limit(self):
+        geometry = self._record(
+            topic_category="几何",
+            primary_error_type="方法问题",
+            reason="辅助线入口没找准",
+            question_text="如图，证明角相等。",
+        )
+        self._record(
+            topic_category="计算",
+            primary_error_type="细节问题",
+            reason="符号漏写",
+            question_text="计算 -2+5。",
+        )
+
+        candidates = lesson_manager.list_targeted_wrong_question_practice_candidates(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            mode="topic",
+            target="几何",
+            limit=10,
+        )
+
+        self.assertEqual([item["id"] for item in candidates], [geometry["id"]])
+
+    def test_reason_mode_matches_specific_reason_and_does_not_cross_fill(self):
+        denominator = self._record(
+            topic_category="计算",
+            primary_error_type="知识点问题",
+            reason="解方程去分母时右边没有同乘",
+            question_text="解方程 (x-1)/2=3。",
+        )
+        self._record(
+            topic_category="计算",
+            primary_error_type="审题问题",
+            reason="题目问法看漏",
+            question_text="求 x 的取值范围。",
+        )
+
+        candidates = lesson_manager.list_targeted_wrong_question_practice_candidates(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            mode="reason",
+            target="去分母",
+            limit=10,
+        )
+
+        self.assertEqual([item["id"] for item in candidates], [denominator["id"]])
+
+    def test_schedule_places_real_questions_before_variants_across_seven_days(self):
+        items = [
+            {"practice_item_id": "real-1", "item_type": "real"},
+            {"practice_item_id": "real-2", "item_type": "real"},
+            {"practice_item_id": "variant-1", "item_type": "variant"},
+            {"practice_item_id": "variant-2", "item_type": "variant"},
+            {"practice_item_id": "variant-3", "item_type": "variant"},
+        ]
+
+        schedule = lesson_manager.build_wrong_question_practice_pack_schedule(items, start_date="2026-05-20")
+
+        self.assertEqual(len(schedule), 7)
+        self.assertEqual(schedule[0]["date"], "2026-05-20")
+        self.assertEqual(schedule[0]["items"][0]["practice_item_id"], "real-1")
+        self.assertEqual(schedule[1]["items"][0]["practice_item_id"], "real-2")
+        scheduled_ids = [
+            item["practice_item_id"]
+            for day in schedule
+            for item in day["items"]
+        ]
+        self.assertEqual(scheduled_ids, ["real-1", "real-2", "variant-1", "variant-2", "variant-3"])

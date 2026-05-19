@@ -6799,6 +6799,40 @@ def _is_wrong_question_candidate_for_week(row: sqlite3.Row, *, week_start: date,
     return archived_date <= week_start - timedelta(days=interval_days)
 
 
+def _practice_pack_target_text(row: sqlite3.Row | dict) -> str:
+    def value(key: str) -> str:
+        if isinstance(row, sqlite3.Row):
+            return str(row[key] or "") if key in row.keys() else ""
+        return str(row.get(key) or "")
+
+    return " ".join(
+        part.strip()
+        for part in (
+            value("topic_category"),
+            value("primary_error_type"),
+            value("secondary_error_summary"),
+            value("child_raw_reason_text"),
+            value("child_reason_core_issue"),
+            value("child_reason_key_omission"),
+            value("child_reason_next_step"),
+            value("teacher_comment"),
+            value("question_text"),
+        )
+        if part.strip()
+    )
+
+
+def _practice_pack_record_matches_target(row: sqlite3.Row, *, mode: str, target: str) -> bool:
+    normalized_mode = _normalize_practice_pack_mode(mode)
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return False
+    if normalized_mode == "topic":
+        topic = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+        return normalized_target in topic or topic in normalized_target or normalized_target in _practice_pack_target_text(row)
+    return normalized_target in _practice_pack_target_text(row)
+
+
 def _weekly_followup_reason_from_category(category: str, count: int, practiced_recently: bool) -> str:
     if practiced_recently:
         return f"{category}还有{count}道可练错题；如果其它分类不足，可以继续收这一类。"
@@ -7299,6 +7333,81 @@ def _serialize_wrong_question_practice_pack_student_row(row: sqlite3.Row | None)
     for key in ("requested_question_count", "real_question_count", "variant_question_count"):
         payload[key] = int(payload.get(key) or 0)
     return payload
+
+
+def list_targeted_wrong_question_practice_candidates(
+    *,
+    organization_id: int,
+    class_id: int,
+    student_id: int,
+    mode: str,
+    target: str,
+    limit: int,
+    reference_date: str = "",
+) -> list[dict]:
+    normalized_mode = _normalize_practice_pack_mode(mode)
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return []
+    reference = _parse_local_date(reference_date) or date.today()
+    six_month_cutoff = reference - timedelta(days=183)
+    six_month_cutoff_bound = f"{six_month_cutoff.isoformat()} 00:00:00"
+    normalized_limit = max(1, int(limit or 1))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.organization_id=?
+              AND wqs.class_id=?
+              AND wqs.student_id=?
+              AND wqs.source='wechat_mp'
+              AND wqs.recognition_status='recognized'
+              AND wqs.created_at >= ?
+            ORDER BY
+              CASE WHEN wqs.archive_status='active' THEN 0 ELSE 1 END ASC,
+              wqs.created_at DESC,
+              wqs.id DESC
+            """,
+            (
+                int(organization_id or 0),
+                int(class_id or 0),
+                int(student_id or 0),
+                six_month_cutoff_bound,
+            ),
+        ).fetchall()
+    matched = [
+        dict(row)
+        for row in rows
+        if _practice_pack_record_matches_target(row, mode=normalized_mode, target=normalized_target)
+    ]
+    return matched[:normalized_limit]
+
+
+def build_wrong_question_practice_pack_schedule(items: list[dict], *, start_date: str) -> list[dict]:
+    start = _parse_local_date(start_date) or date.today()
+    ordered_items = list(items or [])
+    real_items = [item for item in ordered_items if str(item.get("item_type") or "real") == "real"]
+    variant_items = [item for item in ordered_items if str(item.get("item_type") or "real") == "variant"]
+    merged = [*real_items, *variant_items]
+    days = [
+        {
+            "day_index": index + 1,
+            "date": (start + timedelta(days=index)).isoformat(),
+            "items": [],
+        }
+        for index in range(7)
+    ]
+    for index, item in enumerate(merged):
+        days[index % 7]["items"].append(item)
+    return days
 
 
 def _fetch_wrong_question_practice_sheet_row_by_id(
