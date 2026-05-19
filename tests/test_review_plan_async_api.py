@@ -142,6 +142,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("audio_path", thread_kwargs)
         self.assertIn("audio_request_key", thread_kwargs)
 
+    def test_review_plan_audio_upload_limit_covers_large_class_recordings(self):
+        self.assertGreaterEqual(app_module.REVIEW_PLAN_AUDIO_MAX_BYTES, 100 * 1024 * 1024)
+        self.assertEqual(app_module.REVIEW_PLAN_AUDIO_MAX_LABEL, "100MB")
+
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app.has_api_key", return_value=True)

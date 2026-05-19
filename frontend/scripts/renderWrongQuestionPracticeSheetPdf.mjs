@@ -107,7 +107,7 @@ function renderPromptHtml(prompt) {
     .replaceAll('\n', '<br />');
 }
 
-function buildWritingSection(reasonPrompt, improvementPrompt) {
+function buildWritingSection(reasonPrompt, improvementPrompt, title = '') {
   const sections = [
     extractWritingPromptBody(reasonPrompt),
     extractWritingPromptBody(improvementPrompt),
@@ -119,6 +119,7 @@ function buildWritingSection(reasonPrompt, improvementPrompt) {
 
   return `
     <section class="writing-card">
+      ${title ? `<div class="writing-title">${escapeHtml(title)}</div>` : ''}
       ${sections
         .map(
           (section) => `
@@ -160,6 +161,12 @@ function buildItemMarkup(item) {
 
 function buildScheduledItemMarkup(item, label) {
   const trainingGoal = String(item.trainingGoal || '').trim();
+  const writingSection = buildWritingSection(
+    item.reason_blank_prompt || '',
+    item.improvement_summary_prompt || '',
+    '错题复习',
+  );
+  const redoLabel = item.itemType === 'variant' ? '重做变式' : '重做原题';
   return `
     <section class="record-page">
       <div class="record-header">
@@ -167,7 +174,8 @@ function buildScheduledItemMarkup(item, label) {
         <div class="record-type">${escapeHtml(item.itemType === 'variant' ? '变式题' : '原错题')}</div>
       </div>
       ${trainingGoal ? `<div class="pack-goal">训练目标：${escapeHtml(trainingGoal)}</div>` : ''}
-      <div class="record-label">题目内容</div>
+      ${writingSection}
+      <div class="record-label redo-question-label">${redoLabel}</div>
       ${buildQuestionBlock(item)}
       ${buildRedoWorkArea()}
     </section>
@@ -364,6 +372,13 @@ export async function buildDocumentMarkup(payload) {
             padding-bottom: 22px;
           }
 
+          .writing-title {
+            margin-bottom: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #334155;
+          }
+
           .writing-prompt-block + .writing-prompt-block {
             margin-top: 18px;
           }
@@ -398,6 +413,10 @@ export async function buildDocumentMarkup(payload) {
             font-size: 12px;
             font-weight: 700;
             color: #64748b;
+          }
+
+          .redo-question-label {
+            margin-top: 18px;
           }
 
           .redo-lines {
