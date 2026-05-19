@@ -1042,6 +1042,8 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
                         )
                         if ai_processor._wrong_question_practice_pack_variant_review_passed(review_text):
                             variants.append(variant)
+                        if len(variants) >= missing_count:
+                            break
 
                 practice_items = [
                     _practice_pack_item_from_real_record(record, index)

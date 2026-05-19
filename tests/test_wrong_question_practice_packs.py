@@ -771,3 +771,74 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
             self.assertIn("打包说明.txt", names)
             note = archive.read("打包说明.txt").decode("utf-8")
         self.assertIn("李明：没有匹配方向的历史错题", note)
+
+    @mock.patch("app.finalize_ai_charge")
+    @mock.patch("app.ensure_feature_credits_available")
+    @mock.patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
+    @mock.patch("ai_processor.review_wrong_question_practice_pack_variant", return_value="结论：通过\n题目可解。")
+    @mock.patch("ai_processor.generate_wrong_question_practice_pack_variants")
+    @mock.patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_limits_ai_variants_to_requested_gap(
+        self,
+        material_mock,
+        variants_mock,
+        _review_mock,
+        pdf_mock,
+        _ensure_credits_mock,
+        _finalize_charge_mock,
+    ):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        variants_mock.return_value = [
+            {
+                "variant_id": f"variant-{index}",
+                "source_record_id": self.record["id"],
+                "question_text": f"解方程 x/{index + 1}+1=3。",
+                "training_goal": "练习去分母每一项同乘。",
+                "answer": "x=4",
+                "key_steps": ["两边同乘"],
+                "pitfall_reminder": "不要漏乘常数项。",
+            }
+            for index in range(8)
+        ]
+        material_mock.side_effect = lambda **kwargs: {
+            "title": "王睿博 一周错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": str(item.get("wrong_question_record_id") or ""),
+                    "ai_hint": "",
+                    "reason_blank_prompt": "",
+                    "improvement_summary_prompt": "",
+                }
+                for item in kwargs["items"]
+            ],
+        }
+
+        def pdf_side_effect(**kwargs):
+            output_path = Path(kwargs["output_path"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"%PDF-1.4\npractice pack\n")
+            return str(output_path)
+
+        pdf_mock.side_effect = pdf_side_effect
+
+        self.app._run_wrong_question_practice_pack_job(job_id=job["id"], user=self.owner)
+
+        loaded = lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+        students_by_name = {student["student_name_snapshot"]: student for student in loaded["students"]}
+        self.assertEqual(students_by_name["王睿博"]["variant_question_count"], 4)
+        pdf_kwargs = pdf_mock.call_args.kwargs
+        self.assertEqual(len(pdf_kwargs["items"]), 5)
+        self.assertEqual(len(pdf_kwargs["answer_items"]), 5)
+        scheduled_ids = [
+            item["practice_item_id"]
+            for day in pdf_kwargs["schedule"]
+            for item in day["items"]
+        ]
+        self.assertEqual(len(scheduled_ids), 5)
