@@ -270,7 +270,7 @@ test('consultation page source keeps the desktop grade column on one line with t
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /grid-cols-\[7rem_minmax\(8rem,1fr\)_4\.5rem_minmax\(10rem,1\.15fr\)_minmax\(8rem,1fr\)_9\.5rem_6\.5rem\]/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[repeat\(auto-fit,minmax\(7\.25rem,1fr\)\)\]/);
   assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">年级<\/p>/);
   assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap font-semibold text-slate-700 dark:text-slate-200">\{record\.grade \|\| '—'\}<\/p>/);
   assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">咨询老师<\/p>/);
@@ -284,7 +284,7 @@ test('consultation page source top-aligns desktop cells so the first text rows s
   assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">\{record\.date \|\| '—'\}<\/p>/);
   assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
   assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /items-center gap-3 bg-slate-50\/60 px-5 py-4/);
+  assert.match(consultationPageBlock[0], /items-center gap-2 bg-slate-50\/60 px-5 py-4/);
 });
 
 test('consultation page source keeps desktop and tablet consultations as two-row cards', () => {
@@ -299,7 +299,7 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   assert.match(consultationPageBlock[0], /onStageClick=\{\(stage\) => handleInlineStageToggle\(record, stage\)\}/);
   assert.match(consultationPageBlock[0], /hidden md:block/);
   assert.match(consultationPageBlock[0], /md:hidden/);
-  assert.match(consultationPageBlock[0], /咨询结束/);
+  assert.match(consultationPageBlock[0], /onClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
   assert.match(source, /window\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)/);
   assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
   assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
@@ -310,7 +310,7 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   assert.ok(flowBarBlock);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(5,minmax\(7rem,1fr\)\)_minmax\(8rem,1fr\)\]/);
   assert.match(flowBarBlock[0], /onStageDoubleClick/);
-  assert.match(source, /activePage === 'calendar' \|\| activePage === 'consultation'/);
+  assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
