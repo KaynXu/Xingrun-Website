@@ -628,3 +628,14 @@ class WrongQuestionPracticePackPdfPayloadTestCase(unittest.TestCase):
         self.assertEqual(payload_schedule[0]["dayIndex"], 1)
         self.assertEqual(payload_schedule[0]["date"], "2026-05-20")
         self.assertEqual(payload_schedule[0]["items"][0]["practiceItemId"], "real-1")
+
+    def test_browser_payload_skips_malformed_schedule_days(self):
+        payload_schedule = pdf_engine._build_browser_wrong_question_practice_schedule(
+            [
+                None,
+                {"day_index": 2, "date": "2026-05-21", "items": []},
+            ]
+        )
+
+        self.assertEqual(len(payload_schedule), 1)
+        self.assertEqual(payload_schedule[0]["dayIndex"], 2)

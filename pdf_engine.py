@@ -648,6 +648,8 @@ def _build_browser_wrong_question_practice_schedule(schedule: list[dict]) -> lis
     browser_schedule: list[dict] = []
 
     for day in schedule:
+        if not isinstance(day, dict):
+            continue
         browser_schedule.append(
             {
                 "dayIndex": int(day.get("day_index") or 0),

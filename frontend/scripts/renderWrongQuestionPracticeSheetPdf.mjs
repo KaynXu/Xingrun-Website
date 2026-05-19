@@ -68,6 +68,11 @@ function buildQuestionBlock(item) {
   `;
 }
 
+function buildLatexTextBlock(value) {
+  const preview = buildWrongQuestionLatexPreviewModel(value || '');
+  return preview.html || escapeHtml(value || '');
+}
+
 function normalizePromptText(prompt) {
   return String(prompt ?? '')
     .replaceAll('\\r\\n', '\n')
@@ -177,20 +182,20 @@ function buildAnswerItemMarkup(item, index) {
   return `
     <section class="answer-card">
       <div class="answer-title">第 ${escapeHtml(index)} 题</div>
-      ${answer ? `<div class="answer-line"><span>答案</span>${escapeHtml(answer)}</div>` : ''}
+      ${answer ? `<div class="answer-line"><span>答案</span><div class="answer-latex xr-latex-preview">${buildLatexTextBlock(answer)}</div></div>` : ''}
       ${
         keySteps.length > 0
           ? `
             <div class="answer-line">
               <span>关键步骤</span>
               <ol>
-                ${keySteps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}
+                ${keySteps.map((step) => `<li><div class="answer-latex xr-latex-preview">${buildLatexTextBlock(step)}</div></li>`).join('')}
               </ol>
             </div>
           `
           : ''
       }
-      ${pitfallReminder ? `<div class="answer-line"><span>易错提醒</span>${escapeHtml(pitfallReminder)}</div>` : ''}
+      ${pitfallReminder ? `<div class="answer-line"><span>易错提醒</span><div class="answer-latex xr-latex-preview">${buildLatexTextBlock(pitfallReminder)}</div></div>` : ''}
     </section>
   `;
 }
@@ -487,6 +492,9 @@ export async function buildDocumentMarkup(payload) {
 
           .answer-line {
             margin-top: 8px;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
             color: #334155;
             font-size: 13px;
             line-height: 1.7;
@@ -496,8 +504,8 @@ export async function buildDocumentMarkup(payload) {
 
           .answer-line span {
             display: inline-block;
+            flex: 0 0 auto;
             min-width: 4.5em;
-            margin-right: 8px;
             color: #64748b;
             font-weight: 700;
           }
@@ -506,6 +514,15 @@ export async function buildDocumentMarkup(payload) {
             margin: 6px 0 0 5.2em;
             padding-left: 18px;
             white-space: normal;
+          }
+
+          .answer-latex {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .answer-latex p {
+            margin: 0;
           }
         </style>
       </head>
