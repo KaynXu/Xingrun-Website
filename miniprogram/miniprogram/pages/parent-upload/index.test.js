@@ -288,6 +288,153 @@ test('removeActiveBox keeps the current image and selects the next neighboring b
   assert.equal(page.data.activeBox.id, 'box_3');
 });
 
+test('chooseImages treats parent cancel as a stable no-op', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig, {
+    imageItems: [],
+    selectedImageId: '',
+    errorMessage: '',
+  });
+  let chooseImageOptions = null;
+
+  await withWx(async () => {
+    page.chooseImages();
+    chooseImageOptions.fail({ errMsg: 'chooseImage:fail cancel' });
+  }, {
+    chooseImage(options) {
+      chooseImageOptions = options;
+    },
+  });
+
+  assert.deepEqual(chooseImageOptions.sourceType, ['camera', 'album']);
+  assert.deepEqual(page.data.imageItems, []);
+  assert.equal(page.data.selectedImageId, '');
+  assert.equal(page.data.errorMessage, '');
+});
+
+test('toggleActiveBoxVoiceRecording recovers when recorder start fails', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const imageItem = {
+    id: 'img_1',
+    localPath: '/tmp/source.jpg',
+    boxes: [
+      {
+        id: 'box_1',
+        x: 0.1,
+        y: 0.2,
+        width: 0.4,
+        height: 0.3,
+        childReasonInputMode: 'text',
+        childReasonText: '',
+      },
+    ],
+    activeBoxId: 'box_1',
+  };
+  const page = createPageInstance(pageConfig, {
+    imageItems: [imageItem],
+    selectedImageId: 'img_1',
+    currentImage: imageItem,
+    activeBox: imageItem.boxes[0],
+  });
+  const recorderManager = {
+    onStop() {},
+    onError() {},
+    stop() {},
+    start() {
+      throw new Error('permission denied');
+    },
+  };
+
+  await withWx(async () => {
+    page.onLoad();
+    assert.doesNotThrow(() => page.toggleActiveBoxVoiceRecording());
+  }, {
+    getSystemInfoSync() {
+      return { windowWidth: 360, windowHeight: 800 };
+    },
+    getRecorderManager() {
+      return recorderManager;
+    },
+  });
+
+  assert.equal(page.data.recordingBoxId, '');
+  assert.equal(page.data.currentImage.boxes[0].childReasonInputMode, 'voice');
+  assert.match(page.data.currentImage.boxes[0].reasonStatusText, /录音启动失败/);
+  assert.match(page.data.errorMessage, /录音启动失败/);
+});
+
+test('recorder onError clears the stale recording hint on the active box', async () => {
+  let recorderErrorHandler = null;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const imageItem = {
+    id: 'img_1',
+    localPath: '/tmp/source.jpg',
+    boxes: [
+      {
+        id: 'box_1',
+        x: 0.1,
+        y: 0.2,
+        width: 0.4,
+        height: 0.3,
+        childReasonInputMode: 'voice',
+        childReasonText: '',
+        voiceFilePath: '',
+        reasonStatusText: '录音中，再点一次结束。',
+      },
+    ],
+    activeBoxId: 'box_1',
+  };
+  const page = createPageInstance(pageConfig, {
+    imageItems: [imageItem],
+    selectedImageId: 'img_1',
+    currentImage: imageItem,
+    activeBox: imageItem.boxes[0],
+    recordingBoxId: 'box_1',
+  });
+
+  await withWx(async () => {
+    page.onLoad();
+    page.recordingTarget = {
+      imageId: 'img_1',
+      boxId: 'box_1',
+    };
+    recorderErrorHandler({ errMsg: 'record:fail auth deny' });
+  }, {
+    getSystemInfoSync() {
+      return { windowWidth: 360, windowHeight: 800 };
+    },
+    getRecorderManager() {
+      return {
+        onStop() {},
+        onError(callback) {
+          recorderErrorHandler = callback;
+        },
+        stop() {},
+        start() {},
+      };
+    },
+  });
+
+  assert.equal(page.data.recordingBoxId, '');
+  assert.match(page.data.currentImage.boxes[0].reasonStatusText, /录音失败/);
+  assert.match(page.data.errorMessage, /录音失败/);
+});
+
 test('submitUpload exposes each parent-visible upload stage without real network calls', async () => {
   let statusRefreshCalls = 0;
   const pageConfig = loadUploadPage({
@@ -323,6 +470,7 @@ test('submitUpload exposes each parent-visible upload stage without real network
   assert.match(stageUpdates[1].text, /语音说明/);
   assert.match(stageUpdates[2].text, /题图/);
   assert.match(stageUpdates[3].text, /已接收/);
+  assert.doesNotMatch(stageUpdates[3].text, /任务\s*9001|9001/);
   assert.equal(statusRefreshCalls, 0);
   assert.equal(page.data.uploadTaskSummary.state, 'background');
   assert.match(page.data.uploadTaskSummary.description, /可以先离开本页/);
@@ -349,6 +497,46 @@ test('submitUpload releases the page and shows a specific failed stage after cro
   assert.equal(page.data.uploadStage, 'failed');
   assert.match(page.data.uploadStageText, /裁切图片失败，请重试/);
   assert.match(page.data.errorMessage, /裁切图片失败，请重试/);
+});
+
+test('submitUpload keeps the voice draft when audio upload fails before image submission', async () => {
+  let submitCalls = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => {
+      const error = new Error('网络连接中断，录音还在本机，请检查网络后重试。');
+      error.retryable = true;
+      throw error;
+    },
+    submitParentWrongQuestion: async () => {
+      submitCalls += 1;
+      return { task: { id: 9001, status: 'pending' } };
+    },
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const uploadData = createReadyUploadData();
+  const currentImage = uploadData.imageItems[0];
+  const page = createPageInstance(pageConfig, {
+    ...uploadData,
+    selectedImageId: currentImage.id,
+    currentImage,
+    activeBox: currentImage.boxes[0],
+  });
+  page.exportBoxCrop = async () => '/tmp/crop.jpg';
+
+  await withWx(async () => {
+    await page.submitUpload();
+  });
+
+  assert.equal(submitCalls, 0);
+  assert.equal(page.data.submitting, false);
+  assert.equal(page.data.uploadStage, 'failed');
+  assert.match(page.data.uploadStageText, /录音还在本机/);
+  assert.match(page.data.errorMessage, /录音还在本机/);
+  assert.equal(page.data.imageItems.length, 1);
+  assert.equal(page.data.currentImage.id, 'img_1');
+  assert.equal(page.data.activeBox.id, 'box_1');
+  assert.equal(page.data.activeBox.voiceFilePath, '/tmp/reason.mp3');
 });
 
 test('submitUpload reports crop export failure by item without clearing the draft', async () => {
@@ -410,6 +598,8 @@ test('onShow exposes topic controls only for primary bindings and merges website
       suggestionRequests.push(params);
       return { items: ['周期问题', '几何'] };
     },
+    getCurrentParentBindingId: () => 0,
+    setCurrentParentBindingId: () => {},
     uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
     submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
     fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
@@ -442,6 +632,108 @@ test('onShow exposes topic controls only for primary bindings and merges website
 
   assert.equal(middlePage.data.showPrimaryTopicCategory, false);
   assert.equal(suggestionRequests.length, 1);
+});
+
+test('onShow auto-selects the only binding when upload opens as a tab', async () => {
+  let storedBindingId = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [{
+      id: 21,
+      studentName: 'Alice',
+      className: '初一 1 班',
+      classGrade: '初一',
+    }],
+    getCurrentParentBindingId: () => storedBindingId,
+    setCurrentParentBindingId: (_wx, bindingId) => {
+      storedBindingId = Number(bindingId) || 0;
+    },
+    fetchParentTopicCategorySuggestions: async () => ({ items: [] }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig);
+  page.options = {};
+
+  await withWx(async () => {
+    await page.onShow();
+  }, {
+    getStorageSync() {
+      return '';
+    },
+    setStorageSync() {},
+  });
+
+  assert.equal(page.data.binding.id, 21);
+  assert.equal(page.data.needsBindingSelection, false);
+  assert.equal(storedBindingId, 21);
+});
+
+test('onShow asks the parent to choose a child when multiple bindings exist and no current child is stored', async () => {
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [
+      { id: 21, studentName: 'Alice', className: '初一 1 班', classGrade: '初一' },
+      { id: 22, studentName: 'Bob', className: '初一 1 班', classGrade: '初一' },
+    ],
+    getCurrentParentBindingId: () => 0,
+    setCurrentParentBindingId: () => {},
+    fetchParentTopicCategorySuggestions: async () => ({ items: [] }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig);
+  page.options = {};
+
+  await withWx(async () => {
+    await page.onShow();
+  }, {
+    getStorageSync() {
+      return '';
+    },
+    setStorageSync() {},
+  });
+
+  assert.equal(page.data.binding, null);
+  assert.equal(page.data.needsBindingSelection, true);
+  assert.equal(page.data.bindings.length, 2);
+});
+
+test('selectUploadBinding switches upload context without navigating away', async () => {
+  let storedBindingId = 0;
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    fetchParentBindings: async () => [
+      { id: 21, studentName: 'Alice', className: '初一 1 班', classGrade: '初一' },
+      { id: 22, studentName: 'Bob', className: '初一 1 班', classGrade: '初一' },
+    ],
+    getCurrentParentBindingId: () => storedBindingId,
+    setCurrentParentBindingId: (_wx, bindingId) => {
+      storedBindingId = Number(bindingId) || 0;
+    },
+    fetchParentTopicCategorySuggestions: async () => ({ items: [] }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async () => ({ task: { id: 9001, status: 'ready' } }),
+  });
+  const page = createPageInstance(pageConfig);
+  page.options = {};
+
+  await withWx(async () => {
+    await page.onShow();
+    await page.selectUploadBinding({ currentTarget: { dataset: { bindingId: '22' } } });
+  }, {
+    getStorageSync() {
+      return '';
+    },
+    setStorageSync() {},
+  });
+
+  assert.equal(page.data.binding.id, 22);
+  assert.equal(page.data.needsBindingSelection, false);
+  assert.equal(storedBindingId, 22);
 });
 
 test('submitUpload sends unclassified topic for non-primary bindings', async () => {
@@ -710,6 +1002,41 @@ test('pollUploadTasks treats malformed task payloads as pending with the origina
   assert.deepEqual(page.data.successTaskIds, [9001]);
   assert.equal(page.data.uploadStage, 'background');
   assert.match(page.data.uploadStageText, /云端继续识别/);
+});
+
+test('pollUploadTasks keeps missing-record tasks recoverable instead of marking them ready', async () => {
+  const storedWrites = [];
+  const pageConfig = loadUploadPage({
+    ensureParentSession: async () => ({ openId: 'openid-parent-1' }),
+    uploadParentReasonAudio: async () => ({ audioUrl: 'https://example.com/files/reason.mp3' }),
+    submitParentWrongQuestion: async () => ({ task: { id: 9001, status: 'pending' } }),
+    fetchWrongQuestionUploadTask: async (_wx, _serverUrl, params) => ({
+      task: {
+        id: params.taskId,
+        status: 'ready',
+        state: 'missing_record',
+        record_missing: true,
+        retryable: true,
+      },
+    }),
+  });
+  const page = createPageInstance(pageConfig, createReadyUploadData());
+  page.data.successTaskIds = [9001];
+
+  await withWx(async () => {
+    const summary = await page.pollUploadTasks('openid-parent-1', [9001]);
+    assert.equal(summary.state, 'background');
+    assert.match(summary.description, /错题记录/);
+  }, {
+    setStorageSync(_key, value) {
+      storedWrites.push(value);
+    },
+  });
+
+  assert.deepEqual(page.data.successTaskIds, [9001]);
+  assert.equal(page.data.uploadStage, 'background');
+  assert.match(page.data.uploadStageText, /错题记录/);
+  assert.equal(storedWrites.at(-1).tasks[0].id, 9001);
 });
 
 test('restoreAcceptedUploadTasks resumes pending stored tasks without re-uploading cropped images', async () => {

@@ -381,6 +381,50 @@ items 中每一项必须包含：
 16. 示例：若题目出现“定义域 [m-4,3m]、x∈[0,3m]、f(x) 单调递减、比较 f(x+1) 与 f(2x-m)”，不要写“复习函数定义和性质”；可以写“本题先核对两个自变量 x+1、2x-m 是否都落在 ______，再利用 f(x) 单调递减把 f(x+1)>f(2x-m) 转成 ______ 的不等式。”
 17. title 控制在 8 到 24 个字。"""
 
+WRONG_QUESTION_PRACTICE_PACK_VARIANT_PROMPT = """你是错题练习变式题设计助手。
+你会收到某个学生的真实错题、目标复习方向和需要补足的题数。请生成同错因变式题。
+
+只返回 JSON，不要输出解释。
+返回字段：
+- items: array
+
+items 每一项包含：
+- variant_id: string，例如 variant-1
+- source_record_id: string，参考的真实错题 ID
+- question_text: string，新的练习题题面
+- training_goal: string，本题训练目标
+- answer: string，标准答案
+- key_steps: array[string]，关键步骤
+- pitfall_reminder: string，易错提醒
+- difficulty: string，基础 / 中等 / 提升
+
+严格规则：
+1. 必须生成同错因变式题，不跨错因、不换训练目标。
+2. 如果目标是去分母漏乘，题目必须考察等式两边每一项同乘。
+3. 如果目标是符号、审题、步骤遗漏或粗心，题目必须专门触发该错误原因。
+4. 题目必须可解，答案必须唯一且与关键步骤一致。
+5. 不要在 question_text 里泄露答案、关键步骤或易错提醒。
+6. 难度要贴近原题，不要明显超出学生当前学段。
+7. 生成题数量必须等于 requested_count。"""
+
+WRONG_QUESTION_PRACTICE_PACK_VARIANT_REVIEW_PROMPT = """你是错题练习变式题审稿老师。
+请检查变式题是否可直接给学生练习。
+
+检查项：
+1. 题目可解。
+2. 标准答案与题目一致，答案一致。
+3. 关键步骤能推出答案。
+4. 题目确实考察目标错因。
+5. 没有跨到其它错因。
+6. 学生题面没有泄露答案。
+
+第一行必须只写：
+结论：通过
+或
+结论：不通过
+
+后续再用一句话说明原因。"""
+
 WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT = """你是老师微信沟通助手。
 你会收到学生本周错题概况，请写一段老师可以直接发给家长的微信。
 
@@ -770,6 +814,196 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
         "title": title,
         "items": normalized_items,
     }
+
+
+_WRONG_QUESTION_PRACTICE_PACK_TARGET_SUBSTRINGS = (
+    "去分母",
+    "漏乘",
+    "符号",
+    "审题",
+    "步骤",
+    "遗漏",
+    "粗心",
+)
+
+
+def _wrong_question_practice_pack_target_tokens(target: str) -> list[str]:
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return []
+    compact_target = re.sub(r"[\s,，、/／|｜;；:：\-—_()（）\[\]【】{}]+", "", normalized_target)
+    raw_parts = re.split(r"[\s,，、/／|｜;；:：\-—_()（）\[\]【】{}]+", normalized_target)
+    tokens = {
+        part.strip()
+        for part in raw_parts
+        if len(part.strip()) >= 2
+    }
+    if len(compact_target) >= 2:
+        tokens.add(compact_target)
+    for substring in _WRONG_QUESTION_PRACTICE_PACK_TARGET_SUBSTRINGS:
+        if substring in compact_target:
+            tokens.add(substring)
+    return sorted(tokens, key=len, reverse=True)
+
+
+def _wrong_question_practice_pack_variant_matches_target(item: dict, target: str) -> bool:
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return True
+    compact_target = re.sub(r"[\s,，、/／|｜;；:：\-—_()（）\[\]【】{}]+", "", normalized_target)
+    evidence_text = "".join(
+        [
+            str(item.get("question_text") or ""),
+            str(item.get("training_goal") or ""),
+            str(item.get("pitfall_reminder") or ""),
+        ]
+    )
+    if "去分母" in compact_target:
+        has_denominator_evidence = (
+            "去分母" in evidence_text
+            or ("分母" in evidence_text and "同乘" in evidence_text)
+            or ("等式两边" in evidence_text and "同乘" in evidence_text)
+        )
+        if not has_denominator_evidence:
+            return False
+        if "漏乘" in compact_target:
+            return any(token in evidence_text for token in ("漏乘", "每一项", "常数项"))
+        return True
+    tokens = _wrong_question_practice_pack_target_tokens(target)
+    return any(token in evidence_text for token in tokens)
+
+
+def _normalize_wrong_question_practice_pack_variants(
+    payload: dict,
+    *,
+    expected_count: int,
+    target: str,
+) -> list[dict]:
+    raw_items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(raw_items, list) or len(raw_items) != int(expected_count or 0):
+        raise ValueError("wrong question practice pack variant generation failed")
+    normalized = []
+    for index, raw_item in enumerate(raw_items, start=1):
+        source = raw_item if isinstance(raw_item, dict) else {}
+        key_steps = source.get("key_steps")
+        normalized_steps = [
+            str(step or "").strip()
+            for step in (key_steps if isinstance(key_steps, list) else [])
+            if str(step or "").strip()
+        ]
+        item = {
+            "variant_id": str(source.get("variant_id") or f"variant-{index}").strip(),
+            "source_record_id": str(source.get("source_record_id") or "").strip(),
+            "question_text": str(source.get("question_text") or "").strip(),
+            "training_goal": str(source.get("training_goal") or "").strip(),
+            "answer": str(source.get("answer") or "").strip(),
+            "key_steps": normalized_steps,
+            "pitfall_reminder": str(source.get("pitfall_reminder") or "").strip(),
+            "difficulty": str(source.get("difficulty") or "基础").strip() or "基础",
+        }
+        if not item["question_text"] or not item["answer"] or not item["training_goal"] or not item["key_steps"]:
+            raise ValueError("wrong question practice pack variant generation failed")
+        if not _wrong_question_practice_pack_variant_matches_target(item, target):
+            raise ValueError("wrong question practice pack variant target mismatch")
+        normalized.append(item)
+    return normalized
+
+
+def _wrong_question_practice_pack_variant_review_passed(review_text: str) -> bool:
+    for line in str(review_text or "").splitlines():
+        normalized = re.sub(r"\s+", "", line)
+        if not normalized:
+            continue
+        return normalized.startswith("结论：通过") or normalized.startswith("结论:通过")
+    return False
+
+
+def generate_wrong_question_practice_pack_variants(
+    *,
+    student_name: str,
+    class_name: str,
+    mode: str,
+    target: str,
+    requested_count: int,
+    source_records: list[dict],
+    include_usage: bool = False,
+):
+    if int(requested_count or 0) <= 0:
+        return ([], {}) if include_usage else []
+    normalized_records = [
+        {
+            "id": str(record.get("id") or "").strip(),
+            "question_text": str(record.get("question_text") or "").strip(),
+            "topic_category": str(record.get("topic_category") or "").strip(),
+            "primary_error_type": str(record.get("primary_error_type") or "").strip(),
+            "secondary_error_summary": str(record.get("secondary_error_summary") or "").strip(),
+            "child_reason_text": str(record.get("child_raw_reason_text") or "").strip(),
+        }
+        for record in (source_records or [])
+    ]
+    if not normalized_records:
+        raise ValueError("source_records are required")
+    client = _get_client()
+    response = client.chat.completions.create(
+        model=_get_structured_generation_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_PRACTICE_PACK_VARIANT_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "student_name": str(student_name or "").strip(),
+                        "class_name": str(class_name or "").strip(),
+                        "mode": str(mode or "").strip(),
+                        "target": str(target or "").strip(),
+                        "requested_count": int(requested_count or 0),
+                        "source_records": normalized_records,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    payload = _loads_model_json(response.choices[0].message.content)
+    normalized = _normalize_wrong_question_practice_pack_variants(
+        payload,
+        expected_count=int(requested_count or 0),
+        target=str(target or "").strip(),
+    )
+    if include_usage:
+        return normalized, _usage_dict(response)
+    return normalized
+
+
+def review_wrong_question_practice_pack_variant(
+    *,
+    mode: str,
+    target: str,
+    variant: dict,
+    client=None,
+) -> str:
+    active_client = client or _get_client()
+    response = active_client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": WRONG_QUESTION_PRACTICE_PACK_VARIANT_REVIEW_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "mode": str(mode or "").strip(),
+                        "target": str(target or "").strip(),
+                        "variant": variant,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        temperature=0,
+    )
+    return str(response.choices[0].message.content or "").strip()
 
 
 def generate_wrong_question_practice_sheet_material(

@@ -103,6 +103,42 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
 });
 
+test('buildDocumentMarkup renders scheduled answer math through latex preview', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 一周错题练习',
+    schedule: [
+      {
+        dayIndex: 1,
+        date: '2026-05-20',
+        items: [
+          {
+            practiceItemId: 'variant-1',
+            itemType: 'variant',
+            question_order: 1,
+            is_geometry: false,
+            question_text_snapshot: '解方程 $x+1=3$。',
+          },
+        ],
+      },
+    ],
+    answerItems: [
+      {
+        practiceItemId: 'variant-1',
+        answer: '$x=2$',
+        keySteps: ['两边同时减去 $1$'],
+        pitfallReminder: '移项后要变号。',
+      },
+    ],
+  });
+
+  const answerSection = markup.slice(markup.indexOf('答案与关键步骤'));
+  assert.match(answerSection, /class="katex"/);
+  assert.doesNotMatch(answerSection, /\$x=2\$/);
+});
+
 test('resolveChromiumLaunchOptions adds hardened chromium flags on linux', async () => {
   const launchOptions = await resolveChromiumLaunchOptions({
     env: {},

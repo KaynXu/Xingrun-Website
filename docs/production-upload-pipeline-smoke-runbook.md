@@ -150,6 +150,28 @@ Expected healthy result:
 - `Content-Type` is `application/pdf`.
 - Downloaded file is non-empty.
 
+## 8. PDF And LaTeX Render Stability
+
+Run these before asking parents to rely on PDF output after a PDF, LaTeX, worker, or renderer change.
+
+```bash
+cd "$APP_DIR"
+.venv/bin/python -m unittest tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt -v
+
+cd "$APP_DIR/frontend"
+npx tsx --test \
+  src/wrong-question-latex.test.ts \
+  src/render-wrong-question-library-pdf.test.ts \
+  src/render-wrong-question-practice-sheet-pdf.test.ts
+```
+
+Expected healthy result:
+- Wrong-question library PDF generation creates non-empty output.
+- Browser rendering can produce KaTeX-backed student-library PDF markup.
+- ReportLab fallback survives browser-render failures.
+- Invalid LaTeX is preserved as readable source instead of crashing rendering.
+- Old LaTeX transport issues are covered, including eaten backslashes, bare LaTeX fragments, mixed Chinese prose and formulas, and malformed formulas.
+
 ## If Tasks Stay Pending
 
 1. Re-run Redis/RQ checks and confirm the queue has at least one worker.

@@ -2,6 +2,8 @@ const app = getApp();
 const {
   ensureParentSession,
   fetchParentBindings,
+  getCurrentParentBindingId,
+  setCurrentParentBindingId,
 } = require('../../utils/parentApi');
 
 Page({
@@ -9,6 +11,7 @@ Page({
     loading: true,
     errorMessage: '',
     bindings: [],
+    currentBindingId: 0,
   },
 
   async onShow() {
@@ -23,9 +26,21 @@ Page({
       const bindings = await fetchParentBindings(wx, app.globalData.serverUrl, {
         openId: session.openId,
       });
+      const storedBindingId = getCurrentParentBindingId(wx);
+      const hasStoredBinding = bindings.some((item) => item.id === storedBindingId);
+      const currentBindingId = hasStoredBinding
+        ? storedBindingId
+        : bindings.length === 1
+          ? bindings[0].id
+          : 0;
+      if (currentBindingId && currentBindingId !== storedBindingId) {
+        setCurrentParentBindingId(wx, currentBindingId);
+      }
       app.globalData.parentBindings = bindings;
+      app.globalData.currentParentBindingId = currentBindingId;
       this.setData({
         bindings,
+        currentBindingId,
       });
     } catch (error) {
       this.setData({
@@ -40,15 +55,14 @@ Page({
     wx.navigateTo({ url: '/pages/parent-bind/index' });
   },
 
-  goUpload(event) {
+  setCurrentBinding(event) {
     const bindingId = Number(event.currentTarget.dataset.bindingId || 0);
     if (!bindingId) {
       return;
     }
-
-    wx.navigateTo({
-      url: `/pages/parent-upload/index?bindingId=${bindingId}`,
-    });
+    setCurrentParentBindingId(wx, bindingId);
+    app.globalData.currentParentBindingId = bindingId;
+    this.setData({ currentBindingId: bindingId });
   },
 
   goWrongbook(event) {

@@ -59,6 +59,7 @@ _WRONG_QUESTION_PRACTICE_PDF_RETRY_DELAYS_SECONDS = (1, 3, 5)
 from lesson_manager import (
     actor_can_manage_user,
     attach_student_library_pdf_path,
+    build_wrong_question_practice_pack_schedule,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -69,6 +70,7 @@ from lesson_manager import (
     create_class_feedback_task,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
+    create_wrong_question_practice_pack_job,
     create_wechat_wrong_question_upload_task,
     create_organization_request,
     create_student_for_class,
@@ -90,6 +92,7 @@ from lesson_manager import (
     delete_lesson as db_delete_lesson,
     delete_organization,
     find_previous_confirmed_class_feedback_entry,
+    find_active_wrong_question_practice_pack_job,
     get_class,
     get_class_feedback_task,
     get_class_teacher_user_id,
@@ -104,6 +107,7 @@ from lesson_manager import (
     get_or_create_active_class_invite,
     get_lesson,
     get_weekly_wrong_question_followup_message,
+    get_wrong_question_practice_pack_job,
     get_wrong_question_practice_sheet,
     get_or_create_active_organization_invite,
     get_organization_invite_by_token,
@@ -125,6 +129,7 @@ from lesson_manager import (
     list_lessons,
     list_lessons_for_actor,
     list_wrong_question_practice_sheets_for_student,
+    list_targeted_wrong_question_practice_candidates,
     list_organizations,
     list_organization_requests,
     list_parent_student_bindings_for_openid,
@@ -153,6 +158,8 @@ from lesson_manager import (
     save_class,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
+    mark_lesson_transcription_succeeded,
+    mark_wrong_question_practice_pack_job_status,
     mark_wrong_question_practice_sheet_failed,
     mark_wrong_question_practice_sheet_succeeded,
     create_monthly_plan_job,
@@ -177,6 +184,7 @@ from lesson_manager import (
     update_user_profile,
     resolve_teacher_username_to_user_id,
     update_user_role,
+    upsert_wrong_question_practice_pack_job_student,
     upsert_weekly_wrong_question_followup_message,
     upsert_parent_wechat_account,
     get_teacher_alias_entries,
@@ -596,13 +604,70 @@ def _run_review_plan_generation_job(
     chat_model: str,
     request_key: str | None = None,
     request_id: str | None = None,
+    audio_path: str = "",
+    audio_request_key: str | None = None,
+    same_lesson_materials: list[str] | None = None,
 ) -> None:
     try:
         lesson = get_lesson(lesson_id)
         if not lesson:
             logger.warning("Review plan generation skipped: lesson %s not found", lesson_id)
             return
-        if lesson.get("record_status") != "pending":
+        record_status = str(lesson.get("record_status") or "")
+        if record_status == "transcribing":
+            audio_file_path = Path(audio_path) if audio_path else None
+            if not audio_file_path:
+                mark_lesson_generation_failed(lesson_id, "音频转录失败，请重新上传")
+                return
+            try:
+                from ai_processor import transcribe_audio
+                transcription = _run_ai_feature_with_charge(
+                    user=user,
+                    feature_key="audio_transcription",
+                    source_record_type="lesson_upload",
+                    source_record_id=f"upload:{lesson_id}",
+                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(audio_file_path)),
+                    provider="local",
+                    model="faster-whisper-base",
+                    request_key=audio_request_key or request_key,
+                )
+                raw_transcription = str(transcription or "").strip()
+                if not raw_transcription:
+                    mark_lesson_generation_failed(lesson_id, "音频转录失败，请稍后重试")
+                    return
+                merged_summary = _merge_review_plan_materials(raw_transcription, same_lesson_materials or [])
+                mark_lesson_transcription_succeeded(lesson_id, summary=merged_summary)
+                lesson = get_lesson(lesson_id)
+                if not lesson:
+                    logger.warning("Review plan generation skipped after transcription: lesson %s not found", lesson_id)
+                    return
+                record_status = str(lesson.get("record_status") or "")
+            except DuplicateAiRequestError as exc:
+                logger.exception("Review plan audio transcription request rejected for lesson %s", lesson_id)
+                try:
+                    mark_lesson_generation_failed(lesson_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark lesson %s as failed after duplicate transcription request", lesson_id)
+                return
+            except CreditBalanceError as exc:
+                logger.exception("Review plan audio transcription credit preflight failed for lesson %s", lesson_id)
+                try:
+                    mark_lesson_generation_failed(lesson_id, str(exc))
+                except LookupError:
+                    logger.exception("Failed to mark lesson %s as failed after transcription credit error", lesson_id)
+                return
+            except Exception:
+                logger.exception("Review plan audio transcription failed for lesson %s", lesson_id)
+                try:
+                    mark_lesson_generation_failed(lesson_id, "音频转录失败，请稍后重试")
+                except LookupError:
+                    logger.exception("Failed to mark lesson %s as failed after transcription error", lesson_id)
+                return
+            finally:
+                if audio_file_path:
+                    audio_file_path.unlink(missing_ok=True)
+
+        if record_status not in {"pending", "generating"}:
             logger.info(
                 "Review plan generation skipped for lesson %s with status %s",
                 lesson_id,
@@ -886,6 +951,289 @@ def _run_wrong_question_practice_generation_job(
 def _start_wrong_question_practice_generation_thread(**job_kwargs) -> None:
     threading.Thread(
         target=_run_wrong_question_practice_generation_job,
+        kwargs=job_kwargs,
+        daemon=True,
+    ).start()
+
+
+def _practice_pack_item_from_real_record(record: dict, index: int) -> dict:
+    record_id = str(record.get("id") or "").strip()
+    return {
+        "practice_item_id": f"real-{record_id or index}",
+        "item_type": "real",
+        "wrong_question_record_id": record_id,
+        "question_order": int(index),
+        "source": str(record.get("source") or "wechat_mp").strip() or "wechat_mp",
+        "is_geometry": bool(record.get("is_geometry")),
+        "question_text_snapshot": str(record.get("question_text") or "").strip(),
+        "image_url_snapshot": str(record.get("image_url") or "").strip(),
+        "child_reason_text_snapshot": str(record.get("child_raw_reason_text") or "").strip(),
+        "primary_error_type_snapshot": str(record.get("primary_error_type") or "").strip(),
+        "cause_note_snapshot": str(record.get("secondary_error_summary") or "").strip(),
+    }
+
+
+def _practice_pack_item_from_variant(variant: dict, index: int) -> dict:
+    variant_id = str(variant.get("variant_id") or f"variant-{index}").strip()
+    practice_item_id = f"variant-{variant_id or index}"
+    key_steps = variant.get("key_steps") if isinstance(variant.get("key_steps"), list) else []
+    return {
+        "practice_item_id": practice_item_id,
+        "item_type": "variant",
+        "wrong_question_record_id": practice_item_id,
+        "question_order": int(index),
+        "source": "ai_variant",
+        "is_geometry": bool(variant.get("is_geometry")),
+        "question_text_snapshot": str(variant.get("question_text") or "").strip(),
+        "image_url_snapshot": "",
+        "child_reason_text_snapshot": "",
+        "primary_error_type_snapshot": str(variant.get("training_goal") or "").strip(),
+        "cause_note_snapshot": str(variant.get("pitfall_reminder") or "").strip(),
+        "variant_id": variant_id,
+        "source_record_id": str(variant.get("source_record_id") or "").strip(),
+        "training_goal": str(variant.get("training_goal") or "").strip(),
+        "answer": str(variant.get("answer") or "").strip(),
+        "key_steps": [str(step or "").strip() for step in key_steps if str(step or "").strip()],
+        "pitfall_reminder": str(variant.get("pitfall_reminder") or "").strip(),
+    }
+
+
+def _build_wrong_question_practice_pack_zip(job: dict) -> dict:
+    job_id = int(job.get("id") or 0)
+    zip_path = _wrong_question_practice_pack_zip_path(job_id)
+    temp_zip_path = zip_path.with_suffix(f"{zip_path.suffix}.tmp")
+    notes: list[str] = []
+    written_count = 0
+    used_names: set[str] = set()
+
+    try:
+        zip_path.unlink(missing_ok=True)
+        temp_zip_path.unlink(missing_ok=True)
+        with zipfile.ZipFile(temp_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for index, student in enumerate(job.get("students") or [], start=1):
+                student_name = str(student.get("student_name_snapshot") or "学生").strip() or "学生"
+                status = str(student.get("status") or "").strip()
+                pdf_path_value = str(student.get("pdf_path") or "").strip()
+                pdf_path = Path(pdf_path_value) if pdf_path_value else None
+                if status == "ready" and pdf_path is not None and pdf_path.is_file():
+                    safe_name = _safe_pdf_download_filename_part(student_name, f"student-{student.get('student_id') or index}")
+                    archive_name = f"{index:02d}-{safe_name}.pdf"
+                    if archive_name in used_names:
+                        archive_name = f"{index:02d}-{safe_name}-{student.get('student_id') or index}.pdf"
+                    used_names.add(archive_name)
+                    archive.write(pdf_path, archive_name)
+                    written_count += 1
+                    warning = str(student.get("generation_error") or "").strip()
+                    if warning:
+                        notes.append(f"{student_name}：{warning}")
+                    continue
+
+                error_message = str(student.get("generation_error") or "").strip()
+                if status == "ready":
+                    error_message = "PDF 文件缺失"
+                else:
+                    error_message = error_message or "未生成"
+                notes.append(f"{student_name}：{error_message}")
+
+            if written_count <= 0:
+                raise RuntimeError("没有可打包的学生练习 PDF")
+            if notes:
+                archive.writestr("打包说明.txt", "\n".join(notes) + "\n")
+        temp_zip_path.replace(zip_path)
+    except Exception:
+        temp_zip_path.unlink(missing_ok=True)
+        zip_path.unlink(missing_ok=True)
+        raise
+
+    return {"zip_path": str(zip_path), "has_partial": bool(notes)}
+
+
+def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
+    try:
+        job = get_wrong_question_practice_pack_job(job_id)
+        if not job or job.get("status") not in {"pending", "failed"}:
+            logger.info("Wrong question practice pack generation skipped for job %s", job_id)
+            return
+
+        mark_wrong_question_practice_pack_job_status(job_id, status="running", zip_path="", generation_error="")
+        class_row = get_class(int(job.get("class_id") or 0)) or {}
+        class_name = str(class_row.get("name") or "").strip()
+        teacher_name = str(user.get("display_name") or user.get("username") or "").strip()
+        requested_count = int(job.get("requested_question_count") or 0)
+        any_partial = False
+
+        for student in list_students_for_class(int(job.get("class_id") or 0)):
+            student_id = int(student.get("id") or 0)
+            student_name = str(student.get("name") or "").strip() or "学生"
+            upsert_wrong_question_practice_pack_job_student(
+                job_id=job_id,
+                student_id=student_id,
+                student_name_snapshot=student_name,
+                status="running",
+                requested_question_count=requested_count,
+            )
+            try:
+                real_candidates = list_targeted_wrong_question_practice_candidates(
+                    organization_id=int(job.get("organization_id") or 0),
+                    class_id=int(job.get("class_id") or 0),
+                    student_id=student_id,
+                    mode=str(job.get("mode") or ""),
+                    target=str(job.get("target") or ""),
+                    limit=requested_count,
+                )
+                if not real_candidates:
+                    any_partial = True
+                    upsert_wrong_question_practice_pack_job_student(
+                        job_id=job_id,
+                        student_id=student_id,
+                        student_name_snapshot=student_name,
+                        status="skipped",
+                        requested_question_count=requested_count,
+                        generation_error="没有匹配方向的历史错题",
+                    )
+                    continue
+
+                missing_count = max(0, requested_count - len(real_candidates))
+                variants: list[dict] = []
+                if missing_count > 0:
+                    generated_variants = ai_processor.generate_wrong_question_practice_pack_variants(
+                        student_name=student_name,
+                        class_name=class_name,
+                        mode=str(job.get("mode") or ""),
+                        target=str(job.get("target") or ""),
+                        requested_count=missing_count,
+                        source_records=real_candidates,
+                    )
+                    for variant in generated_variants or []:
+                        review_text = ai_processor.review_wrong_question_practice_pack_variant(
+                            mode=str(job.get("mode") or ""),
+                            target=str(job.get("target") or ""),
+                            variant=variant,
+                        )
+                        if ai_processor._wrong_question_practice_pack_variant_review_passed(review_text):
+                            variants.append(variant)
+                        if len(variants) >= missing_count:
+                            break
+
+                practice_items = [
+                    _practice_pack_item_from_real_record(record, index)
+                    for index, record in enumerate(real_candidates, start=1)
+                ]
+                variant_items = [
+                    _practice_pack_item_from_variant(variant, len(practice_items) + index)
+                    for index, variant in enumerate(variants, start=1)
+                ]
+                practice_items.extend(variant_items)
+                generated = ai_processor.generate_wrong_question_practice_sheet_material(
+                    student_name=student_name,
+                    class_name=class_name,
+                    teacher_name=teacher_name,
+                    items=practice_items,
+                )
+                generated_items = generated.get("items") if isinstance(generated, dict) else []
+                generated_by_id = {
+                    str(item.get("wrong_question_record_id") or "").strip(): item
+                    for item in generated_items
+                    if isinstance(item, dict)
+                }
+                merged_items = []
+                for item in practice_items:
+                    generated_item = generated_by_id.get(str(item.get("wrong_question_record_id") or "").strip(), {})
+                    merged_items.append(
+                        {
+                            **item,
+                            "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
+                            "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
+                            "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                        }
+                    )
+                schedule = build_wrong_question_practice_pack_schedule(
+                    merged_items,
+                    start_date=date.today().isoformat(),
+                )
+                warning = ""
+                if len(merged_items) < requested_count:
+                    any_partial = True
+                    warning = "匹配题量不足，已按可用题生成"
+                title = str((generated or {}).get("title") or "").strip() or f"{student_name} 一周错题练习"
+                pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                    student_name=student_name,
+                    class_name=class_name,
+                    teacher_name=teacher_name,
+                    title=title,
+                    items=merged_items,
+                    output_path=str(_wrong_question_practice_pack_student_pdf_path(job_id, student_id)),
+                    schedule=schedule,
+                    answer_items=merged_items,
+                    pack_meta={
+                        "mode": str(job.get("mode") or ""),
+                        "target": str(job.get("target") or ""),
+                        "volume": str(job.get("volume") or ""),
+                        "requested_question_count": requested_count,
+                    },
+                )
+                upsert_wrong_question_practice_pack_job_student(
+                    job_id=job_id,
+                    student_id=student_id,
+                    student_name_snapshot=student_name,
+                    status="ready",
+                    requested_question_count=requested_count,
+                    real_question_count=len(practice_items) - len(variant_items),
+                    variant_question_count=len(variant_items),
+                    pdf_path=str(pdf_path or "").strip(),
+                    generation_error=warning,
+                )
+            except Exception as exc:
+                any_partial = True
+                logger.exception("Wrong question practice pack student generation failed for job %s student %s", job_id, student_id)
+                upsert_wrong_question_practice_pack_job_student(
+                    job_id=job_id,
+                    student_id=student_id,
+                    student_name_snapshot=student_name,
+                    status="failed",
+                    requested_question_count=requested_count,
+                    generation_error=str(exc) or "生成失败",
+                )
+
+        refreshed_job = get_wrong_question_practice_pack_job(job_id) or {}
+        try:
+            zip_result = _build_wrong_question_practice_pack_zip(refreshed_job)
+        except Exception as exc:
+            logger.exception("Wrong question practice pack zip generation failed for job %s", job_id)
+            mark_wrong_question_practice_pack_job_status(
+                job_id,
+                status="failed",
+                zip_path="",
+                generation_error=str(exc) or "打包失败",
+            )
+            return
+
+        refreshed_students = refreshed_job.get("students") or []
+        final_status = "partial_failed" if any_partial or bool(zip_result.get("has_partial")) or any(
+            str(student.get("status") or "") != "ready" for student in refreshed_students
+        ) else "ready"
+        mark_wrong_question_practice_pack_job_status(
+            job_id,
+            status=final_status,
+            zip_path=str(zip_result.get("zip_path") or ""),
+            generation_error="",
+        )
+    except Exception as exc:
+        logger.exception("Wrong question practice pack generation failed for job %s", job_id)
+        try:
+            mark_wrong_question_practice_pack_job_status(
+                job_id,
+                status="failed",
+                zip_path="",
+                generation_error=str(exc) or "生成失败",
+            )
+        except LookupError:
+            logger.exception("Failed to mark wrong question practice pack job %s as failed", job_id)
+
+
+def _start_wrong_question_practice_pack_thread(**job_kwargs) -> None:
+    threading.Thread(
+        target=_run_wrong_question_practice_pack_job,
         kwargs=job_kwargs,
         daemon=True,
     ).start()
@@ -1584,6 +1932,18 @@ def _serialize_wrong_question_practice_sheet_for_response(sheet: object) -> Opti
     return serialized
 
 
+def _serialize_wrong_question_practice_pack_job_for_response(job: object) -> Optional[dict]:
+    if not isinstance(job, dict):
+        return None
+    serialized = dict(job)
+    serialized["download_url"] = ""
+    zip_path_value = str(serialized.get("zip_path") or "").strip()
+    zip_path = Path(zip_path_value) if zip_path_value else None
+    if zip_path is not None and zip_path.is_file() and str(serialized.get("status") or "") in {"ready", "partial_failed"}:
+        serialized["download_url"] = f"/api/wrong-question-practice-packs/{serialized['id']}/download"
+    return serialized
+
+
 def _serialize_wrong_question_practice_sheets_for_response(items: object) -> list[dict]:
     if not isinstance(items, list):
         return []
@@ -1662,6 +2022,16 @@ def _can_access_wrong_question_practice_sheet(user, sheet: object, owned_class_i
     if member_class_ids is None:
         member_class_ids = set(get_user_class_ids(user["id"]))
     return class_id in member_class_ids
+
+
+def _can_access_wrong_question_practice_pack_job(user: dict, job: object) -> bool:
+    if user.get("role") == "super_owner":
+        return True
+    if not isinstance(job, dict):
+        return False
+    if user.get("role") in {"owner", "admin"}:
+        return int(job.get("organization_id") or 0) == int(user.get("organization_id") or 0)
+    return int(job.get("class_id") or 0) in set(get_user_class_ids(user["id"]))
 
 
 def _filter_wrong_question_practice_sheets_for_user(user, sheets: object) -> list[dict]:
@@ -2924,6 +3294,117 @@ def api_wrong_question_student_library_refresh(student_id: int):
     )
 
 
+@app.route("/api/wrong-question-practice-packs", methods=["POST"])
+def api_wrong_question_practice_pack_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    if not has_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+
+    try:
+        class_id = int(data.get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    mode = str(data.get("mode") or "").strip().lower()
+    target = str(data.get("target") or "").strip()
+    volume = str(data.get("volume") or "").strip().lower()
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    if mode not in {"topic", "reason"}:
+        return jsonify({"error": "mode must be topic or reason"}), 400
+    if volume not in {"light", "standard", "intensive"}:
+        return jsonify({"error": "volume must be light, standard or intensive"}), 400
+    if not target:
+        return jsonify({"error": "target is required"}), 400
+
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        existing_job = find_active_wrong_question_practice_pack_job(
+            organization_id=organization_id,
+            class_id=class_id,
+            created_by=int(user["id"]),
+            mode=mode,
+            target=target,
+            volume=volume,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if existing_job:
+        serialized = _serialize_wrong_question_practice_pack_job_for_response(existing_job)
+        if serialized is None:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"job": serialized, "reused": True}), 200
+
+    try:
+        job = create_wrong_question_practice_pack_job(
+            organization_id=organization_id,
+            class_id=class_id,
+            created_by=int(user["id"]),
+            mode=mode,
+            target=target,
+            volume=volume,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    _start_wrong_question_practice_pack_thread(
+        job_id=int(job["id"]),
+        user={
+            "id": int(user["id"]),
+            "organization_id": organization_id,
+            "display_name": user.get("display_name") or user.get("username") or "",
+        },
+    )
+    serialized = _serialize_wrong_question_practice_pack_job_for_response(job)
+    return jsonify({"job": serialized, "reused": False}), 202
+
+
+@app.route("/api/wrong-question-practice-packs/<int:job_id>", methods=["GET"])
+def api_wrong_question_practice_pack_detail(job_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    job = get_wrong_question_practice_pack_job(job_id)
+    if not job or not _can_access_wrong_question_practice_pack_job(user, job):
+        return jsonify({"error": "not found"}), 404
+    serialized = _serialize_wrong_question_practice_pack_job_for_response(job)
+    if serialized is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"job": serialized})
+
+
+@app.route("/api/wrong-question-practice-packs/<int:job_id>/download", methods=["GET"])
+def api_wrong_question_practice_pack_download(job_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    job = get_wrong_question_practice_pack_job(job_id)
+    if not job or not _can_access_wrong_question_practice_pack_job(user, job):
+        return jsonify({"error": "not found"}), 404
+    if str(job.get("status") or "") not in {"ready", "partial_failed"}:
+        return jsonify({"error": "practice pack is not ready"}), 409
+    zip_path = Path(str(job.get("zip_path") or "").strip())
+    if not zip_path or not zip_path.is_file():
+        return jsonify({"error": "zip not found"}), 404
+
+    cls = get_class(int(job.get("class_id") or 0)) or {}
+    class_name = _safe_pdf_download_filename_part(cls.get("name"), f"class-{job.get('class_id') or job_id}")
+    export_date = datetime.now().strftime("%Y-%m-%d")
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{class_name}错题练习包_{export_date}.zip",
+    )
+
+
 @app.route("/api/wrong-question-practice-sheets", methods=["POST"])
 def api_wrong_question_practice_sheet_create():
     user, error = _require_auth()
@@ -3746,6 +4227,20 @@ def _wrong_question_practice_sheet_pdf_path(sheet_id: int) -> Path:
     return practice_dir / f"sheet-{sheet_id}.pdf"
 
 
+def _wrong_question_practice_pack_dir(job_id: int) -> Path:
+    pack_dir = PDF_DIR / "wrong_question_practice_packs" / f"pack-{job_id}"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    return pack_dir
+
+
+def _wrong_question_practice_pack_student_pdf_path(job_id: int, student_id: int) -> Path:
+    return _wrong_question_practice_pack_dir(job_id) / f"student-{student_id}.pdf"
+
+
+def _wrong_question_practice_pack_zip_path(job_id: int) -> Path:
+    return _wrong_question_practice_pack_dir(job_id) / "practice-pack.zip"
+
+
 def _parse_student_wrong_question_library_updated_at(value: str) -> Optional[datetime]:
     raw_value = str(value or "").strip()
     if not raw_value:
@@ -4257,6 +4752,9 @@ def api_lesson_create():
     
     input_type = data.get("input_type", "text")
     raw_text = ""
+    audio_path = ""
+    audio_request_key = None
+    initial_record_status = "pending"
     chat_provider = _default_ai_provider_name()
     chat_model = _default_chat_model_name()
     
@@ -4271,43 +4769,23 @@ def api_lesson_create():
         
         ext = Path(file.filename).suffix.lower()
         if ext in {".mp3", ".m4a", ".mp4", ".wav", ".ogg", ".webm", ".flac"}:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            audio_request_key = _current_audio_upload_request_key()
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             save_path = UPLOAD_DIR / f"audio_{ts}{ext}"
             file.save(str(save_path))
             
             if save_path.stat().st_size > 25 * 1024 * 1024:
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": "音频文件过大（最大 25MB）"}), 400
-                
-            try:
-                from ai_processor import transcribe_audio
-                raw_text = _run_ai_feature_with_charge(
-                    user=user,
-                    feature_key="audio_transcription",
-                    source_record_type="lesson_upload",
-                    source_record_id=f"upload:{_request_payload_fingerprint(include_file_content=True)}",
-                    producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(save_path)),
-                    provider="local",
-                    model="faster-whisper-base",
-                    request_key=_current_audio_upload_request_key(),
-                )
-            except DuplicateAiRequestError as exc:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": str(exc)}), 409
-            except CreditBalanceError as exc:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": str(exc)}), 402
-            except Exception as e:
-                save_path.unlink(missing_ok=True)
-                return jsonify({"error": f"音频转录失败：{e}"}), 500
-            save_path.unlink(missing_ok=True)
+            audio_path = str(save_path)
+            initial_record_status = "transcribing"
         elif ext in {".txt", ".md", ".text"}:
             raw_text = file.read().decode("utf-8", errors="replace")
         else:
             return jsonify({"error": f"不支持的文件格式 {ext}"}), 400
 
     raw_text = _merge_review_plan_materials(raw_text, same_lesson_materials)
-    if not raw_text:
+    if not raw_text and not audio_path:
         return jsonify({"error": "提取的总结内容为空"}), 400
 
     request_key = _current_ai_request_key()
@@ -4347,6 +4825,7 @@ def api_lesson_create():
             summary=raw_text,
             weak_points=weak_points,
             class_id=class_id,
+            record_status=initial_record_status,
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
@@ -4358,14 +4837,19 @@ def api_lesson_create():
             chat_model=chat_model,
             request_key=request_key,
             request_id=request_id,
+            audio_path=audio_path,
+            audio_request_key=audio_request_key,
+            same_lesson_materials=same_lesson_materials,
         )
     except Exception:
         if lesson_id:
             db_delete_lesson(lesson_id)
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
         if request_identity_claimed:
             _release_ai_request_identity(request_id)
         raise
-    return jsonify({"id": lesson_id, "success": True, "status": "pending"}), 202
+    return jsonify({"id": lesson_id, "success": True, "status": initial_record_status}), 202
 
 
 @app.route("/api/class-feedback/labels", methods=["GET"])

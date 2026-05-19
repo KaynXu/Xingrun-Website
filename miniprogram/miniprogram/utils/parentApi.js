@@ -1,5 +1,6 @@
 const PARENT_SESSION_KEY = 'xr_parent_session';
 const PARENT_BINDINGS_KEY = 'xr_parent_bindings';
+const CURRENT_PARENT_BINDING_KEY = 'xr_current_parent_binding_id';
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30000;
 const AUDIO_UPLOAD_TIMEOUT_MS = 20000;
@@ -289,6 +290,20 @@ function uploadFile(wxApi, options) {
           try {
             payload = JSON.parse(responseData);
           } catch (_error) {
+            if (statusCode === 413 && errorMessages.oversizeMessage) {
+              reject(createParentApiError(errorMessages.oversizeMessage, {
+                statusCode,
+                retryable: false,
+              }));
+              return;
+            }
+            if ((statusCode >= 500 || (statusCode >= 200 && statusCode < 300)) && errorMessages.serverRetryMessage) {
+              reject(createParentApiError(errorMessages.serverRetryMessage, {
+                statusCode,
+                retryable: true,
+              }));
+              return;
+            }
             reject(createParentApiError(extractRequestErrorMessage(response, '上传返回解析失败'), {
               statusCode,
               retryable: false,
@@ -367,6 +382,14 @@ function setParentBindings(wxApi, bindings) {
     : [];
   safeSetStorage(wxApi, PARENT_BINDINGS_KEY, normalized);
   return normalized;
+}
+
+function getCurrentParentBindingId(wxApi) {
+  return Number(safeGetStorage(wxApi, CURRENT_PARENT_BINDING_KEY, 0) || 0) || 0;
+}
+
+function setCurrentParentBindingId(wxApi, bindingId) {
+  safeSetStorage(wxApi, CURRENT_PARENT_BINDING_KEY, Number(bindingId) || 0);
 }
 
 function upsertParentBinding(bindings, binding) {
@@ -570,12 +593,15 @@ async function updateChildWrongQuestionTopicCategory(wxApi, serverUrl, params) {
 module.exports = {
   PARENT_SESSION_KEY,
   PARENT_BINDINGS_KEY,
+  CURRENT_PARENT_BINDING_KEY,
   normalizeParentSession,
   normalizeParentBinding,
   getParentSession,
   setParentSession,
   getParentBindings,
   setParentBindings,
+  getCurrentParentBindingId,
+  setCurrentParentBindingId,
   upsertParentBinding,
   cacheParentBinding,
   ensureParentSession,

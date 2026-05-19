@@ -39,6 +39,11 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "closed"):
             conn.execute("SELECT 1")
 
+    def test_primary_school_class_scope_excludes_secondary_grades(self):
+        self.assertTrue(lesson_manager.is_primary_school_class_name("数学强化班", "六年级"))
+        self.assertFalse(lesson_manager.is_primary_school_class_name("九年级 1 班", "九年级"))
+        self.assertFalse(lesson_manager.is_primary_school_class_name("高一年级 1 班", "高一"))
+
     def test_class_invite_is_reused_until_reset(self):
         first = lesson_manager.get_or_create_active_class_invite(self.class_id, self.owner_id)
         second = lesson_manager.get_or_create_active_class_invite(self.class_id, self.owner_id)

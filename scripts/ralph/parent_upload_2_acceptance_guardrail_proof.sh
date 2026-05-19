@@ -66,19 +66,28 @@ require_text "$UPLOAD_MODEL_TEST" "addManualBoxToImage appends a manual box and 
 require_text "$UPLOAD_MODEL_TEST" "buildUploadJobs creates one upload job per box across all images" "text reason upload job fixture"
 require_text "$UPLOAD_MODEL_TEST" "buildUploadJobs falls back to text mode when a voice box has no recording file" "optional voice reason fallback fixture"
 require_text "$UPLOAD_PAGE_TEST" "submitUpload exposes each parent-visible upload stage without real network calls" "crop export submit accepted ready happy path"
+require_text "$UPLOAD_PAGE_TEST" "toggleActiveBoxVoiceRecording recovers when recorder start fails" "voice recorder start recovery fixture"
+require_text "$UPLOAD_PAGE_TEST" "recorder onError clears the stale recording hint on the active box" "voice recorder error recovery fixture"
+require_text "$UPLOAD_PAGE_TEST" "submitUpload keeps the voice draft when audio upload fails before image submission" "audio upload failure draft fixture"
 require_text "$UPLOAD_PAGE_TEST" "submitUpload reports crop export failure by item without clearing the draft" "crop/export failure fixture"
 require_text "$UPLOAD_PAGE_TEST" "submitUpload keeps the original draft and allows retry after a retryable upload failure" "submit retry failure fixture"
 require_text "$UPLOAD_PAGE_TEST" "pollUploadTasks exposes background processing when tasks remain pending" "polling still pending fixture"
 require_text "$UPLOAD_PAGE_TEST" "pollUploadTasks exposes partial failure separately from total failure" "polling failed fixture"
 require_text "$UPLOAD_PAGE_TEST" "pollUploadTasks survives one transient status request failure without losing accepted tasks" "polling ready after transient failure fixture"
+require_text "$UPLOAD_PAGE_TEST" "pollUploadTasks keeps missing-record tasks recoverable instead of marking them ready" "polling missing-record recovery fixture"
 require_text "$UPLOAD_PAGE_TEST" "restoreAcceptedUploadTasks resumes pending stored tasks without re-uploading cropped images" "accepted task recovery fixture"
 require_text "$UPLOAD_PAGE_TEST" "openChildWrongbook keeps a clear progress path after upload acceptance" "wrongbook progress entry fixture"
+require_text "$UPLOAD_MODEL_TEST" "buildUploadTaskSummary surfaces stale pending tasks as long-running recovery copy" "stale pending recovery fixture"
 require_text "$WRONGBOOK_TEST" "onShow refreshes ready upload task status before loading parent wrongbook and PDF state" "wrongbook refresh ready fixture"
 require_text "$WRONGBOOK_TEST" "onShow reports failed upload tasks and marks failed wrongbook cards without AI success copy" "wrongbook failed task fixture"
 require_text "$WRONGBOOK_TEST" "onShow keeps background-processing uploads visible and explains PDF is not ready yet" "wrongbook background and PDF not-ready fixture"
+require_text "$WRONGBOOK_TEST" "onShow keeps missing-record uploads visible as recoverable background work" "wrongbook missing-record fixture"
 require_text "$WRONGBOOK_TEST" "openWrongQuestionLibraryPdf shows recovery messages for not-ready, download, and open failures" "PDF not-ready recovery fixture"
 require_text "$PARENT_API_TEST" "submitParentWrongQuestion parses the upload bridge response" "parentApi task accepted fixture"
 require_text "$PARENT_API_TEST" "submitParentWrongQuestion forwards the child reason text and audio url in upload form data" "parentApi optional voice/text payload fixture"
+require_text "$PARENT_API_TEST" "uploadParentReasonAudio uses a shorter audio timeout and keeps the recording retryable" "parentApi audio timeout fixture"
+require_text "$PARENT_API_TEST" "uploadParentReasonAudio maps network failures to a retryable recording-preserving message" "parentApi audio network fixture"
+require_text "$PARENT_API_TEST" "uploadParentReasonAudio maps transient server failures to a retryable recording-preserving message" "parentApi audio retryable server fixture"
 require_text "$PARENT_API_TEST" "fetchWrongQuestionUploadTask fetches the server task status" "parentApi task status fixture"
 require_text "$BRIDGE_TEST" "parent upload bridge preserves website accepted task payloads with optional fields missing" "bridge accepted task fixture"
 require_text "$BRIDGE_TEST" "parent upload bridge maps website enqueue failures as retryable" "bridge retryable failure fixture"
@@ -97,14 +106,16 @@ from pathlib import Path
 root = Path.cwd()
 prd = json.loads((root / "scripts/ralph/prd.json").read_text(encoding="utf-8"))
 stories = prd.get("userStories", [])
+story_ids = [str(story.get("id", "")) for story in stories]
 pending = [story.get("id", "<missing id>") for story in stories if story.get("passes") is not True]
 allow_current = os.environ.get("XR_RALPH_ALLOW_CURRENT_STORY_PENDING") == "1"
 
-if pending and not (allow_current and pending == ["MP-UPLOAD-012"]):
+if story_ids and all(story_id.startswith("MP-STABILITY-") for story_id in story_ids):
+    print(f"ok PRD pass gate: active stability PRD has {len(pending)} pending stories; parent upload guardrail still runs as baseline")
+elif pending and not (allow_current and pending == ["MP-UPLOAD-012"]):
     print("PRD pass gate failed: " + ", ".join(pending))
     sys.exit(1)
-
-if pending:
+elif pending:
     print("ok PRD pass gate: MP-UPLOAD-012 is the only pending story in pre-completion mode")
 else:
     print(f"ok PRD pass gate: all {len(stories)} stories are passes=true")

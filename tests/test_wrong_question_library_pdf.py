@@ -463,6 +463,17 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertNotIn("\\mathbb", portable)
         self.assertNotIn("\\ldots", portable)
 
+    def test_build_portable_wrong_question_text_normalizes_indexed_roots_for_reportlab_fallback(self):
+        portable = pdf_engine._build_portable_wrong_question_text(
+            "计算 \\sqrt[3]{8} + $\\sqrt[4]{16}+x_1^2$，且 a \\in \\mathbb{R}。"
+        )
+
+        self.assertIn("³√(8)", portable)
+        self.assertIn("⁴√(16)", portable)
+        self.assertIn("x₁²", portable)
+        self.assertIn("∈ ℝ", portable)
+        self.assertNotIn("\\sqrt", portable)
+
     def test_generate_wrong_question_practice_sheet_pdf_requires_browser_render(self):
         items = [
             {

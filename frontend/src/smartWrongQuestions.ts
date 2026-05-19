@@ -71,6 +71,7 @@ export interface WrongQuestionRecord {
   reasonKeyOmission?: string;
   reasonNextStep?: string;
   topicCategory?: string;
+  isPrimarySchool?: boolean;
   primaryErrorType?: string;
   causeNote?: string;
   isMastered?: boolean;
@@ -141,6 +142,32 @@ export interface WrongQuestionPracticeSheetSummary {
 export interface WrongQuestionPracticeSheetListApiResponse {
   items?: unknown[];
   total?: unknown;
+}
+
+export type WrongQuestionPracticePackMode = 'topic' | 'reason';
+export type WrongQuestionPracticePackVolume = 'light' | 'standard' | 'intensive';
+
+export interface WrongQuestionPracticePackStudent {
+  studentId: number;
+  studentNameSnapshot: string;
+  status: string;
+  requestedQuestionCount: number;
+  realQuestionCount: number;
+  variantQuestionCount: number;
+  pdfPath?: string;
+  generationError?: string;
+}
+
+export interface WrongQuestionPracticePackJob {
+  id: number;
+  status: string;
+  mode: WrongQuestionPracticePackMode;
+  target: string;
+  volume: WrongQuestionPracticePackVolume;
+  requestedQuestionCount: number;
+  downloadUrl?: string;
+  generationError?: string;
+  students: WrongQuestionPracticePackStudent[];
 }
 
 export type WeeklyWrongQuestionFollowupMessage = {
@@ -223,6 +250,10 @@ export function isWechatMiniProgramWrongQuestionRecord(record: WrongQuestionReco
   return record.source === 'wechat_mp';
 }
 
+export function isPrimarySchoolWrongQuestionRecord(record: WrongQuestionRecord): boolean {
+  return isWechatMiniProgramWrongQuestionRecord(record) && record.isPrimarySchool === true;
+}
+
 export function isDownstreamWrongQuestionRecord(record: WrongQuestionRecord): boolean {
   return !isWechatMiniProgramWrongQuestionRecord(record);
 }
@@ -271,6 +302,29 @@ function pickNumberValue(source: Record<string, unknown>, keys: string[]): numbe
   return null;
 }
 
+function pickBooleanValue(source: Record<string, unknown>, keys: string[]): boolean | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value !== 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['0', 'false', 'no', 'off'].includes(normalized)) {
+        return false;
+      }
+    }
+  }
+
+  return null;
+}
+
 function pickStringArrayValue(source: Record<string, unknown>, keys: string[]): string[] {
   for (const key of keys) {
     const value = source[key];
@@ -294,6 +348,33 @@ function normalizeStringList(value: unknown): string[] {
 function normalizeWrongQuestionTopicCategory(value = ''): string {
   const normalized = value.trim();
   return normalized || '未分类';
+}
+
+const PRIMARY_GRADE_PATTERN = /(?:小学|小[一二三四五六123456]|[一二三四五六123456]年级)/;
+const SECONDARY_GRADE_PATTERN = /(?:初中|高中|初[一二三123]|高[一二三123]|[七八九789]年级|十[一二]?年级|1[0-2]年级)/;
+
+function isSecondarySchoolClassLabel(className: string, classNameSnapshot: string): boolean {
+  return SECONDARY_GRADE_PATTERN.test(`${className} ${classNameSnapshot}`);
+}
+
+function inferPrimarySchoolClassLabel(className: string, classNameSnapshot: string): boolean {
+  const text = `${className} ${classNameSnapshot}`;
+  if (SECONDARY_GRADE_PATTERN.test(text)) {
+    return false;
+  }
+  return PRIMARY_GRADE_PATTERN.test(text);
+}
+
+function normalizeWrongQuestionPrimarySchoolFlag(
+  source: Record<string, unknown>,
+  className: string,
+  classNameSnapshot: string,
+): boolean {
+  const explicitValue = pickBooleanValue(source, ['isPrimarySchool', 'is_primary_school']);
+  if (explicitValue !== null) {
+    return explicitValue && !isSecondarySchoolClassLabel(className, classNameSnapshot);
+  }
+  return inferPrimarySchoolClassLabel(className, classNameSnapshot);
 }
 
 function normalizeWrongQuestionMappingStatus(value: string, fallback: WrongQuestionMappingStatus = 'mapped'): WrongQuestionMappingStatus {
@@ -451,6 +532,8 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   }
 
   if (normalizedSource === 'wechat_mp') {
+    record.isPrimarySchool = normalizeWrongQuestionPrimarySchoolFlag(source, className, classNameSnapshot);
+
     if (childReasonText) {
       record.childReasonText = childReasonText;
     }
@@ -542,7 +625,9 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
 
   if (isWechatMiniProgramWrongQuestionRecord(record)) {
     draft.isMastered = Boolean(record.isMastered);
-    draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
+    if (isPrimarySchoolWrongQuestionRecord(record)) {
+      draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
+    }
   }
 
   if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
@@ -1064,4 +1149,83 @@ export function normalizeWrongQuestionPracticeSheetListResponse(
 
 export function buildWrongQuestionPracticeSheetsPath(studentId: number): string {
   return `/api/wrong-question-practice-sheets?student_id=${encodeURIComponent(String(studentId))}`;
+}
+
+function normalizeWrongQuestionPracticePackMode(value: string): WrongQuestionPracticePackMode {
+  return value === 'reason' ? 'reason' : 'topic';
+}
+
+function normalizeWrongQuestionPracticePackVolume(value: string): WrongQuestionPracticePackVolume {
+  if (value === 'light' || value === 'intensive') {
+    return value;
+  }
+  return 'standard';
+}
+
+function normalizeWrongQuestionPracticePackStudent(rawStudent: unknown): WrongQuestionPracticePackStudent {
+  const source = isObjectRecord(rawStudent) ? rawStudent : {};
+  const pdfPath = pickStringValue(source, ['pdfPath', 'pdf_path']);
+  const generationError = pickStringValue(source, ['generationError', 'generation_error']);
+  const student: WrongQuestionPracticePackStudent = {
+    studentId: pickNumberValue(source, ['studentId', 'student_id']) ?? 0,
+    studentNameSnapshot: pickStringValue(source, ['studentNameSnapshot', 'student_name_snapshot']),
+    status: pickStringValue(source, ['status']) || 'pending',
+    requestedQuestionCount: pickNumberValue(source, ['requestedQuestionCount', 'requested_question_count']) ?? 0,
+    realQuestionCount: pickNumberValue(source, ['realQuestionCount', 'real_question_count']) ?? 0,
+    variantQuestionCount: pickNumberValue(source, ['variantQuestionCount', 'variant_question_count']) ?? 0,
+    generationError,
+  };
+
+  if (pdfPath) {
+    student.pdfPath = pdfPath;
+  }
+
+  return student;
+}
+
+export function normalizeWrongQuestionPracticePackJobResponse(payload: unknown): {
+  job: WrongQuestionPracticePackJob | null;
+  reused: boolean;
+} {
+  const source = isObjectRecord(payload) ? payload : {};
+  const rawJob = isObjectRecord(source.job) ? source.job : null;
+  if (!rawJob) {
+    return { job: null, reused: source.reused === true };
+  }
+
+  const downloadUrl = pickStringValue(rawJob, ['downloadUrl', 'download_url']);
+  const generationError = pickStringValue(rawJob, ['generationError', 'generation_error']);
+  const job: WrongQuestionPracticePackJob = {
+    id: pickNumberValue(rawJob, ['id']) ?? 0,
+    status: pickStringValue(rawJob, ['status']) || 'pending',
+    mode: normalizeWrongQuestionPracticePackMode(pickStringValue(rawJob, ['mode'])),
+    target: pickStringValue(rawJob, ['target']),
+    volume: normalizeWrongQuestionPracticePackVolume(pickStringValue(rawJob, ['volume'])),
+    requestedQuestionCount: pickNumberValue(rawJob, ['requestedQuestionCount', 'requested_question_count']) ?? 0,
+    students: Array.isArray(rawJob.students)
+      ? rawJob.students.map((item) => normalizeWrongQuestionPracticePackStudent(item))
+      : [],
+  };
+
+  if (downloadUrl) {
+    job.downloadUrl = downloadUrl;
+  }
+
+  if (generationError) {
+    job.generationError = generationError;
+  }
+
+  return { job, reused: source.reused === true };
+}
+
+export function buildWrongQuestionPracticePackCreatePath(): string {
+  return '/api/wrong-question-practice-packs';
+}
+
+export function buildWrongQuestionPracticePackDetailPath(jobId: number): string {
+  return `/api/wrong-question-practice-packs/${encodeURIComponent(String(jobId))}`;
+}
+
+export function buildWrongQuestionPracticePackDownloadPath(jobId: number): string {
+  return `/api/wrong-question-practice-packs/${encodeURIComponent(String(jobId))}/download`;
 }

@@ -181,6 +181,21 @@ test('buildUploadTaskSummary reports background processing after the polling win
   });
 });
 
+test('buildUploadTaskSummary surfaces stale pending tasks as long-running recovery copy', () => {
+  const summary = buildUploadTaskSummary([
+    { id: 1, status: 'processing', is_stale: true },
+  ], { background: true });
+
+  assert.deepEqual(summary, {
+    state: 'background',
+    title: '云端处理时间较长',
+    description: '1 条上传已接收，但云端处理时间比平时久。任务不会丢失，可以稍后回错题本刷新。',
+    readyCount: 0,
+    failedCount: 0,
+    pendingCount: 1,
+  });
+});
+
 test('buildUploadTaskSummary reports ready only after every task is ready', () => {
   assert.deepEqual(buildUploadTaskSummary([
     { id: 1, status: 'ready' },

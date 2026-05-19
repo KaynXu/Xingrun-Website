@@ -4,6 +4,8 @@ const {
   fetchParentBindings,
   fetchParentTopicCategorySuggestions,
   fetchWrongQuestionUploadTask,
+  getCurrentParentBindingId,
+  setCurrentParentBindingId,
   submitParentWrongQuestion,
   uploadParentReasonAudio,
 } = require('../../utils/parentApi');
@@ -86,7 +88,11 @@ function normalizeFetchedUploadTask(taskId, payloadTask, previousTask) {
   if (payloadTaskId === undefined || payloadTaskId === null || String(payloadTaskId) !== String(taskId)) {
     return fallbackTask;
   }
-  const status = String(payloadTask.status || '').trim();
+  const state = String(payloadTask.state || '').trim();
+  let status = UPLOAD_TASK_STATUS_MAP[state] ? state : String(payloadTask.status || '').trim();
+  if (state === 'missing_record' || payloadTask.record_missing === true || payloadTask.recordMissing === true) {
+    status = 'processing';
+  }
   if (!UPLOAD_TASK_STATUS_MAP[status]) {
     return fallbackTask;
   }
@@ -119,7 +125,10 @@ function buildTopicCategoryOptions(suggestions) {
 
 Page({
   data: {
+    loadingBindings: true,
     binding: null,
+    bindings: [],
+    needsBindingSelection: false,
     imageItems: [],
     selectedImageId: '',
     currentImage: null,
@@ -197,17 +206,25 @@ Page({
       this.setData({ recordingBoxId: '' });
       void this.commitImageItems(imageItems, this.data.selectedImageId, false);
     });
-    this.recorderManager.onError((error) => {
+    this.recorderManager.onError(() => {
+      const target = this.recordingTarget;
       this.recordingTarget = null;
+      const message = '录音失败，请重试，也可以不录音直接提交。';
       this.setData({
         recordingBoxId: '',
-        errorMessage: (error && error.errMsg) || '录音失败，请重试。',
+        errorMessage: message,
       });
+      this.markVoiceRecordingFailed(target, message);
     });
   },
 
   async onShow() {
-    const bindingId = Number(this.options.bindingId || 0);
+    const requestedBindingId = Number(this.options.bindingId || 0);
+
+    this.setData({
+      loadingBindings: true,
+      errorMessage: '',
+    });
 
     try {
       const session = await ensureParentSession(wx, app.globalData.serverUrl);
@@ -215,14 +232,27 @@ Page({
       const bindings = await fetchParentBindings(wx, app.globalData.serverUrl, {
         openId: session.openId,
       });
-      const binding = bindings.find((item) => item.id === bindingId) || null;
+      const storedBindingId = getCurrentParentBindingId(wx);
+      let binding = requestedBindingId
+        ? bindings.find((item) => item.id === requestedBindingId) || null
+        : bindings.find((item) => item.id === storedBindingId) || null;
+      if (!binding && !requestedBindingId && bindings.length === 1) {
+        binding = bindings[0];
+      }
+      const needsBindingSelection = !binding && !requestedBindingId && bindings.length > 1;
       app.globalData.parentBindings = bindings;
+      if (binding) {
+        setCurrentParentBindingId(wx, binding.id);
+        app.globalData.currentParentBindingId = binding.id;
+      }
       const showPrimaryTopicCategory = isPrimarySchoolBinding(binding);
       this.setData({
+        bindings,
         binding,
+        needsBindingSelection,
         showPrimaryTopicCategory,
         topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
-        errorMessage: binding ? '' : '没有找到这个孩子的最新绑定关系，请先重新绑定。',
+        errorMessage: requestedBindingId && !binding ? '没有找到这个孩子的最新绑定关系，请先重新绑定。' : '',
       });
       if (binding) {
         if (showPrimaryTopicCategory) {
@@ -232,12 +262,46 @@ Page({
       }
     } catch (error) {
       this.setData({
+        bindings: [],
         binding: null,
+        needsBindingSelection: false,
         showPrimaryTopicCategory: false,
         topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
         errorMessage: error instanceof Error ? error.message : '绑定关系同步失败',
       });
+    } finally {
+      this.setData({ loadingBindings: false });
     }
+  },
+
+  async selectUploadBinding(event) {
+    const bindingId = Number(event.currentTarget.dataset.bindingId || 0);
+    const binding = (this.data.bindings || []).find((item) => item.id === bindingId) || null;
+    if (!binding) {
+      return;
+    }
+
+    setCurrentParentBindingId(wx, binding.id);
+    app.globalData.currentParentBindingId = binding.id;
+    const showPrimaryTopicCategory = isPrimarySchoolBinding(binding);
+    this.setData({
+      binding,
+      needsBindingSelection: false,
+      showPrimaryTopicCategory,
+      topicCategoryOptions: TOPIC_CATEGORY_OPTIONS,
+      errorMessage: '',
+    });
+    if (showPrimaryTopicCategory) {
+      const session = app.globalData.parentSession || {};
+      await this.refreshTopicCategoryOptions(session.openId);
+    }
+    if (app.globalData.parentSession && app.globalData.parentSession.openId) {
+      await this.restoreAcceptedUploadTasks(app.globalData.parentSession.openId, binding);
+    }
+  },
+
+  goMySection() {
+    wx.switchTab({ url: '/pages/parent-home/index' });
   },
 
   async refreshTopicCategoryOptions(openId) {
@@ -266,6 +330,31 @@ Page({
     return new Promise((resolve) => {
       this.setData(data, resolve);
     });
+  },
+
+  markVoiceRecordingFailed(target, message) {
+    if (!target) {
+      return;
+    }
+    const imageItems = this.data.imageItems.map((item) => {
+      if (item.id !== target.imageId) {
+        return item;
+      }
+      return {
+        ...item,
+        boxes: (item.boxes || []).map((box) => {
+          if (box.id !== target.boxId) {
+            return box;
+          }
+          return {
+            ...box,
+            childReasonInputMode: 'voice',
+            reasonStatusText: message,
+          };
+        }),
+      };
+    });
+    void this.commitImageItems(imageItems, this.data.selectedImageId, false);
   },
 
   wait(ms) {
@@ -684,6 +773,9 @@ Page({
         });
       },
       fail: (error) => {
+        if (String((error && error.errMsg) || '').toLowerCase().indexOf('cancel') >= 0) {
+          return;
+        }
         this.setData({
           errorMessage: (error && error.errMsg) || '选择图片失败',
         });
@@ -918,13 +1010,26 @@ Page({
     });
 
     void this.commitImageItems(imageItems, this.data.selectedImageId, false);
-    this.recorderManager.start({
-      duration: 60000,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      encodeBitRate: 96000,
-      format: 'mp3',
-    });
+    try {
+      this.recorderManager.start({
+        duration: 60000,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        encodeBitRate: 96000,
+        format: 'mp3',
+      });
+    } catch (_error) {
+      const message = '录音启动失败，请重试，也可以不录音直接提交。';
+      this.recordingTarget = null;
+      this.setData({
+        recordingBoxId: '',
+        errorMessage: message,
+      });
+      this.markVoiceRecordingFailed({
+        imageId: currentImage.id,
+        boxId: activeBox.id,
+      }, message);
+    }
   },
 
   async removeActiveBox() {
@@ -1255,7 +1360,7 @@ Page({
           return result;
         }, {});
         this.persistAcceptedUploadTasks(session.openId, this.data.binding, acceptedUploadTasks);
-        this.setUploadStage('task_accepted', `${jobLabel}已接收${taskId ? `，任务 ${taskId}` : ''}。`, '任务已接收');
+        this.setUploadStage('task_accepted', `${jobLabel}已接收，云端正在识别。`, '任务已接收');
       }
 
       this.setData({
@@ -1373,6 +1478,6 @@ Page({
   },
 
   backHome() {
-    wx.reLaunch({ url: '/pages/parent-home/index' });
+    wx.switchTab({ url: '/pages/parent-home/index' });
   },
 });

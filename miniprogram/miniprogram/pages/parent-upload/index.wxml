@@ -1,8 +1,14 @@
 <view class="parent-page">
   <view class="hero-card">
     <text class="hero-badge">错题上传</text>
-    <text class="hero-title">{{binding ? binding.studentName + ' · ' + binding.className : '上传孩子错题'}}</text>
-    <text class="hero-subtitle">拍照、连续追加或从相册多选，再框出每一道错题后统一提交给老师。</text>
+    <text class="hero-title">{{binding ? binding.studentName + ' · ' + binding.className : '拍照上传'}}</text>
+    <text class="hero-subtitle">先确认这次上传对应的孩子，再拍照、选图、框出每一道错题后统一提交给老师。</text>
+  </view>
+
+  <view wx:if="{{loadingBindings}}" class="state-card loading-card">
+    <text class="state-marker state-marker-loading">加载中</text>
+    <text class="state-title">正在同步孩子信息</text>
+    <text class="state-desc">请稍候，马上就能开始拍照上传。</text>
   </view>
 
   <view wx:if="{{errorMessage}}" class="state-card error-card">
@@ -11,7 +17,35 @@
     <text class="state-desc">{{errorMessage}}</text>
   </view>
 
-  <view wx:if="{{binding}}" class="panel-card upload-flow-panel">
+  <view wx:if="{{!loadingBindings && !errorMessage && !binding && !needsBindingSelection && !bindings.length}}" class="state-card empty-card upload-empty-card">
+    <text class="state-marker state-marker-empty">下一步</text>
+    <text class="state-title">还没有绑定孩子</text>
+    <text class="state-desc">先到“我的”分区绑定孩子，再回来拍照上传错题。</text>
+    <button class="primary-btn state-action-btn" bindtap="goMySection">去我的绑定孩子</button>
+  </view>
+
+  <view wx:if="{{!loadingBindings && !errorMessage && needsBindingSelection}}" class="panel-card upload-child-panel">
+    <view class="upload-section-head">
+      <text class="section-kicker">孩子</text>
+      <view class="upload-section-copy">
+        <text class="upload-section-title">选择这次上传的孩子</text>
+        <text class="upload-section-desc">选好后会作为当前上传孩子，后续从底部“拍照上传”进入会优先使用。</text>
+      </view>
+    </view>
+    <view class="upload-child-list">
+      <button
+        wx:for="{{bindings}}"
+        wx:key="id"
+        class="ghost-btn upload-child-btn"
+        data-binding-id="{{item.id}}"
+        bindtap="selectUploadBinding"
+      >
+        {{item.studentName || '未命名学生'}} · {{item.className || '未命名班级'}}
+      </button>
+    </view>
+  </view>
+
+  <view wx:if="{{!loadingBindings && binding}}" class="panel-card upload-flow-panel">
     <view class="upload-section upload-image-section">
       <view class="upload-section-head">
         <text class="section-kicker">01</text>

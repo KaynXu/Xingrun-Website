@@ -1,226 +1,211 @@
 {
   "project": "Xingrun WeChat Mini Program",
-  "branchName": "ralph/miniprogram-visual-refresh",
-  "description": "Mini program visual refresh PRD for turning the parent-facing WeChat mini program from a prototype-like utility into a polished, production-ready education product. The core goal is visual quality: pages should look intentional, trustworthy, calm, and finished. Button position and action arrangement are first-class requirements, especially on the parent home, bind, upload, wrongbook, progress, PDF, empty, loading, error, and success states.",
+  "branchName": "ralph/miniprogram-parent-stability",
+  "description": "Mini program parent stability PRD for Ralph. The active product focus is the parent-facing WeChat mini program, especially the real parent path: upload wrong questions, check the wrongbook, and generate/download/open the student wrong-question PDF. Bridge, Flask, Redis/RQ, worker, and PDF renderer checks are included only as supporting surfaces required to prove that the mini program path is stable end to end.",
   "scope": [
-    "Only the WeChat mini program frontend under miniprogram/miniprogram/ is in product scope.",
-    "Main pages: parent-home, parent-bind, parent-upload, parent-wrongbook, shared parent API-facing UI states, and mini program page-level styles.",
-    "Tests and Ralph proof scripts may be updated when they directly guard mini program visual behavior.",
-    "Read miniprogram/handoff.md before each story."
+    "Primary product scope is the WeChat mini program parent experience under miniprogram/miniprogram/.",
+    "Main mini program pages are parent-home, parent-upload, parent-wrongbook, parent-bind when child selection or invite-code setup is relevant, and parentApi.",
+    "Supporting verification may touch bridge, Flask upload task endpoints, Redis/RQ worker status, and PDF/LaTeX rendering only when required to prove the mini program upload-to-wrongbook-to-PDF journey.",
+    "Ralph must read docs/superpowers/specs/2026-05-06-miniprogram-ralph-stability-loop-design.md and scripts/ralph/miniprogram_stability_loop_instructions.md before each story.",
+    "Every story must preserve the current product flow: choose child, upload wrong question, watch task status, open wrongbook, open PDF."
   ],
   "nonGoals": [
-    "Do not work on the website React frontend under frontend/.",
-    "Do not change bridge or website backend behavior unless a story explicitly identifies a visual-only contract gap and the user approves it.",
-    "Do not add new product features, new upload semantics, new AI box selection, or new backend APIs.",
-    "Do not redesign the business flow. Keep the existing parent flow: bind child, open home, upload wrong questions, check wrongbook/PDF.",
-    "Do not copy desktop admin dashboard layouts into the mini program. Use mobile-first mini program patterns.",
-    "Do not make purely decorative changes that hurt clarity, readability, or tap safety."
+    "Do not redesign the website React admin/frontend experience.",
+    "Do not add new parent-facing features beyond stability, recovery, proof, and copy/visual fixes required by this PRD.",
+    "Do not reintroduce AI box selection or wrong-question-boxes routes.",
+    "Do not change payment, account approval, weekly followup, lesson planning, classroom, or website dashboard workflows.",
+    "Do not use production invite codes from memory; only use XR_TEST_CLASS_INVITE_CODE or a user-provided safe test code when a story explicitly needs binding smoke.",
+    "Do not mark real-device stability complete without WeChat DevTools or real-phone screenshot/video evidence."
   ],
-  "visualDirection": [
-    "Production-ready education product, not prototype.",
-    "Warm, clean, trustworthy, parent-friendly, and workmanlike.",
-    "Use a restrained palette with clear primary action color, calm background, readable cards, and obvious status hierarchy.",
-    "Avoid childish decoration, dense developer-tool layout, oversized marketing hero sections, and one-note color themes.",
-    "Buttons must feel deliberately placed: one clear primary action per screen section, secondary actions nearby but visually quieter, destructive actions separated from primary flows."
+  "stabilityDirection": [
+    "The mini program must feel reliable under real parent behavior, not only under local unit tests.",
+    "Uploading should never lose the parent draft silently after crop, audio, network, timeout, 413, enqueue, worker, recognition, or PDF failure.",
+    "Wrongbook and PDF entry points must be honest about pending, failed, not-ready, download-failed, and open-failed states.",
+    "LaTeX and PDF failures must not make a successfully uploaded wrong-question record disappear.",
+    "Visual evidence is required for UI-facing stories because cramped mini program layouts often fail in ways source tests do not see."
   ],
   "globalRules": [
-    "Read AGENTS.md, handoff.md, miniprogram/handoff.md, scripts/ralph/prd.json, and scripts/ralph/progress.txt before each story.",
+    "Read AGENTS.md, handoff.md, miniprogram/handoff.md, scripts/ralph/prd.json, scripts/ralph/progress.txt, the Ralph stability design doc, and scripts/ralph/miniprogram_stability_loop_instructions.md before each story.",
     "Work on exactly one user story per iteration.",
-    "Use the smallest possible edit that improves the requested visual surface.",
-    "Before editing any mini program file, read the current WXML/WXSS/JS/test content.",
-    "Every story must preserve existing upload, binding, wrongbook, PDF, task polling, and recovery behavior unless the story explicitly says otherwise.",
-    "Every story must add or update deterministic proof for visual/layout requirements. Prefer WXML/WXSS structural tests, page model tests, and mini program scope tests.",
-    "A story can only be marked passes=true after its focused proof and the relevant baseline proof pass.",
-    "After MP-VISUAL-001 lands, every later story must run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh.",
-    "If a story touches upload UI, run the full upload stability proof too.",
+    "Use the smallest possible edit that satisfies the story; do not refactor unrelated code.",
+    "Before editing any file, read the current content.",
+    "If the story touches mini program UI, inspect visual evidence from WeChat DevTools, a real phone, or user-provided screenshots before calling the story complete.",
+    "If visual evidence is unavailable, record that as a remaining manual check and do not claim true-device visual stability.",
+    "If the story touches upload, run scripts/ralph/miniprogram_upload_stability_proof.sh in addition to the focused proof.",
+    "If the story touches PDF, LaTeX, worker, or production smoke docs, run scripts/ralph/production_upload_smoke_runbook_proof.sh plus the backend and frontend PDF/LaTeX tests listed in scripts/ralph/miniprogram_stability_loop_instructions.md.",
+    "A story can only be marked passes=true after its focused proof and relevant baseline proof pass through a temporary script.",
+    "Update scripts/ralph/progress.txt after each completed story with current status and next story.",
+    "Update handoff.md and miniprogram/handoff.md when project state changes.",
     "Commit each completed story separately after verification.",
     "If proof fails, do not mark the story passes=true and do not commit."
   ],
-  "experienceTargets": [
-    "A parent opening the mini program should immediately feel this is a finished Starain/Xingrun product, not a prototype or internal test page.",
-    "Every screen should have a clear visual hierarchy: page title, context, primary content, primary action, secondary actions, and state feedback.",
-    "Button order should match the parent journey: choose or confirm child, select/take photo, add/adjust boxes, add optional reason, submit, check progress, open wrongbook/PDF.",
-    "Primary buttons must be easy to find and hard to confuse with secondary or destructive actions.",
-    "Action bars must stay stable on narrow phones and respect safe-area padding.",
-    "No important text or button may wrap awkwardly, overlap, become clipped, or jump position on small screens.",
-    "Empty, loading, failed, processing, partial success, and complete states should look designed, not like raw error messages."
-  ],
   "verificationBaseline": [
-    "scripts/ralph/miniprogram_upload_stability_proof.sh",
-    "scripts/ralph/miniprogram_visual_polish_proof.sh after MP-VISUAL-001 creates it"
+    "scripts/ralph/miniprogram_stability_loop_proof.sh",
+    "scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh",
+    "scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh",
+    "scripts/ralph/miniprogram_upload_stability_proof.sh when upload behavior is touched",
+    "scripts/ralph/production_upload_smoke_runbook_proof.sh when PDF, LaTeX, worker, or production smoke docs are touched",
+    "python -m unittest tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt -v when PDF or LaTeX is touched",
+    "cd frontend && npx tsx --test src/wrong-question-latex.test.ts src/render-wrong-question-library-pdf.test.ts src/render-wrong-question-practice-sheet-pdf.test.ts when PDF or LaTeX is touched",
+    "git diff --check"
+  ],
+  "runInstructions": [
+    "Check active queue: scripts/ralph/run_codex_ralph.sh --check",
+    "Run one story: scripts/ralph/run_codex_ralph.sh 1",
+    "Run up to all remaining stories: scripts/ralph/run_codex_ralph.sh 9",
+    "Preferred operating mode is one story at a time so proof failures are easy to inspect."
   ],
   "userStories": [
     {
-      "id": "MP-VISUAL-001",
-      "title": "Create mini program visual polish proof runner",
-      "description": "As a maintainer, I need a single proof path for mini program visual polish so later Ralph iterations can guard button placement, page structure, and production-readiness without guessing.",
+      "id": "MP-STABILITY-001",
+      "title": "Activate mini program stability Ralph proof gate",
+      "description": "As a maintainer, I need the active Ralph queue to prove it is focused on the parent-facing mini program stability loop before any behavior hardening begins.",
       "acceptanceCriteria": [
-        "Add scripts/ralph/miniprogram_visual_polish_proof.sh.",
-        "The proof must run mini program page structure/layout tests for parent-home, parent-bind, parent-upload, and parent-wrongbook.",
-        "The proof must include checks for primary action hierarchy, secondary action grouping, destructive action separation, bottom action/safe-area rules, and no obvious prototype-only wording.",
-        "The proof must not require WeChat devtools, a real device, production data, production secrets, Redis, RQ, or a running Flask server.",
-        "The proof output must make it obvious which visual contract failed.",
-        "Do not change mini program visual behavior in this story except to add tests or proof infrastructure.",
-        "Run the new visual proof through a temporary script and run scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Confirm scripts/ralph/prd.json is this mini program stability PRD with exactly nine MP-STABILITY stories.",
+        "Confirm the PRD scope states the primary product focus is miniprogram/miniprogram/ and the parent upload-to-wrongbook-to-PDF path.",
+        "Confirm scripts/ralph/miniprogram_stability_loop_instructions.md is referenced by the PRD and contains visual, upload, PDF/LaTeX, and code-review gates.",
+        "Add or update a deterministic proof if needed so the active queue cannot drift back to website frontend or generic visual-only scope.",
+        "Run scripts/ralph/miniprogram_stability_loop_proof.sh and scripts/ralph/run_codex_ralph.sh --check through a temporary script.",
+        "Do not change mini program runtime behavior in this story."
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Added scripts/ralph/miniprogram_visual_polish_proof.sh; proof covers parent-home, parent-bind, parent-upload, and parent-wrongbook visual structure/action hierarchy contracts without requiring WeChat devtools or services."
+      "notes": "Proof gate now validates the active mini program stability PRD shape, nine MP-STABILITY stories, parent upload-to-wrongbook-to-PDF scope, stability instructions reference, and visual/upload/PDF/LaTeX/code-review gate coverage."
     },
     {
-      "id": "MP-VISUAL-002",
-      "title": "Define production mini program visual system",
-      "description": "As a parent, I need the whole mini program to look like one finished product, with consistent colors, spacing, cards, typography, and controls.",
+      "id": "MP-STABILITY-002",
+      "title": "Audit parent upload real-use interaction stability",
+      "description": "As a parent, I need image selection, camera upload, manual boxes, tiny boxes, narrow boxes, rotation, deletion, and retry to stay stable during a realistic upload session.",
       "acceptanceCriteria": [
-        "Audit existing mini program WXML/WXSS for repeated page shells, card styles, button classes, spacing, status blocks, and prototype-like visual leftovers.",
-        "Introduce or normalize a small shared visual system for page background, cards, section headings, primary buttons, secondary buttons, icon buttons, state tags, and safe-area-aware bottom bars.",
-        "Keep the visual system mobile-first and compatible with WeChat mini program CSS constraints.",
-        "Do not make global style changes that break existing parent upload box/canvas interaction.",
-        "Add tests or scope checks that lock the shared visual primitives and prevent reintroducing scattered one-off primary button styles.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Audit parent-upload WXML/WXSS/JS/model tests for real user operations: choose image, take photo, append image, switch current image, add box, drag box, shrink box, rotate image, delete current box, and submit.",
+        "Verify the minimum box behavior still supports small and narrow question areas and does not re-expand after save or rotation.",
+        "Verify crop/export failures identify the failed item and keep the draft.",
+        "Verify crop/export, rotation, and submit lock conflicting gestures or repeated submits.",
+        "Use visual evidence for the upload page on at least one narrow phone size or record the missing true-device visual check explicitly.",
+        "Add or update tests only where an uncovered stability risk is found.",
+        "Run scripts/ralph/miniprogram_upload_stability_proof.sh, scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Shared mini program visual primitives now live in app.wxss for page shells, cards, headings, primary/secondary/icon buttons, state tags, and safe-area-aware bottom action bars. Page wxss no longer owns scattered primary/secondary button definitions; visual proof locks the shared system and upload baseline still passes."
+      "notes": "Audited parent-upload WXML/WXSS/JS/model coverage for choose/take/append image, switch image, manual boxes, tiny/narrow boxes, drag/shrink, rotate, delete, crop/export failure, submit/retry, and interaction locks. Added regression that canceling camera/album selection is a no-op instead of a parent-visible upload failure. True-device upload page visual smoke remains a manual check; local narrow-screen structural guardrails passed."
     },
     {
-      "id": "MP-VISUAL-003",
-      "title": "Standardize button position and action hierarchy",
-      "description": "As a parent, I need buttons to be placed where I expect them, with one obvious main action and no confusing or dangerous button arrangement.",
+      "id": "MP-STABILITY-003",
+      "title": "Harden text and voice reason upload states",
+      "description": "As a parent, I need text and voice reason input to be optional, recoverable, and unable to break the whole upload batch when recording is missing or audio upload fails.",
       "acceptanceCriteria": [
-        "Audit all parent-facing mini program pages for button order, grouping, labels, widths, sticky placement, tap safety, and destructive action placement.",
-        "Each major screen section must have at most one dominant primary action.",
-        "Secondary actions must be visually quieter and located near the content they affect.",
-        "Destructive actions such as deleting a box must be separated from primary submit/continue actions and must not sit in the easiest accidental tap location.",
-        "Upload page actions must follow the parent journey: photo/image input, box adjustment, optional reason, submit, progress/wrongbook.",
-        "Bottom submit/progress areas must be stable, safe-area-aware, and not cover important content.",
-        "Narrow-screen tests must prove buttons do not overlap, clip, jump, or wrap into awkward multi-line layouts.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Audit parent-upload reason mode, text input, voice recording, empty voice recording, upload job construction, and parentApi payload mapping.",
+        "Verify switching to voice but not recording falls back safely and can still submit.",
+        "Verify audio upload timeout, network failure, and retryable errors keep the parent draft.",
+        "Verify the mini program copy does not claim final recognition before the backend task is ready.",
+        "Verify child reason text/audio URL remains optional for image-only task acceptance.",
+        "Add or update tests only where the existing coverage misses a real failure path.",
+        "Run scripts/ralph/miniprogram_upload_stability_proof.sh and scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh through a temporary script."
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Parent-facing action hierarchy is now standardized: child cards show upload as the primary action before wrongbook, upload box tools separate add/rotate from the danger delete action, success/progress next-step uses a primary wrongbook/progress button, and visual/upload proof scripts lock narrow-screen no-wrap and destructive separation."
+      "notes": "Audited parent-upload reason mode, text input, voice recording, empty voice recording fallback, upload job construction, and parentApi payload mapping. Hardened recorder start/onError recovery so failed recording attempts clear stale recording state and keep voice input optional. Added coverage for audio upload failure draft retention and parentApi audio timeout/network/5xx retryable mapping; guardrail now requires these fixtures. Backend task acceptance remains image-first with optional child reason text/audio URL, and upload copy stays at task accepted/background processing until backend ready."
     },
     {
-      "id": "MP-VISUAL-004",
-      "title": "Polish parent home into a finished entry screen",
-      "description": "As a parent, I need the home screen to feel welcoming, organized, and immediately useful, with child cards and main actions arranged like a real product.",
+      "id": "MP-STABILITY-004",
+      "title": "Audit bridge and parentApi upload error mapping",
+      "description": "As a parent on a weak network, I need bridge, parentApi, 400, 413, 502, timeout, malformed response, and retryable errors to map into stable mini program recovery states.",
       "acceptanceCriteria": [
-        "Refresh parent-home visual hierarchy: app identity, bound child context, primary child action, secondary bind/manage action, and status hints.",
-        "Child cards must look intentional and scan well with long child names, class names, and teacher names.",
-        "The primary action for each child must be obvious without creating a crowded button row.",
-        "The empty/no-child state must look designed and make binding the next obvious step.",
-        "Avoid marketing-style hero blocks; this is a utility home screen for repeat parent use.",
-        "Add or update tests that lock button placement, card structure, empty state, and narrow-screen behavior.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Audit miniprogram/miniprogram/utils/parentApi.js and miniprogram/backend/src parent upload proxy behavior for accepted task payloads and error metadata.",
+        "Verify website 202 task acceptance is preserved even when optional fields are missing.",
+        "Verify 400 validation failures are final and clear.",
+        "Verify 413 errors preserve draft and guide smaller crop or retake.",
+        "Verify 502 enqueue failures and network timeouts preserve retryable task metadata when available.",
+        "Verify malformed bridge or website responses do not crash the mini program.",
+        "Run bridge parent upload tests, parentApi tests, scripts/ralph/miniprogram_upload_stability_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Parent home now uses Xingrun parent identity, designed empty state, bound-child count/context, child card class/teacher metadata, progress hint copy, and narrow-screen wrapping rules for long names and metadata."
+      "notes": "Audited parentApi upload mapping and bridge parent upload proxy coverage. Bridge already preserves website 202 accepted task payloads with optional fields missing and maps 400 validation, 413 final oversize, 502 retryable enqueue, timeout, and malformed website acceptance responses into structured errors. Hardened parentApi malformed bridge 2xx upload responses so parents see the existing draft-preserving retry message instead of raw non-JSON text; 413 malformed upload responses still use the smaller-crop/retake guidance."
     },
     {
-      "id": "MP-VISUAL-005",
-      "title": "Polish child binding page",
-      "description": "As a parent binding a child, I need the page to feel simple, safe, and official, with form controls and confirmation actions clearly arranged.",
+      "id": "MP-STABILITY-005",
+      "title": "Audit upload task polling and recovery states",
+      "description": "As a parent, I need pending, processing, ready, failed, stale, missing-record, and mixed task batches to remain understandable without losing accepted uploads.",
       "acceptanceCriteria": [
-        "Refresh parent-bind layout for page title, explanation, input/search area, result cards, already-bound child cards, and bind confirmation.",
-        "Primary bind action must be visually distinct and consistently placed inside the relevant child card or result block.",
-        "Already-bound and unavailable states must be readable without looking like raw debug output.",
-        "Long class/student/teacher names must wrap cleanly without pushing buttons into awkward positions.",
-        "Do not change binding API behavior or child identity matching.",
-        "Add or update tests that lock bind button hierarchy, card structure, empty/error states, and narrow-screen behavior.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Audit upload task persistence under the parent/openId/binding scope.",
+        "Verify page reopen restores pending accepted task ids without re-uploading cropped images.",
+        "Verify transient status request failures do not turn the whole batch failed.",
+        "Verify mixed ready/failed/pending results keep successful items visible and pending items honest.",
+        "Verify stale pending and missing-record states are represented in API or mini program recovery copy where already supported.",
+        "Verify corrupted or unavailable storage does not blank the upload page.",
+        "Run scripts/ralph/miniprogram_upload_stability_proof.sh and scripts/ralph/parent_upload_2_acceptance_guardrail_proof.sh through a temporary script."
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Parent bind page now uses an official invite lookup panel, structured already-bound child cards, class result cards, per-student bind confirmation cards, a designed no-students state, and narrow-screen wrapping rules for long class/student text without changing binding APIs."
+      "notes": "Audited parent/openId/binding scoped task persistence, page reopen recovery, transient status failures, mixed ready/failed/pending batches, corrupted storage recovery, stale pending copy, and backend missing-record state handling. Hardened parent-upload polling so website tasks with state=missing_record and status=ready remain recoverable/background instead of being marked ready and cleared; parent-upload and parent-wrongbook now surface missing-record copy, and stale pending tasks get long-running recovery copy. Parent upload guardrail now requires these fixtures."
     },
     {
-      "id": "MP-VISUAL-006",
-      "title": "Polish wrong question upload page",
-      "description": "As a parent uploading homework photos, I need the upload page to feel like a guided, polished tool instead of a prototype control panel.",
+      "id": "MP-STABILITY-006",
+      "title": "Audit wrongbook refresh and PDF entry states",
+      "description": "As a parent checking uploaded mistakes, I need the wrongbook to show ready, failed, still-processing, PDF-not-ready, missing-PDF, download-failed, and open-failed states honestly.",
       "acceptanceCriteria": [
-        "Refresh parent-upload visual hierarchy for image input, selected image context, box tools, reason input, task stages, and final submit.",
-        "Keep existing manual box behavior, crop export behavior, task polling, recovery, and error semantics intact.",
-        "Photo/select-image actions, box actions, reason actions, and submit action must be visually separated into understandable groups.",
-        "The primary submit action must be stable, safe-area-aware, and easy to find after boxes are prepared.",
-        "Delete current box and rotate controls must be accessible but visually subordinate to submit.",
-        "Submitting/processing states must look designed and must not leave button areas in confusing positions.",
-        "Add or update tests that lock the upload action arrangement, bottom submit area, destructive action separation, status blocks, and narrow-screen behavior.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Audit parent-wrongbook WXML/WXSS/JS/tests and parentApi wrongbook/PDF calls.",
+        "Verify wrongbook refreshes known upload task ids before loading records and PDF metadata.",
+        "Verify failed upload tasks do not show AI success copy.",
+        "Verify background-processing uploads remain visible and explain that PDF is not ready yet.",
+        "Verify openWrongQuestionLibraryPdf handles metadata not ready, download failure, and openDocument failure with recovery copy.",
+        "Use visual evidence for wrongbook and PDF entry on at least one narrow phone size or record the missing true-device visual check explicitly.",
+        "Run scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh, scripts/ralph/miniprogram_upload_stability_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Parent upload page now has a guided visual flow for image input, selected image context, manual box tools, reason/topic entry, task progress, and a safe-area-aware submit panel. Existing crop/manual box/task polling behavior is unchanged; visual proof and upload stability proof passed through /tmp/xingrun_mp_visual_006_proof.sh."
+      "notes": "Audited parent-wrongbook WXML/WXSS/JS/tests and parentApi wrongbook/PDF calls. Existing focused coverage confirms wrongbook refreshes upload task ids before records/PDF metadata, failed upload tasks do not show AI success copy, background and missing-record uploads stay visible with PDF-not-ready copy, missing pdf_url is recoverable, and openWrongQuestionLibraryPdf handles not-ready, download-failed, and open-failed states. No runtime change was needed; true-device wrongbook/PDF visual smoke remains a manual check."
     },
     {
-      "id": "MP-VISUAL-007",
-      "title": "Polish parent wrongbook and PDF entry",
-      "description": "As a parent reviewing mistakes, I need the wrongbook page to feel like a child learning record, with cards, progress, and PDF actions arranged cleanly.",
+      "id": "MP-STABILITY-007",
+      "title": "Harden PDF and LaTeX generation stability",
+      "description": "As a parent opening the wrong-question PDF, I need old LaTeX, malformed formulas, browser renderer issues, and ReportLab fallback paths to preserve readable output instead of breaking the library.",
       "acceptanceCriteria": [
-        "Refresh parent-wrongbook visual hierarchy for child identity, PDF entry, task progress, filters or topic controls if present, wrong question cards, and state feedback.",
-        "PDF action must be visible but not mistaken for the only path when records are still loading or processing.",
-        "Wrong question cards must separate topic/status/time/question preview/image/error information cleanly.",
-        "Failed, still-processing, PDF-not-ready, missing-PDF, download-failed, and open-failed states must look designed and recoverable.",
-        "Long LaTeX-preview text must wrap cleanly without breaking card or button layout.",
-        "Add or update tests that lock card hierarchy, PDF action placement, state blocks, and narrow-screen behavior.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Audit ai_processor.py, pdf_engine.py, frontend/src/wrongQuestionLatex.js, frontend/scripts/renderWrongQuestionLibraryPdf.mjs, and frontend/scripts/renderWrongQuestionPracticeSheetPdf.mjs for the student wrong-question library path.",
+        "Verify JSON-eaten backslashes, bare LaTeX, \\frac, \\text, \\mathbb{R}, \\left, \\right, roots, powers, subscripts, multi-line formulas, Chinese prose mixed with formulas, geometry records, and malformed formulas are covered by tests.",
+        "Verify invalid LaTeX is preserved as readable source and does not crash PDF generation.",
+        "Verify browser/KaTeX rendering and ReportLab fallback are both covered.",
+        "Verify worker PDF rebuild failure keeps the wrong-question record and original image visible.",
+        "Run scripts/ralph/production_upload_smoke_runbook_proof.sh, python -m unittest tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt -v, frontend LaTeX/PDF renderer tests, scripts/ralph/miniprogram_upload_stability_proof.sh, and git diff --check through a temporary script."
       ],
       "priority": 7,
       "passes": true,
-      "notes": "Parent wrongbook now opens with a Xingrun wrongbook learning-record hero, separates upload progress, PDF status/action, topic filters, and wrong question cards, uses ghost styling for not-ready PDF actions, and locks designed loading/error/empty states plus card section hierarchy in visual proof."
+      "notes": "Audited ai_processor.py, pdf_engine.py, frontend wrongQuestionLatex, browser library/practice PDF renderers, backend PDF tests, frontend LaTeX renderer tests, and worker PDF failure coverage. Hardened indexed bare roots such as \\sqrt[3]{8} for both frontend PDF HTML text fallback and ReportLab fallback, while existing tests continue to cover JSON-eaten backslashes, bare LaTeX, \\frac, \\text, \\mathbb{R}, \\left/\\right, powers/subscripts, multi-line formulas, Chinese prose mixed with formulas, geometry/image records, malformed formulas, browser KaTeX rendering, ReportLab fallback, and worker record preservation when PDF rebuild fails."
     },
     {
-      "id": "MP-VISUAL-008",
-      "title": "Unify empty loading success error and processing states",
-      "description": "As a parent, I need every non-happy-path state to look intentional and understandable, not like a raw technical placeholder.",
+      "id": "MP-STABILITY-008",
+      "title": "Run mini program visual and true-device smoke checklist",
+      "description": "As the product owner, I need Ralph to use visual ability and real mini program evidence to catch wasted space, awkward layout, clipped text, unsafe touch targets, and developer leftovers that source tests miss.",
       "acceptanceCriteria": [
-        "Audit all parent-facing pages for empty, loading, success, partial success, processing, retryable failure, final failure, and unavailable states.",
-        "Unify state card layout, icon or marker treatment, title/body/action hierarchy, and retry/check-progress actions.",
-        "Parent-facing copy must be concise, calm, and action-oriented.",
-        "Low-level technical details may remain available only where already intentionally exposed for diagnostics; they must not dominate the visual hierarchy.",
-        "State actions must follow the same primary/secondary button rules as normal page actions.",
-        "Add or update tests that lock state component structure and prevent raw prototype placeholders.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Inspect parent-home, parent-upload, parent-wrongbook, and parent-bind when relevant using WeChat DevTools screenshots, real-phone screenshots/video, or user-provided screenshots.",
+        "Check at least one narrow phone size such as 360x800 or 375x667.",
+        "Check touch target size, button density, wasted card space, text clipping, overlap, safe-area padding, and scroll traps.",
+        "Check for parent-facing developer leftovers such as raw IDs, debug wording, prototype wording, internal route names, and unnecessary technical pipeline copy.",
+        "If real-device or DevTools evidence is unavailable, record exact remaining manual checks in progress.txt and do not claim true-device stability.",
+        "Add or update deterministic structural tests for any layout issue found in visual review.",
+        "Run scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh and git diff --check through a temporary script."
       ],
       "priority": 8,
       "passes": true,
-      "notes": "Unified parent-facing non-happy-path state anatomy across home, bind, upload, and wrongbook: shared state markers now cover loading, empty, processing, success, and error states; upload progress/result and wrongbook upload/item recognition states use marker + title/body structure; home error now has a retry action. Visual and upload stability proofs passed through /tmp/xingrun_mp_visual_008_proof.sh."
+      "notes": "Ran the local visual/true-device smoke checklist scope against parent-home, parent-upload, parent-wrongbook, and parent-bind source/structural contracts. No WeChat DevTools, real-phone, video, or user screenshot evidence was available in this local run, so true-device visual stability is not claimed and exact manual checks remain recorded in progress.txt. Found and removed one parent-facing technical leftover: parent-upload no longer shows raw upload task ids in the accepted-stage copy. Added deterministic coverage in parent-upload tests and the visual acceptance guardrail so task_accepted copy cannot include taskId again."
     },
     {
-      "id": "MP-VISUAL-009",
-      "title": "Harden narrow screen and WeChat runtime layout",
-      "description": "As a parent on small iPhone, Android, or HarmonyOS WeChat containers, I need every page to remain readable, tap-safe, and visually stable.",
+      "id": "MP-STABILITY-009",
+      "title": "Add final mini program stability acceptance guardrail",
+      "description": "As the maintainer, I need one final guardrail that proves the active mini program Ralph stability queue is complete and the upload-to-wrongbook-to-PDF path is protected.",
       "acceptanceCriteria": [
-        "Add or extend structural tests for narrow-screen class rules on parent-home, parent-bind, parent-upload, and parent-wrongbook.",
-        "No primary button may rely on a fixed width that risks clipping common Chinese labels.",
-        "Button text must not be hidden, clipped, or forced into awkward multi-line layouts.",
-        "Sticky or bottom action areas must reserve enough content padding and safe-area spacing.",
-        "Cards must not depend on side-by-side layouts that collapse badly on narrow screens.",
-        "Document remaining manual checks for WeChat devtools and real devices in scripts/ralph/progress.txt without marking them as automated proof.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
+        "Add or update a final acceptance proof script for this stability PRD if the existing proof does not already check all final contracts.",
+        "The final proof must verify every MP-STABILITY story in scripts/ralph/prd.json is passes=true before reporting complete.",
+        "The final proof must verify the active PRD remains focused on the parent-facing mini program path and has not drifted into unrelated website work.",
+        "The final proof must run or require the visual acceptance guardrail, parent upload 2.0 acceptance guardrail, mini program stability loop proof, upload stability proof, and PDF/LaTeX proof commands.",
+        "The final proof must list remaining manual WeChat DevTools, real-phone, production Redis/RQ, and production PDF smoke checks instead of pretending they are automated.",
+        "Update scripts/ralph/progress.txt with final status and remaining manual smoke commands.",
+        "Run the final proof, scripts/ralph/run_codex_ralph.sh --check, and git diff --check through a temporary script."
       ],
       "priority": 9,
       "passes": true,
-      "notes": "Added WeChat narrow-runtime guardrails and structural proof coverage: shared parent page shells now cap width at 100vw, hide horizontal overflow, reserve page bottom safe-area padding with constant/env fallbacks, keep shared button primitives min-width 0/max-width 100%/text-overflow clip, and upload bottom actions include constant/env safe-area padding. Visual and upload stability proofs passed through /tmp/xingrun_mp_visual_009_proof.sh."
-    },
-    {
-      "id": "MP-VISUAL-010",
-      "title": "Add final mini program visual acceptance guardrail",
-      "description": "As the product owner, I need one final guardrail that proves the mini program visual refresh has a finished-product feel and preserved existing upload behavior.",
-      "acceptanceCriteria": [
-        "Add a final local acceptance proof or checklist script for the visual refresh.",
-        "The final proof must verify every story in this PRD is passes=true before reporting complete.",
-        "The proof must verify parent-home, parent-bind, parent-upload, and parent-wrongbook all use the agreed visual system and action hierarchy.",
-        "The proof must verify button placement contracts: one primary action per section, secondary grouping, destructive separation, bottom action/safe-area rules, and narrow-screen constraints.",
-        "The proof must verify no active mini program page presents itself as a prototype, demo, temporary, debug, or internal test UI.",
-        "The proof must verify the story did not modify website frontend or backend files unless explicitly allowed by the PRD.",
-        "Update scripts/ralph/progress.txt with final status and remaining manual WeChat devtools/real-device visual smoke checks.",
-        "Run scripts/ralph/miniprogram_visual_polish_proof.sh and scripts/ralph/miniprogram_upload_stability_proof.sh."
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Added scripts/ralph/miniprogram_visual_acceptance_guardrail_proof.sh. The final guardrail checks PRD pass state, parent-home/parent-bind/parent-upload/parent-wrongbook visual system and action hierarchy contracts, button placement/destructive/safe-area/narrow-screen constraints through the visual proof, active page prototype wording, and absence of website frontend/backend/bridge working tree changes, then runs the visual polish and upload stability proofs."
+      "notes": "Added scripts/ralph/miniprogram_stability_acceptance_guardrail_proof.sh as the final stability acceptance guardrail. It verifies the active PRD is the nine-story MP-STABILITY queue, remains scoped to the parent mini program upload-to-wrongbook-to-PDF path, excludes unrelated website/business workflows, requires every MP-STABILITY story to be passes=true before reporting final completion, runs the visual acceptance guardrail, parent upload 2.0 guardrail, stability loop proof, upload stability proof, production smoke runbook proof, backend PDF/LaTeX tests, frontend PDF/LaTeX renderer tests, and git diff --check, and prints the remaining WeChat DevTools, real-phone, production Redis/RQ, and production PDF smoke checks as manual work."
     }
   ]
 }

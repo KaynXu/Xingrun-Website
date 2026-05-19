@@ -58,7 +58,7 @@
         <text class="filter-title">专题筛选</text>
         <text class="filter-desc">当前显示 {{displayedItems.length}} / {{items.length}} 条</text>
       </view>
-      <scroll-view class="topic-scroll" scroll-x="true" show-scrollbar="false">
+      <view class="topic-scroll">
         <button
           wx:for="{{topicSummaries}}"
           wx:key="topicCategory"
@@ -68,7 +68,7 @@
         >
           {{item.topicCategory}} {{item.count}}
         </button>
-      </scroll-view>
+      </view>
     </view>
 
     <view wx:for="{{displayedItems}}" wx:key="id" class="item-card">

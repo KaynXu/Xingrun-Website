@@ -26,6 +26,19 @@ test('mini program keeps only the parent upload flow pages and deletes legacy pa
   }
 });
 
+test('parent mini program exposes my and photo upload as the only bottom tabs', () => {
+  const appConfigPath = path.join(MINIPROGRAM_DIR, 'app.json');
+  const appConfig = JSON.parse(fs.readFileSync(appConfigPath, 'utf8'));
+
+  assert.deepEqual(appConfig.tabBar.list.map((item) => ({
+    pagePath: item.pagePath,
+    text: item.text,
+  })), [
+    { pagePath: 'pages/parent-home/index', text: '我的' },
+    { pagePath: 'pages/parent-upload/index', text: '拍照上传' },
+  ]);
+});
+
 test('parent home keeps an entry for binding more children after at least one child is already bound', () => {
   const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
 
@@ -33,10 +46,23 @@ test('parent home keeps an entry for binding more children after at least one ch
   assert.match(homeTemplate, /bindtap="goBindMore"/);
 });
 
-test('parent home uses upload-only wording after children are already available', () => {
+test('parent home is the my section and no longer exposes upload actions inside child cards', () => {
   const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
 
-  assert.equal(homeTemplate.includes('已绑定孩子'), false);
+  assert.equal(homeTemplate.includes('我的孩子'), true);
+  assert.equal(homeTemplate.includes('设为上传'), true);
+  assert.equal(homeTemplate.includes('上传错题'), false);
+  assert.equal(homeTemplate.includes('错题本'), true);
+});
+
+test('tab page navigation returns to the my section with switchTab', () => {
+  const bindSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.js'), 'utf8');
+  const bindTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxml'), 'utf8');
+  const uploadSource = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-upload/index.js'), 'utf8');
+
+  assert.match(bindSource, /wx\.switchTab\(\{\s*url:\s*'\/pages\/parent-home\/index'\s*\}\)/);
+  assert.equal(bindTemplate.includes('去我的'), true);
+  assert.match(uploadSource, /backHome\(\)\s*\{[\s\S]*wx\.switchTab\(\{\s*url:\s*'\/pages\/parent-home\/index'\s*\}\)/);
 });
 
 test('active mini program flow avoids optional chaining syntax for better devtools compatibility', () => {
@@ -245,8 +271,9 @@ test('parent upload and wrongbook pages expose primary topic category controls',
   assert.equal(wrongbookTemplate.includes('bindtap="saveTopicCategory"'), true);
 });
 
-test('parent mini program pages stack action areas for narrow phone screens', () => {
+test('parent mini program pages keep action areas stable for narrow phone screens', () => {
   const homeStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxss'), 'utf8');
+  const homeTemplate = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-home/index.wxml'), 'utf8');
   const bindStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-bind/index.wxss'), 'utf8');
   const wrongbookStyles = fs.readFileSync(path.join(MINIPROGRAM_DIR, 'pages/parent-wrongbook/index.wxss'), 'utf8');
   const assertRuleIncludes = (styles, selector, declaration) => {
@@ -262,9 +289,15 @@ test('parent mini program pages stack action areas for narrow phone screens', ()
     );
   };
 
-  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: column;');
-  assertRuleIncludes(homeStyles, '.binding-actions', 'width: 100%;');
-  assertRuleIncludes(homeStyles, '.mini-btn', 'width: 100%;');
+  assert.equal(homeTemplate.includes('上传后可在错题本查看整理进度。'), false);
+  assert.match(homeTemplate, /class="binding-info"[\s\S]*class="binding-actions"/);
+  assert.equal(homeTemplate.includes('class="ghost-btn mini-btn current-btn" disabled'), false);
+  assertRuleIncludes(homeStyles, '.binding-card', 'flex-direction: row;');
+  assertRuleIncludes(homeStyles, '.binding-card', 'align-items: center;');
+  assertRuleIncludes(homeStyles, '.binding-info', 'flex: 1;');
+  assertRuleIncludes(homeStyles, '.binding-actions', 'flex: 0 0 auto;');
+  assertRuleIncludes(homeStyles, '.binding-actions', 'align-items: flex-end;');
+  assertRuleIncludes(homeStyles, '.mini-btn', 'min-width: 160rpx;');
   assertRuleIncludes(homeStyles, '.mini-btn', 'white-space: nowrap;');
 
   assertRuleIncludes(bindStyles, '.student-card', 'flex-direction: column;');
@@ -325,6 +358,12 @@ test('parent bind page uses official card hierarchy for lookup, existing childre
   assert.match(bindTemplate, /class="state-card empty-card empty-student-card"/);
 
   assert.match(bindStyles, /\.invite-panel\s*\{[^}]*gap:\s*22rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*display:\s*block;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*width:\s*100%;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*height:\s*88rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*min-height:\s*88rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*line-height:\s*88rpx;/s);
+  assert.match(bindStyles, /\.field-input\s*\{[^}]*padding:\s*0\s+24rpx;/s);
   assert.match(bindStyles, /\.lookup-btn\s*\{[^}]*width:\s*100%;/s);
   assert.match(bindStyles, /\.bound-child-card,\s*\.student-card\s*\{[^}]*display:\s*flex;/s);
   assert.match(bindStyles, /\.bound-child-card,\s*\.student-card\s*\{[^}]*flex-direction:\s*column;/s);
@@ -345,9 +384,9 @@ test('parent-facing primary actions appear before nearby secondary follow-up act
     uploadTemplate.indexOf('</view>', uploadTemplate.indexOf('<view class="success-actions">')),
   );
 
-  assert.ok(homeActions.indexOf('上传错题') >= 0, 'home child card should include upload action');
-  assert.ok(homeActions.indexOf('查看错题本') >= 0, 'home child card should include wrongbook action');
-  assert.ok(homeActions.indexOf('上传错题') < homeActions.indexOf('查看错题本'));
+  assert.ok(homeActions.indexOf('设为上传') >= 0, 'home child card should include current child action');
+  assert.ok(homeActions.indexOf('错题本') >= 0, 'home child card should include wrongbook action');
+  assert.ok(homeActions.indexOf('设为上传') < homeActions.indexOf('错题本'));
   assert.match(successActions, /class="primary-btn success-action-btn"[^>]*bindtap="openChildWrongbook"/);
   assert.match(successActions, /class="ghost-btn success-action-btn"[^>]*bindtap="backHome"/);
   assert.ok(successActions.indexOf('openChildWrongbook') < successActions.indexOf('backHome'));

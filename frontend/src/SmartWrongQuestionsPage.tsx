@@ -15,6 +15,8 @@ import {
   buildWeeklyWrongQuestionActivitySummaryPath,
   buildWeeklyWrongQuestionFollowupArchivePath,
   buildWeeklyWrongQuestionFollowupMessagePath,
+  buildWrongQuestionPracticePackCreatePath,
+  buildWrongQuestionPracticePackDetailPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
@@ -30,9 +32,11 @@ import {
   getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
+  isPrimarySchoolWrongQuestionRecord,
   isWechatMiniProgramWrongQuestionRecord,
   normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
+  normalizeWrongQuestionPracticePackJobResponse,
   normalizeWrongQuestionPracticeSheetListResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
@@ -41,6 +45,9 @@ import {
   type MemberStudentNotebookSummary,
   type WeeklyWrongQuestionActivitySummary,
   type WeeklyWrongQuestionFollowupItem,
+  type WrongQuestionPracticePackJob,
+  type WrongQuestionPracticePackMode,
+  type WrongQuestionPracticePackVolume,
   type WrongQuestionPracticeSheetListApiResponse,
   type WrongQuestionPracticeSheetSummary,
   type WrongQuestionFilters,
@@ -288,6 +295,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const detailRequestVersionRef = useRef(0);
   const practiceHistoryRequestVersionRef = useRef(0);
   const weeklyActivityRequestVersionRef = useRef(0);
+  const weeklyFollowupRequestVersionRef = useRef(0);
+  const practicePackRequestVersionRef = useRef(0);
   const reviewDraftDirtyByRecordIdRef = useRef<Record<string, boolean>>({});
   const reviewDraftByRecordIdRef = useRef<Record<string, WrongQuestionReviewDraft>>({});
   const recordsRef = useRef(records);
@@ -320,6 +329,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [generatingWeeklyFollowupStudentId, setGeneratingWeeklyFollowupStudentId] = useState<number | null>(null);
   const [generatingWeeklyPracticeStudentId, setGeneratingWeeklyPracticeStudentId] = useState<number | null>(null);
   const [batchGeneratingWeeklyPractice, setBatchGeneratingWeeklyPractice] = useState(false);
+  const [practicePackMode, setPracticePackMode] = useState<WrongQuestionPracticePackMode>('topic');
+  const [practicePackTarget, setPracticePackTarget] = useState('');
+  const [practicePackVolume, setPracticePackVolume] = useState<WrongQuestionPracticePackVolume>('standard');
+  const [practicePackJob, setPracticePackJob] = useState<WrongQuestionPracticePackJob | null>(null);
+  const [practicePackGenerating, setPracticePackGenerating] = useState(false);
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -377,16 +391,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     );
   }, [memberNotebookRecords]);
   const notebookTopicSummaries = useMemo(() => {
-    return buildWrongQuestionTopicSummaries(memberNotebookRecords);
+    return buildWrongQuestionTopicSummaries(memberNotebookRecords.filter(isPrimarySchoolWrongQuestionRecord));
   }, [memberNotebookRecords]);
+  const showNotebookTopicCategory = notebookTopicSummaries.length > 1;
   const displayedNotebookRecords = useMemo(() => {
     const filtered = notebookMasteryFilter === 'mastered'
       ? memberNotebookRecords.filter((item) => item.isMastered === true)
       : notebookMasteryFilter === 'pending'
         ? memberNotebookRecords.filter((item) => item.isMastered !== true)
         : memberNotebookRecords;
-    return [...filterWrongQuestionRecordsByTopic(filtered, notebookTopicFilter)].reverse();
-  }, [memberNotebookRecords, notebookMasteryFilter, notebookTopicFilter]);
+    const topicFiltered = showNotebookTopicCategory
+      ? filterWrongQuestionRecordsByTopic(filtered, notebookTopicFilter)
+      : filtered;
+    return [...topicFiltered].reverse();
+  }, [memberNotebookRecords, notebookMasteryFilter, notebookTopicFilter, showNotebookTopicCategory]);
   const selectedNotebookStudentId = useMemo(() => {
     const matchedRecord = memberNotebookRecords.find((item) => typeof item.studentId === 'number' && item.studentId > 0);
     return matchedRecord?.studentId ?? null;
@@ -397,6 +415,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [memberNotebookRecords]);
   const effectiveSelectedPracticeRecordIds = practiceSelectionTouched ? selectedPracticeRecordIds : defaultPracticeRecordIds;
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
+  const selectedRecordIsPrimarySchool = selectedRecord ? isPrimarySchoolWrongQuestionRecord(selectedRecord) : false;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
   const selectedQuestionTextPreview = useMemo(() => {
     if (!selectedRecord || !selectedDraft || selectedRecord.source !== 'wechat_mp' || selectedRecord.isGeometry) {
@@ -413,12 +432,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     ].filter(Boolean)));
   }, [selectedDraft?.selectedErrorType, selectedRecord?.analysis.errorType]);
   const topicCategoryOptions = useMemo(() => {
+    if (!selectedRecordIsPrimarySchool) {
+      return [];
+    }
     return Array.from(new Set([
       ...WRONG_QUESTION_TOPIC_CATEGORY_OPTIONS,
       selectedRecord?.topicCategory?.trim() ?? '',
       selectedDraft?.topicCategory?.trim() ?? '',
     ].filter(Boolean)));
-  }, [selectedDraft?.topicCategory, selectedRecord?.topicCategory]);
+  }, [selectedDraft?.topicCategory, selectedRecord?.topicCategory, selectedRecordIsPrimarySchool]);
+
+  useEffect(() => {
+    if (!showNotebookTopicCategory && notebookTopicFilter !== '全部') {
+      setNotebookTopicFilter('全部');
+    }
+  }, [notebookTopicFilter, showNotebookTopicCategory]);
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
     reviewDraftDirtyByRecordIdRef.current = {
@@ -502,6 +530,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   }, []);
 
+  const resetWeeklyFollowupContext = useCallback(() => {
+    weeklyFollowupRequestVersionRef.current += 1;
+    practicePackRequestVersionRef.current += 1;
+    setWeeklyFollowupItems([]);
+    setWeeklyFollowupNotice('');
+    setWeeklyFollowupError('');
+    setWeeklyFollowupLoading(false);
+    setGeneratingWeeklyFollowupStudentId(null);
+    setPracticePackJob(null);
+    setPracticePackGenerating(false);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -581,11 +621,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [weeklyActivityWeekStart, weeklyActivityOrganizationId]);
 
   useEffect(() => {
-    setWeeklyFollowupItems([]);
-    setWeeklyFollowupNotice('');
-    setWeeklyFollowupError('');
-    setGeneratingWeeklyFollowupStudentId(null);
-  }, [activeWeeklyFollowupClassId, weeklyFollowupWeekStart]);
+    resetWeeklyFollowupContext();
+  }, [activeWeeklyFollowupClassId, resetWeeklyFollowupContext, weeklyFollowupWeekStart]);
 
   useEffect(() => {
     if (!usesStudentNotebook || hasStaffScope) {
@@ -863,7 +900,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       );
       const currentTopicCategory = (selectedRecord.topicCategory || selectedRecord.analysis.topicCategory || '未分类').trim() || '未分类';
       const nextTopicCategory = payload.topicCategory || '未分类';
-      if (selectedRecord.source === 'wechat_mp' && nextTopicCategory !== currentTopicCategory) {
+      if (selectedRecord.source === 'wechat_mp' && selectedRecordIsPrimarySchool && nextTopicCategory !== currentTopicCategory) {
         const topicResponse = await apiFetch<unknown>(`/api/wrong-questions/${encodeURIComponent(selectedRecord.id)}/topic-category`, {
           method: 'PUT',
           body: JSON.stringify({ topic_category: nextTopicCategory }),
@@ -1066,6 +1103,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       return;
     }
 
+    const requestVersion = weeklyFollowupRequestVersionRef.current + 1;
+    weeklyFollowupRequestVersionRef.current = requestVersion;
     setWeeklyFollowupLoading(true);
     setWeeklyFollowupError('');
     setWeeklyFollowupNotice('');
@@ -1075,13 +1114,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         buildWeeklyWrongQuestionFollowupsPath(activeWeeklyFollowupClassId, weeklyFollowupWeekStart),
       );
       const normalized = normalizeWeeklyWrongQuestionFollowupResponse(response);
+      if (requestVersion !== weeklyFollowupRequestVersionRef.current) {
+        return;
+      }
       setWeeklyFollowupItems(normalized.items);
       setWeeklyFollowupNotice(normalized.items.length > 0 ? `已加载 ${normalized.items.length} 名学生。` : '本周暂无待跟进学生。');
     } catch (loadWeeklyError) {
+      if (requestVersion !== weeklyFollowupRequestVersionRef.current) {
+        return;
+      }
       setWeeklyFollowupItems([]);
       setWeeklyFollowupError(loadWeeklyError instanceof Error ? loadWeeklyError.message : '每周跟进清单加载失败');
     } finally {
-      setWeeklyFollowupLoading(false);
+      if (requestVersion === weeklyFollowupRequestVersionRef.current) {
+        setWeeklyFollowupLoading(false);
+      }
     }
   };
 
@@ -1183,6 +1230,85 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleGeneratePracticePack = async () => {
+    if (!activeWeeklyFollowupClassId) {
+      setWeeklyFollowupError('请选择班级。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    const target = practicePackTarget.trim();
+    if (!target) {
+      setWeeklyFollowupError('请填写练习包方向。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    const requestVersion = practicePackRequestVersionRef.current + 1;
+    practicePackRequestVersionRef.current = requestVersion;
+    setPracticePackGenerating(true);
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(buildWrongQuestionPracticePackCreatePath(), {
+        method: 'POST',
+        body: JSON.stringify({
+          class_id: activeWeeklyFollowupClassId,
+          mode: practicePackMode,
+          target,
+          volume: practicePackVolume,
+        }),
+      });
+      const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
+      setPracticePackJob(normalized.job);
+      if (normalized.job?.downloadUrl) {
+        globalThis.window?.open?.(buildWrongQuestionAuthedPath(normalized.job.downloadUrl), '_blank', 'noopener,noreferrer');
+        setWeeklyFollowupNotice('练习包已生成，正在打开下载。');
+      } else {
+        setWeeklyFollowupNotice(normalized.reused ? '已有同条件练习包正在生成，完成后可下载。' : '正在生成，完成后可下载。');
+      }
+    } catch (generateError) {
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
+      setWeeklyFollowupError(generateError instanceof Error ? generateError.message : '练习包生成失败');
+    } finally {
+      if (requestVersion === practicePackRequestVersionRef.current) {
+        setPracticePackGenerating(false);
+      }
+    }
+  };
+
+  const handleRefreshPracticePackJob = async () => {
+    if (!practicePackJob?.id) {
+      return;
+    }
+
+    const requestVersion = practicePackRequestVersionRef.current + 1;
+    practicePackRequestVersionRef.current = requestVersion;
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(buildWrongQuestionPracticePackDetailPath(practicePackJob.id));
+      const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
+      setPracticePackJob(normalized.job);
+      setWeeklyFollowupNotice('练习包状态已刷新。');
+    } catch (refreshError) {
+      if (requestVersion !== practicePackRequestVersionRef.current) {
+        return;
+      }
+      setWeeklyFollowupError(refreshError instanceof Error ? refreshError.message : '练习包状态刷新失败');
+    }
+  };
+
   const handleCopyWeeklyFollowupMessage = async (messageText: string) => {
     const clipboard = globalThis.navigator?.clipboard;
     if (!clipboard?.writeText) {
@@ -1226,6 +1352,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     || weeklyActivitySummary.teacherItems.length > 0
     || weeklyActivitySummary.studentItems.length > 0
   ));
+  const practicePackDownloadUrl = practicePackJob?.downloadUrl
+    ? buildWrongQuestionAuthedPath(practicePackJob.downloadUrl)
+    : '';
   const detailHeader = selectedRecord ? (
     <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1291,12 +1420,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     </div>
   );
   const handleMemberClassChange = (value: string) => {
+    resetWeeklyFollowupContext();
     const nextClassId = value ? Number(value) : null;
     setSelectedClassId(Number.isFinite(nextClassId) ? nextClassId : null);
     setSelectedStudentName(null);
     setSelectedId(null);
   };
   const handleStaffClassChange = (value: string) => {
+    resetWeeklyFollowupContext();
     const nextClassId = value ? Number(value) : null;
     const nextClassOption = Number.isFinite(nextClassId)
       ? visibleClassOptions.find((item) => item.id === nextClassId) ?? null
@@ -1472,33 +1603,35 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">孩子自述错因</p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{selectedRecord.childReasonText || '孩子还没有填写错因描述。'}</p>
             </div>
-            <div className={`${workspaceCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">小学专题</p>
-              {selectedDraft ? (
-                <div className="mt-2 space-y-2">
-                  <select
-                    aria-label="小学专题"
-                    value={topicCategoryOptions.includes(selectedDraft.topicCategory ?? '') ? selectedDraft.topicCategory : '自定义'}
-                    onChange={(event) => handleDraftChange('topicCategory', event.target.value === '自定义' ? '' : event.target.value)}
-                    className={workspaceFieldClass}
-                  >
-                    {topicCategoryOptions.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                    <option value="自定义">自定义</option>
-                  </select>
-                  <input
-                    aria-label="自定义小学专题"
-                    value={selectedDraft.topicCategory ?? '未分类'}
-                    onChange={(event) => handleDraftChange('topicCategory', event.target.value)}
-                    className={workspaceFieldClass}
-                    placeholder="如：周期问题"
-                  />
-                </div>
-              ) : (
-                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.topicCategory || '未分类'}</p>
-              )}
-            </div>
+            {selectedRecordIsPrimarySchool ? (
+              <div className={`${workspaceCardClass} p-4`}>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">小学专题</p>
+                {selectedDraft ? (
+                  <div className="mt-2 space-y-2">
+                    <select
+                      aria-label="小学专题"
+                      value={topicCategoryOptions.includes(selectedDraft.topicCategory ?? '') ? selectedDraft.topicCategory : '自定义'}
+                      onChange={(event) => handleDraftChange('topicCategory', event.target.value === '自定义' ? '' : event.target.value)}
+                      className={workspaceFieldClass}
+                    >
+                      {topicCategoryOptions.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                      <option value="自定义">自定义</option>
+                    </select>
+                    <input
+                      aria-label="自定义小学专题"
+                      value={selectedDraft.topicCategory ?? '未分类'}
+                      onChange={(event) => handleDraftChange('topicCategory', event.target.value)}
+                      className={workspaceFieldClass}
+                      placeholder="如：周期问题"
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{selectedRecord.topicCategory || '未分类'}</p>
+                )}
+              </div>
+            ) : null}
             <div className={`${workspaceCardClass} p-4`}>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">问题归类</p>
               {selectedDraft ? (
@@ -1943,7 +2076,10 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     aria-label="周次"
                     type="date"
                     value={weeklyFollowupWeekStart}
-                    onChange={(event) => setWeeklyFollowupWeekStart(event.target.value)}
+                    onChange={(event) => {
+                      resetWeeklyFollowupContext();
+                      setWeeklyFollowupWeekStart(event.target.value);
+                    }}
                     className={workspaceFieldClass}
                   />
                 </label>
@@ -1955,20 +2091,53 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 >
                   {weeklyFollowupLoading ? '正在加载' : '查看跟进清单'}
                 </button>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">方式</span>
+                  <select
+                    aria-label="练习包模式"
+                    value={practicePackMode}
+                    onChange={(event) => setPracticePackMode(event.target.value === 'reason' ? 'reason' : 'topic')}
+                    className={workspaceFieldClass}
+                  >
+                    <option value="topic">按专题</option>
+                    <option value="reason">按错因</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">方向</span>
+                  <input
+                    aria-label="练习包方向"
+                    type="text"
+                    value={practicePackTarget}
+                    onChange={(event) => setPracticePackTarget(event.target.value)}
+                    onInput={(event) => setPracticePackTarget((event.target as HTMLInputElement).value)}
+                    className={workspaceFieldClass}
+                    placeholder="例如：去分母漏乘"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">题量</span>
+                  <select
+                    aria-label="练习包题量"
+                    value={practicePackVolume}
+                    onChange={(event) => {
+                      const nextVolume = event.target.value;
+                      setPracticePackVolume(nextVolume === 'light' || nextVolume === 'intensive' ? nextVolume : 'standard');
+                    }}
+                    className={workspaceFieldClass}
+                  >
+                    <option value="light">轻量</option>
+                    <option value="standard">标准</option>
+                    <option value="intensive">强化</option>
+                  </select>
+                </label>
                 <button
                   type="button"
-                  onClick={() => void handleBatchGenerateWeeklyPracticeSheets()}
-                  disabled={batchGeneratingWeeklyPractice}
+                  onClick={() => void handleGeneratePracticePack()}
+                  disabled={practicePackGenerating}
                   className={workspaceSecondaryButtonClass}
                 >
-                  {batchGeneratingWeeklyPractice ? '正在提交' : '批量生成未生成学生练习'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenWeeklyFollowupArchive}
-                  className={workspaceSecondaryButtonClass}
-                >
-                  下载本周练习合集
+                  {practicePackGenerating ? '正在生成' : '生成并下载一周练习包'}
                 </button>
               </div>
             </div>
@@ -1983,6 +2152,39 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             {weeklyFollowupNotice && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                 {weeklyFollowupNotice}
+              </div>
+            )}
+
+            {practicePackJob && (
+              <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{practicePackJob.target || '未命名练习包'}</p>
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
+                      <span>状态：{practicePackJob.status}</span>
+                      <span>{practicePackJob.requestedQuestionCount}题</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleRefreshPracticePackJob()}
+                      className={workspaceSecondaryButtonClass}
+                    >
+                      刷新状态
+                    </button>
+                    {practicePackDownloadUrl ? (
+                      <a
+                        href={practicePackDownloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={workspacePrimaryButtonClass}
+                      >
+                        下载练习包
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -2316,25 +2518,27 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                           当前显示 {displayedNotebookRecords.length}题
                         </span>
                       </div>
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">专题分类</p>
-                        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="小学专题筛选">
-                          {notebookTopicSummaries.map((item) => {
-                            const active = notebookTopicFilter === item.topicCategory;
-                            return (
-                              <button
-                                key={item.topicCategory}
-                                type="button"
-                                aria-pressed={active}
-                                onClick={() => setNotebookTopicFilter(item.topicCategory)}
-                                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active ? 'bg-sky-600 text-white dark:bg-sky-400 dark:text-slate-950' : 'border border-sky-100 bg-white text-sky-700 hover:border-sky-200 dark:border-sky-500/20 dark:bg-slate-950/60 dark:text-sky-300'}`}
-                              >
-                                {item.topicCategory} · {item.count}
-                              </button>
-                            );
-                          })}
+                      {showNotebookTopicCategory ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">专题分类</p>
+                          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="小学专题筛选">
+                            {notebookTopicSummaries.map((item) => {
+                              const active = notebookTopicFilter === item.topicCategory;
+                              return (
+                                <button
+                                  key={item.topicCategory}
+                                  type="button"
+                                  aria-pressed={active}
+                                  onClick={() => setNotebookTopicFilter(item.topicCategory)}
+                                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active ? 'bg-sky-600 text-white dark:bg-sky-400 dark:text-slate-950' : 'border border-sky-100 bg-white text-sky-700 hover:border-sky-200 dark:border-sky-500/20 dark:bg-slate-950/60 dark:text-sky-300'}`}
+                                >
+                                  {item.topicCategory} · {item.count}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                       <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-500 dark:text-slate-400">已选择 {selectedPracticeCount} 题</p>
                         <button
@@ -2384,9 +2588,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                                 <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${item.isMastered ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border-slate-200 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300'}`}>
                                   {item.isMastered ? '已掌握' : '未掌握'}
                                 </span>
-                                <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
-                                  {item.topicCategory || '未分类'}
-                                </span>
+                                {isPrimarySchoolWrongQuestionRecord(item) ? (
+                                  <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                                    {item.topicCategory || '未分类'}
+                                  </span>
+                                ) : null}
                               </div>
                               {!canSelect ? (
                                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

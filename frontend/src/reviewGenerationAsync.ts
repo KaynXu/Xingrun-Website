@@ -62,7 +62,7 @@ export function getReviewLessonTaskState(
   lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path'>,
 ): ReviewLessonTaskState {
   const status = lesson.record_status?.trim() ?? '';
-  if (['pending', 'queued', 'processing', 'generating'].includes(status)) {
+  if (['pending', 'queued', 'processing', 'transcribing', 'generating'].includes(status)) {
     return 'pending';
   }
   if (status === 'failed' || status === 'expired') {
@@ -86,7 +86,14 @@ export function getReviewLessonTaskMessage(
 ): string {
   const state = getReviewLessonTaskState(lesson);
   if (state === 'pending') {
-    return '可离开页面，完成后会出现在列表中';
+    const status = lesson.record_status?.trim() ?? '';
+    if (status === 'transcribing') {
+      return '录音已上传，正在转写';
+    }
+    if (status === 'generating') {
+      return '转写完成，正在生成复习计划';
+    }
+    return '正在生成复习计划，可离开页面';
   }
   if (state === 'failed') {
     if (lesson.record_status === 'expired') {
@@ -98,4 +105,21 @@ export function getReviewLessonTaskMessage(
     return '生成结果缺少 PDF，请刷新后重试';
   }
   return '';
+}
+
+export function getReviewLessonTaskProgress(lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path'>): number {
+  const status = lesson.record_status?.trim() ?? '';
+  if (status === 'transcribing') {
+    return 45;
+  }
+  if (status === 'generating') {
+    return 78;
+  }
+  if (['pending', 'queued', 'processing'].includes(status)) {
+    return 68;
+  }
+  if (getReviewLessonTaskState(lesson) === 'ready') {
+    return 100;
+  }
+  return 0;
 }
