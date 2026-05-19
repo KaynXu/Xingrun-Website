@@ -801,6 +801,52 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
     }
 
 
+_WRONG_QUESTION_PRACTICE_PACK_TARGET_SUBSTRINGS = (
+    "去分母",
+    "漏乘",
+    "符号",
+    "审题",
+    "步骤",
+    "遗漏",
+    "粗心",
+)
+
+
+def _wrong_question_practice_pack_target_tokens(target: str) -> list[str]:
+    normalized_target = str(target or "").strip()
+    if not normalized_target:
+        return []
+    compact_target = re.sub(r"[\s,，、/／|｜;；:：\-—_()（）\[\]【】{}]+", "", normalized_target)
+    raw_parts = re.split(r"[\s,，、/／|｜;；:：\-—_()（）\[\]【】{}]+", normalized_target)
+    tokens = {
+        part.strip()
+        for part in raw_parts
+        if len(part.strip()) >= 2
+    }
+    if len(compact_target) >= 2:
+        tokens.add(compact_target)
+    for substring in _WRONG_QUESTION_PRACTICE_PACK_TARGET_SUBSTRINGS:
+        if substring in compact_target:
+            tokens.add(substring)
+    return sorted(tokens, key=len, reverse=True)
+
+
+def _wrong_question_practice_pack_variant_matches_target(item: dict, target: str) -> bool:
+    tokens = _wrong_question_practice_pack_target_tokens(target)
+    if not tokens:
+        return not str(target or "").strip()
+    combined_text = "".join(
+        [
+            str(item.get("question_text") or ""),
+            str(item.get("training_goal") or ""),
+            str(item.get("pitfall_reminder") or ""),
+            str(item.get("answer") or ""),
+            "".join(str(step or "") for step in (item.get("key_steps") or [])),
+        ]
+    )
+    return any(token in combined_text for token in tokens)
+
+
 def _normalize_wrong_question_practice_pack_variants(
     payload: dict,
     *,
@@ -831,7 +877,7 @@ def _normalize_wrong_question_practice_pack_variants(
         }
         if not item["question_text"] or not item["answer"] or not item["training_goal"] or not item["key_steps"]:
             raise ValueError("wrong question practice pack variant generation failed")
-        if str(target or "").strip() and str(target or "").strip() not in item["training_goal"] and str(target or "").strip() not in item["pitfall_reminder"] and str(target or "").strip() not in item["question_text"]:
+        if not _wrong_question_practice_pack_variant_matches_target(item, target):
             raise ValueError("wrong question practice pack variant target mismatch")
         normalized.append(item)
     return normalized

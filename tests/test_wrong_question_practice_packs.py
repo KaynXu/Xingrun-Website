@@ -504,6 +504,53 @@ class WrongQuestionPracticePackAiNormalizationTestCase(unittest.TestCase):
         self.assertEqual(normalized[0]["answer"], "x=4")
         self.assertEqual(normalized[0]["key_steps"], ["两边同乘2", "x+2=6", "x=4"])
 
+    def test_normalize_variant_payload_accepts_meaningful_target_tokens(self):
+        payload = {
+            "items": [
+                {
+                    "variant_id": "variant-1",
+                    "source_record_id": "wechat-a",
+                    "question_text": "解方程：x/2 + 1 = 3。",
+                    "training_goal": "去分母时等式两边每一项同乘。",
+                    "answer": "x=4",
+                    "key_steps": ["两边同乘2", "x+2=6", "x=4"],
+                    "pitfall_reminder": "不要漏乘常数项。",
+                    "difficulty": "基础",
+                }
+            ]
+        }
+
+        normalized = ai_processor._normalize_wrong_question_practice_pack_variants(
+            payload,
+            expected_count=1,
+            target="去分母漏乘",
+        )
+
+        self.assertEqual(normalized[0]["training_goal"], "去分母时等式两边每一项同乘。")
+
+    def test_normalize_variant_payload_rejects_unrelated_target_text(self):
+        payload = {
+            "items": [
+                {
+                    "variant_id": "variant-1",
+                    "source_record_id": "wechat-a",
+                    "question_text": "如图，证明三角形全等。",
+                    "training_goal": "识别对应边和对应角。",
+                    "answer": "可由 SAS 判定全等。",
+                    "key_steps": ["找对应边", "找夹角", "使用 SAS"],
+                    "pitfall_reminder": "不要把非夹角当作夹角。",
+                    "difficulty": "基础",
+                }
+            ]
+        }
+
+        with self.assertRaises(ValueError):
+            ai_processor._normalize_wrong_question_practice_pack_variants(
+                payload,
+                expected_count=1,
+                target="去分母漏乘",
+            )
+
     def test_variant_review_passed_reads_first_conclusion_line(self):
         self.assertTrue(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：通过\n题目可解。"))
         self.assertFalse(ai_processor._wrong_question_practice_pack_variant_review_passed("结论：不通过\n答案不一致。"))
