@@ -8086,6 +8086,35 @@ def get_wrong_question_practice_pack_job(job_id: int) -> Optional[dict]:
     return job
 
 
+def list_wrong_question_practice_pack_jobs_for_class(
+    *,
+    organization_id: int,
+    class_id: int,
+    limit: int = 20,
+) -> list[dict]:
+    normalized_limit = max(1, min(int(limit or 20), 50))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_practice_pack_jobs
+            WHERE organization_id=? AND class_id=?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (
+                int(organization_id or 0),
+                int(class_id or 0),
+                normalized_limit,
+            ),
+        ).fetchall()
+    return [
+        job
+        for job in (get_wrong_question_practice_pack_job(int(row["id"])) for row in rows)
+        if job is not None
+    ]
+
+
 def find_active_wrong_question_practice_pack_job(
     *,
     organization_id: int,
