@@ -946,3 +946,90 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
             note = archive.read("打包说明.txt").decode("utf-8")
         self.assertFalse(any(name.endswith(".pdf/") for name in names))
         self.assertIn("空路径学生：PDF 文件缺失", note)
+
+
+class WrongQuestionPracticePackApiTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        config_runtime.write_file_config({})
+        lesson_manager.init_db()
+
+        import app as app_module
+
+        self.app = app_module
+        self.app.app.config["TESTING"] = True
+        self.app.PDF_DIR = self.base / "pdfs"
+        self.owner = lesson_manager.get_user_by_username("Kayn")
+        self.class_id = lesson_manager.save_class("七年级 5 班", subject="数学", grade="七年级")
+        lesson_manager.set_class_teacher_user_id(self.class_id, self.owner["id"])
+        self.client = self.app.app.test_client()
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _login_headers(self) -> dict:
+        login = self.client.post(
+            "/api/login",
+            json={"username": "Kayn", "password": "xingrun2026"},
+        )
+        self.assertEqual(login.status_code, 200)
+        return {"X-Auth-Token": login.get_json()["token"]}
+
+    def test_post_pack_creates_or_reuses_job(self):
+        headers = self._login_headers()
+        payload = {
+            "class_id": self.class_id,
+            "mode": "reason",
+            "target": "去分母漏乘",
+            "volume": "standard",
+        }
+
+        with mock.patch("app.has_api_key", return_value=True), mock.patch(
+            "app._start_wrong_question_practice_pack_thread"
+        ) as start_mock:
+            first = self.client.post("/api/wrong-question-practice-packs", json=payload, headers=headers)
+            second = self.client.post("/api/wrong-question-practice-packs", json=payload, headers=headers)
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 200)
+        first_payload = first.get_json()
+        second_payload = second.get_json()
+        self.assertFalse(first_payload["reused"])
+        self.assertTrue(second_payload["reused"])
+        self.assertEqual(first_payload["job"]["id"], second_payload["job"]["id"])
+        start_mock.assert_called_once()
+
+    def test_get_pack_and_download_ready_zip(self):
+        headers = self._login_headers()
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="topic",
+            target="计算",
+            volume="light",
+        )
+        zip_path = self.base / "practice-pack.zip"
+        zip_path.write_bytes(b"zip-bytes")
+        lesson_manager.mark_wrong_question_practice_pack_job_status(
+            job["id"],
+            status="ready",
+            zip_path=str(zip_path),
+            generation_error="",
+        )
+
+        detail = self.client.get(f"/api/wrong-question-practice-packs/{job['id']}", headers=headers)
+        self.assertEqual(detail.status_code, 200)
+        detail_payload = detail.get_json()
+        self.assertEqual(
+            detail_payload["download_url"],
+            f"/api/wrong-question-practice-packs/{job['id']}/download",
+        )
+
+        download = self.client.get(detail_payload["download_url"], headers=headers)
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.data, b"zip-bytes")
+        self.assertEqual(download.mimetype, "application/zip")

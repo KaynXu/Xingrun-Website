@@ -70,6 +70,7 @@ from lesson_manager import (
     create_class_feedback_task,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
+    create_wrong_question_practice_pack_job,
     create_wechat_wrong_question_upload_task,
     create_organization_request,
     create_student_for_class,
@@ -91,6 +92,7 @@ from lesson_manager import (
     delete_lesson as db_delete_lesson,
     delete_organization,
     find_previous_confirmed_class_feedback_entry,
+    find_active_wrong_question_practice_pack_job,
     get_class,
     get_class_feedback_task,
     get_class_teacher_user_id,
@@ -1872,6 +1874,16 @@ def _serialize_wrong_question_practice_sheet_for_response(sheet: object) -> Opti
     return serialized
 
 
+def _serialize_wrong_question_practice_pack_job_for_response(job: object) -> Optional[dict]:
+    if not isinstance(job, dict):
+        return None
+    serialized = dict(job)
+    serialized["download_url"] = ""
+    if str(serialized.get("zip_path") or "").strip() and str(serialized.get("status") or "") in {"ready", "partial_failed"}:
+        serialized["download_url"] = f"/api/wrong-question-practice-packs/{serialized['id']}/download"
+    return serialized
+
+
 def _serialize_wrong_question_practice_sheets_for_response(items: object) -> list[dict]:
     if not isinstance(items, list):
         return []
@@ -1950,6 +1962,16 @@ def _can_access_wrong_question_practice_sheet(user, sheet: object, owned_class_i
     if member_class_ids is None:
         member_class_ids = set(get_user_class_ids(user["id"]))
     return class_id in member_class_ids
+
+
+def _can_access_wrong_question_practice_pack_job(user: dict, job: object) -> bool:
+    if user.get("role") == "super_owner":
+        return True
+    if not isinstance(job, dict):
+        return False
+    if user.get("role") in {"owner", "admin"}:
+        return int(job.get("organization_id") or 0) == int(user.get("organization_id") or 0)
+    return int(job.get("class_id") or 0) in set(get_user_class_ids(user["id"]))
 
 
 def _filter_wrong_question_practice_sheets_for_user(user, sheets: object) -> list[dict]:
@@ -3209,6 +3231,117 @@ def api_wrong_question_student_library_refresh(student_id: int):
             "student_library_pdf_path": pdf_path,
             "pdf_url": f"/api/wechat/student-libraries/{student_id}",
         }
+    )
+
+
+@app.route("/api/wrong-question-practice-packs", methods=["POST"])
+def api_wrong_question_practice_pack_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    if not has_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+
+    try:
+        class_id = int(data.get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    mode = str(data.get("mode") or "").strip().lower()
+    target = str(data.get("target") or "").strip()
+    volume = str(data.get("volume") or "").strip().lower()
+    if not class_id:
+        return jsonify({"error": "class_id is required"}), 400
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    if mode not in {"topic", "reason"}:
+        return jsonify({"error": "mode must be topic or reason"}), 400
+    if volume not in {"light", "standard", "intensive"}:
+        return jsonify({"error": "volume must be light, standard or intensive"}), 400
+    if not target:
+        return jsonify({"error": "target is required"}), 400
+
+    organization_id = int(cls.get("organization_id") or user.get("organization_id") or 0)
+    try:
+        existing_job = find_active_wrong_question_practice_pack_job(
+            organization_id=organization_id,
+            class_id=class_id,
+            created_by=int(user["id"]),
+            mode=mode,
+            target=target,
+            volume=volume,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if existing_job:
+        serialized = _serialize_wrong_question_practice_pack_job_for_response(existing_job)
+        if serialized is None:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"job": serialized, "reused": True}), 200
+
+    try:
+        job = create_wrong_question_practice_pack_job(
+            organization_id=organization_id,
+            class_id=class_id,
+            created_by=int(user["id"]),
+            mode=mode,
+            target=target,
+            volume=volume,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    _start_wrong_question_practice_pack_thread(
+        job_id=int(job["id"]),
+        user={
+            "id": int(user["id"]),
+            "organization_id": organization_id,
+            "display_name": user.get("display_name") or user.get("username") or "",
+        },
+    )
+    serialized = _serialize_wrong_question_practice_pack_job_for_response(job)
+    return jsonify({"job": serialized, "reused": False}), 202
+
+
+@app.route("/api/wrong-question-practice-packs/<int:job_id>", methods=["GET"])
+def api_wrong_question_practice_pack_detail(job_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    job = get_wrong_question_practice_pack_job(job_id)
+    if not job or not _can_access_wrong_question_practice_pack_job(user, job):
+        return jsonify({"error": "not found"}), 404
+    serialized = _serialize_wrong_question_practice_pack_job_for_response(job)
+    if serialized is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(serialized)
+
+
+@app.route("/api/wrong-question-practice-packs/<int:job_id>/download", methods=["GET"])
+def api_wrong_question_practice_pack_download(job_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    job = get_wrong_question_practice_pack_job(job_id)
+    if not job or not _can_access_wrong_question_practice_pack_job(user, job):
+        return jsonify({"error": "not found"}), 404
+    if str(job.get("status") or "") not in {"ready", "partial_failed"}:
+        return jsonify({"error": "practice pack is not ready"}), 409
+    zip_path = Path(str(job.get("zip_path") or "").strip())
+    if not zip_path or not zip_path.is_file():
+        return jsonify({"error": "zip not found"}), 404
+
+    cls = get_class(int(job.get("class_id") or 0)) or {}
+    class_name = _safe_pdf_download_filename_part(cls.get("name"), f"class-{job.get('class_id') or job_id}")
+    export_date = datetime.now().strftime("%Y-%m-%d")
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{class_name}错题练习包_{export_date}.zip",
     )
 
 
