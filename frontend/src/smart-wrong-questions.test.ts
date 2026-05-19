@@ -13,6 +13,9 @@ import {
   buildWeeklyWrongQuestionActivitySummaryPath,
   buildWeeklyWrongQuestionFollowupArchivePath,
   buildWeeklyWrongQuestionFollowupMessagePath,
+  buildWrongQuestionPracticePackCreatePath,
+  buildWrongQuestionPracticePackDetailPath,
+  buildWrongQuestionPracticePackDownloadPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
@@ -30,6 +33,7 @@ import {
   isWechatMiniProgramWrongQuestionRecord,
   normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
+  normalizeWrongQuestionPracticePackJobResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
   resolveSavedWrongQuestionRecord,
@@ -609,6 +613,66 @@ test('weekly followup path builders keep the feature web-only', () => {
     buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath(),
     '/api/wrong-question-followups/weekly/practice-sheets/batch',
   );
+});
+
+test('practice pack path builders target the new practice pack API', () => {
+  assert.equal(
+    buildWrongQuestionPracticePackCreatePath(),
+    '/api/wrong-question-practice-packs',
+  );
+  assert.equal(
+    buildWrongQuestionPracticePackDetailPath('pack/with space?#x'),
+    '/api/wrong-question-practice-packs/pack%2Fwith%20space%3F%23x',
+  );
+  assert.equal(
+    buildWrongQuestionPracticePackDownloadPath('pack/with space?#x'),
+    '/api/wrong-question-practice-packs/pack%2Fwith%20space%3F%23x/download',
+  );
+});
+
+test('normalizeWrongQuestionPracticePackJobResponse converts snake_case job fields to camelCase', () => {
+  const normalized = normalizeWrongQuestionPracticePackJobResponse({
+    reused: true,
+    job: {
+      id: 'pack-42',
+      status: 'ready',
+      mode: 'reason',
+      target: '去分母漏乘',
+      volume: 'intensive',
+      requested_question_count: 56,
+      download_url: '/api/wrong-question-practice-packs/pack-42/download',
+      generation_error: '',
+      students: [
+        {
+          student_id: 501,
+          student_name_snapshot: '王睿博',
+          status: 'ready',
+          requested_question_count: 8,
+          real_question_count: 5,
+          variant_question_count: 3,
+          pdf_path: '/tmp/student-501.pdf',
+          generation_error: '',
+        },
+      ],
+    },
+  });
+
+  assert.equal(normalized.reused, true);
+  assert.equal(normalized.job?.id, 'pack-42');
+  assert.equal(normalized.job?.mode, 'reason');
+  assert.equal(normalized.job?.volume, 'intensive');
+  assert.equal(normalized.job?.requestedQuestionCount, 56);
+  assert.equal(normalized.job?.downloadUrl, '/api/wrong-question-practice-packs/pack-42/download');
+  assert.deepEqual(normalized.job?.students[0], {
+    studentId: 501,
+    studentNameSnapshot: '王睿博',
+    status: 'ready',
+    requestedQuestionCount: 8,
+    realQuestionCount: 5,
+    variantQuestionCount: 3,
+    pdfPath: '/tmp/student-501.pdf',
+    generationError: '',
+  });
 });
 
 test('weekly activity summary path builder supports optional organization filtering', () => {
@@ -2760,10 +2824,18 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
   const domEnvironment = setupDomEnvironment();
   const originalFetch = globalThis.fetch;
   const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  const openedPaths: string[] = [];
   let root: Root | null = null;
 
   try {
     localStorage.setItem('xr_token', 'token-123');
+    Object.defineProperty(domEnvironment.container.ownerDocument.defaultView, 'open', {
+      configurable: true,
+      value: (path: string) => {
+        openedPaths.push(path);
+        return null;
+      },
+    });
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchCalls.push({ input, init });
 
@@ -2922,6 +2994,34 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
         });
       }
 
+      if (input === '/api/wrong-question-practice-packs' && init?.method === 'POST') {
+        return createJsonResponse({
+          reused: false,
+          job: {
+            id: 'pack-42',
+            status: 'ready',
+            mode: 'reason',
+            target: '去分母漏乘',
+            volume: 'intensive',
+            requested_question_count: 16,
+            download_url: '/api/wrong-question-practice-packs/pack-42/download',
+            generation_error: '',
+            students: [
+              {
+                student_id: 501,
+                student_name_snapshot: '王睿博',
+                status: 'ready',
+                requested_question_count: 8,
+                real_question_count: 5,
+                variant_question_count: 3,
+                pdf_path: '/tmp/student-501.pdf',
+                generation_error: '',
+              },
+            ],
+          },
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${String(input)}`);
     }) as typeof fetch;
 
@@ -2976,9 +3076,55 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /网页智能错题/);
       assert.match(pageText, /让 AI 生成练习/);
-      assert.match(pageText, /批量生成未生成学生练习/);
+      assert.match(pageText, /生成并下载一周练习包/);
+      assert.doesNotMatch(pageText, /批量生成未生成学生练习/);
+      assert.doesNotMatch(pageText, /下载本周练习合集/);
       assert.match(pageText, /王睿博妈妈，我刚看了下孩子这周错题。/);
       assert.ok(fetchCalls.some((call) => typeof call.input === 'string' && call.input.startsWith('/api/wrong-question-followups/weekly?class_id=42&week_start=')));
+    });
+
+    const modeSelect = domEnvironment.container.querySelector('select[aria-label="练习包模式"]') as HTMLSelectElement | null;
+    const targetInput = domEnvironment.container.querySelector('input[aria-label="练习包方向"]') as HTMLInputElement | null;
+    const volumeSelect = domEnvironment.container.querySelector('select[aria-label="练习包题量"]') as HTMLSelectElement | null;
+    const generatePackButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成并下载一周练习包'));
+    assert.ok(modeSelect instanceof HTMLSelectElement);
+    assert.ok(targetInput instanceof HTMLInputElement);
+    assert.ok(volumeSelect instanceof HTMLSelectElement);
+    assert.ok(generatePackButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      modeSelect.value = 'reason';
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      setDateInputValue(targetInput, '去分母漏乘');
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      volumeSelect.value = 'intensive';
+      volumeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await act(async () => {
+      generatePackButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const createCall = findLastFetchCall(fetchCalls, (call) => call.input === '/api/wrong-question-practice-packs' && call.init?.method === 'POST');
+      assert.ok(createCall);
+      assert.deepEqual(JSON.parse(String(createCall.init?.body)), {
+        class_id: 42,
+        mode: 'reason',
+        target: '去分母漏乘',
+        volume: 'intensive',
+      });
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /练习包已生成，正在打开下载/);
+      assert.match(pageText, /去分母漏乘/);
+      assert.match(pageText, /ready/);
+      assert.match(pageText, /16题/);
+      assert.match(pageText, /下载练习包/);
+      assert.deepEqual(openedPaths, ['/api/wrong-question-practice-packs/pack-42/download?token=token-123']);
     });
 
     await selectNotebookClass(domEnvironment.container, '43');

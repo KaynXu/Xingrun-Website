@@ -15,6 +15,8 @@ import {
   buildWeeklyWrongQuestionActivitySummaryPath,
   buildWeeklyWrongQuestionFollowupArchivePath,
   buildWeeklyWrongQuestionFollowupMessagePath,
+  buildWrongQuestionPracticePackCreatePath,
+  buildWrongQuestionPracticePackDetailPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
@@ -33,6 +35,7 @@ import {
   isWechatMiniProgramWrongQuestionRecord,
   normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
+  normalizeWrongQuestionPracticePackJobResponse,
   normalizeWrongQuestionPracticeSheetListResponse,
   normalizeWrongQuestionRecord,
   normalizeWrongQuestionListResponse,
@@ -41,6 +44,9 @@ import {
   type MemberStudentNotebookSummary,
   type WeeklyWrongQuestionActivitySummary,
   type WeeklyWrongQuestionFollowupItem,
+  type WrongQuestionPracticePackJob,
+  type WrongQuestionPracticePackMode,
+  type WrongQuestionPracticePackVolume,
   type WrongQuestionPracticeSheetListApiResponse,
   type WrongQuestionPracticeSheetSummary,
   type WrongQuestionFilters,
@@ -320,6 +326,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [generatingWeeklyFollowupStudentId, setGeneratingWeeklyFollowupStudentId] = useState<number | null>(null);
   const [generatingWeeklyPracticeStudentId, setGeneratingWeeklyPracticeStudentId] = useState<number | null>(null);
   const [batchGeneratingWeeklyPractice, setBatchGeneratingWeeklyPractice] = useState(false);
+  const [practicePackMode, setPracticePackMode] = useState<WrongQuestionPracticePackMode>('topic');
+  const [practicePackTarget, setPracticePackTarget] = useState('');
+  const [practicePackVolume, setPracticePackVolume] = useState<WrongQuestionPracticePackVolume>('standard');
+  const [practicePackJob, setPracticePackJob] = useState<WrongQuestionPracticePackJob | null>(null);
+  const [practicePackGenerating, setPracticePackGenerating] = useState(false);
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -585,6 +596,8 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setWeeklyFollowupNotice('');
     setWeeklyFollowupError('');
     setGeneratingWeeklyFollowupStudentId(null);
+    setPracticePackJob(null);
+    setPracticePackGenerating(false);
   }, [activeWeeklyFollowupClassId, weeklyFollowupWeekStart]);
 
   useEffect(() => {
@@ -1183,6 +1196,67 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
+  const handleGeneratePracticePack = async () => {
+    if (!activeWeeklyFollowupClassId) {
+      setWeeklyFollowupError('请选择班级。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    const target = practicePackTarget.trim();
+    if (!target) {
+      setWeeklyFollowupError('请填写练习包方向。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+
+    setPracticePackGenerating(true);
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(buildWrongQuestionPracticePackCreatePath(), {
+        method: 'POST',
+        body: JSON.stringify({
+          class_id: activeWeeklyFollowupClassId,
+          mode: practicePackMode,
+          target,
+          volume: practicePackVolume,
+        }),
+      });
+      const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
+      setPracticePackJob(normalized.job);
+      if (normalized.job?.downloadUrl) {
+        globalThis.window?.open?.(buildWrongQuestionAuthedPath(normalized.job.downloadUrl), '_blank', 'noopener,noreferrer');
+        setWeeklyFollowupNotice('练习包已生成，正在打开下载。');
+      } else {
+        setWeeklyFollowupNotice(normalized.reused ? '已有同条件练习包正在生成，完成后可下载。' : '正在生成，完成后可下载。');
+      }
+    } catch (generateError) {
+      setWeeklyFollowupError(generateError instanceof Error ? generateError.message : '练习包生成失败');
+    } finally {
+      setPracticePackGenerating(false);
+    }
+  };
+
+  const handleRefreshPracticePackJob = async () => {
+    if (!practicePackJob?.id) {
+      return;
+    }
+
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('');
+
+    try {
+      const response = await apiFetch<unknown>(buildWrongQuestionPracticePackDetailPath(practicePackJob.id));
+      const normalized = normalizeWrongQuestionPracticePackJobResponse(response);
+      setPracticePackJob(normalized.job);
+      setWeeklyFollowupNotice('练习包状态已刷新。');
+    } catch (refreshError) {
+      setWeeklyFollowupError(refreshError instanceof Error ? refreshError.message : '练习包状态刷新失败');
+    }
+  };
+
   const handleCopyWeeklyFollowupMessage = async (messageText: string) => {
     const clipboard = globalThis.navigator?.clipboard;
     if (!clipboard?.writeText) {
@@ -1226,6 +1300,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     || weeklyActivitySummary.teacherItems.length > 0
     || weeklyActivitySummary.studentItems.length > 0
   ));
+  const practicePackDownloadUrl = practicePackJob?.downloadUrl
+    ? buildWrongQuestionAuthedPath(practicePackJob.downloadUrl)
+    : '';
   const detailHeader = selectedRecord ? (
     <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1955,20 +2032,53 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 >
                   {weeklyFollowupLoading ? '正在加载' : '查看跟进清单'}
                 </button>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">方式</span>
+                  <select
+                    aria-label="练习包模式"
+                    value={practicePackMode}
+                    onChange={(event) => setPracticePackMode(event.target.value === 'reason' ? 'reason' : 'topic')}
+                    className={workspaceFieldClass}
+                  >
+                    <option value="topic">按专题</option>
+                    <option value="reason">按错因</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">方向</span>
+                  <input
+                    aria-label="练习包方向"
+                    type="text"
+                    value={practicePackTarget}
+                    onChange={(event) => setPracticePackTarget(event.target.value)}
+                    onInput={(event) => setPracticePackTarget((event.target as HTMLInputElement).value)}
+                    className={workspaceFieldClass}
+                    placeholder="例如：去分母漏乘"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">题量</span>
+                  <select
+                    aria-label="练习包题量"
+                    value={practicePackVolume}
+                    onChange={(event) => {
+                      const nextVolume = event.target.value;
+                      setPracticePackVolume(nextVolume === 'light' || nextVolume === 'intensive' ? nextVolume : 'standard');
+                    }}
+                    className={workspaceFieldClass}
+                  >
+                    <option value="light">轻量</option>
+                    <option value="standard">标准</option>
+                    <option value="intensive">强化</option>
+                  </select>
+                </label>
                 <button
                   type="button"
-                  onClick={() => void handleBatchGenerateWeeklyPracticeSheets()}
-                  disabled={batchGeneratingWeeklyPractice}
+                  onClick={() => void handleGeneratePracticePack()}
+                  disabled={practicePackGenerating}
                   className={workspaceSecondaryButtonClass}
                 >
-                  {batchGeneratingWeeklyPractice ? '正在提交' : '批量生成未生成学生练习'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenWeeklyFollowupArchive}
-                  className={workspaceSecondaryButtonClass}
-                >
-                  下载本周练习合集
+                  {practicePackGenerating ? '正在生成' : '生成并下载一周练习包'}
                 </button>
               </div>
             </div>
@@ -1983,6 +2093,39 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             {weeklyFollowupNotice && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                 {weeklyFollowupNotice}
+              </div>
+            )}
+
+            {practicePackJob && (
+              <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{practicePackJob.target || '未命名练习包'}</p>
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
+                      <span>状态：{practicePackJob.status}</span>
+                      <span>{practicePackJob.requestedQuestionCount}题</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleRefreshPracticePackJob()}
+                      className={workspaceSecondaryButtonClass}
+                    >
+                      刷新状态
+                    </button>
+                    {practicePackDownloadUrl ? (
+                      <a
+                        href={practicePackDownloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={workspacePrimaryButtonClass}
+                      >
+                        下载练习包
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             )}
 
