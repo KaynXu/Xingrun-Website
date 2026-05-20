@@ -3164,7 +3164,8 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /练习包已生成，正在打开下载/);
       assert.match(pageText, /去分母漏乘/);
-      assert.match(pageText, /ready/);
+      assert.match(pageText, /生成成功/);
+      assert.doesNotMatch(pageText, /状态：ready/);
       assert.match(pageText, /16题/);
       assert.match(pageText, /下载练习包/);
       assert.deepEqual(openedPaths, ['/api/wrong-question-practice-packs/42/download?token=token-123']);
@@ -3243,7 +3244,7 @@ test('SmartWrongQuestionsPage reloads generated practice pack downloads when wee
           items: [
             {
               id: 91,
-              status: 'ready',
+              status: 'partial_failed',
               mode: 'reason',
               target: '去分母漏乘',
               volume: 'standard',
@@ -3291,7 +3292,8 @@ test('SmartWrongQuestionsPage reloads generated practice pack downloads when wee
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /去分母漏乘/);
-      assert.match(pageText, /ready/);
+      assert.match(pageText, /部分生成成功/);
+      assert.doesNotMatch(pageText, /partial_failed/);
       assert.match(pageText, /10题/);
       assert.match(pageText, /下载练习包/);
       assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-practice-packs?class_id=42'));

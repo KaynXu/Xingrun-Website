@@ -111,6 +111,15 @@ const WRONG_QUESTION_TOPIC_CATEGORY_OPTIONS = [
   '数论',
 ];
 
+const practicePackStatusLabels: Record<string, string> = {
+  pending: '等待生成',
+  running: '生成中',
+  ready: '生成成功',
+  partial_failed: '部分生成成功',
+  failed: '生成失败',
+  skipped: '已跳过',
+};
+
 const initialFilters: WrongQuestionFilters = {
   studentName: '',
   className: '',
@@ -133,6 +142,11 @@ function getWrongQuestionSourceBadgeClass(source: string): string {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getPracticePackStatusLabel(status: string): string {
+  const normalizedStatus = String(status || '').trim();
+  return practicePackStatusLabels[normalizedStatus] || normalizedStatus || '未知';
 }
 
 function canGenerateWrongQuestionPractice(record: WrongQuestionRecord): boolean {
@@ -2214,7 +2228,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">{practicePackJob.target || '未命名练习包'}</p>
                           <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
-                            <span>状态：{practicePackJob.status}</span>
+                            <span>状态：{getPracticePackStatusLabel(practicePackJob.status)}</span>
                             <span>{practicePackJob.requestedQuestionCount}题</span>
                           </div>
                         </div>
