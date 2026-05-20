@@ -5365,42 +5365,82 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                     )}
                     <article className="relative overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-                      <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} absolute right-5 top-4 z-10 h-9 w-[7.25rem] px-3 text-xs`}>
-                        <Eye size={14} />
-                        查看
-                      </button>
-                      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.25rem,1fr))] gap-x-4 gap-y-3 border-b border-sky-50 px-5 py-4 pr-36 text-sm dark:border-white/10">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">日期</p>
-                          <p className="mt-2 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
+                      <div className="border-b border-sky-50 px-5 py-3 text-sm dark:border-white/10">
+                        <div className="grid grid-cols-[minmax(8.5rem,0.82fr)_minmax(10rem,1fr)_minmax(11rem,1.12fr)] gap-x-5 gap-y-2">
+                          <div className="min-w-0 space-y-1.5">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">日期</p>
+                              <p className="mt-1 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">录入</p>
+                              <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.created_at || '—'}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">更新</p>
+                              <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.updated_at || '—'}</p>
+                            </div>
+                          </div>
+                          <div className="min-w-0 space-y-1.5">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">咨询教师</p>
+                              <p className="mt-1 truncate font-semibold text-slate-700 dark:text-slate-200">{getConsultationTeacherName(record, teacherDirectory)}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">科目</p>
+                              <p className="mt-0.5 truncate text-slate-600 dark:text-slate-300">{record.consultation_subject || '未填写咨询科目'}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">年级</p>
+                              <p className="mt-0.5 truncate font-semibold text-slate-700 dark:text-slate-200">{record.grade || '—'}</p>
+                            </div>
+                          </div>
+                          <div className="min-w-0 space-y-1.5">
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <p className="min-w-0 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">家长微信</p>
+                                <div className="-mt-1 flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openViewModal(record)}
+                                    className="flex h-6 w-6 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-600 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                                    title="查看"
+                                  >
+                                    <Eye size={12} />
+                                  </button>
+                                  {canEditConsultations && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(record)}
+                                      className="flex h-6 w-6 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20"
+                                      title={frozen ? '查看结束备注' : '编辑这条咨询'}
+                                      disabled={busy}
+                                    >
+                                      <Pencil size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="mt-1 truncate font-semibold text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">学生</p>
+                              <p className="mt-0.5 truncate text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">来源</p>
+                              <p className="mt-0.5 truncate text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
+                            </div>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">家长微信 / 学生</p>
-                          <p className="mt-2 truncate font-semibold text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
-                          <p className="mt-1 truncate text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">年级</p>
-                          <p className="mt-2 whitespace-nowrap font-semibold text-slate-700 dark:text-slate-200">{record.grade || '—'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">咨询老师</p>
-                          <p className="mt-2 truncate font-semibold text-slate-700 dark:text-slate-200">{getConsultationTeacherName(record, teacherDirectory)}</p>
-                          {needDetail && <p className="mt-1 line-clamp-2 text-slate-500 dark:text-slate-400">咨询详情：{needDetail}</p>}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">咨询科目 / 来源</p>
-                          <p className="mt-2 truncate text-slate-600 dark:text-slate-300">{record.consultation_subject || '未填写咨询科目'}</p>
-                          <p className="mt-1 truncate text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
-                          {followUpNote && <p className="mt-1 truncate text-slate-500 dark:text-slate-400">跟进：{followUpNote}</p>}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">录入 / 更新</p>
-                          <p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.created_at || '—'}</p>
-                          <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.updated_at || '—'}</p>
-                        </div>
+                        {(needDetail || followUpNote) && (
+                          <div className="mt-2 grid gap-1 border-t border-sky-50 pt-2 text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            {needDetail && <p className="line-clamp-2"><span className="font-semibold text-slate-500 dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
+                            {followUpNote && <p className="line-clamp-1"><span className="font-semibold text-slate-500 dark:text-slate-300">跟进：</span>{followUpNote}</p>}
+                          </div>
+                        )}
                       </div>
-                      <div className={`grid grid-cols-[1rem_minmax(0,1fr)_3.75rem_2.25rem] items-center gap-2 bg-slate-50/60 px-5 py-4 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+                      <div className={`grid grid-cols-[1rem_minmax(0,1fr)_3.75rem] items-center gap-2 bg-slate-50/60 px-5 py-4 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
                         <ConsultationStatusLamp stage={record.flow_stage} />
                         <div className="min-w-0 overflow-visible">
                           <ConsultationFlowBar
@@ -5422,15 +5462,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           disabled={!canEditConsultations || busy}
                         >
                           OVER
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(record)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20"
-                          title={frozen ? '查看结束备注' : '编辑这条咨询'}
-                          disabled={!canEditConsultations || busy}
-                        >
-                          <Pencil size={16} />
                         </button>
                       </div>
                     </article>
