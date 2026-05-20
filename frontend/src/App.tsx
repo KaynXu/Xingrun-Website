@@ -1309,6 +1309,40 @@ function restoreConsultationValues(values: ConsultationFormValues): Consultation
     restore_from_end: true,
   } as ConsultationFormValues;
 }
+
+function deriveConsultationFlowFromFields(values: ConsultationFormValues): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage)) return values;
+  const inferred = new Set(Array.isArray(values.completed_stages) ? values.completed_stages : []);
+  if (values.teacher_id || values.receiving_teacher) inferred.add('已加对应教师微信');
+  if (values.need_detail.trim()) inferred.add('正在沟通细节');
+  if (values.test_taken || values.test_images.length > 0) inferred.add('待测试');
+  if (values.trial_taken || values.trial_time_slot || values.trial_class_id || values.trial_class_manual || values.trial_teacher || values.trial_feedback) {
+    inferred.add('待试听');
+  }
+  if (values.flow_stage === '成功进班' || values.success_class_id || values.success_class_manual) inferred.add('成功进班');
+  if (values.flow_stage === '试听失败') inferred.add('试听失败');
+  const completed_stages = consultationFlowStages
+    .filter((stage) => inferred.has(stage))
+    .concat(consultationResultStages.filter((stage) => inferred.has(stage)));
+  const flow_stage = completed_stages[completed_stages.length - 1] || values.flow_stage || consultationFlowStages[0];
+  return { ...values, flow_stage, completed_stages };
+}
+
+function classMatchesAssignedTeacher(
+  classItem: ClassItem,
+  teacher: ConsultationTeacherOption | undefined,
+  currentUser: CurrentUser,
+): boolean {
+  if (!teacher) return true;
+  const classTeacherName = (classItem.teacher_name || '').trim().toLowerCase();
+  const teacherNames = [teacher.display_name, teacher.teacher_id, ...teacher.aliases]
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (classTeacherName && teacherNames.includes(classTeacherName)) return true;
+  if (teacher.teacher_id === currentUser.username && classItem.teacher_user_id === currentUser.id) return true;
+  return false;
+}
+
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
 const consultationSourceAliasMap: Record<string, string[]> = {
@@ -3896,6 +3930,8 @@ const ConsultationModal = ({
   const [quickEntry, setQuickEntry] = useState('');
   const [parseFeedback, setParseFeedback] = useState('');
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
+  const [trialManualClassActive, setTrialManualClassActive] = useState(false);
+  const [successManualClassActive, setSuccessManualClassActive] = useState(false);
   const formScrollRef = useRef<HTMLFormElement | null>(null);
   const baseInfoRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -3906,12 +3942,22 @@ const ConsultationModal = ({
 
   useEffect(() => {
     if (open) {
-      setForm(toConsultationFormValues(record));
+      const initialValues = toConsultationFormValues(record);
+      const defaultAssignedValues = !record && currentUser.role === 'member'
+        ? {
+            ...initialValues,
+            teacher_id: currentUser.username,
+            receiving_teacher: currentUser.display_name || currentUser.username,
+          }
+        : initialValues;
+      setForm(deriveConsultationFlowFromFields(defaultAssignedValues));
       setQuickEntry('');
       setParseFeedback('');
       setConfirmRestoreOpen(false);
+      setTrialManualClassActive(Boolean(defaultAssignedValues.trial_class_manual && !defaultAssignedValues.trial_class_id));
+      setSuccessManualClassActive(Boolean(defaultAssignedValues.success_class_manual && !defaultAssignedValues.success_class_id));
     }
-  }, [open, mode, record]);
+  }, [open, mode, record, currentUser]);
 
   if (!open) {
     return null;
@@ -3927,7 +3973,7 @@ const ConsultationModal = ({
   } as const;
 
   const updateField = <K extends keyof ConsultationFormValues>(key: K, value: ConsultationFormValues[K]) => {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => deriveConsultationFlowFromFields({ ...current, [key]: value }));
   };
 
   const teacherOptions = (() => {
@@ -3959,10 +4005,10 @@ const ConsultationModal = ({
   const handleTeacherChange = (teacherId: string) => {
     const selectedTeacher = teacherOptions.find((option) => option.teacher_id === teacherId);
     if (!selectedTeacher) {
-      updateField('teacher_id', teacherId);
+      setForm((current) => deriveConsultationFlowFromFields({ ...current, teacher_id: teacherId, receiving_teacher: teacherId ? current.receiving_teacher : '' }));
       return;
     }
-    setForm((current) => ({
+    setForm((current) => deriveConsultationFlowFromFields({
       ...current,
       teacher_id: selectedTeacher.teacher_id,
       receiving_teacher: selectedTeacher.display_name,
@@ -3997,7 +4043,7 @@ const ConsultationModal = ({
     nextForm.source_channel = normalizedSource.source_channel;
     nextForm.source_channel_note = normalizedSource.source_channel_note;
 
-    setForm(nextForm);
+    setForm(deriveConsultationFlowFromFields(nextForm));
     setParseFeedback(
       parsed.parent_wechat_name || parsed.grade || parsed.consultation_subject || parsed.source_channel || parsed.receiving_teacher
         ? '已根据快速录入内容回填字段，请检查后保存。'
@@ -4023,17 +4069,23 @@ const ConsultationModal = ({
   const handleSuccessClassChange = (value: string) => {
     const classId = value ? Number(value) : null;
     setForm((current) => {
-      const next = { ...current, success_class_id: classId };
-      return classId ? setConsultationResultStage(next, '成功进班') : next;
+      const next = { ...current, success_class_id: classId, success_class_manual: classId ? '' : current.success_class_manual };
+      return deriveConsultationFlowFromFields(classId ? setConsultationResultStage(next, '成功进班') : next);
     });
   };
 
   const handleSuccessManualChange = (value: string) => {
     setForm((current) => {
       const next = { ...current, success_class_manual: value };
-      return value.trim() ? setConsultationResultStage(next, '成功进班') : next;
+      return deriveConsultationFlowFromFields(value.trim() ? setConsultationResultStage(next, '成功进班') : next);
     });
   };
+
+  const selectedTeacher = teacherOptions.find((option) => option.teacher_id === form.teacher_id);
+  const teacherMatchedClasses = classes.filter((item) => classMatchesAssignedTeacher(item, selectedTeacher, currentUser));
+  const assignableClassOptions = selectedTeacher && teacherMatchedClasses.length > 0 ? teacherMatchedClasses : classes;
+  const trialUsesManualClass = trialManualClassActive || Boolean(form.trial_class_manual.trim() && !form.trial_class_id);
+  const successUsesManualClass = successManualClassActive || Boolean(form.success_class_manual.trim() && !form.success_class_id);
 
   const fieldClass = `${workspaceFieldClass} px-3 py-2 ${readOnly ? 'cursor-default' : ''}`;
   const sectionBoxClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
@@ -4248,18 +4300,27 @@ const ConsultationModal = ({
                 <span>客服微信：{customerWechatDone ? '已添加' : '未添加'}</span>
                 {customerWechatDone ? <CheckCircle2 size={18} /> : null}
               </button>
-              <button
-                type="button"
-                onClick={() => setForm((current) => toggleConsultationStageLight(current, '已加对应教师微信'))}
-                disabled={readOnly || stageFrozen}
-                className={compactStatusClass(teacherWechatDone)}
-              >
-                <span>教师微信：{teacherWechatDone ? '已添加' : '未添加'}</span>
-                <span className="flex items-center gap-2">
+              <label className={cn(compactStatusClass(teacherWechatDone), 'relative p-0')}>
+                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2">
+                  分配老师：{teacherWechatDone ? '已选择' : '未选择'}
+                </span>
+                <span className="pointer-events-none absolute right-4 top-1/2 z-10 flex -translate-y-1/2 items-center gap-2">
                   {teacherWechatDone ? <CheckCircle2 size={18} /> : null}
                   <ChevronDown size={16} />
                 </span>
-              </button>
+                <select
+                  value={form.teacher_id}
+                  onChange={(e) => handleTeacherChange(e.target.value)}
+                  disabled={readOnly || stageFrozen}
+                  className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-4 text-transparent outline-none"
+                  aria-label="选择分配老师"
+                >
+                  <option value="">请选择老师</option>
+                  {teacherOptions.map((option) => (
+                    <option key={option.teacher_id} value={option.teacher_id}>{option.display_name}</option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className={`${compactFieldGridClass} mt-3`}>
@@ -4280,7 +4341,7 @@ const ConsultationModal = ({
                 <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={readOnly} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">咨询老师</span>
+                <span className="text-slate-500 dark:text-slate-400">分配老师/负责老师</span>
                 <select value={form.teacher_id} onChange={(e) => handleTeacherChange(e.target.value)} disabled={readOnly} className={fieldClass}>
                   <option value="">请选择老师</option>
                   {teacherOptions.map((option) => (
@@ -4359,7 +4420,7 @@ const ConsultationModal = ({
                               method: 'POST',
                               body: payload,
                             });
-                            setForm(toConsultationFormValues(normalizeConsultationRecord(uploaded.item)));
+                            setForm(deriveConsultationFlowFromFields(toConsultationFormValues(normalizeConsultationRecord(uploaded.item))));
                             event.currentTarget.value = '';
                           }}
                         />
@@ -4401,11 +4462,25 @@ const ConsultationModal = ({
                   </label>
                   <label className="space-y-2 text-sm">
                     <span className="text-slate-500 dark:text-slate-400">对应班课</span>
-                    <select value={form.trial_class_id ?? ''} onChange={(e) => updateField('trial_class_id', e.target.value ? Number(e.target.value) : null)} disabled={readOnly} className={fieldClass}>
+                    <select
+                      value={trialUsesManualClass ? '__other__' : form.trial_class_id ?? ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__other__') {
+                          setTrialManualClassActive(true);
+                          setForm((current) => deriveConsultationFlowFromFields(moveConsultationStage({ ...current, trial_class_id: null, trial_class_manual: current.trial_class_manual || '' }, '待试听')));
+                          return;
+                        }
+                        setTrialManualClassActive(false);
+                        setForm((current) => deriveConsultationFlowFromFields({ ...current, trial_class_id: e.target.value ? Number(e.target.value) : null, trial_class_manual: '' }));
+                      }}
+                      disabled={readOnly}
+                      className={fieldClass}
+                    >
                       <option value="">请选择系统班级</option>
-                      {classes.map((item) => (
+                      {assignableClassOptions.map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
+                      <option value="__other__">其他：手动输入</option>
                     </select>
                   </label>
                   <label className="space-y-2 text-sm">
@@ -4415,10 +4490,12 @@ const ConsultationModal = ({
                       <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="如：周六 10:00-12:00" />
                     </div>
                   </label>
-                  <label className="space-y-2 text-sm lg:col-span-2">
-                    <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
-                    <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="手动输入班课" />
-                  </label>
+                  {trialUsesManualClass && (
+                    <label className="space-y-2 text-sm lg:col-span-2">
+                      <span className="text-slate-500 dark:text-slate-400">其他班级</span>
+                      <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
+                    </label>
+                  )}
                   <label className="space-y-2 text-sm lg:col-span-2">
                     <span className="text-slate-500 dark:text-slate-400">试听反馈</span>
                     <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="记录试听反馈、适配程度、下一步安排" />
@@ -4434,17 +4511,33 @@ const ConsultationModal = ({
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className="text-slate-500 dark:text-slate-400">班级</span>
-                    <select value={form.success_class_id ?? ''} onChange={(e) => handleSuccessClassChange(e.target.value)} disabled={readOnly} className={fieldClass}>
+                    <select
+                      value={successUsesManualClass ? '__other__' : form.success_class_id ?? ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__other__') {
+                          setSuccessManualClassActive(true);
+                          setForm((current) => deriveConsultationFlowFromFields(setConsultationResultStage({ ...current, success_class_id: null, success_class_manual: current.success_class_manual || '' }, '成功进班')));
+                          return;
+                        }
+                        setSuccessManualClassActive(false);
+                        handleSuccessClassChange(e.target.value);
+                      }}
+                      disabled={readOnly}
+                      className={fieldClass}
+                    >
                       <option value="">请选择系统班级</option>
-                      {classes.map((item) => (
+                      {assignableClassOptions.map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
+                      <option value="__other__">其他：手动输入</option>
                     </select>
                   </label>
-                  <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
-                    <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="手动输入班级" />
-                  </label>
+                  {successUsesManualClass && (
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">其他班级</span>
+                      <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
+                    </label>
+                  )}
                 </div>
               </div>
             )}

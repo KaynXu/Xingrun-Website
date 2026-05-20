@@ -196,7 +196,7 @@ test('consultation modal source includes stage-specific test and trial fields', 
   assert.match(modalBlock[0], /测试情况图片/);
   assert.match(modalBlock[0], /是否试听/);
   assert.match(modalBlock[0], /试听时间段/);
-  assert.match(modalBlock[0], /若没找到对应班级，可以直接手动输入/);
+  assert.match(modalBlock[0], /其他：手动输入/);
   assert.match(modalBlock[0], /试听教师/);
   assert.match(modalBlock[0], /试听反馈/);
   assert.match(modalBlock[0], /成功进班必须选择或填写班级/);
@@ -269,6 +269,39 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
   assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>/);
   assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6`\}>/);
   assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>[\s\S]*结果与备注/);
+});
+
+test('consultation edit form derives lit flow stages from edited fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.match(source, /function deriveConsultationFlowFromFields\(values: ConsultationFormValues\): ConsultationFormValues/);
+  assert.match(source, /values\.teacher_id \|\| values\.receiving_teacher/);
+  assert.match(source, /values\.need_detail\.trim\(\)/);
+  assert.match(source, /values\.test_taken \|\| values\.test_images\.length > 0/);
+  assert.match(source, /values\.trial_taken \|\| values\.trial_time_slot \|\| values\.trial_class_id \|\| values\.trial_class_manual \|\| values\.trial_teacher \|\| values\.trial_feedback/);
+  assert.match(source, /values\.flow_stage === '成功进班'/);
+  assert.match(source, /const flow_stage = completed_stages\[completed_stages\.length - 1\] \|\| values\.flow_stage \|\| consultationFlowStages\[0\];/);
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /setForm\(\(current\) => deriveConsultationFlowFromFields\(\{ \.\.\.current, \[key\]: value \}\)\);/);
+  assert.match(modalBlock[0], /currentUser\.role === 'member'/);
+  assert.match(modalBlock[0], /teacher_id: currentUser\.username/);
+  assert.match(modalBlock[0], /setForm\(deriveConsultationFlowFromFields\(defaultAssignedValues\)\);/);
+});
+
+test('consultation edit form uses assignment teacher dropdown and scoped class options', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /const assignableClassOptions =/);
+  assert.match(modalBlock[0], /classMatchesAssignedTeacher\(item, selectedTeacher, currentUser\)/);
+  assert.match(modalBlock[0], /分配老师\/负责老师/);
+  assert.match(modalBlock[0], /aria-label="选择分配老师"/);
+  assert.match(modalBlock[0], /其他：手动输入/);
+  assert.match(modalBlock[0], /trialUsesManualClass/);
+  assert.match(modalBlock[0], /successUsesManualClass/);
+  assert.doesNotMatch(modalBlock[0], /若没找到对应班级，可以直接手动输入/);
 });
 
 test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {
