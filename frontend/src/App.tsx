@@ -216,7 +216,6 @@ interface ConsultationRecord {
   trial_feedback: string;
   success_class_id: number | null;
   success_class_manual: string;
-  payment_card_status: string;
   end_note: string;
   created_at: string;
   updated_at: string;
@@ -1346,7 +1345,6 @@ function classMatchesAssignedTeacher(
 
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
-const consultationPaymentCardStatusOptions = ['待收费排卡', '已收费', '已排卡', '已完成'];
 const consultationSourceAliasMap: Record<string, string[]> = {
   转介绍: ['转介绍', '介绍', '朋友介绍', '家长介绍', '熟人介绍', '亲友介绍', '老带新', '推荐介绍', '推荐'],
   朋友圈: ['朋友圈', '微信朋友圈', 'pyq'],
@@ -1401,7 +1399,6 @@ const consultationFormDefaults: ConsultationFormValues = {
   trial_feedback: '',
   success_class_id: null,
   success_class_manual: '',
-  payment_card_status: '',
   end_note: '',
 };
 
@@ -1445,7 +1442,6 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     trial_feedback: record.trial_feedback ?? '',
     success_class_id: record.success_class_id ?? null,
     success_class_manual: record.success_class_manual ?? '',
-    payment_card_status: record.payment_card_status ?? '',
     end_note: record.end_note ?? '',
   };
 }
@@ -1478,7 +1474,6 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     trial_feedback: record.trial_feedback ?? '',
     success_class_id: record.success_class_id ?? null,
     success_class_manual: record.success_class_manual ?? '',
-    payment_card_status: record.payment_card_status ?? '',
     end_note: record.end_note ?? '',
     created_at: record.created_at ?? '',
     updated_at: record.updated_at ?? '',
@@ -3558,6 +3553,8 @@ const consultationStageDisplayLabel = (stage: string) => {
   if (stage === '已加小客服微信') return '客服微信✅';
   if (stage === '已加对应教师微信') return '教师微信✅';
   if (stage === '正在沟通细节') return '沟通ing';
+  if (stage === '待测试') return '测试';
+  if (stage === '待试听') return '试听';
   return stage;
 };
 
@@ -3803,7 +3800,7 @@ const ConsultationReadOnlyReport = ({
   const baseSectionActive = Boolean(form.teacher_id || form.receiving_teacher || form.parent_wechat_name || form.child_name || form.grade || form.consultation_subject || form.source_channel || form.source_channel_note);
   const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
   const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
-  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.payment_card_status || form.end_note || form.follow_up_note);
+  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.end_note || form.follow_up_note);
   const resultLabel = form.flow_stage === '成功进班'
     ? '咨询成功'
     : form.flow_stage === '试听失败' || form.flow_stage === '咨询结束'
@@ -3893,10 +3890,6 @@ const ConsultationReadOnlyReport = ({
           <div>
             <p className={compactReadLabelClass}>班级</p>
             <p className={compactReadValueClass}>{value(successClassName || form.success_class_manual)}</p>
-          </div>
-          <div>
-            <p className={compactReadLabelClass}>收费排卡</p>
-            <p className={compactReadValueClass}>{value(form.payment_card_status)}</p>
           </div>
           {record && (
             <>
@@ -4117,7 +4110,7 @@ const ConsultationModal = ({
   const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_images.length > 0;
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
-  const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual || form.payment_card_status;
+  const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
   const baseSectionActive = Boolean(
     form.teacher_id
@@ -4131,7 +4124,7 @@ const ConsultationModal = ({
   );
   const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
   const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
-  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.payment_card_status || form.end_note || form.follow_up_note);
+  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.end_note || form.follow_up_note);
   const hiddenForViewHeaderClass = 'hidden';
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
 
@@ -4412,7 +4405,7 @@ const ConsultationModal = ({
 
             {(showTestFields || !readOnly) && (
               <div ref={testSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
-                <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">待测试</h5>
+                <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">测试</h5>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>是否测试</span>
@@ -4566,18 +4559,6 @@ const ConsultationModal = ({
                   )}
                 </div>
               </div>
-            )}
-
-            {(showSuccessFields || !readOnly) && (
-              <label className="space-y-2 text-sm">
-                <span className={compactEditLabelClass}>收费排卡</span>
-                <select value={form.payment_card_status} onChange={(e) => updateField('payment_card_status', e.target.value)} disabled={readOnly} className={fieldClass}>
-                  <option value="">未记录</option>
-                  {consultationPaymentCardStatusOptions.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              </label>
             )}
 
             {(showEndFields || !readOnly) && (

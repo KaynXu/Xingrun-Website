@@ -381,32 +381,6 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload["follow_up_status"], "完成")
         self.assertEqual(payload["success_class_id"], class_id)
 
-    def test_success_stage_round_trips_payment_card_status(self):
-        class_id = lesson_manager.save_class("四年级数学A班", subject="数学", grade="四年级")
-        response = self.client.post(
-            "/api/consultations",
-            headers=self.auth_headers(self.owner_token),
-            json={
-                "parent_wechat_name": "孙妈妈",
-                "child_name": "孙小光",
-                "flow_stage": "成功进班",
-                "completed_stages": ["已加小客服微信", "成功进班"],
-                "success_class_id": class_id,
-                "payment_card_status": "待收费排卡",
-            },
-        )
-        self.assertEqual(response.status_code, 201)
-        created = response.get_json()
-        self.assertEqual(created["payment_card_status"], "待收费排卡")
-
-        update_response = self.client.put(
-            f"/api/consultations/{created['id']}",
-            headers=self.auth_headers(self.owner_token),
-            json={"payment_card_status": "已完成", "flow_stage": "成功进班", "success_class_id": class_id},
-        )
-        self.assertEqual(update_response.status_code, 200)
-        self.assertEqual(update_response.get_json()["payment_card_status"], "已完成")
-
     def test_legacy_follow_up_status_maps_to_new_flow_stage_without_lighting_unknown_steps(self):
         legacy = self.create_consultation_record(**{"跟进状态": "已报班"})
         with lesson_manager.get_conn() as conn:

@@ -324,19 +324,26 @@ test('consultation edit form highlights changed section titles and uses teacher 
   assert.match(source, /const compactEditLabelClass = 'text-slate-900 dark:text-slate-100';/);
 });
 
-test('consultation success result carries payment card status as a compact secondary state', () => {
+test('consultation success result does not carry payment card status in the consultation form', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
   assert.ok(reportBlock);
-  assert.match(source, /payment_card_status: string;/);
-  assert.match(source, /const consultationPaymentCardStatusOptions = \[/);
-  assert.match(modalBlock[0], /收费排卡/);
-  assert.match(modalBlock[0], /value=\{form\.payment_card_status\}/);
-  assert.match(reportBlock[0], /收费排卡/);
-  assert.match(reportBlock[0], /form\.payment_card_status/);
+  assert.doesNotMatch(source, /payment_card_status/);
+  assert.doesNotMatch(source, /收费排卡/);
+});
+
+test('consultation flow display labels shorten test and trial stage wording', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const labelBlock = source.match(/const consultationStageDisplayLabel = \(stage: string\) => \{[\s\S]*?\n};/);
+
+  assert.ok(labelBlock);
+  assert.match(labelBlock[0], /if \(stage === '待测试'\) return '测试';/);
+  assert.match(labelBlock[0], /if \(stage === '待试听'\) return '试听';/);
+  assert.doesNotMatch(labelBlock[0], /return '待测试'/);
+  assert.doesNotMatch(labelBlock[0], /return '待试听'/);
 });
 
 test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {

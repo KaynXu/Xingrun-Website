@@ -197,7 +197,6 @@ CONSULTATION_STAGE_API_FIELDS = {
     "trial_feedback",
     "success_class_id",
     "success_class_manual",
-    "payment_card_status",
     "end_note",
 }
 COURSE_CALENDAR_TIME_BLOCKS = (
@@ -1266,8 +1265,8 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 created_at, updated_at, flow_stage, completed_stages_json, test_taken,
                 test_images_json, trial_taken, trial_time_slot, trial_class_id,
                 trial_class_manual, trial_teacher, trial_feedback, success_class_id,
-                success_class_manual, payment_card_status, end_note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                success_class_manual, end_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
@@ -1300,7 +1299,6 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 stored["trial_feedback"],
                 stored["success_class_id"],
                 stored["success_class_manual"],
-                stored["payment_card_status"],
                 stored["end_note"],
             ),
         )
@@ -1396,7 +1394,6 @@ def update_consultation(
                 trial_feedback=?,
                 success_class_id=?,
                 success_class_manual=?,
-                payment_card_status=?,
                 end_note=?,
                 updated_at=?
             WHERE id=?
@@ -1426,7 +1423,6 @@ def update_consultation(
                 stored["trial_feedback"],
                 stored["success_class_id"],
                 stored["success_class_manual"],
-                stored["payment_card_status"],
                 stored["end_note"],
                 now,
                 consultation_id,
@@ -1735,7 +1731,6 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "trial_feedback": str(row.get("trial_feedback") or ""),
         "success_class_id": success_class_id,
         "success_class_manual": success_class_manual,
-        "payment_card_status": str(row.get("payment_card_status") or ""),
         "end_note": str(row.get("end_note") or ""),
     }
 
@@ -1787,7 +1782,6 @@ def _consultation_storage_row_to_public_dict(
     serialized["trial_feedback"] = payload.get("trial_feedback", "") or ""
     serialized["success_class_id"] = payload.get("success_class_id")
     serialized["success_class_manual"] = payload.get("success_class_manual", "") or ""
-    serialized["payment_card_status"] = payload.get("payment_card_status", "") or ""
     serialized["end_note"] = payload.get("end_note", "") or ""
     return serialized
 
@@ -1840,7 +1834,6 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "consultations", "trial_feedback", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "success_class_id", "INTEGER")
     _ensure_column(conn, "consultations", "success_class_manual", "TEXT DEFAULT ''")
-    _ensure_column(conn, "consultations", "payment_card_status", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "end_note", "TEXT DEFAULT ''")
 
 
