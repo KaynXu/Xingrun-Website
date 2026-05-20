@@ -573,6 +573,8 @@ test('SmartWrongQuestionsPage wires weekly followup UI only into the web smart w
   assert.match(pageSource, /每周练习跟进/);
   assert.match(pageSource, /buildWeeklyWrongQuestionFollowupArchivePath/);
   assert.match(pageSource, /buildWeeklyWrongQuestionFollowupPracticeSheetPath/);
+  assert.match(pageSource, /<select[\s\S]{0,200}aria-label="练习包方向"/);
+  assert.doesNotMatch(pageSource, /<input[\s\S]{0,200}aria-label="练习包方向"/);
   assert.match(pageSource, /extractGeneratedWeeklyFollowupMessage/);
   assert.doesNotMatch(pageSource, /extractWeeklyFollowupItem/);
   assert.doesNotMatch(pageSource, /小程序老师端/);
@@ -3128,19 +3130,29 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
 
     const modeSelect = domEnvironment.container.querySelector('select[aria-label="练习包模式"]') as HTMLSelectElement | null;
     const targetInput = domEnvironment.container.querySelector('input[aria-label="练习包方向"]') as HTMLInputElement | null;
+    const targetSelect = domEnvironment.container.querySelector('select[aria-label="练习包方向"]') as HTMLSelectElement | null;
     const volumeSelect = domEnvironment.container.querySelector('select[aria-label="练习包题量"]') as HTMLSelectElement | null;
     const generatePackButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成并下载一周练习包'));
     assert.ok(modeSelect instanceof HTMLSelectElement);
-    assert.ok(targetInput instanceof HTMLInputElement);
+    assert.equal(targetInput, null);
+    assert.ok(targetSelect instanceof HTMLSelectElement);
+    assert.ok(Array.from(targetSelect.options).some((option) => option.value === '计算'));
     assert.ok(volumeSelect instanceof HTMLSelectElement);
     assert.ok(generatePackButton instanceof HTMLButtonElement);
 
     await act(async () => {
       modeSelect.value = 'reason';
       modeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-      setDateInputValue(targetInput, '去分母漏乘');
-      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const reasonTargetSelect = domEnvironment.container.querySelector('select[aria-label="练习包方向"]') as HTMLSelectElement | null;
+    assert.ok(reasonTargetSelect instanceof HTMLSelectElement);
+    assert.ok(Array.from(reasonTargetSelect.options).some((option) => option.value === '方法问题'));
+
+    await act(async () => {
+      reasonTargetSelect.value = '方法问题';
+      reasonTargetSelect.dispatchEvent(new Event('change', { bubbles: true }));
       volumeSelect.value = 'intensive';
       volumeSelect.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -3158,12 +3170,12 @@ test('SmartWrongQuestionsPage loads weekly followup items from the web API for t
       assert.deepEqual(JSON.parse(String(createCall.init?.body)), {
         class_id: 42,
         mode: 'reason',
-        target: '去分母漏乘',
+        target: '方法问题',
         volume: 'intensive',
       });
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /练习包已生成，正在打开下载/);
-      assert.match(pageText, /去分母漏乘/);
+      assert.match(pageText, /方法问题/);
       assert.match(pageText, /生成成功/);
       assert.doesNotMatch(pageText, /状态：ready/);
       assert.match(pageText, /16题/);
@@ -3515,15 +3527,14 @@ test('SmartWrongQuestionsPage ignores stale practice pack create responses after
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
-    const targetInput = domEnvironment.container.querySelector('input[aria-label="练习包方向"]') as HTMLInputElement | null;
+    const targetSelect = domEnvironment.container.querySelector('select[aria-label="练习包方向"]') as HTMLSelectElement | null;
     const generatePackButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成并下载一周练习包'));
-    assert.ok(targetInput instanceof HTMLInputElement);
+    assert.ok(targetSelect instanceof HTMLSelectElement);
     assert.ok(generatePackButton instanceof HTMLButtonElement);
 
     await act(async () => {
-      setDateInputValue(targetInput, '去分母漏乘');
-      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      targetSelect.value = '计算';
+      targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
@@ -3543,7 +3554,7 @@ test('SmartWrongQuestionsPage ignores stale practice pack create responses after
           id: 42,
           status: 'ready',
           mode: 'reason',
-          target: '去分母漏乘',
+          target: '计算',
           volume: 'standard',
           requested_question_count: 10,
           download_url: '/api/wrong-question-practice-packs/42/download',
@@ -3557,7 +3568,7 @@ test('SmartWrongQuestionsPage ignores stale practice pack create responses after
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.doesNotMatch(pageText, /练习包已生成，正在打开下载/);
-      assert.doesNotMatch(pageText, /去分母漏乘/);
+      assert.doesNotMatch(pageText, /状态：生成成功/);
       assert.deepEqual(openedPaths, []);
     });
   } finally {
@@ -3619,7 +3630,7 @@ test('SmartWrongQuestionsPage ignores stale practice pack refresh responses afte
             id: 42,
             status: 'processing',
             mode: 'reason',
-            target: '去分母漏乘',
+            target: '计算',
             volume: 'standard',
             requested_question_count: 10,
             students: [],
@@ -3662,15 +3673,14 @@ test('SmartWrongQuestionsPage ignores stale practice pack refresh responses afte
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
-    const targetInput = domEnvironment.container.querySelector('input[aria-label="练习包方向"]') as HTMLInputElement | null;
+    const targetSelect = domEnvironment.container.querySelector('select[aria-label="练习包方向"]') as HTMLSelectElement | null;
     const generatePackButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('生成并下载一周练习包'));
-    assert.ok(targetInput instanceof HTMLInputElement);
+    assert.ok(targetSelect instanceof HTMLSelectElement);
     assert.ok(generatePackButton instanceof HTMLButtonElement);
 
     await act(async () => {
-      setDateInputValue(targetInput, '去分母漏乘');
-      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      targetSelect.value = '计算';
+      targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
     });
 
@@ -3682,7 +3692,7 @@ test('SmartWrongQuestionsPage ignores stale practice pack refresh responses afte
 
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
-      assert.match(pageText, /去分母漏乘/);
+      assert.match(pageText, /计算/);
       assert.match(pageText, /processing/);
     });
 
@@ -3702,7 +3712,7 @@ test('SmartWrongQuestionsPage ignores stale practice pack refresh responses afte
           id: 42,
           status: 'ready',
           mode: 'reason',
-          target: '去分母漏乘',
+          target: '计算',
           volume: 'standard',
           requested_question_count: 10,
           download_url: '/api/wrong-question-practice-packs/42/download',
@@ -3716,7 +3726,7 @@ test('SmartWrongQuestionsPage ignores stale practice pack refresh responses afte
     await waitForAssertion(() => {
       const pageText = domEnvironment.container.textContent || '';
       assert.doesNotMatch(pageText, /练习包状态已刷新/);
-      assert.doesNotMatch(pageText, /去分母漏乘/);
+      assert.doesNotMatch(pageText, /状态：生成成功/);
       assert.doesNotMatch(pageText, /下载练习包/);
     });
   } finally {
