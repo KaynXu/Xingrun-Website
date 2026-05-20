@@ -120,6 +120,11 @@ const practicePackStatusLabels: Record<string, string> = {
   skipped: '已跳过',
 };
 
+const PRACTICE_PACK_REASON_TARGET_OPTIONS = [
+  ...WRONG_QUESTION_ERROR_TYPE_OPTIONS,
+  '计算错误',
+];
+
 const initialFilters: WrongQuestionFilters = {
   studentName: '',
   className: '',
@@ -147,6 +152,20 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 function getPracticePackStatusLabel(status: string): string {
   const normalizedStatus = String(status || '').trim();
   return practicePackStatusLabels[normalizedStatus] || normalizedStatus || '未知';
+}
+
+function buildUniquePracticePackTargets(values: string[]): string[] {
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  for (const value of values) {
+    const normalizedValue = value.trim();
+    if (!normalizedValue || seen.has(normalizedValue)) {
+      continue;
+    }
+    seen.add(normalizedValue);
+    targets.push(normalizedValue);
+  }
+  return targets;
 }
 
 function canGenerateWrongQuestionPractice(record: WrongQuestionRecord): boolean {
@@ -458,12 +477,44 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       selectedDraft?.topicCategory?.trim() ?? '',
     ].filter(Boolean)));
   }, [selectedDraft?.topicCategory, selectedRecord?.topicCategory, selectedRecordIsPrimarySchool]);
+  const practicePackTargetRecords = useMemo(() => {
+    return records.filter((record) => !activeWeeklyFollowupClassId || record.classId === activeWeeklyFollowupClassId);
+  }, [activeWeeklyFollowupClassId, records]);
+  const practicePackTargetOptions = useMemo(() => {
+    if (practicePackMode === 'topic') {
+      return buildUniquePracticePackTargets([
+        ...WRONG_QUESTION_TOPIC_CATEGORY_OPTIONS.filter((item) => item !== '未分类'),
+        ...practicePackTargetRecords.map((record) => record.topicCategory ?? ''),
+        ...practicePackTargetRecords.map((record) => record.analysis.questionCategory ?? ''),
+      ]);
+    }
+
+    return buildUniquePracticePackTargets([
+      ...PRACTICE_PACK_REASON_TARGET_OPTIONS,
+      ...practicePackTargetRecords.map((record) => record.primaryErrorType ?? ''),
+      ...practicePackTargetRecords.map((record) => record.analysis.errorType ?? ''),
+      ...practicePackTargetRecords.map((record) => {
+        const causeNote = record.causeNote?.trim() ?? '';
+        return causeNote.length <= 20 ? causeNote : '';
+      }),
+    ]);
+  }, [practicePackMode, practicePackTargetRecords]);
 
   useEffect(() => {
     if (!showNotebookTopicCategory && notebookTopicFilter !== '全部') {
       setNotebookTopicFilter('全部');
     }
   }, [notebookTopicFilter, showNotebookTopicCategory]);
+
+  useEffect(() => {
+    setPracticePackTarget((currentTarget) => {
+      const normalizedTarget = currentTarget.trim();
+      if (normalizedTarget && practicePackTargetOptions.includes(normalizedTarget)) {
+        return normalizedTarget;
+      }
+      return practicePackTargetOptions[0] ?? '';
+    });
+  }, [practicePackTargetOptions]);
 
   const updateDraftDirtyState = useCallback((recordId: string, isDirty: boolean) => {
     reviewDraftDirtyByRecordIdRef.current = {
@@ -2165,15 +2216,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 </label>
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">方向</span>
-                  <input
+                  <select
                     aria-label="练习包方向"
-                    type="text"
                     value={practicePackTarget}
                     onChange={(event) => setPracticePackTarget(event.target.value)}
-                    onInput={(event) => setPracticePackTarget((event.target as HTMLInputElement).value)}
                     className={workspaceFieldClass}
-                    placeholder="例如：去分母漏乘"
-                  />
+                  >
+                    {practicePackTargetOptions.length > 0 ? (
+                      practicePackTargetOptions.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))
+                    ) : (
+                      <option value="">暂无可选方向</option>
+                    )}
+                  </select>
                 </label>
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-500 dark:text-slate-400">题量</span>
