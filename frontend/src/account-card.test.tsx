@@ -366,7 +366,7 @@ test('consultation full flow bar keeps one-row short labels when modal width is 
 
   assert.ok(flowBarBlock);
   assert.match(flowBarBlock[0], /fullUsesOneRow/);
-  assert.match(flowBarBlock[0], /min-\[640px\]:inline/);
+  assert.match(flowBarBlock[0], /min-\[720px\]:inline/);
   assert.match(flowBarBlock[0], /consultationStageShortLabel\(item\)/);
   assert.match(flowBarBlock[0], /mode === 'full'/);
 });
@@ -383,9 +383,22 @@ test('consultation result capsule matches stage widths and uses empty enter fail
   assert.match(source, /if \(stage === '试听失败'\) return '败';/);
   assert.match(source, /return '';/);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(1\.75rem,1fr\)\)\]/);
-  assert.match(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(6,minmax\(5\.8rem,1fr\)\)\]/);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\]/);
   assert.match(resultCapsuleBlock[0], /consultationResultShortLabel\(resultStage\)/);
   assert.doesNotMatch(resultCapsuleBlock[0], /成\/败/);
+});
+
+test('consultation full flow bar avoids fixed minimum columns that can push the result capsule outside the modal', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
+
+  assert.ok(flowBarBlock);
+  assert.ok(resultCapsuleBlock);
+  assert.match(flowBarBlock[0], /: 'grid w-full min-w-0 grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\] gap-1 min-\[720px\]:gap-1\.5'/);
+  assert.doesNotMatch(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(6,minmax\(5\.8rem,1fr\)\)\]/);
+  assert.match(resultCapsuleBlock[0], /hidden min-\[720px\]:inline/);
+  assert.match(resultCapsuleBlock[0], /min-\[720px\]:hidden/);
 });
 
 test('consultation modal places flow subtitle and status lamp beside the title', () => {
@@ -539,7 +552,7 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
   assert.ok(flowBarBlock);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(1\.75rem,1fr\)\)\]/);
-  assert.match(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(6,minmax\(5\.8rem,1fr\)\)\]/);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /onStageDoubleClick/);
   assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });

@@ -3632,8 +3632,8 @@ const ConsultationResultCapsule = ({
       >
         {compact ? (
           <>
-            <span className="hidden min-[640px]:inline">{resultLabel}</span>
-            <span className="min-[640px]:hidden">{resultShortLabel}</span>
+            <span className="hidden min-[720px]:inline">{resultLabel}</span>
+            <span className="min-[720px]:hidden">{resultShortLabel}</span>
           </>
         ) : (
           resultLabel
@@ -3714,7 +3714,7 @@ const ConsultationFlowBar = ({
   return (
     <div className={compact
       ? 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(1.75rem,1fr))] gap-1 min-[520px]:grid-cols-[repeat(6,minmax(3.85rem,1fr))] min-[520px]:gap-1.5'
-      : 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(1.75rem,1fr))] gap-1 min-[640px]:grid-cols-[repeat(6,minmax(5.8rem,1fr))] min-[640px]:gap-1.5'
+      : 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(0,1fr))] gap-1 min-[720px]:gap-1.5'
     }>
       {consultationProcessStages.map((item) => {
         const stageIndex = consultationProcessStages.indexOf(item);
@@ -3741,8 +3741,8 @@ const ConsultationFlowBar = ({
             >
               {compact || fullUsesOneRow ? (
                 <>
-                  <span className={compact ? 'hidden min-[520px]:inline' : 'hidden min-[640px]:inline'}>{consultationStageDisplayLabel(item)}</span>
-                  <span className={compact ? 'min-[520px]:hidden' : 'min-[640px]:hidden'}>{consultationStageShortLabel(item)}</span>
+                  <span className={compact ? 'hidden min-[520px]:inline' : 'hidden min-[720px]:inline'}>{consultationStageDisplayLabel(item)}</span>
+                  <span className={compact ? 'min-[520px]:hidden' : 'min-[720px]:hidden'}>{consultationStageShortLabel(item)}</span>
                 </>
               ) : (
                 consultationStageDisplayLabel(item)
