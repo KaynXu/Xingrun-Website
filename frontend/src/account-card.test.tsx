@@ -216,6 +216,20 @@ test('consultation view mode uses a read-only report layout instead of disabled 
   assert.match(source, /最后更新/);
 });
 
+test('consultation modal uses compact flow sections for both editing and viewing', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(source, /compactFlowSectionClass/);
+  assert.match(source, /compactFieldGridClass/);
+  assert.match(source, /基础信息/);
+  assert.match(source, /沟通与测试/);
+  assert.match(source, /试听安排/);
+  assert.match(source, /结果与备注/);
+  assert.doesNotMatch(source, /shadow-\[0_14px_35px_rgba\(14,165,233,0\.06\)\]/);
+});
+
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
