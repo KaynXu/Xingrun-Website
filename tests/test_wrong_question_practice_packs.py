@@ -828,6 +828,58 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
     @mock.patch("app.finalize_ai_charge")
     @mock.patch("app.ensure_feature_credits_available")
     @mock.patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
+    @mock.patch("ai_processor.generate_wrong_question_practice_pack_variants")
+    @mock.patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_keeps_generated_answers_for_real_questions(
+        self,
+        material_mock,
+        variants_mock,
+        pdf_mock,
+        _ensure_credits_mock,
+        _finalize_charge_mock,
+    ):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        variants_mock.return_value = []
+        material_mock.return_value = {
+            "title": "王睿博 一周错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": str(self.record["id"]),
+                    "ai_hint": "先去分母。",
+                    "reason_blank_prompt": "错因复盘\n这题错在 ______。",
+                    "improvement_summary_prompt": "下次提醒\n先检查 ______。",
+                    "answer": "x=7",
+                    "key_steps": ["两边同乘 2 得 x-1=6", "两边加 1 得 x=7"],
+                    "pitfall_reminder": "去分母时不要漏乘常数项。",
+                }
+            ],
+        }
+
+        def pdf_side_effect(**kwargs):
+            output_path = Path(kwargs["output_path"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"%PDF-1.4\npractice pack\n")
+            return str(output_path)
+
+        pdf_mock.side_effect = pdf_side_effect
+
+        self.app._run_wrong_question_practice_pack_job(job_id=job["id"], user=self.owner)
+
+        answer_item = pdf_mock.call_args.kwargs["answer_items"][0]
+        self.assertEqual(answer_item["answer"], "x=7")
+        self.assertEqual(answer_item["key_steps"], ["两边同乘 2 得 x-1=6", "两边加 1 得 x=7"])
+        self.assertEqual(answer_item["pitfall_reminder"], "去分母时不要漏乘常数项。")
+
+    @mock.patch("app.finalize_ai_charge")
+    @mock.patch("app.ensure_feature_credits_available")
+    @mock.patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
     @mock.patch("ai_processor.review_wrong_question_practice_pack_variant", return_value="结论：通过\n题目可解。")
     @mock.patch("ai_processor.generate_wrong_question_practice_pack_variants")
     @mock.patch("ai_processor.generate_wrong_question_practice_sheet_material")

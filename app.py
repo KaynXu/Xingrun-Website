@@ -936,6 +936,15 @@ def _run_wrong_question_practice_generation_job(
                         "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
                         "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
                         "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                        "answer": str(generated_item.get("answer") or item.get("answer") or "").strip(),
+                        "key_steps": (
+                            generated_item.get("key_steps")
+                            if isinstance(generated_item.get("key_steps"), list)
+                            else item.get("key_steps", [])
+                        ),
+                        "pitfall_reminder": str(
+                            generated_item.get("pitfall_reminder") or item.get("pitfall_reminder") or ""
+                        ).strip(),
                     }
                 )
 
@@ -1231,6 +1240,15 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
                             "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
                             "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
                             "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                            "answer": str(generated_item.get("answer") or item.get("answer") or "").strip(),
+                            "key_steps": (
+                                generated_item.get("key_steps")
+                                if isinstance(generated_item.get("key_steps"), list)
+                                else item.get("key_steps", [])
+                            ),
+                            "pitfall_reminder": str(
+                                generated_item.get("pitfall_reminder") or item.get("pitfall_reminder") or ""
+                            ).strip(),
                         }
                     )
                 schedule = build_wrong_question_practice_pack_schedule(
