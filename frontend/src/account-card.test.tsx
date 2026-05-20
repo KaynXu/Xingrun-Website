@@ -230,6 +230,30 @@ test('consultation modal uses compact flow sections for both editing and viewing
   assert.doesNotMatch(source, /shadow-\[0_14px_35px_rgba\(14,165,233,0\.06\)\]/);
 });
 
+test('consultation view modal hides the title header and uses four vertical report cards', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.ok(reportBlock);
+  assert.match(modalBlock[0], /hiddenForViewHeaderClass/);
+  assert.match(modalBlock[0], /\$\{readOnly \? hiddenForViewHeaderClass : ''\}/);
+  assert.match(reportBlock[0], /lg:grid-cols-4/);
+  assert.match(reportBlock[0], /min-h-\[18rem\]/);
+});
+
+test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+
+  assert.ok(flowBarBlock);
+  assert.match(flowBarBlock[0], /fullUsesOneRow/);
+  assert.match(flowBarBlock[0], /min-\[640px\]:inline/);
+  assert.match(flowBarBlock[0], /consultationStageShortLabel\(item\)/);
+  assert.match(flowBarBlock[0], /mode === 'full'/);
+});
+
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
@@ -336,7 +360,8 @@ test('consultation page source keeps desktop and tablet consultations as two-row
 
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
   assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(5,minmax\(7rem,1fr\)\)_minmax\(8rem,1fr\)\]/);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(5,minmax\(1\.75rem,1fr\)\)_minmax\(3\.8rem,1fr\)\]/);
+  assert.match(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(5,minmax\(5\.8rem,1fr\)\)_minmax\(6\.8rem,1fr\)\]/);
   assert.match(flowBarBlock[0], /onStageDoubleClick/);
   assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });

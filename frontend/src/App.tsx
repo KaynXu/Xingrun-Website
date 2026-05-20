@@ -3662,6 +3662,7 @@ const ConsultationFlowBar = ({
   const currentStage = stage || consultationFlowStages[0];
   const ended = isConsultationEnded(currentStage);
   const compact = mode === 'list';
+  const fullUsesOneRow = mode === 'full';
   const completedSet = new Set(completedStages || []);
   if (!ended && consultationProcessStages.includes(currentStage)) {
     completedSet.add(currentStage);
@@ -3670,7 +3671,7 @@ const ConsultationFlowBar = ({
   return (
     <div className={compact
       ? 'grid w-full min-w-0 grid-cols-[repeat(5,minmax(1.75rem,1fr))_minmax(3.8rem,1fr)] gap-1 min-[520px]:grid-cols-[repeat(5,minmax(3.85rem,1fr))_minmax(4.7rem,1fr)] min-[520px]:gap-1.5'
-      : 'grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[repeat(5,minmax(7rem,1fr))_minmax(8rem,1fr)]'
+      : 'grid w-full min-w-0 grid-cols-[repeat(5,minmax(1.75rem,1fr))_minmax(3.8rem,1fr)] gap-1 min-[640px]:grid-cols-[repeat(5,minmax(5.8rem,1fr))_minmax(6.8rem,1fr)] min-[640px]:gap-1.5'
     }>
       {consultationProcessStages.map((item) => {
         const stageIndex = consultationProcessStages.indexOf(item);
@@ -3695,10 +3696,10 @@ const ConsultationFlowBar = ({
               onDoubleClick={() => onStageDoubleClick?.(item)}
               className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpActions ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
             >
-              {compact ? (
+              {compact || fullUsesOneRow ? (
                 <>
-                  <span className="hidden min-[520px]:inline">{consultationStageDisplayLabel(item)}</span>
-                  <span className="min-[520px]:hidden">{consultationStageShortLabel(item)}</span>
+                  <span className={compact ? 'hidden min-[520px]:inline' : 'hidden min-[640px]:inline'}>{consultationStageDisplayLabel(item)}</span>
+                  <span className={compact ? 'min-[520px]:hidden' : 'min-[640px]:hidden'}>{consultationStageShortLabel(item)}</span>
                 </>
               ) : (
                 consultationStageDisplayLabel(item)
@@ -3725,7 +3726,7 @@ const ConsultationFlowBar = ({
         stage={currentStage}
         completedStages={completedStages}
         blockedByCurrentProcess={currentProcessIndex >= 0}
-        compact={compact}
+        compact={compact || fullUsesOneRow}
         editable={editable && !ended}
         onResultChange={onResultChange}
         onResultClick={onResultClick}
@@ -3764,10 +3765,10 @@ const ConsultationReadOnlyReport = ({
   const value = (text?: string | null) => text?.trim() || '—';
 
   return (
-    <section className="space-y-3">
-      <div className={compactFlowSectionClass}>
+    <section className="grid gap-3 lg:grid-cols-4">
+      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
         <p className={compactFlowTitleClass}>基础信息</p>
-        <div className={compactFieldGridClass}>
+        <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-1">
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>咨询日期</p><p className={compactReadValueClass}>{value(form.date)}</p></div>
@@ -3780,9 +3781,9 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={compactFlowSectionClass}>
+      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
         <p className={compactFlowTitleClass}>沟通与测试</p>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid gap-3">
           <div>
             <p className={compactReadLabelClass}>沟通ing：情况说明</p>
             <p className={compactReadValueClass}>{value(form.need_detail)}</p>
@@ -3811,9 +3812,9 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={compactFlowSectionClass}>
+      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
         <p className={compactFlowTitleClass}>试听安排</p>
-        <div className={compactFieldGridClass}>
+        <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-1">
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
           <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
           <div><p className={compactReadLabelClass}>对应班课</p><p className={compactReadValueClass}>{value(trialClassName || form.trial_class_manual)}</p></div>
@@ -3825,9 +3826,9 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={compactFlowSectionClass}>
+      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
         <p className={compactFlowTitleClass}>结果与备注</p>
-        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
           <div>
             <p className={compactReadLabelClass}>结果</p>
             <p className={cn(
@@ -4048,6 +4049,7 @@ const ConsultationModal = ({
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
   const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
+  const hiddenForViewHeaderClass = 'hidden';
 
   return (
     <motion.div
@@ -4065,7 +4067,7 @@ const ConsultationModal = ({
         transition={{ duration: 0.2 }}
         className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
+        <div className={`flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10 ${readOnly ? hiddenForViewHeaderClass : ''}`}>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
             <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
@@ -4082,11 +4084,24 @@ const ConsultationModal = ({
             ×
           </button>
         </div>
+        {readOnly && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 top-4 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+            aria-label="关闭咨询记录窗口"
+          >
+            ×
+          </button>
+        )}
 
         <button
           type="button"
           onClick={() => formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="absolute right-4 top-20 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6 sm:top-24"
+          className={cn(
+            'absolute right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6',
+            readOnly ? 'top-16 sm:top-16' : 'top-20 sm:top-24',
+          )}
           title="回到顶部"
           aria-label="回到顶部"
         >
