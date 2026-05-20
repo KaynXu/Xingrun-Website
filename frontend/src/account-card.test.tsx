@@ -225,7 +225,7 @@ test('consultation modal uses compact flow sections for both editing and viewing
   assert.match(source, /compactFieldGridClass/);
   assert.match(source, /基础信息/);
   assert.match(source, /沟通与测试/);
-  assert.match(source, /试听安排/);
+  assert.match(source, />试听</);
   assert.match(source, /结果与备注/);
   assert.doesNotMatch(source, /shadow-\[0_14px_35px_rgba\(14,165,233,0\.06\)\]/);
 });
@@ -239,10 +239,24 @@ test('consultation view modal hides the title header and uses a two by two repor
   assert.ok(reportBlock);
   assert.match(modalBlock[0], /hiddenForViewHeaderClass/);
   assert.match(modalBlock[0], /\$\{readOnly \? hiddenForViewHeaderClass : ''\}/);
-  assert.match(reportBlock[0], /lg:grid-cols-2/);
+  assert.match(reportBlock[0], /md:grid-cols-2/);
   assert.match(reportBlock[0], /min-h-\[17rem\]/);
   assert.doesNotMatch(reportBlock[0], /lg:grid-cols-4/);
+  assert.doesNotMatch(reportBlock[0], /<section className="grid gap-3 lg:grid-cols-2">/);
+  assert.match(reportBlock[0], /sm:grid-cols-\[minmax\(0,0\.78fr\)_minmax\(0,1\.22fr\)\]/);
   assert.match(reportBlock[0], />试听</);
+});
+
+test('consultation edit modal uses the same two by two flow cards as the view modal', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /<div className="grid gap-3 md:grid-cols-2">/);
+  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6`\}>/);
+  assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>/);
+  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6`\}>/);
+  assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>[\s\S]*结果与备注/);
 });
 
 test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {

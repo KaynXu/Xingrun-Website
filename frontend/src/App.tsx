@@ -3739,7 +3739,7 @@ const ConsultationFlowBar = ({
 };
 
 const compactFlowSectionClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
-const compactFieldGridClass = 'grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4';
+const compactFieldGridClass = 'grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2';
 const compactFlowTitleClass = 'mb-2 text-[12px] font-bold tracking-[0.12em] text-sky-700 dark:text-sky-300';
 const compactReadLabelClass = 'text-[11px] font-semibold tracking-[0.06em] text-slate-400';
 const compactReadValueClass = 'mt-0.5 whitespace-pre-wrap text-sm font-medium leading-5 text-slate-700 dark:text-slate-200';
@@ -3765,10 +3765,10 @@ const ConsultationReadOnlyReport = ({
   const value = (text?: string | null) => text?.trim() || '—';
 
   return (
-    <section className="grid gap-3 lg:grid-cols-2">
+    <section className="grid gap-3 md:grid-cols-2">
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>基础信息</p>
-        <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-1">
+        <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>咨询日期</p><p className={compactReadValueClass}>{value(form.date)}</p></div>
@@ -4228,7 +4228,14 @@ const ConsultationModal = ({
             </section>
           )}
 
-          <section ref={baseInfoRef} className={`${compactFlowSectionClass} scroll-mt-6`}>
+          <datalist id="consultation-grade-options">
+            {consultationGradeOptions.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <section ref={baseInfoRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
             <p className={compactFlowTitleClass}>基础信息</p>
             <div className="grid gap-2 sm:grid-cols-2">
               <button
@@ -4306,13 +4313,7 @@ const ConsultationModal = ({
             </div>
           </section>
 
-          <datalist id="consultation-grade-options">
-            {consultationGradeOptions.map((option) => (
-              <option key={option} value={option} />
-            ))}
-          </datalist>
-
-          <section className={`${compactFlowSectionClass} mt-3 space-y-3`}>
+            <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
             <p className={compactFlowTitleClass}>沟通与测试</p>
             <label ref={contentRef} className="scroll-mt-6 space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">沟通ing：情况说明</span>
@@ -4379,9 +4380,11 @@ const ConsultationModal = ({
               </div>
             )}
 
+            </section>
+
             {(showTrialFields || !readOnly) && (
-              <div ref={trialSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
-                <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">试听安排</h5>
+              <div ref={trialSectionRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
+                <p className={compactFlowTitleClass}>试听</p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className="text-slate-500 dark:text-slate-400">是否试听</span>
@@ -4423,9 +4426,10 @@ const ConsultationModal = ({
               </div>
             )}
 
+            <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
+              <p className={compactFlowTitleClass}>结果与备注</p>
             {(showSuccessFields || !readOnly) && (
               <div ref={successSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
-                <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">结果与备注</h5>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className="text-slate-500 dark:text-slate-400">班级</span>
@@ -4468,7 +4472,8 @@ const ConsultationModal = ({
                 </div>
               </div>
             )}
-          </section>
+            </section>
+          </div>
             </>
           )}
 
