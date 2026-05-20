@@ -165,7 +165,10 @@ class AiProcessorPromptTestCase(unittest.TestCase):
     def test_wrong_question_practice_prompt_focuses_on_reflection_not_solution(self):
         self.assertIn("不要单独生成“下次提醒”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("第一行是这个书写区的小标题", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
-        self.assertIn("不要提示孩子该怎样把这道题一步一步做对", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("标准答案和关键步骤只允许放在 answer、key_steps、pitfall_reminder 字段里", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("answer: string", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("key_steps: array[string]", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("pitfall_reminder: string", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("题目内容必须用于提取本题的对象、条件、问法或符号", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("优先把孩子语音/文字里提到的具体遗漏、误判、步骤顺序写进填空句", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("像复习计划里的填空题一样", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
