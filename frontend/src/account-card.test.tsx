@@ -404,6 +404,22 @@ test('consultation full result capsule keeps the same height as the five process
   assert.doesNotMatch(flowBarBlock[0], /compact=\{compact \|\| fullUsesOneRow\}/);
 });
 
+test('consultation modal jump controls use proportional space inside equal flow capsules', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
+
+  assert.ok(flowBarBlock);
+  assert.ok(resultCapsuleBlock);
+  assert.match(flowBarBlock[0], /basis-\[20%\]/);
+  assert.match(flowBarBlock[0], /flex-\[1_1_80%\]/);
+  assert.doesNotMatch(flowBarBlock[0], /h-7 w-4/);
+  assert.match(resultCapsuleBlock[0], /basis-\[24%\]/);
+  assert.match(resultCapsuleBlock[0], /flex-\[1_1_76%\]/);
+  assert.match(resultCapsuleBlock[0], /flex-1/);
+  assert.doesNotMatch(resultCapsuleBlock[0], /right-0\.5/);
+});
+
 test('consultation full flow bar avoids fixed minimum columns that can push the result capsule outside the modal', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
@@ -448,7 +464,7 @@ test('consultation modal flow capsules jump to matching edit sections without ch
   assert.match(modalBlock[0], /onStageJump=\{handleStageJump\}/);
 });
 
-test('consultation modal uses slim jump buttons and flashes the jumped edit section', () => {
+test('consultation modal uses proportional jump buttons and flashes the jumped edit section', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
@@ -465,9 +481,9 @@ test('consultation modal uses slim jump buttons and flashes the jumped edit sect
   assert.match(modalBlock[0], /highlightedJumpStage === '已加小客服微信'/);
   assert.match(modalBlock[0], /highlightedJumpStage === '正在沟通细节'/);
   assert.match(modalBlock[0], /highlightedJumpStage === '成功进班'/);
-  assert.match(flowBarBlock[0], /className="mr-0\.5 flex h-7 w-4/);
-  assert.match(resultCapsuleBlock[0], /className="absolute right-0\.5 top-1\/2 flex h-7 w-4/);
-  assert.doesNotMatch(flowBarBlock[0], /h-8 w-8/);
+  assert.match(flowBarBlock[0], /className="flex h-full basis-\[20%\] shrink-0/);
+  assert.match(resultCapsuleBlock[0], /className="flex h-full basis-\[24%\] shrink-0 items-stretch"/);
+  assert.doesNotMatch(flowBarBlock[0], /h-7 w-4/);
 });
 
 test('consultation result capsule keeps the colored label full width while preserving the dropdown hit area', () => {
@@ -475,10 +491,11 @@ test('consultation result capsule keeps the colored label full width while prese
   const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(resultCapsuleBlock);
-  assert.match(resultCapsuleBlock[0], /className=\{`min-w-0 flex-1 overflow-hidden text-ellipsis \$\{showJumpAction \? 'pl-3 pr-9' : compact \? 'px-0\.5' : 'px-2'\}/);
-  assert.match(resultCapsuleBlock[0], /className=\{`absolute \$\{showJumpAction \? 'right-5' : 'right-1'\} top-1\/2/);
+  assert.match(resultCapsuleBlock[0], /className=\{`min-w-0 overflow-hidden text-ellipsis \$\{showJumpAction \? 'flex-\[1_1_76%\] pl-3 pr-1' : 'flex-1'\}/);
+  assert.match(resultCapsuleBlock[0], /className="flex h-full basis-\[24%\] shrink-0 items-stretch"/);
+  assert.match(resultCapsuleBlock[0], /className="relative flex flex-1 items-center justify-center text-current opacity-80"/);
   assert.match(resultCapsuleBlock[0], /className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"/);
-  assert.doesNotMatch(resultCapsuleBlock[0], /bg-white\/70 text-slate-500 shadow-sm dark:bg-slate-900\/70/);
+  assert.doesNotMatch(resultCapsuleBlock[0], /right-5/);
 });
 
 test('consultation source restores ended records only after an explicit yes no confirmation', () => {

@@ -3631,7 +3631,7 @@ const ConsultationResultCapsule = ({
         disabled={!editable}
         onClick={onResultClick}
         onDoubleClick={onResultDoubleClick}
-        className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpAction ? 'pl-3 pr-9' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`min-w-0 overflow-hidden text-ellipsis ${showJumpAction ? 'flex-[1_1_76%] pl-3 pr-1' : 'flex-1'} ${compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {useShortLabel ? (
           <>
@@ -3642,40 +3642,62 @@ const ConsultationResultCapsule = ({
           resultLabel
         )}
       </button>
-      <div className={`absolute ${showJumpAction ? 'right-5' : 'right-1'} top-1/2 flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} -translate-y-1/2 items-center justify-center text-current opacity-80`}>
-        <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
-        <select
-          value={resultStage}
-          disabled={!editable}
-          onClick={(event) => event.stopPropagation()}
-          onChange={(event) => {
-            const value = event.target.value as ConsultationResultStage | '';
-            if (value) onResultChange?.(value);
-          }}
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
-          aria-label="选择咨询结果"
-          title="选择咨询结果"
-        >
-          <option value="">未选择结果</option>
-          <option value="成功进班">☀️ 成功进班</option>
-          <option value="试听失败">😢 试听未成</option>
-        </select>
-      </div>
       {showJumpAction ? (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onJump?.();
-          }}
-          className="absolute right-0.5 top-1/2 flex h-7 w-4 -translate-y-1/2 items-center justify-center rounded-md bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
-          aria-label="跳转到结果编辑栏"
-          title="跳转到结果编辑栏"
-        >
-          <ArrowRight size={10} />
-        </button>
-      ) : null}
+        <div className="flex h-full basis-[24%] shrink-0 items-stretch">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onJump?.();
+            }}
+            className="flex flex-1 items-center justify-center bg-white/60 text-slate-500 transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-800"
+            aria-label="跳转到结果编辑栏"
+            title="跳转到结果编辑栏"
+          >
+            <ArrowRight size={compact ? 10 : 12} />
+          </button>
+          <div className="relative flex flex-1 items-center justify-center text-current opacity-80">
+            <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
+            <select
+              value={resultStage}
+              disabled={!editable}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                const value = event.target.value as ConsultationResultStage | '';
+                if (value) onResultChange?.(value);
+              }}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+              aria-label="选择咨询结果"
+              title="选择咨询结果"
+            >
+              <option value="">未选择结果</option>
+              <option value="成功进班">☀️ 成功进班</option>
+              <option value="试听失败">😢 试听未成</option>
+            </select>
+          </div>
+        </div>
+      ) : (
+        <div className={`absolute right-1 top-1/2 flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} -translate-y-1/2 items-center justify-center text-current opacity-80`}>
+          <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
+          <select
+            value={resultStage}
+            disabled={!editable}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              const value = event.target.value as ConsultationResultStage | '';
+              if (value) onResultChange?.(value);
+            }}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+            aria-label="选择咨询结果"
+            title="选择咨询结果"
+          >
+            <option value="">未选择结果</option>
+            <option value="成功进班">☀️ 成功进班</option>
+            <option value="试听失败">😢 试听未成</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 };
@@ -3740,7 +3762,7 @@ const ConsultationFlowBar = ({
               disabled={!editable}
               onClick={() => onStageClick?.(item)}
               onDoubleClick={() => onStageDoubleClick?.(item)}
-              className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpActions ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+              className={`min-w-0 overflow-hidden text-ellipsis ${showJumpActions ? 'flex-[1_1_80%] pl-3 pr-1' : 'flex-1'} ${compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
             >
               {compact || fullUsesOneRow ? (
                 <>
@@ -3758,11 +3780,11 @@ const ConsultationFlowBar = ({
                   event.stopPropagation();
                   onStageJump?.(item);
                 }}
-                className="mr-0.5 flex h-7 w-4 shrink-0 items-center justify-center rounded-md bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="flex h-full basis-[20%] shrink-0 items-center justify-center bg-white/60 text-slate-500 transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-800"
                 aria-label={`跳转到${item}编辑栏`}
                 title={`跳转到${item}编辑栏`}
               >
-                <ArrowRight size={10} />
+                <ArrowRight size={compact ? 10 : 12} />
               </button>
             )}
           </div>
