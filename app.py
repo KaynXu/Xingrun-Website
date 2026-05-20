@@ -1170,25 +1170,36 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
 
                 missing_count = max(0, requested_count - len(real_candidates))
                 variants: list[dict] = []
+                variant_generation_warning = ""
                 if missing_count > 0:
-                    generated_variants = ai_processor.generate_wrong_question_practice_pack_variants(
-                        student_name=student_name,
-                        class_name=class_name,
-                        mode=str(job.get("mode") or ""),
-                        target=str(job.get("target") or ""),
-                        requested_count=missing_count,
-                        source_records=real_candidates,
-                    )
-                    for variant in generated_variants or []:
-                        review_text = ai_processor.review_wrong_question_practice_pack_variant(
+                    try:
+                        generated_variants = ai_processor.generate_wrong_question_practice_pack_variants(
+                            student_name=student_name,
+                            class_name=class_name,
                             mode=str(job.get("mode") or ""),
                             target=str(job.get("target") or ""),
-                            variant=variant,
+                            requested_count=missing_count,
+                            source_records=real_candidates,
                         )
-                        if ai_processor._wrong_question_practice_pack_variant_review_passed(review_text):
-                            variants.append(variant)
-                        if len(variants) >= missing_count:
-                            break
+                        for variant in generated_variants or []:
+                            review_text = ai_processor.review_wrong_question_practice_pack_variant(
+                                mode=str(job.get("mode") or ""),
+                                target=str(job.get("target") or ""),
+                                variant=variant,
+                            )
+                            if ai_processor._wrong_question_practice_pack_variant_review_passed(review_text):
+                                variants.append(variant)
+                            if len(variants) >= missing_count:
+                                break
+                    except Exception as exc:
+                        any_partial = True
+                        variant_generation_warning = "AI 补题失败，已按可用题生成"
+                        logger.warning(
+                            "Wrong question practice pack variant generation failed for job %s student %s: %s",
+                            job_id,
+                            student_id,
+                            exc,
+                        )
 
                 practice_items = [
                     _practice_pack_item_from_real_record(record, index)
@@ -1229,7 +1240,7 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
                 warning = ""
                 if len(merged_items) < requested_count:
                     any_partial = True
-                    warning = "匹配题量不足，已按可用题生成"
+                    warning = variant_generation_warning or "匹配题量不足，已按可用题生成"
                 title = str((generated or {}).get("title") or "").strip() or f"{student_name} 一周错题练习"
                 pdf_path = pdf_engine.generate_wrong_question_practice_sheet_pdf(
                     student_name=student_name,
