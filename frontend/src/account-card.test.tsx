@@ -243,8 +243,20 @@ test('consultation view modal hides the title header and uses a two by two repor
   assert.match(reportBlock[0], /min-h-\[17rem\]/);
   assert.doesNotMatch(reportBlock[0], /lg:grid-cols-4/);
   assert.doesNotMatch(reportBlock[0], /<section className="grid gap-3 lg:grid-cols-2">/);
-  assert.match(reportBlock[0], /sm:grid-cols-\[minmax\(0,0\.78fr\)_minmax\(0,1\.22fr\)\]/);
+  assert.match(reportBlock[0], /grid-cols-\[minmax\(0,0\.78fr\)_minmax\(0,1\.22fr\)\]/);
   assert.match(reportBlock[0], />试听</);
+});
+
+test('consultation read only cards use two inner columns in narrow modal widths', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
+
+  assert.ok(reportBlock);
+  assert.match(reportBlock[0], /readOnlyTwoColumnGridClass/);
+  assert.match(reportBlock[0], /<div className=\{`grid gap-x-3 gap-y-2 text-sm \$\{readOnlyTwoColumnGridClass\}`\}>[\s\S]*客服微信/);
+  assert.match(reportBlock[0], /<div className=\{`grid gap-x-3 gap-y-2 text-sm \$\{readOnlyTwoColumnGridClass\}`\}>[\s\S]*试听教师/);
+  assert.match(reportBlock[0], /<div className=\{`grid gap-3 text-sm \$\{readOnlyTwoColumnGridClass\}`\}>[\s\S]*最后更新/);
+  assert.doesNotMatch(reportBlock[0], /sm:grid-cols-2 lg:grid-cols-1/);
 });
 
 test('consultation edit modal uses the same two by two flow cards as the view modal', () => {

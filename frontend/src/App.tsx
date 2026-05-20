@@ -3763,12 +3763,13 @@ const ConsultationReadOnlyReport = ({
       ? '咨询失败'
       : '尚未定论';
   const value = (text?: string | null) => text?.trim() || '—';
+  const readOnlyTwoColumnGridClass = 'grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]';
 
   return (
     <section className="grid gap-3 md:grid-cols-2">
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>基础信息</p>
-        <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
+        <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>咨询日期</p><p className={compactReadValueClass}>{value(form.date)}</p></div>
@@ -3814,7 +3815,7 @@ const ConsultationReadOnlyReport = ({
 
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>试听</p>
-        <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-1">
+        <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
           <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
           <div><p className={compactReadLabelClass}>对应班课</p><p className={compactReadValueClass}>{value(trialClassName || form.trial_class_manual)}</p></div>
@@ -3828,7 +3829,7 @@ const ConsultationReadOnlyReport = ({
 
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>结果与备注</p>
-        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
+        <div className={`grid gap-3 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div>
             <p className={compactReadLabelClass}>结果</p>
             <p className={cn(
