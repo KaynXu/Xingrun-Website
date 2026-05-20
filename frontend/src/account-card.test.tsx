@@ -441,6 +441,17 @@ test('consultation modal uses slim jump buttons and flashes the jumped edit sect
   assert.doesNotMatch(flowBarBlock[0], /h-8 w-8/);
 });
 
+test('consultation result capsule keeps the colored label full width while preserving the dropdown hit area', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
+
+  assert.ok(resultCapsuleBlock);
+  assert.match(resultCapsuleBlock[0], /className=\{`min-w-0 flex-1 overflow-hidden text-ellipsis \$\{showJumpAction \? 'pl-3 pr-9' : compact \? 'px-0\.5' : 'px-2'\}/);
+  assert.match(resultCapsuleBlock[0], /className=\{`absolute \$\{showJumpAction \? 'right-5' : 'right-1'\} top-1\/2/);
+  assert.match(resultCapsuleBlock[0], /className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"/);
+  assert.doesNotMatch(resultCapsuleBlock[0], /bg-white\/70 text-slate-500 shadow-sm dark:bg-slate-900\/70/);
+});
+
 test('consultation source restores ended records only after an explicit yes no confirmation', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);

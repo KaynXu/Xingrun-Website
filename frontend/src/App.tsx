@@ -3628,7 +3628,7 @@ const ConsultationResultCapsule = ({
         disabled={!editable}
         onClick={onResultClick}
         onDoubleClick={onResultDoubleClick}
-        className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpAction ? 'pl-3 pr-1' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpAction ? 'pl-3 pr-9' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {compact ? (
           <>
@@ -3639,7 +3639,7 @@ const ConsultationResultCapsule = ({
           resultLabel
         )}
       </button>
-      <div className={`${showJumpAction ? 'mr-5' : 'mr-0.5'} relative flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm dark:bg-slate-900/70 dark:text-slate-300`}>
+      <div className={`absolute ${showJumpAction ? 'right-5' : 'right-1'} top-1/2 flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} -translate-y-1/2 items-center justify-center text-current opacity-80`}>
         <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
         <select
           value={resultStage}
