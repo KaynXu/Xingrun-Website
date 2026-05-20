@@ -767,6 +767,67 @@ class WrongQuestionPracticePackWorkerTestCase(unittest.TestCase):
     @mock.patch("app.finalize_ai_charge")
     @mock.patch("app.ensure_feature_credits_available")
     @mock.patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
+    @mock.patch("ai_processor.review_wrong_question_practice_pack_variant")
+    @mock.patch("ai_processor.generate_wrong_question_practice_pack_variants")
+    @mock.patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_keeps_real_questions_when_variant_generation_fails(
+        self,
+        material_mock,
+        variants_mock,
+        review_mock,
+        pdf_mock,
+        _ensure_credits_mock,
+        _finalize_charge_mock,
+    ):
+        job = lesson_manager.create_wrong_question_practice_pack_job(
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            created_by=self.owner["id"],
+            mode="reason",
+            target="去分母",
+            volume="light",
+        )
+        variants_mock.side_effect = ValueError("wrong question practice pack variant target mismatch")
+        material_mock.side_effect = lambda **kwargs: {
+            "title": "王睿博 一周错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": str(item.get("wrong_question_record_id") or ""),
+                    "ai_hint": "",
+                    "reason_blank_prompt": "",
+                    "improvement_summary_prompt": "",
+                }
+                for item in kwargs["items"]
+            ],
+        }
+
+        def pdf_side_effect(**kwargs):
+            output_path = Path(kwargs["output_path"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"%PDF-1.4\npractice pack\n")
+            return str(output_path)
+
+        pdf_mock.side_effect = pdf_side_effect
+
+        self.app._run_wrong_question_practice_pack_job(job_id=job["id"], user=self.owner)
+
+        loaded = lesson_manager.get_wrong_question_practice_pack_job(job["id"])
+        self.assertEqual(loaded["status"], "partial_failed")
+        self.assertTrue(Path(loaded["zip_path"]).exists())
+        students_by_name = {student["student_name_snapshot"]: student for student in loaded["students"]}
+        self.assertEqual(students_by_name["王睿博"]["status"], "ready")
+        self.assertEqual(students_by_name["王睿博"]["real_question_count"], 1)
+        self.assertEqual(students_by_name["王睿博"]["variant_question_count"], 0)
+        self.assertIn("AI 补题失败", students_by_name["王睿博"]["generation_error"])
+        self.assertEqual(students_by_name["李明"]["status"], "skipped")
+        review_mock.assert_not_called()
+        pdf_kwargs = pdf_mock.call_args.kwargs
+        self.assertEqual(len(pdf_kwargs["items"]), 1)
+        self.assertEqual(len(pdf_kwargs["answer_items"]), 1)
+
+    @mock.patch("app.finalize_ai_charge")
+    @mock.patch("app.ensure_feature_credits_available")
+    @mock.patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
     @mock.patch("ai_processor.review_wrong_question_practice_pack_variant", return_value="结论：通过\n题目可解。")
     @mock.patch("ai_processor.generate_wrong_question_practice_pack_variants")
     @mock.patch("ai_processor.generate_wrong_question_practice_sheet_material")
