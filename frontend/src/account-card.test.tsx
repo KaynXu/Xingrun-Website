@@ -296,12 +296,47 @@ test('consultation edit form uses assignment teacher dropdown and scoped class o
   assert.ok(modalBlock);
   assert.match(modalBlock[0], /const assignableClassOptions =/);
   assert.match(modalBlock[0], /classMatchesAssignedTeacher\(item, selectedTeacher, currentUser\)/);
-  assert.match(modalBlock[0], /分配老师\/负责老师/);
-  assert.match(modalBlock[0], /aria-label="选择分配老师"/);
+  assert.match(modalBlock[0], /负责老师VX：/);
+  assert.match(modalBlock[0], /aria-label="选择负责老师"/);
+  assert.doesNotMatch(modalBlock[0], /分配老师\/负责老师/);
   assert.match(modalBlock[0], /其他：手动输入/);
   assert.match(modalBlock[0], /trialUsesManualClass/);
   assert.match(modalBlock[0], /successUsesManualClass/);
   assert.doesNotMatch(modalBlock[0], /若没找到对应班级，可以直接手动输入/);
+});
+
+test('consultation edit form highlights changed section titles and uses teacher dropdowns', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(source, /const compactFlowTitleClass = \(active = false\)/);
+  assert.match(modalBlock[0], /const baseSectionActive =/);
+  assert.match(modalBlock[0], /const communicationSectionActive =/);
+  assert.match(modalBlock[0], /const trialSectionActive =/);
+  assert.match(modalBlock[0], /const resultSectionActive =/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(baseSectionActive\)/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(communicationSectionActive\)/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(trialSectionActive\)/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(resultSectionActive\)/);
+  assert.match(modalBlock[0], /<select value=\{form\.trial_teacher\}/);
+  assert.match(modalBlock[0], /onChange=\{\(e\) => updateField\('trial_teacher', e\.target\.value\)\}/);
+  assert.match(source, /const compactEditLabelClass = 'text-slate-900 dark:text-slate-100';/);
+});
+
+test('consultation success result carries payment card status as a compact secondary state', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.ok(reportBlock);
+  assert.match(source, /payment_card_status: string;/);
+  assert.match(source, /const consultationPaymentCardStatusOptions = \[/);
+  assert.match(modalBlock[0], /收费排卡/);
+  assert.match(modalBlock[0], /value=\{form\.payment_card_status\}/);
+  assert.match(reportBlock[0], /收费排卡/);
+  assert.match(reportBlock[0], /form\.payment_card_status/);
 });
 
 test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {

@@ -216,6 +216,7 @@ interface ConsultationRecord {
   trial_feedback: string;
   success_class_id: number | null;
   success_class_manual: string;
+  payment_card_status: string;
   end_note: string;
   created_at: string;
   updated_at: string;
@@ -1345,6 +1346,7 @@ function classMatchesAssignedTeacher(
 
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
+const consultationPaymentCardStatusOptions = ['待收费排卡', '已收费', '已排卡', '已完成'];
 const consultationSourceAliasMap: Record<string, string[]> = {
   转介绍: ['转介绍', '介绍', '朋友介绍', '家长介绍', '熟人介绍', '亲友介绍', '老带新', '推荐介绍', '推荐'],
   朋友圈: ['朋友圈', '微信朋友圈', 'pyq'],
@@ -1399,6 +1401,7 @@ const consultationFormDefaults: ConsultationFormValues = {
   trial_feedback: '',
   success_class_id: null,
   success_class_manual: '',
+  payment_card_status: '',
   end_note: '',
 };
 
@@ -1442,6 +1445,7 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     trial_feedback: record.trial_feedback ?? '',
     success_class_id: record.success_class_id ?? null,
     success_class_manual: record.success_class_manual ?? '',
+    payment_card_status: record.payment_card_status ?? '',
     end_note: record.end_note ?? '',
   };
 }
@@ -1474,6 +1478,7 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     trial_feedback: record.trial_feedback ?? '',
     success_class_id: record.success_class_id ?? null,
     success_class_manual: record.success_class_manual ?? '',
+    payment_card_status: record.payment_card_status ?? '',
     end_note: record.end_note ?? '',
     created_at: record.created_at ?? '',
     updated_at: record.updated_at ?? '',
@@ -3774,8 +3779,12 @@ const ConsultationFlowBar = ({
 
 const compactFlowSectionClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
 const compactFieldGridClass = 'grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2';
-const compactFlowTitleClass = 'mb-2 text-[12px] font-bold tracking-[0.12em] text-sky-700 dark:text-sky-300';
-const compactReadLabelClass = 'text-[11px] font-semibold tracking-[0.06em] text-slate-400';
+const compactFlowTitleClass = (active = false) => cn(
+  'mb-2 text-[13px] font-extrabold tracking-[0.1em] transition-colors',
+  active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-500 dark:text-slate-400',
+);
+const compactReadLabelClass = 'text-[11px] font-semibold tracking-[0.06em] text-slate-900 dark:text-slate-100';
+const compactEditLabelClass = 'text-slate-900 dark:text-slate-100';
 const compactReadValueClass = 'mt-0.5 whitespace-pre-wrap text-sm font-medium leading-5 text-slate-700 dark:text-slate-200';
 
 const ConsultationReadOnlyReport = ({
@@ -3791,6 +3800,10 @@ const ConsultationReadOnlyReport = ({
   const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const trialClassName = classes.find((item) => item.id === form.trial_class_id)?.name;
   const successClassName = classes.find((item) => item.id === form.success_class_id)?.name;
+  const baseSectionActive = Boolean(form.teacher_id || form.receiving_teacher || form.parent_wechat_name || form.child_name || form.grade || form.consultation_subject || form.source_channel || form.source_channel_note);
+  const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
+  const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
+  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.payment_card_status || form.end_note || form.follow_up_note);
   const resultLabel = form.flow_stage === '成功进班'
     ? '咨询成功'
     : form.flow_stage === '试听失败' || form.flow_stage === '咨询结束'
@@ -3802,7 +3815,7 @@ const ConsultationReadOnlyReport = ({
   return (
     <section className="grid gap-3 md:grid-cols-2">
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
-        <p className={compactFlowTitleClass}>基础信息</p>
+        <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
@@ -3817,7 +3830,7 @@ const ConsultationReadOnlyReport = ({
       </div>
 
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
-        <p className={compactFlowTitleClass}>沟通与测试</p>
+        <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
         <div className="grid gap-3">
           <div>
             <p className={compactReadLabelClass}>沟通ing：情况说明</p>
@@ -3848,7 +3861,7 @@ const ConsultationReadOnlyReport = ({
       </div>
 
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
-        <p className={compactFlowTitleClass}>试听</p>
+        <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
           <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
@@ -3862,7 +3875,7 @@ const ConsultationReadOnlyReport = ({
       </div>
 
       <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
-        <p className={compactFlowTitleClass}>结果与备注</p>
+        <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
         <div className={`grid gap-3 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div>
             <p className={compactReadLabelClass}>结果</p>
@@ -3880,6 +3893,10 @@ const ConsultationReadOnlyReport = ({
           <div>
             <p className={compactReadLabelClass}>班级</p>
             <p className={compactReadValueClass}>{value(successClassName || form.success_class_manual)}</p>
+          </div>
+          <div>
+            <p className={compactReadLabelClass}>收费排卡</p>
+            <p className={compactReadValueClass}>{value(form.payment_card_status)}</p>
           </div>
           {record && (
             <>
@@ -4100,8 +4117,21 @@ const ConsultationModal = ({
   const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_images.length > 0;
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
-  const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
+  const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual || form.payment_card_status;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
+  const baseSectionActive = Boolean(
+    form.teacher_id
+    || form.receiving_teacher
+    || form.parent_wechat_name
+    || form.child_name
+    || form.grade
+    || form.consultation_subject
+    || form.source_channel
+    || form.source_channel_note,
+  );
+  const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
+  const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
+  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.payment_card_status || form.end_note || form.follow_up_note);
   const hiddenForViewHeaderClass = 'hidden';
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
 
@@ -4289,7 +4319,7 @@ const ConsultationModal = ({
 
           <div className="grid gap-3 md:grid-cols-2">
             <section ref={baseInfoRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
-            <p className={compactFlowTitleClass}>基础信息</p>
+            <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
             <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
@@ -4302,7 +4332,7 @@ const ConsultationModal = ({
               </button>
               <label className={cn(compactStatusClass(teacherWechatDone), 'relative p-0')}>
                 <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2">
-                  分配老师：{teacherWechatDone ? '已选择' : '未选择'}
+                  负责老师VX：{form.receiving_teacher || '未选择'}
                 </span>
                 <span className="pointer-events-none absolute right-4 top-1/2 z-10 flex -translate-y-1/2 items-center gap-2">
                   {teacherWechatDone ? <CheckCircle2 size={18} /> : null}
@@ -4313,7 +4343,7 @@ const ConsultationModal = ({
                   onChange={(e) => handleTeacherChange(e.target.value)}
                   disabled={readOnly || stageFrozen}
                   className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-4 text-transparent outline-none"
-                  aria-label="选择分配老师"
+                  aria-label="选择负责老师"
                 >
                   <option value="">请选择老师</option>
                   {teacherOptions.map((option) => (
@@ -4325,39 +4355,30 @@ const ConsultationModal = ({
 
             <div className={`${compactFieldGridClass} mt-3`}>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">日期</span>
+                <span className={compactEditLabelClass}>日期</span>
                 <input type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} disabled={readOnly} className={fieldClass} />
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">家长微信名</span>
+                <span className={compactEditLabelClass}>家长微信名</span>
                 <input value={form.parent_wechat_name} onChange={(e) => updateField('parent_wechat_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="家长微信昵称" />
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">孩子姓名</span>
+                <span className={compactEditLabelClass}>孩子姓名</span>
                 <input value={form.child_name} onChange={(e) => updateField('child_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="孩子姓名" />
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">年级</span>
+                <span className={compactEditLabelClass}>年级</span>
                 <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={readOnly} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">分配老师/负责老师</span>
-                <select value={form.teacher_id} onChange={(e) => handleTeacherChange(e.target.value)} disabled={readOnly} className={fieldClass}>
-                  <option value="">请选择老师</option>
-                  {teacherOptions.map((option) => (
-                    <option key={option.teacher_id} value={option.teacher_id}>{option.display_name}</option>
-                  ))}
-                </select>
               </label>
             </div>
 
             <div className={`${compactFieldGridClass} mt-3`}>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">咨询科目</span>
+                <span className={compactEditLabelClass}>咨询科目</span>
                 <input value={form.consultation_subject} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="咨询科目" />
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">来源渠道主类</span>
+                <span className={compactEditLabelClass}>来源渠道主类</span>
                 <select value={form.source_channel} onChange={(e) => updateField('source_channel', e.target.value)} disabled={readOnly} className={fieldClass}>
                   <option value="">请选择来源渠道</option>
                   {!consultationSourceOptions.includes(form.source_channel) && form.source_channel ? (
@@ -4369,16 +4390,16 @@ const ConsultationModal = ({
                 </select>
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">来源渠道备注</span>
+                <span className={compactEditLabelClass}>来源渠道备注</span>
                 <input value={form.source_channel_note} onChange={(e) => updateField('source_channel_note', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="例如：张妈妈转介绍" />
               </label>
             </div>
           </section>
 
             <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
-            <p className={compactFlowTitleClass}>沟通与测试</p>
+            <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
             <label ref={contentRef} className="scroll-mt-6 space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">沟通ing：情况说明</span>
+              <span className={compactEditLabelClass}>沟通ing：情况说明</span>
               <textarea
                 value={form.need_detail}
                 onChange={(e) => updateField('need_detail', e.target.value)}
@@ -4394,7 +4415,7 @@ const ConsultationModal = ({
                 <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">待测试</h5>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">是否测试</span>
+                    <span className={compactEditLabelClass}>是否测试</span>
                     <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
                       <option value="">未记录</option>
                       <option value="是">是</option>
@@ -4402,7 +4423,7 @@ const ConsultationModal = ({
                     </select>
                   </label>
                   <div className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">测试情况图片</span>
+                    <span className={compactEditLabelClass}>测试情况图片</span>
                     {!readOnly && record ? (
                       <label className={`${workspaceSecondaryButtonClass} w-full cursor-pointer justify-center`}>
                         <Upload size={17} />
@@ -4446,10 +4467,10 @@ const ConsultationModal = ({
 
             {(showTrialFields || !readOnly) && (
               <div ref={trialSectionRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
-                <p className={compactFlowTitleClass}>试听</p>
+                <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">是否试听</span>
+                    <span className={compactEditLabelClass}>是否试听</span>
                     <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
                       <option value="">未记录</option>
                       <option value="是">是</option>
@@ -4457,11 +4478,16 @@ const ConsultationModal = ({
                     </select>
                   </label>
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">试听教师</span>
-                    <input value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="试听教师" />
+                    <span className={compactEditLabelClass}>试听教师</span>
+                    <select value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass}>
+                      <option value="">请选择试听教师</option>
+                      {teacherOptions.map((option) => (
+                        <option key={option.teacher_id} value={option.display_name}>{option.display_name}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">对应班课</span>
+                    <span className={compactEditLabelClass}>对应班课</span>
                     <select
                       value={trialUsesManualClass ? '__other__' : form.trial_class_id ?? ''}
                       onChange={(e) => {
@@ -4484,7 +4510,7 @@ const ConsultationModal = ({
                     </select>
                   </label>
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">试听时间段</span>
+                    <span className={compactEditLabelClass}>试听时间段</span>
                     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                       <ArrowRight size={18} className="text-slate-400" />
                       <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="如：周六 10:00-12:00" />
@@ -4492,12 +4518,12 @@ const ConsultationModal = ({
                   </label>
                   {trialUsesManualClass && (
                     <label className="space-y-2 text-sm lg:col-span-2">
-                      <span className="text-slate-500 dark:text-slate-400">其他班级</span>
+                      <span className={compactEditLabelClass}>其他班级</span>
                       <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
                     </label>
                   )}
                   <label className="space-y-2 text-sm lg:col-span-2">
-                    <span className="text-slate-500 dark:text-slate-400">试听反馈</span>
+                    <span className={compactEditLabelClass}>试听反馈</span>
                     <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="记录试听反馈、适配程度、下一步安排" />
                   </label>
                 </div>
@@ -4505,12 +4531,12 @@ const ConsultationModal = ({
             )}
 
             <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
-              <p className={compactFlowTitleClass}>结果与备注</p>
+              <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
             {(showSuccessFields || !readOnly) && (
               <div ref={successSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">班级</span>
+                    <span className={compactEditLabelClass}>班级</span>
                     <select
                       value={successUsesManualClass ? '__other__' : form.success_class_id ?? ''}
                       onChange={(e) => {
@@ -4534,7 +4560,7 @@ const ConsultationModal = ({
                   </label>
                   {successUsesManualClass && (
                     <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">其他班级</span>
+                      <span className={compactEditLabelClass}>其他班级</span>
                       <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
                     </label>
                   )}
@@ -4542,15 +4568,27 @@ const ConsultationModal = ({
               </div>
             )}
 
+            {(showSuccessFields || !readOnly) && (
+              <label className="space-y-2 text-sm">
+                <span className={compactEditLabelClass}>收费排卡</span>
+                <select value={form.payment_card_status} onChange={(e) => updateField('payment_card_status', e.target.value)} disabled={readOnly} className={fieldClass}>
+                  <option value="">未记录</option>
+                  {consultationPaymentCardStatusOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             {(showEndFields || !readOnly) && (
               <label ref={endSectionRef} className="scroll-mt-6 space-y-2 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">咨询结束备注</span>
+                <span className={compactEditLabelClass}>咨询结束备注</span>
                 <textarea value={form.end_note} onChange={(e) => updateField('end_note', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="可以为空；用于说明为什么结束、后续是否还可能重新沟通" />
               </label>
             )}
 
             <label className="space-y-2 text-sm">
-              <span className="text-slate-500 dark:text-slate-400">跟进备注（内部）</span>
+              <span className={compactEditLabelClass}>跟进备注（内部）</span>
               <textarea value={form.follow_up_note} onChange={(e) => updateField('follow_up_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} placeholder="补充后续跟进安排或内部提醒" />
             </label>
 
