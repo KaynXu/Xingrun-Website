@@ -3567,6 +3567,12 @@ const consultationStageShortLabel = (stage: string) => {
   return stage;
 };
 
+const consultationResultShortLabel = (stage: string) => {
+  if (stage === '成功进班') return '进';
+  if (stage === '试听失败') return '败';
+  return '';
+};
+
 const ConsultationStatusLamp = ({ stage }: { stage: string }) => {
   const status = deriveConsultationDisplayStatus(stage);
   const lampClass = stage === '咨询结束'
@@ -3605,6 +3611,7 @@ const ConsultationResultCapsule = ({
   const active = isConsultationResultStage(stage);
   const completed = Boolean(completedResultStage) && !blockedByCurrentProcess;
   const resultLabel = resultStage === '试听失败' ? '😢 试听未成' : '☀️ 成功进班';
+  const resultShortLabel = consultationResultShortLabel(resultStage);
   return (
     <div
       title={resultStage || '成功进班'}
@@ -3625,14 +3632,14 @@ const ConsultationResultCapsule = ({
       >
         {compact ? (
           <>
-            <span className="hidden min-[520px]:inline">{resultLabel}</span>
-            <span className="min-[520px]:hidden">成/败</span>
+            <span className="hidden min-[640px]:inline">{resultLabel}</span>
+            <span className="min-[640px]:hidden">{resultShortLabel}</span>
           </>
         ) : (
           resultLabel
         )}
       </button>
-      <div className={`${showJumpAction ? 'mr-10' : 'mr-0.5'} relative flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm dark:bg-slate-900/70 dark:text-slate-300`}>
+      <div className={`${showJumpAction ? 'mr-5' : 'mr-0.5'} relative flex ${compact ? 'h-6 w-6' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm dark:bg-slate-900/70 dark:text-slate-300`}>
         <ChevronDown size={compact ? 11 : 13} className="pointer-events-none" />
         <select
           value={resultStage}
@@ -3659,11 +3666,11 @@ const ConsultationResultCapsule = ({
             event.stopPropagation();
             onJump?.();
           }}
-          className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="absolute right-0.5 top-1/2 flex h-7 w-4 -translate-y-1/2 items-center justify-center rounded-md bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
           aria-label="跳转到结果编辑栏"
           title="跳转到结果编辑栏"
         >
-          <ArrowRight size={14} />
+          <ArrowRight size={10} />
         </button>
       ) : null}
     </div>
@@ -3706,8 +3713,8 @@ const ConsultationFlowBar = ({
   const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
   return (
     <div className={compact
-      ? 'grid w-full min-w-0 grid-cols-[repeat(5,minmax(1.75rem,1fr))_minmax(3.8rem,1fr)] gap-1 min-[520px]:grid-cols-[repeat(5,minmax(3.85rem,1fr))_minmax(4.7rem,1fr)] min-[520px]:gap-1.5'
-      : 'grid w-full min-w-0 grid-cols-[repeat(5,minmax(1.75rem,1fr))_minmax(3.8rem,1fr)] gap-1 min-[640px]:grid-cols-[repeat(5,minmax(5.8rem,1fr))_minmax(6.8rem,1fr)] min-[640px]:gap-1.5'
+      ? 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(1.75rem,1fr))] gap-1 min-[520px]:grid-cols-[repeat(6,minmax(3.85rem,1fr))] min-[520px]:gap-1.5'
+      : 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(1.75rem,1fr))] gap-1 min-[640px]:grid-cols-[repeat(6,minmax(5.8rem,1fr))] min-[640px]:gap-1.5'
     }>
       {consultationProcessStages.map((item) => {
         const stageIndex = consultationProcessStages.indexOf(item);
@@ -3748,11 +3755,11 @@ const ConsultationFlowBar = ({
                   event.stopPropagation();
                   onStageJump?.(item);
                 }}
-                className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="mr-0.5 flex h-7 w-4 shrink-0 items-center justify-center rounded-md bg-white/70 text-slate-500 shadow-sm transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
                 aria-label={`跳转到${item}编辑栏`}
                 title={`跳转到${item}编辑栏`}
               >
-                <ArrowRight size={14} />
+                <ArrowRight size={10} />
               </button>
             )}
           </div>
@@ -3775,6 +3782,7 @@ const ConsultationFlowBar = ({
 };
 
 const compactFlowSectionClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
+const consultationJumpHighlightClass = 'ring-2 ring-sky-300 bg-sky-50/80 shadow-[0_0_0_4px_rgba(14,165,233,0.12)] dark:bg-sky-400/10 dark:ring-sky-400/50';
 const compactFieldGridClass = 'grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2';
 const compactFlowTitleClass = (active = false) => cn(
   'mb-2 text-[13px] font-extrabold tracking-[0.1em] transition-colors',
@@ -3942,6 +3950,7 @@ const ConsultationModal = ({
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   const [trialManualClassActive, setTrialManualClassActive] = useState(false);
   const [successManualClassActive, setSuccessManualClassActive] = useState(false);
+  const [highlightedJumpStage, setHighlightedJumpStage] = useState<string>('');
   const formScrollRef = useRef<HTMLFormElement | null>(null);
   const baseInfoRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -3949,6 +3958,7 @@ const ConsultationModal = ({
   const trialSectionRef = useRef<HTMLDivElement | null>(null);
   const successSectionRef = useRef<HTMLDivElement | null>(null);
   const endSectionRef = useRef<HTMLLabelElement | null>(null);
+  const jumpHighlightTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -3964,10 +3974,17 @@ const ConsultationModal = ({
       setQuickEntry('');
       setParseFeedback('');
       setConfirmRestoreOpen(false);
+      setHighlightedJumpStage('');
       setTrialManualClassActive(Boolean(defaultAssignedValues.trial_class_manual && !defaultAssignedValues.trial_class_id));
       setSuccessManualClassActive(Boolean(defaultAssignedValues.success_class_manual && !defaultAssignedValues.success_class_id));
     }
   }, [open, mode, record, currentUser]);
+
+  useEffect(() => () => {
+    if (jumpHighlightTimerRef.current !== null) {
+      window.clearTimeout(jumpHighlightTimerRef.current);
+    }
+  }, []);
 
   if (!open) {
     return null;
@@ -4073,7 +4090,12 @@ const ConsultationModal = ({
             : stage === '正在沟通细节'
               ? contentRef.current
               : baseInfoRef.current;
+    if (jumpHighlightTimerRef.current !== null) {
+      window.clearTimeout(jumpHighlightTimerRef.current);
+    }
+    setHighlightedJumpStage(stage);
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    jumpHighlightTimerRef.current = window.setTimeout(() => setHighlightedJumpStage(''), 900);
   };
 
   const handleSuccessClassChange = (value: string) => {
@@ -4096,6 +4118,12 @@ const ConsultationModal = ({
   const assignableClassOptions = selectedTeacher && teacherMatchedClasses.length > 0 ? teacherMatchedClasses : classes;
   const trialUsesManualClass = trialManualClassActive || Boolean(form.trial_class_manual.trim() && !form.trial_class_id);
   const successUsesManualClass = successManualClassActive || Boolean(form.success_class_manual.trim() && !form.success_class_id);
+  const baseInfoHighlighted = highlightedJumpStage === '已加小客服微信' || highlightedJumpStage === '已加对应教师微信';
+  const communicationHighlighted = highlightedJumpStage === '正在沟通细节';
+  const testHighlighted = highlightedJumpStage === '待测试';
+  const trialHighlighted = highlightedJumpStage === '待试听' || highlightedJumpStage === '试听失败';
+  const successHighlighted = highlightedJumpStage === '成功进班';
+  const endHighlighted = highlightedJumpStage === '咨询结束';
 
   const fieldClass = `${workspaceFieldClass} px-3 py-2 ${readOnly ? 'cursor-default' : ''}`;
   const sectionBoxClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
@@ -4311,7 +4339,7 @@ const ConsultationModal = ({
           </datalist>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <section ref={baseInfoRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
+            <section ref={baseInfoRef} className={cn(compactFlowSectionClass, 'min-h-[17rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
             <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2">
               <button
@@ -4385,9 +4413,9 @@ const ConsultationModal = ({
             </div>
           </section>
 
-            <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
+            <section ref={contentRef} className={cn(compactFlowSectionClass, 'min-h-[17rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
-            <label ref={contentRef} className="scroll-mt-6 space-y-2 text-sm">
+            <label className="scroll-mt-6 space-y-2 text-sm">
               <span className={compactEditLabelClass}>沟通ing：情况说明</span>
               <textarea
                 value={form.need_detail}
@@ -4400,7 +4428,7 @@ const ConsultationModal = ({
             </label>
 
             {(showTestFields || !readOnly) && (
-              <div ref={testSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
+              <div ref={testSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', testHighlighted && consultationJumpHighlightClass)}>
                 <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">测试</h5>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
@@ -4455,7 +4483,7 @@ const ConsultationModal = ({
             </section>
 
             {(showTrialFields || !readOnly) && (
-              <div ref={trialSectionRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
+              <div ref={trialSectionRef} className={cn(compactFlowSectionClass, 'min-h-[17rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
                 <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
@@ -4522,7 +4550,7 @@ const ConsultationModal = ({
             <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
               <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
             {(showSuccessFields || !readOnly) && (
-              <div ref={successSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
+              <div ref={successSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', successHighlighted && consultationJumpHighlightClass)}>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>班级</span>
@@ -4558,7 +4586,7 @@ const ConsultationModal = ({
             )}
 
             {(showEndFields || !readOnly) && (
-              <label ref={endSectionRef} className="scroll-mt-6 space-y-2 text-sm">
+              <label ref={endSectionRef} className={cn('scroll-mt-6 space-y-2 rounded-xl p-2 text-sm transition', endHighlighted && consultationJumpHighlightClass)}>
                 <span className={compactEditLabelClass}>咨询结束备注</span>
                 <textarea value={form.end_note} onChange={(e) => updateField('end_note', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="可以为空；用于说明为什么结束、后续是否还可能重新沟通" />
               </label>

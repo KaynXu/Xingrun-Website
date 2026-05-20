@@ -265,9 +265,9 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
 
   assert.ok(modalBlock);
   assert.match(modalBlock[0], /<div className="grid gap-3 md:grid-cols-2">/);
-  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6`\}>/);
-  assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>/);
-  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6`\}>/);
+  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[17rem\] scroll-mt-6'/);
+  assert.match(modalBlock[0], /<section ref=\{contentRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[17rem\] scroll-mt-6 space-y-3'/);
+  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[17rem\] scroll-mt-6'/);
   assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>[\s\S]*结果与备注/);
 });
 
@@ -371,6 +371,23 @@ test('consultation full flow bar keeps one-row short labels when modal width is 
   assert.match(flowBarBlock[0], /mode === 'full'/);
 });
 
+test('consultation result capsule matches stage widths and uses empty enter fail short labels', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
+
+  assert.ok(flowBarBlock);
+  assert.ok(resultCapsuleBlock);
+  assert.match(source, /const consultationResultShortLabel = \(stage: string\) => \{/);
+  assert.match(source, /if \(stage === '成功进班'\) return '进';/);
+  assert.match(source, /if \(stage === '试听失败'\) return '败';/);
+  assert.match(source, /return '';/);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(1\.75rem,1fr\)\)\]/);
+  assert.match(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(6,minmax\(5\.8rem,1fr\)\)\]/);
+  assert.match(resultCapsuleBlock[0], /consultationResultShortLabel\(resultStage\)/);
+  assert.doesNotMatch(resultCapsuleBlock[0], /成\/败/);
+});
+
 test('consultation modal places flow subtitle and status lamp beside the title', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
@@ -400,6 +417,28 @@ test('consultation modal flow capsules jump to matching edit sections without ch
   assert.match(modalBlock[0], /target\?\.scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\);/);
   assert.match(modalBlock[0], /showJumpActions=\{!readOnly\}/);
   assert.match(modalBlock[0], /onStageJump=\{handleStageJump\}/);
+});
+
+test('consultation modal uses slim jump buttons and flashes the jumped edit section', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.ok(flowBarBlock);
+  assert.ok(resultCapsuleBlock);
+  assert.match(source, /const consultationJumpHighlightClass = /);
+  assert.match(modalBlock[0], /const \[highlightedJumpStage, setHighlightedJumpStage\] = useState<string>\(''\);/);
+  assert.match(modalBlock[0], /const jumpHighlightTimerRef = useRef<number \| null>\(null\);/);
+  assert.match(modalBlock[0], /setHighlightedJumpStage\(stage\);/);
+  assert.match(modalBlock[0], /window\.setTimeout\(\(\) => setHighlightedJumpStage\(''\), 900\)/);
+  assert.match(modalBlock[0], /highlightedJumpStage === '已加小客服微信'/);
+  assert.match(modalBlock[0], /highlightedJumpStage === '正在沟通细节'/);
+  assert.match(modalBlock[0], /highlightedJumpStage === '成功进班'/);
+  assert.match(flowBarBlock[0], /className="mr-0\.5 flex h-7 w-4/);
+  assert.match(resultCapsuleBlock[0], /className="absolute right-0\.5 top-1\/2 flex h-7 w-4/);
+  assert.doesNotMatch(flowBarBlock[0], /h-8 w-8/);
 });
 
 test('consultation source restores ended records only after an explicit yes no confirmation', () => {
@@ -488,8 +527,8 @@ test('consultation page source keeps desktop and tablet consultations as two-row
 
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
   assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(5,minmax\(1\.75rem,1fr\)\)_minmax\(3\.8rem,1fr\)\]/);
-  assert.match(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(5,minmax\(5\.8rem,1fr\)\)_minmax\(6\.8rem,1fr\)\]/);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(1\.75rem,1fr\)\)\]/);
+  assert.match(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(6,minmax\(5\.8rem,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /onStageDoubleClick/);
   assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });
