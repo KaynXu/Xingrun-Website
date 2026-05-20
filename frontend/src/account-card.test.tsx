@@ -388,6 +388,21 @@ test('consultation result capsule matches stage widths and uses empty enter fail
   assert.doesNotMatch(resultCapsuleBlock[0], /成\/败/);
 });
 
+test('consultation full result capsule keeps the same height as the five process capsules', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
+
+  assert.ok(flowBarBlock);
+  assert.ok(resultCapsuleBlock);
+  assert.match(resultCapsuleBlock[0], /useResponsiveShortLabel\?: boolean/);
+  assert.match(resultCapsuleBlock[0], /const useShortLabel = compact \|\| useResponsiveShortLabel;/);
+  assert.match(resultCapsuleBlock[0], /\$\{compact \? 'h-8 text-\[10px\]' : 'h-\[42px\] text-xs'\}/);
+  assert.match(flowBarBlock[0], /compact=\{compact\}/);
+  assert.match(flowBarBlock[0], /useResponsiveShortLabel=\{fullUsesOneRow\}/);
+  assert.doesNotMatch(flowBarBlock[0], /compact=\{compact \|\| fullUsesOneRow\}/);
+});
+
 test('consultation full flow bar avoids fixed minimum columns that can push the result capsule outside the modal', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);

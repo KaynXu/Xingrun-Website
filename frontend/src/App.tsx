@@ -3604,6 +3604,7 @@ const ConsultationResultCapsule = ({
   onResultClick?: () => void;
   onResultDoubleClick?: () => void;
   showJumpAction?: boolean;
+  useResponsiveShortLabel?: boolean;
   onJump?: () => void;
 }) => {
   const completedResultStage = (completedStages || []).find(isConsultationResultStage) || '';
@@ -3612,6 +3613,7 @@ const ConsultationResultCapsule = ({
   const completed = Boolean(completedResultStage) && !blockedByCurrentProcess;
   const resultLabel = resultStage === '试听失败' ? '😢 试听未成' : '☀️ 成功进班';
   const resultShortLabel = consultationResultShortLabel(resultStage);
+  const useShortLabel = compact || useResponsiveShortLabel;
   return (
     <div
       title={resultStage || '成功进班'}
@@ -3630,7 +3632,7 @@ const ConsultationResultCapsule = ({
         onDoubleClick={onResultDoubleClick}
         className={`min-w-0 flex-1 overflow-hidden text-ellipsis ${showJumpAction ? 'pl-3 pr-9' : compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        {compact ? (
+        {useShortLabel ? (
           <>
             <span className="hidden min-[720px]:inline">{resultLabel}</span>
             <span className="min-[720px]:hidden">{resultShortLabel}</span>
@@ -3769,12 +3771,13 @@ const ConsultationFlowBar = ({
         stage={currentStage}
         completedStages={completedStages}
         blockedByCurrentProcess={currentProcessIndex >= 0}
-        compact={compact || fullUsesOneRow}
+        compact={compact}
         editable={editable && !ended}
         onResultChange={onResultChange}
         onResultClick={onResultClick}
         onResultDoubleClick={onResultDoubleClick}
         showJumpAction={showJumpActions}
+        useResponsiveShortLabel={fullUsesOneRow}
         onJump={() => onStageJump?.(isConsultationResultStage(currentStage) ? currentStage : '成功进班')}
       />
     </div>
