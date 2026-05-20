@@ -396,6 +396,7 @@ test('consultation full result capsule keeps the same height as the five process
   assert.ok(flowBarBlock);
   assert.ok(resultCapsuleBlock);
   assert.match(resultCapsuleBlock[0], /useResponsiveShortLabel\?: boolean/);
+  assert.match(resultCapsuleBlock[0], /useResponsiveShortLabel = false,/);
   assert.match(resultCapsuleBlock[0], /const useShortLabel = compact \|\| useResponsiveShortLabel;/);
   assert.match(resultCapsuleBlock[0], /\$\{compact \? 'h-8 text-\[10px\]' : 'h-\[42px\] text-xs'\}/);
   assert.match(flowBarBlock[0], /compact=\{compact\}/);

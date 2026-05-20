@@ -3593,6 +3593,7 @@ const ConsultationResultCapsule = ({
   onResultClick,
   onResultDoubleClick,
   showJumpAction = false,
+  useResponsiveShortLabel = false,
   onJump,
 }: {
   stage: string;
