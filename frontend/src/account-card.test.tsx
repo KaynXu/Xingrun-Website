@@ -305,6 +305,20 @@ test('consultation edit form uses assignment teacher dropdown and scoped class o
   assert.doesNotMatch(modalBlock[0], /若没找到对应班级，可以直接手动输入/);
 });
 
+test('consultation edit form keeps wechat status capsules compressed in one row without visible teacher chevron', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /grid grid-cols-\[minmax\(0,0\.82fr\)_minmax\(0,1\.18fr\)\] gap-2/);
+  assert.match(modalBlock[0], /<span className="min-w-0 truncate">客服微信：/);
+  assert.match(modalBlock[0], /<span className="pointer-events-none absolute inset-x-3 top-1\/2 z-10 min-w-0 -translate-y-1\/2 truncate text-center">/);
+  assert.match(modalBlock[0], /className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-3 text-transparent outline-none"/);
+  const teacherCapsuleBlock = modalBlock[0].match(/负责老师VX：[\s\S]*?aria-label="选择负责老师"[\s\S]*?<\/label>/);
+  assert.ok(teacherCapsuleBlock);
+  assert.doesNotMatch(teacherCapsuleBlock[0], /ChevronDown/);
+});
+
 test('consultation edit form highlights changed section titles and uses teacher dropdowns', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);

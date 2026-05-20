@@ -4313,29 +4313,25 @@ const ConsultationModal = ({
           <div className="grid gap-3 md:grid-cols-2">
             <section ref={baseInfoRef} className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6`}>
             <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2">
               <button
                 type="button"
                 onClick={() => setForm((current) => toggleConsultationStageLight(current, '已加小客服微信'))}
                 disabled={readOnly || stageFrozen}
-                className={compactStatusClass(customerWechatDone)}
+                className={cn(compactStatusClass(customerWechatDone), 'min-w-0 px-3')}
               >
-                <span>客服微信：{customerWechatDone ? '已添加' : '未添加'}</span>
-                {customerWechatDone ? <CheckCircle2 size={18} /> : null}
+                <span className="min-w-0 truncate">客服微信：{customerWechatDone ? '已添加' : '未添加'}</span>
+                {customerWechatDone ? <CheckCircle2 size={18} className="shrink-0" /> : null}
               </button>
-              <label className={cn(compactStatusClass(teacherWechatDone), 'relative p-0')}>
-                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2">
+              <label className={cn(compactStatusClass(teacherWechatDone), 'relative min-w-0 p-0')}>
+                <span className="pointer-events-none absolute inset-x-3 top-1/2 z-10 min-w-0 -translate-y-1/2 truncate text-center">
                   负责老师VX：{form.receiving_teacher || '未选择'}
-                </span>
-                <span className="pointer-events-none absolute right-4 top-1/2 z-10 flex -translate-y-1/2 items-center gap-2">
-                  {teacherWechatDone ? <CheckCircle2 size={18} /> : null}
-                  <ChevronDown size={16} />
                 </span>
                 <select
                   value={form.teacher_id}
                   onChange={(e) => handleTeacherChange(e.target.value)}
                   disabled={readOnly || stageFrozen}
-                  className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-4 text-transparent outline-none"
+                  className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-3 text-transparent outline-none"
                   aria-label="选择负责老师"
                 >
                   <option value="">请选择老师</option>
