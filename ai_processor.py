@@ -361,9 +361,12 @@ items 中每一项必须包含：
 - wrong_question_record_id: string，必须与输入题目里的 wrong_question_record_id 完全一致
 - reason_blank_prompt: string，用于第一个书写区。请写成多行字符串：第一行是这个书写区的小标题；后续内容必须是简短挖空题正文，不要写成开放问答或长段分析。只需要围绕错因做轻引导，让孩子自己补出原因
 - improvement_summary_prompt: string，用于第二个书写区。请写成多行字符串：第一行是这个书写区的小标题；后续内容也必须是简短挖空题正文，不要写成大段自由总结。只需要轻轻引导孩子写“接下来准备怎么补、以后做题先提醒自己什么”
+- answer: string，用于 PDF 最后的“答案与关键步骤”页，必须是这道题的标准答案或结论
+- key_steps: array[string]，用于 PDF 最后的“答案与关键步骤”页，必须是推出答案的 2 到 4 个关键步骤
+- pitfall_reminder: string，用于 PDF 最后的“答案与关键步骤”页，提醒本题最容易再次犯的 1 个错误
 
 严格规则：
-1. 不要直接给出原题答案，不要提示孩子该怎样把这道题一步一步做对。
+1. 不要在 reason_blank_prompt 或 improvement_summary_prompt 里直接给出原题答案，也不要在这两个学生书写区里提示孩子该怎样把这道题一步一步做对；标准答案和关键步骤只允许放在 answer、key_steps、pitfall_reminder 字段里。
 2. 生成内容主要依据孩子自述错因、顶层错因分类和补充备注；题目内容必须用于提取本题的对象、条件、问法或符号，让填空题具像到这道题，但不要把重点放在讲题上。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
@@ -379,7 +382,8 @@ items 中每一项必须包含：
 14. 句子要自然，适合小学/初中学生抄写和填写，不要出现工程术语。
 15. 像复习计划里的填空题一样，把空放在“本题具体要核对的词、条件、关系、范围、单位、顺序”上；避免只写“这题可能因为对 ______ 的性质理解不透彻”这种泛化句。
 16. 示例：若题目出现“定义域 [m-4,3m]、x∈[0,3m]、f(x) 单调递减、比较 f(x+1) 与 f(2x-m)”，不要写“复习函数定义和性质”；可以写“本题先核对两个自变量 x+1、2x-m 是否都落在 ______，再利用 f(x) 单调递减把 f(x+1)>f(2x-m) 转成 ______ 的不等式。”
-17. title 控制在 8 到 24 个字。"""
+17. answer 要简洁准确；key_steps 要能独立解释答案从哪里来，不要只写“计算可得”“由题意得”这类空泛步骤。
+18. title 控制在 8 到 24 个字。"""
 
 WRONG_QUESTION_PRACTICE_PACK_VARIANT_PROMPT = """你是错题练习变式题设计助手。
 你会收到某个学生的真实错题、目标复习方向和需要补足的题数。请生成同错因变式题。
@@ -764,6 +768,14 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
         ai_hint = str(source.get("ai_hint") or "").strip()
         reason_blank_prompt = str(source.get("reason_blank_prompt") or "").strip()
         improvement_summary_prompt = str(source.get("improvement_summary_prompt") or "").strip()
+        answer = str(source.get("answer") or "").strip()
+        key_steps = source.get("key_steps")
+        normalized_key_steps = [
+            str(step or "").strip()
+            for step in (key_steps if isinstance(key_steps, list) else [])
+            if str(step or "").strip()
+        ]
+        pitfall_reminder = str(source.get("pitfall_reminder") or "").strip()
 
         reason_blank_prompt = reason_blank_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
         improvement_summary_prompt = improvement_summary_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -794,7 +806,13 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
             else:
                 improvement_summary_prompt = improvement_lines[0]
 
-        if not wrong_question_record_id or not reason_blank_prompt or not improvement_summary_prompt:
+        if (
+            not wrong_question_record_id
+            or not reason_blank_prompt
+            or not improvement_summary_prompt
+            or not answer
+            or not normalized_key_steps
+        ):
             raise ValueError("wrong question practice sheet generation failed")
 
         normalized_items.append(
@@ -803,6 +821,9 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
                 "ai_hint": ai_hint,
                 "reason_blank_prompt": reason_blank_prompt,
                 "improvement_summary_prompt": improvement_summary_prompt,
+                "answer": answer,
+                "key_steps": normalized_key_steps,
+                "pitfall_reminder": pitfall_reminder,
             }
         )
 
