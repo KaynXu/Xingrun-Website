@@ -202,6 +202,20 @@ test('consultation modal source includes stage-specific test and trial fields', 
   assert.match(modalBlock[0], /成功进班必须选择或填写班级/);
 });
 
+test('consultation view mode uses a read-only report layout instead of disabled edit fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(source, /const ConsultationReadOnlyReport = \(/);
+  assert.match(modalBlock[0], /readOnly \? \(/);
+  assert.match(modalBlock[0], /<ConsultationReadOnlyReport/);
+  assert.match(source, /沟通ing：情况说明/);
+  assert.match(source, /测试情况图片/);
+  assert.match(source, /录入时间/);
+  assert.match(source, /最后更新/);
+});
+
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
@@ -258,7 +272,7 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.match(consultationPageBlock[0], /const needDetail = record\.need_detail\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /咨询详情：\{needDetail\}/);
-  assert.match(consultationPageBlock[0], /line-clamp-2 text-slate-500/);
+  assert.match(consultationPageBlock[0], /line-clamp-2/);
   assert.match(consultationPageBlock[0], /跟进：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
@@ -270,10 +284,10 @@ test('consultation page source keeps the desktop grade column on one line with t
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /grid-cols-\[repeat\(auto-fit,minmax\(7\.25rem,1fr\)\)\]/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(8\.5rem,0\.82fr\)_minmax\(10rem,1fr\)_minmax\(11rem,1\.12fr\)\]/);
   assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">年级<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap font-semibold text-slate-700 dark:text-slate-200">\{record\.grade \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">咨询老师<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 truncate font-semibold text-slate-700 dark:text-slate-200">\{record\.grade \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">咨询教师<\/p>/);
 });
 
 test('consultation page source top-aligns desktop cells so the first text rows stay visually aligned', () => {
@@ -281,9 +295,9 @@ test('consultation page source top-aligns desktop cells so the first text rows s
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">\{record\.date \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">\{record\.date \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
   assert.match(consultationPageBlock[0], /items-center gap-2 bg-slate-50\/60 px-5 py-4/);
 });
 
@@ -301,8 +315,8 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   assert.match(consultationPageBlock[0], /md:hidden/);
   assert.match(consultationPageBlock[0], /onClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
   assert.match(source, /window\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)/);
-  assert.match(consultationPageBlock[0], /<p className="mt-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
   assert.doesNotMatch(consultationPageBlock[0], /2xl:hidden/);
   assert.doesNotMatch(consultationPageBlock[0], /hidden 2xl:block/);
 

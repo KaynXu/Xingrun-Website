@@ -3737,6 +3737,158 @@ const ConsultationFlowBar = ({
   );
 };
 
+const ConsultationReadOnlyReport = ({
+  form,
+  record,
+  classes,
+}: {
+  form: ConsultationFormValues;
+  record: ConsultationRecord | null;
+  classes: ClassItem[];
+}) => {
+  const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
+  const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
+  const trialClassName = classes.find((item) => item.id === form.trial_class_id)?.name;
+  const successClassName = classes.find((item) => item.id === form.success_class_id)?.name;
+  const resultLabel = form.flow_stage === '成功进班'
+    ? '咨询成功'
+    : form.flow_stage === '试听失败' || form.flow_stage === '咨询结束'
+      ? '咨询失败'
+      : '尚未定论';
+  const value = (text?: string | null) => text?.trim() || '—';
+  const reportBoxClass = 'rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70';
+  const labelClass = 'text-xs font-semibold uppercase tracking-[0.12em] text-slate-400';
+  const valueClass = 'mt-1 whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700 dark:text-slate-200';
+
+  return (
+    <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5`}>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className={cn(reportBoxClass, customerWechatDone ? 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/10' : '')}>
+          <p className={labelClass}>客服微信</p>
+          <p className="mt-2 flex items-center justify-between text-base font-bold text-emerald-700 dark:text-emerald-300">
+            {customerWechatDone ? '已添加' : '未添加'}
+            {customerWechatDone ? <CheckCircle2 size={18} /> : null}
+          </p>
+        </div>
+        <div className={cn(reportBoxClass, teacherWechatDone ? 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-400/20 dark:bg-emerald-500/10' : '')}>
+          <p className={labelClass}>教师微信</p>
+          <p className="mt-2 flex items-center justify-between text-base font-bold text-emerald-700 dark:text-emerald-300">
+            {teacherWechatDone ? '已添加' : '未添加'}
+            {teacherWechatDone ? <CheckCircle2 size={18} /> : null}
+          </p>
+        </div>
+      </div>
+
+      <div className={reportBoxClass}>
+        <p className={labelClass}>基础信息</p>
+        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div><span className="text-slate-400">咨询日期：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.date)}</span></div>
+          <div><span className="text-slate-400">家长微信：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.parent_wechat_name)}</span></div>
+          <div><span className="text-slate-400">学生：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.child_name)}</span></div>
+          <div><span className="text-slate-400">年级：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.grade)}</span></div>
+          <div><span className="text-slate-400">咨询老师：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.receiving_teacher)}</span></div>
+          <div><span className="text-slate-400">科目：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.consultation_subject)}</span></div>
+          <div className="sm:col-span-2"><span className="text-slate-400">来源：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value([form.source_channel, form.source_channel_note].filter(Boolean).join(' · '))}</span></div>
+        </div>
+      </div>
+
+      <div className={reportBoxClass}>
+        <p className={labelClass}>沟通ing：情况说明</p>
+        <p className={valueClass}>{value(form.need_detail)}</p>
+      </div>
+
+      <div className={reportBoxClass}>
+        <p className={labelClass}>待测试</p>
+        <div className="mt-3 grid gap-3 text-sm md:grid-cols-[12rem_minmax(0,1fr)]">
+          <div>
+            <p className="text-slate-400">是否测试</p>
+            <p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{value(form.test_taken)}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">测试情况图片</p>
+            {form.test_images.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {form.test_images.map((image, index) => (
+                  <a
+                    key={`${image.url}-${index}`}
+                    href={image.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group block overflow-hidden rounded-xl border border-sky-100 bg-sky-50 dark:border-white/10 dark:bg-white/5"
+                  >
+                    <img src={image.url} alt={`测试情况图片 ${index + 1}`} className="h-20 w-28 object-cover transition group-hover:scale-105" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-slate-500 dark:text-slate-400">暂无图片</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className={reportBoxClass}>
+        <p className={labelClass}>待试听</p>
+        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div><span className="text-slate-400">是否试听：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.trial_taken)}</span></div>
+          <div><span className="text-slate-400">试听教师：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.trial_teacher)}</span></div>
+          <div><span className="text-slate-400">对应班课：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(trialClassName || form.trial_class_manual)}</span></div>
+          <div><span className="text-slate-400">试听时间段：</span><span className="font-semibold text-slate-700 dark:text-slate-200">{value(form.trial_time_slot)}</span></div>
+        </div>
+        <div className="mt-3 border-t border-sky-50 pt-3 dark:border-white/10">
+          <p className="text-slate-400">试听反馈</p>
+          <p className={valueClass}>{value(form.trial_feedback)}</p>
+        </div>
+      </div>
+
+      <div className={reportBoxClass}>
+        <p className={labelClass}>成功进班 / 咨询结束</p>
+        <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+          <div>
+            <p className="text-slate-400">结果</p>
+            <p className={cn(
+              'mt-1 inline-flex rounded-full px-3 py-1 text-sm font-bold',
+              resultLabel === '咨询成功'
+                ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300'
+                : resultLabel === '咨询失败'
+                  ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300'
+                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300',
+            )}>
+              {resultLabel}
+            </p>
+          </div>
+          <div>
+            <p className="text-slate-400">班级</p>
+            <p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{value(successClassName || form.success_class_manual)}</p>
+          </div>
+        </div>
+        <div className="mt-3 border-t border-sky-50 pt-3 dark:border-white/10">
+          <p className="text-slate-400">咨询结束备注</p>
+          <p className={valueClass}>{value(form.end_note)}</p>
+        </div>
+      </div>
+
+      <div className={reportBoxClass}>
+        <p className={labelClass}>跟进备注（内部）</p>
+        <p className={valueClass}>{value(form.follow_up_note)}</p>
+      </div>
+
+      {record && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className={reportBoxClass}>
+            <p className={labelClass}>录入时间</p>
+            <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
+          </div>
+          <div className={reportBoxClass}>
+            <p className={labelClass}>最后更新</p>
+            <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
 const ConsultationModal = ({
   open,
   mode,
@@ -4043,6 +4195,10 @@ const ConsultationModal = ({
             />
           </section>
 
+          {readOnly ? (
+            <ConsultationReadOnlyReport form={form} record={record} classes={classes} />
+          ) : (
+            <>
           {!readOnly && (
             <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
@@ -4191,7 +4347,7 @@ const ConsultationModal = ({
                     </select>
                   </label>
                   <div className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">测试情况</span>
+                    <span className="text-slate-500 dark:text-slate-400">测试情况图片</span>
                     {!readOnly && record ? (
                       <label className={`${workspaceSecondaryButtonClass} w-full cursor-pointer justify-center`}>
                         <Upload size={17} />
@@ -4257,7 +4413,7 @@ const ConsultationModal = ({
                     </select>
                   </label>
                   <label className="space-y-2 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">时间段</span>
+                    <span className="text-slate-500 dark:text-slate-400">试听时间段</span>
                     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                       <ArrowRight size={18} className="text-slate-400" />
                       <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="如：周六 10:00-12:00" />
@@ -4321,6 +4477,8 @@ const ConsultationModal = ({
               </div>
             )}
           </section>
+            </>
+          )}
 
           <div className="mt-5 flex flex-col gap-3 border-t border-sky-100/80 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:pt-5 dark:border-white/10">
             <div className="text-sm text-slate-500 dark:text-slate-400">
