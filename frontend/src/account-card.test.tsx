@@ -230,7 +230,7 @@ test('consultation modal uses compact flow sections for both editing and viewing
   assert.doesNotMatch(source, /shadow-\[0_14px_35px_rgba\(14,165,233,0\.06\)\]/);
 });
 
-test('consultation view modal hides the title header and uses four vertical report cards', () => {
+test('consultation view modal hides the title header and uses a two by two report grid', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
@@ -239,8 +239,10 @@ test('consultation view modal hides the title header and uses four vertical repo
   assert.ok(reportBlock);
   assert.match(modalBlock[0], /hiddenForViewHeaderClass/);
   assert.match(modalBlock[0], /\$\{readOnly \? hiddenForViewHeaderClass : ''\}/);
-  assert.match(reportBlock[0], /lg:grid-cols-4/);
-  assert.match(reportBlock[0], /min-h-\[18rem\]/);
+  assert.match(reportBlock[0], /lg:grid-cols-2/);
+  assert.match(reportBlock[0], /min-h-\[17rem\]/);
+  assert.doesNotMatch(reportBlock[0], /lg:grid-cols-4/);
+  assert.match(reportBlock[0], />试听</);
 });
 
 test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {
@@ -252,6 +254,17 @@ test('consultation full flow bar keeps one-row short labels when modal width is 
   assert.match(flowBarBlock[0], /min-\[640px\]:inline/);
   assert.match(flowBarBlock[0], /consultationStageShortLabel\(item\)/);
   assert.match(flowBarBlock[0], /mode === 'full'/);
+});
+
+test('consultation modal places flow subtitle and status lamp beside the title', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /flowHeaderMetaClass/);
+  assert.match(modalBlock[0], /咨询流程<\/h4>[\s\S]*当前咨询的完整流程位置/);
+  assert.match(modalBlock[0], /当前咨询的完整流程位置[\s\S]*<ConsultationStatusLamp stage=\{form\.flow_stage\} \/>/);
+  assert.doesNotMatch(modalBlock[0], /<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">\s*\{readOnly \? '当前咨询的完整流程位置。'/);
 });
 
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {

@@ -3765,8 +3765,8 @@ const ConsultationReadOnlyReport = ({
   const value = (text?: string | null) => text?.trim() || '—';
 
   return (
-    <section className="grid gap-3 lg:grid-cols-4">
-      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
+    <section className="grid gap-3 lg:grid-cols-2">
+      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>基础信息</p>
         <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-1">
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
@@ -3781,7 +3781,7 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
+      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>沟通与测试</p>
         <div className="grid gap-3">
           <div>
@@ -3812,8 +3812,8 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
-        <p className={compactFlowTitleClass}>试听安排</p>
+      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
+        <p className={compactFlowTitleClass}>试听</p>
         <div className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-1">
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
           <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
@@ -3826,7 +3826,7 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[18rem]`}>
+      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
         <p className={compactFlowTitleClass}>结果与备注</p>
         <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
           <div>
@@ -4050,6 +4050,7 @@ const ConsultationModal = ({
   const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
   const hiddenForViewHeaderClass = 'hidden';
+  const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
 
   return (
     <motion.div
@@ -4118,14 +4119,14 @@ const ConsultationModal = ({
 
           <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h4 className="font-semibold text-slate-900 dark:text-white">咨询流程</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <span className={flowHeaderMetaClass}>
                   {readOnly ? '当前咨询的完整流程位置。' : '点击阶段框更新当前流程，未经历阶段保持灰色。'}
-                </p>
+                  <ConsultationStatusLamp stage={form.flow_stage} />
+                </span>
               </div>
               <div className="flex items-center gap-3">
-                <ConsultationStatusLamp stage={form.flow_stage} />
                 {!readOnly && (
                   <button
                     type="button"
