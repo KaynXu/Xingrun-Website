@@ -3908,6 +3908,16 @@ const ConsultationModal = ({
   };
 
   const fieldClass = `${workspaceFieldClass} ${readOnly ? 'cursor-default' : ''}`;
+  const sectionBoxClass = 'rounded-2xl border border-sky-100 bg-white/85 p-4 shadow-[0_14px_35px_rgba(14,165,233,0.06)] dark:border-white/10 dark:bg-slate-950/70';
+  const compactStatusClass = (active: boolean) => cn(
+    'inline-flex min-h-10 w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+    active
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
+      : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400',
+    readOnly || stageFrozen ? 'cursor-default' : 'hover:border-emerald-300 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/15',
+  );
+  const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
+  const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_images.length > 0;
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
   const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
@@ -4072,191 +4082,124 @@ const ConsultationModal = ({
             </section>
           )}
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <section ref={baseInfoRef} className={`${workspaceSoftCardClass} scroll-mt-6 space-y-4 p-4 sm:p-5`}>
-              <div>
-                <h4 className="font-semibold text-slate-900 dark:text-white">基础信息</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">日期、家长微信和咨询老师信息。</p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">日期</span>
-                  <input
-                    type="date"
-                    value={form.date}
-                    onChange={(e) => updateField('date', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">年级</span>
-                  <input
-                    type="text"
-                    value={form.grade}
-                    onChange={(e) => updateField('grade', e.target.value)}
-                    disabled={readOnly}
-                    list="consultation-grade-options"
-                    className={fieldClass}
-                    placeholder="如：三年级"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">家长微信名</span>
-                  <input
-                    type="text"
-                    value={form.parent_wechat_name}
-                    onChange={(e) => updateField('parent_wechat_name', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                    placeholder="家长微信昵称"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">孩子姓名</span>
-                  <input
-                    type="text"
-                    value={form.child_name}
-                    onChange={(e) => updateField('child_name', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                    placeholder="孩子姓名"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">咨询老师</span>
-                  <select
-                    value={form.teacher_id}
-                    onChange={(e) => handleTeacherChange(e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    <option value="">请选择老师</option>
-                    {teacherOptions.map((option) => (
-                      <option key={option.teacher_id} value={option.teacher_id}>
-                        {option.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </section>
+          <section ref={baseInfoRef} className={`${workspaceSoftCardClass} scroll-mt-6 space-y-5 p-4 sm:p-5`}>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setForm((current) => toggleConsultationStageLight(current, '已加小客服微信'))}
+                disabled={readOnly || stageFrozen}
+                className={compactStatusClass(customerWechatDone)}
+              >
+                <span>客服微信：{customerWechatDone ? '已添加' : '未添加'}</span>
+                {customerWechatDone ? <CheckCircle2 size={18} /> : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((current) => toggleConsultationStageLight(current, '已加对应教师微信'))}
+                disabled={readOnly || stageFrozen}
+                className={compactStatusClass(teacherWechatDone)}
+              >
+                <span>教师微信：{teacherWechatDone ? '已添加' : '未添加'}</span>
+                <span className="flex items-center gap-2">
+                  {teacherWechatDone ? <CheckCircle2 size={18} /> : null}
+                  <ChevronDown size={16} />
+                </span>
+              </button>
+            </div>
 
-            <section ref={contentRef} className={`${workspaceSoftCardClass} scroll-mt-6 space-y-4 p-4 sm:p-5`}>
-              <div>
-                <h4 className="font-semibold text-slate-900 dark:text-white">咨询内容</h4>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">咨询主题、需求和跟进状态。</p>
-              </div>
-              <div className="space-y-4">
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">咨询科目</span>
-                  <input
-                    type="text"
-                    value={form.consultation_subject}
-                    onChange={(e) => updateField('consultation_subject', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                    placeholder="咨询科目"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">来源渠道主类</span>
-                  <select
-                    value={form.source_channel}
-                    onChange={(e) => updateField('source_channel', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    <option value="">请选择来源渠道</option>
-                    {!consultationSourceOptions.includes(form.source_channel) && form.source_channel ? (
-                      <option value={form.source_channel}>{form.source_channel}</option>
-                    ) : null}
-                    {consultationSourceOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">来源渠道备注</span>
-                  <input
-                    type="text"
-                    value={form.source_channel_note}
-                    onChange={(e) => updateField('source_channel_note', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                    placeholder="例如：张妈妈转介绍 / 家长群看到后私聊"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">跟进状态</span>
-                  <select
-                    value={form.follow_up_status}
-                    onChange={(e) => updateField('follow_up_status', e.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    {consultationStatusOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </section>
+            <div className="grid gap-4 lg:grid-cols-5">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">日期</span>
+                <input type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} disabled={readOnly} className={fieldClass} />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">家长微信名</span>
+                <input value={form.parent_wechat_name} onChange={(e) => updateField('parent_wechat_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="家长微信昵称" />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">孩子姓名</span>
+                <input value={form.child_name} onChange={(e) => updateField('child_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="孩子姓名" />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">年级</span>
+                <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={readOnly} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">咨询老师</span>
+                <select value={form.teacher_id} onChange={(e) => handleTeacherChange(e.target.value)} disabled={readOnly} className={fieldClass}>
+                  <option value="">请选择老师</option>
+                  {teacherOptions.map((option) => (
+                    <option key={option.teacher_id} value={option.teacher_id}>{option.display_name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
-            <datalist id="consultation-grade-options">
-              {consultationGradeOptions.map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">咨询科目</span>
+                <input value={form.consultation_subject} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="咨询科目" />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">来源渠道主类</span>
+                <select value={form.source_channel} onChange={(e) => updateField('source_channel', e.target.value)} disabled={readOnly} className={fieldClass}>
+                  <option value="">请选择来源渠道</option>
+                  {!consultationSourceOptions.includes(form.source_channel) && form.source_channel ? (
+                    <option value={form.source_channel}>{form.source_channel}</option>
+                  ) : null}
+                  {consultationSourceOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">来源渠道备注</span>
+                <input value={form.source_channel_note} onChange={(e) => updateField('source_channel_note', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="例如：张妈妈转介绍" />
+              </label>
+            </div>
+          </section>
 
-            <section className={`${workspaceSoftCardClass} space-y-4 p-4 sm:p-5 lg:col-span-2`}>
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">咨询详情</span>
-                  <textarea
-                    value={form.need_detail}
-                    onChange={(e) => updateField('need_detail', e.target.value)}
-                    disabled={readOnly}
-                    rows={5}
-                    className={`${fieldClass} resize-none`}
-                    placeholder="家长本次咨询目标或诉求"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">跟进备注（内部）</span>
-                  <textarea
-                    value={form.follow_up_note}
-                    onChange={(e) => updateField('follow_up_note', e.target.value)}
-                    disabled={readOnly}
-                    rows={5}
-                    className={`${fieldClass} resize-none`}
-                    placeholder="补充后续跟进安排或内部提醒"
-                  />
-                </label>
-              </div>
-              {(showTestFields || !readOnly) && (
-                <div ref={testSectionRef} className="scroll-mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <h5 className="font-semibold text-slate-900 dark:text-white">待测试</h5>
-                  <div className="mt-3 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">是否测试</span>
-                      <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
-                        <option value="">未记录</option>
-                        <option value="是">是</option>
-                        <option value="否">否</option>
-                      </select>
-                    </label>
-                    {!readOnly && record && (
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">测试情况图片</span>
+          <datalist id="consultation-grade-options">
+            {consultationGradeOptions.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+
+          <section className={`${workspaceSoftCardClass} mt-5 space-y-5 p-4 sm:p-5`}>
+            <label ref={contentRef} className="scroll-mt-6 space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">沟通ing：情况说明</span>
+              <textarea
+                value={form.need_detail}
+                onChange={(e) => updateField('need_detail', e.target.value)}
+                disabled={readOnly}
+                rows={5}
+                className={`${fieldClass} resize-none`}
+                placeholder="家长本次咨询目标、问题背景、正在沟通的细节"
+              />
+            </label>
+
+            {(showTestFields || !readOnly) && (
+              <div ref={testSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
+                <h5 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">待测试</h5>
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">是否测试</span>
+                    <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+                      <option value="">未记录</option>
+                      <option value="是">是</option>
+                      <option value="否">否</option>
+                    </select>
+                  </label>
+                  <div className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">测试情况</span>
+                    {!readOnly && record ? (
+                      <label className={`${workspaceSecondaryButtonClass} w-full cursor-pointer justify-center`}>
+                        <Upload size={17} />
+                        添加图片
                         <input
                           type="file"
                           accept="image/png,image/jpeg,image/webp"
-                          className={workspaceFieldClass}
+                          className="hidden"
                           onChange={async (event) => {
                             const file = event.target.files?.[0];
                             if (!file || !record) return;
@@ -4271,87 +4214,102 @@ const ConsultationModal = ({
                           }}
                         />
                       </label>
+                    ) : (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">查看下方已上传图片</div>
                     )}
                   </div>
-                  {form.test_images.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {form.test_images.map((image, index) => (
-                        <a key={`${image.url}-${index}`} href={image.url} target="_blank" rel="noreferrer" className={workspaceSecondaryButtonClass}>
-                          查看图片 {index + 1}
-                        </a>
+                </div>
+                {form.test_images.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {form.test_images.map((image, index) => (
+                      <a key={`${image.url}-${index}`} href={image.url} target="_blank" rel="noreferrer" className={workspaceSecondaryButtonClass}>
+                        查看图片 {index + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(showTrialFields || !readOnly) && (
+              <div ref={trialSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
+                <h5 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">待试听</h5>
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">是否试听</span>
+                    <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+                      <option value="">未记录</option>
+                      <option value="是">是</option>
+                      <option value="否">否</option>
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">试听教师</span>
+                    <input value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="试听教师" />
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">对应班课</span>
+                    <select value={form.trial_class_id ?? ''} onChange={(e) => updateField('trial_class_id', e.target.value ? Number(e.target.value) : null)} disabled={readOnly} className={fieldClass}>
+                      <option value="">请选择系统班级</option>
+                      {classes.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {(showTrialFields || !readOnly) && (
-                <div ref={trialSectionRef} className="scroll-mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <h5 className="font-semibold text-slate-900 dark:text-white">待试听</h5>
-                  <div className="mt-3 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">是否试听</span>
-                      <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
-                        <option value="">未记录</option>
-                        <option value="是">是</option>
-                        <option value="否">否</option>
-                      </select>
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">试听时间段</span>
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">时间段</span>
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                      <ArrowRight size={18} className="text-slate-400" />
                       <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="如：周六 10:00-12:00" />
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">对应班课</span>
-                      <select value={form.trial_class_id ?? ''} onChange={(e) => updateField('trial_class_id', e.target.value ? Number(e.target.value) : null)} disabled={readOnly} className={fieldClass}>
-                        <option value="">请选择系统班级</option>
-                        {classes.map((item) => (
-                          <option key={item.id} value={item.id}>{item.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
-                      <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="手动输入班课" />
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">试听教师</span>
-                      <input value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass} />
-                    </label>
-                    <label className="space-y-2 text-sm md:col-span-2">
-                      <span className="text-slate-500 dark:text-slate-400">试听反馈</span>
-                      <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} />
-                    </label>
-                  </div>
+                    </div>
+                  </label>
+                  <label className="space-y-2 text-sm lg:col-span-2">
+                    <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
+                    <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="手动输入班课" />
+                  </label>
+                  <label className="space-y-2 text-sm lg:col-span-2">
+                    <span className="text-slate-500 dark:text-slate-400">试听反馈</span>
+                    <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="记录试听反馈、适配程度、下一步安排" />
+                  </label>
                 </div>
-              )}
-              {(showSuccessFields || !readOnly) && (
-                <div ref={successSectionRef} className="scroll-mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <h5 className="font-semibold text-slate-900 dark:text-white">成功进班</h5>
-                  <div className="mt-3 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">进班班级</span>
-                      <select value={form.success_class_id ?? ''} onChange={(e) => handleSuccessClassChange(e.target.value)} disabled={readOnly} className={fieldClass}>
-                        <option value="">请选择系统班级</option>
-                        {classes.map((item) => (
-                          <option key={item.id} value={item.id}>{item.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
-                      <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} />
-                    </label>
-                  </div>
+              </div>
+            )}
+
+            {(showSuccessFields || !readOnly) && (
+              <div ref={successSectionRef} className={`${sectionBoxClass} scroll-mt-6`}>
+                <h5 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">成功进班</h5>
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">班级</span>
+                    <select value={form.success_class_id ?? ''} onChange={(e) => handleSuccessClassChange(e.target.value)} disabled={readOnly} className={fieldClass}>
+                      <option value="">请选择系统班级</option>
+                      {classes.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">若没找到对应班级，可以直接手动输入</span>
+                    <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="手动输入班级" />
+                  </label>
                 </div>
-              )}
-              {(showEndFields || !readOnly) && (
-                <label ref={endSectionRef} className="scroll-mt-6 space-y-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">咨询结束备注</span>
-                  <textarea value={form.end_note} onChange={(e) => updateField('end_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} />
-                </label>
-              )}
-              {record && (
-                <div className="grid gap-3 sm:grid-cols-2">
+              </div>
+            )}
+
+            {(showEndFields || !readOnly) && (
+              <label ref={endSectionRef} className="scroll-mt-6 space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">咨询结束备注</span>
+                <textarea value={form.end_note} onChange={(e) => updateField('end_note', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="可以为空；用于说明为什么结束、后续是否还可能重新沟通" />
+              </label>
+            )}
+
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">跟进备注（内部）</span>
+              <textarea value={form.follow_up_note} onChange={(e) => updateField('follow_up_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} placeholder="补充后续跟进安排或内部提醒" />
+            </label>
+
+            {record && (
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">录入时间</p>
                   <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.created_at || '—'}</p>
@@ -4360,10 +4318,9 @@ const ConsultationModal = ({
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
                   <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.updated_at || '—'}</p>
                 </div>
-                </div>
-              )}
-            </section>
-          </div>
+              </div>
+            )}
+          </section>
 
           <div className="mt-5 flex flex-col gap-3 border-t border-sky-100/80 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:pt-5 dark:border-white/10">
             <div className="text-sm text-slate-500 dark:text-slate-400">
