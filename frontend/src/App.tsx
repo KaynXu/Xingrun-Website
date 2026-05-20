@@ -5346,10 +5346,29 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
                         <p className="mt-2 whitespace-nowrap font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
                       </div>
-                      <button type="button" onClick={() => openViewModal(record)} className={`${workspaceSecondaryButtonClass} h-9 px-3 text-xs`}>
-                        <Eye size={14} />
-                        查看
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openViewModal(record)}
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-600 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                          title="查看"
+                          aria-label="查看咨询"
+                        >
+                          <Eye size={13} />
+                        </button>
+                        {canEditConsultations && (
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(record)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20"
+                            title={isConsultationEnded(record.flow_stage) ? '查看结束备注' : '编辑这条咨询'}
+                            aria-label="编辑咨询"
+                            disabled={busy}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="pb-1">
                       <ConsultationFlowBar
@@ -5409,22 +5428,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                       </div>
                     </div>
 
-                    <div className={canManage ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}>
+                    <div className={canManage ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
                       {canEditConsultations && (
                         <>
                           <button
                             type="button"
-                            onClick={() => openEditModal(record)}
-                            className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 px-2 text-xs`}
-                            disabled={busy}
-                          >
-                            <Pencil size={14} />
-                            编辑
-                          </button>
-                          <button
-                            type="button"
                             onClick={() => handleInlineEndConsultation(record)}
-                            className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-rose-500 px-2 text-xs font-extrabold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
+                            className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-rose-500 px-3 text-xs font-extrabold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
                             disabled={busy}
                           >
                             OVER
@@ -5446,7 +5456,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                                   setDeletingId(null);
                                 }
                               }}
-                              className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                              className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
                               disabled={busy}
                             >
                               <Trash2 size={14} />

@@ -405,6 +405,23 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });
 
+test('consultation mobile card keeps view edit icons in the top right and removes the bottom edit capsule', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  const mobileGrid = consultationPageBlock[0].match(/<div className="grid gap-4 p-4 sm:p-5 md:hidden">[\s\S]*?<div className="hidden md:block">/);
+  assert.ok(mobileGrid);
+  assert.match(mobileGrid[0], /aria-label="查看咨询"/);
+  assert.match(mobileGrid[0], /aria-label="编辑咨询"/);
+  assert.match(mobileGrid[0], /<Eye size=\{13\} \/>/);
+  assert.match(mobileGrid[0], /<Pencil size=\{13\} \/>/);
+  assert.doesNotMatch(mobileGrid[0], /<Pencil size=\{14\} \/>[\s\S]*编辑/);
+  assert.match(mobileGrid[0], /<div className=\{canManage \? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'\}>/);
+  assert.match(mobileGrid[0], /OVER/);
+  assert.match(mobileGrid[0], /删除/);
+});
+
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
