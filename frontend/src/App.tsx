@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.8';
+const consultationMeetingVersion = 'V1.9';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5856,25 +5856,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 </span>
               </button>
             ))}
-            <div className="absolute bottom-4 right-[4.75rem] top-1 z-20 flex w-5 items-start justify-center">
-              <ChevronDown size={12} className="mt-1 text-[#7188A6]" />
-              <select
-                value={resultStage}
-                disabled={frozen || busy || !canEditConsultations}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) => {
-                  const value = event.target.value as ConsultationResultStage | '';
-                  if (value) handleInlineResultChange(record, value);
-                }}
-                className="absolute inset-0 h-6 w-6 cursor-pointer opacity-0 disabled:cursor-default"
-                aria-label="选择咨询结果"
-                title="选择咨询结果"
-              >
-                <option value="">未选择结果</option>
-                <option value="成功进班">☀️ 成功进班</option>
-                <option value="试听失败">😢 试听未成</option>
-              </select>
-            </div>
           </div>
           {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
         </div>
@@ -6056,6 +6037,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     const sectionLabel = getVisibleRecordSectionLabel(record, index);
     const resultPill = getRecordResultPill(record);
     const showTopResultPill = record.flow_stage !== '咨询结束';
+    const mobileResultStage = isConsultationResultStage(record.flow_stage)
+      ? record.flow_stage
+      : (record.completed_stages || []).find(isConsultationResultStage) || '';
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
@@ -6063,7 +6047,30 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
-              {showTopResultPill && <span className={`inline-flex h-7 min-w-0 max-w-[7.5rem] items-center justify-center truncate rounded-lg px-2.5 text-[11px] font-extrabold ${resultPill.className}`}>{resultPill.label}</span>}
+              {showTopResultPill && (
+                <div className={`relative inline-flex h-7 min-w-0 max-w-[7.5rem] items-center overflow-hidden rounded-lg text-[11px] font-extrabold ${resultPill.className}`}>
+                  <span className="min-w-0 flex-1 truncate px-2.5 pr-1 text-center">{resultPill.label}</span>
+                  <span className="relative flex h-full w-6 shrink-0 items-center justify-center border-l border-white/30 bg-white/20">
+                    <ChevronDown size={12} className="pointer-events-none" />
+                    <select
+                      value={mobileResultStage}
+                      disabled={!canEditConsultations || busy || isConsultationEnded(record.flow_stage)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => {
+                        const value = event.target.value as ConsultationResultStage | '';
+                        if (value) handleInlineResultChange(record, value);
+                      }}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+                      aria-label="选择咨询结果"
+                      title="选择咨询结果"
+                    >
+                      <option value="">未选择结果</option>
+                      <option value="成功进班">☀️ 成功进班</option>
+                      <option value="试听失败">😢 试听未成</option>
+                    </select>
+                  </span>
+                </div>
+              )}
               {renderConsultationIconActions(record, busy, true)}
             </div>
           </div>

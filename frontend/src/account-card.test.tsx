@@ -172,14 +172,14 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.8 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V1.9 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.8';/);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.9';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
