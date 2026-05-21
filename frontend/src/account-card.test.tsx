@@ -522,6 +522,17 @@ test('consultation modal places flow subtitle and status lamp beside the title',
   assert.doesNotMatch(modalBlock[0], /<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">\s*\{readOnly \? '当前咨询的完整流程位置。'/);
 });
 
+test('consultation modal flow uses the same compact one-row style as consultation cards', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /grid-cols-\[minmax\(0,1fr\)_4\.5rem\]/);
+  assert.match(modalBlock[0], /<ConsultationFlowBar[\s\S]*mode="list"/);
+  assert.match(modalBlock[0], />\s*OVER\s*<\/button>/);
+  assert.doesNotMatch(modalBlock[0], /mode="full"/);
+});
+
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);

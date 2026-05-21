@@ -4285,23 +4285,6 @@ const ConsultationModal = ({
                   <ConsultationStatusLamp stage={form.flow_stage} />
                 </span>
               </div>
-              <div className="flex items-center gap-3">
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (stageFrozen) {
-                        setConfirmRestoreOpen(true);
-                        return;
-                      }
-                      setForm((current) => endConsultationValues(current));
-                    }}
-                    className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(239,68,68,0.18)] transition hover:bg-rose-600"
-                  >
-                    {stageFrozen ? '已结束' : '咨询结束'}
-                  </button>
-                )}
-              </div>
             </div>
             {confirmRestoreOpen && (
               <div className="rounded-2xl border border-sky-100 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950">
@@ -4323,25 +4306,42 @@ const ConsultationModal = ({
                 </div>
               </div>
             )}
-            <ConsultationFlowBar
-              mode="full"
-              stage={form.flow_stage}
-              completedStages={form.completed_stages}
-              editable={!readOnly && !stageFrozen}
-              showJumpActions={!readOnly}
-              onStageClick={(stage) => setForm((current) => toggleConsultationStage(current, stage))}
-              onStageDoubleClick={(stage) => setForm((current) => moveConsultationStage(current, stage))}
-              onResultChange={(stage) => setForm((current) => setConsultationResultStage(current, stage))}
-              onResultClick={() => {
-                setForm((current) => (
-                  isConsultationResultStage(current.flow_stage)
-                    ? clearConsultationResultStage(current)
-                    : setConsultationResultStage(current, '成功进班')
-                ));
-              }}
-              onResultDoubleClick={() => setForm((current) => setConsultationResultStage(current, '成功进班'))}
-              onStageJump={handleStageJump}
-            />
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2">
+              <ConsultationFlowBar
+                mode="list"
+                stage={form.flow_stage}
+                completedStages={form.completed_stages}
+                editable={!readOnly && !stageFrozen}
+                showJumpActions={!readOnly}
+                onStageClick={(stage) => setForm((current) => toggleConsultationStage(current, stage))}
+                onStageDoubleClick={(stage) => setForm((current) => moveConsultationStage(current, stage))}
+                onResultChange={(stage) => setForm((current) => setConsultationResultStage(current, stage))}
+                onResultClick={() => {
+                  setForm((current) => (
+                    isConsultationResultStage(current.flow_stage)
+                      ? clearConsultationResultStage(current)
+                      : setConsultationResultStage(current, '成功进班')
+                  ));
+                }}
+                onResultDoubleClick={() => setForm((current) => setConsultationResultStage(current, '成功进班'))}
+                onStageJump={handleStageJump}
+              />
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => {
+                  if (readOnly) return;
+                  if (stageFrozen) {
+                    setConfirmRestoreOpen(true);
+                    return;
+                  }
+                  setForm((current) => endConsultationValues(current));
+                }}
+                className="inline-flex h-8 min-w-0 items-center justify-center rounded-[10px] border border-rose-200 bg-rose-50 px-2 text-[11px] font-extrabold text-rose-500 transition hover:bg-rose-100 disabled:cursor-default disabled:opacity-70 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+              >
+                OVER
+              </button>
+            </div>
           </section>
 
           {readOnly ? (
