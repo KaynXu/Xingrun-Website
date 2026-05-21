@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.5';
+const consultationMeetingVersion = 'V1.6';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5786,6 +5786,89 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     );
   };
 
+  const renderTimelineFlow = (record: ConsultationRecord, busy: boolean) => {
+    const frozen = isConsultationEnded(record.flow_stage);
+    const editable = canEditConsultations && !busy && !frozen;
+    const currentStage = record.flow_stage || consultationFlowStages[0];
+    const completedSet = new Set(record.completed_stages || []);
+    const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
+    if (!frozen && consultationProcessStages.includes(currentStage)) {
+      completedSet.add(currentStage);
+    }
+    const completedResultStage = (record.completed_stages || []).find(isConsultationResultStage) || '';
+    const resultStage = isConsultationResultStage(currentStage) ? currentStage : completedResultStage;
+    const timelineItems = consultationProcessStages.map((item) => {
+      const stageIndex = consultationProcessStages.indexOf(item);
+      const isCurrent = item === currentStage;
+      const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
+      const isCompleted = completedSet.has(item) && !isAfterCurrentProcess;
+      return { type: 'stage' as const, value: item, label: consultationStageShortLabel(item), isCurrent, isCompleted };
+    }).concat([{
+      type: 'result' as const,
+      value: resultStage,
+      label: resultStage === '试听失败' ? '败' : resultStage === '成功进班' ? '进' : '',
+      isCurrent: isConsultationResultStage(currentStage),
+      isCompleted: Boolean(completedResultStage) && currentProcessIndex < 0,
+    }]);
+
+    return (
+      <div className="relative grid w-full min-w-0 grid-cols-[repeat(6,minmax(0,1fr))] items-start gap-1.5 px-0.5 pt-1">
+        <div className="pointer-events-none absolute left-[6%] right-[6%] top-[0.625rem] h-px bg-sky-100 dark:bg-white/10" />
+        {timelineItems.map((item, index) => {
+          const nodeClass = item.isCurrent
+            ? 'border-sky-500 bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16),0_6px_16px_rgba(14,165,233,0.24)]'
+            : item.isCompleted
+              ? 'border-emerald-500 bg-emerald-500 text-white shadow-[0_0_0_3px_rgba(16,185,129,0.12)]'
+              : 'border-slate-200 bg-white text-slate-300 dark:border-white/10 dark:bg-slate-900 dark:text-slate-500';
+          const textClass = item.isCurrent
+            ? 'text-sky-700 dark:text-sky-200'
+            : item.isCompleted
+              ? 'text-emerald-700 dark:text-emerald-200'
+              : 'text-slate-400 dark:text-slate-500';
+          return (
+            <div key={`${item.type}-${index}`} className="relative z-10 flex min-w-0 flex-col items-center gap-1">
+              <button
+                type="button"
+                disabled={!editable || item.type === 'result'}
+                onClick={() => item.type === 'stage' && handleInlineStageToggle(record, item.value)}
+                onDoubleClick={() => item.type === 'stage' && handleInlineStageMove(record, item.value)}
+                className={`flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-black leading-none transition ${nodeClass} ${editable && item.type === 'stage' ? 'hover:scale-110' : 'cursor-default'}`}
+                title={item.type === 'stage' ? item.value : resultStage || '咨询结果'}
+              >
+                {item.isCompleted || item.isCurrent ? '✓' : ''}
+              </button>
+              <div className={`relative min-w-0 text-center text-[10px] font-extrabold leading-none ${textClass}`}>
+                {item.type === 'result' ? (
+                  <div className="relative min-w-0">
+                    <span>{item.label}</span>
+                    <select
+                      value={resultStage}
+                      disabled={!editable}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => {
+                        const value = event.target.value as ConsultationResultStage | '';
+                        if (value) handleInlineResultChange(record, value);
+                      }}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+                      aria-label="选择咨询结果"
+                      title="选择咨询结果"
+                    >
+                      <option value="">未选择结果</option>
+                      <option value="成功进班">☀️ 成功进班</option>
+                      <option value="试听失败">😢 试听未成</option>
+                    </select>
+                  </div>
+                ) : (
+                  item.label
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderInfoCell = (label: string, value: string, className = '') => (
     <div className={`min-w-0 ${className}`}>
       <p className="text-[10px] font-bold tracking-[0.06em] text-slate-400">{label}</p>
@@ -5882,14 +5965,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
         <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[6.25rem_6.25rem_7.5rem_minmax(7.5rem,1fr)_minmax(7.5rem,1fr)_minmax(7.5rem,1fr)_4rem] items-center gap-x-3 border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+          <div className="grid grid-cols-[0.74fr_0.74fr_0.96fr_1.16fr_1.16fr_1.16fr_3.6rem] items-center border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
-            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
-            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
-            {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
-            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
-            {renderInfoCell('来源', getConsultationSourceLabel(record))}
-            {renderConsultationIconActions(record, busy, true)}
+            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('家长微信', record.parent_wechat_name || '—', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            <div className="border-l border-sky-100/80 pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
           </div>
           <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
@@ -5915,16 +5998,16 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
         <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[6.25rem_minmax(6rem,1fr)_minmax(7rem,1fr)_4rem] items-center gap-x-3 border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+          <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
-            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
-            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
-            {renderConsultationIconActions(record, busy, true)}
+            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            <div className="border-l border-sky-100/80 pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
           </div>
-          <div className="grid grid-cols-3 gap-x-3 border-b border-sky-50 px-4 py-2.5 text-sm dark:border-white/10">
+          <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] border-b border-sky-50 px-4 py-2.5 text-sm dark:border-white/10">
             {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
-            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
-            {renderInfoCell('来源', getConsultationSourceLabel(record))}
+            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
           </div>
           <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
@@ -5932,7 +6015,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           <div className={`grid grid-cols-[0.875rem_minmax(0,1fr)_3.65rem] items-center gap-2 border-t border-sky-50 bg-slate-50/55 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
             <ConsultationStatusLamp stage={record.flow_stage} />
-            <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+            <div className="min-w-0 overflow-visible">{renderTimelineFlow(record, busy)}</div>
             {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
           </div>
         </article>
@@ -5946,6 +6029,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     const followUpNote = record.follow_up_note?.trim();
     const sectionLabel = getVisibleRecordSectionLabel(record, index);
     const resultPill = getRecordResultPill(record);
+    const showTopResultPill = record.flow_stage !== '咨询结束';
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
@@ -5953,7 +6037,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
-              <span className={`inline-flex h-7 min-w-0 max-w-[7.5rem] items-center justify-center truncate rounded-lg px-2.5 text-[11px] font-extrabold ${resultPill.className}`}>{resultPill.label}</span>
+              {showTopResultPill && <span className={`inline-flex h-7 min-w-0 max-w-[7.5rem] items-center justify-center truncate rounded-lg px-2.5 text-[11px] font-extrabold ${resultPill.className}`}>{resultPill.label}</span>}
               {renderConsultationIconActions(record, busy, true)}
             </div>
           </div>
@@ -5969,7 +6053,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="space-y-2.5">
             <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
               <ConsultationStatusLamp stage={record.flow_stage} />
-              <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+              <div className="min-w-0 overflow-visible">{renderTimelineFlow(record, busy)}</div>
             </div>
             {canEditConsultations && (
               <div className={canManage ? 'grid grid-cols-2 gap-2.5' : 'grid grid-cols-1 gap-2.5'}>
