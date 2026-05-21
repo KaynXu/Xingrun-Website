@@ -172,14 +172,14 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.7 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V1.8 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.7';/);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.8';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
@@ -613,11 +613,11 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const renderConsultationDetail = \(needDetail\?: string, followUpNote\?: string, mobile = false\) =>/);
   assert.match(consultationPageBlock[0], /咨询详情：<\/span>\{needDetail\}/);
-  assert.match(consultationPageBlock[0], /mobile \? 'line-clamp-4' : 'line-clamp-1'/);
+  assert.match(consultationPageBlock[0], /mobile \? 'line-clamp-2' : 'line-clamp-1'/);
   assert.match(consultationPageBlock[0], /跟进：<\/span>\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
-  assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
+  assert.match(consultationPageBlock[0], /overflow-x-auto/);
 });
 
 test('consultation page source renders separate desktop pad and mobile consultation card layouts', () => {
@@ -628,10 +628,11 @@ test('consultation page source renders separate desktop pad and mobile consultat
   assert.match(consultationPageBlock[0], /const renderDesktopConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
   assert.match(consultationPageBlock[0], /const renderPadConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
   assert.match(consultationPageBlock[0], /const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(0,1fr\)_3\.6rem\]/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[repeat\(3,minmax\(0,1fr\)\)\] border-b/);
-  assert.match(consultationPageBlock[0], /const renderTimelineFlow = \(record: ConsultationRecord, busy: boolean\) =>/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\] items-start/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_72px\]/);
+  assert.match(consultationPageBlock[0], /const renderB3FlowStrip = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
+  assert.match(consultationPageBlock[0], /const renderB3MobileTimeline = \(record: ConsultationRecord, busy: boolean\) =>/);
+  assert.match(consultationPageBlock[0], /min-w-\[31rem\]/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_3\.75rem\]/);
   assert.match(consultationPageBlock[0], /showTopResultPill/);
   assert.match(consultationPageBlock[0], /hidden md:block xl:hidden/);
   assert.match(consultationPageBlock[0], /hidden xl:block/);
@@ -679,7 +680,8 @@ test('consultation mobile card keeps view edit icons in the top right and remove
   assert.match(mobileCard[0], /getRecordResultPill\(record\)/);
   assert.match(mobileCard[0], /renderConsultationIconActions\(record, busy, true\)/);
   assert.match(mobileCard[0], /renderTimeRow\(record, true\)/);
-  assert.match(mobileCard[0], /renderOverButton\(record, busy, 'h-9 px-3 text-xs'\)/);
+  assert.match(mobileCard[0], /renderB3FlowStrip\(record, busy, true\)/);
+  assert.doesNotMatch(mobileCard[0], /renderOverButton\(record, busy, 'h-9 px-3 text-xs'\)/);
   assert.match(mobileCard[0], /renderDeleteButton\(record, busy\)/);
   assert.match(consultationPageBlock[0], /aria-label="查看咨询"/);
   assert.match(consultationPageBlock[0], /aria-label="编辑咨询"/);
@@ -971,8 +973,8 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /border border-rose-200 bg-rose-50 p-4 text-rose-600[^\n]*dark:border-rose-400\/20[^\n]*dark:bg-rose-500\/10[^\n]*dark:text-rose-300/);
   assert.match(appSource, /inline-flex gap-2 rounded-2xl border border-sky-100 bg-white\/85 p-1 shadow-sm[^\n]*dark:border-white\/10[^\n]*dark:bg-white\/5/);
   assert.match(appSource, /min-h-\[320px\][^\n]*border border-sky-100[^\n]*text-slate-700[^\n]*dark:border-white\/10[^\n]*dark:bg-slate-900\/70[^\n]*dark:text-slate-100/);
-  assert.match(appSource, /rounded-xl border border-sky-100 bg-white shadow-\[0_10px_26px_rgba\(47,128,237,0\.045\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
-  assert.match(appSource, /bg-slate-50\/55 px-4 py-3 dark:border-white\/10 dark:bg-white\/\[0\.03\]/);
+  assert.match(appSource, /rounded-\[14px\] border border-\[#D9EEF7\] bg-white shadow-\[0_6px_18px_rgba\(31,42,68,0\.04\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(appSource, /bg-\[#F9FDFF\] px-4 py-3 dark:border-white\/10 dark:bg-white\/\[0\.03\]/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^"]*dark:border-white\/10[^"]*dark:bg-\[radial-gradient/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);

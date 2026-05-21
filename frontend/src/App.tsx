@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.7';
+const consultationMeetingVersion = 'V1.8';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5786,105 +5786,128 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     );
   };
 
-  const renderTimelineFlow = (record: ConsultationRecord, busy: boolean) => {
-    const frozen = isConsultationEnded(record.flow_stage);
-    const editable = canEditConsultations && !busy && !frozen;
+  const renderB3MobileTimeline = (record: ConsultationRecord, busy: boolean) => {
     const currentStage = record.flow_stage || consultationFlowStages[0];
+    const frozen = isConsultationEnded(currentStage);
     const completedSet = new Set(record.completed_stages || []);
-    const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
     if (!frozen && consultationProcessStages.includes(currentStage)) {
       completedSet.add(currentStage);
     }
-    const completedResultStage = (record.completed_stages || []).find(isConsultationResultStage) || '';
-    const resultStage = isConsultationResultStage(currentStage) ? currentStage : completedResultStage;
-    const timelineItems = consultationProcessStages.map((item) => {
-      const stageIndex = consultationProcessStages.indexOf(item);
-      const isCurrent = item === currentStage;
-      const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
-      const isCompleted = completedSet.has(item) && !isAfterCurrentProcess;
-      return { type: 'stage' as const, value: item, shortLabel: consultationStageShortLabel(item), label: consultationStageDisplayLabel(item), isCurrent, isCompleted };
-    }).concat([{
-      type: 'result' as const,
-      value: resultStage,
-      shortLabel: resultStage === '试听失败' ? '败' : resultStage === '成功进班' ? '进' : '',
-      label: resultStage === '试听失败' ? '失败' : resultStage === '成功进班' ? '进班' : '',
-      isCurrent: isConsultationResultStage(currentStage),
-      isCompleted: Boolean(completedResultStage) && currentProcessIndex < 0,
-    }]);
+    const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
+    const resultStage = isConsultationResultStage(currentStage)
+      ? currentStage
+      : (record.completed_stages || []).find(isConsultationResultStage) || '';
+    const resultActive = isConsultationResultStage(currentStage);
+    const resultCompleted = Boolean(resultStage) && currentProcessIndex < 0;
+    const timelineItems = [
+      ...consultationProcessStages.map((stageItem) => {
+        const stageIndex = consultationProcessStages.indexOf(stageItem);
+        const isCurrent = stageItem === currentStage;
+        const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
+        return {
+          key: stageItem,
+          label: consultationStageShortLabel(stageItem),
+          active: isCurrent,
+          completed: completedSet.has(stageItem) && !isAfterCurrentProcess,
+          disabled: frozen || busy || !canEditConsultations,
+          onClick: () => handleInlineStageToggle(record, stageItem),
+          onDoubleClick: () => handleInlineStageMove(record, stageItem),
+        };
+      }),
+      {
+        key: 'consultation-result',
+        label: consultationResultShortLabel(resultStage) || '进',
+        active: resultActive,
+        completed: resultCompleted,
+        disabled: frozen || busy || !canEditConsultations,
+        onClick: () => handleInlineResultClick(record),
+        onDoubleClick: () => handleInlineResultChange(record, '成功进班'),
+      },
+    ];
 
     return (
-      <div className="relative grid w-full min-w-0 grid-cols-[repeat(6,minmax(0,1fr))] items-start gap-1.5 px-0.5 pt-1">
-        <div className="pointer-events-none absolute left-[6%] right-[6%] top-[0.625rem] h-px bg-sky-100 dark:bg-white/10" />
-        {timelineItems.map((item, index) => {
-          const nodeClass = item.isCurrent
-            ? 'border-sky-500 bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16),0_6px_16px_rgba(14,165,233,0.24)]'
-            : item.isCompleted
-              ? 'border-emerald-500 bg-emerald-500 text-white shadow-[0_0_0_3px_rgba(16,185,129,0.12)]'
-              : 'border-slate-200 bg-white text-slate-300 dark:border-white/10 dark:bg-slate-900 dark:text-slate-500';
-          const textClass = item.isCurrent
-            ? 'text-sky-700 dark:text-sky-200'
-            : item.isCompleted
-              ? 'text-emerald-700 dark:text-emerald-200'
-              : 'text-slate-400 dark:text-slate-500';
-          return (
-            <div key={`${item.type}-${index}`} className="relative z-10 flex min-w-0 flex-col items-center gap-1">
+      <div className="overflow-x-auto pb-0.5">
+        <div className="grid min-w-[31rem] grid-cols-[minmax(0,1fr)_3.75rem] items-center gap-2">
+          <div className="relative grid grid-cols-6 items-start gap-2 px-1 pt-1">
+            <span className="absolute left-5 right-5 top-[0.72rem] h-px bg-[#D9EEF7]" aria-hidden="true" />
+            {timelineItems.map((item) => (
               <button
+                key={item.key}
                 type="button"
-                disabled={!editable || item.type === 'result'}
-                onClick={() => item.type === 'stage' && handleInlineStageToggle(record, item.value)}
-                onDoubleClick={() => item.type === 'stage' && handleInlineStageMove(record, item.value)}
-                className={`flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-black leading-none transition ${nodeClass} ${editable && item.type === 'stage' ? 'hover:scale-110' : 'cursor-default'}`}
-                title={item.type === 'stage' ? item.value : resultStage || '咨询结果'}
+                disabled={item.disabled}
+                onClick={item.onClick}
+                onDoubleClick={item.onDoubleClick}
+                className="relative z-10 flex min-w-0 flex-col items-center gap-1 disabled:cursor-default"
+                title={item.key === 'consultation-result' ? resultStage || '成功进班' : item.key}
               >
-                {item.isCompleted || item.isCurrent ? '✓' : ''}
+                <span
+                  className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-extrabold leading-none transition ${
+                    item.active
+                      ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]'
+                      : item.completed
+                        ? 'border-[#22B981] bg-[#22B981] text-white'
+                        : 'border-slate-300 bg-white text-transparent'
+                  }`}
+                >
+                  {item.active ? (item.key === 'consultation-result' ? '☀' : item.label) : item.completed ? '✓' : ''}
+                </span>
+                <span className={`truncate text-[11px] font-bold leading-4 ${item.active ? 'text-[#0EA5E9]' : item.completed ? 'text-[#0A8F65]' : 'text-[#7188A6]'}`}>
+                  {item.label}
+                </span>
               </button>
-              <div className={`relative min-w-0 text-center text-[10px] font-extrabold leading-none ${textClass}`}>
-                {item.type === 'result' ? (
-                  <div className="relative min-w-0">
-                    <span className="hidden min-[520px]:inline">{item.label}</span>
-                    <span className="min-[520px]:hidden">{item.shortLabel}</span>
-                    <select
-                      value={resultStage}
-                      disabled={!editable}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={(event) => {
-                        const value = event.target.value as ConsultationResultStage | '';
-                        if (value) handleInlineResultChange(record, value);
-                      }}
-                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
-                      aria-label="选择咨询结果"
-                      title="选择咨询结果"
-                    >
-                      <option value="">未选择结果</option>
-                      <option value="成功进班">☀️ 成功进班</option>
-                      <option value="试听失败">😢 试听未成</option>
-                    </select>
-                  </div>
-                ) : (
-                  <>
-                    <span className="hidden min-[520px]:inline">{item.label}</span>
-                    <span className="min-[520px]:hidden">{item.shortLabel}</span>
-                  </>
-                )}
-              </div>
+            ))}
+            <div className="absolute bottom-4 right-[4.75rem] top-1 z-20 flex w-5 items-start justify-center">
+              <ChevronDown size={12} className="mt-1 text-[#7188A6]" />
+              <select
+                value={resultStage}
+                disabled={frozen || busy || !canEditConsultations}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  const value = event.target.value as ConsultationResultStage | '';
+                  if (value) handleInlineResultChange(record, value);
+                }}
+                className="absolute inset-0 h-6 w-6 cursor-pointer opacity-0 disabled:cursor-default"
+                aria-label="选择咨询结果"
+                title="选择咨询结果"
+              >
+                <option value="">未选择结果</option>
+                <option value="成功进班">☀️ 成功进班</option>
+                <option value="试听失败">😢 试听未成</option>
+              </select>
             </div>
-          );
-        })}
+          </div>
+          {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
+        </div>
+      </div>
+    );
+  };
+
+  const renderB3FlowStrip = (record: ConsultationRecord, busy: boolean, mobile = false) => {
+    const frozen = isConsultationEnded(record.flow_stage);
+    if (mobile) {
+      return renderB3MobileTimeline(record, busy);
+    }
+    return (
+      <div className="min-w-0 overflow-visible">
+        <div className={`grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2 ${frozen ? 'opacity-75' : ''}`}>
+          <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+          {renderOverButton(record, busy, 'h-8 px-2 text-[11px]')}
+        </div>
       </div>
     );
   };
 
   const renderInfoCell = (label: string, value: string, className = '') => (
     <div className={`min-w-0 ${className}`}>
-      <p className="text-[10px] font-bold tracking-[0.06em] text-slate-400">{label}</p>
-      <p className="mt-0.5 truncate text-[13px] font-extrabold leading-5 text-slate-900 dark:text-white">{value || '—'}</p>
+      <p className="truncate text-[11px] font-bold leading-4 text-[#7188A6]">{label}</p>
+      <p className="mt-0.5 truncate whitespace-nowrap text-[13px] font-semibold leading-5 text-[#1F2A44] dark:text-white">{value || '—'}</p>
     </div>
   );
 
   const renderTimeRow = (record: ConsultationRecord, boxed = false) => (
     <div className={boxed
-      ? 'grid grid-cols-2 overflow-hidden rounded-xl border border-sky-100 bg-white/80 dark:border-white/10 dark:bg-slate-950/70'
-      : 'flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400'
+      ? 'grid grid-cols-2 overflow-hidden rounded-lg border border-[#D9EEF7] bg-white/80 dark:border-white/10 dark:bg-slate-950/70'
+      : 'flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-[#7188A6] dark:text-slate-400'
     }>
       <div className={boxed ? 'min-w-0 border-r border-sky-100 p-3 dark:border-white/10' : 'inline-flex min-w-0 items-center gap-2'}>
         <CalendarDays size={boxed ? 0 : 13} className={boxed ? 'hidden' : 'text-slate-400'} />
@@ -5904,8 +5927,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return null;
     }
     return (
-      <div className={`min-w-0 text-[13px] leading-5 text-slate-500 dark:text-slate-400 ${mobile ? 'space-y-1 border-y border-sky-50 py-2.5 dark:border-white/10' : 'border-t border-sky-50 pt-2 dark:border-white/10'}`}>
-        {needDetail && <p className={mobile ? 'line-clamp-4' : 'line-clamp-1'}><span className="font-semibold text-slate-500 dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
+      <div className={`min-w-0 text-[13px] leading-5 text-[#7188A6] dark:text-slate-400 ${mobile ? 'space-y-1 border-y border-[#EEF7FC] py-2.5 dark:border-white/10' : 'border-t border-[#EEF7FC] pt-2 dark:border-white/10'}`}>
+        {needDetail && <p className={mobile ? 'line-clamp-2' : 'line-clamp-1'}><span className="font-semibold text-[#7188A6] dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
         {followUpNote && <p className="line-clamp-1"><span className="font-semibold text-slate-500 dark:text-slate-300">跟进：</span>{followUpNote}</p>}
       </div>
     );
@@ -5928,7 +5951,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     <button
       type="button"
       onClick={() => handleInlineEndConsultation(record)}
-      className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg bg-rose-500 font-extrabold text-white shadow-[0_6px_14px_rgba(239,68,68,0.14)] transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300 ${className}`}
+      className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 font-extrabold text-[#F45B7A] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
       disabled={!canEditConsultations || busy}
     >
       OVER
@@ -5952,7 +5975,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           setDeletingId(null);
         }
       }}
-      className="inline-flex h-9 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+      className="inline-flex h-8 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-[#F45B7A] transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
       disabled={busy}
     >
       <Trash2 size={14} />
@@ -5969,26 +5992,23 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_3.6rem] items-center border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_72px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
-            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
-            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
-            <div className="border-l border-sky-100/80 pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
-          </div>
-          <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] border-b border-sky-50 px-4 py-2.5 text-sm dark:border-white/10">
-            {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
-            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
-            {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
+            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
+            {renderInfoCell('家长微信', record.parent_wechat_name || '—', 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
+            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充', 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
+            {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
+            <div className="border-l border-[#D9EEF7] pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
           </div>
           <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
             {renderTimeRow(record)}
           </div>
-          <div className={`grid grid-cols-[0.875rem_minmax(0,1fr)_4.35rem] items-center gap-2.5 border-t border-sky-50 bg-slate-50/55 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+          <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2.5 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
             <ConsultationStatusLamp stage={record.flow_stage} />
-            <div className="min-w-0 overflow-visible">{renderTimelineFlow(record, busy)}</div>
-            {renderOverButton(record, busy, 'h-8 px-2 text-[11px]')}
+            {renderB3FlowStrip(record, busy)}
           </div>
         </article>
       </React.Fragment>
@@ -6004,14 +6024,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
             {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
             <div className="border-l border-sky-100/80 pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
           </div>
-          <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] border-b border-sky-50 px-4 py-2.5 text-sm dark:border-white/10">
+          <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] border-b border-[#EEF7FC] px-4 py-2.5 text-sm dark:border-white/10">
             {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
             {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
             {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
@@ -6020,10 +6040,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             {renderConsultationDetail(needDetail, followUpNote)}
             {renderTimeRow(record)}
           </div>
-          <div className={`grid grid-cols-[0.875rem_minmax(0,1fr)_3.65rem] items-center gap-2 border-t border-sky-50 bg-slate-50/55 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+          <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
             <ConsultationStatusLamp stage={record.flow_stage} />
-            <div className="min-w-0 overflow-visible">{renderTimelineFlow(record, busy)}</div>
-            {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
+            {renderB3FlowStrip(record, busy)}
           </div>
         </article>
       </React.Fragment>
@@ -6040,7 +6059,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="relative space-y-3 rounded-xl border border-sky-100 bg-white p-3.5 shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
           <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
@@ -6060,11 +6079,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="space-y-2.5">
             <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
               <ConsultationStatusLamp stage={record.flow_stage} />
-              <div className="min-w-0 overflow-visible">{renderTimelineFlow(record, busy)}</div>
+              <div className="min-w-0 overflow-visible">{renderB3FlowStrip(record, busy, true)}</div>
             </div>
             {canEditConsultations && (
-              <div className={canManage ? 'grid grid-cols-2 gap-2.5' : 'grid grid-cols-1 gap-2.5'}>
-                {renderOverButton(record, busy, 'h-9 px-3 text-xs')}
+              <div className={canManage ? 'grid grid-cols-1 gap-2.5' : 'hidden'}>
                 {renderDeleteButton(record, busy)}
               </div>
             )}
