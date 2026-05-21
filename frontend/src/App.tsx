@@ -3931,7 +3931,15 @@ const compactReadLabelClass = consultationLabelClass;
 const compactEditLabelClass = consultationLabelClass;
 const compactReadValueClass = consultationValueClass;
 
-const ConsultationExpandableText = ({ text, lines = 3 }: { text?: string | null; lines?: 2 | 3 }) => {
+const ConsultationCardExpandableText = ({
+  label,
+  text,
+  lines = 1,
+}: {
+  label: string;
+  text?: string | null;
+  lines?: 1 | 2;
+}) => {
   const [expanded, setExpanded] = useState(false);
   const [canToggle, setCanToggle] = useState(false);
   const textRef = useRef<HTMLParagraphElement | null>(null);
@@ -3962,26 +3970,25 @@ const ConsultationExpandableText = ({ text, lines = 3 }: { text?: string | null;
     };
   }, [content, expanded, lines]);
 
-  if (!content) {
-    return <p className={compactReadValueClass}>—</p>;
-  }
+  if (!content) return null;
+
   return (
     <div>
       <p
         ref={textRef}
         className={cn(
-          compactReadValueClass,
-          'whitespace-pre-wrap',
-          !expanded ? (lines === 2 ? 'line-clamp-2' : 'line-clamp-3') : '',
+          'min-w-0 whitespace-pre-wrap break-words text-[13px] leading-5 text-[#7188A6] dark:text-slate-400',
+          !expanded ? (lines === 2 ? 'line-clamp-2' : 'line-clamp-1') : '',
         )}
       >
+        <span className="font-semibold text-[#7188A6] dark:text-slate-300">{label}：</span>
         {content}
       </p>
       {canToggle && (
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="mt-1 text-xs font-extrabold text-[#0EA5E9] transition hover:text-sky-700"
+          className="mt-1 text-[11px] font-extrabold text-[#0EA5E9] transition hover:text-sky-700"
         >
           {expanded ? '收起' : '展开全文'}
         </button>
@@ -4037,7 +4044,7 @@ const ConsultationReadOnlyReport = ({
         <div className="grid gap-3">
           <div>
             <p className={compactReadLabelClass}>沟通ing：情况说明</p>
-            <ConsultationExpandableText text={form.need_detail} lines={2} />
+            <p className={compactReadValueClass}>{value(form.need_detail)}</p>
           </div>
           <div>
             <div className="grid grid-cols-2 gap-2">
@@ -4073,7 +4080,7 @@ const ConsultationReadOnlyReport = ({
         </div>
         <div className="mt-3 border-t border-sky-50 pt-3 dark:border-white/10">
           <p className={compactReadLabelClass}>试听反馈</p>
-          <ConsultationExpandableText text={form.trial_feedback} lines={2} />
+          <p className={compactReadValueClass}>{value(form.trial_feedback)}</p>
         </div>
       </div>
 
@@ -4106,8 +4113,8 @@ const ConsultationReadOnlyReport = ({
         </div>
         <div className="mt-3 border-t border-sky-50 pt-3 dark:border-white/10">
           <div className="grid gap-3 md:grid-cols-2">
-            <div><p className={compactReadLabelClass}>咨询结束备注</p><ConsultationExpandableText text={form.end_note} lines={2} /></div>
-            <div><p className={compactReadLabelClass}>跟进备注（内部）</p><ConsultationExpandableText text={form.follow_up_note} lines={2} /></div>
+            <div><p className={compactReadLabelClass}>咨询结束备注</p><p className={compactReadValueClass}>{value(form.end_note)}</p></div>
+            <div><p className={compactReadLabelClass}>跟进备注（内部）</p><p className={compactReadValueClass}>{value(form.follow_up_note)}</p></div>
           </div>
         </div>
       </div>
@@ -5439,9 +5446,9 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
           </div>
         </div>
         {record.need_detail?.trim() && (
-          <p className="line-clamp-1 border-b border-[#EAF6FC] px-3.5 py-2 text-xs leading-5 text-[#7188A6] dark:border-white/10 dark:text-slate-400" title={record.need_detail}>
-            咨询详情：{record.need_detail}
-          </p>
+          <div className="border-b border-[#EAF6FC] px-3.5 py-2 dark:border-white/10" title={record.need_detail}>
+            <ConsultationCardExpandableText label="咨询详情" text={record.need_detail} />
+          </div>
         )}
         <div className="grid grid-cols-[0.75rem_minmax(0,1fr)] items-center gap-2 bg-[#F9FDFF] px-3.5 py-2.5 dark:bg-white/[0.03]">
           <ConsultationStatusLamp stage={record.flow_stage} />
@@ -6088,9 +6095,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return null;
     }
     return (
-      <div className={`min-w-0 text-[13px] leading-5 text-[#7188A6] dark:text-slate-400 ${mobile ? 'space-y-1 border-y border-[#EEF7FC] py-2.5 dark:border-white/10' : 'border-t border-[#EEF7FC] pt-2 dark:border-white/10'}`}>
-        {needDetail && <p className={mobile ? 'line-clamp-2' : 'line-clamp-1'}><span className="font-semibold text-[#7188A6] dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
-        {followUpNote && <p className="line-clamp-1"><span className="font-semibold text-slate-500 dark:text-slate-300">跟进：</span>{followUpNote}</p>}
+      <div className={`min-w-0 ${mobile ? 'space-y-1.5 border-y border-[#EEF7FC] py-2.5 dark:border-white/10' : 'space-y-1 border-t border-[#EEF7FC] pt-2 dark:border-white/10'}`}>
+        {needDetail && <ConsultationCardExpandableText label="咨询详情" text={needDetail} lines={mobile ? 2 : 1} />}
+        {followUpNote && <ConsultationCardExpandableText label="跟进" text={followUpNote} />}
       </div>
     );
   };

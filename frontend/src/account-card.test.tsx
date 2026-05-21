@@ -294,16 +294,24 @@ test('consultation view mode uses a read-only report layout instead of disabled 
   assert.match(source, /最后更新/);
 });
 
-test('consultation read only long text expands based on rendered overflow instead of character count', () => {
+test('consultation list and workbench cards expand long detail previews based on rendered overflow', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const expandableBlock = source.match(/const ConsultationExpandableText = \([\s\S]*?\n};/);
+  const expandableBlock = source.match(/const ConsultationCardExpandableText = \([\s\S]*?\n};/);
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
 
   assert.ok(expandableBlock);
+  assert.ok(consultationPageBlock);
+  assert.ok(workbenchBlock);
   assert.match(expandableBlock[0], /textRef = useRef<HTMLParagraphElement \| null>\(null\)/);
   assert.match(expandableBlock[0], /element\.scrollHeight > element\.clientHeight \+ 1/);
   assert.match(expandableBlock[0], /window\.addEventListener\('resize', measure\)/);
   assert.match(expandableBlock[0], /展开全文/);
   assert.doesNotMatch(expandableBlock[0], /content\.length > \(lines === 2 \? 64 : 96\)/);
+  assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
+  assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="跟进" text=\{followUpNote\} \/>/);
+  assert.match(workbenchBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{record\.need_detail\} \/>/);
+  assert.doesNotMatch(source, /<ConsultationExpandableText/);
 });
 
 test('consultation modal uses compact flow sections for both editing and viewing', () => {
@@ -631,9 +639,9 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.match(consultationPageBlock[0], /const needDetail = record\.need_detail\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const renderConsultationDetail = \(needDetail\?: string, followUpNote\?: string, mobile = false\) =>/);
-  assert.match(consultationPageBlock[0], /咨询详情：<\/span>\{needDetail\}/);
-  assert.match(consultationPageBlock[0], /mobile \? 'line-clamp-2' : 'line-clamp-1'/);
-  assert.match(consultationPageBlock[0], /跟进：<\/span>\{followUpNote\}/);
+  assert.match(consultationPageBlock[0], /label="咨询详情" text=\{needDetail\}/);
+  assert.match(consultationPageBlock[0], /lines=\{mobile \? 2 : 1\}/);
+  assert.match(consultationPageBlock[0], /label="跟进" text=\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
   assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
