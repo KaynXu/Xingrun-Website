@@ -172,6 +172,57 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
+test('consultation page V1.0 exposes owner-only meeting workbench instead of refresh', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
+
+  assert.ok(consultationPageBlock);
+  assert.ok(appBlock);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.0';/);
+  assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
+  assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
+  assert.match(consultationPageBlock[0], /面对面模式/);
+  assert.match(consultationPageBlock[0], /!canOpenMeetingWorkbench && \(/);
+  assert.match(source, /consultationMeeting'\) === '1'/);
+  assert.match(source, /<ConsultationMeetingWorkbench currentUser=\{currentUser\}/);
+});
+
+test('consultation meeting workbench keeps local drafts until final save', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(workbenchBlock);
+  assert.match(workbenchBlock[0], /const \[draftsById, setDraftsById\] = useState<Record<number, ConsultationFormValues>>\(\{\}\);/);
+  assert.match(workbenchBlock[0], /const \[processedIds, setProcessedIds\] = useState<Set<number>>\(\(\) => new Set\(\)\);/);
+  assert.match(workbenchBlock[0], /setDraftsById\(\(current\) => \(\{ \.\.\.current, \[selectedRecord\.id\]: values \}\)\);/);
+  assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(selectedRecord\.id\)\);/);
+  assert.match(workbenchBlock[0], /const pendingRecords = /);
+  assert.match(workbenchBlock[0], /const processedActiveRecords = /);
+  assert.match(workbenchBlock[0], /const processedEndedRecords = /);
+  assert.match(workbenchBlock[0], /待处理/);
+  assert.match(workbenchBlock[0], /待咨询/);
+  assert.match(workbenchBlock[0], /已结束/);
+});
+
+test('consultation meeting workbench final save and close guard are explicit', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(workbenchBlock);
+  assert.match(workbenchBlock[0], /beforeunload/);
+  assert.match(workbenchBlock[0], /还有未最终保存的咨询修改，是否关闭？/);
+  assert.match(workbenchBlock[0], /const handleFinalSave = async \(\) => \{/);
+  assert.match(workbenchBlock[0], /await apiFetch\(`\/api\/consultations\/\$\{id\}`/);
+  assert.match(workbenchBlock[0], /最终保存/);
+  assert.match(workbenchBlock[0], /按教师查看/);
+  assert.match(workbenchBlock[0], /xr_consultation_meeting_saved_at/);
+  assert.match(workbenchBlock[0], /setDraftsById\(\{\}\);/);
+  assert.match(workbenchBlock[0], /setProcessedIds\(new Set\(\)\);/);
+  assert.match(source, /const handleMeetingWorkbenchSave = \(event: StorageEvent\) => \{/);
+  assert.match(source, /event\.key === 'xr_consultation_meeting_saved_at'/);
+});
+
 test('consultation source renders approved v6 flow stage bars', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   assert.match(source, /consultationFlowStages/);

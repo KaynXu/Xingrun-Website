@@ -1136,6 +1136,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
+const consultationMeetingVersion = 'V1.0';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5100,8 +5101,267 @@ const ConsultationBatchModal = ({
   );
 };
 
+const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUser }) => {
+  const [records, setRecords] = useState<ConsultationRecord[]>([]);
+  const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [draftsById, setDraftsById] = useState<Record<number, ConsultationFormValues>>({});
+  const [processedIds, setProcessedIds] = useState<Set<number>>(() => new Set());
+  const [teacherFilter, setTeacherFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
+  const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
+  const teacherDirectory = buildConsultationTeacherDirectory(records);
+  const hasUncommittedChanges = Object.keys(draftsById).length > 0;
+
+  const loadWorkbench = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [consultations, classItems, teacherItems] = await Promise.all([
+        apiFetch<ConsultationRecord[]>('/api/consultations?q='),
+        apiFetch<ClassItem[]>('/api/classes').catch(() => [] as ClassItem[]),
+        apiFetch<ConsultationTeacherOption[]>('/api/consultation-teachers').catch(() => [] as ConsultationTeacherOption[]),
+      ]);
+      setRecords(consultations.map(normalizeConsultationRecord));
+      setClasses(classItems);
+      setConsultationTeachers(teacherItems.map(normalizeConsultationTeacherOption));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '面对面工作台加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWorkbench().catch(() => undefined);
+  }, [loadWorkbench]);
+
+  useEffect(() => {
+    if (!hasUncommittedChanges) {
+      return undefined;
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '还有未最终保存的咨询修改，是否关闭？';
+      return '还有未最终保存的咨询修改，是否关闭？';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUncommittedChanges]);
+
+  const getDraftRecord = useCallback((record: ConsultationRecord): ConsultationRecord => {
+    const draft = draftsById[record.id];
+    return draft ? normalizeConsultationRecord({ ...record, ...draft }) : record;
+  }, [draftsById]);
+
+  const filteredRecords = useMemo(() => records
+    .map(getDraftRecord)
+    .filter((record) => {
+      if (!teacherFilter) return true;
+      return record.teacher_id === teacherFilter
+        || record.receiving_teacher === teacherFilter
+        || getConsultationTeacherName(record, teacherDirectory) === teacherFilter;
+    }), [getDraftRecord, records, teacherDirectory, teacherFilter]);
+
+  const pendingRecords = filteredRecords.filter((record) => !processedIds.has(record.id));
+  const processedRecords = filteredRecords.filter((record) => processedIds.has(record.id));
+  const processedEndedRecords = processedRecords.filter((record) => isConsultationEnded(record.flow_stage) || isConsultationResultStage(record.flow_stage));
+  const processedActiveRecords = processedRecords.filter((record) => !processedEndedRecords.some((endedRecord) => endedRecord.id === record.id));
+
+  const openViewModal = (record: ConsultationRecord) => {
+    setSelectedRecord(record);
+    setModalMode('view');
+    setModalOpen(true);
+    setError('');
+  };
+
+  const openEditModal = (record: ConsultationRecord) => {
+    setSelectedRecord(record);
+    setModalMode('edit');
+    setModalOpen(true);
+    setError('');
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setSelectedRecord(null);
+  };
+
+  const handleLocalSubmit = async (values: ConsultationFormValues) => {
+    if (!selectedRecord) {
+      return;
+    }
+    setDraftsById((current) => ({ ...current, [selectedRecord.id]: values }));
+    setProcessedIds((current) => new Set(current).add(selectedRecord.id));
+    closeModal();
+  };
+
+  const handleFinalSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      for (const [rawId, values] of Object.entries(draftsById)) {
+        const id = Number(rawId);
+        await apiFetch(`/api/consultations/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(values),
+        });
+      }
+      setDraftsById({});
+      setProcessedIds(new Set());
+      await loadWorkbench();
+      writeLocalStorageItem('xr_consultation_meeting_saved_at', String(Date.now()));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '最终保存失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCloseWorkbench = () => {
+    if (hasUncommittedChanges && !window.confirm('还有未最终保存的咨询修改，是否关闭？')) {
+      return;
+    }
+    window.close();
+  };
+
+  const renderMeetingRecordCard = (record: ConsultationRecord) => (
+    <article key={record.id} className="rounded-2xl border border-sky-100 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-extrabold text-slate-900 dark:text-white">{record.parent_wechat_name || '未填写家长微信'}</p>
+          <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+            {record.child_name || '未填写学生'} · {record.grade || '未填写年级'} · {record.consultation_subject || '未填写科目'}
+          </p>
+          <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">负责教师：{getConsultationTeacherName(record, teacherDirectory)}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button type="button" onClick={() => openViewModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300" aria-label="查看咨询">
+            <Eye size={13} />
+          </button>
+          <button type="button" onClick={() => openEditModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200" aria-label="编辑咨询">
+            <Pencil size={13} />
+          </button>
+        </div>
+      </div>
+      <div className="mt-3">
+        <ConsultationFlowBar mode="list" stage={record.flow_stage} completedStages={record.completed_stages} editable={false} />
+      </div>
+      {record.need_detail?.trim() && (
+        <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">咨询详情：{record.need_detail}</p>
+      )}
+    </article>
+  );
+
+  if (!hasOwnerAccess(currentUser.role)) {
+    return (
+      <div className={`${workspacePageClass} min-h-[100svh]`}>
+        <div className={`${workspaceCardClass} p-8 text-center text-slate-500 dark:text-slate-400`}>当前账号没有面对面沟通模式权限。</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${workspacePageClass} min-h-[100svh] space-y-5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Meeting · {consultationMeetingVersion}</p>
+          <h3 className={`${workspaceSectionTitleClass} mt-3`}>面对面沟通工作台</h3>
+          <p className={`${workspaceSectionTextClass} mt-2`}>本页面内保存只进入已处理栏，点击最终保存后才同步主咨询页。</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3 lg:w-[32rem]">
+          <label className="sm:col-span-1">
+            <span className="sr-only">按教师查看</span>
+            <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)} className={`${workspaceFieldClass} h-10 w-full rounded-xl px-3 text-sm`}>
+              <option value="">按教师查看：全部</option>
+              {consultationTeachers.map((teacher) => (
+                <option key={teacher.teacher_id} value={teacher.teacher_id}>{teacher.display_name}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={handleFinalSave} disabled={!hasUncommittedChanges || saving} className={`${workspacePrimaryButtonClass} h-10 disabled:cursor-not-allowed disabled:opacity-50`}>
+            <CheckCircle2 size={15} />
+            最终保存
+          </button>
+          <button type="button" onClick={handleCloseWorkbench} className={`${workspaceSecondaryButtonClass} h-10`}>
+            <X size={15} />
+            关闭
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className={`${workspaceCardClass} p-8 text-center text-slate-500 dark:text-slate-400`}>正在加载面对面沟通工作台...</div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+          <section className={`${workspaceCardClass} p-4`}>
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-base font-extrabold text-slate-900 dark:text-white">待处理</h4>
+              <span className="rounded-full bg-sky-50 px-2 py-1 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{pendingRecords.length}</span>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {pendingRecords.length ? pendingRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">当前筛选下没有待处理咨询。</p>}
+            </div>
+          </section>
+
+          <section className={`${workspaceCardClass} p-4`}>
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-base font-extrabold text-slate-900 dark:text-white">已处理</h4>
+              <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200">{processedRecords.length}</span>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-extrabold tracking-[0.16em] text-slate-400">待咨询</p>
+                <div className="space-y-3">
+                  {processedActiveRecords.length ? processedActiveRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无待咨询。</p>}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-extrabold tracking-[0.16em] text-slate-400">已结束</p>
+                <div className="space-y-3">
+                  {processedEndedRecords.length ? processedEndedRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无已结束。</p>}
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {modalOpen && selectedRecord && (
+          <ConsultationModal
+            open={modalOpen}
+            mode={modalMode}
+            record={getDraftRecord(selectedRecord)}
+            consultationTeachers={consultationTeachers}
+            classes={classes}
+            submitting={false}
+            error={error}
+            currentUser={currentUser}
+            onClose={closeModal}
+            onSubmit={handleLocalSubmit}
+            onRequestEdit={selectedRecord ? () => setModalMode('edit') : undefined}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const canManage = hasStaffAccess(currentUser.role);
+  const canOpenMeetingWorkbench = hasOwnerAccess(currentUser.role);
   const canEditConsultations = canManage || currentUser.role === 'member';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
@@ -5166,6 +5426,19 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   }, [load, search]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const handleMeetingWorkbenchSave = (event: StorageEvent) => {
+      if (event.key === 'xr_consultation_meeting_saved_at') {
+        load(search).catch(() => undefined);
+      }
+    };
+    window.addEventListener('storage', handleMeetingWorkbenchSave);
+    return () => window.removeEventListener('storage', handleMeetingWorkbenchSave);
+  }, [load, search]);
+
+  useEffect(() => {
     let active = true;
     apiFetch<ConsultationTeacherOption[]>('/api/consultation-teachers')
       .then((items) => {
@@ -5196,6 +5469,15 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const openBatchModal = () => {
     setBatchModalOpen(true);
     setError('');
+  };
+
+  const openConsultationMeetingWorkbench = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('consultationMeeting', '1');
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
   };
 
   const openViewModal = (record: ConsultationRecord) => {
@@ -5406,14 +5688,27 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             />
           </label>
           <div className={`grid w-full gap-2 self-start lg:w-[22rem] lg:self-auto xl:w-[24rem] ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
-            <button
-              type="button"
-              onClick={() => load(search).catch(() => undefined)}
-              className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
-            >
-              <RefreshCw size={14} />
-              刷新
-            </button>
+            {canOpenMeetingWorkbench ? (
+              <button
+                type="button"
+                onClick={openConsultationMeetingWorkbench}
+                className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+              >
+                <ShieldCheck size={14} />
+                面对面模式
+              </button>
+            ) : (
+              !canOpenMeetingWorkbench && (
+                <button
+                  type="button"
+                  onClick={() => load(search).catch(() => undefined)}
+                  className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+                >
+                  <RefreshCw size={14} />
+                  刷新
+                </button>
+              )
+            )}
             {canManage && (
               <button
                 type="button"
@@ -11042,6 +11337,17 @@ export default function App() {
         }}
         onLogout={handleLogout}
       />
+    );
+  }
+
+  const consultationMeetingMode = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('consultationMeeting') === '1';
+
+  if (consultationMeetingMode) {
+    return (
+      <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+        <ConsultationMeetingWorkbench currentUser={currentUser} />
+      </div>
     );
   }
 
