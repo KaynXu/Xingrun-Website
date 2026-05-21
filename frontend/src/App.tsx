@@ -1138,6 +1138,19 @@ const consultationProcessStages = ['已加小客服微信', '已加对应教师�
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
 const consultationMeetingVersion = 'V2.0';
+type ConsultationFlowSectionKey = 'base' | 'communication' | 'trial' | 'result';
+type ConsultationFlowSectionState = { active: boolean; current: boolean };
+const consultationFlowSectionOrder: ConsultationFlowSectionKey[] = ['base', 'communication', 'trial', 'result'];
+const consultationFlowStageToSection: Record<string, ConsultationFlowSectionKey> = {
+  '已加小客服微信': 'base',
+  '已加对应教师微信': 'base',
+  '正在沟通细节': 'communication',
+  '待测试': 'communication',
+  '待试听': 'trial',
+  '成功进班': 'result',
+  '试听失败': 'result',
+  '咨询结束': 'result',
+};
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -1190,6 +1203,25 @@ function isConsultationEnded(stage: string): boolean {
 
 function isConsultationResultStage(stage: string): stage is ConsultationResultStage {
   return consultationResultStages.includes(stage as ConsultationResultStage);
+}
+
+function getConsultationFlowSectionStates(form: ConsultationFormValues): Record<ConsultationFlowSectionKey, ConsultationFlowSectionState> {
+  const stages = [
+    ...(Array.isArray(form.completed_stages) ? form.completed_stages : []),
+    form.flow_stage,
+  ].filter(Boolean);
+  const currentSection = consultationFlowStageToSection[form.flow_stage] || 'base';
+  const furthestSectionIndex = Math.max(
+    consultationFlowSectionOrder.indexOf(currentSection),
+    ...stages.map((stage) => consultationFlowSectionOrder.indexOf(consultationFlowStageToSection[stage] || 'base')),
+  );
+  return consultationFlowSectionOrder.reduce((states, section, index) => ({
+    ...states,
+    [section]: {
+      active: index <= furthestSectionIndex,
+      current: section === currentSection,
+    },
+  }), {} as Record<ConsultationFlowSectionKey, ConsultationFlowSectionState>);
 }
 
 function getConsultationRecordDateTime(record: ConsultationRecord): number {
@@ -3923,10 +3955,29 @@ const ConsultationFlowBar = ({
 const compactFlowSectionClass = `${consultationPanelClass} px-3.5 py-3`;
 const consultationJumpHighlightClass = 'ring-2 ring-sky-300 bg-sky-50/80 shadow-[0_0_0_4px_rgba(14,165,233,0.12)] dark:bg-sky-400/10 dark:ring-sky-400/50';
 const compactFieldGridClass = 'grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2';
-const compactFlowTitleClass = (active = false) => cn(
+function consultationFlowSectionClass(state: ConsultationFlowSectionState): string {
+  return cn(
+    compactFlowSectionClass,
+    'transition-colors duration-200',
+    state.current
+      ? 'border-[#93DDF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F2FBFF_100%)] ring-2 ring-sky-100 dark:border-sky-400/40 dark:bg-sky-400/10 dark:ring-sky-400/10'
+      : state.active
+        ? 'border-[#BFE5F8] bg-white dark:border-white/10 dark:bg-slate-950/72'
+        : 'border-[#E6EEF5] bg-[#F7FAFC] text-[#9AABBF] opacity-70 shadow-none saturate-[0.72] dark:border-white/8 dark:bg-slate-900/45 dark:text-slate-500',
+  );
+}
+const compactFlowTitleClass = (state: boolean | ConsultationFlowSectionState = false) => {
+  const active = typeof state === 'boolean' ? state : state.active;
+  const current = typeof state === 'boolean' ? false : state.current;
+  return cn(
   'mb-3 border-b border-[#EAF6FC] pb-2 text-[13px] font-extrabold transition-colors dark:border-white/10',
-  active ? 'text-[#0EA5E9] dark:text-sky-300' : 'text-[#7188A6] dark:text-slate-300',
-);
+  current
+    ? 'text-[#0EA5E9] dark:text-sky-300'
+    : active
+      ? 'text-[#1F2A44] dark:text-slate-100'
+      : 'text-[#9AABBF] dark:text-slate-500',
+  );
+};
 const compactReadLabelClass = consultationLabelClass;
 const compactEditLabelClass = consultationLabelClass;
 const compactReadValueClass = consultationValueClass;
@@ -4009,12 +4060,9 @@ const ConsultationReadOnlyReport = ({
 }) => {
   const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
   const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
+  const sectionStates = getConsultationFlowSectionStates(form);
   const trialClassName = classes.find((item) => item.id === form.trial_class_id)?.name;
   const successClassName = classes.find((item) => item.id === form.success_class_id)?.name;
-  const baseSectionActive = Boolean(form.teacher_id || form.receiving_teacher || form.parent_wechat_name || form.child_name || form.grade || form.consultation_subject || form.source_channel || form.source_channel_note);
-  const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
-  const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
-  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.end_note || form.follow_up_note);
   const resultLabel = form.flow_stage === '成功进班'
     ? '咨询成功'
     : form.flow_stage === '试听失败' || form.flow_stage === '咨询结束'
@@ -4025,8 +4073,8 @@ const ConsultationReadOnlyReport = ({
 
   return (
     <section className="grid gap-3 md:grid-cols-2">
-      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
-        <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
+      <div className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem]')}>
+        <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
@@ -4040,8 +4088,8 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
-        <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
+      <div className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem]')}>
+        <p className={compactFlowTitleClass(sectionStates.communication)}>沟通与测试</p>
         <div className="grid gap-3">
           <div>
             <p className={compactReadLabelClass}>沟通ing：情况说明</p>
@@ -4071,8 +4119,8 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
-        <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
+      <div className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem]')}>
+        <p className={compactFlowTitleClass(sectionStates.trial)}>试听</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
           <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
@@ -4085,8 +4133,8 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
-        <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
+      <div className={cn(consultationFlowSectionClass(sectionStates.result), 'min-h-[14rem]')}>
+        <p className={compactFlowTitleClass(sectionStates.result)}>结果与备注</p>
         <div className={`grid gap-3 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div>
             <p className={compactReadLabelClass}>结果</p>
@@ -4361,19 +4409,7 @@ const ConsultationModal = ({
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
   const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
-  const baseSectionActive = Boolean(
-    form.teacher_id
-    || form.receiving_teacher
-    || form.parent_wechat_name
-    || form.child_name
-    || form.grade
-    || form.consultation_subject
-    || form.source_channel
-    || form.source_channel_note,
-  );
-  const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
-  const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
-  const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.end_note || form.follow_up_note);
+  const sectionStates = getConsultationFlowSectionStates(form);
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
 
   return (
@@ -4553,8 +4589,8 @@ const ConsultationModal = ({
           </datalist>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <section ref={baseInfoRef} className={cn(compactFlowSectionClass, 'min-h-[14rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
-            <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
+            <section ref={baseInfoRef} className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
+            <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
             <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2">
               <button
                 type="button"
@@ -4627,8 +4663,8 @@ const ConsultationModal = ({
             </div>
           </section>
 
-            <section ref={contentRef} className={cn(compactFlowSectionClass, 'min-h-[14rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
-            <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
+            <section ref={contentRef} className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
+            <p className={compactFlowTitleClass(sectionStates.communication)}>沟通与测试</p>
             <label className="scroll-mt-6 space-y-2 text-sm">
               <span className={compactEditLabelClass}>沟通ing：情况说明</span>
               <textarea
@@ -4697,8 +4733,8 @@ const ConsultationModal = ({
             </section>
 
             {(showTrialFields || !readOnly) && (
-              <div ref={trialSectionRef} className={cn(compactFlowSectionClass, 'min-h-[14rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
-                <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
+              <div ref={trialSectionRef} className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
+                <p className={compactFlowTitleClass(sectionStates.trial)}>试听</p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>是否试听</span>
@@ -4761,8 +4797,8 @@ const ConsultationModal = ({
               </div>
             )}
 
-            <section className={`${compactFlowSectionClass} min-h-[14rem] scroll-mt-6 space-y-3`}>
-              <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
+            <section className={cn(consultationFlowSectionClass(sectionStates.result), 'min-h-[14rem] scroll-mt-6 space-y-3')}>
+              <p className={compactFlowTitleClass(sectionStates.result)}>结果与备注</p>
             {(showSuccessFields || !readOnly) && (
               <div ref={successSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', successHighlighted && consultationJumpHighlightClass)}>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">

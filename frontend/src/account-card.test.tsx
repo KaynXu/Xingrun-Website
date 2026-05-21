@@ -357,6 +357,31 @@ test('consultation modal uses compact flow sections for both editing and viewing
   assert.doesNotMatch(source, /shadow-\[0_14px_35px_rgba\(14,165,233,0\.06\)\]/);
 });
 
+test('consultation modal sections derive active and current visual states from the shared flow status', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const readOnlyBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?const ConsultationModal = /);
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(readOnlyBlock);
+  assert.ok(modalBlock);
+  assert.match(source, /type ConsultationFlowSectionKey = 'base' \| 'communication' \| 'trial' \| 'result';/);
+  assert.match(source, /function getConsultationFlowSectionStates\(form: ConsultationFormValues\)/);
+  assert.match(source, /const consultationFlowStageToSection/);
+  assert.match(source, /'已加小客服微信': 'base'/);
+  assert.match(source, /'正在沟通细节': 'communication'/);
+  assert.match(source, /'待试听': 'trial'/);
+  assert.match(source, /'成功进班': 'result'/);
+  assert.match(source, /'咨询结束': 'result'/);
+  assert.match(source, /function consultationFlowSectionClass\(/);
+  assert.match(readOnlyBlock[0], /const sectionStates = getConsultationFlowSectionStates\(form\);/);
+  assert.match(modalBlock[0], /const sectionStates = getConsultationFlowSectionStates\(form\);/);
+  assert.match(source, /consultationFlowSectionClass\(sectionStates\.base/);
+  assert.match(source, /consultationFlowSectionClass\(sectionStates\.communication/);
+  assert.match(source, /consultationFlowSectionClass\(sectionStates\.trial/);
+  assert.match(source, /consultationFlowSectionClass\(sectionStates\.result/);
+  assert.match(source, /compactFlowTitleClass\(sectionStates\.result\)/);
+});
+
 test('consultation view modal keeps the title header and uses a two by two report grid', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
@@ -392,10 +417,10 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
 
   assert.ok(modalBlock);
   assert.match(modalBlock[0], /<div className="grid gap-3 md:grid-cols-2">/);
-  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[14rem\] scroll-mt-6'/);
-  assert.match(modalBlock[0], /<section ref=\{contentRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[14rem\] scroll-mt-6 space-y-3'/);
-  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[14rem\] scroll-mt-6'/);
-  assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[14rem\] scroll-mt-6 space-y-3`\}>[\s\S]*结果与备注/);
+  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{cn\(consultationFlowSectionClass\(sectionStates\.base\), 'min-h-\[14rem\] scroll-mt-6'/);
+  assert.match(modalBlock[0], /<section ref=\{contentRef\} className=\{cn\(consultationFlowSectionClass\(sectionStates\.communication\), 'min-h-\[14rem\] scroll-mt-6 space-y-3'/);
+  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{cn\(consultationFlowSectionClass\(sectionStates\.trial\), 'min-h-\[14rem\] scroll-mt-6'/);
+  assert.match(modalBlock[0], /<section className=\{cn\(consultationFlowSectionClass\(sectionStates\.result\), 'min-h-\[14rem\] scroll-mt-6 space-y-3'\)\}>[\s\S]*结果与备注/);
 });
 
 test('consultation edit form derives lit flow stages from edited fields', () => {
@@ -451,15 +476,14 @@ test('consultation edit form highlights changed section titles and uses teacher 
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
-  assert.match(source, /const compactFlowTitleClass = \(active = false\)/);
-  assert.match(modalBlock[0], /const baseSectionActive =/);
-  assert.match(modalBlock[0], /const communicationSectionActive =/);
-  assert.match(modalBlock[0], /const trialSectionActive =/);
-  assert.match(modalBlock[0], /const resultSectionActive =/);
-  assert.match(modalBlock[0], /compactFlowTitleClass\(baseSectionActive\)/);
-  assert.match(modalBlock[0], /compactFlowTitleClass\(communicationSectionActive\)/);
-  assert.match(modalBlock[0], /compactFlowTitleClass\(trialSectionActive\)/);
-  assert.match(modalBlock[0], /compactFlowTitleClass\(resultSectionActive\)/);
+  assert.match(source, /const compactFlowTitleClass = \(state: boolean \| ConsultationFlowSectionState = false\)/);
+  assert.match(modalBlock[0], /const sectionStates = getConsultationFlowSectionStates\(form\);/);
+  assert.doesNotMatch(modalBlock[0], /const baseSectionActive =/);
+  assert.doesNotMatch(modalBlock[0], /const communicationSectionActive =/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(sectionStates\.base\)/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(sectionStates\.communication\)/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(sectionStates\.trial\)/);
+  assert.match(modalBlock[0], /compactFlowTitleClass\(sectionStates\.result\)/);
   assert.match(modalBlock[0], /<select value=\{form\.trial_teacher\}/);
   assert.match(modalBlock[0], /onChange=\{\(e\) => updateField\('trial_teacher', e\.target\.value\)\}/);
   assert.match(source, /const compactEditLabelClass = consultationLabelClass;/);
