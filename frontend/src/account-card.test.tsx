@@ -172,14 +172,14 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.6 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V1.7 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.6';/);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.7';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
@@ -628,7 +628,8 @@ test('consultation page source renders separate desktop pad and mobile consultat
   assert.match(consultationPageBlock[0], /const renderDesktopConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
   assert.match(consultationPageBlock[0], /const renderPadConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
   assert.match(consultationPageBlock[0], /const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[0\.74fr_0\.74fr_0\.96fr_1\.16fr_1\.16fr_1\.16fr_3\.6rem\]/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(0,1fr\)_3\.6rem\]/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[repeat\(3,minmax\(0,1fr\)\)\] border-b/);
   assert.match(consultationPageBlock[0], /const renderTimelineFlow = \(record: ConsultationRecord, busy: boolean\) =>/);
   assert.match(consultationPageBlock[0], /grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\] items-start/);
   assert.match(consultationPageBlock[0], /showTopResultPill/);

@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.6';
+const consultationMeetingVersion = 'V1.7';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5802,11 +5802,12 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       const isCurrent = item === currentStage;
       const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
       const isCompleted = completedSet.has(item) && !isAfterCurrentProcess;
-      return { type: 'stage' as const, value: item, label: consultationStageShortLabel(item), isCurrent, isCompleted };
+      return { type: 'stage' as const, value: item, shortLabel: consultationStageShortLabel(item), label: consultationStageDisplayLabel(item), isCurrent, isCompleted };
     }).concat([{
       type: 'result' as const,
       value: resultStage,
-      label: resultStage === '试听失败' ? '败' : resultStage === '成功进班' ? '进' : '',
+      shortLabel: resultStage === '试听失败' ? '败' : resultStage === '成功进班' ? '进' : '',
+      label: resultStage === '试听失败' ? '失败' : resultStage === '成功进班' ? '进班' : '',
       isCurrent: isConsultationResultStage(currentStage),
       isCompleted: Boolean(completedResultStage) && currentProcessIndex < 0,
     }]);
@@ -5840,7 +5841,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               <div className={`relative min-w-0 text-center text-[10px] font-extrabold leading-none ${textClass}`}>
                 {item.type === 'result' ? (
                   <div className="relative min-w-0">
-                    <span>{item.label}</span>
+                    <span className="hidden min-[520px]:inline">{item.label}</span>
+                    <span className="min-[520px]:hidden">{item.shortLabel}</span>
                     <select
                       value={resultStage}
                       disabled={!editable}
@@ -5859,7 +5861,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     </select>
                   </div>
                 ) : (
-                  item.label
+                  <>
+                    <span className="hidden min-[520px]:inline">{item.label}</span>
+                    <span className="min-[520px]:hidden">{item.shortLabel}</span>
+                  </>
                 )}
               </div>
             </div>
@@ -5965,14 +5970,16 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
         <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[0.74fr_0.74fr_0.96fr_1.16fr_1.16fr_1.16fr_3.6rem] items-center border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_3.6rem] items-center border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
             {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
-            {renderInfoCell('家长微信', record.parent_wechat_name || '—', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
+            <div className="border-l border-sky-100/80 pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
+          </div>
+          <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] border-b border-sky-50 px-4 py-2.5 text-sm dark:border-white/10">
+            {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
             {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充', 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
             {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
-            <div className="border-l border-sky-100/80 pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
           </div>
           <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
@@ -5980,7 +5987,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           <div className={`grid grid-cols-[0.875rem_minmax(0,1fr)_4.35rem] items-center gap-2.5 border-t border-sky-50 bg-slate-50/55 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
             <ConsultationStatusLamp stage={record.flow_stage} />
-            <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+            <div className="min-w-0 overflow-visible">{renderTimelineFlow(record, busy)}</div>
             {renderOverButton(record, busy, 'h-8 px-2 text-[11px]')}
           </div>
         </article>
