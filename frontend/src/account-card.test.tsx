@@ -438,15 +438,19 @@ test('consultation flow display labels shorten test and trial stage wording', ()
   assert.doesNotMatch(labelBlock[0], /return '待试听'/);
 });
 
-test('consultation full flow bar keeps one-row short labels when modal width is narrow', () => {
+test('consultation flow bar renders a one-row B6 dot stepper with responsive labels', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /fullUsesOneRow/);
+  assert.match(flowBarBlock[0], /flowNodes/);
+  assert.match(flowBarBlock[0], /showOver/);
+  assert.match(flowBarBlock[0], /grid-cols-\[repeat\(7,minmax\(1\.55rem,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /min-\[720px\]:inline/);
   assert.match(flowBarBlock[0], /consultationStageShortLabel\(item\)/);
-  assert.match(flowBarBlock[0], /mode === 'full'/);
+  assert.match(flowBarBlock[0], /border-\[#22B981\] bg-\[#22B981\] text-white/);
+  assert.match(flowBarBlock[0], /border-\[#0EA5E9\] bg-\[#0EA5E9\] text-white/);
+  assert.match(flowBarBlock[0], /border-\[#F45B7A\]/);
 });
 
 test('consultation result capsule matches stage widths and uses empty enter fail short labels', () => {
@@ -466,49 +470,43 @@ test('consultation result capsule matches stage widths and uses empty enter fail
   assert.doesNotMatch(resultCapsuleBlock[0], /成\/败/);
 });
 
-test('consultation full result capsule keeps the same height as the five process capsules', () => {
+test('consultation flow treats result as the sixth dot node instead of a separate wide capsule', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
-  assert.ok(resultCapsuleBlock);
-  assert.match(resultCapsuleBlock[0], /useResponsiveShortLabel\?: boolean/);
-  assert.match(resultCapsuleBlock[0], /useResponsiveShortLabel = false,/);
-  assert.match(resultCapsuleBlock[0], /const useShortLabel = compact \|\| useResponsiveShortLabel;/);
-  assert.match(resultCapsuleBlock[0], /\$\{compact \? 'h-8 text-\[10px\]' : 'h-\[42px\] text-xs'\}/);
-  assert.match(flowBarBlock[0], /compact=\{compact\}/);
-  assert.match(flowBarBlock[0], /useResponsiveShortLabel=\{fullUsesOneRow\}/);
-  assert.doesNotMatch(flowBarBlock[0], /compact=\{compact \|\| fullUsesOneRow\}/);
+  assert.match(flowBarBlock[0], /key: 'consultation-result'/);
+  assert.match(flowBarBlock[0], /type: 'result' as const/);
+  assert.match(flowBarBlock[0], /const resultShortLabel = consultationResultShortLabel\(resultStage\) \|\| '进';/);
+  assert.match(flowBarBlock[0], /h-\[18px\] w-\[18px\]/);
+  assert.match(flowBarBlock[0], /h-\[21px\] w-\[21px\]/);
+  assert.doesNotMatch(flowBarBlock[0], /h-\[42px\] text-xs/);
 });
 
-test('consultation modal jump controls use proportional space inside equal flow capsules', () => {
+test('consultation modal jump controls are preserved on the dot stepper without widening nodes', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
-  assert.ok(resultCapsuleBlock);
-  assert.match(flowBarBlock[0], /basis-\[20%\]/);
-  assert.match(flowBarBlock[0], /flex-\[1_1_80%\]/);
+  assert.match(flowBarBlock[0], /showJumpActions && node\.type !== 'over'/);
+  assert.match(flowBarBlock[0], /onStageJump\?\./);
+  assert.match(flowBarBlock[0], /absolute left-1\/2 top-0 z-20 flex h-4 w-4/);
+  assert.match(flowBarBlock[0], /<ArrowRight size=\{9\} \/>/);
+  assert.doesNotMatch(flowBarBlock[0], /basis-\[20%\]/);
+  assert.doesNotMatch(flowBarBlock[0], /flex-\[1_1_80%\]/);
   assert.doesNotMatch(flowBarBlock[0], /h-7 w-4/);
-  assert.match(resultCapsuleBlock[0], /basis-\[24%\]/);
-  assert.match(resultCapsuleBlock[0], /flex-\[1_1_76%\]/);
-  assert.match(resultCapsuleBlock[0], /flex-1/);
-  assert.doesNotMatch(resultCapsuleBlock[0], /right-0\.5/);
 });
 
 test('consultation full flow bar avoids fixed minimum columns that can push the result capsule outside the modal', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
-  assert.ok(resultCapsuleBlock);
-  assert.match(flowBarBlock[0], /: 'grid w-full min-w-0 grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\] gap-1 min-\[720px\]:gap-1\.5'/);
+  assert.match(flowBarBlock[0], /'grid-cols-\[repeat\(7,minmax\(0,1fr\)\)\]'/);
   assert.doesNotMatch(flowBarBlock[0], /min-\[640px\]:grid-cols-\[repeat\(6,minmax\(5\.8rem,1fr\)\)\]/);
-  assert.match(resultCapsuleBlock[0], /hidden min-\[720px\]:inline/);
-  assert.match(resultCapsuleBlock[0], /min-\[720px\]:hidden/);
+  assert.doesNotMatch(flowBarBlock[0], /grid-cols-\[minmax\(0,1fr\)_4\.5rem\]/);
+  assert.match(flowBarBlock[0], /hidden min-\[720px\]:inline/);
+  assert.match(flowBarBlock[0], /min-\[720px\]:hidden/);
 });
 
 test('consultation modal places flow subtitle and status lamp beside the title', () => {
@@ -527,9 +525,9 @@ test('consultation modal flow uses the same compact one-row style as consultatio
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
-  assert.match(modalBlock[0], /grid-cols-\[minmax\(0,1fr\)_4\.5rem\]/);
   assert.match(modalBlock[0], /<ConsultationFlowBar[\s\S]*mode="list"/);
-  assert.match(modalBlock[0], />\s*OVER\s*<\/button>/);
+  assert.match(modalBlock[0], /showOver/);
+  assert.match(modalBlock[0], /onOverClick=\{\(\) => \{/);
   assert.doesNotMatch(modalBlock[0], /mode="full"/);
 });
 
@@ -542,7 +540,7 @@ test('consultation modal flow capsules jump to matching edit sections without ch
   assert.ok(flowBarBlock);
   assert.match(flowBarBlock[0], /showJumpActions/);
   assert.match(flowBarBlock[0], /onStageJump/);
-  assert.match(flowBarBlock[0], /aria-label=\{`跳转到\$\{item\}编辑栏`\}/);
+  assert.match(flowBarBlock[0], /aria-label=\{`跳转到\$\{node\.title\}编辑栏`\}/);
   assert.match(modalBlock[0], /const baseInfoRef = useRef<HTMLElement \| null>\(null\);/);
   assert.match(modalBlock[0], /const testSectionRef = useRef<HTMLDivElement \| null>\(null\);/);
   assert.match(modalBlock[0], /const trialSectionRef = useRef<HTMLDivElement \| null>\(null\);/);
@@ -553,15 +551,13 @@ test('consultation modal flow capsules jump to matching edit sections without ch
   assert.match(modalBlock[0], /onStageJump=\{handleStageJump\}/);
 });
 
-test('consultation modal uses proportional jump buttons and flashes the jumped edit section', () => {
+test('consultation modal uses dot-stepper jump buttons and flashes the jumped edit section', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-  const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
   assert.ok(flowBarBlock);
-  assert.ok(resultCapsuleBlock);
   assert.match(source, /const consultationJumpHighlightClass = /);
   assert.match(modalBlock[0], /const \[highlightedJumpStage, setHighlightedJumpStage\] = useState<string>\(''\);/);
   assert.match(modalBlock[0], /const jumpHighlightTimerRef = useRef<number \| null>\(null\);/);
@@ -570,8 +566,8 @@ test('consultation modal uses proportional jump buttons and flashes the jumped e
   assert.match(modalBlock[0], /highlightedJumpStage === '已加小客服微信'/);
   assert.match(modalBlock[0], /highlightedJumpStage === '正在沟通细节'/);
   assert.match(modalBlock[0], /highlightedJumpStage === '成功进班'/);
-  assert.match(flowBarBlock[0], /className="flex h-full basis-\[20%\] shrink-0/);
-  assert.match(resultCapsuleBlock[0], /className="flex h-full basis-\[24%\] shrink-0 items-stretch"/);
+  assert.match(flowBarBlock[0], /absolute left-1\/2 top-0 z-20 flex h-4 w-4/);
+  assert.match(flowBarBlock[0], /onStageJump\?\.\(node\.type === 'result'/);
   assert.doesNotMatch(flowBarBlock[0], /h-7 w-4/);
 });
 

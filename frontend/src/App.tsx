@@ -3720,101 +3720,202 @@ const ConsultationFlowBar = ({
   mode = 'full',
   editable = false,
   showJumpActions = false,
+  showOver = false,
+  overDisabled = false,
   onStageClick,
   onStageDoubleClick,
   onResultChange,
   onResultClick,
   onResultDoubleClick,
   onStageJump,
+  onOverClick,
 }: {
   stage: string;
   completedStages: string[];
   mode?: 'list' | 'full';
   editable?: boolean;
   showJumpActions?: boolean;
+  showOver?: boolean;
+  overDisabled?: boolean;
   onStageClick?: (stage: string) => void;
   onStageDoubleClick?: (stage: string) => void;
   onResultChange?: (stage: ConsultationResultStage) => void;
   onResultClick?: () => void;
   onResultDoubleClick?: () => void;
   onStageJump?: (stage: string) => void;
+  onOverClick?: () => void;
 }) => {
   const currentStage = stage || consultationFlowStages[0];
   const ended = isConsultationEnded(currentStage);
   const compact = mode === 'list';
-  const fullUsesOneRow = mode === 'full';
   const completedSet = new Set(completedStages || []);
   if (!ended && consultationProcessStages.includes(currentStage)) {
     completedSet.add(currentStage);
   }
   const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
+  const completedResultStage = (completedStages || []).find(isConsultationResultStage) || '';
+  const resultStage = isConsultationResultStage(currentStage) ? currentStage : completedResultStage;
+  const resultActive = isConsultationResultStage(currentStage);
+  const resultCompleted = Boolean(completedResultStage) && currentProcessIndex < 0;
+  const resultLabel = resultStage === '试听失败' ? '咨询失败' : '进班';
+  const resultShortLabel = consultationResultShortLabel(resultStage) || '进';
+  const flowNodes = [
+    ...consultationProcessStages.map((item) => {
+      const stageIndex = consultationProcessStages.indexOf(item);
+      const isCurrent = item === currentStage;
+      const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
+      return {
+        key: item,
+        type: 'process' as const,
+        label: consultationStageDisplayLabel(item).replace('微信✅', ''),
+        shortLabel: consultationStageShortLabel(item),
+        title: item,
+        active: isCurrent,
+        completed: completedSet.has(item) && !isAfterCurrentProcess,
+        disabled: !editable || ended,
+      };
+    }),
+    {
+      key: 'consultation-result',
+      type: 'result' as const,
+      label: resultLabel,
+      shortLabel: resultShortLabel,
+      title: resultStage || '成功进班',
+      active: resultActive,
+      completed: resultCompleted,
+      disabled: !editable || ended,
+    },
+    ...(showOver ? [{
+      key: 'consultation-over',
+      type: 'over' as const,
+      label: 'OVER',
+      shortLabel: 'OVER',
+      title: '咨询结束',
+      active: ended,
+      completed: ended,
+      disabled: overDisabled,
+    }] : []),
+  ];
+  const gridClass = showOver
+    ? compact
+      ? 'grid-cols-[repeat(7,minmax(1.55rem,1fr))] min-[520px]:grid-cols-[repeat(7,minmax(2.9rem,1fr))]'
+      : 'grid-cols-[repeat(7,minmax(0,1fr))]'
+    : compact
+      ? 'grid-cols-[repeat(6,minmax(1.75rem,1fr))] min-[520px]:grid-cols-[repeat(6,minmax(3.85rem,1fr))]'
+      : 'grid-cols-[repeat(6,minmax(0,1fr))]';
+  const getNodeCircleClass = (node: typeof flowNodes[number]) => {
+    if (node.type === 'over') {
+      return node.active
+        ? 'border-[#F45B7A] bg-[#F45B7A] text-white shadow-[0_0_0_3px_rgba(244,91,122,0.14)]'
+        : 'border-[#F45B7A] bg-white text-transparent dark:bg-slate-950';
+    }
+    if (node.active) {
+      return 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]';
+    }
+    if (node.completed) {
+      return 'border-[#22B981] bg-[#22B981] text-white';
+    }
+    return 'border-[#C7DDEA] bg-white text-transparent dark:bg-slate-950';
+  };
+  const getNodeTextClass = (node: typeof flowNodes[number]) => {
+    if (node.type === 'over') return node.active ? 'text-[#F45B7A]' : 'text-[#7188A6]';
+    if (node.active) return 'text-[#0EA5E9]';
+    if (node.completed) return 'text-[#0A8F65]';
+    return 'text-[#7188A6]';
+  };
+  const getConnectorClass = (node: typeof flowNodes[number], next?: typeof flowNodes[number]) => {
+    if (!next) return '';
+    if (node.type === 'over' || next.type === 'over') {
+      return ended ? 'bg-[#F45B7A]/55' : 'bg-[#D9EEF7]';
+    }
+    if (node.completed && next.completed) return 'bg-[#22B981]';
+    if (node.active || next.active) return 'bg-[#0EA5E9]';
+    return 'bg-[#D9EEF7]';
+  };
   return (
-    <div className={compact
-      ? 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(1.75rem,1fr))] gap-1 min-[520px]:grid-cols-[repeat(6,minmax(3.85rem,1fr))] min-[520px]:gap-1.5'
-      : 'grid w-full min-w-0 grid-cols-[repeat(6,minmax(0,1fr))] gap-1 min-[720px]:gap-1.5'
-    }>
-      {consultationProcessStages.map((item) => {
-        const stageIndex = consultationProcessStages.indexOf(item);
-        const isCurrent = item === currentStage;
-        const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
-        const isCompleted = completedSet.has(item) && !isAfterCurrentProcess;
-        const stageClass = isCurrent
-          ? 'bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.20),0_8px_24px_rgba(14,165,233,0.28)]'
-          : isCompleted
-            ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-[0_0_0_1px_rgba(16,185,129,0.16)] dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200'
-            : 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500';
+    <div className={`grid w-full min-w-0 ${gridClass} ${compact ? 'gap-0.5' : 'gap-1'}`}>
+      {flowNodes.map((node, index) => {
+        const nextNode = flowNodes[index + 1];
+        const circleText = node.type === 'over'
+          ? ''
+          : node.active
+            ? node.shortLabel
+            : node.completed
+              ? '✓'
+              : '';
+        const handlePrimaryClick = () => {
+          if (node.type === 'process') onStageClick?.(node.key);
+          if (node.type === 'result') onResultClick?.();
+          if (node.type === 'over') onOverClick?.();
+        };
+        const handlePrimaryDoubleClick = () => {
+          if (node.type === 'process') onStageDoubleClick?.(node.key);
+          if (node.type === 'result') onResultDoubleClick?.();
+        };
         return (
-          <div
-            key={item}
-            title={item}
-            className={`flex min-w-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-[10px] text-center font-extrabold leading-none transition ${compact ? 'h-8 text-[10px]' : 'h-[42px] text-xs'} ${editable ? 'hover:-translate-y-0.5' : ''} ${ended ? 'opacity-60' : ''} ${stageClass}`}
-          >
+          <div key={node.key} className="group relative min-w-0">
+            {nextNode && (
+              <span
+                className={`absolute left-1/2 right-[-50%] ${compact ? 'top-[0.58rem]' : 'top-[0.68rem]'} h-px ${getConnectorClass(node, nextNode)}`}
+                aria-hidden="true"
+              />
+            )}
             <button
               type="button"
-              disabled={!editable}
-              onClick={() => onStageClick?.(item)}
-              onDoubleClick={() => onStageDoubleClick?.(item)}
-              className={`min-w-0 overflow-hidden text-ellipsis ${showJumpActions ? 'flex-[1_1_80%] pl-3 pr-1' : 'flex-1'} ${compact ? 'px-0.5' : 'px-2'} ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+              disabled={node.disabled}
+              onClick={handlePrimaryClick}
+              onDoubleClick={handlePrimaryDoubleClick}
+              title={node.title}
+              className={`relative z-10 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-lg ${compact ? 'min-h-9 py-0.5' : 'min-h-11 py-1'} text-center transition ${node.disabled ? 'cursor-default' : 'hover:bg-sky-50/70 dark:hover:bg-white/5'}`}
             >
-              {compact || fullUsesOneRow ? (
+              <span className={`${compact ? 'h-[18px] w-[18px] text-[10px]' : 'h-[21px] w-[21px] text-[11px]'} flex items-center justify-center rounded-full border font-extrabold leading-none ${getNodeCircleClass(node)}`}>
+                {circleText}
+              </span>
+              <span className={`block w-full truncate whitespace-nowrap ${compact ? 'text-[10px]' : 'text-[11px]'} font-extrabold leading-4 ${getNodeTextClass(node)}`}>
                 <>
-                  <span className={compact ? 'hidden min-[520px]:inline' : 'hidden min-[720px]:inline'}>{consultationStageDisplayLabel(item)}</span>
-                  <span className={compact ? 'min-[520px]:hidden' : 'min-[720px]:hidden'}>{consultationStageShortLabel(item)}</span>
+                  <span className={compact ? 'hidden min-[520px]:inline' : 'hidden min-[720px]:inline'}>{node.label}</span>
+                  <span className={compact ? 'min-[520px]:hidden' : 'min-[720px]:hidden'}>{node.shortLabel}</span>
                 </>
-              ) : (
-                consultationStageDisplayLabel(item)
-              )}
+              </span>
             </button>
-            {showJumpActions && (
+            {node.type === 'result' && (
+              <div className={`absolute right-0 top-0 z-20 flex ${compact ? 'h-5 w-5' : 'h-6 w-6'} items-center justify-center rounded-full bg-white/80 text-[#7188A6] shadow-sm dark:bg-slate-900/80`}>
+                <ChevronDown size={compact ? 10 : 11} className="pointer-events-none" />
+                <select
+                  value={resultStage}
+                  disabled={node.disabled}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => {
+                    const value = event.target.value as ConsultationResultStage | '';
+                    if (value) onResultChange?.(value);
+                  }}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+                  aria-label="选择咨询结果"
+                  title="选择咨询结果"
+                >
+                  <option value="">未选择结果</option>
+                  <option value="成功进班">☀️ 成功进班</option>
+                  <option value="试听失败">😢 试听未成</option>
+                </select>
+              </div>
+            )}
+            {showJumpActions && node.type !== 'over' && (
               <button
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onStageJump?.(item);
+                  onStageJump?.(node.type === 'result' ? (isConsultationResultStage(currentStage) ? currentStage : '成功进班') : node.key);
                 }}
-                className="flex h-full basis-[20%] shrink-0 items-center justify-center bg-white/60 text-slate-500 transition hover:bg-white hover:text-sky-600 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-800"
-                aria-label={`跳转到${item}编辑栏`}
-                title={`跳转到${item}编辑栏`}
+                className="absolute left-1/2 top-0 z-20 flex h-4 w-4 -translate-x-1/2 -translate-y-1 items-center justify-center rounded-full bg-white text-[#7188A6] opacity-0 shadow-sm transition hover:text-[#0EA5E9] focus:opacity-100 group-hover:opacity-100 dark:bg-slate-900"
+                aria-label={`跳转到${node.title}编辑栏`}
+                title={`跳转到${node.title}编辑栏`}
               >
-                <ArrowRight size={compact ? 10 : 12} />
+                <ArrowRight size={9} />
               </button>
             )}
           </div>
         );
       })}
-      <ConsultationResultCapsule
-        stage={currentStage}
-        completedStages={completedStages}
-        blockedByCurrentProcess={currentProcessIndex >= 0}
-        compact={compact}
-        editable={editable && !ended}
-        onResultChange={onResultChange}
-        onResultClick={onResultClick}
-        onResultDoubleClick={onResultDoubleClick}
-        showJumpAction={showJumpActions}
-        useResponsiveShortLabel={fullUsesOneRow}
-        onJump={() => onStageJump?.(isConsultationResultStage(currentStage) ? currentStage : '成功进班')}
-      />
     </div>
   );
 };
@@ -3829,6 +3930,35 @@ const compactFlowTitleClass = (active = false) => cn(
 const compactReadLabelClass = consultationLabelClass;
 const compactEditLabelClass = consultationLabelClass;
 const compactReadValueClass = consultationValueClass;
+
+const ConsultationExpandableText = ({ text, lines = 3 }: { text?: string | null; lines?: 2 | 3 }) => {
+  const [expanded, setExpanded] = useState(false);
+  const content = text?.trim();
+  if (!content) {
+    return <p className={compactReadValueClass}>—</p>;
+  }
+  const canToggle = content.length > (lines === 2 ? 64 : 96);
+  return (
+    <div>
+      <p className={cn(
+        compactReadValueClass,
+        'whitespace-pre-wrap',
+        !expanded && canToggle ? (lines === 2 ? 'line-clamp-2' : 'line-clamp-3') : '',
+      )}>
+        {content}
+      </p>
+      {canToggle && (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="mt-1 text-xs font-extrabold text-[#0EA5E9] transition hover:text-sky-700"
+        >
+          {expanded ? '收起' : '展开'}
+        </button>
+      )}
+    </div>
+  );
+};
 
 const ConsultationReadOnlyReport = ({
   form,
@@ -3877,7 +4007,7 @@ const ConsultationReadOnlyReport = ({
         <div className="grid gap-3">
           <div>
             <p className={compactReadLabelClass}>沟通ing：情况说明</p>
-            <p className={compactReadValueClass}>{value(form.need_detail)}</p>
+            <ConsultationExpandableText text={form.need_detail} />
           </div>
           <div>
             <div className="grid grid-cols-2 gap-2">
@@ -3913,7 +4043,7 @@ const ConsultationReadOnlyReport = ({
         </div>
         <div className="mt-3 border-t border-sky-50 pt-3 dark:border-white/10">
           <p className={compactReadLabelClass}>试听反馈</p>
-          <p className={compactReadValueClass}>{value(form.trial_feedback)}</p>
+          <ConsultationExpandableText text={form.trial_feedback} lines={2} />
         </div>
       </div>
 
@@ -3946,8 +4076,8 @@ const ConsultationReadOnlyReport = ({
         </div>
         <div className="mt-3 border-t border-sky-50 pt-3 dark:border-white/10">
           <div className="grid gap-3 md:grid-cols-2">
-            <div><p className={compactReadLabelClass}>咨询结束备注</p><p className={compactReadValueClass}>{value(form.end_note)}</p></div>
-            <div><p className={compactReadLabelClass}>跟进备注（内部）</p><p className={compactReadValueClass}>{value(form.follow_up_note)}</p></div>
+            <div><p className={compactReadLabelClass}>咨询结束备注</p><ConsultationExpandableText text={form.end_note} lines={2} /></div>
+            <div><p className={compactReadLabelClass}>跟进备注（内部）</p><ConsultationExpandableText text={form.follow_up_note} lines={2} /></div>
           </div>
         </div>
       </div>
@@ -4306,13 +4436,15 @@ const ConsultationModal = ({
                 </div>
               </div>
             )}
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2">
+            <div className="min-w-0">
               <ConsultationFlowBar
                 mode="list"
                 stage={form.flow_stage}
                 completedStages={form.completed_stages}
                 editable={!readOnly && !stageFrozen}
                 showJumpActions={!readOnly}
+                showOver
+                overDisabled={readOnly}
                 onStageClick={(stage) => setForm((current) => toggleConsultationStage(current, stage))}
                 onStageDoubleClick={(stage) => setForm((current) => moveConsultationStage(current, stage))}
                 onResultChange={(stage) => setForm((current) => setConsultationResultStage(current, stage))}
@@ -4325,11 +4457,7 @@ const ConsultationModal = ({
                 }}
                 onResultDoubleClick={() => setForm((current) => setConsultationResultStage(current, '成功进班'))}
                 onStageJump={handleStageJump}
-              />
-              <button
-                type="button"
-                disabled={readOnly}
-                onClick={() => {
+                onOverClick={() => {
                   if (readOnly) return;
                   if (stageFrozen) {
                     setConfirmRestoreOpen(true);
@@ -4337,10 +4465,7 @@ const ConsultationModal = ({
                   }
                   setForm((current) => endConsultationValues(current));
                 }}
-                className="inline-flex h-8 min-w-0 items-center justify-center rounded-[10px] border border-rose-200 bg-rose-50 px-2 text-[11px] font-extrabold text-rose-500 transition hover:bg-rose-100 disabled:cursor-default disabled:opacity-70 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-              >
-                OVER
-              </button>
+              />
             </div>
           </section>
 
@@ -5290,11 +5415,31 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
         )}
         <div className="grid grid-cols-[0.75rem_minmax(0,1fr)] items-center gap-2 bg-[#F9FDFF] px-3.5 py-2.5 dark:bg-white/[0.03]">
           <ConsultationStatusLamp stage={record.flow_stage} />
-          <ConsultationFlowBar mode="list" stage={record.flow_stage} completedStages={record.completed_stages} editable={false} />
+          <ConsultationFlowBar mode="list" stage={record.flow_stage} completedStages={record.completed_stages} editable={false} showOver overDisabled />
         </div>
       </article>
     );
   };
+
+  const renderWorkbenchEmptyState = (title: string, description: string, primaryLabel: string, onPrimary: () => void) => (
+    <div className="col-span-full flex min-h-[18rem] flex-col items-center justify-center rounded-[16px] border border-dashed border-[#D9EEF7] bg-[#F9FDFF] px-6 py-10 text-center dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-[#0EA5E9] dark:bg-sky-400/10 dark:text-sky-200">
+        <MessageSquare size={28} />
+      </div>
+      <h4 className="mt-4 text-lg font-extrabold text-[#1F2A44] dark:text-white">{title}</h4>
+      <p className="mt-2 max-w-md text-sm leading-6 text-[#7188A6] dark:text-slate-400">{description}</p>
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        <button type="button" onClick={onPrimary} className={`${workspaceSecondaryButtonClass} h-10 px-4 py-2 text-sm`}>
+          {primaryLabel}
+        </button>
+        {teacherFilter && (
+          <button type="button" onClick={() => setTeacherFilter('')} className={`${workspaceSecondaryButtonClass} h-10 px-4 py-2 text-sm`}>
+            清空筛选
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   if (!hasOwnerAccess(currentUser.role)) {
     return (
@@ -5306,11 +5451,11 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
 
   return (
     <div className={`${workspacePageClass} min-h-[100svh] space-y-5 bg-[#F5FAFD] dark:bg-slate-950`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className={`sticky top-0 z-20 -mx-3 flex flex-col gap-4 rounded-[18px] ${consultationSurfaceClass} px-3 py-3 sm:mx-0 sm:px-4 lg:grid lg:grid-cols-[minmax(18rem,1fr)_minmax(28rem,36rem)] lg:items-center`}>
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#0EA5E9]">Consultation Meeting · {consultationMeetingVersion}</p>
-          <h3 className="mt-2 text-2xl font-extrabold tracking-tight text-[#1F2A44] dark:text-white">面对面沟通工作台</h3>
-          <p className="mt-2 text-sm text-[#7188A6] dark:text-slate-400">本页面内保存只进入已处理栏，点击最终保存后才同步主咨询页。</p>
+          <h3 className="mt-1 text-xl font-extrabold tracking-tight text-[#1F2A44] dark:text-white">面对面沟通工作台</h3>
+          <p className="mt-1 text-sm text-[#7188A6] dark:text-slate-400">本页保存先进入已处理，最终保存后同步主咨询页。</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-3 lg:w-[32rem]">
           <label className="sm:col-span-1">
@@ -5322,11 +5467,11 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
               ))}
             </select>
           </label>
-          <button type="button" onClick={handleFinalSave} disabled={!hasUncommittedChanges || saving} className={`${workspacePrimaryButtonClass} h-10 disabled:cursor-not-allowed disabled:opacity-50`}>
+          <button type="button" onClick={handleFinalSave} disabled={!hasUncommittedChanges || saving} className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50`}>
             <CheckCircle2 size={15} />
             最终保存
           </button>
-          <button type="button" onClick={handleCloseWorkbench} className={`${workspaceSecondaryButtonClass} h-10`}>
+          <button type="button" onClick={handleCloseWorkbench} className={`${workspaceSecondaryButtonClass} h-10 px-4 py-2 text-sm`}>
             <X size={15} />
             关闭
           </button>
@@ -5373,7 +5518,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
 
           {workbenchTab === 'pending' ? (
             <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-              {pendingRecords.length ? pendingRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">当前筛选下没有待处理咨询。</p>}
+              {pendingRecords.length ? pendingRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无待处理记录', '可以切到已处理查看刚核对过的咨询，或调整负责教师筛选。', '查看已处理', () => setWorkbenchTab('processed'))}
             </div>
           ) : (
             <div className="space-y-4">
@@ -5406,11 +5551,11 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
 
               {processedWorkbenchTab === 'active' ? (
                 <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-                  {processedActiveRecords.length ? processedActiveRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无待咨询。</p>}
+                  {processedActiveRecords.length ? processedActiveRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无待咨询', '可以查看待处理队列继续核对，或切换到已结束查看完成记录。', '查看待处理', () => setWorkbenchTab('pending'))}
                 </div>
               ) : (
                 <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-                  {processedEndedRecords.length ? processedEndedRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无已结束。</p>}
+                  {processedEndedRecords.length ? processedEndedRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无已结束记录', '咨询成功、咨询失败或中途结束的记录会在这里集中查看。', '查看待处理', () => setWorkbenchTab('pending'))}
                 </div>
               )}
             </div>
@@ -5785,11 +5930,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         stage={record.flow_stage}
         completedStages={record.completed_stages}
         editable={canEditConsultations && !busy && !frozen}
+        showOver
+        overDisabled={!canEditConsultations || busy}
         onStageClick={(stage) => handleInlineStageToggle(record, stage)}
         onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
         onResultChange={(stage) => handleInlineResultChange(record, stage)}
         onResultClick={() => handleInlineResultClick(record)}
         onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
+        onOverClick={() => handleInlineEndConsultation(record)}
       />
     );
   };
@@ -5873,15 +6021,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const renderB3FlowStrip = (record: ConsultationRecord, busy: boolean, mobile = false) => {
     const frozen = isConsultationEnded(record.flow_stage);
-    if (mobile) {
-      return renderB3MobileTimeline(record, busy);
-    }
     return (
-      <div className="min-w-0 overflow-visible">
-        <div className={`grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2 ${frozen ? 'opacity-75' : ''}`}>
-          <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
-          {renderOverButton(record, busy, 'h-8 px-2 text-[11px]')}
-        </div>
+      <div className={`min-w-0 overflow-visible ${frozen ? 'opacity-75' : ''}`}>
+        {renderInlineFlow(record, busy)}
       </div>
     );
   };
