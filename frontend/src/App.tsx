@@ -1136,7 +1136,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.0';
+const consultationMeetingVersion = 'V1.1';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5114,6 +5114,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
+  const [workbenchTab, setWorkbenchTab] = useState<'pending' | 'processed'>('pending');
   const teacherDirectory = buildConsultationTeacherDirectory(records);
   const hasUncommittedChanges = Object.keys(draftsById).length > 0;
 
@@ -5197,6 +5198,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     }
     setDraftsById((current) => ({ ...current, [selectedRecord.id]: values }));
     setProcessedIds((current) => new Set(current).add(selectedRecord.id));
+    setWorkbenchTab('processed');
     closeModal();
   };
 
@@ -5304,38 +5306,55 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
       {loading ? (
         <div className={`${workspaceCardClass} p-8 text-center text-slate-500 dark:text-slate-400`}>正在加载面对面沟通工作台...</div>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
-          <section className={`${workspaceCardClass} p-4`}>
-            <div className="mb-3 flex items-center justify-between">
-              <h4 className="text-base font-extrabold text-slate-900 dark:text-white">待处理</h4>
-              <span className="rounded-full bg-sky-50 px-2 py-1 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{pendingRecords.length}</span>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2">
+        <section className={`${workspaceCardClass} p-4`}>
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+            <button
+              type="button"
+              onClick={() => setWorkbenchTab('pending')}
+              className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
+                workbenchTab === 'pending'
+                  ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              待处理
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{pendingRecords.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkbenchTab('processed')}
+              className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
+                workbenchTab === 'processed'
+                  ? 'bg-white text-emerald-700 shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              已处理
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200">{processedRecords.length}</span>
+            </button>
+          </div>
+
+          {workbenchTab === 'pending' ? (
+            <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
               {pendingRecords.length ? pendingRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">当前筛选下没有待处理咨询。</p>}
             </div>
-          </section>
-
-          <section className={`${workspaceCardClass} p-4`}>
-            <div className="mb-3 flex items-center justify-between">
-              <h4 className="text-base font-extrabold text-slate-900 dark:text-white">已处理</h4>
-              <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200">{processedRecords.length}</span>
-            </div>
-            <div className="space-y-4">
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
               <div>
                 <p className="mb-2 text-xs font-extrabold tracking-[0.16em] text-slate-400">待咨询</p>
-                <div className="space-y-3">
+                <div className="grid gap-3">
                   {processedActiveRecords.length ? processedActiveRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无待咨询。</p>}
                 </div>
               </div>
               <div>
                 <p className="mb-2 text-xs font-extrabold tracking-[0.16em] text-slate-400">已结束</p>
-                <div className="space-y-3">
+                <div className="grid gap-3">
                   {processedEndedRecords.length ? processedEndedRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无已结束。</p>}
                 </div>
               </div>
             </div>
-          </section>
-        </div>
+          )}
+        </section>
       )}
 
       <AnimatePresence>
