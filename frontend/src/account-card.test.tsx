@@ -232,6 +232,22 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
   assert.match(workbenchBlock[0], /已结束/);
 });
 
+test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(workbenchBlock);
+  assert.match(workbenchBlock[0], /const renderMeetingDesktopCard = \(record: ConsultationRecord\) =>/);
+  assert.match(workbenchBlock[0], /const renderMeetingPadCard = \(record: ConsultationRecord\) =>/);
+  assert.match(workbenchBlock[0], /const renderMeetingMobileCard = \(record: ConsultationRecord\) =>/);
+  assert.match(workbenchBlock[0], /<div className="block md:hidden">\{renderMeetingMobileCard\(record\)\}<\/div>/);
+  assert.match(workbenchBlock[0], /<div className="hidden md:block xl:hidden">\{renderMeetingPadCard\(record\)\}<\/div>/);
+  assert.match(workbenchBlock[0], /<div className="hidden xl:block">\{renderMeetingDesktopCard\(record\)\}<\/div>/);
+  assert.match(workbenchBlock[0], /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_72px\]/);
+  assert.match(workbenchBlock[0], /grid-cols-\[0\.82fr_1fr_1fr_3\.6rem\]/);
+  assert.doesNotMatch(workbenchBlock[0], /lg:grid-cols-2 2xl:grid-cols-3/);
+});
+
 test('consultation meeting workbench final save and close guard are explicit', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
@@ -312,7 +328,7 @@ test('consultation list and workbench cards expand long detail previews based on
   assert.doesNotMatch(expandableBlock[0], /content\.length > \(lines === 2 \? 64 : 96\)/);
   assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
   assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="跟进" text=\{followUpNote\} \/>/);
-  assert.match(workbenchBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{record\.need_detail\} \/>/);
+  assert.match(workbenchBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
   assert.doesNotMatch(source, /<ConsultationExpandableText/);
 });
 
