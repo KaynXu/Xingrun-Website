@@ -307,6 +307,8 @@ test('consultation list and workbench cards expand long detail previews based on
   assert.match(expandableBlock[0], /element\.scrollHeight > element\.clientHeight \+ 1/);
   assert.match(expandableBlock[0], /window\.addEventListener\('resize', measure\)/);
   assert.match(expandableBlock[0], /展开全文/);
+  assert.match(expandableBlock[0], /className="relative min-w-0"/);
+  assert.match(expandableBlock[0], /absolute bottom-0 right-0/);
   assert.doesNotMatch(expandableBlock[0], /content\.length > \(lines === 2 \? 64 : 96\)/);
   assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
   assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="跟进" text=\{followUpNote\} \/>/);

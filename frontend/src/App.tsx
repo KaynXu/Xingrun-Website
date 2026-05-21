@@ -3973,11 +3973,12 @@ const ConsultationCardExpandableText = ({
   if (!content) return null;
 
   return (
-    <div>
+    <div className="relative min-w-0">
       <p
         ref={textRef}
         className={cn(
           'min-w-0 whitespace-pre-wrap break-words text-[13px] leading-5 text-[#7188A6] dark:text-slate-400',
+          canToggle ? 'pr-16' : '',
           !expanded ? (lines === 2 ? 'line-clamp-2' : 'line-clamp-1') : '',
         )}
       >
@@ -3988,7 +3989,7 @@ const ConsultationCardExpandableText = ({
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="mt-1 text-[11px] font-extrabold text-[#0EA5E9] transition hover:text-sky-700"
+          className="absolute bottom-0 right-0 bg-white pl-1 text-[11px] font-extrabold leading-5 text-[#0EA5E9] transition hover:text-sky-700 dark:bg-slate-950"
         >
           {expanded ? '收起' : '展开全文'}
         </button>
