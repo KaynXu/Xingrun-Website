@@ -3970,12 +3970,12 @@ const compactFlowTitleClass = (state: boolean | ConsultationFlowSectionState = f
   const active = typeof state === 'boolean' ? state : state.active;
   const current = typeof state === 'boolean' ? false : state.current;
   return cn(
-  'mb-3 border-b border-[#EAF6FC] pb-2 text-[13px] font-extrabold transition-colors dark:border-white/10',
-  current
-    ? 'text-[#0EA5E9] dark:text-sky-300'
-    : active
-      ? 'text-[#1F2A44] dark:text-slate-100'
-      : 'text-[#7C8FA8] dark:text-slate-400',
+    'mb-3 border-b border-[#EAF6FC] pb-2 text-[13px] transition-colors dark:border-white/10',
+    current
+      ? 'font-bold text-[#0EA5E9] dark:text-sky-300'
+      : active
+        ? 'font-semibold text-[#1F2A44] dark:text-slate-100'
+        : 'font-medium text-[#8EA0B8] dark:text-slate-400',
   );
 };
 const compactReadLabelClass = consultationLabelClass;

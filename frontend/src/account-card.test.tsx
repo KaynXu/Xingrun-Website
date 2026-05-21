@@ -392,7 +392,14 @@ test('consultation inactive flow sections stay readable without whole-card opaci
   assert.match(sectionClassBlock[0], /#F7FAFC/);
   assert.match(sectionClassBlock[0], /#E5ECF3/);
   assert.match(sectionClassBlock[0], /text-\[#4F6178\]/);
-  assert.match(titleClassBlock[0], /#7C8FA8/);
+  assert.match(sectionClassBlock[0], /border-l-4 border-l-\[#0EA5E9\]/);
+  assert.match(sectionClassBlock[0], /#F0FAFF/);
+  assert.match(sectionClassBlock[0], /#D9EEF7/);
+  assert.match(titleClassBlock[0], /#8EA0B8/);
+  assert.match(titleClassBlock[0], /font-bold/);
+  assert.match(titleClassBlock[0], /font-semibold/);
+  assert.match(titleClassBlock[0], /font-medium/);
+  assert.doesNotMatch(titleClassBlock[0], /text-\[13px\] font-extrabold/);
   assert.doesNotMatch(sectionClassBlock[0], /opacity-\d+/);
   assert.doesNotMatch(sectionClassBlock[0], /saturate-/);
   assert.doesNotMatch(sectionClassBlock[0], /scale-/);
