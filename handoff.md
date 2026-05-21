@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-20
+最后更新：2026-05-21
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-21 已定位生产网页智能错题中 2026-05-20 16:26 起多条小程序上传错题显示“暂无题目文本 / 当前题目还不能加入错题练习”的原因：这些记录在生产 `wrong_question_submissions` 中均为 `recognition_status='failed'`、`question_text=''`、`recognition_error='Connection error.'`，前端因此按未识别题目禁用错题练习勾选。复跑同一张题图确认图片可下载且 N1N key 存在，但视觉识别调用失败为 `openai.APIConnectionError`，底层 `httpx.ConnectError('[Errno 101] Network is unreachable')`；生产 DNS 同时返回 `api.n1n.ai` 的 IPv4/IPv6，服务器无 IPv6 路由，`curl -6` 立即失败，`curl -4` 12 秒内未连通。根因不是题图质量或前端展示，而是生产机到 N1N 视觉接口网络不可达；需要先恢复可用 vision provider 或修通到 `api.n1n.ai` 的网络，再对失败 upload task/record 做重试或重新识别补题目文本。
 - 2026-05-20 已修复网页智能错题“一周练习包”答案页只显示题号的问题并发布到生产：AI 练习材料现在会为真实历史错题同时生成 `answer / key_steps / pitfall_reminder`，但学生前面的错题复习书写区仍不泄露答案；后端合并练习包题目时会把这些答案字段传给 PDF 的 `answer_items`，所以“答案与关键步骤”页会显示标准答案、关键步骤和易错提醒。本地 `develop(b68c584)` 已合入并推送 `master(7da6c0b)`，生产机 `/home/ubuntu/Xingrun-Website` 已 fast-forward 到 `7da6c0bc9`，生产 `npm --prefix frontend run build` 通过，`pm2 restart xingrun` 后 `xingrun` online，本机健康检查返回 `HTTP/1.1 302 FOUND`。发布 proof：`py_compile app.py lesson_manager.py ai_processor.py pdf_engine.py` 通过；AI prompt 定向测试通过；`tests.test_wrong_question_practice_packs` 36 条通过；后端 smoke 74 条通过；前端全量 258 条通过；frontend build 通过（保留既有 dynamic import/chunk size 警告）；`git diff --check` 通过。旧 PDF 不会自动补答案，需要重新生成一周练习包。
 - 2026-05-20 已把网页智能错题“一周练习包”的“方向”从老师手填改成系统下拉选项并发布到生产：按专题时显示固定专题和当前班级错题里已有的专题/题型（如计算、几何等）；按错因时显示固定错因和当前班级错题里已有的错因/短错因说明（如方法问题、计算错误等）。切换“按专题/按错因”会自动切换方向选项，生成请求只使用下拉选中的方向，不再允许自由输入。本地 `develop(6202026)` 已合入并推送 `master(d390483)`，生产机 `/home/ubuntu/Xingrun-Website` 已 fast-forward 到 `d39048337`，生产 `npm --prefix frontend run build` 通过，`pm2 restart xingrun` 后 `xingrun` online，本机健康检查返回 `HTTP/1.1 302 FOUND`。发布 proof：`py_compile app.py lesson_manager.py ai_processor.py` 通过；`tests.test_wrong_question_practice_packs` 34 条通过；后端 smoke 74 条通过；前端全量 258 条通过；frontend build 通过（保留既有 dynamic import/chunk size 警告）；`git diff --check` 通过。
 - 2026-05-20 已发布网页智能错题“一周练习包”两处修复到生产：AI 补变式题失败时保留已有真实错题生成部分包，班级包可进入 `partial_failed` 并下载；练习包列表状态改为中文显示（`等待生成 / 生成中 / 生成成功 / 部分生成成功 / 生成失败 / 已跳过`）。本地 `develop(8c6341b)` 已合入并推送 `master(4ac1391)`，生产机 `/home/ubuntu/Xingrun-Website` 已 fast-forward 到 `4ac139147`，生产 `npm --prefix frontend run build` 通过，`pm2 restart xingrun` 后 `xingrun` online，本机健康检查返回 `HTTP/1.1 302 FOUND`。发布 proof：`py_compile app.py lesson_manager.py ai_processor.py` 通过；`tests.test_wrong_question_practice_packs` 34 条通过；后端 smoke 74 条通过；前端全量 258 条通过；frontend build 通过（保留既有 dynamic import/chunk size 警告）；`git diff --check` 通过。线上已有 failed 旧任务不会自动变 ready，需要重新生成同一筛选。
