@@ -172,14 +172,14 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.9 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V1.10 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.9';/);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.10';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
@@ -617,7 +617,7 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.match(consultationPageBlock[0], /跟进：<\/span>\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
-  assert.match(consultationPageBlock[0], /overflow-x-auto/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
 });
 
 test('consultation page source renders separate desktop pad and mobile consultation card layouts', () => {
@@ -631,8 +631,8 @@ test('consultation page source renders separate desktop pad and mobile consultat
   assert.match(consultationPageBlock[0], /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_72px\]/);
   assert.match(consultationPageBlock[0], /const renderB3FlowStrip = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
   assert.match(consultationPageBlock[0], /const renderB3MobileTimeline = \(record: ConsultationRecord, busy: boolean\) =>/);
-  assert.match(consultationPageBlock[0], /min-w-\[31rem\]/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_3\.75rem\]/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
+  assert.doesNotMatch(consultationPageBlock[0], /min-w-\[31rem\]/);
   assert.match(consultationPageBlock[0], /showTopResultPill/);
   assert.match(consultationPageBlock[0], /hidden md:block xl:hidden/);
   assert.match(consultationPageBlock[0], /hidden xl:block/);

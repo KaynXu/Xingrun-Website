@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.9';
+const consultationMeetingVersion = 'V1.10';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5826,10 +5826,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     ];
 
     return (
-      <div className="overflow-x-auto pb-0.5">
-        <div className="grid min-w-[31rem] grid-cols-[minmax(0,1fr)_3.75rem] items-center gap-2">
-          <div className="relative grid grid-cols-6 items-start gap-2 px-1 pt-1">
-            <span className="absolute left-5 right-5 top-[0.72rem] h-px bg-[#D9EEF7]" aria-hidden="true" />
+      <div className="min-w-0 pb-0.5">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(2.9rem,3.75rem)] items-center gap-1.5">
+          <div className="relative grid min-w-0 grid-cols-6 items-start gap-1 px-1 pt-1">
+            <span className="absolute left-3 right-3 top-[0.68rem] h-px bg-[#D9EEF7]" aria-hidden="true" />
             {timelineItems.map((item) => (
               <button
                 key={item.key}
@@ -5837,11 +5837,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 disabled={item.disabled}
                 onClick={item.onClick}
                 onDoubleClick={item.onDoubleClick}
-                className="relative z-10 flex min-w-0 flex-col items-center gap-1 disabled:cursor-default"
+                className="relative z-10 flex min-w-0 flex-col items-center gap-0.5 disabled:cursor-default"
                 title={item.key === 'consultation-result' ? resultStage || '成功进班' : item.key}
               >
                 <span
-                  className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-extrabold leading-none transition ${
+                  className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[10px] font-extrabold leading-none transition ${
                     item.active
                       ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]'
                       : item.completed
@@ -5851,13 +5851,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 >
                   {item.active ? (item.key === 'consultation-result' ? '☀' : item.label) : item.completed ? '✓' : ''}
                 </span>
-                <span className={`truncate text-[11px] font-bold leading-4 ${item.active ? 'text-[#0EA5E9]' : item.completed ? 'text-[#0A8F65]' : 'text-[#7188A6]'}`}>
+                <span className={`truncate text-[10px] font-bold leading-4 ${item.active ? 'text-[#0EA5E9]' : item.completed ? 'text-[#0A8F65]' : 'text-[#7188A6]'}`}>
                   {item.label}
                 </span>
               </button>
             ))}
           </div>
-          {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
+          {renderOverButton(record, busy, 'h-8 px-1.5 text-[10px]')}
         </div>
       </div>
     );
