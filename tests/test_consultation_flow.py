@@ -350,6 +350,85 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(stored["flow_stage"], "待试听")
         self.assertIn("待试听", stored["completed_stages_json"])
 
+    def test_consultation_search_fuzzy_covers_flow_and_detail_fields(self):
+        matched = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "CaseParentA",
+                "child_name": "搜索学生A",
+                "consultation_subject": "数学",
+                "need_detail": "家长主要咨询试听安排和班课节奏",
+                "flow_stage": "待试听",
+                "completed_stages": ["已加小客服微信", "待试听"],
+                "trial_feedback": "孩子试听反馈非常积极",
+                "end_note": "后续继续跟进",
+                "follow_up_note": "内部提醒：周二面对面核对",
+            },
+        )
+        self.assertEqual(matched.status_code, 201)
+        other = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "CaseParentB",
+                "child_name": "搜索学生B",
+                "consultation_subject": "英语",
+                "need_detail": "只了解寒假课程",
+                "flow_stage": "正在沟通细节",
+            },
+        )
+        self.assertEqual(other.status_code, 201)
+
+        response = self.client.get(
+            "/api/consultations?q=试听反馈",
+            headers=self.auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([item["child_name"] for item in payload], ["搜索学生A"])
+
+    def test_consultation_search_exact_matches_full_fields_and_long_text_contains(self):
+        exact = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "date": "2026-05-19",
+                "parent_wechat_name": "ExactParent",
+                "child_name": "王小明",
+                "consultation_subject": "数学",
+                "need_detail": "这是一段完整咨询内容，包含精准片段ABC。",
+            },
+        )
+        self.assertEqual(exact.status_code, 201)
+        partial_name = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "date": "2026-05-20",
+                "parent_wechat_name": "OtherParent",
+                "child_name": "王小明同学",
+                "consultation_subject": "数学",
+                "need_detail": "普通咨询内容",
+            },
+        )
+        self.assertEqual(partial_name.status_code, 201)
+
+        exact_name = self.client.get(
+            "/api/consultations?q=王小明&search_mode=exact",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(exact_name.status_code, 200)
+        self.assertEqual([item["child_name"] for item in exact_name.get_json()], ["王小明"])
+
+        exact_long_text = self.client.get(
+            "/api/consultations?q=精准片段ABC&search_mode=exact",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(exact_long_text.status_code, 200)
+        self.assertEqual([item["child_name"] for item in exact_long_text.get_json()], ["王小明"])
+
     def test_success_stage_requires_existing_or_manual_class(self):
         missing_class = self.client.post(
             "/api/consultations",
