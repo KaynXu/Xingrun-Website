@@ -1611,11 +1611,11 @@ const consultationSurfaceClass =
 const consultationPanelClass =
   'rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_8px_22px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/72';
 const consultationLabelClass =
-  'text-[11px] font-bold leading-4 text-[#7188A6] dark:text-slate-300';
+  'consultation-field-label text-[11px] font-bold leading-4 text-[#7188A6] dark:text-slate-300';
 const consultationValueClass =
-  'mt-0.5 min-w-0 break-words text-[13px] font-semibold leading-5 text-[#1F2A44] dark:text-slate-100';
+  'consultation-field-value mt-0.5 min-w-0 break-words text-[13px] font-semibold leading-5 text-[#1F2A44] dark:text-slate-100';
 const consultationInputClass =
-  'w-full rounded-lg border border-[#BFE5F8] bg-white px-3 py-2 text-sm text-[#1F2A44] outline-none transition placeholder:text-[#9AAEC4] focus:border-[#0EA5E9] focus:ring-3 focus:ring-sky-100 disabled:bg-[#F6FAFD] disabled:text-[#7188A6] dark:border-white/10 dark:bg-slate-900/75 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-500/15';
+  'consultation-field-input w-full rounded-lg border border-[#BFE5F8] bg-white px-3 py-2 text-sm text-[#1F2A44] outline-none transition placeholder:text-[#9AAEC4] focus:border-[#0EA5E9] focus:ring-3 focus:ring-sky-100 disabled:bg-[#F6FAFD] disabled:text-[#7188A6] dark:border-white/10 dark:bg-slate-900/75 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-500/15';
 export const workspacePrimaryButtonClass =
   'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
 export const workspaceSecondaryButtonClass =
@@ -3960,10 +3960,10 @@ function consultationFlowSectionClass(state: ConsultationFlowSectionState): stri
     compactFlowSectionClass,
     'transition-colors duration-200',
     state.current
-      ? 'border-[#93DDF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F2FBFF_100%)] ring-2 ring-sky-100 dark:border-sky-400/40 dark:bg-sky-400/10 dark:ring-sky-400/10'
+      ? 'border-[#A7DDF8] border-l-4 border-l-[#0EA5E9] bg-[#F0FAFF] ring-1 ring-sky-100 dark:border-sky-400/40 dark:bg-sky-400/10 dark:ring-sky-400/10'
       : state.active
-        ? 'border-[#BFE5F8] bg-white dark:border-white/10 dark:bg-slate-950/72'
-        : 'border-[#E6EEF5] bg-[#F7FAFC] text-[#9AABBF] opacity-70 shadow-none saturate-[0.72] dark:border-white/8 dark:bg-slate-900/45 dark:text-slate-500',
+        ? 'border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/72'
+        : 'border-[#E5ECF3] bg-[#F7FAFC] shadow-none [&_.consultation-field-input]:border-[#D7E4EE] [&_.consultation-field-input]:bg-white/85 [&_.consultation-field-input]:text-[#4F6178] [&_.consultation-field-input]:placeholder:text-[#9AABBF] [&_.consultation-field-label]:text-[#8EA0B8] [&_.consultation-field-value]:text-[#4F6178] dark:border-white/8 dark:bg-slate-900/45',
   );
 }
 const compactFlowTitleClass = (state: boolean | ConsultationFlowSectionState = false) => {
@@ -3975,7 +3975,7 @@ const compactFlowTitleClass = (state: boolean | ConsultationFlowSectionState = f
     ? 'text-[#0EA5E9] dark:text-sky-300'
     : active
       ? 'text-[#1F2A44] dark:text-slate-100'
-      : 'text-[#9AABBF] dark:text-slate-500',
+      : 'text-[#7C8FA8] dark:text-slate-400',
   );
 };
 const compactReadLabelClass = consultationLabelClass;

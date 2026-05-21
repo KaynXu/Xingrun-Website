@@ -382,6 +382,22 @@ test('consultation modal sections derive active and current visual states from t
   assert.match(source, /compactFlowTitleClass\(sectionStates\.result\)/);
 });
 
+test('consultation inactive flow sections stay readable without whole-card opacity', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const sectionClassBlock = source.match(/function consultationFlowSectionClass[\s\S]*?const compactFlowTitleClass/);
+  const titleClassBlock = source.match(/const compactFlowTitleClass[\s\S]*?const compactReadLabelClass/);
+
+  assert.ok(sectionClassBlock);
+  assert.ok(titleClassBlock);
+  assert.match(sectionClassBlock[0], /#F7FAFC/);
+  assert.match(sectionClassBlock[0], /#E5ECF3/);
+  assert.match(sectionClassBlock[0], /text-\[#4F6178\]/);
+  assert.match(titleClassBlock[0], /#7C8FA8/);
+  assert.doesNotMatch(sectionClassBlock[0], /opacity-\d+/);
+  assert.doesNotMatch(sectionClassBlock[0], /saturate-/);
+  assert.doesNotMatch(sectionClassBlock[0], /scale-/);
+});
+
 test('consultation view modal keeps the title header and uses a two by two report grid', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
