@@ -188,16 +188,15 @@ test('consultation page V2.0 exposes owner-only meeting workbench instead of ref
   assert.match(source, /<ConsultationMeetingWorkbench currentUser=\{currentUser\}/);
 });
 
-test('consultation page exposes fuzzy and exact search modes beside the search box', () => {
+test('consultation page uses one unified search without mode switching', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /const \[searchMode, setSearchMode\] = useState<'fuzzy' \| 'exact'>\('fuzzy'\);/);
-  assert.match(consultationPageBlock[0], /search_mode=\$\{searchMode\}/);
   assert.match(consultationPageBlock[0], /搜索姓名、微信、老师、科目、咨询内容/);
-  assert.match(consultationPageBlock[0], /'模糊'/);
-  assert.match(consultationPageBlock[0], /'精准'/);
+  assert.doesNotMatch(consultationPageBlock[0], /searchMode/);
+  assert.doesNotMatch(consultationPageBlock[0], /search_mode=/);
+  assert.doesNotMatch(consultationPageBlock[0], /setSearchMode/);
 });
 
 test('consultation modal keeps save beside close and supports keyboard save shortcuts', () => {

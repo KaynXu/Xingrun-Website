@@ -429,6 +429,41 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(exact_long_text.status_code, 200)
         self.assertEqual([item["child_name"] for item in exact_long_text.get_json()], ["王小明"])
 
+    def test_consultation_search_orders_exact_matches_before_fuzzy_matches(self):
+        exact = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "OrderExactParent",
+                "child_name": "排序学生",
+                "consultation_subject": "数学",
+                "need_detail": "普通咨询内容",
+            },
+        )
+        self.assertEqual(exact.status_code, 201)
+        fuzzy = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "OrderFuzzyParent",
+                "child_name": "排序学生延伸",
+                "consultation_subject": "语文",
+                "need_detail": "普通咨询内容",
+            },
+        )
+        self.assertEqual(fuzzy.status_code, 201)
+
+        response = self.client.get(
+            "/api/consultations?q=排序学生",
+            headers=self.auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["child_name"] for item in response.get_json()],
+            ["排序学生", "排序学生延伸"],
+        )
+
     def test_success_stage_requires_existing_or_manual_class(self):
         missing_class = self.client.post(
             "/api/consultations",

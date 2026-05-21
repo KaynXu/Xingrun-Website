@@ -5740,7 +5740,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [searchMode, setSearchMode] = useState<'fuzzy' | 'exact'>('fuzzy');
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -5759,7 +5758,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setError('');
     try {
       const query = keyword.trim();
-      const data = await apiFetch<ConsultationRecord[]>(`/api/consultations?q=${encodeURIComponent(query)}&search_mode=${searchMode}`);
+      const data = await apiFetch<ConsultationRecord[]>(`/api/consultations?q=${encodeURIComponent(query)}`);
       if (requestId !== loadRequestId.current) {
         return;
       }
@@ -5774,7 +5773,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         setLoading(false);
       }
     }
-  }, [searchMode]);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -6419,25 +6418,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 className={`${workspaceFieldClass} w-full rounded-full py-2.5 pl-11 pr-4`}
               />
             </label>
-            <div className="grid h-9 shrink-0 grid-cols-2 rounded-full border border-sky-100 bg-white p-1 text-[11px] font-bold shadow-[0_8px_18px_rgba(14,165,233,0.08)] dark:border-white/10 dark:bg-white/5 sm:w-[6.5rem]">
-              {([
-                ['fuzzy', '模糊'],
-                ['exact', '精准'],
-              ] as const).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setSearchMode(mode)}
-                  className={`rounded-full px-2 transition ${
-                    searchMode === mode
-                      ? 'bg-sky-500 text-white shadow-[0_5px_12px_rgba(14,165,233,0.20)]'
-                      : 'text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:text-slate-300 dark:hover:bg-white/10'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
           <div className={`grid w-full gap-2 self-start lg:w-[22rem] lg:self-auto xl:w-[24rem] ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
             {canOpenMeetingWorkbench ? (

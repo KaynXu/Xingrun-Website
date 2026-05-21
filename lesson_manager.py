@@ -1229,22 +1229,41 @@ def _consultation_search_value(row: dict, field: str) -> str:
     return str(value or "")
 
 
+def _consultation_search_exact_match(row: dict, normalized_keyword: str) -> bool:
+    return any(
+        _consultation_search_value(row, field).strip().casefold() == normalized_keyword
+        for field in CONSULTATION_SEARCH_EXACT_FIELDS
+    ) or any(
+        normalized_keyword in _consultation_search_value(row, field).casefold()
+        for field in CONSULTATION_SEARCH_LONG_TEXT_FIELDS
+    )
+
+
+def _consultation_search_fuzzy_match(row: dict, normalized_keyword: str) -> bool:
+    return normalized_keyword in " ".join(
+        _consultation_search_value(row, field).casefold()
+        for field in CONSULTATION_SEARCH_FIELDS
+    )
+
+
 def _consultation_matches_search(row: dict, keyword: str, search_mode: str = "fuzzy") -> bool:
     normalized_keyword = (keyword or "").strip().casefold()
     if not normalized_keyword:
         return True
     if search_mode == "exact":
-        return any(
-            _consultation_search_value(row, field).strip().casefold() == normalized_keyword
-            for field in CONSULTATION_SEARCH_EXACT_FIELDS
-        ) or any(
-            normalized_keyword in _consultation_search_value(row, field).casefold()
-            for field in CONSULTATION_SEARCH_LONG_TEXT_FIELDS
-        )
-    return normalized_keyword in " ".join(
-        _consultation_search_value(row, field).casefold()
-        for field in CONSULTATION_SEARCH_FIELDS
-    )
+        return _consultation_search_exact_match(row, normalized_keyword)
+    return _consultation_search_fuzzy_match(row, normalized_keyword)
+
+
+def _consultation_search_rank(row: dict, keyword: str) -> Optional[int]:
+    normalized_keyword = (keyword or "").strip().casefold()
+    if not normalized_keyword:
+        return 0
+    if _consultation_search_exact_match(row, normalized_keyword):
+        return 0
+    if _consultation_search_fuzzy_match(row, normalized_keyword):
+        return 1
+    return None
 
 
 def list_consultations(
@@ -1281,10 +1300,18 @@ def list_consultations(
     ]
     keyword = (query or "").strip()
     if keyword:
-        serialized_rows = [
-            row for row in serialized_rows
-            if _consultation_matches_search(row, keyword, search_mode)
-        ]
+        if search_mode == "exact":
+            serialized_rows = [
+                row for row in serialized_rows
+                if _consultation_matches_search(row, keyword, search_mode)
+            ]
+        else:
+            ranked_rows = []
+            for row in serialized_rows:
+                rank = _consultation_search_rank(row, keyword)
+                if rank is not None:
+                    ranked_rows.append((rank, row))
+            serialized_rows = [row for _, row in sorted(ranked_rows, key=lambda item: item[0])]
     return serialized_rows
 
 
