@@ -3983,7 +3983,7 @@ const ConsultationExpandableText = ({ text, lines = 3 }: { text?: string | null;
           onClick={() => setExpanded((current) => !current)}
           className="mt-1 text-xs font-extrabold text-[#0EA5E9] transition hover:text-sky-700"
         >
-          {expanded ? '收起' : '展开'}
+          {expanded ? '收起' : '展开全文'}
         </button>
       )}
     </div>
@@ -4037,7 +4037,7 @@ const ConsultationReadOnlyReport = ({
         <div className="grid gap-3">
           <div>
             <p className={compactReadLabelClass}>沟通ing：情况说明</p>
-            <ConsultationExpandableText text={form.need_detail} />
+            <ConsultationExpandableText text={form.need_detail} lines={2} />
           </div>
           <div>
             <div className="grid grid-cols-2 gap-2">

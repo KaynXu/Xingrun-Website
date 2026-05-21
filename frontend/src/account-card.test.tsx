@@ -302,6 +302,7 @@ test('consultation read only long text expands based on rendered overflow instea
   assert.match(expandableBlock[0], /textRef = useRef<HTMLParagraphElement \| null>\(null\)/);
   assert.match(expandableBlock[0], /element\.scrollHeight > element\.clientHeight \+ 1/);
   assert.match(expandableBlock[0], /window\.addEventListener\('resize', measure\)/);
+  assert.match(expandableBlock[0], /展开全文/);
   assert.doesNotMatch(expandableBlock[0], /content\.length > \(lines === 2 \? 64 : 96\)/);
 });
 
