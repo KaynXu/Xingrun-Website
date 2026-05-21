@@ -16,6 +16,33 @@ BASE_DIR = Path(__file__).parent.resolve()
 PDF_DIR = BASE_DIR / "data" / "pdfs"
 
 
+def _iter_exception_chain(exc: BaseException):
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _is_retryable_upload_error(exc: BaseException) -> bool:
+    retryable_names = {
+        "APIConnectionError",
+        "APITimeoutError",
+        "ConnectError",
+        "ConnectTimeout",
+        "ReadError",
+        "ReadTimeout",
+        "TimeoutException",
+    }
+    for item in _iter_exception_chain(exc):
+        if isinstance(item, (ConnectionError, TimeoutError)):
+            return True
+        if item.__class__.__name__ in retryable_names:
+            return True
+    return False
+
+
 def _student_wrong_question_library_path(student_id: int) -> Path:
     library_dir = PDF_DIR / "wrong_question_libraries"
     library_dir.mkdir(parents=True, exist_ok=True)
@@ -53,7 +80,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
     if not task:
         raise LookupError("wrong question upload task not found")
 
-    update_wechat_wrong_question_upload_task(task["id"], status="processing")
+    update_wechat_wrong_question_upload_task(task["id"], status="processing", retryable=False)
     created_record_id = ""
     reason_text = str(task.get("child_raw_reason_text") or "").strip()
     display_text = ""
@@ -104,8 +131,18 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
             status="ready",
             record_id=str(record.get("id") or ""),
             error_message="",
+            retryable=False,
         ) or {}
     except Exception as exc:
+        if not created_record_id and _is_retryable_upload_error(exc):
+            return update_wechat_wrong_question_upload_task(
+                task["id"],
+                status="failed",
+                record_id="",
+                error_message=str(exc),
+                retryable=True,
+            ) or {}
+
         if not created_record_id:
             try:
                 failed_record = create_wechat_wrong_question_submission(
@@ -135,4 +172,5 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
             status="failed",
             record_id=created_record_id,
             error_message=str(exc),
+            retryable=False,
         ) or {}

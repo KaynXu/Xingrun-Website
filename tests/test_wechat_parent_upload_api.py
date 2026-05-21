@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -297,6 +299,35 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         record = lesson_manager.get_wechat_wrong_question_submission(refreshed["record_id"])
         self.assertEqual(record["recognition_status"], "failed")
         self.assertEqual(record["recognition_error"], "题目识别失败")
+
+    def test_worker_keeps_network_recognition_failure_retryable_without_empty_record(self):
+        account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
+        binding = lesson_manager.bind_parent_to_student(
+            parent_wechat_account_id=account["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+        )
+        task = lesson_manager.create_wechat_wrong_question_upload_task(
+            binding_id=binding["id"],
+            image_url="https://files.example.com/record.png",
+            child_raw_reason_text="我没看懂题",
+        )
+
+        from wrong_question_upload_worker import process_wechat_wrong_question_upload_task
+
+        with patch(
+            "wrong_question_upload_worker.ai_processor.recognize_wrong_question_image",
+            side_effect=httpx.ConnectError("[Errno 101] Network is unreachable"),
+        ):
+            result = process_wechat_wrong_question_upload_task(task["id"])
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["retryable"], 1)
+        self.assertEqual(result["record_id"], "")
+        self.assertEqual(result["error_message"], "[Errno 101] Network is unreachable")
+
+        submissions = lesson_manager.list_wechat_wrong_question_submissions()
+        self.assertEqual(submissions, [])
 
     def test_worker_keeps_failed_recognition_visible_to_teacher(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
