@@ -294,6 +294,17 @@ test('consultation view mode uses a read-only report layout instead of disabled 
   assert.match(source, /最后更新/);
 });
 
+test('consultation read only long text expands based on rendered overflow instead of character count', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const expandableBlock = source.match(/const ConsultationExpandableText = \([\s\S]*?\n};/);
+
+  assert.ok(expandableBlock);
+  assert.match(expandableBlock[0], /textRef = useRef<HTMLParagraphElement \| null>\(null\)/);
+  assert.match(expandableBlock[0], /element\.scrollHeight > element\.clientHeight \+ 1/);
+  assert.match(expandableBlock[0], /window\.addEventListener\('resize', measure\)/);
+  assert.doesNotMatch(expandableBlock[0], /content\.length > \(lines === 2 \? 64 : 96\)/);
+});
+
 test('consultation modal uses compact flow sections for both editing and viewing', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);

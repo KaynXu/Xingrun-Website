@@ -3933,18 +3933,48 @@ const compactReadValueClass = consultationValueClass;
 
 const ConsultationExpandableText = ({ text, lines = 3 }: { text?: string | null; lines?: 2 | 3 }) => {
   const [expanded, setExpanded] = useState(false);
+  const [canToggle, setCanToggle] = useState(false);
+  const textRef = useRef<HTMLParagraphElement | null>(null);
   const content = text?.trim();
+
+  useEffect(() => {
+    setExpanded(false);
+    setCanToggle(false);
+  }, [content]);
+
+  useEffect(() => {
+    if (!content || expanded) return undefined;
+    const element = textRef.current;
+    if (!element) return undefined;
+    let frame = window.requestAnimationFrame(() => {
+      setCanToggle(element.scrollHeight > element.clientHeight + 1);
+    });
+    const measure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        setCanToggle(element.scrollHeight > element.clientHeight + 1);
+      });
+    };
+    window.addEventListener('resize', measure);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', measure);
+    };
+  }, [content, expanded, lines]);
+
   if (!content) {
     return <p className={compactReadValueClass}>—</p>;
   }
-  const canToggle = content.length > (lines === 2 ? 64 : 96);
   return (
     <div>
-      <p className={cn(
-        compactReadValueClass,
-        'whitespace-pre-wrap',
-        !expanded && canToggle ? (lines === 2 ? 'line-clamp-2' : 'line-clamp-3') : '',
-      )}>
+      <p
+        ref={textRef}
+        className={cn(
+          compactReadValueClass,
+          'whitespace-pre-wrap',
+          !expanded ? (lines === 2 ? 'line-clamp-2' : 'line-clamp-3') : '',
+        )}
+      >
         {content}
       </p>
       {canToggle && (
