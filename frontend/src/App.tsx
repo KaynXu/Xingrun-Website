@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.4';
+const consultationMeetingVersion = 'V1.5';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5740,14 +5740,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const renderConsultationIconActions = (record: ConsultationRecord, busy: boolean, compact = false) => {
     const frozen = isConsultationEnded(record.flow_stage);
-    const sizeClass = compact ? 'h-8 w-8' : 'h-9 w-9';
-    const iconSize = compact ? 13 : 14;
+    const sizeClass = compact ? 'h-7 w-7' : 'h-8 w-8';
+    const iconSize = compact ? 12 : 13;
     return (
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center justify-end gap-1">
         <button
           type="button"
           onClick={() => openViewModal(record)}
-          className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-white text-slate-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10`}
+          className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-white/85 text-slate-600 shadow-[0_4px_10px_rgba(14,165,233,0.10)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10`}
           title="查看"
           aria-label="查看咨询"
         >
@@ -5757,7 +5757,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <button
             type="button"
             onClick={() => openEditModal(record)}
-            className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20`}
+            className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-sky-50/85 text-sky-700 shadow-[0_4px_10px_rgba(14,165,233,0.10)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20`}
             title={frozen ? '查看结束备注' : '编辑这条咨询'}
             aria-label="编辑咨询"
             disabled={busy}
@@ -5788,15 +5788,15 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
   const renderInfoCell = (label: string, value: string, className = '') => (
     <div className={`min-w-0 ${className}`}>
-      <p className="text-[11px] font-bold tracking-[0.06em] text-slate-400">{label}</p>
-      <p className="mt-1 truncate text-sm font-extrabold text-slate-900 dark:text-white">{value || '—'}</p>
+      <p className="text-[10px] font-bold tracking-[0.06em] text-slate-400">{label}</p>
+      <p className="mt-0.5 truncate text-[13px] font-extrabold leading-5 text-slate-900 dark:text-white">{value || '—'}</p>
     </div>
   );
 
   const renderTimeRow = (record: ConsultationRecord, boxed = false) => (
     <div className={boxed
       ? 'grid grid-cols-2 overflow-hidden rounded-xl border border-sky-100 bg-white/80 dark:border-white/10 dark:bg-slate-950/70'
-      : 'flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400'
+      : 'flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400'
     }>
       <div className={boxed ? 'min-w-0 border-r border-sky-100 p-3 dark:border-white/10' : 'inline-flex min-w-0 items-center gap-2'}>
         <CalendarDays size={boxed ? 0 : 13} className={boxed ? 'hidden' : 'text-slate-400'} />
@@ -5816,7 +5816,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return null;
     }
     return (
-      <div className={`min-w-0 text-sm leading-6 text-slate-500 dark:text-slate-400 ${mobile ? 'space-y-1 border-y border-sky-50 py-3 dark:border-white/10' : 'border-t border-sky-50 pt-3 dark:border-white/10'}`}>
+      <div className={`min-w-0 text-[13px] leading-5 text-slate-500 dark:text-slate-400 ${mobile ? 'space-y-1 border-y border-sky-50 py-2.5 dark:border-white/10' : 'border-t border-sky-50 pt-2 dark:border-white/10'}`}>
         {needDetail && <p className={mobile ? 'line-clamp-4' : 'line-clamp-1'}><span className="font-semibold text-slate-500 dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
         {followUpNote && <p className="line-clamp-1"><span className="font-semibold text-slate-500 dark:text-slate-300">跟进：</span>{followUpNote}</p>}
       </div>
@@ -5840,7 +5840,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     <button
       type="button"
       onClick={() => handleInlineEndConsultation(record)}
-      className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-xl bg-rose-500 font-extrabold text-white shadow-[0_10px_20px_rgba(239,68,68,0.16)] transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300 ${className}`}
+      className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg bg-rose-500 font-extrabold text-white shadow-[0_6px_14px_rgba(239,68,68,0.14)] transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300 ${className}`}
       disabled={!canEditConsultations || busy}
     >
       OVER
@@ -5864,7 +5864,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           setDeletingId(null);
         }
       }}
-      className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+      className="inline-flex h-9 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
       disabled={busy}
     >
       <Trash2 size={14} />
@@ -5881,8 +5881,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[6.5rem_6.5rem_8rem_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_4.5rem] items-center gap-x-4 border-b border-sky-50 px-5 py-4 text-sm dark:border-white/10">
+        <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="grid grid-cols-[6.25rem_6.25rem_7.5rem_minmax(7.5rem,1fr)_minmax(7.5rem,1fr)_minmax(7.5rem,1fr)_4rem] items-center gap-x-3 border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
             {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
@@ -5891,14 +5891,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             {renderInfoCell('来源', getConsultationSourceLabel(record))}
             {renderConsultationIconActions(record, busy, true)}
           </div>
-          <div className="space-y-3 px-5 py-3">
+          <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
             {renderTimeRow(record)}
           </div>
-          <div className={`grid grid-cols-[1rem_minmax(0,1fr)_5rem] items-center gap-3 border-t border-sky-50 bg-slate-50/70 px-5 py-4 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+          <div className={`grid grid-cols-[0.875rem_minmax(0,1fr)_4.35rem] items-center gap-2.5 border-t border-sky-50 bg-slate-50/55 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
             <ConsultationStatusLamp stage={record.flow_stage} />
             <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
-            {renderOverButton(record, busy, 'h-9 px-3 text-xs')}
+            {renderOverButton(record, busy, 'h-8 px-2 text-[11px]')}
           </div>
         </article>
       </React.Fragment>
@@ -5914,23 +5914,23 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-          <div className="grid grid-cols-[6.5rem_minmax(6rem,1fr)_minmax(7rem,1fr)_4.5rem] items-center gap-x-4 border-b border-sky-50 px-4 py-4 text-sm dark:border-white/10">
+        <article className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="grid grid-cols-[6.25rem_minmax(6rem,1fr)_minmax(7rem,1fr)_4rem] items-center gap-x-3 border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
             {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
             {renderConsultationIconActions(record, busy, true)}
           </div>
-          <div className="grid grid-cols-3 gap-x-4 border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+          <div className="grid grid-cols-3 gap-x-3 border-b border-sky-50 px-4 py-2.5 text-sm dark:border-white/10">
             {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
             {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
             {renderInfoCell('来源', getConsultationSourceLabel(record))}
           </div>
-          <div className="space-y-3 px-4 py-3">
+          <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
             {renderTimeRow(record)}
           </div>
-          <div className={`grid grid-cols-[1rem_minmax(0,1fr)_4rem] items-center gap-2 border-t border-sky-50 bg-slate-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+          <div className={`grid grid-cols-[0.875rem_minmax(0,1fr)_3.65rem] items-center gap-2 border-t border-sky-50 bg-slate-50/55 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
             <ConsultationStatusLamp stage={record.flow_stage} />
             <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
             {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
@@ -5949,15 +5949,15 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className={`${workspaceSoftCardClass} relative space-y-4 p-4`}>
-          <div className="flex items-center justify-between gap-3 border-b border-sky-50 pb-3 dark:border-white/10">
+        <article className="relative space-y-3 rounded-xl border border-sky-100 bg-white p-3.5 shadow-[0_10px_26px_rgba(47,128,237,0.045)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
-              <span className={`inline-flex h-8 min-w-0 max-w-[8.5rem] items-center justify-center truncate rounded-lg px-3 text-xs font-extrabold ${resultPill.className}`}>{resultPill.label}</span>
+              <span className={`inline-flex h-7 min-w-0 max-w-[7.5rem] items-center justify-center truncate rounded-lg px-2.5 text-[11px] font-extrabold ${resultPill.className}`}>{resultPill.label}</span>
               {renderConsultationIconActions(record, busy, true)}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-3">
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
             {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
             {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
@@ -5966,14 +5966,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           {renderConsultationDetail(needDetail, followUpNote, true)}
           {renderTimeRow(record, true)}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
               <ConsultationStatusLamp stage={record.flow_stage} />
               <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
             </div>
             {canEditConsultations && (
-              <div className={canManage ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'}>
-                {renderOverButton(record, busy, 'h-10 px-3 text-xs')}
+              <div className={canManage ? 'grid grid-cols-2 gap-2.5' : 'grid grid-cols-1 gap-2.5'}>
+                {renderOverButton(record, busy, 'h-9 px-3 text-xs')}
                 {renderDeleteButton(record, busy)}
               </div>
             )}
