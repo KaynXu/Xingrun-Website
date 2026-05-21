@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.10';
+const consultationMeetingVersion = 'V2.0';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -1574,6 +1574,16 @@ export const workspaceSoftCardClass =
   'rounded-[1.5rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(239,248,255,0.78)_100%)] shadow-[0_14px_36px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] dark:shadow-[0_18px_40px_rgba(2,6,23,0.44)]';
 export const workspaceFieldClass =
   'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:focus:border-sky-500 dark:focus:ring-sky-500/15 dark:placeholder:text-slate-500';
+const consultationSurfaceClass =
+  'border border-[#D9EEF7] bg-white shadow-[0_10px_28px_rgba(31,42,68,0.05)] dark:border-white/10 dark:bg-slate-950/78';
+const consultationPanelClass =
+  'rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_8px_22px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/72';
+const consultationLabelClass =
+  'text-[11px] font-bold leading-4 text-[#7188A6] dark:text-slate-300';
+const consultationValueClass =
+  'mt-0.5 min-w-0 break-words text-[13px] font-semibold leading-5 text-[#1F2A44] dark:text-slate-100';
+const consultationInputClass =
+  'w-full rounded-lg border border-[#BFE5F8] bg-white px-3 py-2 text-sm text-[#1F2A44] outline-none transition placeholder:text-[#9AAEC4] focus:border-[#0EA5E9] focus:ring-3 focus:ring-sky-100 disabled:bg-[#F6FAFD] disabled:text-[#7188A6] dark:border-white/10 dark:bg-slate-900/75 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-500/15';
 export const workspacePrimaryButtonClass =
   'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
 export const workspaceSecondaryButtonClass =
@@ -3809,16 +3819,16 @@ const ConsultationFlowBar = ({
   );
 };
 
-const compactFlowSectionClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
+const compactFlowSectionClass = `${consultationPanelClass} px-3.5 py-3`;
 const consultationJumpHighlightClass = 'ring-2 ring-sky-300 bg-sky-50/80 shadow-[0_0_0_4px_rgba(14,165,233,0.12)] dark:bg-sky-400/10 dark:ring-sky-400/50';
 const compactFieldGridClass = 'grid gap-x-3 gap-y-2 text-sm sm:grid-cols-2';
 const compactFlowTitleClass = (active = false) => cn(
-  'mb-2 text-[13px] font-extrabold tracking-[0.1em] transition-colors',
-  active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-500 dark:text-slate-400',
+  'mb-3 border-b border-[#EAF6FC] pb-2 text-[13px] font-extrabold transition-colors dark:border-white/10',
+  active ? 'text-[#0EA5E9] dark:text-sky-300' : 'text-[#7188A6] dark:text-slate-300',
 );
-const compactReadLabelClass = 'text-[11px] font-semibold tracking-[0.06em] text-slate-900 dark:text-slate-100';
-const compactEditLabelClass = 'text-slate-900 dark:text-slate-100';
-const compactReadValueClass = 'mt-0.5 whitespace-pre-wrap text-sm font-medium leading-5 text-slate-700 dark:text-slate-200';
+const compactReadLabelClass = consultationLabelClass;
+const compactEditLabelClass = consultationLabelClass;
+const compactReadValueClass = consultationValueClass;
 
 const ConsultationReadOnlyReport = ({
   form,
@@ -3847,7 +3857,7 @@ const ConsultationReadOnlyReport = ({
 
   return (
     <section className="grid gap-3 md:grid-cols-2">
-      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
+      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
         <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
@@ -3862,7 +3872,7 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
+      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
         <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
         <div className="grid gap-3">
           <div>
@@ -3893,7 +3903,7 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
+      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
         <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
@@ -3907,7 +3917,7 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={`${compactFlowSectionClass} min-h-[17rem]`}>
+      <div className={`${compactFlowSectionClass} min-h-[14rem]`}>
         <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
         <div className={`grid gap-3 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div>
@@ -4168,10 +4178,10 @@ const ConsultationModal = ({
   const successHighlighted = highlightedJumpStage === '成功进班';
   const endHighlighted = highlightedJumpStage === '咨询结束';
 
-  const fieldClass = `${workspaceFieldClass} px-3 py-2 ${readOnly ? 'cursor-default' : ''}`;
-  const sectionBoxClass = 'rounded-xl border border-sky-100 bg-white/75 px-3 py-3 dark:border-white/10 dark:bg-slate-950/60';
+  const fieldClass = `${consultationInputClass} ${readOnly ? 'cursor-default' : ''}`;
+  const sectionBoxClass = 'rounded-xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]';
   const compactStatusClass = (active: boolean) => cn(
-    'inline-flex min-h-10 w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+    'inline-flex min-h-10 w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm font-semibold transition',
     active
       ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
       : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400',
@@ -4196,7 +4206,6 @@ const ConsultationModal = ({
   const communicationSectionActive = Boolean(form.need_detail.trim() || form.test_taken || form.test_images.length > 0);
   const trialSectionActive = Boolean(form.trial_taken || form.trial_teacher || form.trial_class_id || form.trial_class_manual || form.trial_time_slot || form.trial_feedback);
   const resultSectionActive = Boolean(form.flow_stage === '成功进班' || form.flow_stage === '试听失败' || form.success_class_id || form.success_class_manual || form.end_note || form.follow_up_note);
-  const hiddenForViewHeaderClass = 'hidden';
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
 
   return (
@@ -4204,22 +4213,22 @@ const ConsultationModal = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#F5FAFD]/25 px-3 py-3 sm:items-center sm:px-4 sm:py-6"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
+      <div className="absolute inset-0 bg-slate-950/38 backdrop-blur-[6px]" />
       <motion.div
         initial={{ opacity: 0, scale: 0.97, y: 18 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: 18 }}
         transition={{ duration: 0.2 }}
-        className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
+        className={`relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[18px] ${consultationSurfaceClass} max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)]`}
       >
-        <div className={`flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10 ${readOnly ? hiddenForViewHeaderClass : ''}`}>
+        <div className="flex items-start justify-between gap-4 border-b border-[#EAF6FC] bg-white px-4 py-3.5 sm:px-6 sm:py-4 dark:border-white/10 dark:bg-slate-950/80">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation</p>
-            <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#0EA5E9]">Consultation</p>
+            <h3 className="mt-1.5 text-xl font-extrabold tracking-tight text-[#1F2A44] sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
+            <p className="mt-1 max-w-2xl text-sm text-[#7188A6] dark:text-slate-400">
               {readOnly ? '记录详情只读展示，管理员和机构负责人可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
             </p>
           </div>
@@ -4239,29 +4248,18 @@ const ConsultationModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F9FE] text-[#7188A6] transition-colors hover:bg-sky-100 hover:text-[#1F2A44] dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
               aria-label="关闭咨询记录窗口"
             >
               ×
             </button>
           </div>
         </div>
-        {readOnly && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 top-4 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label="关闭咨询记录窗口"
-          >
-            ×
-          </button>
-        )}
-
         <button
           type="button"
           onClick={() => formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
           className={cn(
-            'absolute right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-sky-100 bg-white text-sky-600 shadow-lg transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6',
+            'absolute right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[#D9EEF7] bg-white text-[#0EA5E9] shadow-[0_8px_20px_rgba(14,165,233,0.16)] transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6',
             readOnly ? 'top-16 sm:top-16' : 'top-20 sm:top-24',
           )}
           title="回到顶部"
@@ -4270,7 +4268,7 @@ const ConsultationModal = ({
           <ArrowUp size={18} />
         </button>
 
-        <form ref={formScrollRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <form ref={formScrollRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto bg-[#F8FCFE] px-4 py-4 sm:px-6 sm:py-5 dark:bg-slate-900/80">
           {error && (
             <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
               <AlertCircle size={16} />
@@ -4278,10 +4276,10 @@ const ConsultationModal = ({
             </div>
           )}
 
-          <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
+          <section className={`${consultationPanelClass} mb-4 space-y-3 p-3.5 sm:p-4`}>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h4 className="font-semibold text-slate-900 dark:text-white">咨询流程</h4>
+                <h4 className="font-extrabold text-[#1F2A44] dark:text-white">咨询流程</h4>
                 <span className={flowHeaderMetaClass}>
                   {readOnly ? '当前咨询的完整流程位置。' : '点击阶段框更新当前流程，未经历阶段保持灰色。'}
                   <ConsultationStatusLamp stage={form.flow_stage} />
@@ -4351,39 +4349,35 @@ const ConsultationModal = ({
           ) : (
             <>
           {!readOnly && (
-            <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4 sm:p-5`}>
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h4 className="font-semibold text-slate-900 dark:text-white">快速录入</h4>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    先写一句自然描述，手动点“智能解析”后回填到下方字段。
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={handleQuickParse} className={workspacePrimaryButtonClass}>
-                    <Cpu size={18} />
-                    智能解析
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuickEntry('');
-                      setParseFeedback('');
-                    }}
-                    className={workspaceSecondaryButtonClass}
-                  >
-                    清空
-                  </button>
-                </div>
+            <section className={`${consultationPanelClass} mb-4 grid gap-3 p-3.5 lg:grid-cols-[8rem_minmax(0,1fr)_auto] lg:items-center sm:p-4`}>
+              <div>
+                <h4 className="text-sm font-extrabold text-[#1F2A44] dark:text-white">快速录入</h4>
+                <p className="mt-1 text-xs text-[#7188A6] dark:text-slate-400">自然描述可一键解析。</p>
               </div>
               <textarea
                 value={quickEntry}
                 onChange={(e) => setQuickEntry(e.target.value)}
-                rows={3}
-                className={`${workspaceFieldClass} resize-none`}
+                rows={1}
+                className={`${consultationInputClass} min-h-10 resize-none`}
                 placeholder="例如：张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础"
               />
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <button type="button" onClick={handleQuickParse} className={`${workspacePrimaryButtonClass} h-10 px-3 py-2 text-sm`}>
+                  <Cpu size={15} />
+                  智能解析
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickEntry('');
+                    setParseFeedback('');
+                  }}
+                  className={`${workspaceSecondaryButtonClass} h-10 px-3 py-2 text-sm`}
+                >
+                  清空
+                </button>
+              </div>
+              <p className="text-xs text-[#7188A6] dark:text-slate-400 lg:col-span-3">
                 {parseFeedback || '解析后可确认并保存。'}
               </p>
             </section>
@@ -4396,7 +4390,7 @@ const ConsultationModal = ({
           </datalist>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <section ref={baseInfoRef} className={cn(compactFlowSectionClass, 'min-h-[17rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
+            <section ref={baseInfoRef} className={cn(compactFlowSectionClass, 'min-h-[14rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(baseSectionActive)}>基础信息</p>
             <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2">
               <button
@@ -4470,7 +4464,7 @@ const ConsultationModal = ({
             </div>
           </section>
 
-            <section ref={contentRef} className={cn(compactFlowSectionClass, 'min-h-[17rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
+            <section ref={contentRef} className={cn(compactFlowSectionClass, 'min-h-[14rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(communicationSectionActive)}>沟通与测试</p>
             <label className="scroll-mt-6 space-y-2 text-sm">
               <span className={compactEditLabelClass}>沟通ing：情况说明</span>
@@ -4540,7 +4534,7 @@ const ConsultationModal = ({
             </section>
 
             {(showTrialFields || !readOnly) && (
-              <div ref={trialSectionRef} className={cn(compactFlowSectionClass, 'min-h-[17rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
+              <div ref={trialSectionRef} className={cn(compactFlowSectionClass, 'min-h-[14rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
                 <p className={compactFlowTitleClass(trialSectionActive)}>试听</p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
@@ -4604,7 +4598,7 @@ const ConsultationModal = ({
               </div>
             )}
 
-            <section className={`${compactFlowSectionClass} min-h-[17rem] scroll-mt-6 space-y-3`}>
+            <section className={`${compactFlowSectionClass} min-h-[14rem] scroll-mt-6 space-y-3`}>
               <p className={compactFlowTitleClass(resultSectionActive)}>结果与备注</p>
             {(showSuccessFields || !readOnly) && (
               <div ref={successSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', successHighlighted && consultationJumpHighlightClass)}>
@@ -5260,33 +5254,47 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     window.close();
   };
 
-  const renderMeetingRecordCard = (record: ConsultationRecord) => (
-    <article key={record.id} className="rounded-2xl border border-sky-100 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold text-slate-900 dark:text-white">{record.parent_wechat_name || '未填写家长微信'}</p>
-          <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
-            {record.child_name || '未填写学生'} · {record.grade || '未填写年级'} · {record.consultation_subject || '未填写科目'}
+  const renderMeetingRecordCard = (record: ConsultationRecord) => {
+    const infoItems = [
+      ['学生', record.child_name || '未填写学生'],
+      ['家长微信', record.parent_wechat_name || '未填写家长微信'],
+      ['咨询老师', getConsultationTeacherName(record, teacherDirectory)],
+      ['科目 / 年级', `${record.consultation_subject || '未填写科目'} / ${record.grade || '未填写年级'}`],
+      ['来源', getConsultationSourceLabel(record)],
+      ['更新时间', record.updated_at || '—'],
+    ];
+    return (
+      <article key={record.id} className={`${consultationPanelClass} overflow-hidden`}>
+        <div className="grid gap-3 border-b border-[#EAF6FC] px-3.5 py-3 dark:border-white/10 xl:grid-cols-[minmax(0,1fr)_4.5rem] xl:items-start">
+          <div className="grid min-w-0 gap-x-3 gap-y-2 sm:grid-cols-3 xl:grid-cols-[0.85fr_1.25fr_0.9fr_1.05fr_1.1fr_1fr]">
+            {infoItems.map(([label, value]) => (
+              <div key={label} className="min-w-0 border-[#EAF6FC] sm:border-l sm:pl-3 first:border-l-0 first:pl-0 dark:border-white/10" title={value}>
+                <p className={consultationLabelClass}>{label}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[13px] font-semibold text-[#1F2A44] dark:text-white">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-1">
+            <button type="button" onClick={() => openViewModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D9EEF7] bg-white text-[#1F2A44] transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300" aria-label="查看咨询">
+              <Eye size={13} />
+            </button>
+            <button type="button" onClick={() => openEditModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D9EEF7] bg-sky-50 text-[#0EA5E9] transition hover:bg-sky-100 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200" aria-label="编辑咨询">
+              <Pencil size={13} />
+            </button>
+          </div>
+        </div>
+        {record.need_detail?.trim() && (
+          <p className="line-clamp-1 border-b border-[#EAF6FC] px-3.5 py-2 text-xs leading-5 text-[#7188A6] dark:border-white/10 dark:text-slate-400" title={record.need_detail}>
+            咨询详情：{record.need_detail}
           </p>
-          <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">负责教师：{getConsultationTeacherName(record, teacherDirectory)}</p>
+        )}
+        <div className="grid grid-cols-[0.75rem_minmax(0,1fr)] items-center gap-2 bg-[#F9FDFF] px-3.5 py-2.5 dark:bg-white/[0.03]">
+          <ConsultationStatusLamp stage={record.flow_stage} />
+          <ConsultationFlowBar mode="list" stage={record.flow_stage} completedStages={record.completed_stages} editable={false} />
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={() => openViewModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300" aria-label="查看咨询">
-            <Eye size={13} />
-          </button>
-          <button type="button" onClick={() => openEditModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200" aria-label="编辑咨询">
-            <Pencil size={13} />
-          </button>
-        </div>
-      </div>
-      <div className="mt-3">
-        <ConsultationFlowBar mode="list" stage={record.flow_stage} completedStages={record.completed_stages} editable={false} />
-      </div>
-      {record.need_detail?.trim() && (
-        <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">咨询详情：{record.need_detail}</p>
-      )}
-    </article>
-  );
+      </article>
+    );
+  };
 
   if (!hasOwnerAccess(currentUser.role)) {
     return (
@@ -5297,17 +5305,17 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   }
 
   return (
-    <div className={`${workspacePageClass} min-h-[100svh] space-y-5`}>
+    <div className={`${workspacePageClass} min-h-[100svh] space-y-5 bg-[#F5FAFD] dark:bg-slate-950`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Meeting · {consultationMeetingVersion}</p>
-          <h3 className={`${workspaceSectionTitleClass} mt-3`}>面对面沟通工作台</h3>
-          <p className={`${workspaceSectionTextClass} mt-2`}>本页面内保存只进入已处理栏，点击最终保存后才同步主咨询页。</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#0EA5E9]">Consultation Meeting · {consultationMeetingVersion}</p>
+          <h3 className="mt-2 text-2xl font-extrabold tracking-tight text-[#1F2A44] dark:text-white">面对面沟通工作台</h3>
+          <p className="mt-2 text-sm text-[#7188A6] dark:text-slate-400">本页面内保存只进入已处理栏，点击最终保存后才同步主咨询页。</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-3 lg:w-[32rem]">
           <label className="sm:col-span-1">
             <span className="sr-only">按教师查看</span>
-            <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)} className={`${workspaceFieldClass} h-10 w-full rounded-xl px-3 text-sm`}>
+            <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)} className={`${consultationInputClass} h-10 w-full px-3 text-sm`}>
               <option value="">按教师查看：全部</option>
               {consultationTeachers.map((teacher) => (
                 <option key={teacher.teacher_id} value={teacher.teacher_id}>{teacher.display_name}</option>
@@ -5335,15 +5343,15 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
       {loading ? (
         <div className={`${workspaceCardClass} p-8 text-center text-slate-500 dark:text-slate-400`}>正在加载面对面沟通工作台...</div>
       ) : (
-        <section className={`${workspaceCardClass} p-4`}>
-          <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+        <section className={`rounded-[18px] ${consultationSurfaceClass} p-3 sm:p-4`}>
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-[#EAF6FC] p-1 dark:bg-white/5">
             <button
               type="button"
               onClick={() => setWorkbenchTab('pending')}
               className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
                 workbenchTab === 'pending'
-                  ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  ? 'bg-white text-[#0EA5E9] shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                  : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               待处理
@@ -5354,8 +5362,8 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
               onClick={() => setWorkbenchTab('processed')}
               className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
                 workbenchTab === 'processed'
-                  ? 'bg-white text-emerald-700 shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  ? 'bg-white text-[#22B981] shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
+                  : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               已处理
@@ -5369,14 +5377,14 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#EAF6FC] p-1 dark:bg-white/5">
                 <button
                   type="button"
                   onClick={() => setProcessedWorkbenchTab('active')}
                   className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
                     processedWorkbenchTab === 'active'
-                      ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      ? 'bg-white text-[#0EA5E9] shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                      : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   待咨询
@@ -5387,8 +5395,8 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
                   onClick={() => setProcessedWorkbenchTab('ended')}
                   className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
                     processedWorkbenchTab === 'ended'
-                      ? 'bg-white text-emerald-700 shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      ? 'bg-white text-[#22B981] shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
+                      : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   已结束

@@ -172,14 +172,14 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.10 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V2.0 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.10';/);
+  assert.match(source, /const consultationMeetingVersion = 'V2\.0';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
@@ -308,17 +308,17 @@ test('consultation modal uses compact flow sections for both editing and viewing
   assert.doesNotMatch(source, /shadow-\[0_14px_35px_rgba\(14,165,233,0\.06\)\]/);
 });
 
-test('consultation view modal hides the title header and uses a two by two report grid', () => {
+test('consultation view modal keeps the title header and uses a two by two report grid', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
   assert.ok(reportBlock);
-  assert.match(modalBlock[0], /hiddenForViewHeaderClass/);
-  assert.match(modalBlock[0], /\$\{readOnly \? hiddenForViewHeaderClass : ''\}/);
+  assert.match(modalBlock[0], /记录详情只读展示，管理员和机构负责人可以在这里进入编辑。/);
+  assert.doesNotMatch(modalBlock[0], /hiddenForViewHeaderClass/);
   assert.match(reportBlock[0], /md:grid-cols-2/);
-  assert.match(reportBlock[0], /min-h-\[17rem\]/);
+  assert.match(reportBlock[0], /min-h-\[14rem\]/);
   assert.doesNotMatch(reportBlock[0], /lg:grid-cols-4/);
   assert.doesNotMatch(reportBlock[0], /<section className="grid gap-3 lg:grid-cols-2">/);
   assert.match(reportBlock[0], /grid-cols-\[minmax\(0,0\.78fr\)_minmax\(0,1\.22fr\)\]/);
@@ -343,10 +343,10 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
 
   assert.ok(modalBlock);
   assert.match(modalBlock[0], /<div className="grid gap-3 md:grid-cols-2">/);
-  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[17rem\] scroll-mt-6'/);
-  assert.match(modalBlock[0], /<section ref=\{contentRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[17rem\] scroll-mt-6 space-y-3'/);
-  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[17rem\] scroll-mt-6'/);
-  assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[17rem\] scroll-mt-6 space-y-3`\}>[\s\S]*结果与备注/);
+  assert.match(modalBlock[0], /<section ref=\{baseInfoRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[14rem\] scroll-mt-6'/);
+  assert.match(modalBlock[0], /<section ref=\{contentRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[14rem\] scroll-mt-6 space-y-3'/);
+  assert.match(modalBlock[0], /<div ref=\{trialSectionRef\} className=\{cn\(compactFlowSectionClass, 'min-h-\[14rem\] scroll-mt-6'/);
+  assert.match(modalBlock[0], /<section className=\{`\$\{compactFlowSectionClass\} min-h-\[14rem\] scroll-mt-6 space-y-3`\}>[\s\S]*结果与备注/);
 });
 
 test('consultation edit form derives lit flow stages from edited fields', () => {
@@ -413,7 +413,7 @@ test('consultation edit form highlights changed section titles and uses teacher 
   assert.match(modalBlock[0], /compactFlowTitleClass\(resultSectionActive\)/);
   assert.match(modalBlock[0], /<select value=\{form\.trial_teacher\}/);
   assert.match(modalBlock[0], /onChange=\{\(e\) => updateField\('trial_teacher', e\.target\.value\)\}/);
-  assert.match(source, /const compactEditLabelClass = 'text-slate-900 dark:text-slate-100';/);
+  assert.match(source, /const compactEditLabelClass = consultationLabelClass;/);
 });
 
 test('consultation success result does not carry payment card status in the consultation form', () => {
