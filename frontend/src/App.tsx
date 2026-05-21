@@ -1137,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.2';
+const consultationMeetingVersion = 'V1.4';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -5142,6 +5142,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<'pending' | 'processed'>('pending');
+  const [processedWorkbenchTab, setProcessedWorkbenchTab] = useState<'active' | 'ended'>('active');
   const teacherDirectory = buildConsultationTeacherDirectory(records);
   const hasUncommittedChanges = Object.keys(draftsById).length > 0;
 
@@ -5226,6 +5227,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     setDraftsById((current) => ({ ...current, [selectedRecord.id]: values }));
     setProcessedIds((current) => new Set(current).add(selectedRecord.id));
     setWorkbenchTab('processed');
+    setProcessedWorkbenchTab(isConsultationEnded(values.flow_stage) || isConsultationResultStage(values.flow_stage) ? 'ended' : 'active');
     closeModal();
   };
 
@@ -5366,19 +5368,43 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
               {pendingRecords.length ? pendingRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">当前筛选下没有待处理咨询。</p>}
             </div>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs font-extrabold tracking-[0.16em] text-slate-400">待咨询</p>
-                <div className="grid gap-3">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+                <button
+                  type="button"
+                  onClick={() => setProcessedWorkbenchTab('active')}
+                  className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
+                    processedWorkbenchTab === 'active'
+                      ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  待咨询
+                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{processedActiveRecords.length}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProcessedWorkbenchTab('ended')}
+                  className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
+                    processedWorkbenchTab === 'ended'
+                      ? 'bg-white text-emerald-700 shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  已结束
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200">{processedEndedRecords.length}</span>
+                </button>
+              </div>
+
+              {processedWorkbenchTab === 'active' ? (
+                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                   {processedActiveRecords.length ? processedActiveRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无待咨询。</p>}
                 </div>
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-extrabold tracking-[0.16em] text-slate-400">已结束</p>
-                <div className="grid gap-3">
+              ) : (
+                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                   {processedEndedRecords.length ? processedEndedRecords.map(renderMeetingRecordCard) : <p className="text-sm text-slate-400">暂无已结束。</p>}
                 </div>
-              </div>
+              )}
             </div>
           )}
         </section>
@@ -5712,6 +5738,251 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
+  const renderConsultationIconActions = (record: ConsultationRecord, busy: boolean, compact = false) => {
+    const frozen = isConsultationEnded(record.flow_stage);
+    const sizeClass = compact ? 'h-8 w-8' : 'h-9 w-9';
+    const iconSize = compact ? 13 : 14;
+    return (
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => openViewModal(record)}
+          className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-white text-slate-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10`}
+          title="查看"
+          aria-label="查看咨询"
+        >
+          <Eye size={iconSize} />
+        </button>
+        {canEditConsultations && (
+          <button
+            type="button"
+            onClick={() => openEditModal(record)}
+            className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20`}
+            title={frozen ? '查看结束备注' : '编辑这条咨询'}
+            aria-label="编辑咨询"
+            disabled={busy}
+          >
+            <Pencil size={iconSize} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderInlineFlow = (record: ConsultationRecord, busy: boolean) => {
+    const frozen = isConsultationEnded(record.flow_stage);
+    return (
+      <ConsultationFlowBar
+        mode="list"
+        stage={record.flow_stage}
+        completedStages={record.completed_stages}
+        editable={canEditConsultations && !busy && !frozen}
+        onStageClick={(stage) => handleInlineStageToggle(record, stage)}
+        onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
+        onResultChange={(stage) => handleInlineResultChange(record, stage)}
+        onResultClick={() => handleInlineResultClick(record)}
+        onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
+      />
+    );
+  };
+
+  const renderInfoCell = (label: string, value: string, className = '') => (
+    <div className={`min-w-0 ${className}`}>
+      <p className="text-[11px] font-bold tracking-[0.06em] text-slate-400">{label}</p>
+      <p className="mt-1 truncate text-sm font-extrabold text-slate-900 dark:text-white">{value || '—'}</p>
+    </div>
+  );
+
+  const renderTimeRow = (record: ConsultationRecord, boxed = false) => (
+    <div className={boxed
+      ? 'grid grid-cols-2 overflow-hidden rounded-xl border border-sky-100 bg-white/80 dark:border-white/10 dark:bg-slate-950/70'
+      : 'flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400'
+    }>
+      <div className={boxed ? 'min-w-0 border-r border-sky-100 p-3 dark:border-white/10' : 'inline-flex min-w-0 items-center gap-2'}>
+        <CalendarDays size={boxed ? 0 : 13} className={boxed ? 'hidden' : 'text-slate-400'} />
+        <p className={boxed ? 'text-[11px] font-bold tracking-[0.06em] text-slate-400' : 'whitespace-nowrap font-bold text-slate-400'}>录入时间</p>
+        <p className={boxed ? 'mt-1 whitespace-pre-line text-sm font-semibold text-slate-700 dark:text-slate-200' : 'truncate'}>{record.created_at || '—'}</p>
+      </div>
+      <div className={boxed ? 'min-w-0 p-3' : 'inline-flex min-w-0 items-center gap-2'}>
+        <CalendarDays size={boxed ? 0 : 13} className={boxed ? 'hidden' : 'text-slate-400'} />
+        <p className={boxed ? 'text-[11px] font-bold tracking-[0.06em] text-slate-400' : 'whitespace-nowrap font-bold text-slate-400'}>更新时间</p>
+        <p className={boxed ? 'mt-1 whitespace-pre-line text-sm font-semibold text-slate-700 dark:text-slate-200' : 'truncate'}>{record.updated_at || '—'}</p>
+      </div>
+    </div>
+  );
+
+  const renderConsultationDetail = (needDetail?: string, followUpNote?: string, mobile = false) => {
+    if (!needDetail && !followUpNote) {
+      return null;
+    }
+    return (
+      <div className={`min-w-0 text-sm leading-6 text-slate-500 dark:text-slate-400 ${mobile ? 'space-y-1 border-y border-sky-50 py-3 dark:border-white/10' : 'border-t border-sky-50 pt-3 dark:border-white/10'}`}>
+        {needDetail && <p className={mobile ? 'line-clamp-4' : 'line-clamp-1'}><span className="font-semibold text-slate-500 dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
+        {followUpNote && <p className="line-clamp-1"><span className="font-semibold text-slate-500 dark:text-slate-300">跟进：</span>{followUpNote}</p>}
+      </div>
+    );
+  };
+
+  const getRecordResultPill = (record: ConsultationRecord) => {
+    if (record.flow_stage === '成功进班') {
+      return { label: '☀️ 成功进班', className: 'bg-sky-500 text-white shadow-[0_8px_18px_rgba(14,165,233,0.22)]' };
+    }
+    if (record.flow_stage === '试听失败') {
+      return { label: '😢 试听未成', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
+    }
+    if (record.flow_stage === '咨询结束') {
+      return { label: 'OVER', className: 'bg-rose-500 text-white shadow-[0_8px_18px_rgba(244,63,94,0.22)]' };
+    }
+    return { label: '未选择结果', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
+  };
+
+  const renderOverButton = (record: ConsultationRecord, busy: boolean, className = '') => (
+    <button
+      type="button"
+      onClick={() => handleInlineEndConsultation(record)}
+      className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-xl bg-rose-500 font-extrabold text-white shadow-[0_10px_20px_rgba(239,68,68,0.16)] transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300 ${className}`}
+      disabled={!canEditConsultations || busy}
+    >
+      OVER
+    </button>
+  );
+
+  const renderDeleteButton = (record: ConsultationRecord, busy: boolean) => canManage ? (
+    <button
+      type="button"
+      onClick={async () => {
+        if (!window.confirm('确定删除这条咨询记录吗？')) {
+          return;
+        }
+        setDeletingId(record.id);
+        try {
+          await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
+          await load(search);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : '删除咨询记录失败');
+        } finally {
+          setDeletingId(null);
+        }
+      }}
+      className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+      disabled={busy}
+    >
+      <Trash2 size={14} />
+      删除
+    </button>
+  ) : null;
+
+  const renderDesktopConsultationCard = (record: ConsultationRecord, index: number) => {
+    const busy = isBusy && selectedRecord?.id === record.id;
+    const needDetail = record.need_detail?.trim();
+    const followUpNote = record.follow_up_note?.trim();
+    const frozen = isConsultationEnded(record.flow_stage);
+    const sectionLabel = getVisibleRecordSectionLabel(record, index);
+    return (
+      <React.Fragment key={record.id}>
+        {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
+        <article className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="grid grid-cols-[6.5rem_6.5rem_8rem_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_4.5rem] items-center gap-x-4 border-b border-sky-50 px-5 py-4 text-sm dark:border-white/10">
+            {renderInfoCell('日期', record.date || '—')}
+            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
+            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
+            {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
+            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
+            {renderInfoCell('来源', getConsultationSourceLabel(record))}
+            {renderConsultationIconActions(record, busy, true)}
+          </div>
+          <div className="space-y-3 px-5 py-3">
+            {renderConsultationDetail(needDetail, followUpNote)}
+            {renderTimeRow(record)}
+          </div>
+          <div className={`grid grid-cols-[1rem_minmax(0,1fr)_5rem] items-center gap-3 border-t border-sky-50 bg-slate-50/70 px-5 py-4 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+            <ConsultationStatusLamp stage={record.flow_stage} />
+            <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+            {renderOverButton(record, busy, 'h-9 px-3 text-xs')}
+          </div>
+        </article>
+      </React.Fragment>
+    );
+  };
+
+  const renderPadConsultationCard = (record: ConsultationRecord, index: number) => {
+    const busy = isBusy && selectedRecord?.id === record.id;
+    const needDetail = record.need_detail?.trim();
+    const followUpNote = record.follow_up_note?.trim();
+    const frozen = isConsultationEnded(record.flow_stage);
+    const sectionLabel = getVisibleRecordSectionLabel(record, index);
+    return (
+      <React.Fragment key={record.id}>
+        {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
+        <article className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
+          <div className="grid grid-cols-[6.5rem_minmax(6rem,1fr)_minmax(7rem,1fr)_4.5rem] items-center gap-x-4 border-b border-sky-50 px-4 py-4 text-sm dark:border-white/10">
+            {renderInfoCell('日期', record.date || '—')}
+            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
+            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
+            {renderConsultationIconActions(record, busy, true)}
+          </div>
+          <div className="grid grid-cols-3 gap-x-4 border-b border-sky-50 px-4 py-3 text-sm dark:border-white/10">
+            {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
+            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
+            {renderInfoCell('来源', getConsultationSourceLabel(record))}
+          </div>
+          <div className="space-y-3 px-4 py-3">
+            {renderConsultationDetail(needDetail, followUpNote)}
+            {renderTimeRow(record)}
+          </div>
+          <div className={`grid grid-cols-[1rem_minmax(0,1fr)_4rem] items-center gap-2 border-t border-sky-50 bg-slate-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
+            <ConsultationStatusLamp stage={record.flow_stage} />
+            <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+            {renderOverButton(record, busy, 'h-8 px-2 text-[10px]')}
+          </div>
+        </article>
+      </React.Fragment>
+    );
+  };
+
+  const renderMobileConsultationCard = (record: ConsultationRecord, index: number) => {
+    const busy = isBusy && selectedRecord?.id === record.id;
+    const needDetail = record.need_detail?.trim();
+    const followUpNote = record.follow_up_note?.trim();
+    const sectionLabel = getVisibleRecordSectionLabel(record, index);
+    const resultPill = getRecordResultPill(record);
+    return (
+      <React.Fragment key={record.id}>
+        {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
+        <article className={`${workspaceSoftCardClass} relative space-y-4 p-4`}>
+          <div className="flex items-center justify-between gap-3 border-b border-sky-50 pb-3 dark:border-white/10">
+            <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={`inline-flex h-8 min-w-0 max-w-[8.5rem] items-center justify-center truncate rounded-lg px-3 text-xs font-extrabold ${resultPill.className}`}>{resultPill.label}</span>
+              {renderConsultationIconActions(record, busy, true)}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+            {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory))}
+            {renderInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`)}
+            {renderInfoCell('家长微信', record.parent_wechat_name || '—')}
+            {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
+            {renderInfoCell('来源', getConsultationSourceLabel(record), 'col-span-2')}
+          </div>
+          {renderConsultationDetail(needDetail, followUpNote, true)}
+          {renderTimeRow(record, true)}
+          <div className="space-y-3">
+            <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
+              <ConsultationStatusLamp stage={record.flow_stage} />
+              <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
+            </div>
+            {canEditConsultations && (
+              <div className={canManage ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'}>
+                {renderOverButton(record, busy, 'h-10 px-3 text-xs')}
+                {renderDeleteButton(record, busy)}
+              </div>
+            )}
+          </div>
+        </article>
+      </React.Fragment>
+    );
+  };
+
   return (
     <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -5831,269 +6102,18 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         ) : (
           <>
             <div className="grid gap-4 p-4 sm:p-5 md:hidden">
-              {visibleRecords.map((record, index) => {
-                const busy = isBusy && selectedRecord?.id === record.id;
-                const needDetail = record.need_detail?.trim();
-                const followUpNote = record.follow_up_note?.trim();
-                const sectionLabel = getVisibleRecordSectionLabel(record, index);
-                return (
-                  <React.Fragment key={record.id}>
-                    {sectionLabel && (
-                      <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">
-                        {sectionLabel}
-                      </div>
-                    )}
-                    <article className={`${workspaceSoftCardClass} relative space-y-4 p-4`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">咨询日期</p>
-                        <p className="mt-2 whitespace-nowrap font-mono text-sm text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => openViewModal(record)}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-600 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                          title="查看"
-                          aria-label="查看咨询"
-                        >
-                          <Eye size={13} />
-                        </button>
-                        {canEditConsultations && (
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(record)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20"
-                            title={isConsultationEnded(record.flow_stage) ? '查看结束备注' : '编辑这条咨询'}
-                            aria-label="编辑咨询"
-                            disabled={busy}
-                          >
-                            <Pencil size={13} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="pb-1">
-                      <ConsultationFlowBar
-                        mode="list"
-                        stage={record.flow_stage}
-                        completedStages={record.completed_stages}
-                        editable={canEditConsultations && !busy && !isConsultationEnded(record.flow_stage)}
-                        onStageClick={(stage) => handleInlineStageToggle(record, stage)}
-                        onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
-                        onResultChange={(stage) => handleInlineResultChange(record, stage)}
-                        onResultClick={() => handleInlineResultClick(record)}
-                        onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">家长微信</p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">学生姓名</p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{record.child_name?.trim() || '待补充'}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">咨询老师</p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{getConsultationTeacherName(record, teacherDirectory)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">咨询学科</p>
-                          <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{record.consultation_subject || '未填写'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">来源</p>
-                          <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{getConsultationSourceLabel(record)}</p>
-                        </div>
-                      </div>
-                      {(needDetail || followUpNote) && (
-                        <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
-                          {needDetail && <p className="line-clamp-2">咨询详情：{needDetail}</p>}
-                          {followUpNote && <p className="line-clamp-2">跟进：{followUpNote}</p>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="-mx-1 grid grid-cols-2 gap-2 rounded-2xl border border-sky-100 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/70">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">录入时间</p>
-                        <p className="mt-1 truncate text-xs text-slate-700 dark:text-slate-200">{record.created_at || '—'}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold tracking-[0.08em] text-slate-400">更新时间</p>
-                        <p className="mt-1 truncate text-xs text-slate-700 dark:text-slate-200">{record.updated_at || '—'}</p>
-                      </div>
-                    </div>
-
-                    <div className={canManage ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
-                      {canEditConsultations && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleInlineEndConsultation(record)}
-                            className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-rose-500 px-3 text-xs font-extrabold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
-                            disabled={busy}
-                          >
-                            OVER
-                          </button>
-                          {canManage && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!window.confirm('确定删除这条咨询记录吗？')) {
-                                  return;
-                                }
-                                setDeletingId(record.id);
-                                try {
-                                  await apiFetch(`/api/consultations/${record.id}`, { method: 'DELETE' });
-                                  await load(search);
-                                } catch (err) {
-                                  setError(err instanceof Error ? err.message : '删除咨询记录失败');
-                                } finally {
-                                  setDeletingId(null);
-                                }
-                              }}
-                              className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                              disabled={busy}
-                            >
-                              <Trash2 size={14} />
-                              删除
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    </article>
-                  </React.Fragment>
-                );
-              })}
+              {visibleRecords.map(renderMobileConsultationCard)}
             </div>
 
-            <div className="hidden md:block">
+            <div className="hidden md:block xl:hidden">
               <div className="space-y-3 p-4">
-                {visibleRecords.map((record, index) => {
-                  const busy = isBusy && selectedRecord?.id === record.id;
-                  const needDetail = record.need_detail?.trim();
-                  const followUpNote = record.follow_up_note?.trim();
-                  const frozen = isConsultationEnded(record.flow_stage);
-                  const sectionLabel = getVisibleRecordSectionLabel(record, index);
-                  return (
-                    <React.Fragment key={record.id}>
-                    {sectionLabel && (
-                      <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">
-                        {sectionLabel}
-                      </div>
-                    )}
-                    <article className="relative overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-                      <div className="border-b border-sky-50 px-5 py-3 text-sm dark:border-white/10">
-                        <div className="grid grid-cols-[minmax(8.5rem,0.82fr)_minmax(10rem,1fr)_minmax(11rem,1.12fr)] gap-x-5 gap-y-2">
-                          <div className="min-w-0 space-y-1.5">
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">日期</p>
-                              <p className="mt-1 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">{record.date || '—'}</p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">录入</p>
-                              <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.created_at || '—'}</p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">更新</p>
-                              <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">{record.updated_at || '—'}</p>
-                            </div>
-                          </div>
-                          <div className="min-w-0 space-y-1.5">
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">咨询教师</p>
-                              <p className="mt-1 truncate font-semibold text-slate-700 dark:text-slate-200">{getConsultationTeacherName(record, teacherDirectory)}</p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">科目</p>
-                              <p className="mt-0.5 truncate text-slate-600 dark:text-slate-300">{record.consultation_subject || '未填写咨询科目'}</p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">年级</p>
-                              <p className="mt-0.5 truncate font-semibold text-slate-700 dark:text-slate-200">{record.grade || '—'}</p>
-                            </div>
-                          </div>
-                          <div className="min-w-0 space-y-1.5">
-                            <div className="min-w-0">
-                              <div className="flex min-w-0 items-center justify-between gap-2">
-                                <p className="min-w-0 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">家长微信</p>
-                                <div className="-mt-1 flex shrink-0 items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => openViewModal(record)}
-                                    className="flex h-6 w-6 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-600 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                                    title="查看"
-                                  >
-                                    <Eye size={12} />
-                                  </button>
-                                  {canEditConsultations && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditModal(record)}
-                                      className="flex h-6 w-6 items-center justify-center rounded-full border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(14,165,233,0.12)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20"
-                                      title={frozen ? '查看结束备注' : '编辑这条咨询'}
-                                      disabled={busy}
-                                    >
-                                      <Pencil size={12} />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <p className="mt-1 truncate font-semibold text-slate-900 dark:text-white">{record.parent_wechat_name || '—'}</p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">学生</p>
-                              <p className="mt-0.5 truncate text-slate-500 dark:text-slate-400">{getConsultationStudentMeta(record)}</p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">来源</p>
-                              <p className="mt-0.5 truncate text-slate-500 dark:text-slate-400">{getConsultationSourceLabel(record)}</p>
-                            </div>
-                          </div>
-                        </div>
-                        {(needDetail || followUpNote) && (
-                          <div className="mt-2 grid gap-1 border-t border-sky-50 pt-2 text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            {needDetail && <p className="line-clamp-2"><span className="font-semibold text-slate-500 dark:text-slate-300">咨询详情：</span>{needDetail}</p>}
-                            {followUpNote && <p className="line-clamp-1"><span className="font-semibold text-slate-500 dark:text-slate-300">跟进：</span>{followUpNote}</p>}
-                          </div>
-                        )}
-                      </div>
-                      <div className={`grid grid-cols-[1rem_minmax(0,1fr)_3.75rem] items-center gap-2 bg-slate-50/60 px-5 py-4 dark:bg-white/[0.03] ${frozen ? 'opacity-75' : ''}`}>
-                        <ConsultationStatusLamp stage={record.flow_stage} />
-                        <div className="min-w-0 overflow-visible">
-                          <ConsultationFlowBar
-                            mode="list"
-                            stage={record.flow_stage}
-                            completedStages={record.completed_stages}
-                            editable={canEditConsultations && !busy && !frozen}
-                            onStageClick={(stage) => handleInlineStageToggle(record, stage)}
-                            onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
-                            onResultChange={(stage) => handleInlineResultChange(record, stage)}
-                            onResultClick={() => handleInlineResultClick(record)}
-                            onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleInlineEndConsultation(record)}
-                          className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[10px] bg-rose-500 px-1.5 text-[10px] font-extrabold text-white shadow-[0_10px_20px_rgba(239,68,68,0.18)] transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
-                          disabled={!canEditConsultations || busy}
-                        >
-                          OVER
-                        </button>
-                      </div>
-                    </article>
-                    </React.Fragment>
-                  );
-                })}
+                {visibleRecords.map(renderPadConsultationCard)}
+              </div>
+            </div>
+
+            <div className="hidden xl:block">
+              <div className="space-y-3 p-4">
+                {visibleRecords.map(renderDesktopConsultationCard)}
               </div>
             </div>
           </>

@@ -172,14 +172,14 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.2 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V1.4 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.2';/);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.4';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
@@ -218,10 +218,15 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
   assert.match(workbenchBlock[0], /const processedActiveRecords = /);
   assert.match(workbenchBlock[0], /const processedEndedRecords = /);
   assert.match(workbenchBlock[0], /const \[workbenchTab, setWorkbenchTab\] = useState<'pending' \| 'processed'>\('pending'\);/);
+  assert.match(workbenchBlock[0], /const \[processedWorkbenchTab, setProcessedWorkbenchTab\] = useState<'active' \| 'ended'>\('active'\);/);
   assert.match(workbenchBlock[0], /setWorkbenchTab\('processed'\);/);
+  assert.match(workbenchBlock[0], /setProcessedWorkbenchTab\(isConsultationEnded\(values\.flow_stage\) \|\| isConsultationResultStage\(values\.flow_stage\) \? 'ended' : 'active'\);/);
   assert.match(workbenchBlock[0], /workbenchTab === 'pending'/);
+  assert.match(workbenchBlock[0], /processedWorkbenchTab === 'active'/);
   assert.match(workbenchBlock[0], /onClick=\{\(\) => setWorkbenchTab\('pending'\)\}/);
   assert.match(workbenchBlock[0], /onClick=\{\(\) => setWorkbenchTab\('processed'\)\}/);
+  assert.match(workbenchBlock[0], /onClick=\{\(\) => setProcessedWorkbenchTab\('active'\)\}/);
+  assert.match(workbenchBlock[0], /onClick=\{\(\) => setProcessedWorkbenchTab\('ended'\)\}/);
   assert.match(workbenchBlock[0], /待处理/);
   assert.match(workbenchBlock[0], /待咨询/);
   assert.match(workbenchBlock[0], /已结束/);
@@ -606,34 +611,29 @@ test('consultation page source keeps consultation detail under teacher and follo
   assert.ok(consultationPageBlock);
   assert.match(consultationPageBlock[0], /const needDetail = record\.need_detail\?\.trim\(\);/);
   assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
-  assert.match(consultationPageBlock[0], /咨询详情：\{needDetail\}/);
-  assert.match(consultationPageBlock[0], /line-clamp-2/);
-  assert.match(consultationPageBlock[0], /跟进：\{followUpNote\}/);
+  assert.match(consultationPageBlock[0], /const renderConsultationDetail = \(needDetail\?: string, followUpNote\?: string, mobile = false\) =>/);
+  assert.match(consultationPageBlock[0], /咨询详情：<\/span>\{needDetail\}/);
+  assert.match(consultationPageBlock[0], /mobile \? 'line-clamp-4' : 'line-clamp-1'/);
+  assert.match(consultationPageBlock[0], /跟进：<\/span>\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
   assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
   assert.doesNotMatch(consultationPageBlock[0], /overflow-x-auto/);
 });
 
-test('consultation page source keeps the desktop grade column on one line with tighter spacing before teacher details', () => {
+test('consultation page source renders separate desktop pad and mobile consultation card layouts', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(8\.5rem,0\.82fr\)_minmax\(10rem,1fr\)_minmax\(11rem,1\.12fr\)\]/);
-  assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">年级<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 truncate font-semibold text-slate-700 dark:text-slate-200">\{record\.grade \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="text-\[11px\] font-bold uppercase tracking-\[0\.08em\] text-slate-400">咨询教师<\/p>/);
-});
-
-test('consultation page source top-aligns desktop cells so the first text rows stay visually aligned', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /<p className="mt-1 whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">\{record\.date \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /items-center gap-2 bg-slate-50\/60 px-5 py-4/);
+  assert.match(consultationPageBlock[0], /const renderDesktopConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
+  assert.match(consultationPageBlock[0], /const renderPadConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
+  assert.match(consultationPageBlock[0], /const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
+  assert.match(consultationPageBlock[0], /grid-cols-\[6\.5rem_6\.5rem_8rem_minmax\(8rem,1fr\)_minmax\(8rem,1fr\)_minmax\(8rem,1fr\)_4\.5rem\]/);
+  assert.match(consultationPageBlock[0], /hidden md:block xl:hidden/);
+  assert.match(consultationPageBlock[0], /hidden xl:block/);
+  assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderDesktopConsultationCard\)/);
+  assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderPadConsultationCard\)/);
+  assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderMobileConsultationCard\)/);
 });
 
 test('consultation page source keeps desktop and tablet consultations as two-row cards', () => {
@@ -646,12 +646,14 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   assert.match(consultationPageBlock[0], /const handleInlineEndConsultation = async \(record: ConsultationRecord\) =>/);
   assert.match(consultationPageBlock[0], /editable=\{canEditConsultations && !busy && !frozen\}/);
   assert.match(consultationPageBlock[0], /onStageClick=\{\(stage\) => handleInlineStageToggle\(record, stage\)\}/);
-  assert.match(consultationPageBlock[0], /hidden md:block/);
+  assert.match(consultationPageBlock[0], /hidden md:block xl:hidden/);
+  assert.match(consultationPageBlock[0], /hidden xl:block/);
   assert.match(consultationPageBlock[0], /md:hidden/);
   assert.match(consultationPageBlock[0], /onClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
   assert.match(source, /window\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)/);
-  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.created_at \|\| '—'\}<\/p>/);
-  assert.match(consultationPageBlock[0], /<p className="mt-0\.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">\{record\.updated_at \|\| '—'\}<\/p>/);
+  assert.match(consultationPageBlock[0], /const renderTimeRow = \(record: ConsultationRecord, boxed = false\) =>/);
+  assert.match(consultationPageBlock[0], /\{record\.created_at \|\| '—'\}/);
+  assert.match(consultationPageBlock[0], /\{record\.updated_at \|\| '—'\}/);
   assert.doesNotMatch(consultationPageBlock[0], /2xl:hidden/);
   assert.doesNotMatch(consultationPageBlock[0], /hidden 2xl:block/);
 
@@ -668,16 +670,15 @@ test('consultation mobile card keeps view edit icons in the top right and remove
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  const mobileGrid = consultationPageBlock[0].match(/<div className="grid gap-4 p-4 sm:p-5 md:hidden">[\s\S]*?<div className="hidden md:block">/);
-  assert.ok(mobileGrid);
-  assert.match(mobileGrid[0], /aria-label="查看咨询"/);
-  assert.match(mobileGrid[0], /aria-label="编辑咨询"/);
-  assert.match(mobileGrid[0], /<Eye size=\{13\} \/>/);
-  assert.match(mobileGrid[0], /<Pencil size=\{13\} \/>/);
-  assert.doesNotMatch(mobileGrid[0], /<Pencil size=\{14\} \/>[\s\S]*编辑/);
-  assert.match(mobileGrid[0], /<div className=\{canManage \? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'\}>/);
-  assert.match(mobileGrid[0], /OVER/);
-  assert.match(mobileGrid[0], /删除/);
+  const mobileCard = consultationPageBlock[0].match(/const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) => \{[\s\S]*?\n  \};/);
+  assert.ok(mobileCard);
+  assert.match(mobileCard[0], /getRecordResultPill\(record\)/);
+  assert.match(mobileCard[0], /renderConsultationIconActions\(record, busy, true\)/);
+  assert.match(mobileCard[0], /renderTimeRow\(record, true\)/);
+  assert.match(mobileCard[0], /renderOverButton\(record, busy, 'h-10 px-3 text-xs'\)/);
+  assert.match(mobileCard[0], /renderDeleteButton\(record, busy\)/);
+  assert.match(consultationPageBlock[0], /aria-label="查看咨询"/);
+  assert.match(consultationPageBlock[0], /aria-label="编辑咨询"/);
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
@@ -966,8 +967,8 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /border border-rose-200 bg-rose-50 p-4 text-rose-600[^\n]*dark:border-rose-400\/20[^\n]*dark:bg-rose-500\/10[^\n]*dark:text-rose-300/);
   assert.match(appSource, /inline-flex gap-2 rounded-2xl border border-sky-100 bg-white\/85 p-1 shadow-sm[^\n]*dark:border-white\/10[^\n]*dark:bg-white\/5/);
   assert.match(appSource, /min-h-\[320px\][^\n]*border border-sky-100[^\n]*text-slate-700[^\n]*dark:border-white\/10[^\n]*dark:bg-slate-900\/70[^\n]*dark:text-slate-100/);
-  assert.match(appSource, /rounded-\[18px\] border border-sky-100 bg-white shadow-\[0_18px_45px_rgba\(15,23,42,0\.06\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
-  assert.match(appSource, /bg-slate-50\/60 px-5 py-4 dark:bg-white\/\[0\.03\]/);
+  assert.match(appSource, /rounded-2xl border border-sky-100 bg-white shadow-\[0_18px_45px_rgba\(15,23,42,0\.06\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(appSource, /bg-slate-50\/70 px-5 py-4 dark:border-white\/10 dark:bg-white\/\[0\.03\]/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^"]*dark:border-white\/10[^"]*dark:bg-\[radial-gradient/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);
