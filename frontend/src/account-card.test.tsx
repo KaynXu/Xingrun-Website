@@ -172,20 +172,37 @@ test('consultation page source adds ai batch entry in the existing action area',
   assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
 });
 
-test('consultation page V1.1 exposes owner-only meeting workbench instead of refresh', () => {
+test('consultation page V1.2 exposes owner-only meeting workbench instead of refresh', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(consultationPageBlock);
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V1\.1';/);
+  assert.match(source, /const consultationMeetingVersion = 'V1\.2';/);
   assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
   assert.match(consultationPageBlock[0], /面对面模式/);
   assert.match(consultationPageBlock[0], /!canOpenMeetingWorkbench && \(/);
   assert.match(source, /consultationMeeting'\) === '1'/);
   assert.match(source, /<ConsultationMeetingWorkbench currentUser=\{currentUser\}/);
+});
+
+test('consultation modal keeps save beside close and supports keyboard save shortcuts', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(source, /Save,/);
+  assert.match(modalBlock[0], /const saveButtonLabel = submitting \? '保存中\.\.\.' : mode === 'create' \? '创建记录' : '保存修改';/);
+  assert.match(modalBlock[0], /const handleSaveShortcut = \(event: KeyboardEvent\) => \{/);
+  assert.match(modalBlock[0], /\(event\.metaKey \|\| event\.altKey\) && event\.key\.toLowerCase\(\) === 's'/);
+  assert.match(modalBlock[0], /event\.preventDefault\(\);/);
+  assert.match(modalBlock[0], /formScrollRef\.current\?\.requestSubmit\(\);/);
+  assert.match(modalBlock[0], /title="Command\+S \/ Alt\+S"/);
+  assert.match(modalBlock[0], /<Save size=\{15\} \/>/);
+  assert.match(modalBlock[0], /aria-label="关闭咨询记录窗口"[\s\S]*<form ref=\{formScrollRef\}/);
+  assert.doesNotMatch(modalBlock[0], /<button type="submit" className=\{`\$\{workspacePrimaryButtonClass\} w-full sm:w-auto`\}/);
 });
 
 test('consultation meeting workbench keeps local drafts until final save', () => {

@@ -38,6 +38,7 @@ import {
   Sun,
   X,
   ChevronDown,
+  Save,
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
@@ -1136,7 +1137,7 @@ const consultationFlowStages = ['已加小客服微信', '已加对应教师微�
 const consultationProcessStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听'];
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
-const consultationMeetingVersion = 'V1.1';
+const consultationMeetingVersion = 'V1.2';
 type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
@@ -4013,6 +4014,20 @@ const ConsultationModal = ({
     }
   }, []);
 
+  useEffect(() => {
+    if (!open || mode === 'view') {
+      return undefined;
+    }
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.altKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        formScrollRef.current?.requestSubmit();
+      }
+    };
+    window.addEventListener('keydown', handleSaveShortcut);
+    return () => window.removeEventListener('keydown', handleSaveShortcut);
+  }, [open, mode]);
+
   if (!open) {
     return null;
   }
@@ -4020,6 +4035,7 @@ const ConsultationModal = ({
   const readOnly = mode === 'view';
   const stageFrozen = isConsultationEnded(form.flow_stage);
   const canEdit = hasStaffAccess(currentUser.role) || currentUser.role === 'member';
+  const saveButtonLabel = submitting ? '保存中...' : mode === 'create' ? '创建记录' : '保存修改';
   const titleMap = {
     view: '查看咨询记录',
     create: '新增咨询记录',
@@ -4207,14 +4223,28 @@ const ConsultationModal = ({
               {readOnly ? '记录详情只读展示，管理员和机构负责人可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label="关闭咨询记录窗口"
-          >
-            ×
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => formScrollRef.current?.requestSubmit()}
+                className={`${workspacePrimaryButtonClass} h-10 px-4 text-sm`}
+                disabled={submitting}
+                title="Command+S / Alt+S"
+              >
+                <Save size={15} />
+                {saveButtonLabel}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-label="关闭咨询记录窗口"
+            >
+              ×
+            </button>
+          </div>
         </div>
         {readOnly && (
           <button
@@ -4682,9 +4712,6 @@ const ConsultationModal = ({
                     disabled={submitting}
                   >
                     取消
-                  </button>
-                  <button type="submit" className={`${workspacePrimaryButtonClass} w-full sm:w-auto`} disabled={submitting}>
-                    {submitting ? '保存中...' : mode === 'create' ? '创建记录' : '保存修改'}
                   </button>
                 </>
               )}
