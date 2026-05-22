@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-21
+最后更新：2026-05-22
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-22 已按用户截图修复陈骏豪（student `291`，衔接2班）小程序错题上传任务 `496/497`：两条任务原为 `failed + retryable=1 + Connection error.` 且 `record_id=''`，原图已在云端；操作前已备份生产 DB 到 `/home/ubuntu/Xingrun-Website/data/xingrun.db.backup-before-wq-496-497-repair-20260522-142428`；已人工识别两道经济/分段计价题，写入 `wrong_question_submissions` 为 `recognized`、`question_text_source='teacher'`，并把任务 `496/497` 更新为 `ready`。生产 proof：task 496 -> `wechat-acf8faa83075615a`、task 497 -> `wechat-8871311f069764f5`，两条均 `status='ready' / retryable=0 / error_message='' / recognition_status='recognized'`；学生 `291` 当前 `wechat_mp + recognized + active` 错题共 `7` 条；错题库 PDF 已重建为 `/home/ubuntu/Xingrun-Website/data/pdfs/wrong_question_libraries/student-291.pdf`，大小 `2292538` 字节。
 - 2026-05-21 已生成谢雨彤（student `80`）的错题练习 PDF：生产库中该学生当前 `wechat_mp + recognized + active` 错题共 `13` 条，已有 pending sheet `136` 正好包含 13 个 item；操作前已备份生产 DB 到 `/home/ubuntu/Xingrun-Website/data/xingrun.db.backup-before-xie-yutong-sheet-136-20260521-184454`；随后用 PM2 运行环境里的 DeepSeek key 跑正式错题练习生成链路，sheet 136 已变为 `ready`，`question_count=13`，`generation_error=''`，PDF 为 `/home/ubuntu/Xingrun-Website/data/pdfs/wrong_question_practice_sheets/sheet-136.pdf`，大小 `633557` 字节。已拉取到本机 `/Users/xiaodi/Desktop/xie-yutong-practice-sheet-136.pdf`。
 - 2026-05-21 已确认截图孩子 student `82` 的错题练习无需重复生成：生产库中该孩子当前 `wechat_mp + recognized + active` 错题共 `5` 条，均已包含在上一轮生成的 sheet `137` 中；sheet 137 当前 `ready`，`question_count=5`，items 数 `5`，PDF `/home/ubuntu/Xingrun-Website/data/pdfs/wrong_question_practice_sheets/sheet-137.pdf` 存在且大小 `725370` 字节。
 - 2026-05-21 已按用户截图把 2026-05-17 15:02-15:05 这一组 5 题生成错题练习：根因是第 2 题 `wechat-8bdcc3b28b1460ed` / task `446` 不是网络故障，而是当时识别审稿把手写批注误判为会污染题干，导致 `recognition_status='failed'` 无法勾选生成。操作前已备份生产 DB 到 `/home/ubuntu/Xingrun-Website/data/xingrun.db.backup-before-wq-446-practice-20260521-182633`；已人工核对原图题干，写回第 2 题为 `recognized`、`question_text_source='teacher'`，task 446 置为 `ready`；随后用 PM2 运行环境里的 DeepSeek key 重新跑正式错题练习生成链路，生成 sheet `137`，PDF 为 `/home/ubuntu/Xingrun-Website/data/pdfs/wrong_question_practice_sheets/sheet-137.pdf`。生产 proof：record 446 `recognized / q_len=350 / recognition_error=''`；task 446 `ready / retryable=0 / error_message=''`；sheet 137 `ready / question_count=5 / generation_error=''`；items 数 `5`；PDF 存在且大小 `725370` 字节。
