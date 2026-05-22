@@ -741,6 +741,32 @@ def _render_wrong_question_geometry_svg(spec: dict) -> str:
     return "".join(elements)
 
 
+def _build_smooth_function_curve_path(points: list[tuple[float, float]]) -> str:
+    if not points:
+        return ""
+    if len(points) == 1:
+        x, y = points[0]
+        return f"M {x:.1f} {y:.1f}"
+    if len(points) == 2:
+        (x1, y1), (x2, y2) = points
+        return f"M {x1:.1f} {y1:.1f} L {x2:.1f} {y2:.1f}"
+
+    commands = [f"M {points[0][0]:.1f} {points[0][1]:.1f}"]
+    for index in range(len(points) - 1):
+        p0 = points[index - 1] if index > 0 else points[index]
+        p1 = points[index]
+        p2 = points[index + 1]
+        p3 = points[index + 2] if index + 2 < len(points) else p2
+        c1x = p1[0] + (p2[0] - p0[0]) / 6
+        c1y = p1[1] + (p2[1] - p0[1]) / 6
+        c2x = p2[0] - (p3[0] - p1[0]) / 6
+        c2y = p2[1] - (p3[1] - p1[1]) / 6
+        commands.append(
+            f"C {c1x:.1f} {c1y:.1f}, {c2x:.1f} {c2y:.1f}, {p2[0]:.1f} {p2[1]:.1f}"
+        )
+    return " ".join(commands)
+
+
 def _render_wrong_question_function_plot_svg(spec: dict) -> str:
     curves = spec.get("curves") if isinstance(spec.get("curves"), list) else []
     if not curves and isinstance(spec.get("points"), list):
@@ -798,10 +824,10 @@ def _render_wrong_question_function_plot_svg(spec: dict) -> str:
     palette = ["#2563eb", "#dc2626", "#059669"]
     for index, curve in enumerate(normalized_curves):
         projected = [project(point) for point in curve["points"]]
-        path_points = " ".join(f"{x:.1f},{y:.1f}" for x, y in projected)
+        curve_path = _build_smooth_function_curve_path(projected)
         color = palette[index % len(palette)]
         elements.append(
-            f'<polyline points="{path_points}" fill="none" stroke="{color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>'
+            f'<path d="{curve_path}" fill="none" stroke="{color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>'
         )
         label = html.escape(curve["label"])
         if label:

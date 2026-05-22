@@ -215,6 +215,8 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertRegex(normalized_record["image_data_url"], r"^data:image/svg\+xml;base64,")
         decoded_svg = base64.b64decode(normalized_record["image_data_url"].split(",", 1)[1]).decode("utf-8")
         self.assertIn("<svg", decoded_svg)
+        self.assertIn("<path", decoded_svg)
+        self.assertNotIn("<polyline", decoded_svg)
         self.assertIn("y=x^2", decoded_svg)
 
     def test_generate_student_wrong_question_library_pdf_rotates_geometry_image_data_url(self):
