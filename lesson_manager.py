@@ -269,6 +269,43 @@ CONSULTATION_API_FIELD_MAP = {
     "updated_at": "最后更新",
 }
 
+CONSULTATION_SEARCH_EXACT_FIELDS = (
+    "日期",
+    "date",
+    "家长微信名",
+    "parent_wechat_name",
+    "孩子姓名",
+    "child_name",
+    "接待老师",
+    "receiving_teacher",
+    "teacher_display_name",
+    "咨询科目",
+    "consultation_subject",
+    "年级",
+    "grade",
+    "来源渠道",
+    "source_channel",
+    "来源渠道备注",
+    "source_channel_note",
+    "跟进状态",
+    "follow_up_status",
+    "flow_stage",
+    "test_taken",
+    "trial_taken",
+    "trial_time_slot",
+    "trial_teacher",
+    "success_class_manual",
+)
+CONSULTATION_SEARCH_LONG_TEXT_FIELDS = (
+    "具体需求",
+    "need_detail",
+    "trial_feedback",
+    "end_note",
+    "跟进备注",
+    "follow_up_note",
+)
+CONSULTATION_SEARCH_FIELDS = CONSULTATION_SEARCH_EXACT_FIELDS + CONSULTATION_SEARCH_LONG_TEXT_FIELDS
+
 DATA_DIR.mkdir(exist_ok=True)
 PDF_DIR.mkdir(exist_ok=True)
 
@@ -1185,8 +1222,53 @@ def normalize_consultation_batch_parse_result(payload: Optional[dict]) -> dict:
         "warnings": warnings,
     }
 
+def _consultation_search_value(row: dict, field: str) -> str:
+    value = row.get(field, "")
+    if isinstance(value, list):
+        return " ".join(str(item or "") for item in value)
+    return str(value or "")
+
+
+def _consultation_search_exact_match(row: dict, normalized_keyword: str) -> bool:
+    return any(
+        _consultation_search_value(row, field).strip().casefold() == normalized_keyword
+        for field in CONSULTATION_SEARCH_EXACT_FIELDS
+    ) or any(
+        normalized_keyword in _consultation_search_value(row, field).casefold()
+        for field in CONSULTATION_SEARCH_LONG_TEXT_FIELDS
+    )
+
+
+def _consultation_search_fuzzy_match(row: dict, normalized_keyword: str) -> bool:
+    return normalized_keyword in " ".join(
+        _consultation_search_value(row, field).casefold()
+        for field in CONSULTATION_SEARCH_FIELDS
+    )
+
+
+def _consultation_matches_search(row: dict, keyword: str, search_mode: str = "fuzzy") -> bool:
+    normalized_keyword = (keyword or "").strip().casefold()
+    if not normalized_keyword:
+        return True
+    if search_mode == "exact":
+        return _consultation_search_exact_match(row, normalized_keyword)
+    return _consultation_search_fuzzy_match(row, normalized_keyword)
+
+
+def _consultation_search_rank(row: dict, keyword: str) -> Optional[int]:
+    normalized_keyword = (keyword or "").strip().casefold()
+    if not normalized_keyword:
+        return 0
+    if _consultation_search_exact_match(row, normalized_keyword):
+        return 0
+    if _consultation_search_fuzzy_match(row, normalized_keyword):
+        return 1
+    return None
+
+
 def list_consultations(
     query: str = "",
+    search_mode: str = "fuzzy",
     organization_id: Optional[int] = None,
     assigned_user_id: Optional[int] = None
 ) -> list[dict]:
@@ -1216,12 +1298,20 @@ def list_consultations(
         _consultation_storage_row_to_public_dict(row, teacher_directory)
         for row in rows
     ]
-    keyword = (query or "").strip().lower()
+    keyword = (query or "").strip()
     if keyword:
-        serialized_rows = [
-            row for row in serialized_rows
-            if keyword in " ".join(row.get(field, "").lower() for field in CONSULTATION_FIELDNAMES)
-        ]
+        if search_mode == "exact":
+            serialized_rows = [
+                row for row in serialized_rows
+                if _consultation_matches_search(row, keyword, search_mode)
+            ]
+        else:
+            ranked_rows = []
+            for row in serialized_rows:
+                rank = _consultation_search_rank(row, keyword)
+                if rank is not None:
+                    ranked_rows.append((rank, row))
+            serialized_rows = [row for _, row in sorted(ranked_rows, key=lambda item: item[0])]
     return serialized_rows
 
 
@@ -5546,7 +5636,7 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
     return [dict(row) for row in rows]
 
 
-def list_consultations_for_actor(actor_user: dict, query: str = "") -> list[dict]:
+def list_consultations_for_actor(actor_user: dict, query: str = "", search_mode: str = "fuzzy") -> list[dict]:
     organization_id = None if (actor_user or {}).get("role") == SUPER_OWNER_ROLE else actor_user["organization_id"]
     assigned_user_id = None
     
@@ -5556,6 +5646,7 @@ def list_consultations_for_actor(actor_user: dict, query: str = "") -> list[dict
     
     return list_consultations(
         query=query,
+        search_mode=search_mode,
         organization_id=organization_id,
         assigned_user_id=assigned_user_id
     )
