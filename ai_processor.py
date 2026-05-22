@@ -280,7 +280,7 @@ def _transcribe_audio_path_locally(audio_path: str) -> str:
 
 
 WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
-你需要判断上传图片是否属于几何题或几何体题，并为非几何题提取可直接进入错题库的题目文本。
+你需要判断上传图片是否属于几何题或几何体题，并提取可直接进入错题库的题目文本；如果题目依赖几何图、函数图、数轴或线段示意图，还要输出可重绘的结构化图像信息。
 识别前必须先根据印刷文字、页边和题目排版判断图片正确阅读方向；如果原图是横着或倒着的，仍按旋正后的方向理解题目。
 题目文本允许“正文 + LaTeX 公式”混合输出：
 - 普通中文、英文和题干说明直接输出为普通文本
@@ -289,7 +289,13 @@ WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 - 在 JSON 字符串里，LaTeX 命令的反斜杠必须写成双反斜杠，例如 \\frac、\\text、\\to
 - 不要把整道题都改写成纯 LaTeX，只把公式片段转成 LaTeX
 如果能明确识别公式结构，优先输出可渲染的 LaTeX；如果某个符号拿不准，宁可保留原始可读文本，也不要编造错误公式。
-如果非几何题里包含数轴、表格、函数图像、线段示意图或其他辅助图，题目文本必须用自然语言补足解题所需的图中信息，不要只写“如图所示”。例如数轴图要说明点的位置关系、已标出的坐标或距离，如“图中 A 在 B 左侧”。
+如果题目里包含数轴、表格、函数图像、线段示意图、几何图形或其他辅助图，题目文本必须保留题干主体，并用自然语言补足解题所需的图中信息，不要只写“如图所示”。例如数轴图要说明点的位置关系、已标出的坐标或距离，如“图中 A 在 B 左侧”。
+图像可重绘时，必须输出 diagram_type 与 diagram_spec：
+- diagram_type 只能取 none、number_line、geometry、function_plot 之一。
+- diagram_spec 为 JSON object；无法可靠重绘时返回 null。
+- number_line 使用 {"type":"number_line","points":[{"label":"A","value":-5},{"label":"B","value":15}]}。
+- geometry 使用 {"type":"geometry","points":[{"label":"A","x":0,"y":1}],"segments":[{"from":"A","to":"B"},{"from":"O","to":"D","dashed":true}]}，只记录题目图里解题必需的点、线、虚线和标注。
+- function_plot 使用 {"type":"function_plot","x_min":-2,"x_max":2,"y_min":-1,"y_max":4,"curves":[{"label":"y=x^2","points":[[-2,4],[-1,1],[0,0],[1,1],[2,4]]}]}，用足够采样点表达函数走势和关键交点。
 如果收到上一版审稿意见要求重新识别，必须逐条修正审稿指出的问题，尤其是题干原句、图中关键信息和问题问法；不要重复输出已被指出有误的文本。
 只返回 JSON，不要输出额外解释。
 返回字段必须包含：
@@ -298,7 +304,9 @@ WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 - confidence: string
 - notes: string
 - image_rotation_degrees: number，只能是 0、90、180、270，表示为了让原始上传图片变成可阅读方向，需要顺时针旋转多少度
-如果是几何题，question_text 返回空字符串。
+- diagram_type: string
+- diagram_spec: object 或 null
+如果是几何题，也要尽量返回题目文字和可重绘的 diagram_spec；只有题干文字无法可靠识别时，question_text 才返回空字符串。
 如果不是几何题但无法可靠识别题目文本，也要如实返回空字符串，并在 notes 里说明原因。"""
 
 WRONG_QUESTION_RECOGNITION_REVIEW_PROMPT = """你是错题识别质量审稿员。
@@ -473,6 +481,13 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
     question_text = str(payload.get("question_text") or "").strip()
     confidence = str(payload.get("confidence") or "").strip()
     notes = str(payload.get("notes") or "").strip()
+    diagram_type = str(payload.get("diagram_type") or "").strip()
+    raw_diagram_spec = payload.get("diagram_spec")
+    diagram_spec = raw_diagram_spec if isinstance(raw_diagram_spec, dict) else None
+    if diagram_spec and not diagram_type:
+        diagram_type = str(diagram_spec.get("type") or "").strip()
+    if not diagram_spec:
+        diagram_type = diagram_type if diagram_type and diagram_type != "none" else ""
     try:
         image_rotation_degrees = int(payload.get("image_rotation_degrees") or 0)
     except (TypeError, ValueError):
@@ -480,19 +495,22 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
     if image_rotation_degrees not in {0, 90, 180, 270}:
         image_rotation_degrees = 0
 
-    if is_geometry:
-        return {
-            "is_geometry": True,
-            "question_text": "",
-            "confidence": confidence,
-            "notes": notes,
-            "image_rotation_degrees": image_rotation_degrees,
-        }
-
     normalized_text = _repair_wrong_question_latex_transport(question_text)
     normalized_text = normalized_text.replace("\r\n", "\n").replace("\r", "\n")
     normalized_text = "\n".join(line.strip() for line in normalized_text.split("\n")).strip()
     normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
+
+    if is_geometry:
+        return {
+            "is_geometry": True,
+            "question_text": normalized_text,
+            "confidence": confidence,
+            "notes": notes,
+            "image_rotation_degrees": image_rotation_degrees,
+            "diagram_type": diagram_type,
+            "diagram_spec": diagram_spec,
+        }
+
     compact_text = re.sub(r"\s+", "", normalized_text)
     if normalized_text in _WRONG_QUESTION_TEXT_FAILURE_MARKERS or len(compact_text) < 6:
         raise ValueError("题目识别失败，请重新识别")
@@ -503,6 +521,8 @@ def _normalize_wrong_question_recognition_result(payload: dict) -> dict:
         "confidence": confidence,
         "notes": notes,
         "image_rotation_degrees": image_rotation_degrees,
+        "diagram_type": diagram_type,
+        "diagram_spec": diagram_spec,
     }
 
 
@@ -513,14 +533,14 @@ def _request_wrong_question_recognition_attempt(
     client=None,
 ) -> dict:
     active_client = client or _get_vision_client()
-    user_instruction = "请判断这道错题是否属于几何题，并提取非几何题题目文本。"
+    user_instruction = "请判断这道错题是否属于几何题，提取题目文本，并在需要图像时输出可重绘的 diagram_spec。"
     if revision_feedback:
         user_instruction = (
             "上一版识别没有通过质量检查。请根据下面的审稿意见重新识别并重写题目文本：\n"
             f"{revision_feedback}\n\n"
             "只保留原始题目主体，忽略学生手写答案、草稿、订正、批改痕迹和解题过程。"
             "先判断图片正确阅读方向，并返回原图需要顺时针旋转的 image_rotation_degrees。"
-            "如果原题包含数轴、表格、函数图像或示意图，必须用文字补足图中关键信息，不要只写“如图所示”。"
+            "如果原题包含几何图、数轴、表格、函数图像或示意图，必须用文字补足图中关键信息，并尽量输出可重绘的 diagram_spec。"
         )
 
     response = active_client.chat.completions.create(

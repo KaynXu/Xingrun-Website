@@ -111,6 +111,112 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         urlopen.assert_called_once_with("https://files.example.com/geometry-1.png", timeout=10)
         self.assertRegex(captured_payloads[0]["records"][0]["image_data_url"], r"^data:image/png;base64,")
 
+    def test_generate_student_wrong_question_library_pdf_prefers_structured_geometry_diagram(self):
+        records = [
+            {
+                "student_name": "Alice",
+                "class_display_name": "六年级 1 班",
+                "teacher_display_name": "平台管理员",
+                "created_at": "2026-04-09 10:00:00",
+                "is_geometry": 1,
+                "question_text": "如图，数轴上点 A 表示 -5，点 B 表示 15。",
+                "image_url": "https://files.example.com/geometry-original.png",
+                "diagram_type": "number_line",
+                "diagram_spec": {
+                    "type": "number_line",
+                    "points": [
+                        {"label": "A", "value": -5},
+                        {"label": "B", "value": 15},
+                    ],
+                },
+            }
+        ]
+        output_path = self.base / "structured-geometry-student-1.pdf"
+        captured_payloads = []
+
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake structured geometry pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("urllib.request.urlopen") as urlopen, patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                records=records,
+                output_path=str(output_path),
+            )
+
+        normalized_record = captured_payloads[0]["records"][0]
+        urlopen.assert_not_called()
+        self.assertEqual(normalized_record["question_text"], "如图，数轴上点 A 表示 -5，点 B 表示 15。")
+        self.assertEqual(normalized_record["diagram_type"], "number_line")
+        self.assertRegex(normalized_record["image_data_url"], r"^data:image/svg\+xml;base64,")
+        decoded_svg = base64.b64decode(normalized_record["image_data_url"].split(",", 1)[1]).decode("utf-8")
+        self.assertIn("<svg", decoded_svg)
+        self.assertIn(">A<", decoded_svg)
+        self.assertIn(">B<", decoded_svg)
+
+    def test_generate_student_wrong_question_library_pdf_renders_function_plot_for_non_geometry_record(self):
+        records = [
+            {
+                "student_name": "Alice",
+                "class_display_name": "八年级 2 班",
+                "teacher_display_name": "平台管理员",
+                "created_at": "2026-04-09 10:00:00",
+                "is_geometry": 0,
+                "question_text": "如图，抛物线经过点 $(-1,1)$、$(0,0)$、$(1,1)$。",
+                "image_url": "https://files.example.com/function-original.png",
+                "diagram_type": "function_plot",
+                "diagram_spec_json": json.dumps(
+                    {
+                        "type": "function_plot",
+                        "x_min": -2,
+                        "x_max": 2,
+                        "y_min": -1,
+                        "y_max": 4,
+                        "curves": [
+                            {
+                                "label": "y=x^2",
+                                "points": [
+                                    [-2, 4],
+                                    [-1, 1],
+                                    [0, 0],
+                                    [1, 1],
+                                    [2, 4],
+                                ],
+                            }
+                        ],
+                    }
+                ),
+            }
+        ]
+        output_path = self.base / "function-plot-student-1.pdf"
+        captured_payloads = []
+
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake function plot pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("urllib.request.urlopen") as urlopen, patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            pdf_engine.generate_student_wrong_question_library_pdf(
+                student_name="Alice",
+                class_name="八年级 2 班",
+                records=records,
+                output_path=str(output_path),
+            )
+
+        normalized_record = captured_payloads[0]["records"][0]
+        urlopen.assert_not_called()
+        self.assertEqual(normalized_record["diagram_type"], "function_plot")
+        self.assertRegex(normalized_record["image_data_url"], r"^data:image/svg\+xml;base64,")
+        decoded_svg = base64.b64decode(normalized_record["image_data_url"].split(",", 1)[1]).decode("utf-8")
+        self.assertIn("<svg", decoded_svg)
+        self.assertIn("y=x^2", decoded_svg)
+
     def test_generate_student_wrong_question_library_pdf_rotates_geometry_image_data_url(self):
         source_image = PILImage.new("RGB", (2, 1), "white")
         source_buffer = io.BytesIO()
@@ -333,10 +439,16 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         geometry = ai_processor._normalize_wrong_question_recognition_result(
             {
                 "is_geometry": True,
-                "question_text": "",
+                "question_text": "如图，菱形 ABCD 的对角线相交于点 O。",
                 "confidence": "high",
                 "notes": "",
                 "image_rotation_degrees": 90,
+                "diagram_type": "geometry",
+                "diagram_spec": {
+                    "type": "geometry",
+                    "points": [{"label": "A", "x": 0, "y": 1}],
+                    "segments": [],
+                },
             }
         )
         non_geometry = ai_processor._normalize_wrong_question_recognition_result(
@@ -350,7 +462,28 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         )
 
         self.assertEqual(geometry["image_rotation_degrees"], 90)
+        self.assertEqual(geometry["question_text"], "如图，菱形 ABCD 的对角线相交于点 O。")
+        self.assertEqual(geometry["diagram_type"], "geometry")
+        self.assertEqual(geometry["diagram_spec"]["type"], "geometry")
         self.assertEqual(non_geometry["image_rotation_degrees"], 0)
+
+    def test_recognize_wrong_question_image_preserves_function_diagram_spec(self):
+        normalized = ai_processor._normalize_wrong_question_recognition_result(
+            {
+                "is_geometry": False,
+                "question_text": "如图，函数 $y=x^2$ 经过原点。",
+                "confidence": "high",
+                "notes": "",
+                "diagram_type": "function_plot",
+                "diagram_spec": {
+                    "type": "function_plot",
+                    "curves": [{"points": [[-1, 1], [0, 0], [1, 1]]}],
+                },
+            }
+        )
+
+        self.assertEqual(normalized["diagram_type"], "function_plot")
+        self.assertEqual(normalized["diagram_spec"]["type"], "function_plot")
 
     def test_recognize_wrong_question_image_repairs_json_consumed_latex_backslashes(self):
         normalized = ai_processor._normalize_wrong_question_recognition_result(

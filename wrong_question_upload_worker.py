@@ -122,6 +122,8 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
             image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0),
             question_text=str(recognition.get("question_text") or ""),
             question_text_source="ai",
+            diagram_type=str(recognition.get("diagram_type") or ""),
+            diagram_spec=recognition.get("diagram_spec") if isinstance(recognition.get("diagram_spec"), dict) else None,
         )
         created_record_id = str(record.get("id") or "")
         pdf_path = _refresh_student_wrong_question_library_cache(int(task["student_id"]))
@@ -162,6 +164,8 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
                     image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0) if isinstance(recognition, dict) else 0,
                     question_text=str(recognition.get("question_text") or "") if isinstance(recognition, dict) else "",
                     question_text_source="ai",
+                    diagram_type=str(recognition.get("diagram_type") or "") if isinstance(recognition, dict) else "",
+                    diagram_spec=recognition.get("diagram_spec") if isinstance(recognition, dict) and isinstance(recognition.get("diagram_spec"), dict) else None,
                     recognition_error=str(exc),
                 )
                 created_record_id = str(failed_record.get("id") or "")

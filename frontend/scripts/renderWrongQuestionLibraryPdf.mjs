@@ -55,9 +55,32 @@ function buildErrorList(errors) {
 }
 
 function buildQuestionBlock(record) {
+  const preview = buildWrongQuestionLatexPreviewModel(record.question_text || '');
+  const errorList = buildErrorList(preview.errors);
+  const questionTextBlock = (preview.html || errorList)
+    ? `
+      <div class="question-text-block">
+        <div class="question-text-preview">${preview.html || '<span class="question-empty">暂无题目文本</span>'}</div>
+        ${errorList}
+      </div>
+    `
+    : '';
+
+  if (record.image_data_url && record.diagram_type) {
+    return `
+      ${questionTextBlock}
+      <div class="geometry-card">
+        <div class="geometry-title">生成图像</div>
+        <img src="${record.image_data_url}" alt="生成图像" class="geometry-image" />
+        <div class="geometry-caption">已按题目信息重新绘制图像，便于按图复盘关系。</div>
+      </div>
+    `;
+  }
+
   if (record.is_geometry) {
     if (record.image_data_url) {
       return `
+        ${questionTextBlock}
         <div class="geometry-card">
           <div class="geometry-title">几何原题图片</div>
           <img src="${record.image_data_url}" alt="几何原题图片" class="geometry-image" />
@@ -67,6 +90,7 @@ function buildQuestionBlock(record) {
     }
 
     return `
+      ${questionTextBlock}
       <div class="geometry-card">
         <div class="geometry-title">几何原题图片</div>
         <div class="geometry-placeholder">图片暂时无法载入，已保留原图记录。</div>
@@ -75,7 +99,6 @@ function buildQuestionBlock(record) {
     `;
   }
 
-  const preview = buildWrongQuestionLatexPreviewModel(record.question_text || '');
   return `
     <div class="question-text-block">
       <div class="question-text-preview">${preview.html || '<span class="question-empty">暂无题目文本</span>'}</div>

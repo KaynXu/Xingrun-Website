@@ -1051,6 +1051,8 @@ def _practice_pack_item_from_real_record(record: dict, index: int) -> dict:
         "is_geometry": bool(record.get("is_geometry")),
         "question_text_snapshot": str(record.get("question_text") or "").strip(),
         "image_url_snapshot": str(record.get("image_url") or "").strip(),
+        "diagram_type_snapshot": str(record.get("diagram_type") or "").strip(),
+        "diagram_spec_json_snapshot": str(record.get("diagram_spec_json") or "").strip(),
         "child_reason_text_snapshot": str(record.get("child_raw_reason_text") or "").strip(),
         "primary_error_type_snapshot": str(record.get("primary_error_type") or "").strip(),
         "cause_note_snapshot": str(record.get("secondary_error_summary") or "").strip(),
@@ -3303,7 +3305,7 @@ def api_wrong_question_review_save(record_id):
         if not saved_record:
             return jsonify({"error": "not found"}), 404
         question_text = str(((request.json or {}).get("question_text") or "")).strip()
-        if question_text and not local_record.get("is_geometry"):
+        if question_text:
             saved_record = update_wechat_wrong_question_question_text(
                 record_id,
                 question_text=question_text,

@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,6 +49,12 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             is_geometry=True,
             question_text="",
             question_text_source="ai",
+            diagram_type="geometry",
+            diagram_spec={
+                "type": "geometry",
+                "points": [{"label": "A", "x": 0, "y": 1}],
+                "segments": [],
+            },
         )
 
     def tearDown(self):
@@ -80,6 +87,11 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["items"][0]["wrong_question_record_id"], self.record_two["id"])
         self.assertTrue(saved["items"][0]["is_geometry"])
         self.assertEqual(saved["items"][0]["cause_note_snapshot"], "图形关系判断不完整")
+        self.assertEqual(saved["items"][0]["diagram_type_snapshot"], "geometry")
+        self.assertEqual(
+            json.loads(saved["items"][0]["diagram_spec_json_snapshot"])["points"][0]["label"],
+            "A",
+        )
         self.assertEqual(saved["items"][1]["wrong_question_record_id"], self.record_one["id"])
         self.assertEqual(saved["items"][1]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
         self.assertEqual(saved["items"][1]["child_reason_text_snapshot"], "我把乘法放到最后算了")

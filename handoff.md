@@ -400,8 +400,10 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`develop`
-- 本轮提交范围只应包含家长首页孩子卡片右侧操作列和对应视觉 guardrail；当前工作区另有非本轮 `parent-wrongbook` 专题筛选未提交改动（`index.wxml` / `index.wxss` / `index.test.js`），会让完整 `miniprogram_visual_acceptance_guardrail_proof.sh` 在上传稳定性子段的 topic chip flex 断言处失败，未纳入本轮提交。
+- 当前分支：`feature/structured-wrong-question-diagrams`，从已同步的 `develop` 拉出；不要碰 `master`。
+- 本轮正在把智能错题的“几何题只能保留原图截图”改为结构化图像方案：识别提示词新增 `diagram_type` / `diagram_spec`，入库和练习单快照新增结构化图字段，PDF payload 会优先把数轴/几何/函数图渲染成 SVG data URL，只有没有结构化图时才回退原图。
+- 已验证：临时 proof 脚本完整跑过 `python3 -m py_compile ai_processor.py pdf_engine.py lesson_manager.py wrong_question_upload_worker.py app.py`、`python3 -m unittest tests.test_wrong_question_library_pdf tests.test_wrong_question_practice_store`、`node --test frontend/src/render-wrong-question-library-pdf.test.ts frontend/src/render-wrong-question-practice-sheet-pdf.test.ts`，并额外断言数轴与函数图 payload 都生成 `data:image/svg+xml;base64,...`；脚本已删除。
+- 尝试扩展运行上传/练习包相关 Python 用例时，本地缺 `httpx` 与 `flask_cors`，Flask 相关测试模块无法导入；不是业务断言失败。
 - `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
 - 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。
 - 小程序相关代码、bridge、计划文档与 HTML 工具现统一位于根目录 `miniprogram/` 下。

@@ -568,6 +568,270 @@ def _guess_wrong_question_image_mime_type(image_url: str) -> str:
     return "image/png"
 
 
+def _parse_wrong_question_diagram_spec(source: dict) -> tuple[str, dict]:
+    diagram_type = str(
+        source.get("diagram_type")
+        or source.get("diagram_type_snapshot")
+        or ""
+    ).strip()
+    raw_spec = (
+        source.get("diagram_spec")
+        if source.get("diagram_spec") is not None
+        else source.get("diagram_spec_snapshot")
+    )
+    if raw_spec is None:
+        raw_spec = (
+            source.get("diagram_spec_json")
+            or source.get("diagram_spec_json_snapshot")
+            or ""
+        )
+    if isinstance(raw_spec, str):
+        raw_spec = raw_spec.strip()
+        if not raw_spec:
+            return diagram_type, {}
+        try:
+            raw_spec = json.loads(raw_spec)
+        except json.JSONDecodeError:
+            return diagram_type, {}
+    if not isinstance(raw_spec, dict):
+        return diagram_type, {}
+    spec = dict(raw_spec)
+    spec_type = str(spec.get("type") or diagram_type or "").strip()
+    if spec_type:
+        spec["type"] = spec_type
+    if not diagram_type:
+        diagram_type = spec_type
+    return diagram_type, spec
+
+
+def _diagram_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _diagram_points_by_label(points: list[dict]) -> dict[str, dict]:
+    return {
+        str(point.get("label") or "").strip(): point
+        for point in points
+        if isinstance(point, dict) and str(point.get("label") or "").strip()
+    }
+
+
+def _scale_diagram_value(value: float, min_value: float, max_value: float, start: float, end: float) -> float:
+    if abs(max_value - min_value) < 1e-9:
+        return (start + end) / 2
+    return start + (value - min_value) * (end - start) / (max_value - min_value)
+
+
+def _render_wrong_question_number_line_svg(spec: dict) -> str:
+    raw_points = spec.get("points") if isinstance(spec.get("points"), list) else []
+    points = [
+        {
+            "label": str(point.get("label") or "").strip(),
+            "value": _diagram_float(point.get("value")),
+        }
+        for point in raw_points
+        if isinstance(point, dict)
+    ]
+    points = [point for point in points if point["label"]]
+    if not points:
+        return ""
+
+    values = [point["value"] for point in points]
+    min_value = min(values)
+    max_value = max(values)
+    padding = max(2.0, (max_value - min_value) * 0.18)
+    min_value -= padding
+    max_value += padding
+    width, height = 560, 180
+    y = 105
+    axis_start, axis_end = 54, width - 54
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        f'<line x1="{axis_start}" y1="{y}" x2="{axis_end}" y2="{y}" stroke="#111827" stroke-width="3" stroke-linecap="round"/>',
+        f'<path d="M {axis_end} {y} l -14 -9 v 18 z" fill="#111827"/>',
+    ]
+    for point in sorted(points, key=lambda item: item["value"]):
+        x = _scale_diagram_value(point["value"], min_value, max_value, axis_start, axis_end - 4)
+        label = html.escape(point["label"])
+        value_text = html.escape(f"{point['value']:g}")
+        elements.extend(
+            [
+                f'<line x1="{x:.1f}" y1="{y - 11}" x2="{x:.1f}" y2="{y + 11}" stroke="#111827" stroke-width="3"/>',
+                f'<text x="{x:.1f}" y="{y - 28}" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-style="italic" font-weight="700" fill="#111827">{label}</text>',
+                f'<text x="{x:.1f}" y="{y + 42}" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#6b7280">{value_text}</text>',
+            ]
+        )
+    elements.append("</svg>")
+    return "".join(elements)
+
+
+def _render_wrong_question_geometry_svg(spec: dict) -> str:
+    raw_points = spec.get("points") if isinstance(spec.get("points"), list) else []
+    points = [
+        {
+            "label": str(point.get("label") or "").strip(),
+            "x": _diagram_float(point.get("x")),
+            "y": _diagram_float(point.get("y")),
+        }
+        for point in raw_points
+        if isinstance(point, dict) and str(point.get("label") or "").strip()
+    ]
+    if not points:
+        return ""
+
+    width, height = 560, 340
+    margin = 48
+    xs = [point["x"] for point in points]
+    ys = [point["y"] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    if abs(max_x - min_x) < 1e-9:
+        min_x -= 1
+        max_x += 1
+    if abs(max_y - min_y) < 1e-9:
+        min_y -= 1
+        max_y += 1
+
+    def project(point: dict) -> tuple[float, float]:
+        x = _scale_diagram_value(point["x"], min_x, max_x, margin, width - margin)
+        y = _scale_diagram_value(point["y"], min_y, max_y, height - margin, margin)
+        return x, y
+
+    point_lookup = _diagram_points_by_label(points)
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+    ]
+    raw_segments = spec.get("segments") if isinstance(spec.get("segments"), list) else []
+    for segment in raw_segments:
+        if isinstance(segment, dict):
+            start_label = str(segment.get("from") or segment.get("start") or "").strip()
+            end_label = str(segment.get("to") or segment.get("end") or "").strip()
+            dashed = bool(segment.get("dashed") or segment.get("dash"))
+        elif isinstance(segment, (list, tuple)) and len(segment) >= 2:
+            start_label = str(segment[0] or "").strip()
+            end_label = str(segment[1] or "").strip()
+            dashed = False
+        else:
+            continue
+        start = point_lookup.get(start_label)
+        end = point_lookup.get(end_label)
+        if not start or not end:
+            continue
+        x1, y1 = project(start)
+        x2, y2 = project(end)
+        dash = ' stroke-dasharray="10 8"' if dashed else ""
+        elements.append(
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#111827" stroke-width="3" stroke-linecap="round"{dash}/>'
+        )
+    for point in points:
+        x, y = project(point)
+        label = html.escape(point["label"])
+        elements.extend(
+            [
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#111827"/>',
+                f'<text x="{x + 9:.1f}" y="{y - 9:.1f}" font-family="Arial, sans-serif" font-size="19" font-style="italic" font-weight="700" fill="#111827">{label}</text>',
+            ]
+        )
+    elements.append("</svg>")
+    return "".join(elements)
+
+
+def _render_wrong_question_function_plot_svg(spec: dict) -> str:
+    curves = spec.get("curves") if isinstance(spec.get("curves"), list) else []
+    if not curves and isinstance(spec.get("points"), list):
+        curves = [{"points": spec.get("points"), "label": spec.get("label") or ""}]
+
+    normalized_curves: list[dict] = []
+    all_points: list[tuple[float, float]] = []
+    for curve in curves:
+        if not isinstance(curve, dict):
+            continue
+        points = []
+        for raw_point in curve.get("points") or []:
+            if isinstance(raw_point, dict):
+                point = (_diagram_float(raw_point.get("x")), _diagram_float(raw_point.get("y")))
+            elif isinstance(raw_point, (list, tuple)) and len(raw_point) >= 2:
+                point = (_diagram_float(raw_point[0]), _diagram_float(raw_point[1]))
+            else:
+                continue
+            points.append(point)
+            all_points.append(point)
+        if points:
+            normalized_curves.append({"points": points, "label": str(curve.get("label") or "").strip()})
+    if not normalized_curves:
+        return ""
+
+    x_min = _diagram_float(spec.get("x_min"), min(point[0] for point in all_points))
+    x_max = _diagram_float(spec.get("x_max"), max(point[0] for point in all_points))
+    y_min = _diagram_float(spec.get("y_min"), min(point[1] for point in all_points))
+    y_max = _diagram_float(spec.get("y_max"), max(point[1] for point in all_points))
+    if abs(x_max - x_min) < 1e-9:
+        x_min -= 1
+        x_max += 1
+    if abs(y_max - y_min) < 1e-9:
+        y_min -= 1
+        y_max += 1
+
+    width, height = 560, 360
+    margin = 46
+
+    def project(point: tuple[float, float]) -> tuple[float, float]:
+        x = _scale_diagram_value(point[0], x_min, x_max, margin, width - margin)
+        y = _scale_diagram_value(point[1], y_min, y_max, height - margin, margin)
+        return x, y
+
+    x_axis_y = project((0, 0))[1] if y_min <= 0 <= y_max else height - margin
+    y_axis_x = project((0, 0))[0] if x_min <= 0 <= x_max else margin
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        f'<line x1="{margin}" y1="{x_axis_y:.1f}" x2="{width - margin}" y2="{x_axis_y:.1f}" stroke="#374151" stroke-width="2"/>',
+        f'<line x1="{y_axis_x:.1f}" y1="{margin}" x2="{y_axis_x:.1f}" y2="{height - margin}" stroke="#374151" stroke-width="2"/>',
+        f'<text x="{width - margin + 10}" y="{x_axis_y + 5:.1f}" font-family="Arial, sans-serif" font-size="16" fill="#374151">x</text>',
+        f'<text x="{y_axis_x - 5:.1f}" y="{margin - 14}" font-family="Arial, sans-serif" font-size="16" fill="#374151">y</text>',
+    ]
+    palette = ["#2563eb", "#dc2626", "#059669"]
+    for index, curve in enumerate(normalized_curves):
+        projected = [project(point) for point in curve["points"]]
+        path_points = " ".join(f"{x:.1f},{y:.1f}" for x, y in projected)
+        color = palette[index % len(palette)]
+        elements.append(
+            f'<polyline points="{path_points}" fill="none" stroke="{color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
+        label = html.escape(curve["label"])
+        if label:
+            label_x, label_y = projected[-1]
+            elements.append(
+                f'<text x="{label_x + 8:.1f}" y="{label_y - 8:.1f}" font-family="Arial, sans-serif" font-size="16" fill="{color}">{label}</text>'
+            )
+    elements.append("</svg>")
+    return "".join(elements)
+
+
+def _render_wrong_question_diagram_data_url(source: dict) -> tuple[str, str]:
+    diagram_type, spec = _parse_wrong_question_diagram_spec(source)
+    if not spec:
+        return "", diagram_type
+    spec_type = str(spec.get("type") or diagram_type or "").strip().lower()
+    if spec_type == "number_line":
+        svg = _render_wrong_question_number_line_svg(spec)
+    elif spec_type in {"geometry", "coordinate_geometry", "geometric"}:
+        svg = _render_wrong_question_geometry_svg(spec)
+    elif spec_type in {"function_plot", "function", "graph"}:
+        svg = _render_wrong_question_function_plot_svg(spec)
+    else:
+        svg = ""
+    if not svg:
+        return "", diagram_type
+    encoded_svg = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded_svg}", diagram_type or spec_type
+
+
 def _repair_wrong_question_latex_transport(text: str) -> str:
     if not isinstance(text, str) or not text:
         return str(text or "")
@@ -603,6 +867,7 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
             "created_at": str(record.get("created_at") or ""),
             "is_geometry": bool(record.get("is_geometry")),
             "question_text": _repair_wrong_question_latex_transport(str(record.get("question_text") or "")),
+            "diagram_type": str(record.get("diagram_type") or "").strip(),
             "child_reason_text": str(
                 record.get("child_raw_reason_text")
                 or record.get("child_reason_text")
@@ -619,7 +884,11 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
             "image_data_url": "",
         }
 
-        if normalized_record["is_geometry"]:
+        diagram_data_url, diagram_type = _render_wrong_question_diagram_data_url(record)
+        if diagram_data_url:
+            normalized_record["image_data_url"] = diagram_data_url
+            normalized_record["diagram_type"] = diagram_type
+        elif normalized_record["is_geometry"]:
             image_url = str(record.get("image_url") or "")
             image_bytes = _fetch_wrong_question_image_bytes(image_url, record.get("image_rotation_degrees"))
             if image_bytes:
@@ -652,6 +921,7 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
             "wrong_question_record_id": str(item.get("wrong_question_record_id") or ""),
             "is_geometry": bool(item.get("is_geometry")),
             "question_text_snapshot": _repair_wrong_question_latex_transport(str(item.get("question_text_snapshot") or "")),
+            "diagram_type": str(item.get("diagram_type") or item.get("diagram_type_snapshot") or "").strip(),
             "ai_hint": str(item.get("ai_hint") or ""),
             "reason_blank_prompt": str(item.get("reason_blank_prompt") or ""),
             "improvement_summary_prompt": str(item.get("improvement_summary_prompt") or ""),
@@ -665,7 +935,11 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
             "scheduledDate": str(item.get("scheduled_date") or "").strip(),
         }
 
-        if normalized_item["is_geometry"]:
+        diagram_data_url, diagram_type = _render_wrong_question_diagram_data_url(item)
+        if diagram_data_url:
+            normalized_item["image_data_url"] = diagram_data_url
+            normalized_item["diagram_type"] = diagram_type
+        elif normalized_item["is_geometry"]:
             image_url = str(item.get("image_url_snapshot") or "")
             image_bytes = _fetch_wrong_question_image_bytes(image_url)
             if image_bytes:

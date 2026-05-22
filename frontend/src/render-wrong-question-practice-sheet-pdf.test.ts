@@ -103,6 +103,31 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
 });
 
+test('buildDocumentMarkup renders generated diagram practice items with question text', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: true,
+        question_text_snapshot: '如图，函数 $y=x^2$ 经过原点。',
+        diagram_type: 'function_plot',
+        image_data_url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      },
+    ],
+  });
+
+  assert.match(markup, /函数/);
+  assert.match(markup, /class="katex"/);
+  assert.match(markup, /生成图像/);
+  assert.match(markup, /src="data:image\/svg\+xml;base64,PHN2Zz48L3N2Zz4="/);
+  assert.doesNotMatch(markup, /图片暂时无法载入/);
+});
+
 test('buildDocumentMarkup renders scheduled answer math through latex preview', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
