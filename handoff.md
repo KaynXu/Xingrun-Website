@@ -400,11 +400,12 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 当前分支：`fix/curved-function-diagram-svg`，从本地最新 `develop` 拉出；不要碰 `master`。
-- 本轮正在把智能错题的“几何题只能保留原图截图”改为结构化图像方案：识别提示词新增 `diagram_type` / `diagram_spec`，入库和练习单快照新增结构化图字段，PDF payload 会优先把数轴/几何/函数图渲染成 SVG data URL，只有没有结构化图时才回退原图。
-- 已补上用户反馈：函数图不再用 `<polyline>` 折线连接采样点，改为三次贝塞尔 `<path>` 平滑曲线；演示 PDF `tmp_structured_wrong_question_demo.pdf` 已重新生成并打开。
+- 当前本地 `develop` 包含智能错题结构化图像方案：识别提示词新增 `diagram_type` / `diagram_spec`，入库和练习单快照新增结构化图字段，PDF payload 会优先把数轴/几何/函数图渲染成 SVG data URL，只有没有结构化图时才回退原图。
+- 已补上用户反馈：函数图不再用 `<polyline>` 折线连接采样点，改为三次贝塞尔 `<path>` 平滑曲线；几何图不再按 x/y 轴分别拉伸，而是等比例缩放并居中，避免正方形被画成长方形。
+- 云端最近两道几何题样张已重新生成并打开：`/Users/xiaodi/Desktop/cloud-two-geometry-structured-demo-20260522.pdf`；其中正方形题的结构化图已保持正方形比例。
 - 已验证：临时 proof 脚本完整跑过 `python3 -m py_compile ai_processor.py pdf_engine.py lesson_manager.py wrong_question_upload_worker.py app.py`、`python3 -m unittest tests.test_wrong_question_library_pdf tests.test_wrong_question_practice_store`、`node --test frontend/src/render-wrong-question-library-pdf.test.ts frontend/src/render-wrong-question-practice-sheet-pdf.test.ts`，并额外断言数轴与函数图 payload 都生成 `data:image/svg+xml;base64,...`；脚本已删除。
 - 本轮曲线修复已验证：`python3 -m py_compile pdf_engine.py`、`python3 -m unittest tests.test_wrong_question_library_pdf`，并额外断言函数图 SVG 包含 `<path>` 且不含 `<polyline>`。
+- 本轮正方形比例修复已验证：新增回归测试先在旧逻辑下失败（`AB=464.0`、`BC=244.0`），修复后 proof 通过 `python3 -m py_compile pdf_engine.py`、`python3 -m unittest tests.test_wrong_question_library_pdf tests.test_wrong_question_practice_store`、`npx tsx --test src/render-wrong-question-library-pdf.test.ts src/render-wrong-question-practice-sheet-pdf.test.ts`、`git diff --check`；额外 smoke 显示 `AB=244.0`、`BC=244.0`。
 - 尝试扩展运行上传/练习包相关 Python 用例时，本地缺 `httpx` 与 `flask_cors`，Flask 相关测试模块无法导入；不是业务断言失败。
 - `config.json` 已从 Git 跟踪文件中移除；如本机需要继续用 JSON 配置，它只应作为被 `.gitignore` 忽略的本地运行时文件存在。
 - 当前工作区仍可能保留未跟踪运行库 `data/xingrun.db`，不得纳入正常代码提交。

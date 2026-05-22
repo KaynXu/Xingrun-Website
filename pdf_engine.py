@@ -696,9 +696,15 @@ def _render_wrong_question_geometry_svg(spec: dict) -> str:
         min_y -= 1
         max_y += 1
 
+    drawable_width = width - margin * 2
+    drawable_height = height - margin * 2
+    scale = min(drawable_width / (max_x - min_x), drawable_height / (max_y - min_y))
+    center_x = (min_x + max_x) / 2
+    center_y = (min_y + max_y) / 2
+
     def project(point: dict) -> tuple[float, float]:
-        x = _scale_diagram_value(point["x"], min_x, max_x, margin, width - margin)
-        y = _scale_diagram_value(point["y"], min_y, max_y, height - margin, margin)
+        x = width / 2 + (point["x"] - center_x) * scale
+        y = height / 2 - (point["y"] - center_y) * scale
         return x, y
 
     point_lookup = _diagram_points_by_label(points)

@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -157,6 +158,34 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertIn("<svg", decoded_svg)
         self.assertIn(">A<", decoded_svg)
         self.assertIn(">B<", decoded_svg)
+
+    def test_structured_geometry_diagram_preserves_square_aspect_ratio(self):
+        svg = pdf_engine._render_wrong_question_geometry_svg(
+            {
+                "type": "geometry",
+                "points": [
+                    {"label": "A", "x": -1, "y": 1},
+                    {"label": "B", "x": 1, "y": 1},
+                    {"label": "C", "x": 1, "y": -1},
+                    {"label": "D", "x": -1, "y": -1},
+                ],
+                "segments": [
+                    {"from": "A", "to": "B"},
+                    {"from": "B", "to": "C"},
+                ],
+            }
+        )
+        segment_lines = [
+            tuple(float(value) for value in match.groups())
+            for match in re.finditer(
+                r'<line x1="([0-9.]+)" y1="([0-9.]+)" x2="([0-9.]+)" y2="([0-9.]+)"',
+                svg,
+            )
+        ]
+        self.assertEqual(len(segment_lines), 2)
+        ab = ((segment_lines[0][2] - segment_lines[0][0]) ** 2 + (segment_lines[0][3] - segment_lines[0][1]) ** 2) ** 0.5
+        bc = ((segment_lines[1][2] - segment_lines[1][0]) ** 2 + (segment_lines[1][3] - segment_lines[1][1]) ** 2) ** 0.5
+        self.assertAlmostEqual(ab, bc, delta=0.5)
 
     def test_generate_student_wrong_question_library_pdf_renders_function_plot_for_non_geometry_record(self):
         records = [
