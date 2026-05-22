@@ -3680,7 +3680,11 @@ def api_consultations_list():
     user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_consultations_for_actor(user, query=request.args.get("q", "")))
+    return jsonify(list_consultations_for_actor(
+        user,
+        query=request.args.get("q", ""),
+        search_mode=request.args.get("search_mode", "fuzzy"),
+    ))
 
 
 @app.route("/api/consultations/ai-parse", methods=["POST"])
