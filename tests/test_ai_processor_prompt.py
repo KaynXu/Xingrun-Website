@@ -201,27 +201,6 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertNotIn('Paragraph("AI 提示"', source)
         self.assertNotIn('Paragraph("下次提醒"', source)
 
-    def test_parse_and_generate_plan_uses_configured_model_for_n1n(self):
-        fake_client = _FakeClient(
-            {
-                "lesson_info": {},
-                "days": [],
-                "weekly_review_prompts": [],
-            }
-        )
-        with patch(
-            "ai_processor._load_config",
-            return_value={
-                "provider": "n1n",
-                "n1n_model": "gpt-5.4",
-                "n1n_api_key": "test-key",
-                "n1n_base_url": "https://api.n1n.ai/v1",
-            },
-        ), patch("ai_processor._get_client", return_value=fake_client):
-            ai_processor.parse_and_generate_plan("课堂总结")
-
-        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
-
     def test_wrong_question_recognition_uses_vision_model_when_text_provider_is_deepseek(self):
         fake_client = _FakeClient(
             {
@@ -235,17 +214,17 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             return_value={
                 "provider": "deepseek",
                 "deepseek_model": "deepseek-chat",
-                "vision_provider": "n1n",
-                "vision_model": "gpt-5.5",
-                "n1n_api_key": "test-key",
-                "n1n_base_url": "https://api.n1n.ai/v1",
+                "vision_provider": "qwen",
+                "vision_model": "qwen-vl-max-latest",
+                "qwen_api_key": "test-key",
+                "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             },
         ), patch("ai_processor._get_vision_client", return_value=fake_client):
             ai_processor._request_wrong_question_recognition_attempt(
                 "https://files.example.com/question.png"
             )
 
-        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.5")
+        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "qwen-vl-max-latest")
 
     def test_wrong_question_recognition_retry_instruction_requires_diagram_details(self):
         fake_client = _FakeClient(
@@ -295,30 +274,6 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             plan = ai_processor.parse_and_generate_plan("课堂总结")
 
         self.assertEqual(plan["days"][0]["items"][0]["text"], r"计算 $\frac{1}{2}$ 的值")
-
-    def test_generate_monthly_plan_uses_configured_model_for_n1n(self):
-        fake_client = _FakeClient(
-            {
-                "lesson_info": {},
-                "days": [],
-                "weekly_review_prompts": [],
-            }
-        )
-        with patch(
-            "ai_processor._load_config",
-            return_value={
-                "provider": "n1n",
-                "n1n_model": "gpt-5.4",
-                "n1n_api_key": "test-key",
-                "n1n_base_url": "https://api.n1n.ai/v1",
-            },
-        ), patch("ai_processor._get_client", return_value=fake_client):
-            ai_processor.generate_monthly_plan(
-                [{"date": "2026-04-09", "summary": "课堂总结", "topic": "一次函数"}],
-                "2026-04",
-            )
-
-        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
 
     def test_transcribe_child_reason_audio_uses_local_faster_whisper_auto_detect_first(self):
         fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})

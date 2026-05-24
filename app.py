@@ -17,8 +17,6 @@ import os
 import re
 import secrets
 import threading
-import urllib.error
-import urllib.request
 import webbrowser
 import zipfile
 from datetime import date, datetime, timedelta
@@ -228,11 +226,6 @@ _AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
 _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
 _AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
 _AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
-_N1N_PRICING_CACHE_TTL_SECONDS = 900.0
-_N1N_PRICING_CACHE: dict[str, object] = {"expires_at": 0.0, "payload": {}}
-_N1N_PRICING_CACHE_LOCK = threading.Lock()
-
-
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
     return get_runtime_config()
@@ -249,8 +242,6 @@ def _default_chat_model_name() -> str:
         return str(cfg.get("deepseek_model", "deepseek-chat") or "deepseek-chat")
     if provider == "mimo":
         return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
-    if provider == "n1n":
-        return str(cfg.get("n1n_model", "gpt-4o") or "gpt-4o")
     return "gpt-4o"
 
 
@@ -272,63 +263,6 @@ def _split_ai_result_with_usage(result: object, *, provider: str, model: str) ->
     ):
         return result[0], _normalize_ai_usage_payload(result[1], provider=provider, model=model)
     return result, _normalize_ai_usage_payload({}, provider=provider, model=model)
-
-
-def _fetch_n1n_pricing_payload() -> dict:
-    req = urllib.request.Request(
-        "https://api.n1n.ai/api/pricing_new",
-        headers={"User-Agent": "Xingrun-Summary/1.0"},
-    )
-    with urllib.request.urlopen(req, timeout=8) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, dict) or not payload.get("data"):
-        raise RuntimeError("invalid n1n pricing payload")
-    return payload
-
-
-def _get_cached_n1n_pricing_payload(force_refresh: bool = False) -> dict:
-    now = monotonic()
-    with _N1N_PRICING_CACHE_LOCK:
-        cached_payload = _N1N_PRICING_CACHE.get("payload")
-        expires_at = float(_N1N_PRICING_CACHE.get("expires_at") or 0.0)
-        if not force_refresh and isinstance(cached_payload, dict) and now < expires_at:
-            return cached_payload
-
-    fresh_payload = _fetch_n1n_pricing_payload()
-    with _N1N_PRICING_CACHE_LOCK:
-        _N1N_PRICING_CACHE["payload"] = fresh_payload
-        _N1N_PRICING_CACHE["expires_at"] = now + _N1N_PRICING_CACHE_TTL_SECONDS
-    return fresh_payload
-
-
-def _build_n1n_model_pricing_lookup(*, payload: dict, group_name: str) -> dict[str, dict[str, float | int | str]]:
-    group_ratio_map = payload.get("group_ratio") if isinstance(payload.get("group_ratio"), dict) else {}
-    group_ratio = float(group_ratio_map.get(group_name, 1.0) or 1.0)
-    # Match n1n pricing page display: model_ratio is multiplied by this constant before group ratio.
-    base_multiplier = 1.2
-
-    result: dict[str, dict[str, float | int | str]] = {}
-    for item in payload.get("data") or []:
-        if not isinstance(item, dict):
-            continue
-        model_name = str(item.get("model_name") or "").strip()
-        if not model_name:
-            continue
-        quota_type = int(item.get("quota_type") or 0)
-        model_price = float(item.get("model_price") or 0.0)
-        model_ratio = float(item.get("model_ratio") or 0.0)
-        completion_ratio = float(item.get("completion_ratio") or 0.0)
-        input_usd_per_m = model_ratio * base_multiplier * group_ratio if quota_type == 0 else 0.0
-        output_usd_per_m = input_usd_per_m * completion_ratio if quota_type == 0 else 0.0
-        result[model_name] = {
-            "quota_type": quota_type,
-            "group_name": group_name,
-            "group_ratio": group_ratio,
-            "input_usd_per_m": input_usd_per_m,
-            "output_usd_per_m": output_usd_per_m,
-            "flat_model_price_usd": model_price,
-        }
-    return result
 
 
 class DuplicateAiRequestError(RuntimeError):
@@ -1477,8 +1411,6 @@ def has_api_key():
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
     elif provider == "mimo":
         key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
-    elif provider == "n1n":
-        key = cfg.get("n1n_api_key", "") or os.environ.get("N1N_API_KEY", "")
     else:
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     return bool(key.strip())
@@ -2270,44 +2202,6 @@ def api_credit_member_usage_detail(user_id: int):
     if error:
         return error
     return jsonify({"items": list_member_usage_detail(user["organization_id"], user_id)})
-
-
-@app.route("/api/credits/pricing/n1n", methods=["GET"])
-def api_credit_pricing_n1n():
-    user, error = _require_owner()
-    if error:
-        return error
-    cfg = get_config()
-    if str(cfg.get("provider", "") or "").strip().lower() != "n1n":
-        return jsonify({"provider": str(cfg.get("provider", "") or ""), "group": "default", "cny_per_usd": 1.0, "items": {}})
-
-    group_name = str(request.args.get("group", "default") or "default").strip() or "default"
-    models_query = str(request.args.get("models", "") or "").strip()
-    requested_models = {
-        part.strip()
-        for part in models_query.split(",")
-        if part.strip()
-    }
-    try:
-        payload = _get_cached_n1n_pricing_payload()
-    except (RuntimeError, ValueError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-        return jsonify({"error": "unable to load n1n pricing"}), 502
-
-    pricing_lookup = _build_n1n_model_pricing_lookup(payload=payload, group_name=group_name)
-    if requested_models:
-        pricing_lookup = {
-            model_name: pricing_lookup[model_name]
-            for model_name in requested_models
-            if model_name in pricing_lookup
-        }
-
-    return jsonify({
-        "provider": "n1n",
-        "group": group_name,
-        "cny_per_usd": 1.0,
-        "items": pricing_lookup,
-    })
-
 
 @app.route("/api/credits/redeem/xhs", methods=["POST"])
 def api_credit_redeem_xhs():
@@ -5430,9 +5324,9 @@ def api_settings_get():
         "mimo_set": bool(cfg.get("mimo_api_key")),
         "mimo_masked": _mask(cfg.get("mimo_api_key", "")),
         "mimo_base_url": cfg.get("mimo_base_url", ""),
-        "n1n_set": bool(cfg.get("n1n_api_key")),
-        "n1n_masked": _mask(cfg.get("n1n_api_key", "")),
-        "n1n_base_url": cfg.get("n1n_base_url", "https://api.n1n.ai/v1"),
+        "qwen_set": bool(cfg.get("qwen_api_key")),
+        "qwen_masked": _mask(cfg.get("qwen_api_key", "")),
+        "qwen_base_url": cfg.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         "controlled_keys": sorted(controlled_keys),
     })
 
@@ -5447,7 +5341,7 @@ def api_settings_save():
     controlled_keys = env_controlled_keys()
     if "provider" in data and "provider" not in controlled_keys:
         cfg["provider"] = data["provider"].strip()
-    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url", "n1n_api_key", "n1n_base_url"):
+    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
     write_file_config(cfg)

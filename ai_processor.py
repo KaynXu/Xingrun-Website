@@ -62,13 +62,6 @@ def _get_client():
             raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
         return OpenAI(api_key=key, base_url=base_url)
 
-    elif provider == "n1n":
-        key = cfg.get("n1n_api_key", "") or os.environ.get("N1N_API_KEY", "")
-        base_url = cfg.get("n1n_base_url", "https://api.n1n.ai/v1").strip()
-        if not key:
-            raise RuntimeError("未找到 N1N API Key，请在设置页面配置。")
-        return OpenAI(api_key=key, base_url=base_url)
-
     else:  # openai（默认）
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
         if not key:
@@ -83,14 +76,7 @@ def _get_client():
 def _get_vision_client():
     from openai import OpenAI
     cfg = _load_config()
-    provider = str(cfg.get("vision_provider") or "n1n").strip() or "n1n"
-
-    if provider == "n1n":
-        key = cfg.get("n1n_api_key", "") or os.environ.get("N1N_API_KEY", "")
-        base_url = cfg.get("n1n_base_url", "https://api.n1n.ai/v1").strip()
-        if not key:
-            raise RuntimeError("未找到 N1N API Key，请在设置页面配置。")
-        return OpenAI(api_key=key, base_url=base_url)
+    provider = str(cfg.get("vision_provider") or "qwen").strip() or "qwen"
 
     if provider == "openai":
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
@@ -125,8 +111,6 @@ def _get_chat_model() -> str:
         return cfg.get("deepseek_model", "deepseek-chat")
     elif provider == "mimo":
         return cfg.get("mimo_model", "MiMo-7B-RL")
-    elif provider == "n1n":
-        return cfg.get("n1n_model", "gpt-4o")
     return "gpt-4o"
 
 
@@ -135,7 +119,7 @@ def _get_structured_generation_model() -> str:
 
 
 def _get_vision_model() -> str:
-    return str(_load_config().get("vision_model") or "gpt-5.5")
+    return str(_load_config().get("vision_model") or "qwen-vl-max-latest")
 
 
 _BARE_LATEX_COMMAND_RE = re.compile(
@@ -547,7 +531,7 @@ def _request_wrong_question_recognition_attempt(
             f"{revision_feedback}\n\n"
             "只保留原始题目主体，忽略学生手写答案、草稿、订正、批改痕迹和解题过程。"
             "先判断图片正确阅读方向，并返回原图需要顺时针旋转的 image_rotation_degrees。"
-            "如果原题包含几何图、数轴、表格、函数图像或示意图，必须用文字补足图中关键信息，并尽量输出可重绘的 diagram_spec。"
+            "如果原题包含几何图、数轴、表格、函数图像或示意图，必须用文字补足图中关键信息，不要只写“如图所示”，并尽量输出可重绘的 diagram_spec。"
         )
 
     response = active_client.chat.completions.create(
