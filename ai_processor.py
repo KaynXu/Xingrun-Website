@@ -107,6 +107,13 @@ def _get_vision_client():
             raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
         return OpenAI(api_key=key, base_url=base_url)
 
+    if provider == "qwen":
+        key = cfg.get("qwen_api_key", "") or os.environ.get("DASHSCOPE_API_KEY", "")
+        base_url = cfg.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
+        if not key:
+            raise RuntimeError("未找到 DashScope API Key，请配置 DASHSCOPE_API_KEY。")
+        return OpenAI(api_key=key, base_url=base_url)
+
     return _get_client()
 
 
