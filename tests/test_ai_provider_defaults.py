@@ -17,11 +17,11 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 cfg = config_runtime.get_runtime_config()
 
                 self.assertEqual(cfg["provider"], "deepseek")
-                self.assertEqual(cfg["vision_provider"], "n1n")
-                self.assertEqual(cfg["vision_model"], "gpt-5.5")
+                self.assertEqual(cfg["vision_provider"], "qwen")
+                self.assertEqual(cfg["vision_model"], "qwen-vl-max-latest")
                 self.assertEqual(ai_processor._provider_name(), "deepseek")
                 self.assertEqual(ai_processor._get_chat_model(), "deepseek-chat")
-                self.assertEqual(ai_processor._get_vision_model(), "gpt-5.5")
+                self.assertEqual(ai_processor._get_vision_model(), "qwen-vl-max-latest")
                 self.assertEqual(app._default_ai_provider_name(), "deepseek")
                 self.assertEqual(app._default_chat_model_name(), "deepseek-chat")
                 self.assertFalse(app.has_api_key())
@@ -60,13 +60,13 @@ class AiProviderDefaultsTest(unittest.TestCase):
             missing_config = Path(tmpdir) / "config.json"
             with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
                 os.environ,
-                {"XR_VISION_PROVIDER": "n1n", "XR_VISION_MODEL": "gpt-5.4"},
+                {"XR_VISION_PROVIDER": "qwen", "XR_VISION_MODEL": "qwen-vl-plus-latest"},
                 clear=True,
             ):
                 cfg = config_runtime.get_runtime_config()
-                self.assertEqual(cfg["vision_provider"], "n1n")
-                self.assertEqual(cfg["vision_model"], "gpt-5.4")
-                self.assertEqual(ai_processor._get_vision_model(), "gpt-5.4")
+                self.assertEqual(cfg["vision_provider"], "qwen")
+                self.assertEqual(cfg["vision_model"], "qwen-vl-plus-latest")
+                self.assertEqual(ai_processor._get_vision_model(), "qwen-vl-plus-latest")
 
     def test_qwen_vision_provider_uses_dashscope_compatible_endpoint(self):
         with tempfile.TemporaryDirectory() as tmpdir:
