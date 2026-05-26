@@ -88,6 +88,22 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
 
         self.assertEqual(answer_day_headings, [])
 
+    def test_answer_key_table_uses_two_side_by_side_answer_sets(self):
+        generate_review_pdfs.register_fonts()
+        styles = generate_review_pdfs.build_styles()
+        labels = generate_review_pdfs.build_labels(chinese_only=True)
+
+        table = generate_review_pdfs.make_compact_answer_key_table(
+            _sample_days(),
+            {},
+            styles,
+            labels,
+            "cn",
+            chinese_only=True,
+        )
+
+        self.assertEqual(table._ncols, 6)
+
     def test_cli_output_filename_uses_lesson_knowledge_points(self):
         output_dir = Path("/tmp/review-plan-layout-test")
         with patch("sys.argv", ["generate_review_pdfs.py", "cn"]), \
