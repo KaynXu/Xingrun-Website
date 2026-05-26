@@ -684,10 +684,9 @@ def _run_review_plan_generation_job(
                 logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
             return
 
-        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
+        from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
-            safe = (topic or "课程").replace("/", "-").replace(" ", "_")[:28]
-            pdf_name = f"{lesson_date}_{subject}_{safe}.pdf"
+            pdf_name = build_single_lesson_pdf_filename(plan, suffix=str(lesson_id))
             pdf_path = str(PDF_DIR / pdf_name)
             generate_single_lesson_pdf(plan, pdf_path)
         except Exception:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from review_plan_templates.generate_review_pdfs import normalize_portable_text, render_review_plan_pdf
+from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text, render_review_plan_pdf
 
 
 DEFAULT_FINAL_REMINDERS = [
@@ -204,3 +204,12 @@ def generate_single_lesson_pdf(plan_data: dict, output_path: str) -> str:
         variant_key="cn",
         knowledge_sections=extract_knowledge_sections(plan_data),
     )
+
+
+def build_single_lesson_pdf_filename(plan_data: dict, *, suffix: str = "") -> str:
+    lesson, _, _ = adapt_plan_to_review_template(plan_data)
+    stem = build_lesson_filename_part(lesson)
+    suffix = str(suffix or "").strip()
+    if suffix:
+        stem = f"{stem}-{suffix}"
+    return f"{stem}.pdf"
