@@ -8754,6 +8754,7 @@ const ClassManagementPage = ({
   const [studentCenterTab, setStudentCenterTab] = useState<'classes' | 'students'>('classes');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
+  const [selectedClassTeacherFilter, setSelectedClassTeacherFilter] = useState<number | 'all'>('all');
   const [studentTeacherFilter, setStudentTeacherFilter] = useState<number | null>(null);
   const [studentStageFilter, setStudentStageFilter] = useState('');
   const [studentGradeFilter, setStudentGradeFilter] = useState('');
@@ -9227,21 +9228,27 @@ const ClassManagementPage = ({
   };
 
   const classSubjectFilterOptions = ['全部学科', ...Array.from(new Set(classes.map((item) => item.subject.trim()).filter(Boolean))).map(String).sort((a, b) => a.localeCompare(b, 'zh-CN'))];
+  const classTeacherFilterBaseClasses = classes.filter((item) => selectedSubjectFilter === '全部学科' || item.subject === selectedSubjectFilter);
+  const classTeacherFilterOptions = users.filter((user) => classTeacherFilterBaseClasses.some((item) => (teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null) === user.id));
+  const classGradeFilterBaseClasses = classTeacherFilterBaseClasses.filter((item) => selectedClassTeacherFilter === 'all' || (teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null) === selectedClassTeacherFilter);
+  const classGradeFilterOptions = ['全部', ...Array.from(new Set(classGradeFilterBaseClasses.map((item) => item.current_grade || item.grade).filter(Boolean))).map(String).sort((a, b) => a.localeCompare(b, 'zh-CN'))];
   const activeClassFilterSummary = [
-    selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
     selectedSubjectFilter !== '全部学科' ? selectedSubjectFilter : '',
+    selectedClassTeacherFilter !== 'all' ? users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师' : '',
+    selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
   ].filter(Boolean).join(' / ') || '全部';
   const filteredClasses = classes.filter((item) => {
     if (selectedSubjectFilter !== '全部学科' && item.subject !== selectedSubjectFilter) {
       return false;
     }
+    const itemTeacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
+    if (selectedClassTeacherFilter !== 'all' && itemTeacherUserId !== selectedClassTeacherFilter) {
+      return false;
+    }
     if (selectedGradeFilter === '全部') {
       return true;
     }
-    if (selectedGradeFilter === '未绑定') {
-      return item.teacher_user_id == null;
-    }
-    return item.grade === selectedGradeFilter;
+    return (item.current_grade || item.grade) === selectedGradeFilter;
   });
 
   const newClassForm = formByClassId.new || createEmptyClassForm();
@@ -9454,38 +9461,94 @@ const ClassManagementPage = ({
         </div>
 
         <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-4 dark:border-white/10">
-          <div className="flex flex-wrap gap-2">
-            {gradeFilterOptions.map((option) => {
-              const active = option === selectedGradeFilter;
-              return (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">科目</p>
+            <div className="flex flex-wrap gap-2">
+              {classSubjectFilterOptions.map((option) => {
+                const active = option === selectedSubjectFilter;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSubjectFilter(option);
+                      setSelectedClassTeacherFilter('all');
+                      setSelectedGradeFilter('全部');
+                    }}
+                    className={cn(
+                      'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                      active
+                        ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                        : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                    )}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">教师</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedClassTeacherFilter('all');
+                  setSelectedGradeFilter('全部');
+                }}
+                className={cn(
+                  'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                  selectedClassTeacherFilter === 'all'
+                    ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                    : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                )}
+              >
+                全部教师
+              </button>
+              {classTeacherFilterOptions.map((teacher) => (
                 <button
-                  key={option}
+                  key={teacher.id}
                   type="button"
-                  onClick={() => setSelectedGradeFilter(option)}
+                  onClick={() => {
+                    setSelectedClassTeacherFilter(teacher.id);
+                    setSelectedGradeFilter('全部');
+                  }}
                   className={cn(
                     'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                    active
+                    selectedClassTeacherFilter === teacher.id
                       ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
                       : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
                   )}
                 >
-                  {option}
+                  {teacher.name}
                 </button>
-              );
-            })}
-          </div>
-          <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 sm:max-w-xs">
-            学科筛选
-            <select
-              value={selectedSubjectFilter}
-              onChange={(event) => setSelectedSubjectFilter(event.target.value)}
-              className={`${workspaceFieldClass} w-full`}
-            >
-              {classSubjectFilterOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">年级</p>
+            <div className="flex flex-wrap gap-2">
+              {classGradeFilterOptions.map((option) => {
+                const active = option === selectedGradeFilter;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setSelectedGradeFilter(option)}
+                    className={cn(
+                      'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                      active
+                        ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                        : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                    )}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {loading ? (
