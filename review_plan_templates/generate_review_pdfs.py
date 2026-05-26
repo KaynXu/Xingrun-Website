@@ -1226,7 +1226,7 @@ def build_styles():
         "h2": ParagraphStyle("h2", parent=base, fontSize=12, leading=17, textColor=accent, spaceBefore=3, spaceAfter=3),
         "body": base,
         "small": ParagraphStyle("small", parent=base, fontSize=8.6, leading=12),
-        "tiny": ParagraphStyle("tiny", parent=base, fontSize=7.4, leading=9.4),
+        "tiny": ParagraphStyle("tiny", parent=base, fontSize=6.7, leading=8.0),
         "quote": ParagraphStyle("quote", parent=base, fontSize=10, leading=15, leftIndent=6, rightIndent=6),
     }
 
@@ -1382,21 +1382,13 @@ def make_knowledge_answer_table(knowledge_items, styles, knowledge_mode, labels,
 
 def make_compact_answer_key_table(days, knowledge_sections, styles, labels, variant_key, chinese_only=False):
     day_header = "复习日" if chinese_only else "Day"
-    rows = [[Paragraph(day_header, styles["tiny"]), Paragraph(labels["answer_type"], styles["tiny"]), Paragraph(labels["answer_value"], styles["tiny"])]]
+    entries = []
     for day in days:
         day_label = localize_text(day["day"], chinese_only)
         for index, item in enumerate(day["blanks"], start=1):
-            rows.append([
-                Paragraph(day_label, styles["tiny"]),
-                Paragraph(f"{labels['blank_prefix']} {index}", styles["tiny"]),
-                Paragraph(escape(normalize_portable_text(item[1])), styles["tiny"]),
-            ])
+            entries.append((day_label, f"{labels['blank_prefix']} {index}", escape(normalize_portable_text(item[1]))))
         for index, item in enumerate(day["choices"], start=1):
-            rows.append([
-                Paragraph(day_label, styles["tiny"]),
-                Paragraph(f"{labels['choice_prefix']} {index}", styles["tiny"]),
-                Paragraph(escape(normalize_portable_text(item["answer"])), styles["tiny"]),
-            ])
+            entries.append((day_label, f"{labels['choice_prefix']} {index}", escape(normalize_portable_text(item["answer"]))))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         if not knowledge_items:
@@ -1406,37 +1398,48 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
             title = localize_text(item["title"], chinese_only)
             if knowledge_mode == "mixed":
                 for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-                    rows.append([
-                        Paragraph(day_label, styles["tiny"]),
-                        Paragraph(escape(f"{title} {labels['blank_prefix']} {index}"), styles["tiny"]),
-                        Paragraph(escape(normalize_portable_text(blank[1])), styles["tiny"]),
-                    ])
+                    entries.append((day_label, escape(f"{title} {labels['blank_prefix']} {index}"), escape(normalize_portable_text(blank[1]))))
                 for index, choice in enumerate(item["mixed"]["choices"], start=1):
-                    rows.append([
-                        Paragraph(day_label, styles["tiny"]),
-                        Paragraph(escape(f"{title} {labels['choice_prefix']} {index}"), styles["tiny"]),
-                        Paragraph(escape(normalize_portable_text(choice["answer"])), styles["tiny"]),
-                    ])
+                    entries.append((day_label, escape(f"{title} {labels['choice_prefix']} {index}"), escape(normalize_portable_text(choice["answer"]))))
             else:
                 for index, keypoint in enumerate(item["oral"]["keypoints"], start=1):
-                    rows.append([
-                        Paragraph(day_label, styles["tiny"]),
-                        Paragraph(escape(f"{title} {labels['oral_prompt_prefix']} {index}"), styles["tiny"]),
-                        Paragraph(escape(localize_text(keypoint, chinese_only)), styles["tiny"]),
-                    ])
+                    entries.append((day_label, escape(f"{title} {labels['oral_prompt_prefix']} {index}"), escape(localize_text(keypoint, chinese_only))))
 
-    table = Table(rows, colWidths=[24 * mm, 58 * mm, 88 * mm], repeatRows=1)
+    split_at = (len(entries) + 1) // 2
+    left_entries = entries[:split_at]
+    right_entries = entries[split_at:]
+    rows = [[
+        Paragraph(day_header, styles["tiny"]),
+        Paragraph(labels["answer_type"], styles["tiny"]),
+        Paragraph(labels["answer_value"], styles["tiny"]),
+        Paragraph(day_header, styles["tiny"]),
+        Paragraph(labels["answer_type"], styles["tiny"]),
+        Paragraph(labels["answer_value"], styles["tiny"]),
+    ]]
+    blank_cells = ["", "", ""]
+    for index, left_entry in enumerate(left_entries):
+        right_entry = right_entries[index] if index < len(right_entries) else blank_cells
+        rows.append([
+            Paragraph(left_entry[0], styles["tiny"]),
+            Paragraph(left_entry[1], styles["tiny"]),
+            Paragraph(left_entry[2], styles["tiny"]),
+            Paragraph(right_entry[0], styles["tiny"]),
+            Paragraph(right_entry[1], styles["tiny"]),
+            Paragraph(right_entry[2], styles["tiny"]),
+        ])
+
+    table = Table(rows, colWidths=[15 * mm, 33 * mm, 37 * mm, 15 * mm, 33 * mm, 37 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8EFE7")),
                 ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#D2D8DE")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D2D8DE")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
             ]
         )
     )
