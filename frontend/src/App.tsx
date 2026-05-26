@@ -1941,12 +1941,13 @@ const Sidebar = ({
           <button
             key={item.id}
             type="button"
+            title={compact && !mobile ? item.label : undefined}
             onClick={() => {
               setActivePage(item.id as Page);
               onNavigate?.();
             }}
             className={cn(
-              'relative flex w-full touch-manipulation items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
+              'group/nav-item relative flex w-full touch-manipulation items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
               compact && !mobile && 'justify-center px-3',
               activePage === item.id
                 ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)] dark:border-sky-500/30 dark:bg-white/10 dark:text-sky-300 dark:shadow-[0_16px_36px_rgba(2,6,23,0.35)]'
@@ -1955,6 +1956,11 @@ const Sidebar = ({
           >
             <item.icon size={20} />
             <span className={cn('font-medium', compact && !mobile && 'hidden')}>{item.label}</span>
+            {compact && !mobile && (
+              <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-sky-100 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 shadow-[0_10px_24px_rgba(31,42,68,0.14)] transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
+                {item.label}
+              </span>
+            )}
             {activePage === item.id && (
               <motion.div
                 layoutId="active-pill"
@@ -5335,6 +5341,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   const [draftsById, setDraftsById] = useState<Record<number, ConsultationFormValues>>({});
   const [processedIds, setProcessedIds] = useState<Set<number>>(() => new Set());
   const [teacherFilter, setTeacherFilter] = useState('');
+  const [teacherFilterOpen, setTeacherFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -5350,6 +5357,24 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   const hasUncommittedChanges = Object.keys(draftsById).length > 0;
   const meetingTodayIso = getTodayIsoDate();
   const prefersReducedMotion = useReducedMotion();
+  const groupedMeetingTeachers = useMemo(() => {
+    const teacherSubjects = new Map<string, Set<string>>();
+    records.forEach((record) => {
+      const teacherId = record.teacher_id || record.receiving_teacher;
+      if (!teacherId) return;
+      const subjects = teacherSubjects.get(teacherId) ?? new Set<string>();
+      if (record.consultation_subject?.includes('物理')) subjects.add('物理');
+      if (record.consultation_subject?.includes('数学')) subjects.add('数学');
+      teacherSubjects.set(teacherId, subjects);
+    });
+    return {
+      数学: consultationTeachers.filter((teacher) => !teacherSubjects.get(teacher.teacher_id)?.has('物理')),
+      物理: consultationTeachers.filter((teacher) => teacherSubjects.get(teacher.teacher_id)?.has('物理')),
+    };
+  }, [consultationTeachers, records]);
+  const selectedMeetingTeacherLabel = teacherFilter
+    ? consultationTeachers.find((teacher) => teacher.teacher_id === teacherFilter)?.display_name || teacherFilter
+    : '全部';
 
   const loadWorkbench = useCallback(async () => {
     setLoading(true);
@@ -5776,15 +5801,69 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
           <p className="mt-1 text-sm text-[#7188A6] dark:text-slate-400">本页保存先进入已处理，最终保存后同步主咨询页。</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-3 lg:w-[32rem]">
-          <label className="sm:col-span-1">
-            <span className="sr-only">按教师查看</span>
-            <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)} className={`${consultationInputClass} h-10 w-full px-3 text-sm`}>
-              <option value="">按教师查看：全部</option>
-              {consultationTeachers.map((teacher) => (
-                <option key={teacher.teacher_id} value={teacher.teacher_id}>{teacher.display_name}</option>
-              ))}
-            </select>
-          </label>
+          <div className="relative sm:col-span-1">
+            <button
+              type="button"
+              onClick={() => setTeacherFilterOpen((current) => !current)}
+              className={`${consultationInputClass} flex h-10 w-full items-center justify-between gap-2 px-3 text-left text-sm`}
+            >
+              <span className="min-w-0 truncate">按教师查看：{selectedMeetingTeacherLabel}</span>
+              <ChevronDown size={14} className={cn('shrink-0 transition', teacherFilterOpen && 'rotate-180')} />
+            </button>
+            <AnimatePresence>
+              {teacherFilterOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                  transition={{ duration: 0.14 }}
+                  className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-[#D9EEF7] bg-white p-3 shadow-[0_18px_42px_rgba(31,42,68,0.14)] dark:border-white/10 dark:bg-slate-950"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTeacherFilter('');
+                      setTeacherFilterOpen(false);
+                    }}
+                    className={cn(
+                      'mb-2 flex h-8 w-full items-center justify-between rounded-xl px-3 text-sm font-bold transition',
+                      !teacherFilter ? 'bg-sky-500 text-white' : 'bg-sky-50 text-slate-600 hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300',
+                    )}
+                  >
+                    全部教师
+                    <span className="text-xs">{consultationTeachers.length}</span>
+                  </button>
+                  {(['数学', '物理'] as const).map((subject) => (
+                    <div key={subject} className="mt-2">
+                      <p className="px-1 text-[11px] font-extrabold text-slate-400">{subject}</p>
+                      <div className="mt-1 grid grid-cols-2 gap-1.5">
+                        {groupedMeetingTeachers[subject].length ? groupedMeetingTeachers[subject].map((teacher) => (
+                          <button
+                            key={`${subject}-${teacher.teacher_id}`}
+                            type="button"
+                            onClick={() => {
+                              setTeacherFilter(teacher.teacher_id);
+                              setTeacherFilterOpen(false);
+                            }}
+                            className={cn(
+                              'min-w-0 rounded-xl border px-2.5 py-2 text-left text-xs font-bold transition',
+                              teacherFilter === teacher.teacher_id
+                                ? 'border-sky-200 bg-sky-500 text-white'
+                                : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+                            )}
+                          >
+                            <span className="block truncate">{teacher.display_name}</span>
+                          </button>
+                        )) : (
+                          <p className="col-span-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400 dark:bg-white/5">暂无教师</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <button type="button" onClick={handleFinalSave} disabled={!hasUncommittedChanges || saving} className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50`}>
             <CheckCircle2 size={15} />
             最终保存

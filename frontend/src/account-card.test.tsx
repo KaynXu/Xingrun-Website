@@ -259,6 +259,20 @@ test('consultation meeting workbench has lighter secondary filters and terminal 
   assert.match(workbenchBlock[0], /30天\+/);
 });
 
+test('consultation meeting workbench uses a grouped teacher popover instead of a select', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(workbenchBlock);
+  assert.match(workbenchBlock[0], /const \[teacherFilterOpen, setTeacherFilterOpen\] = useState\(false\);/);
+  assert.match(workbenchBlock[0], /const groupedMeetingTeachers = useMemo/);
+  assert.match(workbenchBlock[0], /数学/);
+  assert.match(workbenchBlock[0], /物理/);
+  assert.match(workbenchBlock[0], /setTeacherFilter\(teacher\.teacher_id\)/);
+  assert.match(workbenchBlock[0], /按教师查看：\{selectedMeetingTeacherLabel\}/);
+  assert.doesNotMatch(workbenchBlock[0], /<select value=\{teacherFilter\}/);
+});
+
 test('consultation meeting workbench can directly mark a card processed with motion feedback', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
@@ -292,6 +306,17 @@ test('consultation meeting workbench only lets the flow over node change state o
   assert.match(workbenchBlock[0], /onOverDoubleClick=\{\(\) => handleMeetingOverDoubleClick\(record\)\}/);
   assert.doesNotMatch(workbenchBlock[0], /onStageDoubleClick=/);
   assert.doesNotMatch(workbenchBlock[0], /onResultDoubleClick=/);
+});
+
+test('compact sidebar shows immediate labels on icon hover', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const sidebarBlock = source.match(/const Sidebar = \([\s\S]*?\n};/);
+
+  assert.ok(sidebarBlock);
+  assert.match(sidebarBlock[0], /title=\{compact && !mobile \? item\.label : undefined\}/);
+  assert.match(sidebarBlock[0], /group\/nav-item/);
+  assert.match(sidebarBlock[0], /group-hover\/nav-item:opacity-100/);
+  assert.match(sidebarBlock[0], /\{item\.label\}/);
 });
 
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
