@@ -3765,6 +3765,7 @@ const ConsultationFlowBar = ({
   onResultDoubleClick,
   onStageJump,
   onOverClick,
+  onOverDoubleClick,
 }: {
   stage: string;
   completedStages: string[];
@@ -3780,6 +3781,7 @@ const ConsultationFlowBar = ({
   onResultDoubleClick?: () => void;
   onStageJump?: (stage: string) => void;
   onOverClick?: () => void;
+  onOverDoubleClick?: () => void;
 }) => {
   const currentStage = stage || consultationFlowStages[0];
   const ended = isConsultationEnded(currentStage);
@@ -3887,6 +3889,7 @@ const ConsultationFlowBar = ({
         const handlePrimaryDoubleClick = () => {
           if (node.type === 'process') onStageDoubleClick?.(node.key);
           if (node.type === 'result') onResultDoubleClick?.();
+          if (node.type === 'over') onOverDoubleClick?.();
         };
         return (
           <div key={node.key} className="group relative min-w-0">
@@ -5472,6 +5475,12 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     setProcessedIds((current) => new Set(current).add(record.id));
   };
 
+  const handleMeetingOverDoubleClick = (record: ConsultationRecord) => {
+    const values = endConsultationValues(toConsultationFormValues(record));
+    setDraftsById((current) => ({ ...current, [record.id]: { ...values, ended_at: values.ended_at || new Date().toISOString() } }));
+    setProcessedIds((current) => new Set(current).add(record.id));
+  };
+
   const handleFinalSave = async () => {
     setSaving(true);
     setError('');
@@ -5553,7 +5562,15 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   };
 
   const renderMeetingFlowStrip = (record: ConsultationRecord) => (
-    <ConsultationFlowBar mode="list" stage={record.flow_stage} completedStages={record.completed_stages} editable={false} showOver overDisabled />
+    <ConsultationFlowBar
+      mode="list"
+      stage={record.flow_stage}
+      completedStages={record.completed_stages}
+      editable={false}
+      showOver
+      overDisabled={false}
+      onOverDoubleClick={() => handleMeetingOverDoubleClick(record)}
+    />
   );
 
   const getMeetingRecordResultPill = (record: ConsultationRecord) => {

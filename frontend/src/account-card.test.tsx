@@ -275,6 +275,25 @@ test('consultation meeting workbench can directly mark a card processed with mot
   assert.match(workbenchBlock[0], /exit=\{\{ opacity: 0, scale: prefersReducedMotion \? 1 : 0\.96, y: prefersReducedMotion \? 0 : 10 \}\}/);
 });
 
+test('consultation meeting workbench only lets the flow over node change state on double click', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(flowBarBlock);
+  assert.ok(workbenchBlock);
+  assert.match(flowBarBlock[0], /onOverDoubleClick/);
+  assert.match(flowBarBlock[0], /if \(node\.type === 'over'\) onOverDoubleClick\?\.\(\);/);
+  assert.match(workbenchBlock[0], /const handleMeetingOverDoubleClick = \(record: ConsultationRecord\) => \{/);
+  assert.match(workbenchBlock[0], /const values = endConsultationValues\(toConsultationFormValues\(record\)\);/);
+  assert.match(workbenchBlock[0], /setDraftsById\(\(current\) => \(\{ \.\.\.current, \[record\.id\]: \{ \.\.\.values, ended_at: values\.ended_at \|\| new Date\(\)\.toISOString\(\) \} \}\)\);/);
+  assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(record\.id\)\);/);
+  assert.match(workbenchBlock[0], /editable=\{false\}/);
+  assert.match(workbenchBlock[0], /onOverDoubleClick=\{\(\) => handleMeetingOverDoubleClick\(record\)\}/);
+  assert.doesNotMatch(workbenchBlock[0], /onStageDoubleClick=/);
+  assert.doesNotMatch(workbenchBlock[0], /onResultDoubleClick=/);
+});
+
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
