@@ -9293,6 +9293,57 @@ const ClassManagementPage = ({
     selectedClassStageFilter !== '全部学段' ? selectedClassStageFilter : '',
     selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
   ].filter(Boolean).join(' / ') || '全部';
+  const classFilterItems = [
+    {
+      key: 'subject' as const,
+      label: selectedSubjectFilter,
+      selected: selectedSubjectFilter !== '全部学科',
+    },
+    {
+      key: 'teacher' as const,
+      label: selectedClassTeacherFilter === 'all' ? '全部教师' : users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师',
+      selected: selectedClassTeacherFilter !== 'all',
+    },
+    {
+      key: 'stage' as const,
+      label: selectedClassStageFilter,
+      selected: selectedClassStageFilter !== '全部学段',
+    },
+    {
+      key: 'grade' as const,
+      label: selectedGradeFilter === '全部' ? '全部年级' : selectedGradeFilter,
+      selected: selectedGradeFilter !== '全部',
+    },
+  ];
+  const handleClassFilterLayerClick = (layer: typeof activeClassFilterLayer, selected: boolean) => {
+    if (!selected) {
+      setActiveClassFilterLayer(layer);
+      return;
+    }
+    if (layer === 'subject') {
+      setSelectedSubjectFilter('全部学科');
+      setSelectedClassTeacherFilter('all');
+      setSelectedClassStageFilter('全部学段');
+      setSelectedGradeFilter('全部');
+      setActiveClassFilterLayer('subject');
+      return;
+    }
+    if (layer === 'teacher') {
+      setSelectedClassTeacherFilter('all');
+      setSelectedClassStageFilter('全部学段');
+      setSelectedGradeFilter('全部');
+      setActiveClassFilterLayer('teacher');
+      return;
+    }
+    if (layer === 'stage') {
+      setSelectedClassStageFilter('全部学段');
+      setSelectedGradeFilter('全部');
+      setActiveClassFilterLayer('stage');
+      return;
+    }
+    setSelectedGradeFilter('全部');
+    setActiveClassFilterLayer('grade');
+  };
   const filteredClasses = classes.filter((item) => {
     if (selectedSubjectFilter !== '全部学科' && item.subject !== selectedSubjectFilter) {
       return false;
@@ -9631,20 +9682,17 @@ const ClassManagementPage = ({
         <div className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选：{activeClassFilterSummary}</span>
-            {[
-              { key: 'subject' as const, label: selectedSubjectFilter },
-              { key: 'teacher' as const, label: selectedClassTeacherFilter === 'all' ? '全部教师' : users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师' },
-              { key: 'stage' as const, label: selectedClassStageFilter },
-              { key: 'grade' as const, label: selectedGradeFilter === '全部' ? '全部年级' : selectedGradeFilter },
-            ].map((item) => (
+            {classFilterItems.map((item) => (
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setActiveClassFilterLayer(item.key)}
+                onClick={() => handleClassFilterLayerClick(item.key, item.selected)}
                 className={cn(
                   'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                  activeClassFilterLayer === item.key
+                  item.selected
                     ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                    : activeClassFilterLayer === item.key
+                      ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
                     : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
                 )}
               >
