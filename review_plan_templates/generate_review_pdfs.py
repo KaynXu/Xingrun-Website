@@ -913,6 +913,37 @@ def build_timestamped_output_path(output_dir, filename):
     return base_path.with_name(f"{base_path.stem}-{timestamp}{base_path.suffix}")
 
 
+def make_safe_filename_part(value, fallback="课程复习计划", max_length=80):
+    normalized = localize_text(str(value or ""), True)
+    normalized = re.sub(r"^[\d一二三四五六七八九十]+[.、]\s*", "", normalized)
+    normalized = re.sub(r"[\\/:*?\"<>|：]+", "-", normalized)
+    normalized = re.sub(r"\s+", "", normalized)
+    normalized = re.sub(r"-{2,}", "-", normalized).strip("-. ")
+    if not normalized:
+        normalized = fallback
+    return normalized[:max_length].strip("-. ") or fallback
+
+
+def build_lesson_filename_part(lesson, fallback="课程复习计划"):
+    title = lesson.get("title", "") if isinstance(lesson, dict) else ""
+    title = re.sub(r"(课后)?复习计划$", "", str(title or ""))
+    safe_title = make_safe_filename_part(title, "", 80)
+    if len(safe_title) > 5:
+        return safe_title
+
+    topics = []
+    for topic in lesson.get("full_review_topics", []) if isinstance(lesson, dict) else []:
+        safe_topic = make_safe_filename_part(topic, "", 24)
+        if safe_topic and safe_topic not in topics:
+            topics.append(safe_topic)
+        if len(topics) >= 3:
+            break
+    if topics:
+        return make_safe_filename_part("-".join(topics), fallback)
+
+    return make_safe_filename_part(title, fallback)
+
+
 def is_chinese_only(variant_key):
     return VARIANTS[variant_key].get("language") == "cn"
 
@@ -1583,8 +1614,7 @@ def main():
     if lesson_pack_path:
         load_lesson_pack(lesson_pack_path)
     OUTPUT_DIR.mkdir(exist_ok=True)
-    variant = VARIANTS[variant_key]
-    file_path = build_timestamped_output_path(OUTPUT_DIR, variant["filename"])
+    file_path = build_timestamped_output_path(OUTPUT_DIR, f"{build_lesson_filename_part(LESSON)}.pdf")
     render_review_plan_pdf(
         lesson=LESSON,
         days=DAYS,

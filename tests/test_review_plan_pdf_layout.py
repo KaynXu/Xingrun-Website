@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from review_plan_templates import generate_review_pdfs
@@ -86,6 +87,21 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
         ]
 
         self.assertEqual(answer_day_headings, [])
+
+    def test_cli_output_filename_uses_lesson_knowledge_points(self):
+        output_dir = Path("/tmp/review-plan-layout-test")
+        with patch("sys.argv", ["generate_review_pdfs.py", "cn"]), \
+             patch.object(generate_review_pdfs, "OUTPUT_DIR", output_dir), \
+             patch.object(generate_review_pdfs, "LESSON", _sample_lesson()), \
+             patch.object(generate_review_pdfs, "DAYS", _sample_days()), \
+             patch.object(generate_review_pdfs, "FINAL_REMINDER_LINES", ["先看入口，再写步骤。"]), \
+             patch.object(generate_review_pdfs, "KNOWLEDGE_SECTIONS", {}), \
+             patch("review_plan_templates.generate_review_pdfs.render_review_plan_pdf") as render_pdf:
+            generate_review_pdfs.main()
+
+        output_path = Path(render_pdf.call_args.kwargs["output_path"])
+        self.assertIn("数量积入口-单位向量-投影长度", output_path.name)
+        self.assertNotIn("review-plan-chinese-only", output_path.name)
 
 
 if __name__ == "__main__":
