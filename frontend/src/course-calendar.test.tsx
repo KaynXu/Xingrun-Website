@@ -312,15 +312,17 @@ test('course calendar filters can show an empty draggable course result without 
       );
     });
 
-    const [teacherSelect, subjectSelect] = Array.from(domEnvironment.container.querySelectorAll('select')) as HTMLSelectElement[];
-    assert.ok(teacherSelect);
-    assert.ok(subjectSelect);
+    const findButton = (label: string) => Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.trim() === label);
+    const stageButton = findButton('全部学段');
+    assert.ok(stageButton);
 
     await act(async () => {
-      teacherSelect.value = 'Alice';
-      teacherSelect.dispatchEvent(new domEnvironment.event('change', { bubbles: true }));
-      subjectSelect.value = '物理';
-      subjectSelect.dispatchEvent(new domEnvironment.event('change', { bubbles: true }));
+      stageButton.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
+    });
+    const highSchoolButton = findButton('高中');
+    assert.ok(highSchoolButton);
+    await act(async () => {
+      highSchoolButton.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
     });
 
     assert.match(domEnvironment.container.textContent ?? '', /暂无可拖拽课程/);
@@ -532,13 +534,13 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /isCalendarExpanded/);
   assert.match(source, /Maximize2/);
   assert.match(source, /Minimize2/);
-  assert.match(source, /const SUBJECT_FILTER_OPTIONS = \['数学', '物理'\]/);
-  assert.match(source, /getTeacherOptions\(classes\)/);
+  assert.match(source, /const SUBJECT_FILTER_OPTIONS = \['全部学科', '数学', '物理', '国际数学'\]/);
+  assert.match(source, /const teacherFilterBaseClasses = classes\.filter/);
   assert.doesNotMatch(source, /setTeacherEditorOpen\(true\)/);
   assert.doesNotMatch(source, /handleAddTeacherOption/);
   assert.doesNotMatch(source, /handleRemoveTeacherOption/);
   assert.match(source, /function getClassGradeRank/);
-  assert.match(source, /getClassGradeRank\(b\) - getClassGradeRank\(a\)/);
+  assert.match(source, /getClassGradeRank\(a\) - getClassGradeRank\(b\)/);
   assert.match(source, /max-h-\[320px\] space-y-2 overflow-y-auto overscroll-contain/);
   assert.match(source, /max-h-\[320px\] space-y-3 overflow-y-auto overscroll-contain/);
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_240px\]/);

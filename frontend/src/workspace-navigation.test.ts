@@ -275,18 +275,21 @@ test('class management source adds grade and subject filters and reuses the shar
   const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.match(classManagementBlock, /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
+  assert.match(classManagementBlock, /const \[selectedClassStageFilter, setSelectedClassStageFilter\] = useState<string>\('全部学段'\)/);
   assert.match(classManagementBlock, /const \[selectedSubjectFilter, setSelectedSubjectFilter\] = useState<string>\('全部学科'\)/);
   assert.match(classManagementBlock, /const \[selectedClassTeacherFilter, setSelectedClassTeacherFilter\] = useState<number \| 'all'>\('all'\)/);
-  assert.match(classManagementBlock, /const classSubjectFilterOptions = \['全部学科',[\s\S]*new Set\(classes\.map\(\(item\) => item\.subject\.trim\(\)\)\.filter\(Boolean\)\)/);
+  assert.match(classManagementBlock, /const classSubjectFilterOptions = academicSubjectFilterOptions;/);
   assert.match(classManagementBlock, /const classTeacherFilterBaseClasses = classes\.filter\(\(item\) => selectedSubjectFilter === '全部学科' \|\| item\.subject === selectedSubjectFilter\);/);
   assert.match(classManagementBlock, /const classTeacherFilterOptions = users\.filter\(\(user\) => classTeacherFilterBaseClasses\.some/);
-  assert.match(classManagementBlock, /const classGradeFilterBaseClasses = classTeacherFilterBaseClasses\.filter/);
-  assert.match(classManagementBlock, /const classGradeFilterOptions = \['全部', \.\.\.Array\.from\(new Set\(classGradeFilterBaseClasses\.map/);
+  assert.match(classManagementBlock, /const classStageFilterBaseClasses = classTeacherFilterBaseClasses\.filter/);
+  assert.match(classManagementBlock, /const classGradeFilterBaseClasses = classStageFilterBaseClasses\.filter/);
+  assert.match(classManagementBlock, /const classGradeFilterOptions = \['全部', \.\.\.studentCenterGradeOptions\.filter/);
   assert.match(appSource, sharedGradeOptionsPattern);
   assert.match(classManagementBlock, /const filteredClasses = classes\.filter\(\(item\) => \{/);
   assert.match(classManagementBlock, /if \(selectedSubjectFilter !== '全部学科' && item\.subject !== selectedSubjectFilter\) \{\s*return false;\s*\}/);
   assert.match(classManagementBlock, /if \(selectedClassTeacherFilter !== 'all' && itemTeacherUserId !== selectedClassTeacherFilter\) \{/);
-  assert.match(classManagementBlock, /return \(item\.current_grade \|\| item\.grade\) === selectedGradeFilter;/);
+  assert.match(classManagementBlock, /if \(selectedClassStageFilter !== '全部学段'/);
+  assert.match(classManagementBlock, /return normalizeAcademicGradeLabel\(item\.current_grade \|\| item\.grade \|\| ''\) === selectedGradeFilter;/);
   assert.match(classManagementBlock, /setSelectedSubjectFilter\(option\);[\s\S]*setSelectedClassTeacherFilter\('all'\);[\s\S]*setSelectedGradeFilter\('全部'\);/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.current_grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'current_grade', e\.target\.value\)\}/);
   assert.match(classManagementBlock, /<select[\s\S]*?value=\{editingFormState\.current_grade \|\| editingFormState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(editingClass\.id, 'current_grade', e\.target\.value\)\}/);

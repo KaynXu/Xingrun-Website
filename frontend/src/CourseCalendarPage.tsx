@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
-  ChevronDown,
   Clock,
   Filter,
   GripVertical,
@@ -57,7 +56,14 @@ const TIME_ADJUSTMENT_PRESETS = [
   { label: '晚 15 分钟', minutes: 15 },
   { label: '晚半小时', minutes: 30 },
 ] as const;
-const SUBJECT_FILTER_OPTIONS = ['数学', '物理'];
+const SUBJECT_FILTER_OPTIONS = ['全部学科', '数学', '物理', '国际数学'];
+const STAGE_FILTER_OPTIONS = ['全部学段', '小奥', '初中', '高中'];
+const GRADE_FILTER_GROUPS: Record<string, string[]> = {
+  小奥: ['1年级', '2年级', '3年级', '4年级', '5年级', '6年级'],
+  初中: ['7年级', '8年级', '9年级'],
+  高中: ['高一', '高二', '高三'],
+};
+const GRADE_FILTER_OPTIONS = [...GRADE_FILTER_GROUPS.小奥, ...GRADE_FILTER_GROUPS.初中, ...GRADE_FILTER_GROUPS.高中];
 
 type CustomOffsetDirection = 'early' | 'late';
 
@@ -140,6 +146,36 @@ function getTeacherOptions(classes: CourseCalendarClassRecord[]): string[] {
   ) as string[];
 }
 
+function normalizeAcademicGradeLabel(value: string): string {
+  const normalized = value.trim();
+  const gradeMap: Record<string, string> = {
+    一年级: '1年级',
+    二年级: '2年级',
+    三年级: '3年级',
+    四年级: '4年级',
+    五年级: '5年级',
+    六年级: '6年级',
+    七年级: '7年级',
+    八年级: '8年级',
+    九年级: '9年级',
+    初一: '7年级',
+    初二: '8年级',
+    初三: '9年级',
+    高一: '高一',
+    高二: '高二',
+    高三: '高三',
+  };
+  return gradeMap[normalized] || normalized;
+}
+
+function getAcademicStageFromGrade(value: string): string {
+  const grade = normalizeAcademicGradeLabel(value);
+  if (GRADE_FILTER_GROUPS.小奥.includes(grade)) return '小奥';
+  if (GRADE_FILTER_GROUPS.初中.includes(grade)) return '初中';
+  if (GRADE_FILTER_GROUPS.高中.includes(grade)) return '高中';
+  return '';
+}
+
 function getClassGradeRank(courseClass: CourseCalendarClassRecord): number {
   const label = `${courseClass.grade || ''} ${courseClass.name || ''}`;
   const gradeRanks: Array<[RegExp, number]> = [
@@ -161,7 +197,7 @@ function getClassGradeRank(courseClass: CourseCalendarClassRecord): number {
 
 function getClassOptions(classes: CourseCalendarClassRecord[]): CourseCalendarClassRecord[] {
   return [...classes].sort((a, b) => {
-    const gradeDelta = getClassGradeRank(b) - getClassGradeRank(a);
+    const gradeDelta = getClassGradeRank(a) - getClassGradeRank(b);
     if (gradeDelta !== 0) {
       return gradeDelta;
     }
@@ -317,15 +353,40 @@ export function CourseCalendarPage({
   const visibleSchedules = joinedSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
   const joinedCustomSchedules = buildJoinedCustomSchedules(customSchedules);
   const visibleCustomSchedules = joinedCustomSchedules.filter((schedule) => visibleDateSet.has(schedule.date));
-  const teacherOptions = getTeacherOptions(classes);
-  const [teacherFilter, setTeacherFilter] = React.useState('');
-  const [subjectFilter, setSubjectFilter] = React.useState('');
   const canFilterCourses = currentUserRole !== 'member';
+  const [teacherFilter, setTeacherFilter] = React.useState('');
+  const [subjectFilter, setSubjectFilter] = React.useState('全部学科');
+  const [stageFilter, setStageFilter] = React.useState('全部学段');
+  const [gradeFilter, setGradeFilter] = React.useState('');
+  const [activeFilterLayer, setActiveFilterLayer] = React.useState<'subject' | 'teacher' | 'stage' | 'grade'>('subject');
+  const teacherFilterBaseClasses = classes.filter((courseClass) => subjectFilter === '全部学科' || courseClass.subject === subjectFilter);
+  const teacherOptions = getTeacherOptions(teacherFilterBaseClasses);
+  const stageFilterBaseClasses = teacherFilterBaseClasses.filter((courseClass) => !teacherFilter || courseClass.teacher_name === teacherFilter);
+  const gradeFilterBaseClasses = stageFilterBaseClasses.filter((courseClass) => {
+    if (stageFilter === '全部学段') return true;
+    return getAcademicStageFromGrade(courseClass.grade || courseClass.name || '') === stageFilter;
+  });
+  const visibleGradeOptions = GRADE_FILTER_OPTIONS.filter((grade) => {
+    if (stageFilter !== '全部学段' && !GRADE_FILTER_GROUPS[stageFilter]?.includes(grade)) return false;
+    return gradeFilterBaseClasses.some((courseClass) => normalizeAcademicGradeLabel(courseClass.grade || courseClass.name || '') === grade);
+  });
+  const filterSummary = [
+    subjectFilter !== '全部学科' ? subjectFilter : '',
+    teacherFilter || '',
+    stageFilter !== '全部学段' ? stageFilter : '',
+    gradeFilter || '',
+  ].filter(Boolean).join(' / ') || '全部';
   const classOptions = getClassOptions(classes).filter((courseClass) => {
+    if (canFilterCourses && subjectFilter !== '全部学科' && courseClass.subject !== subjectFilter) {
+      return false;
+    }
     if (canFilterCourses && teacherFilter && courseClass.teacher_name !== teacherFilter) {
       return false;
     }
-    if (canFilterCourses && subjectFilter && courseClass.subject !== subjectFilter) {
+    if (canFilterCourses && stageFilter !== '全部学段' && getAcademicStageFromGrade(courseClass.grade || courseClass.name || '') !== stageFilter) {
+      return false;
+    }
+    if (canFilterCourses && gradeFilter && normalizeAcademicGradeLabel(courseClass.grade || courseClass.name || '') !== gradeFilter) {
       return false;
     }
     return true;
@@ -507,41 +568,82 @@ export function CourseCalendarPage({
                 </label>
 
                 {canFilterCourses && (
-                  <div className="grid gap-3 sm:grid-cols-[minmax(9.5rem,1fr)_minmax(9.5rem,1fr)]">
-                  <label className="relative min-w-38">
-                    <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                      <Users className="h-3.5 w-3.5" />
-                      老师
-                    </span>
-                    <select
-                      value={teacherFilter}
-                      onChange={(event) => setTeacherFilter(event.target.value)}
-                      className="h-14 w-full appearance-none rounded-2xl border border-sky-200 bg-white px-4 pt-5 text-sm font-medium text-slate-700 shadow-sm outline-none transition [color-scheme:light] focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
-                    >
-                      <option value="">全部老师</option>
-                      {teacherOptions.map((teacherName) => (
-                        <option key={teacherName} value={teacherName}>{teacherName}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-4 top-5 h-4 w-4 text-slate-400 dark:text-slate-500" />
-                  </label>
-                  <label className="relative min-w-38">
-                    <span className="pointer-events-none absolute left-4 top-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                      <Filter className="h-3.5 w-3.5" />
-                      学科
-                    </span>
-                    <select
-                      value={subjectFilter}
-                      onChange={(event) => setSubjectFilter(event.target.value)}
-                      className="h-14 w-full appearance-none rounded-2xl border border-sky-200 bg-white px-4 pt-5 text-sm font-medium text-slate-700 shadow-sm outline-none transition [color-scheme:light] focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:border-sky-500 dark:focus:ring-sky-500/15"
-                    >
-                      <option value="">全部学科</option>
-                      {SUBJECT_FILTER_OPTIONS.map((subject) => (
-                        <option key={subject} value={subject}>{subject}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-4 top-5 h-4 w-4 text-slate-400 dark:text-slate-500" />
-                  </label>
+                  <div className="w-full max-w-3xl rounded-2xl border border-sky-200 bg-white/86 p-2 shadow-sm dark:border-white/10 dark:bg-white/5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2 text-sm font-semibold text-slate-500 dark:text-slate-400">筛选：{filterSummary}</span>
+                      {[
+                        { key: 'subject' as const, icon: Filter, label: subjectFilter },
+                        { key: 'teacher' as const, icon: Users, label: teacherFilter || '全部教师' },
+                        { key: 'stage' as const, icon: Filter, label: stageFilter },
+                        { key: 'grade' as const, icon: Filter, label: gradeFilter || '全部年级' },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setActiveFilterLayer(item.key)}
+                            className={cn(
+                              'inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition',
+                              activeFilterLayer === item.key
+                                ? 'border-sky-500 bg-sky-500 text-white shadow-sm'
+                                : 'border-sky-100 bg-sky-50 text-slate-600 hover:bg-sky-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                            )}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 rounded-xl bg-sky-50/80 p-2 dark:bg-slate-950/30">
+                      {activeFilterLayer === 'subject' && (
+                        <div className="flex flex-wrap gap-2">
+                          {SUBJECT_FILTER_OPTIONS.map((subject) => (
+                            <button key={subject} type="button" onClick={() => {
+                              setSubjectFilter(subject);
+                              setTeacherFilter('');
+                              setStageFilter('全部学段');
+                              setGradeFilter('');
+                            }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', subjectFilter === subject ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{subject}</button>
+                          ))}
+                        </div>
+                      )}
+                      {activeFilterLayer === 'teacher' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => {
+                            setTeacherFilter('');
+                            setStageFilter('全部学段');
+                            setGradeFilter('');
+                          }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', !teacherFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部教师</button>
+                          {teacherOptions.map((teacherName) => (
+                            <button key={teacherName} type="button" onClick={() => {
+                              setTeacherFilter(teacherName);
+                              setStageFilter('全部学段');
+                              setGradeFilter('');
+                            }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', teacherFilter === teacherName ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{teacherName}</button>
+                          ))}
+                        </div>
+                      )}
+                      {activeFilterLayer === 'stage' && (
+                        <div className="flex flex-wrap gap-2">
+                          {STAGE_FILTER_OPTIONS.map((stage) => (
+                            <button key={stage} type="button" onClick={() => {
+                              setStageFilter(stage);
+                              setGradeFilter('');
+                            }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', stageFilter === stage ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{stage}</button>
+                          ))}
+                        </div>
+                      )}
+                      {activeFilterLayer === 'grade' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => setGradeFilter('')} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', !gradeFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部年级</button>
+                          {visibleGradeOptions.map((grade) => (
+                            <button key={grade} type="button" onClick={() => setGradeFilter(grade)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', gradeFilter === grade ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{grade}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
