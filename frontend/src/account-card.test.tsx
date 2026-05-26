@@ -223,24 +223,40 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[draftsById, setDraftsById\] = useState<Record<number, ConsultationFormValues>>\(\{\}\);/);
   assert.match(workbenchBlock[0], /const \[processedIds, setProcessedIds\] = useState<Set<number>>\(\(\) => new Set\(\)\);/);
-  assert.match(workbenchBlock[0], /setDraftsById\(\(current\) => \(\{ \.\.\.current, \[selectedRecord\.id\]: values \}\)\);/);
+  assert.match(workbenchBlock[0], /setDraftsById\(\(current\) => \(\{ \.\.\.current, \[selectedRecord\.id\]: nextValues \}\)\);/);
   assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(selectedRecord\.id\)\);/);
   assert.match(workbenchBlock[0], /const pendingRecords = /);
   assert.match(workbenchBlock[0], /const processedActiveRecords = /);
   assert.match(workbenchBlock[0], /const processedEndedRecords = /);
   assert.match(workbenchBlock[0], /const \[workbenchTab, setWorkbenchTab\] = useState<'pending' \| 'processed'>\('pending'\);/);
-  assert.match(workbenchBlock[0], /const \[processedWorkbenchTab, setProcessedWorkbenchTab\] = useState<'active' \| 'ended'>\('active'\);/);
-  assert.match(workbenchBlock[0], /setWorkbenchTab\('processed'\);/);
-  assert.match(workbenchBlock[0], /setProcessedWorkbenchTab\(isConsultationEnded\(values\.flow_stage\) \|\| isConsultationResultStage\(values\.flow_stage\) \? 'ended' : 'active'\);/);
+  assert.match(workbenchBlock[0], /const \[pendingStatusFilter, setPendingStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
+  assert.match(workbenchBlock[0], /const \[processedStatusFilter, setProcessedStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
+  assert.match(workbenchBlock[0], /const isTerminal = isConsultationEnded\(values\.flow_stage\) \|\| isConsultationResultStage\(values\.flow_stage\);/);
+  assert.match(workbenchBlock[0], /ended_at: isTerminal \? values\.ended_at \|\| new Date\(\)\.toISOString\(\) : ''/);
+  assert.doesNotMatch(workbenchBlock[0], /setWorkbenchTab\('processed'\);/);
+  assert.doesNotMatch(workbenchBlock[0], /processedWorkbenchTab/);
   assert.match(workbenchBlock[0], /workbenchTab === 'pending'/);
-  assert.match(workbenchBlock[0], /processedWorkbenchTab === 'active'/);
   assert.match(workbenchBlock[0], /onClick=\{\(\) => setWorkbenchTab\('pending'\)\}/);
   assert.match(workbenchBlock[0], /onClick=\{\(\) => setWorkbenchTab\('processed'\)\}/);
-  assert.match(workbenchBlock[0], /onClick=\{\(\) => setProcessedWorkbenchTab\('active'\)\}/);
-  assert.match(workbenchBlock[0], /onClick=\{\(\) => setProcessedWorkbenchTab\('ended'\)\}/);
+  assert.match(workbenchBlock[0], /renderMeetingSecondaryFilters/);
   assert.match(workbenchBlock[0], /待处理/);
   assert.match(workbenchBlock[0], /待咨询/);
   assert.match(workbenchBlock[0], /已结束/);
+});
+
+test('consultation meeting workbench has lighter secondary filters and terminal age filters', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(workbenchBlock);
+  assert.match(workbenchBlock[0], /const \[pendingStatusFilter, setPendingStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
+  assert.match(workbenchBlock[0], /const \[pendingEndedAgeFilter, setPendingEndedAgeFilter\] = useState<'7' \| '30' \| 'over30'>\('over30'\);/);
+  assert.match(workbenchBlock[0], /const \[processedStatusFilter, setProcessedStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
+  assert.match(workbenchBlock[0], /getMeetingEndedAgeBucket/);
+  assert.match(workbenchBlock[0], /renderMeetingSecondaryFilters/);
+  assert.match(workbenchBlock[0], /一周内/);
+  assert.match(workbenchBlock[0], /一月内/);
+  assert.match(workbenchBlock[0], /30天\+/);
 });
 
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {

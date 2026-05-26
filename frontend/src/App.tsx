@@ -218,6 +218,7 @@ interface ConsultationRecord {
   success_class_id: number | null;
   success_class_manual: string;
   end_note: string;
+  ended_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -1434,6 +1435,7 @@ const consultationFormDefaults: ConsultationFormValues = {
   success_class_id: null,
   success_class_manual: '',
   end_note: '',
+  ended_at: '',
 };
 
 function buildConsultationBatchCreatePayload(fields: Partial<ConsultationFormValues>): ConsultationFormValues {
@@ -1477,6 +1479,7 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     success_class_id: record.success_class_id ?? null,
     success_class_manual: record.success_class_manual ?? '',
     end_note: record.end_note ?? '',
+    ended_at: record.ended_at ?? '',
   };
 }
 
@@ -1509,6 +1512,7 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     success_class_id: record.success_class_id ?? null,
     success_class_manual: record.success_class_manual ?? '',
     end_note: record.end_note ?? '',
+    ended_at: record.ended_at ?? '',
     created_at: record.created_at ?? '',
     updated_at: record.updated_at ?? '',
   };
@@ -5335,9 +5339,13 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<'pending' | 'processed'>('pending');
-  const [processedWorkbenchTab, setProcessedWorkbenchTab] = useState<'active' | 'ended'>('active');
+  const [pendingStatusFilter, setPendingStatusFilter] = useState<'active' | 'ended'>('active');
+  const [pendingEndedAgeFilter, setPendingEndedAgeFilter] = useState<'7' | '30' | 'over30'>('over30');
+  const [processedStatusFilter, setProcessedStatusFilter] = useState<'active' | 'ended'>('active');
+  const [processedEndedAgeFilter, setProcessedEndedAgeFilter] = useState<'7' | '30' | 'over30'>('over30');
   const teacherDirectory = buildConsultationTeacherDirectory(records);
   const hasUncommittedChanges = Object.keys(draftsById).length > 0;
+  const meetingTodayIso = getTodayIsoDate();
 
   const loadWorkbench = useCallback(async () => {
     setLoading(true);
@@ -5389,10 +5397,42 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
         || getConsultationTeacherName(record, teacherDirectory) === teacherFilter;
     }), [getDraftRecord, records, teacherDirectory, teacherFilter]);
 
+  const isMeetingEndedRecord = (record: ConsultationRecord) => isConsultationEnded(record.flow_stage) || isConsultationResultStage(record.flow_stage);
+  const getMeetingEndedAgeBucket = (record: ConsultationRecord): '7' | '30' | 'over30' => {
+    const endedAt = (record.ended_at || '').trim();
+    if (!endedAt) return 'over30';
+    const endedDate = endedAt.slice(0, 10);
+    const endedTime = Date.parse(`${endedDate}T12:00:00`);
+    const todayTime = Date.parse(`${meetingTodayIso}T12:00:00`);
+    if (!Number.isFinite(endedTime) || !Number.isFinite(todayTime)) return 'over30';
+    const ageDays = Math.max(0, Math.floor((todayTime - endedTime) / 86_400_000));
+    if (ageDays <= 7) return '7';
+    if (ageDays <= 30) return '30';
+    return 'over30';
+  };
+
   const pendingRecords = filteredRecords.filter((record) => !processedIds.has(record.id));
   const processedRecords = filteredRecords.filter((record) => processedIds.has(record.id));
-  const processedEndedRecords = processedRecords.filter((record) => isConsultationEnded(record.flow_stage) || isConsultationResultStage(record.flow_stage));
-  const processedActiveRecords = processedRecords.filter((record) => !processedEndedRecords.some((endedRecord) => endedRecord.id === record.id));
+  const pendingEndedRecords = pendingRecords.filter(isMeetingEndedRecord);
+  const pendingActiveRecords = pendingRecords.filter((record) => !isMeetingEndedRecord(record));
+  const processedEndedRecords = processedRecords.filter(isMeetingEndedRecord);
+  const processedActiveRecords = processedRecords.filter((record) => !isMeetingEndedRecord(record));
+  const pendingVisibleRecords = pendingStatusFilter === 'active'
+    ? pendingActiveRecords
+    : pendingEndedRecords.filter((record) => getMeetingEndedAgeBucket(record) === pendingEndedAgeFilter);
+  const processedVisibleRecords = processedStatusFilter === 'active'
+    ? processedActiveRecords
+    : processedEndedRecords.filter((record) => getMeetingEndedAgeBucket(record) === processedEndedAgeFilter);
+
+  const buildMeetingFilterCounts = (activeRecords: ConsultationRecord[], endedRecords: ConsultationRecord[]) => ({
+    active: activeRecords.length,
+    ended: endedRecords.length,
+    ended7: endedRecords.filter((record) => getMeetingEndedAgeBucket(record) === '7').length,
+    ended30: endedRecords.filter((record) => getMeetingEndedAgeBucket(record) === '30').length,
+    endedOver30: endedRecords.filter((record) => getMeetingEndedAgeBucket(record) === 'over30').length,
+  });
+  const pendingFilterCounts = buildMeetingFilterCounts(pendingActiveRecords, pendingEndedRecords);
+  const processedFilterCounts = buildMeetingFilterCounts(processedActiveRecords, processedEndedRecords);
 
   const openViewModal = (record: ConsultationRecord) => {
     setSelectedRecord(record);
@@ -5417,10 +5457,13 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     if (!selectedRecord) {
       return;
     }
-    setDraftsById((current) => ({ ...current, [selectedRecord.id]: values }));
+    const isTerminal = isConsultationEnded(values.flow_stage) || isConsultationResultStage(values.flow_stage);
+    const nextValues = {
+      ...values,
+      ended_at: isTerminal ? values.ended_at || new Date().toISOString() : '',
+    };
+    setDraftsById((current) => ({ ...current, [selectedRecord.id]: nextValues }));
     setProcessedIds((current) => new Set(current).add(selectedRecord.id));
-    setWorkbenchTab('processed');
-    setProcessedWorkbenchTab(isConsultationEnded(values.flow_stage) || isConsultationResultStage(values.flow_stage) ? 'ended' : 'active');
     closeModal();
   };
 
@@ -5604,6 +5647,66 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     </React.Fragment>
   );
 
+  const renderMeetingSecondaryFilters = (
+    statusValue: 'active' | 'ended',
+    setStatusValue: (value: 'active' | 'ended') => void,
+    ageValue: '7' | '30' | 'over30',
+    setAgeValue: (value: '7' | '30' | 'over30') => void,
+    counts: { active: number; ended: number; ended7: number; ended30: number; endedOver30: number },
+  ) => (
+    <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { key: 'active' as const, label: '待咨询', count: counts.active },
+          { key: 'ended' as const, label: '已结束', count: counts.ended },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setStatusValue(item.key)}
+            className={cn(
+              'h-8 rounded-full border px-3 text-xs font-bold transition',
+              statusValue === item.key
+                ? 'border-sky-200 bg-sky-500 text-white shadow-[0_8px_18px_rgba(14,165,233,0.16)]'
+                : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+            )}
+          >
+            {item.label}
+            <span className={cn('ml-1 rounded-full px-1.5 py-0.5 text-[10px]', statusValue === item.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300')}>
+              {item.count}
+            </span>
+          </button>
+        ))}
+      </div>
+      {statusValue === 'ended' && (
+        <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-2">
+          {[
+            { key: '7' as const, label: '一周内', count: counts.ended7 },
+            { key: '30' as const, label: '一月内', count: counts.ended30 },
+            { key: 'over30' as const, label: '30天+', count: counts.endedOver30 },
+          ].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setAgeValue(item.key)}
+              className={cn(
+                'h-7 rounded-full border px-2.5 text-[11px] font-bold transition',
+                ageValue === item.key
+                  ? 'border-emerald-200 bg-emerald-500 text-white shadow-[0_8px_18px_rgba(34,197,94,0.16)]'
+                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+              )}
+            >
+              {item.label}
+              <span className={cn('ml-1 rounded-full px-1 py-0.5 text-[10px]', ageValue === item.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300')}>
+                {item.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const renderWorkbenchEmptyState = (title: string, description: string, primaryLabel: string, onPrimary: () => void) => (
     <div className="col-span-full flex min-h-[18rem] flex-col items-center justify-center rounded-[16px] border border-dashed border-[#D9EEF7] bg-[#F9FDFF] px-6 py-10 text-center dark:border-white/10 dark:bg-white/[0.03]">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-[#0EA5E9] dark:bg-sky-400/10 dark:text-sky-200">
@@ -5700,47 +5803,35 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
           </div>
 
           {workbenchTab === 'pending' ? (
-            <div className="grid gap-3">
-              {pendingRecords.length ? pendingRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无待处理记录', '可以切到已处理查看刚核对过的咨询，或调整负责教师筛选。', '查看已处理', () => setWorkbenchTab('processed'))}
+            <div>
+              {renderMeetingSecondaryFilters(
+                pendingStatusFilter,
+                setPendingStatusFilter,
+                pendingEndedAgeFilter,
+                setPendingEndedAgeFilter,
+                pendingFilterCounts,
+              )}
+              <div className="grid gap-3">
+                {pendingVisibleRecords.length ? pendingVisibleRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无待处理记录', '可以切到已处理查看刚核对过的咨询，或调整负责教师筛选。', '查看已处理', () => setWorkbenchTab('processed'))}
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#EAF6FC] p-1 dark:bg-white/5">
-                <button
-                  type="button"
-                  onClick={() => setProcessedWorkbenchTab('active')}
-                  className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
-                    processedWorkbenchTab === 'active'
-                      ? 'bg-white text-[#0EA5E9] shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
-                      : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  待咨询
-                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{processedActiveRecords.length}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProcessedWorkbenchTab('ended')}
-                  className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
-                    processedWorkbenchTab === 'ended'
-                      ? 'bg-white text-[#22B981] shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
-                      : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  已结束
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200">{processedEndedRecords.length}</span>
-                </button>
-              </div>
-
-              {processedWorkbenchTab === 'active' ? (
-                <div className="grid gap-3">
-                  {processedActiveRecords.length ? processedActiveRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无待咨询', '可以查看待处理队列继续核对，或切换到已结束查看完成记录。', '查看待处理', () => setWorkbenchTab('pending'))}
-                </div>
-              ) : (
-                <div className="grid gap-3">
-                  {processedEndedRecords.length ? processedEndedRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无已结束记录', '咨询成功、咨询失败或中途结束的记录会在这里集中查看。', '查看待处理', () => setWorkbenchTab('pending'))}
-                </div>
+              {renderMeetingSecondaryFilters(
+                processedStatusFilter,
+                setProcessedStatusFilter,
+                processedEndedAgeFilter,
+                setProcessedEndedAgeFilter,
+                processedFilterCounts,
               )}
+              <div className="grid gap-3">
+                {processedVisibleRecords.length ? processedVisibleRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState(
+                  processedStatusFilter === 'active' ? '当前筛选下暂无待咨询' : '当前筛选下暂无已结束记录',
+                  processedStatusFilter === 'active' ? '可以查看待处理队列继续核对，或切换到已结束查看完成记录。' : '咨询成功、咨询失败或中途结束的记录会在这里集中查看。',
+                  '查看待处理',
+                  () => setWorkbenchTab('pending'),
+                )}
+              </div>
             </div>
           )}
         </section>
