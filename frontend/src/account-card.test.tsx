@@ -259,6 +259,22 @@ test('consultation meeting workbench has lighter secondary filters and terminal 
   assert.match(workbenchBlock[0], /30天\+/);
 });
 
+test('consultation meeting workbench can directly mark a card processed with motion feedback', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+
+  assert.ok(workbenchBlock);
+  assert.match(workbenchBlock[0], /const prefersReducedMotion = useReducedMotion\(\);/);
+  assert.match(workbenchBlock[0], /const handleDirectProcess = \(record: ConsultationRecord\) => \{/);
+  assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(record\.id\)\);/);
+  assert.match(workbenchBlock[0], /aria-label="直接进入已处理"/);
+  assert.match(workbenchBlock[0], /title="直接进入已处理"/);
+  assert.match(workbenchBlock[0], /<Pencil size=\{13\} \/>[\s\S]*<CheckCircle2 size=\{13\} \/>/);
+  assert.match(workbenchBlock[0], /<motion\.div/);
+  assert.match(workbenchBlock[0], /layout/);
+  assert.match(workbenchBlock[0], /exit=\{\{ opacity: 0, scale: prefersReducedMotion \? 1 : 0\.96, y: prefersReducedMotion \? 0 : 10 \}\}/);
+});
+
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
@@ -270,8 +286,8 @@ test('consultation meeting workbench reuses the same responsive card scheme as t
   assert.match(workbenchBlock[0], /<div className="block md:hidden">\{renderMeetingMobileCard\(record\)\}<\/div>/);
   assert.match(workbenchBlock[0], /<div className="hidden md:block xl:hidden">\{renderMeetingPadCard\(record\)\}<\/div>/);
   assert.match(workbenchBlock[0], /<div className="hidden xl:block">\{renderMeetingDesktopCard\(record\)\}<\/div>/);
-  assert.match(workbenchBlock[0], /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_72px\]/);
-  assert.match(workbenchBlock[0], /grid-cols-\[0\.82fr_1fr_1fr_3\.6rem\]/);
+  assert.match(workbenchBlock[0], /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_96px\]/);
+  assert.match(workbenchBlock[0], /grid-cols-\[0\.82fr_1fr_1fr_5\.8rem\]/);
   assert.doesNotMatch(workbenchBlock[0], /lg:grid-cols-2 2xl:grid-cols-3/);
 });
 

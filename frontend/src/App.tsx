@@ -5346,6 +5346,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   const teacherDirectory = buildConsultationTeacherDirectory(records);
   const hasUncommittedChanges = Object.keys(draftsById).length > 0;
   const meetingTodayIso = getTodayIsoDate();
+  const prefersReducedMotion = useReducedMotion();
 
   const loadWorkbench = useCallback(async () => {
     setLoading(true);
@@ -5467,6 +5468,10 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
     closeModal();
   };
 
+  const handleDirectProcess = (record: ConsultationRecord) => {
+    setProcessedIds((current) => new Set(current).add(record.id));
+  };
+
   const handleFinalSave = async () => {
     setSaving(true);
     setError('');
@@ -5510,6 +5515,9 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
       </button>
       <button type="button" onClick={() => openEditModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D9EEF7] bg-sky-50 text-[#0EA5E9] transition hover:bg-sky-100 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200" aria-label="编辑咨询">
         <Pencil size={13} />
+      </button>
+      <button type="button" onClick={() => handleDirectProcess(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-100 bg-emerald-50 text-[#22B981] transition hover:bg-emerald-100 dark:border-white/10 dark:bg-emerald-400/10 dark:text-emerald-200" title="直接进入已处理" aria-label="直接进入已处理">
+        <CheckCircle2 size={13} />
       </button>
     </div>
   );
@@ -5563,7 +5571,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
 
   const renderMeetingDesktopCard = (record: ConsultationRecord) => (
     <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
-      <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_72px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
+      <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_96px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
         {renderMeetingInfoCell('日期', record.date || '—')}
         {renderMeetingInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
         {renderMeetingInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
@@ -5585,7 +5593,7 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
 
   const renderMeetingPadCard = (record: ConsultationRecord) => (
     <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
-      <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
+      <div className="grid grid-cols-[0.82fr_1fr_1fr_5.8rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
         {renderMeetingInfoCell('日期', record.date || '—')}
         {renderMeetingInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
         {renderMeetingInfoCell('科目 / 年级', `${record.consultation_subject || '未填写'} / ${record.grade || '—'}`, 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
@@ -5640,11 +5648,18 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
   };
 
   const renderMeetingRecordCard = (record: ConsultationRecord) => (
-    <React.Fragment key={record.id}>
+    <motion.div
+      key={record.id}
+      layout
+      initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.98, y: prefersReducedMotion ? 0 : 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.96, y: prefersReducedMotion ? 0 : 10 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: 'easeOut' }}
+    >
       <div className="block md:hidden">{renderMeetingMobileCard(record)}</div>
       <div className="hidden md:block xl:hidden">{renderMeetingPadCard(record)}</div>
       <div className="hidden xl:block">{renderMeetingDesktopCard(record)}</div>
-    </React.Fragment>
+    </motion.div>
   );
 
   const renderMeetingSecondaryFilters = (
@@ -5812,7 +5827,11 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
                 pendingFilterCounts,
               )}
               <div className="grid gap-3">
-                {pendingVisibleRecords.length ? pendingVisibleRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState('当前筛选下暂无待处理记录', '可以切到已处理查看刚核对过的咨询，或调整负责教师筛选。', '查看已处理', () => setWorkbenchTab('processed'))}
+                {pendingVisibleRecords.length ? (
+                  <AnimatePresence initial={false}>
+                    {pendingVisibleRecords.map(renderMeetingRecordCard)}
+                  </AnimatePresence>
+                ) : renderWorkbenchEmptyState('当前筛选下暂无待处理记录', '可以切到已处理查看刚核对过的咨询，或调整负责教师筛选。', '查看已处理', () => setWorkbenchTab('processed'))}
               </div>
             </div>
           ) : (
@@ -5825,7 +5844,11 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
                 processedFilterCounts,
               )}
               <div className="grid gap-3">
-                {processedVisibleRecords.length ? processedVisibleRecords.map(renderMeetingRecordCard) : renderWorkbenchEmptyState(
+                {processedVisibleRecords.length ? (
+                  <AnimatePresence initial={false}>
+                    {processedVisibleRecords.map(renderMeetingRecordCard)}
+                  </AnimatePresence>
+                ) : renderWorkbenchEmptyState(
                   processedStatusFilter === 'active' ? '当前筛选下暂无待咨询' : '当前筛选下暂无已结束记录',
                   processedStatusFilter === 'active' ? '可以查看待处理队列继续核对，或切换到已结束查看完成记录。' : '咨询成功、咨询失败或中途结束的记录会在这里集中查看。',
                   '查看待处理',
