@@ -2657,10 +2657,43 @@ def init_db():
             is_active INTEGER NOT NULL DEFAULT 1,
             is_system_default INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS class_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            before_json TEXT NOT NULL DEFAULT '{}',
+            after_json TEXT NOT NULL DEFAULT '{}',
+            note TEXT NOT NULL DEFAULT '',
+            actor_user_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS student_class_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            before_json TEXT NOT NULL DEFAULT '{}',
+            after_json TEXT NOT NULL DEFAULT '{}',
+            note TEXT NOT NULL DEFAULT '',
+            actor_user_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
         """)
         import master_data
 
         master_data.ensure_schema(conn)
+        _ensure_column(conn, "classes", "stage", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "current_grade", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "class_number", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "cohort_year", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "classes", "is_bridge", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "classes", "bridge_target", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "content_track", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "last_promoted_at", "TEXT DEFAULT ''")
         # Safe migration: add class_id if not already present
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
@@ -3200,7 +3233,7 @@ def list_member_usage_summary_rows(organization_id: int) -> list[dict]:
             """,
             (organization_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [_class_row_to_dict(row) for row in rows]
 
 
 def hash_password(password: str) -> str:
@@ -3682,7 +3715,7 @@ def create_monthly_plan_job(organization_id: int, user_id: int, month_str: str) 
 def get_monthly_plan_job(job_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM monthly_plan_jobs WHERE id=?", (job_id,)).fetchone()
-        return dict(row) if row else None
+        return _class_row_to_dict(row) if row else None
 
 
 def mark_monthly_plan_job_succeeded(job_id: int, *, pdf_filename: str) -> None:
@@ -3737,19 +3770,170 @@ def requeue_monthly_plan_job(job_id: int) -> dict:
 
 
 # ─── 班级 CRUD ─────────────────────────────────────────────────────────────────
+CLASS_STAGES = ("小奥", "初中", "高中")
+CLASS_GRADE_ORDER = ("1年级", "2年级", "3年级", "4年级", "5年级", "6年级", "7年级", "8年级", "9年级", "高一", "高二", "高三")
+CLASS_STAGE_GRADES = {
+    "小奥": ("1年级", "2年级", "3年级", "4年级", "5年级", "6年级"),
+    "初中": ("7年级", "8年级", "9年级"),
+    "高中": ("高一", "高二", "高三"),
+}
+PROMOTION_NEXT_GRADE = {
+    "1年级": "2年级",
+    "2年级": "3年级",
+    "3年级": "4年级",
+    "4年级": "5年级",
+    "5年级": "6年级",
+    "6年级": "7年级",
+    "7年级": "8年级",
+    "8年级": "9年级",
+    "9年级": "高一",
+    "高一": "高二",
+    "高二": "高三",
+}
+GRADUATION_GRADES = {"6年级", "9年级", "高三"}
+
+
+def normalize_class_grade(value: str) -> str:
+    raw = str(value or "").strip()
+    aliases = {
+        "一年级": "1年级",
+        "二年级": "2年级",
+        "三年级": "3年级",
+        "四年级": "4年级",
+        "五年级": "5年级",
+        "六年级": "6年级",
+        "七年级": "7年级",
+        "八年级": "8年级",
+        "九年级": "9年级",
+        "初一": "7年级",
+        "初二": "8年级",
+        "初三": "9年级",
+        "高1": "高一",
+        "高2": "高二",
+        "高3": "高三",
+    }
+    return aliases.get(raw, raw)
+
+
+def infer_class_stage(grade: str) -> str:
+    normalized = normalize_class_grade(grade)
+    for stage, grades in CLASS_STAGE_GRADES.items():
+        if normalized in grades:
+            return stage
+    return ""
+
+
+def current_school_year_start(today: str | None = None) -> int:
+    date_value = datetime.strptime(today, "%Y-%m-%d").date() if today else date.today()
+    return date_value.year if (date_value.month, date_value.day) >= (6, 30) else date_value.year - 1
+
+
+def infer_cohort_year(grade: str, today: str | None = None) -> int:
+    normalized = normalize_class_grade(grade)
+    stage = infer_class_stage(normalized)
+    grades = CLASS_STAGE_GRADES.get(stage, ())
+    offset = grades.index(normalized) if normalized in grades else 0
+    return current_school_year_start(today) - offset
+
+
+def build_structured_class_name(cohort_year: int, current_grade: str, class_number: str, is_bridge: bool) -> str:
+    suffix = "·衔接" if is_bridge else ""
+    return f"{cohort_year}级{current_grade}{str(class_number).strip()}班{suffix}"
+
+
+def _class_row_to_dict(row) -> dict:
+    item = dict(row)
+    item["current_grade"] = item.get("current_grade") or item.get("grade") or ""
+    item["stage"] = item.get("stage") or infer_class_stage(item["current_grade"])
+    item["class_number"] = str(item.get("class_number") or "")
+    item["cohort_year"] = int(item.get("cohort_year") or 0)
+    item["is_bridge"] = bool(item.get("is_bridge") or 0)
+    item["bridge_target"] = item.get("bridge_target") or ""
+    item["content_track"] = item.get("content_track") or ""
+    item["last_promoted_at"] = item.get("last_promoted_at") or ""
+    if item["cohort_year"] and item["current_grade"] and item["class_number"]:
+        item["name"] = build_structured_class_name(item["cohort_year"], item["current_grade"], item["class_number"], item["is_bridge"])
+    return item
+
+
+def _build_class_payload(
+    name: str,
+    subject: str = "",
+    grade: str = "",
+    *,
+    stage: str = "",
+    current_grade: str = "",
+    class_number: str = "",
+    cohort_year: int | None = None,
+    is_bridge: bool = False,
+    bridge_target: str = "",
+    content_track: str = "",
+    today: str | None = None,
+) -> dict:
+    normalized_grade = normalize_class_grade(current_grade or grade)
+    normalized_stage = stage or infer_class_stage(normalized_grade)
+    normalized_class_number = str(class_number or "").strip()
+    normalized_cohort_year = int(cohort_year or 0)
+    if normalized_grade and not normalized_cohort_year:
+        normalized_cohort_year = infer_cohort_year(normalized_grade, today)
+    display_name = (name or "").strip()
+    if normalized_grade and normalized_class_number and normalized_cohort_year:
+        display_name = build_structured_class_name(normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge)
+    return {
+        "name": display_name,
+        "subject": (subject or "").strip(),
+        "grade": normalized_grade or (grade or "").strip(),
+        "stage": normalized_stage,
+        "current_grade": normalized_grade,
+        "class_number": normalized_class_number,
+        "cohort_year": normalized_cohort_year,
+        "is_bridge": 1 if is_bridge else 0,
+        "bridge_target": (bridge_target or "").strip(),
+        "content_track": (content_track or bridge_target or "").strip(),
+    }
+
+
 def save_class(name: str, subject: str = "", grade: str = "",
-               teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None) -> int:
+               teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None,
+               stage: str = "", current_grade: str = "", class_number: str = "",
+               cohort_year: int | None = None, is_bridge: bool = False, bridge_target: str = "",
+               content_track: str = "", teacher_user_id: Optional[int] = None, today: str | None = None) -> int:
+    payload = _build_class_payload(
+        name,
+        subject,
+        grade,
+        stage=stage,
+        current_grade=current_grade,
+        class_number=class_number,
+        cohort_year=cohort_year,
+        is_bridge=is_bridge,
+        bridge_target=bridge_target,
+        content_track=content_track,
+        today=today,
+    )
     with get_conn() as conn:
         if organization_id is None:
             organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
         cur = conn.execute(
             """
-            INSERT INTO classes (organization_id, name, subject, grade, teacher_name, teacher_email)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO classes (
+                organization_id, name, subject, grade, teacher_name, teacher_email,
+                stage, current_grade, class_number, cohort_year, is_bridge, bridge_target, content_track
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (organization_id, name, subject, grade, teacher_name, teacher_email)
+            (
+                organization_id, payload["name"], payload["subject"], payload["grade"], teacher_name, teacher_email,
+                payload["stage"], payload["current_grade"], payload["class_number"], payload["cohort_year"],
+                payload["is_bridge"], payload["bridge_target"], payload["content_track"],
+            )
         )
-        return cur.lastrowid
+        class_id = cur.lastrowid
+        if teacher_user_id is not None:
+            conn.execute("INSERT INTO user_classes (user_id, class_id) VALUES (?, ?)", (teacher_user_id, class_id))
+            _sync_class_teacher_metadata(conn, [class_id])
+    record_class_history(class_id, "created", after=get_class(class_id))
+    return class_id
 
 
 def _sync_class_teacher_metadata(conn: sqlite3.Connection, class_ids: list[int]) -> None:
@@ -3796,7 +3980,7 @@ def get_class(class_id: int):
             """,
             (class_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return _class_row_to_dict(row) if row else None
 
 
 def list_classes():
@@ -3817,11 +4001,28 @@ def list_classes():
             ORDER BY c.created_at DESC
             """
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_class_row_to_dict(r) for r in rows]
 
 
 def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
-                 teacher_name: Optional[str] = None, teacher_email: Optional[str] = None):
+                 teacher_name: Optional[str] = None, teacher_email: Optional[str] = None,
+                 stage: str = "", current_grade: str = "", class_number: str = "",
+                 cohort_year: int | None = None, is_bridge: bool = False, bridge_target: str = "",
+                 content_track: str = "", today: str | None = None):
+    before = get_class(class_id)
+    payload = _build_class_payload(
+        name,
+        subject,
+        grade,
+        stage=stage or (before or {}).get("stage", ""),
+        current_grade=current_grade or grade,
+        class_number=class_number or (before or {}).get("class_number", ""),
+        cohort_year=cohort_year if cohort_year is not None else (before or {}).get("cohort_year", 0),
+        is_bridge=is_bridge,
+        bridge_target=bridge_target or (before or {}).get("bridge_target", ""),
+        content_track=content_track or (before or {}).get("content_track", ""),
+        today=today,
+    )
     with get_conn() as conn:
         bound_teacher_row = conn.execute(
             "SELECT user_id FROM user_classes WHERE class_id=? ORDER BY user_id LIMIT 1",
@@ -3830,24 +4031,152 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
 
         if bound_teacher_row:
             conn.execute(
-                "UPDATE classes SET name=?, subject=?, grade=?, teacher_email='' WHERE id=?",
-                (name, subject, grade, class_id)
+                """
+                UPDATE classes
+                SET name=?, subject=?, grade=?, teacher_email='', stage=?, current_grade=?,
+                    class_number=?, cohort_year=?, is_bridge=?, bridge_target=?, content_track=?
+                WHERE id=?
+                """,
+                (
+                    payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["current_grade"],
+                    payload["class_number"], payload["cohort_year"], payload["is_bridge"], payload["bridge_target"],
+                    payload["content_track"], class_id,
+                )
             )
             _sync_class_teacher_metadata(conn, [class_id])
-            return
-
-        conn.execute(
+        else:
+            conn.execute(
             """
             UPDATE classes
             SET name=?,
                 subject=?,
                 grade=?,
+                stage=?,
+                current_grade=?,
+                class_number=?,
+                cohort_year=?,
+                is_bridge=?,
+                bridge_target=?,
+                content_track=?,
                 teacher_name=COALESCE(?, teacher_name),
                 teacher_email=COALESCE(?, teacher_email)
             WHERE id=?
             """,
-            (name, subject, grade, teacher_name, teacher_email, class_id)
+            (
+                payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["current_grade"],
+                payload["class_number"], payload["cohort_year"], payload["is_bridge"], payload["bridge_target"],
+                payload["content_track"], teacher_name, teacher_email, class_id,
+            )
+            )
+    record_class_history(class_id, "updated", before=before, after=get_class(class_id))
+
+
+def record_class_history(class_id: int, action: str, before: dict | None = None, after: dict | None = None,
+                         note: str = "", actor_user_id: int | None = None) -> None:
+    cls = after if after and after.get("organization_id") else get_class(class_id)
+    if not cls:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO class_history (organization_id, class_id, action, before_json, after_json, note, actor_user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cls["organization_id"],
+                class_id,
+                action,
+                json.dumps(before or {}, ensure_ascii=False),
+                json.dumps(after or {}, ensure_ascii=False),
+                note,
+                actor_user_id,
+            ),
         )
+
+
+def list_class_history(class_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM class_history WHERE class_id=? ORDER BY created_at ASC, id ASC", (class_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def record_student_class_history(student_id: int, class_id: int, action: str, before: dict | None = None, after: dict | None = None,
+                                 note: str = "", actor_user_id: int | None = None) -> None:
+    cls = get_class(class_id)
+    if not cls:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO student_class_history (organization_id, student_id, class_id, action, before_json, after_json, note, actor_user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cls["organization_id"],
+                student_id,
+                class_id,
+                action,
+                json.dumps(before or {}, ensure_ascii=False),
+                json.dumps(after or {}, ensure_ascii=False),
+                note,
+                actor_user_id,
+            ),
+        )
+
+
+def list_student_class_history(student_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM student_class_history WHERE student_id=? ORDER BY created_at ASC, id ASC", (student_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def bridge_crosses_target_stage(current_grade: str, next_grade: str, bridge_target: str) -> bool:
+    if current_grade == "6年级" and next_grade == "7年级":
+        return bridge_target in {"", "默认下一学段", "初中衔接"}
+    if current_grade == "9年级" and next_grade == "高一":
+        return bridge_target in {"", "默认下一学段", "高中衔接"}
+    return False
+
+
+def promote_classes_for_academic_year(today: str | None = None) -> dict:
+    today_value = today or date.today().isoformat()
+    promoted_ids: list[int] = []
+    pending_ids: list[int] = []
+    history_events: list[tuple[int, str, dict | None, dict | None]] = []
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM classes ORDER BY id").fetchall()
+        for row in rows:
+            item = _class_row_to_dict(row)
+            if item.get("last_promoted_at", "").startswith(today_value):
+                continue
+            current_grade = normalize_class_grade(item.get("current_grade") or item.get("grade") or "")
+            next_grade = PROMOTION_NEXT_GRADE.get(current_grade)
+            if not next_grade:
+                pending_ids.append(item["id"])
+                history_events.append((item["id"], "promotion_pending", item, {"reason": "unknown_grade", "grade": current_grade}))
+                continue
+            is_bridge = bool(item.get("is_bridge"))
+            if current_grade in GRADUATION_GRADES and not is_bridge:
+                pending_ids.append(item["id"])
+                history_events.append((item["id"], "promotion_pending", item, {"reason": "graduation_grade", "grade": current_grade}))
+                continue
+            next_is_bridge = is_bridge and not bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
+            next_stage = infer_class_stage(next_grade)
+            class_number = item.get("class_number") or ""
+            next_name = build_structured_class_name(item["cohort_year"], next_grade, class_number, next_is_bridge) if item.get("cohort_year") and class_number else item["name"]
+            conn.execute(
+                """
+                UPDATE classes
+                SET grade=?, current_grade=?, stage=?, name=?, is_bridge=?, last_promoted_at=?
+                WHERE id=?
+                """,
+                (next_grade, next_grade, next_stage, next_name, 1 if next_is_bridge else 0, today_value, item["id"]),
+            )
+            promoted_ids.append(item["id"])
+            history_events.append((item["id"], "promoted", item, {"current_grade": next_grade, "name": next_name, "is_bridge": next_is_bridge}))
+    for class_id, action, before, after in history_events:
+        record_class_history(class_id, action, before=before, after=after)
+    return {"promoted_ids": promoted_ids, "pending_ids": pending_ids}
 
 
 def delete_class(class_id: int):
@@ -4359,7 +4688,10 @@ def create_student_for_class(class_id: int, raw_name: str):
             (class_id, student_id),
         )
         row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
-    return dict(row)
+    student = dict(row)
+    record_class_history(class_id, "student_added", after={"student_id": student_id, "student_name": student["name"]})
+    record_student_class_history(student_id, class_id, "joined", after={"class_id": class_id, "student_name": student["name"]})
+    return student
 
 
 def remove_student_from_class(class_id: int, student_id: int) -> bool:
@@ -4372,11 +4704,17 @@ def remove_student_from_class(class_id: int, student_id: int) -> bool:
             """,
             (class_id, student_id),
         )
+        student_row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
         cur = conn.execute(
             "DELETE FROM class_students WHERE class_id=? AND student_id=?",
             (class_id, student_id),
         )
-    return cur.rowcount > 0
+    removed = cur.rowcount > 0
+    if removed:
+        student = dict(student_row) if student_row else {"id": student_id}
+        record_class_history(class_id, "student_removed", before={"student_id": student_id, "student_name": student.get("name", "")})
+        record_student_class_history(student_id, class_id, "left", before={"class_id": class_id, "student_name": student.get("name", "")})
+    return removed
 
 
 def _last_day_of_month(year: int, month: int) -> int:
@@ -5462,6 +5800,7 @@ def set_class_teacher_user_id(class_id: int, teacher_user_id: Optional[int]):
     if teacher_user_id is not None and (isinstance(teacher_user_id, bool) or not isinstance(teacher_user_id, int)):
         raise ValueError("teacher_user_id must be an integer or null")
 
+    before = get_class(class_id)
     with get_conn() as conn:
         class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
         if not class_row:
@@ -5479,6 +5818,7 @@ def set_class_teacher_user_id(class_id: int, teacher_user_id: Optional[int]):
                 (teacher_user_id, class_id),
             )
         _sync_class_teacher_metadata(conn, [class_id])
+    record_class_history(class_id, "teacher_changed", before=before, after=get_class(class_id))
 
 
 # ─── 用户-班级关联 ──────────────────────────────────────────────────────────────

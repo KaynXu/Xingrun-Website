@@ -214,7 +214,8 @@ test('workspace navigation source exposes classes management through configurabl
   assert.match(appSource, /const configurableWorkspacePages/);
   assert.match(appSource, /function canOpenWorkspacePage\(user: CurrentUser, page: Page\): boolean \{/);
   assert.match(sidebarBlock, /canOpenWorkspacePage\(currentUser, item\.id as Page\)/);
-  assert.match(appSource, /classes: '班级管理'/);
+  assert.match(sidebarBlock, /id: 'classes'[\s\S]*label: '学管中心'/);
+  assert.match(appSource, /classes: '学管中心'/);
   assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
   assert.match(appSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
   assert.match(classManagementBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
@@ -282,9 +283,9 @@ test('class management source adds grade and subject filters and reuses the shar
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '全部'\) \{\s*return true;\s*\}/);
   assert.match(classManagementBlock, /if \(selectedGradeFilter === '未绑定'\) \{\s*return item\.teacher_user_id == null;\s*\}/);
   assert.match(classManagementBlock, /if \(selectedSubjectFilter !== '全部学科' && item\.subject !== selectedSubjectFilter\) \{\s*return false;\s*\}/);
-  assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'grade', e\.target\.value\)\}/);
-  assert.match(classManagementBlock, /<select[\s\S]*?value=\{editingFormState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(editingClass\.id, 'grade', e\.target\.value\)\}/);
-  assert.match(appSource, /gradeOptions\.includes\(\s*[^)]*grade[^)]*\)/);
+  assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.current_grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'current_grade', e\.target\.value\)\}/);
+  assert.match(classManagementBlock, /<select[\s\S]*?value=\{editingFormState\.current_grade \|\| editingFormState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(editingClass\.id, 'current_grade', e\.target\.value\)\}/);
+  assert.match(appSource, /studentCenterGradeOptions\.includes\(\s*[^)]*current_grade[^)]*\)/);
   assert.match(appSource, /请选择年级/);
   assert.match(appSource, /学科不能为空/);
   assert.match(appSource, /placeholder="如：数学"/);
@@ -299,7 +300,7 @@ test('class management source uses class-centric teacher binding instead of user
   assert.match(classManagementBlock, /const \[teacherBindingSavingByClassId, setTeacherBindingSavingByClassId\] = useState<Record<number, boolean>>\(\{\}\);/);
   assert.match(classManagementBlock, /const handleSelectTeacherForClass = async \(classId: number, teacherUserId: number\) => \{/);
   assert.match(classManagementBlock, /apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{/);
-  assert.doesNotMatch(classManagementBlock, /type="checkbox"/);
+  assert.doesNotMatch(classManagementBlock, /checked=\{.*classIds/);
   assert.match(classManagementBlock, /placeholder="搜索老师"/);
   assert.match(classManagementBlock, /<select/);
 });

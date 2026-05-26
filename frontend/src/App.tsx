@@ -183,6 +183,14 @@ interface ClassItem {
   name: string;
   subject: string;
   grade: string;
+  stage?: string;
+  current_grade?: string;
+  class_number?: string;
+  cohort_year?: number;
+  is_bridge?: boolean;
+  bridge_target?: string;
+  content_track?: string;
+  last_promoted_at?: string;
   teacher_name?: string;
   teacher_email?: string;
   teacher_user_id?: number | null;
@@ -343,6 +351,13 @@ interface ClassFormValues {
   subject: string;
   grade: string;
   teacher_name: string;
+  stage: string;
+  current_grade: string;
+  class_number: string;
+  cohort_year: string;
+  is_bridge: boolean;
+  bridge_target: string;
+  content_track: string;
 }
 
 type LoadPageResult =
@@ -377,13 +392,15 @@ const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
 
 const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
+const studentCenterStageOptions = ['小奥', '初中', '高中'];
+const studentCenterGradeOptions = ['1年级', '2年级', '3年级', '4年级', '5年级', '6年级', '7年级', '8年级', '9年级', '高一', '高二', '高三'];
 const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
   { id: 'review-generation', label: '复习生成' },
   { id: 'class-feedback-generation', label: '课堂反馈' },
   { id: 'consultation', label: '咨询记录' },
   { id: 'calendar', label: '课程日历' },
   { id: 'smartWrongQuestions', label: '智能错题' },
-  { id: 'classes', label: '班级管理' },
+  { id: 'classes', label: '学管中心' },
 ];
 const configurableWorkspacePageIds = new Set(configurableWorkspacePages.map((item) => item.id));
 
@@ -479,6 +496,13 @@ function createEmptyClassForm(): ClassFormValues {
     subject: '',
     grade: '',
     teacher_name: '',
+    stage: '小奥',
+    current_grade: '1年级',
+    class_number: '1',
+    cohort_year: '',
+    is_bridge: false,
+    bridge_target: '默认下一学段',
+    content_track: '',
   };
 }
 
@@ -488,6 +512,13 @@ function toClassFormValues(item: ClassItem): ClassFormValues {
     subject: item.subject || '',
     grade: item.grade || '',
     teacher_name: item.teacher_name || '',
+    stage: item.stage || '',
+    current_grade: item.current_grade || item.grade || '',
+    class_number: item.class_number || '',
+    cohort_year: item.cohort_year ? String(item.cohort_year) : '',
+    is_bridge: Boolean(item.is_bridge),
+    bridge_target: item.bridge_target || '默认下一学段',
+    content_track: item.content_track || '',
   };
 }
 
@@ -1908,7 +1939,7 @@ const Sidebar = ({
       ...(canAccessSmartWrongQuestions(currentUser.role)
         ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
         : []),
-      { id: 'classes', icon: Home, label: '班级管理' },
+      { id: 'classes', icon: Home, label: '学管中心' },
       ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
       ...(hasStaffAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
       { id: 'settings', icon: Settings, label: '系统设置' },
@@ -8720,8 +8751,14 @@ const ClassManagementPage = ({
   const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
     new: createEmptyClassForm(),
   }));
+  const [studentCenterTab, setStudentCenterTab] = useState<'classes' | 'students'>('classes');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
+  const [studentTeacherFilter, setStudentTeacherFilter] = useState<number | null>(null);
+  const [studentStageFilter, setStudentStageFilter] = useState('');
+  const [studentGradeFilter, setStudentGradeFilter] = useState('');
+  const [studentClassFilter, setStudentClassFilter] = useState<number | null>(null);
+  const [studentNameFilter, setStudentNameFilter] = useState('');
   const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
   const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
   const [studentDraftNameByClassId, setStudentDraftNameByClassId] = useState<Record<number, string>>({});
@@ -8894,6 +8931,17 @@ const ClassManagementPage = ({
     void loadStudentsForClass(expandedClassId);
   }, [expandedClassId, loadStudentsForClass, studentsByClassId]);
 
+  useEffect(() => {
+    if (studentCenterTab !== 'students') {
+      return;
+    }
+    classes.forEach((item) => {
+      if (!Object.prototype.hasOwnProperty.call(studentsByClassId, item.id)) {
+        void loadStudentsForClass(item.id);
+      }
+    });
+  }, [classes, loadStudentsForClass, studentCenterTab, studentsByClassId]);
+
   const handleFieldChange = (classId: number | 'new', field: keyof ClassFormValues, value: string) => {
     const stateKey = getClassStateKey(classId);
     setFormByClassId((current) => ({
@@ -8957,13 +9005,21 @@ const ClassManagementPage = ({
     const payload = {
       name: normalizeClassNameInput(currentForm.name),
       subject: currentForm.subject.trim(),
-      grade: currentForm.grade.trim(),
+      grade: (currentForm.current_grade || currentForm.grade).trim(),
       teacher_name: selectedTeacher?.name || '',
       teacher_email: '',
+      stage: currentForm.stage,
+      current_grade: currentForm.current_grade || currentForm.grade,
+      class_number: currentForm.class_number,
+      cohort_year: currentForm.cohort_year ? Number(currentForm.cohort_year) : undefined,
+      is_bridge: currentForm.is_bridge,
+      bridge_target: currentForm.bridge_target,
+      content_track: currentForm.content_track,
+      teacher_user_id: classId === 'new' ? selectedTeacherUserId : undefined,
     };
 
-    if (!payload.name) {
-      setFormError('班级名称不能为空');
+    if (!payload.class_number) {
+      setFormError('请选择班号');
       return;
     }
 
@@ -8972,7 +9028,7 @@ const ClassManagementPage = ({
       return;
     }
 
-    if (!payload.grade || !gradeOptions.includes(payload.grade)) {
+    if (!payload.current_grade || !studentCenterGradeOptions.includes(payload.current_grade)) {
       setFormError('请选择年级');
       return;
     }
@@ -9006,6 +9062,13 @@ const ClassManagementPage = ({
           name: payload.name,
           subject: payload.subject,
           grade: payload.grade,
+          stage: payload.stage,
+          current_grade: payload.current_grade,
+          class_number: payload.class_number,
+          cohort_year: payload.cohort_year,
+          is_bridge: payload.is_bridge,
+          bridge_target: payload.bridge_target,
+          content_track: payload.content_track,
           teacher_name: selectedTeacher?.name || '',
           teacher_email: '',
           teacher_user_id: selectedTeacherUserId,
@@ -9224,6 +9287,19 @@ const ClassManagementPage = ({
         return user.name.toLowerCase().includes(keyword);
       })
     : [];
+  const studentRows = classes.flatMap((classItem) => (studentsByClassId[classItem.id] || []).map((student) => ({
+    ...student,
+    classItem,
+    teacherUserId: teacherBindingByClassId[classItem.id] ?? classItem.teacher_user_id ?? null,
+  })));
+  const filteredStudentRows = studentRows.filter((item) => {
+    if (studentTeacherFilter != null && item.teacherUserId !== studentTeacherFilter) return false;
+    if (studentStageFilter && (item.classItem.stage || '') !== studentStageFilter) return false;
+    if (studentGradeFilter && (item.classItem.current_grade || item.classItem.grade || '') !== studentGradeFilter) return false;
+    if (studentClassFilter != null && item.classItem.id !== studentClassFilter) return false;
+    if (studentNameFilter && !item.name.includes(studentNameFilter)) return false;
+    return true;
+  });
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
@@ -9275,6 +9351,79 @@ const ClassManagementPage = ({
         </div>
       )}
 
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-sky-50 p-1 dark:bg-white/5">
+        {[
+          { key: 'classes' as const, label: '班级管理' },
+          { key: 'students' as const, label: '学员管理' },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setStudentCenterTab(item.key)}
+            className={cn(
+              'h-10 rounded-xl text-sm font-bold transition',
+              studentCenterTab === item.key
+                ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {studentCenterTab === 'students' && (
+        <section className={`${workspaceCardClass} space-y-5 p-6`}>
+          <div>
+            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学员管理</h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">默认展示全部学员，可按教师、学段、年级、班级和学员逐级点击筛选。</p>
+          </div>
+          <div className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setStudentTeacherFilter(null)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentTeacherFilter == null ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部教师</button>
+              {users.map((user) => (
+                <button key={user.id} type="button" onClick={() => setStudentTeacherFilter(user.id)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentTeacherFilter === user.id ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{user.name}</button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setStudentStageFilter('')} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', !studentStageFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部学段</button>
+              {studentCenterStageOptions.map((stage) => (
+                <button key={stage} type="button" onClick={() => setStudentStageFilter(stage)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentStageFilter === stage ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{stage}</button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setStudentGradeFilter('')} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', !studentGradeFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部年级</button>
+              {studentCenterGradeOptions.map((grade) => (
+                <button key={grade} type="button" onClick={() => setStudentGradeFilter(grade)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentGradeFilter === grade ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{grade}</button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setStudentClassFilter(null)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentClassFilter == null ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部班级</button>
+              {classes.map((item) => (
+                <button key={item.id} type="button" onClick={() => setStudentClassFilter(item.id)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentClassFilter === item.id ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{item.name}</button>
+              ))}
+            </div>
+            <input value={studentNameFilter} onChange={(event) => setStudentNameFilter(event.target.value)} placeholder="筛选学员姓名" className={`${workspaceFieldClass} max-w-sm`} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filteredStudentRows.length ? filteredStudentRows.map((item) => {
+              const teacher = item.teacherUserId == null ? undefined : users.find((user) => user.id === item.teacherUserId);
+              return (
+                <div key={`${item.classItem.id}-${item.id}`} className={`${workspaceSoftCardClass} p-4`}>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{item.name}</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{item.classItem.name}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{[item.classItem.stage, item.classItem.current_grade || item.classItem.grade, teacher?.name || item.classItem.teacher_name || '未分配老师'].filter(Boolean).join(' · ')}</p>
+                  <button type="button" className={`${workspaceSecondaryButtonClass} mt-4 h-9 px-3 py-2 text-sm`}>班级进出历史</button>
+                </div>
+              );
+            }) : (
+              <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">当前筛选下暂无学员。</div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {studentCenterTab === 'classes' && (
       <section className={`${workspaceCardClass} space-y-5 p-6`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -9410,6 +9559,7 @@ const ClassManagementPage = ({
           </div>
         )}
       </section>
+      )}
 
       <AnimatePresence>
         {(newClassExpanded || editingClass) && (
@@ -9473,14 +9623,10 @@ const ClassManagementPage = ({
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">班级名称</span>
-                        <input
-                          type="text"
-                          value={newClassForm.name}
-                          onChange={(e) => handleFieldChange('new', 'name', e.target.value)}
-                          className={workspaceFieldClass}
-                          placeholder="如：三班"
-                        />
+                        <span className="text-slate-500 dark:text-slate-400">学段</span>
+                        <select value={newClassForm.stage} onChange={(e) => handleFieldChange('new', 'stage', e.target.value)} className={workspaceFieldClass}>
+                          {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
                       </label>
                       <label className="space-y-2 text-sm">
                         <span className="text-slate-500 dark:text-slate-400">学科</span>
@@ -9492,18 +9638,29 @@ const ClassManagementPage = ({
                           placeholder="如：数学"
                         />
                       </label>
-                      <label className="space-y-2 text-sm md:col-span-2">
+                      <label className="space-y-2 text-sm">
                         <span className="text-slate-500 dark:text-slate-400">年级</span>
                         <select
-                          value={newClassForm.grade}
-                          onChange={(e) => handleFieldChange('new', 'grade', e.target.value)}
+                          value={newClassForm.current_grade}
+                          onChange={(e) => handleFieldChange('new', 'current_grade', e.target.value)}
                           className={workspaceFieldClass}
                         >
-                          <option value="">请选择年级</option>
-                          {gradeOptions.map((option) => (
+                          {studentCenterGradeOptions.map((option) => (
                             <option key={option} value={option}>{option}</option>
                           ))}
                         </select>
+                      </label>
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">班号</span>
+                        <input type="number" min="1" value={newClassForm.class_number} onChange={(e) => handleFieldChange('new', 'class_number', e.target.value)} className={workspaceFieldClass} />
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={newClassForm.is_bridge}
+                          onChange={(e) => setFormByClassId((current) => ({ ...current, new: { ...(current.new || createEmptyClassForm()), is_bridge: e.target.checked } }))}
+                        />
+                        <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                       </label>
                     </div>
 
@@ -9613,14 +9770,10 @@ const ClassManagementPage = ({
 
                         <div className="grid gap-4 md:grid-cols-2">
                           <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">班级名称</span>
-                            <input
-                              type="text"
-                              value={editingFormState.name}
-                              onChange={(e) => handleFieldChange(editingClass.id, 'name', e.target.value)}
-                              className={workspaceFieldClass}
-                              placeholder="如：三班"
-                            />
+                            <span className="text-slate-500 dark:text-slate-400">学段</span>
+                            <select value={editingFormState.stage} onChange={(e) => handleFieldChange(editingClass.id, 'stage', e.target.value)} className={workspaceFieldClass}>
+                              {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
                           </label>
                           <label className="space-y-2 text-sm">
                             <span className="text-slate-500 dark:text-slate-400">学科</span>
@@ -9632,18 +9785,32 @@ const ClassManagementPage = ({
                               placeholder="如：数学"
                             />
                           </label>
-                          <label className="space-y-2 text-sm md:col-span-2">
+                          <label className="space-y-2 text-sm">
                             <span className="text-slate-500 dark:text-slate-400">年级</span>
                             <select
-                              value={editingFormState.grade}
-                              onChange={(e) => handleFieldChange(editingClass.id, 'grade', e.target.value)}
+                              value={editingFormState.current_grade || editingFormState.grade}
+                              onChange={(e) => handleFieldChange(editingClass.id, 'current_grade', e.target.value)}
                               className={workspaceFieldClass}
                             >
-                              <option value="">请选择年级</option>
-                              {gradeOptions.map((option) => (
+                              {studentCenterGradeOptions.map((option) => (
                                 <option key={option} value={option}>{option}</option>
                               ))}
                             </select>
+                          </label>
+                          <label className="space-y-2 text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">班号</span>
+                            <input type="number" min="1" value={editingFormState.class_number} onChange={(e) => handleFieldChange(editingClass.id, 'class_number', e.target.value)} className={workspaceFieldClass} />
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={editingFormState.is_bridge}
+                              onChange={(e) => {
+                                const stateKey = getClassStateKey(editingClass.id);
+                                setFormByClassId((current) => ({ ...current, [stateKey]: { ...(current[stateKey] || toClassFormValues(editingClass)), is_bridge: e.target.checked } }));
+                              }}
+                            />
+                            <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                           </label>
                         </div>
                       </div>
@@ -11993,7 +12160,7 @@ export default function App() {
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
-    classes: '班级管理',
+    classes: '学管中心',
     accounts: '账号审批',
     credit: '积分中心',
     settings: '系统设置',

@@ -121,6 +121,7 @@ from lesson_manager import (
     init_db,
     list_all_users,
     list_class_feedback_label_configs,
+    list_class_history,
     list_class_teacher_bindings,
     list_classes,
     list_classes_for_actor,
@@ -141,6 +142,7 @@ from lesson_manager import (
     list_primary_topic_category_suggestions,
     list_student_wrong_question_library_records,
     list_students_for_class,
+    list_student_class_history,
     list_wechat_wrong_question_submissions_for_parent_student,
     list_wechat_wrong_question_submissions,
     list_weekly_wrong_question_activity_summary,
@@ -4132,7 +4134,9 @@ def api_class_create():
     name = (data.get("name") or "").strip()
     subject = (data.get("subject") or "").strip()
     grade = (data.get("grade") or "").strip()
-    if not name:
+    class_number = (data.get("class_number") or "").strip()
+    current_grade = (data.get("current_grade") or grade).strip()
+    if not name and not class_number:
         return jsonify({"error": "班级名称不能为空"}), 400
     if not subject:
         return jsonify({"error": "学科不能为空"}), 400
@@ -4143,8 +4147,17 @@ def api_class_create():
         teacher_name=data.get("teacher_name", "").strip(),
         teacher_email=data.get("teacher_email", "").strip(),
         organization_id=user.get("organization_id"),
+        stage=(data.get("stage") or "").strip(),
+        current_grade=current_grade,
+        class_number=class_number,
+        cohort_year=data.get("cohort_year"),
+        is_bridge=bool(data.get("is_bridge")),
+        bridge_target=(data.get("bridge_target") or "").strip(),
+        content_track=(data.get("content_track") or "").strip(),
+        teacher_user_id=data.get("teacher_user_id"),
     )
-    return jsonify({"id": cid, "name": name}), 201
+    cls = get_class(cid)
+    return jsonify({"id": cid, "name": cls["name"] if cls else name}), 201
 
 
 @app.route("/api/classes/teacher-bindings", methods=["GET"])
@@ -4236,6 +4249,30 @@ def api_class_students_delete(class_id, student_id):
         return error
     removed = remove_student_from_class(class_id, student_id)
     return jsonify({"ok": True, "removed": removed})
+
+
+@app.route("/api/classes/<int:class_id>/history", methods=["GET"])
+def api_class_history(class_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, error = _get_accessible_class_or_error(user, class_id)
+    if error:
+        return error
+    return jsonify({"items": list_class_history(class_id)})
+
+
+@app.route("/api/students/<int:student_id>/class-history", methods=["GET"])
+def api_student_class_history(student_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    visible_items = []
+    for item in list_student_class_history(student_id):
+        cls, class_error = _get_accessible_class_or_error(user, int(item["class_id"]))
+        if cls and not class_error:
+            visible_items.append(item)
+    return jsonify({"items": visible_items})
 
 
 @app.route("/api/classes/<int:class_id>/teacher", methods=["PUT"])
@@ -4785,7 +4822,9 @@ def api_class_update(class_id):
     name = (data.get("name") or "").strip()
     subject = (data.get("subject") or "").strip()
     grade = (data.get("grade") or "").strip()
-    if not name:
+    class_number = (data.get("class_number") or "").strip()
+    current_grade = (data.get("current_grade") or grade).strip()
+    if not name and not class_number:
         return jsonify({"error": "班级名称不能为空"}), 400
     if not subject:
         return jsonify({"error": "学科不能为空"}), 400
@@ -4802,6 +4841,13 @@ def api_class_update(class_id):
         grade=grade,
         teacher_name=teacher_name,
         teacher_email=teacher_email,
+        stage=(data.get("stage") or "").strip(),
+        current_grade=current_grade,
+        class_number=class_number,
+        cohort_year=data.get("cohort_year"),
+        is_bridge=bool(data.get("is_bridge")),
+        bridge_target=(data.get("bridge_target") or "").strip(),
+        content_track=(data.get("content_track") or "").strip(),
     )
     return jsonify({"ok": True})
 
