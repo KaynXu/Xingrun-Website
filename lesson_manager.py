@@ -178,6 +178,7 @@ CONSULTATION_FLOW_STAGE_DERIVED_STATUS = {
     "成功进班": "完成",
     "咨询结束": "完成",
 }
+CONSULTATION_TERMINAL_STAGES = {"成功进班", "咨询结束"}
 CONSULTATION_LEGACY_STATUS_STAGE_MAP = {
     "待邀约": "已加小客服微信",
     "跟进中": "正在沟通细节",
@@ -1355,8 +1356,8 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 created_at, updated_at, flow_stage, completed_stages_json, test_taken,
                 test_images_json, trial_taken, trial_time_slot, trial_class_id,
                 trial_class_manual, trial_teacher, trial_feedback, success_class_id,
-                success_class_manual, end_note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                success_class_manual, end_note, ended_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
@@ -1390,6 +1391,7 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 stored["success_class_id"],
                 stored["success_class_manual"],
                 stored["end_note"],
+                stored["ended_at"],
             ),
         )
         row = conn.execute(
@@ -1485,6 +1487,7 @@ def update_consultation(
                 success_class_id=?,
                 success_class_manual=?,
                 end_note=?,
+                ended_at=?,
                 updated_at=?
             WHERE id=?
             """,
@@ -1514,6 +1517,7 @@ def update_consultation(
                 stored["success_class_id"],
                 stored["success_class_manual"],
                 stored["end_note"],
+                stored["ended_at"],
                 now,
                 consultation_id,
             ),
@@ -1789,6 +1793,11 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
     success_class_manual = str(row.get("success_class_manual") or "").strip()
     if row.get("_require_success_class") and flow_stage == "成功进班" and not success_class_id and not success_class_manual:
         raise ValueError("成功进班必须选择或填写班级")
+    existing_ended_at = str(row.get("ended_at") or "").strip()
+    if flow_stage in CONSULTATION_TERMINAL_STAGES:
+        ended_at = existing_ended_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        ended_at = ""
     return {
         "organization_id": organization_id,
         "date": serialized.get("date", ""),
@@ -1822,6 +1831,7 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "success_class_id": success_class_id,
         "success_class_manual": success_class_manual,
         "end_note": str(row.get("end_note") or ""),
+        "ended_at": ended_at,
     }
 
 
@@ -1873,6 +1883,7 @@ def _consultation_storage_row_to_public_dict(
     serialized["success_class_id"] = payload.get("success_class_id")
     serialized["success_class_manual"] = payload.get("success_class_manual", "") or ""
     serialized["end_note"] = payload.get("end_note", "") or ""
+    serialized["ended_at"] = payload.get("ended_at", "") or ""
     return serialized
 
 
@@ -1925,6 +1936,7 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "consultations", "success_class_id", "INTEGER")
     _ensure_column(conn, "consultations", "success_class_manual", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "end_note", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "ended_at", "TEXT DEFAULT ''")
 
 
 def _migrate_legacy_organization_scope(conn: sqlite3.Connection) -> None:

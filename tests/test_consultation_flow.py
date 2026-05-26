@@ -580,6 +580,68 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload["completed_stages"], ["已加小客服微信", "正在沟通细节"])
         self.assertEqual(payload["end_note"], "误触结束")
 
+    def test_terminal_consultation_records_ended_at_once(self):
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "吴妈妈",
+                "child_name": "吴小同",
+                "flow_stage": "待试听",
+                "completed_stages": ["已加小客服微信", "待试听"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        first = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "flow_stage": "咨询结束",
+                "completed_stages": ["已加小客服微信", "待试听"],
+            },
+        )
+
+        self.assertEqual(first.status_code, 200)
+        first_payload = first.get_json()
+        self.assertTrue(first_payload["ended_at"])
+        self.assertEqual(first_payload["flow_stage"], "咨询结束")
+        self.assertEqual(first_payload["completed_stages"], ["已加小客服微信", "待试听", "咨询结束"])
+
+        second = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(self.owner_token),
+            json={"end_note": "补充结束说明"},
+        )
+
+        self.assertEqual(second.status_code, 200)
+        second_payload = second.get_json()
+        self.assertEqual(second_payload["ended_at"], first_payload["ended_at"])
+        self.assertEqual(second_payload["end_note"], "补充结束说明")
+
+    def test_legacy_terminal_consultation_without_ended_at_stays_blank(self):
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "parent_wechat_name": "郑妈妈",
+                "child_name": "郑小同",
+                "flow_stage": "成功进班",
+                "completed_stages": ["成功进班"],
+                "success_class_manual": "七年级数学班",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+        with lesson_manager.get_conn() as conn:
+            conn.execute("UPDATE consultations SET ended_at='' WHERE id=?", (consultation_id,))
+
+        response = self.client.get(f"/api/consultations/{consultation_id}", headers=self.auth_headers(self.owner_token))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["ended_at"], "")
+
     def test_owner_uploads_multiple_consultation_test_images(self):
         created = self.create_consultation_record()
 
