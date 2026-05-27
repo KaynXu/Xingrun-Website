@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-26
+最后更新：2026-05-27
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-27 已按用户要求调取生产库七年级 4 班上周六/周天错题：日期范围为 `2026-05-23 00:00:00` 到 `2026-05-25 00:00:00`，生产库 class `14` 共 47 条 `recognized + active` 错题，覆盖 6 名学生：吴靖萱 3 条、康芮绮 8 条、张琨旎 13 条、彭栎玮 9 条、晏语佳 6 条、蒋贝贝 8 条。已基于既有周末错题复习 PDF 生成清晰命名的周六周日交付包：目录 `output/pdf/七年级4班-周六周日错题复习PDF-20260523-20260524/`，压缩包 `output/pdf/七年级4班-周六周日错题复习PDF-20260523-20260524.zip`。新包移除了封面范围里的 `2026-05-22` 空日期说明，历史旧包保留。proof：临时脚本验证生产查询总数 47、学生数 6、PDF 数 6、zip 内 6 份 PDF、每份 PDF 页数/大小有效、全文不含 `2026-05-22`、封面题量与生产查询一致、抽查首尾页渲染非空。
 - 2026-05-26 已优化复习计划 PDF 版式：`review_plan_templates/generate_review_pdfs.py` 现在只在封面和第 1 天保留“全课覆盖清单/执行清单”等整课复盘引导，后续复习日直接进入当天填空、选择和课堂方法题，避免每天重复同一块说明；答案区改成单张紧凑汇总表，真实向量课程包 proof 中答案区从第 8 页开始、共 2 页。同步修正了嵌套选择题/课堂方法表格宽度，避免内表右边框顶出外框。新增 `tests/test_review_plan_pdf_layout.py` 固化版式行为。proof：`.venv/bin/python -m unittest tests.test_review_plan_pdf_layout tests.test_review_plan_math_normalization tests.test_single_lesson_pdf_unification -v` 16 条通过；临时脚本生成 `/tmp/xingrun_review_plan_layout_proof/review-plan-layout-proof.pdf`，9 页，`全课覆盖清单` 出现 2 次、`执行清单` 出现 1 次、答案区 2 页，并渲染抽查第 1/2/3/4/5/8/9 页非空，目视未见明显空白或重叠。
 - 2026-05-26 已继续优化复习计划 PDF 文件名：模板 CLI、网站异步生成、`lesson_manager cmd_add` 都改为优先使用本堂课知识要点/课程标题生成 PDF 名称，不再输出泛化的 `review-plan-chinese-only...` 或 `日期_科目_主题.pdf`。标题足够明确时会去掉“课后复习计划”后作为文件名；标题太短或太泛时回退到前三个知识要点拼名；模板 CLI 仍追加时间戳防止覆盖，网站异步生成追加 lesson id。proof：临时脚本真实课程包输出 `数学向量与解三角形题复盘-20260526-191131.pdf`，PDF 9 页；`.venv/bin/python -m unittest tests.test_review_plan_pdf_layout tests.test_review_plan_math_normalization tests.test_single_lesson_pdf_unification -v` 17 条通过；`py_compile app.py lesson_manager.py review_plan_templates/generate_review_pdfs.py review_plan_templates/single_lesson_pdf.py tests/test_review_plan_pdf_layout.py` 通过。
 - 2026-05-26 已把复习计划 PDF 答案区进一步压缩成左右双栏答案表：`make_compact_answer_key_table()` 现在将答案条目拆成两组并排显示，并降低答案表字号、行距与 padding。真实最近课程包 `lesson_pack_vector_triangle_replay_20260524.py` 重新生成 `review_plan_templates/pdf_output/数学向量与解三角形题复盘-20260526-192132.pdf`，PDF 从 9 页降到 8 页，`自查答案` 位于第 8 页且答案区页跨度为 1 页；渲染抽查第 8 页可读、无明显重叠。proof：`.venv/bin/python -m unittest tests.test_review_plan_pdf_layout tests.test_review_plan_math_normalization tests.test_single_lesson_pdf_unification -v` 18 条通过；`py_compile review_plan_templates/generate_review_pdfs.py tests/test_review_plan_pdf_layout.py` 通过；临时脚本输出 `Answer section page span: 1 page(s) -> [8]`。
