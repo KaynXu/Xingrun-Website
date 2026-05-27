@@ -2690,6 +2690,7 @@ def init_db():
         _ensure_column(conn, "classes", "current_grade", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "class_number", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "cohort_year", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "classes", "show_cohort_year", "INTEGER DEFAULT 1")
         _ensure_column(conn, "classes", "is_bridge", "INTEGER DEFAULT 0")
         _ensure_column(conn, "classes", "bridge_target", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "content_track", "TEXT DEFAULT ''")
@@ -3771,43 +3772,52 @@ def requeue_monthly_plan_job(job_id: int) -> dict:
 
 # ─── 班级 CRUD ─────────────────────────────────────────────────────────────────
 CLASS_STAGES = ("小奥", "初中", "高中")
-CLASS_GRADE_ORDER = ("1年级", "2年级", "3年级", "4年级", "5年级", "6年级", "7年级", "8年级", "9年级", "高一", "高二", "高三")
+CLASS_GRADE_ORDER = ("一年级", "二年级", "三年级", "四年级", "五年级", "六年级", "七年级", "八年级", "九年级", "高一", "高二", "高三")
 CLASS_STAGE_GRADES = {
-    "小奥": ("1年级", "2年级", "3年级", "4年级", "5年级", "6年级"),
-    "初中": ("7年级", "8年级", "9年级"),
+    "小奥": ("一年级", "二年级", "三年级", "四年级", "五年级", "六年级"),
+    "初中": ("七年级", "八年级", "九年级"),
     "高中": ("高一", "高二", "高三"),
 }
 PROMOTION_NEXT_GRADE = {
-    "1年级": "2年级",
-    "2年级": "3年级",
-    "3年级": "4年级",
-    "4年级": "5年级",
-    "5年级": "6年级",
-    "6年级": "7年级",
-    "7年级": "8年级",
-    "8年级": "9年级",
-    "9年级": "高一",
+    "一年级": "二年级",
+    "二年级": "三年级",
+    "三年级": "四年级",
+    "四年级": "五年级",
+    "五年级": "六年级",
+    "六年级": "七年级",
+    "七年级": "八年级",
+    "八年级": "九年级",
+    "九年级": "高一",
     "高一": "高二",
     "高二": "高三",
 }
-GRADUATION_GRADES = {"6年级", "9年级", "高三"}
+GRADUATION_GRADES = {"六年级", "九年级", "高三"}
 
 
 def normalize_class_grade(value: str) -> str:
     raw = str(value or "").strip()
     aliases = {
-        "一年级": "1年级",
-        "二年级": "2年级",
-        "三年级": "3年级",
-        "四年级": "4年级",
-        "五年级": "5年级",
-        "六年级": "6年级",
-        "七年级": "7年级",
-        "八年级": "8年级",
-        "九年级": "9年级",
-        "初一": "7年级",
-        "初二": "8年级",
-        "初三": "9年级",
+        "1年级": "一年级",
+        "2年级": "二年级",
+        "3年级": "三年级",
+        "4年级": "四年级",
+        "5年级": "五年级",
+        "6年级": "六年级",
+        "7年级": "七年级",
+        "8年级": "八年级",
+        "9年级": "九年级",
+        "一年级": "一年级",
+        "二年级": "二年级",
+        "三年级": "三年级",
+        "四年级": "四年级",
+        "五年级": "五年级",
+        "六年级": "六年级",
+        "七年级": "七年级",
+        "八年级": "八年级",
+        "九年级": "九年级",
+        "初一": "七年级",
+        "初二": "八年级",
+        "初三": "九年级",
         "高1": "高一",
         "高2": "高二",
         "高3": "高三",
@@ -3836,9 +3846,10 @@ def infer_cohort_year(grade: str, today: str | None = None) -> int:
     return current_school_year_start(today) - offset
 
 
-def build_structured_class_name(cohort_year: int, current_grade: str, class_number: str, is_bridge: bool) -> str:
+def build_structured_class_name(cohort_year: int, current_grade: str, class_number: str, is_bridge: bool, show_cohort_year: bool = True) -> str:
     suffix = "·衔接" if is_bridge else ""
-    return f"{cohort_year}级{current_grade}{str(class_number).strip()}班{suffix}"
+    cohort_prefix = f"{cohort_year}级·" if show_cohort_year and cohort_year else ""
+    return f"{cohort_prefix}{current_grade}·{str(class_number).strip()}班{suffix}"
 
 
 def _class_row_to_dict(row) -> dict:
@@ -3847,12 +3858,19 @@ def _class_row_to_dict(row) -> dict:
     item["stage"] = item.get("stage") or infer_class_stage(item["current_grade"])
     item["class_number"] = str(item.get("class_number") or "")
     item["cohort_year"] = int(item.get("cohort_year") or 0)
+    item["show_cohort_year"] = bool(item.get("show_cohort_year", 1))
     item["is_bridge"] = bool(item.get("is_bridge") or 0)
     item["bridge_target"] = item.get("bridge_target") or ""
     item["content_track"] = item.get("content_track") or ""
     item["last_promoted_at"] = item.get("last_promoted_at") or ""
     if item["cohort_year"] and item["current_grade"] and item["class_number"]:
-        item["name"] = build_structured_class_name(item["cohort_year"], item["current_grade"], item["class_number"], item["is_bridge"])
+        item["name"] = build_structured_class_name(
+            item["cohort_year"],
+            item["current_grade"],
+            item["class_number"],
+            item["is_bridge"],
+            item["show_cohort_year"],
+        )
     return item
 
 
@@ -3865,6 +3883,7 @@ def _build_class_payload(
     current_grade: str = "",
     class_number: str = "",
     cohort_year: int | None = None,
+    show_cohort_year: bool = True,
     is_bridge: bool = False,
     bridge_target: str = "",
     content_track: str = "",
@@ -3878,7 +3897,7 @@ def _build_class_payload(
         normalized_cohort_year = infer_cohort_year(normalized_grade, today)
     display_name = (name or "").strip()
     if normalized_grade and normalized_class_number and normalized_cohort_year:
-        display_name = build_structured_class_name(normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge)
+        display_name = build_structured_class_name(normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year)
     return {
         "name": display_name,
         "subject": (subject or "").strip(),
@@ -3887,6 +3906,7 @@ def _build_class_payload(
         "current_grade": normalized_grade,
         "class_number": normalized_class_number,
         "cohort_year": normalized_cohort_year,
+        "show_cohort_year": 1 if show_cohort_year else 0,
         "is_bridge": 1 if is_bridge else 0,
         "bridge_target": (bridge_target or "").strip(),
         "content_track": (content_track or bridge_target or "").strip(),
@@ -3896,7 +3916,7 @@ def _build_class_payload(
 def save_class(name: str, subject: str = "", grade: str = "",
                teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None,
                stage: str = "", current_grade: str = "", class_number: str = "",
-               cohort_year: int | None = None, is_bridge: bool = False, bridge_target: str = "",
+               cohort_year: int | None = None, show_cohort_year: bool = True, is_bridge: bool = False, bridge_target: str = "",
                content_track: str = "", teacher_user_id: Optional[int] = None, today: str | None = None) -> int:
     payload = _build_class_payload(
         name,
@@ -3906,6 +3926,7 @@ def save_class(name: str, subject: str = "", grade: str = "",
         current_grade=current_grade,
         class_number=class_number,
         cohort_year=cohort_year,
+        show_cohort_year=show_cohort_year,
         is_bridge=is_bridge,
         bridge_target=bridge_target,
         content_track=content_track,
@@ -3918,14 +3939,14 @@ def save_class(name: str, subject: str = "", grade: str = "",
             """
             INSERT INTO classes (
                 organization_id, name, subject, grade, teacher_name, teacher_email,
-                stage, current_grade, class_number, cohort_year, is_bridge, bridge_target, content_track
+                stage, current_grade, class_number, cohort_year, show_cohort_year, is_bridge, bridge_target, content_track
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id, payload["name"], payload["subject"], payload["grade"], teacher_name, teacher_email,
                 payload["stage"], payload["current_grade"], payload["class_number"], payload["cohort_year"],
-                payload["is_bridge"], payload["bridge_target"], payload["content_track"],
+                payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"], payload["content_track"],
             )
         )
         class_id = cur.lastrowid
@@ -3987,7 +4008,8 @@ def list_classes():
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT c.*, COUNT(l.id) as lesson_count,
+            SELECT c.*, COUNT(DISTINCT l.id) as lesson_count,
+                   COUNT(DISTINCT cs.student_id) as student_count,
                    (
                        SELECT uc.user_id
                        FROM user_classes uc
@@ -3997,6 +4019,7 @@ def list_classes():
                    ) AS teacher_user_id
             FROM classes c
             LEFT JOIN lessons l ON l.class_id = c.id
+            LEFT JOIN class_students cs ON cs.class_id = c.id
             GROUP BY c.id
             ORDER BY c.created_at DESC
             """
@@ -4007,7 +4030,7 @@ def list_classes():
 def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                  teacher_name: Optional[str] = None, teacher_email: Optional[str] = None,
                  stage: str = "", current_grade: str = "", class_number: str = "",
-                 cohort_year: int | None = None, is_bridge: bool = False, bridge_target: str = "",
+                 cohort_year: int | None = None, show_cohort_year: bool | None = None, is_bridge: bool = False, bridge_target: str = "",
                  content_track: str = "", today: str | None = None):
     before = get_class(class_id)
     payload = _build_class_payload(
@@ -4018,6 +4041,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
         current_grade=current_grade or grade,
         class_number=class_number or (before or {}).get("class_number", ""),
         cohort_year=cohort_year if cohort_year is not None else (before or {}).get("cohort_year", 0),
+        show_cohort_year=show_cohort_year if show_cohort_year is not None else (before or {}).get("show_cohort_year", True),
         is_bridge=is_bridge,
         bridge_target=bridge_target or (before or {}).get("bridge_target", ""),
         content_track=content_track or (before or {}).get("content_track", ""),
@@ -4034,12 +4058,12 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                 """
                 UPDATE classes
                 SET name=?, subject=?, grade=?, teacher_email='', stage=?, current_grade=?,
-                    class_number=?, cohort_year=?, is_bridge=?, bridge_target=?, content_track=?
+                    class_number=?, cohort_year=?, show_cohort_year=?, is_bridge=?, bridge_target=?, content_track=?
                 WHERE id=?
                 """,
                 (
                     payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["current_grade"],
-                    payload["class_number"], payload["cohort_year"], payload["is_bridge"], payload["bridge_target"],
+                    payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                     payload["content_track"], class_id,
                 )
             )
@@ -4055,6 +4079,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                 current_grade=?,
                 class_number=?,
                 cohort_year=?,
+                show_cohort_year=?,
                 is_bridge=?,
                 bridge_target=?,
                 content_track=?,
@@ -4064,7 +4089,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             """,
             (
                 payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["current_grade"],
-                payload["class_number"], payload["cohort_year"], payload["is_bridge"], payload["bridge_target"],
+                payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                 payload["content_track"], teacher_name, teacher_email, class_id,
             )
             )
@@ -4131,9 +4156,9 @@ def list_student_class_history(student_id: int) -> list[dict]:
 
 
 def bridge_crosses_target_stage(current_grade: str, next_grade: str, bridge_target: str) -> bool:
-    if current_grade == "6年级" and next_grade == "7年级":
+    if current_grade == "六年级" and next_grade == "七年级":
         return bridge_target in {"", "默认下一学段", "初中衔接"}
-    if current_grade == "9年级" and next_grade == "高一":
+    if current_grade == "九年级" and next_grade == "高一":
         return bridge_target in {"", "默认下一学段", "高中衔接"}
     return False
 

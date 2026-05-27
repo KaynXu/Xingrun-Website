@@ -38,6 +38,8 @@ import {
   Sun,
   X,
   ChevronDown,
+  ChevronRight,
+  Info,
   Save,
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -187,6 +189,7 @@ interface ClassItem {
   current_grade?: string;
   class_number?: string;
   cohort_year?: number;
+  show_cohort_year?: boolean | number;
   is_bridge?: boolean;
   bridge_target?: string;
   content_track?: string;
@@ -195,6 +198,7 @@ interface ClassItem {
   teacher_email?: string;
   teacher_user_id?: number | null;
   lesson_count?: number;
+  student_count?: number;
 }
 
 interface ConsultationRecord {
@@ -355,6 +359,7 @@ interface ClassFormValues {
   current_grade: string;
   class_number: string;
   cohort_year: string;
+  show_cohort_year: boolean;
   is_bridge: boolean;
   bridge_target: string;
   content_track: string;
@@ -392,12 +397,13 @@ const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
 
 const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
-const academicSubjectFilterOptions = ['全部学科', '数学', '物理', '国际数学'];
+const academicSubjectOptions = ['数学', '物理', '国际数学'];
+const academicSubjectFilterOptions = ['全部学科', ...academicSubjectOptions];
 const studentCenterStageOptions = ['小奥', '初中', '高中'];
-const studentCenterGradeOptions = ['1年级', '2年级', '3年级', '4年级', '5年级', '6年级', '7年级', '8年级', '9年级', '高一', '高二', '高三'];
+const studentCenterGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '高一', '高二', '高三'];
 const studentCenterGradeGroups: Record<string, string[]> = {
-  小奥: ['1年级', '2年级', '3年级', '4年级', '5年级', '6年级'],
-  初中: ['7年级', '8年级', '9年级'],
+  小奥: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
+  初中: ['七年级', '八年级', '九年级'],
   高中: ['高一', '高二', '高三'],
 };
 const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
@@ -428,18 +434,27 @@ function hasStaffAccess(role: Role): boolean {
 function normalizeAcademicGradeLabel(value: string): string {
   const normalized = value.trim();
   const gradeMap: Record<string, string> = {
-    一年级: '1年级',
-    二年级: '2年级',
-    三年级: '3年级',
-    四年级: '4年级',
-    五年级: '5年级',
-    六年级: '6年级',
-    七年级: '7年级',
-    八年级: '8年级',
-    九年级: '9年级',
-    初一: '7年级',
-    初二: '8年级',
-    初三: '9年级',
+    '1年级': '一年级',
+    '2年级': '二年级',
+    '3年级': '三年级',
+    '4年级': '四年级',
+    '5年级': '五年级',
+    '6年级': '六年级',
+    '7年级': '七年级',
+    '8年级': '八年级',
+    '9年级': '九年级',
+    一年级: '一年级',
+    二年级: '二年级',
+    三年级: '三年级',
+    四年级: '四年级',
+    五年级: '五年级',
+    六年级: '六年级',
+    七年级: '七年级',
+    八年级: '八年级',
+    九年级: '九年级',
+    初一: '七年级',
+    初二: '八年级',
+    初三: '九年级',
     高一: '高一',
     高二: '高二',
     高三: '高三',
@@ -459,6 +474,44 @@ function getAcademicGradeRank(value: string): number {
   const grade = normalizeAcademicGradeLabel(value);
   const index = studentCenterGradeOptions.indexOf(grade);
   return index === -1 ? 999 : index;
+}
+
+function getCurrentSchoolYearStart(): number {
+  const now = new Date();
+  return now.getMonth() + 1 >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+function inferAcademicCohortYear(grade: string): number {
+  const normalizedGrade = normalizeAcademicGradeLabel(grade);
+  const stage = getAcademicStageFromGrade(normalizedGrade);
+  const stageGrades = studentCenterGradeGroups[stage] || [];
+  const stageOffset = stageGrades.indexOf(normalizedGrade);
+  return getCurrentSchoolYearStart() - Math.max(0, stageOffset);
+}
+
+function buildClassDisplayName(form: Pick<ClassFormValues, 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'show_cohort_year' | 'is_bridge'>): string {
+  const grade = normalizeAcademicGradeLabel(form.current_grade || form.grade);
+  const classNumber = form.class_number.trim();
+  if (!grade || !classNumber) {
+    return '';
+  }
+  const cohortYear = Number(form.cohort_year) || inferAcademicCohortYear(grade);
+  const cohortPrefix = form.show_cohort_year && cohortYear ? `${cohortYear}级·` : '';
+  const bridgeSuffix = form.is_bridge ? '·衔接' : '';
+  return `${cohortPrefix}${grade}·${classNumber}班${bridgeSuffix}`;
+}
+
+function getClassFormDirtySignature(form: Pick<ClassFormValues, 'subject' | 'stage' | 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'is_bridge' | 'bridge_target' | 'content_track'>): string {
+  return JSON.stringify({
+    subject: form.subject.trim(),
+    stage: form.stage,
+    current_grade: normalizeAcademicGradeLabel(form.current_grade || form.grade),
+    class_number: form.class_number.trim(),
+    cohort_year: form.cohort_year ? String(Number(form.cohort_year)) : '',
+    is_bridge: Boolean(form.is_bridge),
+    bridge_target: form.bridge_target || '',
+    content_track: form.content_track || '',
+  });
 }
 
 function canAccessSmartWrongQuestions(role: Role): boolean {
@@ -539,9 +592,10 @@ function createEmptyClassForm(): ClassFormValues {
     grade: '',
     teacher_name: '',
     stage: '小奥',
-    current_grade: '1年级',
+    current_grade: '一年级',
     class_number: '1',
     cohort_year: '',
+    show_cohort_year: true,
     is_bridge: false,
     bridge_target: '默认下一学段',
     content_track: '',
@@ -555,9 +609,10 @@ function toClassFormValues(item: ClassItem): ClassFormValues {
     grade: item.grade || '',
     teacher_name: item.teacher_name || '',
     stage: item.stage || '',
-    current_grade: item.current_grade || item.grade || '',
+    current_grade: normalizeAcademicGradeLabel(item.current_grade || item.grade || ''),
     class_number: item.class_number || '',
     cohort_year: item.cohort_year ? String(item.cohort_year) : '',
+    show_cohort_year: item.show_cohort_year !== false && item.show_cohort_year !== 0,
     is_bridge: Boolean(item.is_bridge),
     bridge_target: item.bridge_target || '默认下一学段',
     content_track: item.content_track || '',
@@ -2169,54 +2224,27 @@ const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) 
   </div>
 );
 
-const SubjectCombobox = ({
+const SubjectSelect = ({
   value,
   onChange,
-  options,
   className,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: string[];
   className?: string;
 }) => {
-  const [open, setOpen] = useState(false);
-  const filtered = options.filter(
-    (o) => o && (!value || o.toLowerCase().includes(value.toLowerCase()))
-  );
-
   return (
-    <div className={cn('relative', className)}>
-      <input
-        type="text"
-        placeholder="科目"
-        value={value}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-          onChange(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className={`${workspaceFieldClass} w-full`}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-full min-w-[8rem] overflow-hidden rounded-xl border border-sky-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900">
-          {filtered.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onMouseDown={() => {
-                onChange(opt);
-                setOpen(false);
-              }}
-              className="w-full px-4 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-sky-50 dark:text-slate-200 dark:hover:bg-white/10"
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <select
+      aria-label="科目"
+      value={academicSubjectOptions.includes(value) ? value : ''}
+      onChange={(event) => onChange(event.target.value)}
+      className={cn(workspaceFieldClass, 'w-full', className)}
+    >
+      <option value="">选择科目</option>
+      {academicSubjectOptions.map((option) => (
+        <option key={option} value={option}>{option}</option>
+      ))}
+    </select>
   );
 };
 
@@ -2294,7 +2322,7 @@ const LessonInput = ({
   const handleClassChange = (id: number) => {
     setClassId(id);
     const cls = classes.find((c) => c.id === id);
-    if (cls?.subject) setSubject(cls.subject);
+    if (cls?.subject && academicSubjectOptions.includes(cls.subject)) setSubject(cls.subject);
   };
 
   const handleAnalyze = async () => {
@@ -2305,7 +2333,7 @@ const LessonInput = ({
         method: 'POST',
         body: JSON.stringify({ text: summaryText }),
       });
-      if (result.subject) setSubject(result.subject);
+      if (result.subject) setSubject(academicSubjectOptions.includes(result.subject) ? result.subject : '');
       if (result.topic) setTopic(result.topic);
       if (result.weak_points) setWeakPoints(result.weak_points);
     } catch (e) {
@@ -2413,10 +2441,9 @@ const LessonInput = ({
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
-                <SubjectCombobox
+                <SubjectSelect
                   value={subject}
                   onChange={setSubject}
-                  options={[...new Set<string>(classes.map((c: ClassItem) => c.subject).filter(Boolean))] as string[]}
                   className="w-full"
                 />
                 <select
@@ -4331,7 +4358,7 @@ const ConsultationModal = ({
       return undefined;
     }
     const handleSaveShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.altKey) && event.key.toLowerCase() === 's') {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         formScrollRef.current?.requestSubmit();
       }
@@ -4529,7 +4556,7 @@ const ConsultationModal = ({
                 onClick={() => formScrollRef.current?.requestSubmit()}
                 className={`${workspacePrimaryButtonClass} h-10 px-4 text-sm`}
                 disabled={submitting}
-                title="Command+S / Alt+S"
+                title="Command+S / Ctrl+S"
               >
                 <Save size={15} />
                 {saveButtonLabel}
@@ -4728,7 +4755,12 @@ const ConsultationModal = ({
             <div className={`${compactFieldGridClass} mt-3`}>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>咨询科目</span>
-                <input value={form.consultation_subject} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="咨询科目" />
+                <select value={academicSubjectOptions.includes(form.consultation_subject) ? form.consultation_subject : ''} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={readOnly} className={fieldClass}>
+                  <option value="">请选择咨询科目</option>
+                  {academicSubjectOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>来源渠道主类</span>
@@ -8798,14 +8830,23 @@ const ClassManagementPage = ({
   const [selectedClassStageFilter, setSelectedClassStageFilter] = useState<string>('全部学段');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
   const [selectedClassTeacherFilter, setSelectedClassTeacherFilter] = useState<number | 'all'>('all');
-  const [activeClassFilterLayer, setActiveClassFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade'>('subject');
+  const [activeClassFilterLayer, setActiveClassFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
+  const [overviewSubjectFilter, setOverviewSubjectFilter] = useState<string>('全部学科');
+  const [overviewTeacherFilter, setOverviewTeacherFilter] = useState<number | 'all'>('all');
+  const [overviewStageFilter, setOverviewStageFilter] = useState<string>('全部学段');
+  const [overviewGradeFilter, setOverviewGradeFilter] = useState<string>('全部');
+  const [activeOverviewFilterLayer, setActiveOverviewFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
+  const [clickedOverviewFilterLayer, setClickedOverviewFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
+  const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [studentSubjectFilter, setStudentSubjectFilter] = useState<string>('全部学科');
-  const [studentTeacherFilter, setStudentTeacherFilter] = useState<number | null>(null);
-  const [studentStageFilter, setStudentStageFilter] = useState('');
-  const [studentGradeFilter, setStudentGradeFilter] = useState('');
-  const [studentClassFilter, setStudentClassFilter] = useState<number | null>(null);
+  const [studentTeacherFilter, setStudentTeacherFilter] = useState<number | 'all'>('all');
+  const [studentStageFilter, setStudentStageFilter] = useState<string>('全部学段');
+  const [studentGradeFilter, setStudentGradeFilter] = useState<string>('全部');
+  const [studentClassFilter, setStudentClassFilter] = useState<number | 'all'>('all');
   const [studentNameFilter, setStudentNameFilter] = useState('');
-  const [activeStudentFilterLayer, setActiveStudentFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | 'class' | 'student'>('subject');
+  const [activeStudentFilterLayer, setActiveStudentFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | 'class' | null>(null);
+  const [showClassCohortYear, setShowClassCohortYear] = useState(true);
+  const [activeClassHelpKey, setActiveClassHelpKey] = useState<'overview' | null>(null);
   const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
   const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
   const [studentDraftNameByClassId, setStudentDraftNameByClassId] = useState<Record<number, string>>({});
@@ -8823,12 +8864,17 @@ const ClassManagementPage = ({
   const [inviteLoadingByClassId, setInviteLoadingByClassId] = useState<Record<number, boolean>>({});
   const [inviteResettingByClassId, setInviteResettingByClassId] = useState<Record<number, boolean>>({});
   const loadPageRequestVersionRef = useRef(0);
+  const classFilterCloseTimerRef = useRef<number | null>(null);
+  const overviewFilterCloseTimerRef = useRef<number | null>(null);
+  const overviewLayerCloseTimerRef = useRef<number | null>(null);
+  const studentFilterCloseTimerRef = useRef<number | null>(null);
   const classInteractionLocked = saving || deleting;
   const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
   const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
   const pageRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
   const assignmentRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
   const canManageClassTeachers = hasStaffAccess(currentUser.role);
+  const canUseOrganizationClassFilters = hasOwnerAccess(currentUser.role);
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
@@ -8905,6 +8951,21 @@ const ClassManagementPage = ({
   useEffect(() => {
     loadPage().catch(() => undefined);
   }, [loadPage]);
+
+  useEffect(() => () => {
+    if (classFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(classFilterCloseTimerRef.current);
+    }
+    if (overviewFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewFilterCloseTimerRef.current);
+    }
+    if (overviewLayerCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewLayerCloseTimerRef.current);
+    }
+    if (studentFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(studentFilterCloseTimerRef.current);
+    }
+  }, []);
 
   const handleLoadClassInvite = useCallback(async (classId: number) => {
     setInviteLoadingByClassId((current) => ({ ...current, [classId]: true }));
@@ -8991,13 +9052,23 @@ const ClassManagementPage = ({
 
   const handleFieldChange = (classId: number | 'new', field: keyof ClassFormValues, value: string) => {
     const stateKey = getClassStateKey(classId);
-    setFormByClassId((current) => ({
-      ...current,
-      [stateKey]: {
-        ...(current[stateKey] || createEmptyClassForm()),
-        [field]: value,
-      },
-    }));
+    setFormByClassId((current) => {
+      const currentForm = current[stateKey] || createEmptyClassForm();
+      const nextForm = {
+        ...currentForm,
+        [field]: field === 'current_grade' ? normalizeAcademicGradeLabel(value) : value,
+      };
+      if (field === 'stage') {
+        const gradeOptionsForStage = studentCenterGradeGroups[value] || studentCenterGradeOptions;
+        if (!gradeOptionsForStage.includes(nextForm.current_grade)) {
+          nextForm.current_grade = gradeOptionsForStage[0] || '';
+        }
+      }
+      return {
+        ...current,
+        [stateKey]: nextForm,
+      };
+    });
   };
 
   const handleTeacherSearchChange = (classId: number | 'new', value: string) => {
@@ -9022,6 +9093,25 @@ const ClassManagementPage = ({
     setFormError('');
     setAssignmentError('');
   };
+
+  const findDuplicateClass = (classId: number | 'new', payload: {
+    subject: string;
+    stage: string;
+    current_grade: string;
+    class_number: string;
+    cohort_year?: number;
+  }) => classes.find((item) => {
+    if (classId !== 'new' && item.id === classId) {
+      return false;
+    }
+    const itemCohortYear = Number(item.cohort_year || 0);
+    const payloadCohortYear = Number(payload.cohort_year || 0);
+    return item.subject === payload.subject
+      && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === payload.stage
+      && normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === payload.current_grade
+      && String(item.class_number || '').trim() === payload.class_number
+      && itemCohortYear === payloadCohortYear;
+  });
 
   useEffect(() => {
     if (!classBindingTarget || expandedClassId === null) {
@@ -9049,16 +9139,19 @@ const ClassManagementPage = ({
       return;
     }
     const selectedTeacher = typeof selectedTeacherUserId === 'number' ? users.find((user) => user.id === selectedTeacherUserId) : undefined;
+    const displayName = buildClassDisplayName(currentForm);
+    const inferredCohortYear = Number(currentForm.cohort_year) || inferAcademicCohortYear(currentForm.current_grade || currentForm.grade);
     const payload = {
-      name: normalizeClassNameInput(currentForm.name),
+      name: displayName || normalizeClassNameInput(currentForm.name),
       subject: currentForm.subject.trim(),
       grade: (currentForm.current_grade || currentForm.grade).trim(),
       teacher_name: selectedTeacher?.name || '',
       teacher_email: '',
       stage: currentForm.stage,
-      current_grade: currentForm.current_grade || currentForm.grade,
-      class_number: currentForm.class_number,
-      cohort_year: currentForm.cohort_year ? Number(currentForm.cohort_year) : undefined,
+      current_grade: normalizeAcademicGradeLabel(currentForm.current_grade || currentForm.grade),
+      class_number: currentForm.class_number.trim(),
+      cohort_year: inferredCohortYear,
+      show_cohort_year: true,
       is_bridge: currentForm.is_bridge,
       bridge_target: currentForm.bridge_target,
       content_track: currentForm.content_track,
@@ -9077,6 +9170,11 @@ const ClassManagementPage = ({
 
     if (!payload.current_grade || !studentCenterGradeOptions.includes(payload.current_grade)) {
       setFormError('请选择年级');
+      return;
+    }
+
+    if (findDuplicateClass(classId, payload)) {
+      setFormError('已存在相同学科、学段、年级、班号和入学级的班级，请调整后再保存。');
       return;
     }
 
@@ -9113,6 +9211,7 @@ const ClassManagementPage = ({
           current_grade: payload.current_grade,
           class_number: payload.class_number,
           cohort_year: payload.cohort_year,
+          show_cohort_year: payload.show_cohort_year,
           is_bridge: payload.is_bridge,
           bridge_target: payload.bridge_target,
           content_track: payload.content_track,
@@ -9155,6 +9254,20 @@ const ClassManagementPage = ({
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (expandedClassId === null) {
+      return undefined;
+    }
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void handleSaveClass(expandedClassId);
+      }
+    };
+    window.addEventListener('keydown', handleSaveShortcut);
+    return () => window.removeEventListener('keydown', handleSaveShortcut);
+  }, [expandedClassId, formByClassId, newClassTeacherUserId, teacherBindingByClassId, classes, users, saving, deleting]);
 
   const handleDeleteClass = async (classId: number) => {
     const targetClass = classes.find((item) => item.id === classId);
@@ -9273,100 +9386,347 @@ const ClassManagementPage = ({
     }
   };
 
-  const classSubjectFilterOptions = academicSubjectFilterOptions;
-  const classTeacherFilterBaseClasses = classes.filter((item) => selectedSubjectFilter === '全部学科' || item.subject === selectedSubjectFilter);
-  const classTeacherFilterOptions = users.filter((user) => classTeacherFilterBaseClasses.some((item) => (teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null) === user.id));
-  const classStageFilterBaseClasses = classTeacherFilterBaseClasses.filter((item) => selectedClassTeacherFilter === 'all' || (teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null) === selectedClassTeacherFilter);
-  const classGradeFilterBaseClasses = classStageFilterBaseClasses.filter((item) => {
-    if (selectedClassStageFilter === '全部学段') return true;
-    return (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === selectedClassStageFilter;
+  const getClassTeacherUserId = (item: ClassItem) => teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
+  const classSubjectByTeacherUserId = new Map<number, string>();
+  const classSubjectByTeacherName = new Map<string, string>();
+  classes.forEach((item) => {
+    const subject = item.subject && academicSubjectOptions.includes(item.subject) ? item.subject : '';
+    if (!subject) {
+      return;
+    }
+    const teacherUserId = getClassTeacherUserId(item);
+    if (teacherUserId != null && !classSubjectByTeacherUserId.has(teacherUserId)) {
+      classSubjectByTeacherUserId.set(teacherUserId, subject);
+    }
+    if (item.teacher_name && !classSubjectByTeacherName.has(item.teacher_name)) {
+      classSubjectByTeacherName.set(item.teacher_name, subject);
+    }
   });
-  const classGradeFilterOptions = ['全部', ...studentCenterGradeOptions.filter((grade) => {
+  const getClassEffectiveSubject = (item: ClassItem) => {
+    if (item.subject && academicSubjectOptions.includes(item.subject)) {
+      return item.subject;
+    }
+    const teacherUserId = getClassTeacherUserId(item);
+    if (teacherUserId != null) {
+      const subjectByUserId = classSubjectByTeacherUserId.get(teacherUserId);
+      if (subjectByUserId) {
+        return subjectByUserId;
+      }
+    }
+    return item.teacher_name ? classSubjectByTeacherName.get(item.teacher_name) || '' : '';
+  };
+  const scopedClassItems = classes.filter((item) => {
+    if (currentUser.role !== 'member') {
+      return true;
+    }
+    const itemTeacherUserId = getClassTeacherUserId(item);
+    return itemTeacherUserId === currentUser.id || item.teacher_name === currentUser.display_name;
+  });
+  const classMatchesSelectedFilters = (item: ClassItem, except?: typeof activeClassFilterLayer) => {
+    if (except !== 'subject' && selectedSubjectFilter !== '全部学科' && getClassEffectiveSubject(item) !== selectedSubjectFilter) {
+      return false;
+    }
+    const itemTeacherUserId = getClassTeacherUserId(item);
+    if (except !== 'teacher' && selectedClassTeacherFilter !== 'all' && itemTeacherUserId !== selectedClassTeacherFilter) {
+      return false;
+    }
+    if (except !== 'stage' && selectedClassStageFilter !== '全部学段' && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) !== selectedClassStageFilter) {
+      return false;
+    }
+    if (except !== 'grade' && selectedGradeFilter !== '全部' && normalizeAcademicGradeLabel(item.current_grade || item.grade || '') !== selectedGradeFilter) {
+      return false;
+    }
+    return true;
+  };
+  const getClassFilterOptionBase = (layer: typeof activeClassFilterLayer) => scopedClassItems.filter((item) => classMatchesSelectedFilters(item, layer));
+  const classSubjectFilterOptions = academicSubjectOptions;
+  const classTeacherFilterOptions = users.filter((user) => getClassFilterOptionBase('teacher').some((item) => getClassTeacherUserId(item) === user.id));
+  const classStageFilterOptions = studentCenterStageOptions.filter((stage) => getClassFilterOptionBase('stage').some((item) => (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === stage));
+  const classGradeFilterOptions = studentCenterGradeOptions.filter((grade) => {
     if (selectedClassStageFilter !== '全部学段' && !studentCenterGradeGroups[selectedClassStageFilter]?.includes(grade)) {
       return false;
     }
-    return classGradeFilterBaseClasses.some((item) => normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === grade);
-  })];
+    return getClassFilterOptionBase('grade').some((item) => normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === grade);
+  });
   const activeClassFilterSummary = [
-    selectedSubjectFilter !== '全部学科' ? selectedSubjectFilter : '',
     selectedClassTeacherFilter !== 'all' ? users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师' : '',
+    selectedSubjectFilter !== '全部学科' ? selectedSubjectFilter : '',
     selectedClassStageFilter !== '全部学段' ? selectedClassStageFilter : '',
     selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
   ].filter(Boolean).join(' / ') || '全部';
+  const overviewMatchesSelectedFilters = (item: ClassItem, except?: typeof activeOverviewFilterLayer) => {
+    if (except !== 'subject' && overviewSubjectFilter !== '全部学科' && getClassEffectiveSubject(item) !== overviewSubjectFilter) {
+      return false;
+    }
+    const itemTeacherUserId = getClassTeacherUserId(item);
+    if (except !== 'teacher' && overviewTeacherFilter !== 'all' && itemTeacherUserId !== overviewTeacherFilter) {
+      return false;
+    }
+    if (except !== 'stage' && overviewStageFilter !== '全部学段' && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) !== overviewStageFilter) {
+      return false;
+    }
+    if (except !== 'grade' && overviewGradeFilter !== '全部' && normalizeAcademicGradeLabel(item.current_grade || item.grade || '') !== overviewGradeFilter) {
+      return false;
+    }
+    return true;
+  };
+  const getOverviewFilterOptionBase = (layer: typeof activeOverviewFilterLayer) => scopedClassItems.filter((item) => overviewMatchesSelectedFilters(item, layer));
+  const overviewSubjectFilterOptions = academicSubjectOptions;
+  const overviewTeacherFilterOptions = users.filter((user) => getOverviewFilterOptionBase('teacher').some((item) => getClassTeacherUserId(item) === user.id));
+  const overviewStageFilterOptions = studentCenterStageOptions.filter((stage) => getOverviewFilterOptionBase('stage').some((item) => (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === stage));
+  const overviewGradeFilterOptions = studentCenterGradeOptions.filter((grade) => {
+    if (overviewStageFilter !== '全部学段' && !studentCenterGradeGroups[overviewStageFilter]?.includes(grade)) {
+      return false;
+    }
+    return getOverviewFilterOptionBase('grade').some((item) => normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === grade);
+  });
+  const activeOverviewFilterSummary = [
+    overviewTeacherFilter !== 'all' ? `教师：${users.find((user) => user.id === overviewTeacherFilter)?.name || '指定教师'}` : '',
+    overviewSubjectFilter !== '全部学科' ? `科目：${overviewSubjectFilter}` : '',
+    overviewStageFilter !== '全部学段' ? `学段：${overviewStageFilter}` : '',
+    overviewGradeFilter !== '全部' ? `年级：${overviewGradeFilter}` : '',
+  ].filter(Boolean).join(' / ') || '全校区';
+  const overviewFilterItems = [
+    {
+      key: 'subject' as const,
+      label: '科目',
+      selected: overviewSubjectFilter !== '全部学科',
+    },
+    ...(canUseOrganizationClassFilters ? [{
+      key: 'teacher' as const,
+      label: '教师',
+      selected: overviewTeacherFilter !== 'all',
+    }] : []),
+    {
+      key: 'stage' as const,
+      label: '学段',
+      selected: overviewStageFilter !== '全部学段',
+    },
+    {
+      key: 'grade' as const,
+      label: '年级',
+      selected: overviewGradeFilter !== '全部',
+    },
+  ];
+  const handleClearOverviewFilters = () => {
+    setOverviewSubjectFilter('全部学科');
+    setOverviewTeacherFilter('all');
+    setOverviewStageFilter('全部学段');
+    setOverviewGradeFilter('全部');
+    setActiveOverviewFilterLayer(null);
+    setClickedOverviewFilterLayer(null);
+  };
+  const handleSelectOverviewFilterOption = (value: string | number) => {
+    if (!activeOverviewFilterLayer) {
+      return;
+    }
+    if (activeOverviewFilterLayer === 'subject') {
+      setOverviewSubjectFilter(String(value));
+    } else if (activeOverviewFilterLayer === 'teacher') {
+      setOverviewTeacherFilter(value === 'all' ? 'all' : Number(value));
+    } else if (activeOverviewFilterLayer === 'stage') {
+      setOverviewStageFilter(String(value));
+    } else {
+      setOverviewGradeFilter(String(value));
+    }
+  };
+  const handleOverviewFilterAreaEnter = () => {
+    if (overviewFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewFilterCloseTimerRef.current);
+      overviewFilterCloseTimerRef.current = null;
+    }
+    setIsOverviewFilterOpen(true);
+  };
+  const handleOverviewFilterAreaLeave = () => {
+    if (overviewFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewFilterCloseTimerRef.current);
+    }
+    if (overviewLayerCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewLayerCloseTimerRef.current);
+    }
+    overviewFilterCloseTimerRef.current = window.setTimeout(() => {
+      setIsOverviewFilterOpen(false);
+      setActiveOverviewFilterLayer(null);
+      setClickedOverviewFilterLayer(null);
+      overviewFilterCloseTimerRef.current = null;
+    }, 120);
+  };
+  const handleOverviewLayerEnter = () => {
+    if (overviewLayerCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewLayerCloseTimerRef.current);
+      overviewLayerCloseTimerRef.current = null;
+    }
+  };
+  const handleOverviewLayerLeave = () => {
+    if (overviewLayerCloseTimerRef.current !== null) {
+      window.clearTimeout(overviewLayerCloseTimerRef.current);
+    }
+    overviewLayerCloseTimerRef.current = window.setTimeout(() => {
+      setActiveOverviewFilterLayer(null);
+      setClickedOverviewFilterLayer(null);
+      overviewLayerCloseTimerRef.current = null;
+    }, 120);
+  };
   const classFilterItems = [
     {
       key: 'subject' as const,
-      label: selectedSubjectFilter,
+      defaultLabel: '科目',
+      label: selectedSubjectFilter === '全部学科' ? '科目' : selectedSubjectFilter,
       selected: selectedSubjectFilter !== '全部学科',
     },
     {
       key: 'teacher' as const,
-      label: selectedClassTeacherFilter === 'all' ? '全部教师' : users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师',
+      defaultLabel: '教师',
+      label: selectedClassTeacherFilter === 'all' ? '教师' : users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师',
       selected: selectedClassTeacherFilter !== 'all',
     },
     {
       key: 'stage' as const,
-      label: selectedClassStageFilter,
+      defaultLabel: '学段',
+      label: selectedClassStageFilter === '全部学段' ? '学段' : selectedClassStageFilter,
       selected: selectedClassStageFilter !== '全部学段',
     },
     {
       key: 'grade' as const,
-      label: selectedGradeFilter === '全部' ? '全部年级' : selectedGradeFilter,
+      defaultLabel: '年级',
+      label: selectedGradeFilter === '全部' ? '年级' : selectedGradeFilter,
       selected: selectedGradeFilter !== '全部',
     },
   ];
-  const handleClassFilterLayerClick = (layer: typeof activeClassFilterLayer, selected: boolean) => {
-    if (!selected) {
-      setActiveClassFilterLayer(layer);
-      return;
-    }
+  const handleClearClassFilter = (layer: typeof activeClassFilterLayer) => {
     if (layer === 'subject') {
       setSelectedSubjectFilter('全部学科');
-      setSelectedClassTeacherFilter('all');
-      setSelectedClassStageFilter('全部学段');
-      setSelectedGradeFilter('全部');
-      setActiveClassFilterLayer('subject');
       return;
     }
     if (layer === 'teacher') {
       setSelectedClassTeacherFilter('all');
-      setSelectedClassStageFilter('全部学段');
-      setSelectedGradeFilter('全部');
-      setActiveClassFilterLayer('teacher');
       return;
     }
     if (layer === 'stage') {
       setSelectedClassStageFilter('全部学段');
-      setSelectedGradeFilter('全部');
-      setActiveClassFilterLayer('stage');
       return;
     }
     setSelectedGradeFilter('全部');
-    setActiveClassFilterLayer('grade');
   };
-  const filteredClasses = classes.filter((item) => {
-    if (selectedSubjectFilter !== '全部学科' && item.subject !== selectedSubjectFilter) {
-      return false;
+  const handleSelectClassFilterOption = (value: string | number) => {
+    if (!activeClassFilterLayer) {
+      return;
     }
-    const itemTeacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
-    if (selectedClassTeacherFilter !== 'all' && itemTeacherUserId !== selectedClassTeacherFilter) {
-      return false;
+    if (activeClassFilterLayer === 'subject') {
+      setSelectedSubjectFilter(String(value));
+    } else if (activeClassFilterLayer === 'teacher') {
+      setSelectedClassTeacherFilter(value === 'all' ? 'all' : Number(value));
+    } else if (activeClassFilterLayer === 'stage') {
+      setSelectedClassStageFilter(String(value));
+    } else {
+      setSelectedGradeFilter(String(value));
     }
-    if (selectedClassStageFilter !== '全部学段' && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) !== selectedClassStageFilter) {
-      return false;
+  };
+  const handleClassFilterAreaEnter = () => {
+    if (classFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(classFilterCloseTimerRef.current);
+      classFilterCloseTimerRef.current = null;
     }
-    if (selectedGradeFilter === '全部') {
-      return true;
+  };
+  const handleClassFilterAreaLeave = () => {
+    if (classFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(classFilterCloseTimerRef.current);
     }
-    return normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === selectedGradeFilter;
-  }).sort((left, right) => {
+    classFilterCloseTimerRef.current = window.setTimeout(() => {
+      setActiveClassFilterLayer(null);
+      classFilterCloseTimerRef.current = null;
+    }, 120);
+  };
+  useEffect(() => {
+    if (selectedSubjectFilter !== '全部学科' && !classSubjectFilterOptions.includes(selectedSubjectFilter)) {
+      setSelectedSubjectFilter('全部学科');
+    }
+    if (selectedClassTeacherFilter !== 'all' && !classTeacherFilterOptions.some((user) => user.id === selectedClassTeacherFilter)) {
+      setSelectedClassTeacherFilter('all');
+    }
+    if (selectedClassStageFilter !== '全部学段' && !classStageFilterOptions.includes(selectedClassStageFilter)) {
+      setSelectedClassStageFilter('全部学段');
+    }
+    if (selectedGradeFilter !== '全部' && !classGradeFilterOptions.includes(selectedGradeFilter)) {
+      setSelectedGradeFilter('全部');
+    }
+  }, [classSubjectFilterOptions, classTeacherFilterOptions, classStageFilterOptions, classGradeFilterOptions, selectedSubjectFilter, selectedClassTeacherFilter, selectedClassStageFilter, selectedGradeFilter]);
+  useEffect(() => {
+    if (overviewSubjectFilter !== '全部学科' && !overviewSubjectFilterOptions.includes(overviewSubjectFilter)) {
+      setOverviewSubjectFilter('全部学科');
+    }
+    if (overviewTeacherFilter !== 'all' && !overviewTeacherFilterOptions.some((user) => user.id === overviewTeacherFilter)) {
+      setOverviewTeacherFilter('all');
+    }
+    if (overviewStageFilter !== '全部学段' && !overviewStageFilterOptions.includes(overviewStageFilter)) {
+      setOverviewStageFilter('全部学段');
+    }
+    if (overviewGradeFilter !== '全部' && !overviewGradeFilterOptions.includes(overviewGradeFilter)) {
+      setOverviewGradeFilter('全部');
+    }
+  }, [overviewSubjectFilterOptions, overviewTeacherFilterOptions, overviewStageFilterOptions, overviewGradeFilterOptions, overviewSubjectFilter, overviewTeacherFilter, overviewStageFilter, overviewGradeFilter]);
+  const activeClassFilterOptions = !activeClassFilterLayer
+    ? []
+    : activeClassFilterLayer === 'subject'
+      ? classSubjectFilterOptions.map((option) => ({ id: option, label: option, selected: selectedSubjectFilter === option }))
+      : activeClassFilterLayer === 'teacher'
+        ? [
+          ...classTeacherFilterOptions.map((teacher) => ({ id: teacher.id, label: teacher.name, selected: selectedClassTeacherFilter === teacher.id })),
+        ]
+        : activeClassFilterLayer === 'stage'
+          ? classStageFilterOptions.map((stage) => ({ id: stage, label: stage, selected: selectedClassStageFilter === stage }))
+          : classGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: selectedGradeFilter === grade }));
+  const activeOverviewFilterOptions = !activeOverviewFilterLayer
+    ? []
+    : activeOverviewFilterLayer === 'subject'
+      ? overviewSubjectFilterOptions.map((option) => ({ id: option, label: option, selected: overviewSubjectFilter === option }))
+      : activeOverviewFilterLayer === 'teacher'
+        ? overviewTeacherFilterOptions.map((teacher) => ({ id: teacher.id, label: teacher.name, selected: overviewTeacherFilter === teacher.id }))
+        : activeOverviewFilterLayer === 'stage'
+          ? overviewStageFilterOptions.map((stage) => ({ id: stage, label: stage, selected: overviewStageFilter === stage }))
+          : overviewGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: overviewGradeFilter === grade }));
+  const getClassInfoIssues = (item: ClassItem) => {
+    const grade = normalizeAcademicGradeLabel(item.current_grade || item.grade || '');
+    return [
+      (!item.subject || !academicSubjectOptions.includes(item.subject)) ? '缺科目' : '',
+      !(item.stage || getAcademicStageFromGrade(grade)) ? '缺学段' : '',
+      !grade ? '缺年级' : '',
+      !item.class_number ? '缺班号' : '',
+      getClassTeacherUserId(item) == null ? '缺负责教师' : '',
+    ].filter(Boolean);
+  };
+  const isClassInfoIncomplete = (item: ClassItem) => getClassInfoIssues(item).length > 0;
+  const filteredClasses = scopedClassItems.filter((item) => classMatchesSelectedFilters(item)).sort((left, right) => {
+    const incompleteDelta = Number(isClassInfoIncomplete(right)) - Number(isClassInfoIncomplete(left));
     const gradeDelta = getAcademicGradeRank(left.current_grade || left.grade || '') - getAcademicGradeRank(right.current_grade || right.grade || '');
-    return gradeDelta || `${left.subject}${left.name}`.localeCompare(`${right.subject}${right.name}`, 'zh-CN') || left.id - right.id;
+    return incompleteDelta || gradeDelta || `${getClassEffectiveSubject(left)}${left.name}`.localeCompare(`${getClassEffectiveSubject(right)}${right.name}`, 'zh-CN') || left.id - right.id;
   });
+  const overviewFilteredClasses = scopedClassItems.filter((item) => overviewMatchesSelectedFilters(item));
+  const classSummaryTeacherKeys = new Set(overviewFilteredClasses.map((item) => {
+    const teacherUserId = getClassTeacherUserId(item);
+    return teacherUserId == null
+      ? (item.teacher_name ? `name:${item.teacher_name}` : null)
+      : `id:${teacherUserId}`;
+  }).filter(Boolean));
+  const classOwnerSummaryItems = [
+    { label: '教师人数', value: classSummaryTeacherKeys.size },
+    { label: '学员人数', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.student_count || 0), 0) },
+    { label: '班级数量', value: overviewFilteredClasses.length },
+    { label: '小课数量', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.lesson_count || 0), 0) },
+  ];
+  const classTeacherSummaryItems = [
+    { label: '主讲教师', value: currentUser.display_name || currentUser.username },
+    { label: '学员人数', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.student_count || 0), 0) },
+    { label: '班级数量', value: overviewFilteredClasses.length },
+    { label: '小课数量', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.lesson_count || 0), 0) },
+  ];
+  const classSummaryItems = canUseOrganizationClassFilters ? classOwnerSummaryItems : classTeacherSummaryItems;
 
   const newClassForm = formByClassId.new || createEmptyClassForm();
   const newClassExpanded = expandedClassId === 'new';
   const newClassTeacher = newClassTeacherUserId == null ? undefined : users.find((user) => user.id === newClassTeacherUserId);
+  const newClassGradeOptions = studentCenterGradeGroups[newClassForm.stage] || studentCenterGradeOptions;
+  const newClassDisplayNamePreview = buildClassDisplayName({ ...newClassForm, show_cohort_year: true }) || '2025级·四年级·1班';
   const newClassFilteredUsers = users.filter((user) => {
     const keyword = (teacherSearchByClassId.new || '').trim().toLowerCase();
     if (newClassTeacherUserId === user.id) {
@@ -9379,6 +9739,59 @@ const ClassManagementPage = ({
   });
   const editingClass = typeof expandedClassId === 'number' ? classes.find((item) => item.id === expandedClassId) ?? null : null;
   const editingFormState = editingClass ? (formByClassId[getClassStateKey(editingClass.id)] || toClassFormValues(editingClass)) : null;
+  const editingClassGradeOptions = editingFormState ? (studentCenterGradeGroups[editingFormState.stage] || studentCenterGradeOptions) : studentCenterGradeOptions;
+  const editingClassDisplayNamePreview = editingFormState ? buildClassDisplayName({ ...editingFormState, show_cohort_year: true }) || '2025级·四年级·1班' : '';
+  const getClassDisplayName = (item: ClassItem) => buildClassDisplayName({
+    name: item.name || '',
+    subject: item.subject || '',
+    grade: item.grade || '',
+    teacher_name: item.teacher_name || '',
+    stage: item.stage || '',
+    current_grade: item.current_grade || item.grade || '',
+    class_number: item.class_number || '',
+    cohort_year: item.cohort_year ? String(item.cohort_year) : '',
+    show_cohort_year: showClassCohortYear,
+    is_bridge: Boolean(item.is_bridge),
+    bridge_target: item.bridge_target || '',
+    content_track: item.content_track || '',
+  }) || item.name;
+  const isClassFormDraftDirty = (classId: number | 'new') => {
+    const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
+    const savedClass = classId === 'new' ? null : classes.find((item) => item.id === classId);
+    if (classId !== 'new' && !savedClass) {
+      return false;
+    }
+    const savedForm = classId === 'new' ? createEmptyClassForm() : toClassFormValues(savedClass as ClassItem);
+    if (getClassFormDirtySignature(currentForm) !== getClassFormDirtySignature(savedForm)) {
+      return true;
+    }
+    return classId === 'new' && newClassTeacherUserId !== null;
+  };
+  const resetClassFormDraft = (classId: number | 'new') => {
+    if (classId === 'new') {
+      setFormByClassId((current) => ({ ...current, new: createEmptyClassForm() }));
+      setNewClassTeacherUserId(null);
+      setTeacherSearchByClassId((current) => ({ ...current, new: '' }));
+      return;
+    }
+    const savedClass = classes.find((item) => item.id === classId);
+    if (!savedClass) {
+      return;
+    }
+    setFormByClassId((current) => ({ ...current, [getClassStateKey(classId)]: toClassFormValues(savedClass) }));
+  };
+  const attemptCloseClassEditor = () => {
+    if (expandedClassId === null) {
+      return;
+    }
+    if (isClassFormDraftDirty(expandedClassId) && !window.confirm('有未保存的修改，确定放弃并关闭吗？')) {
+      return;
+    }
+    resetClassFormDraft(expandedClassId);
+    setFormError('');
+    setAssignmentError('');
+    setExpandedClassId(null);
+  };
   const editingTeacherSearch = editingClass ? (teacherSearchByClassId[getClassStateKey(editingClass.id)] || '') : '';
   const editingCurrentTeacherUserId = editingClass
     ? (teacherBindingByClassId[editingClass.id] ?? editingClass.teacher_user_id ?? null)
@@ -9407,61 +9820,312 @@ const ClassManagementPage = ({
         return user.name.toLowerCase().includes(keyword);
       })
     : [];
-  const studentRows = classes.flatMap((classItem) => (studentsByClassId[classItem.id] || []).map((student) => ({
+  const studentRows = scopedClassItems.flatMap((classItem) => (studentsByClassId[classItem.id] || []).map((student) => ({
     ...student,
     classItem,
     teacherUserId: teacherBindingByClassId[classItem.id] ?? classItem.teacher_user_id ?? null,
   })));
-  const studentSubjectFilterOptions = academicSubjectFilterOptions;
-  const studentTeacherFilterBaseRows = studentRows.filter((item) => studentSubjectFilter === '全部学科' || item.classItem.subject === studentSubjectFilter);
-  const studentTeacherFilterOptions = users.filter((user) => studentTeacherFilterBaseRows.some((item) => item.teacherUserId === user.id));
-  const studentStageFilterBaseRows = studentTeacherFilterBaseRows.filter((item) => studentTeacherFilter == null || item.teacherUserId === studentTeacherFilter);
-  const studentGradeFilterBaseRows = studentStageFilterBaseRows.filter((item) => {
-    if (!studentStageFilter) return true;
-    return (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) === studentStageFilter;
-  });
-  const studentVisibleGradeOptions = studentCenterGradeOptions.filter((grade) => {
-    if (studentStageFilter && !studentCenterGradeGroups[studentStageFilter]?.includes(grade)) return false;
-    return studentGradeFilterBaseRows.some((item) => normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') === grade);
-  });
-  const studentClassFilterOptions = classes.filter((classItem) => {
-    if (studentSubjectFilter !== '全部学科' && classItem.subject !== studentSubjectFilter) return false;
-    const teacherUserId = teacherBindingByClassId[classItem.id] ?? classItem.teacher_user_id ?? null;
-    if (studentTeacherFilter != null && teacherUserId !== studentTeacherFilter) return false;
-    if (studentStageFilter && (classItem.stage || getAcademicStageFromGrade(classItem.current_grade || classItem.grade || '')) !== studentStageFilter) return false;
-    if (studentGradeFilter && normalizeAcademicGradeLabel(classItem.current_grade || classItem.grade || '') !== studentGradeFilter) return false;
+  const studentMatchesSelectedFilters = (item: (typeof studentRows)[number], except?: typeof activeStudentFilterLayer) => {
+    if (except !== 'subject' && studentSubjectFilter !== '全部学科' && getClassEffectiveSubject(item.classItem) !== studentSubjectFilter) {
+      return false;
+    }
+    if (except !== 'teacher' && studentTeacherFilter !== 'all' && item.teacherUserId !== studentTeacherFilter) {
+      return false;
+    }
+    if (except !== 'stage' && studentStageFilter !== '全部学段' && (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) !== studentStageFilter) {
+      return false;
+    }
+    if (except !== 'grade' && studentGradeFilter !== '全部' && normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') !== studentGradeFilter) {
+      return false;
+    }
+    if (except !== 'class' && studentClassFilter !== 'all' && item.classItem.id !== studentClassFilter) {
+      return false;
+    }
+    if (except !== 'student' && studentNameFilter.trim() && !item.name.includes(studentNameFilter.trim())) {
+      return false;
+    }
     return true;
+  };
+  const getStudentFilterOptionBase = (layer: typeof activeStudentFilterLayer) => studentRows.filter((item) => studentMatchesSelectedFilters(item, layer));
+  const studentSubjectFilterOptions = academicSubjectOptions;
+  const studentTeacherFilterOptions = users.filter((user) => getStudentFilterOptionBase('teacher').some((item) => item.teacherUserId === user.id));
+  const studentStageFilterOptions = studentCenterStageOptions.filter((stage) => getStudentFilterOptionBase('stage').some((item) => (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) === stage));
+  const studentGradeFilterOptions = studentCenterGradeOptions.filter((grade) => {
+    if (studentStageFilter !== '全部学段' && !studentCenterGradeGroups[studentStageFilter]?.includes(grade)) {
+      return false;
+    }
+    return getStudentFilterOptionBase('grade').some((item) => normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') === grade);
   });
-  const filteredStudentRows = studentRows.filter((item) => {
-    if (studentSubjectFilter !== '全部学科' && item.classItem.subject !== studentSubjectFilter) return false;
-    if (studentTeacherFilter != null && item.teacherUserId !== studentTeacherFilter) return false;
-    if (studentStageFilter && (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) !== studentStageFilter) return false;
-    if (studentGradeFilter && normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') !== studentGradeFilter) return false;
-    if (studentClassFilter != null && item.classItem.id !== studentClassFilter) return false;
-    if (studentNameFilter && !item.name.includes(studentNameFilter)) return false;
-    return true;
-  }).sort((left, right) => {
+  const studentClassFilterOptions = scopedClassItems.filter((classItem) => getStudentFilterOptionBase('class').some((item) => item.classItem.id === classItem.id));
+  const filteredStudentRows = studentRows.filter((item) => studentMatchesSelectedFilters(item)).sort((left, right) => {
     const gradeDelta = getAcademicGradeRank(left.classItem.current_grade || left.classItem.grade || '') - getAcademicGradeRank(right.classItem.current_grade || right.classItem.grade || '');
     return gradeDelta || left.classItem.name.localeCompare(right.classItem.name, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN') || left.id - right.id;
   });
   const activeStudentFilterSummary = [
+    studentTeacherFilter !== 'all' ? users.find((user) => user.id === studentTeacherFilter)?.name || '指定教师' : '',
     studentSubjectFilter !== '全部学科' ? studentSubjectFilter : '',
-    studentTeacherFilter != null ? users.find((user) => user.id === studentTeacherFilter)?.name || '指定教师' : '',
-    studentStageFilter,
-    studentGradeFilter,
-    studentClassFilter != null ? classes.find((item) => item.id === studentClassFilter)?.name || '指定班级' : '',
-    studentNameFilter,
+    studentStageFilter !== '全部学段' ? studentStageFilter : '',
+    studentGradeFilter !== '全部' ? studentGradeFilter : '',
+    studentClassFilter !== 'all' ? scopedClassItems.find((item) => item.id === studentClassFilter)?.name || '指定班级' : '',
+    studentNameFilter.trim(),
   ].filter(Boolean).join(' / ') || '全部';
+  const studentFilterItems = [
+    {
+      key: 'subject' as const,
+      defaultLabel: '科目',
+      label: studentSubjectFilter === '全部学科' ? '科目' : studentSubjectFilter,
+      selected: studentSubjectFilter !== '全部学科',
+    },
+    {
+      key: 'teacher' as const,
+      defaultLabel: '教师',
+      label: studentTeacherFilter === 'all' ? '教师' : users.find((user) => user.id === studentTeacherFilter)?.name || '指定教师',
+      selected: studentTeacherFilter !== 'all',
+    },
+    {
+      key: 'stage' as const,
+      defaultLabel: '学段',
+      label: studentStageFilter === '全部学段' ? '学段' : studentStageFilter,
+      selected: studentStageFilter !== '全部学段',
+    },
+    {
+      key: 'grade' as const,
+      defaultLabel: '年级',
+      label: studentGradeFilter === '全部' ? '年级' : studentGradeFilter,
+      selected: studentGradeFilter !== '全部',
+    },
+    {
+      key: 'class' as const,
+      defaultLabel: '班级',
+      label: studentClassFilter === 'all' ? '班级' : scopedClassItems.find((item) => item.id === studentClassFilter)?.name || '指定班级',
+      selected: studentClassFilter !== 'all',
+    },
+  ];
+  const handleClearStudentFilter = (layer: typeof activeStudentFilterLayer) => {
+    if (layer === 'subject') {
+      setStudentSubjectFilter('全部学科');
+      return;
+    }
+    if (layer === 'teacher') {
+      setStudentTeacherFilter('all');
+      return;
+    }
+    if (layer === 'stage') {
+      setStudentStageFilter('全部学段');
+      return;
+    }
+    if (layer === 'grade') {
+      setStudentGradeFilter('全部');
+      return;
+    }
+    setStudentClassFilter('all');
+  };
+  const handleSelectStudentFilterOption = (value: string | number) => {
+    if (!activeStudentFilterLayer) {
+      return;
+    }
+    if (activeStudentFilterLayer === 'subject') {
+      setStudentSubjectFilter(String(value));
+    } else if (activeStudentFilterLayer === 'teacher') {
+      setStudentTeacherFilter(value === 'all' ? 'all' : Number(value));
+    } else if (activeStudentFilterLayer === 'stage') {
+      setStudentStageFilter(String(value));
+    } else if (activeStudentFilterLayer === 'grade') {
+      setStudentGradeFilter(String(value));
+    } else if (activeStudentFilterLayer === 'class') {
+      setStudentClassFilter(value === 'all' ? 'all' : Number(value));
+    }
+  };
+  const handleStudentFilterAreaEnter = () => {
+    if (studentFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(studentFilterCloseTimerRef.current);
+      studentFilterCloseTimerRef.current = null;
+    }
+  };
+  const handleStudentFilterAreaLeave = () => {
+    if (studentFilterCloseTimerRef.current !== null) {
+      window.clearTimeout(studentFilterCloseTimerRef.current);
+    }
+    studentFilterCloseTimerRef.current = window.setTimeout(() => {
+      setActiveStudentFilterLayer(null);
+      studentFilterCloseTimerRef.current = null;
+    }, 120);
+  };
+  useEffect(() => {
+    if (studentSubjectFilter !== '全部学科' && !studentSubjectFilterOptions.includes(studentSubjectFilter)) {
+      setStudentSubjectFilter('全部学科');
+    }
+    if (studentTeacherFilter !== 'all' && !studentTeacherFilterOptions.some((user) => user.id === studentTeacherFilter)) {
+      setStudentTeacherFilter('all');
+    }
+    if (studentStageFilter !== '全部学段' && !studentStageFilterOptions.includes(studentStageFilter)) {
+      setStudentStageFilter('全部学段');
+    }
+    if (studentGradeFilter !== '全部' && !studentGradeFilterOptions.includes(studentGradeFilter)) {
+      setStudentGradeFilter('全部');
+    }
+    if (studentClassFilter !== 'all' && !studentClassFilterOptions.some((item) => item.id === studentClassFilter)) {
+      setStudentClassFilter('all');
+    }
+  }, [studentSubjectFilterOptions, studentTeacherFilterOptions, studentStageFilterOptions, studentGradeFilterOptions, studentClassFilterOptions, studentSubjectFilter, studentTeacherFilter, studentStageFilter, studentGradeFilter, studentClassFilter]);
+  const activeStudentFilterOptions = !activeStudentFilterLayer
+    ? []
+    : activeStudentFilterLayer === 'subject'
+      ? studentSubjectFilterOptions.map((option) => ({ id: option, label: option, selected: studentSubjectFilter === option }))
+      : activeStudentFilterLayer === 'teacher'
+        ? studentTeacherFilterOptions.map((teacher) => ({ id: teacher.id, label: teacher.name, selected: studentTeacherFilter === teacher.id }))
+        : activeStudentFilterLayer === 'stage'
+          ? studentStageFilterOptions.map((stage) => ({ id: stage, label: stage, selected: studentStageFilter === stage }))
+          : activeStudentFilterLayer === 'grade'
+            ? studentGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: studentGradeFilter === grade }))
+            : studentClassFilterOptions.map((classItem) => ({ id: classItem.id, label: classItem.name, selected: studentClassFilter === classItem.id }));
+  const handleClassCardClick = (event: React.MouseEvent, classId: number) => {
+    if ((event.target as HTMLElement).closest('button, a, input, select, textarea')) {
+      return;
+    }
+    handleToggleExpandedClass(classId);
+  };
 
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <section className={`${workspaceCardClass} space-y-4 p-6`}>
         <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Class Workspace</p>
-        <div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">班级管理</h3>
-          <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-            在这里统一管理 {currentUser.organization_name} 的班级信息与负责老师安排。
-          </p>
+        <div className="relative flex flex-wrap items-center gap-2">
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">校区总览</h3>
+          <div
+            className="relative"
+            onMouseEnter={() => setActiveClassHelpKey('overview')}
+            onMouseLeave={() => setActiveClassHelpKey(null)}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveClassHelpKey((current) => current === 'overview' ? null : 'overview')}
+              className="inline-flex h-8 w-8 items-center justify-center text-sky-600 transition hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
+              aria-label="查看校区总览说明"
+            >
+              <Info size={16} />
+            </button>
+            {activeClassHelpKey === 'overview' && (
+              <div className="absolute left-0 top-10 z-20 w-[min(24rem,calc(100vw-3rem))] rounded-2xl border border-sky-100 bg-white p-4 text-sm text-slate-500 shadow-[0_18px_40px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
+                <p className="font-semibold text-slate-900 dark:text-white">校区总览说明</p>
+                <p className="mt-2">这里汇总 {currentUser.organization_name} 的教师、学员、班级和小课数量，可按科目、教师、学段和年级查看不同范围。</p>
+              </div>
+            )}
+          </div>
+          <div
+            className="relative"
+            onMouseEnter={handleOverviewFilterAreaEnter}
+            onMouseLeave={handleOverviewFilterAreaLeave}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setIsOverviewFilterOpen((current) => {
+                  if (current) {
+                    setActiveOverviewFilterLayer(null);
+                    setClickedOverviewFilterLayer(null);
+                  }
+                  return !current;
+                });
+              }}
+              className={cn(
+                'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
+                isOverviewFilterOpen || activeOverviewFilterSummary !== '全校区'
+                  ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
+                  : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+              )}
+            >
+              {activeOverviewFilterSummary === '全校区' ? '全校区' : `全校区：${activeOverviewFilterSummary}`}
+              {activeOverviewFilterSummary !== '全校区' ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="清空校区总览筛选"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClearOverviewFilters();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleClearOverviewFilters();
+                    }
+                  }}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-xs leading-none text-sky-600 hover:bg-sky-200 dark:bg-slate-950/20 dark:hover:bg-slate-950/30"
+                >
+                  ×
+                </span>
+              ) : null}
+            </button>
+            {isOverviewFilterOpen && (
+              <div className="absolute left-0 top-11 z-20 w-[min(28rem,calc(100vw-3rem))] space-y-3 rounded-2xl border border-sky-100 bg-white p-3 shadow-[0_18px_40px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-900">
+                <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-3 dark:border-white/10 dark:bg-white/5">
+                  <div className="flex flex-wrap gap-2">
+                    {overviewFilterItems.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onMouseEnter={() => {
+                          handleOverviewLayerEnter();
+                          setActiveOverviewFilterLayer(item.key);
+                          setClickedOverviewFilterLayer(null);
+                        }}
+                        onMouseLeave={handleOverviewLayerLeave}
+                        onClick={() => {
+                          handleOverviewLayerEnter();
+                          if (activeOverviewFilterLayer === item.key) {
+                            setActiveOverviewFilterLayer(null);
+                            setClickedOverviewFilterLayer(null);
+                            return;
+                          }
+                          setActiveOverviewFilterLayer(item.key);
+                          setClickedOverviewFilterLayer(item.key);
+                        }}
+                        className={cn(
+                          'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                          activeOverviewFilterLayer === item.key || item.selected
+                            ? 'border-sky-300 bg-sky-50/80 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
+                            : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 hover:shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-100',
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {activeOverviewFilterLayer && (
+                  <div
+                    className="rounded-2xl border border-sky-100 bg-sky-50/70 p-3 dark:border-white/10 dark:bg-white/5"
+                    onMouseEnter={handleOverviewLayerEnter}
+                    onMouseLeave={handleOverviewLayerLeave}
+                  >
+                    {activeOverviewFilterOptions.length === 0 ? (
+                      <p className="text-sm text-slate-400 dark:text-slate-500">当前条件下暂无可选项。</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {activeOverviewFilterOptions.map((option) => (
+                          <button
+                            key={`${activeOverviewFilterLayer}-${option.id}`}
+                            type="button"
+                            onClick={() => handleSelectOverviewFilterOption(option.id)}
+                            className={cn(
+                              'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                              option.selected
+                                ? 'border-sky-500 bg-sky-500 text-white'
+                                : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                            )}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         {classBindingTarget && (
           <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-sky-500/30 dark:bg-sky-500/10">
@@ -9480,19 +10144,13 @@ const ClassManagementPage = ({
             )}
           </div>
         )}
-        <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">班级命名规则</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">按「学科 + 年级 + 班级」维护班级信息，例如：数学七年级三班、物理七年级二班。学科填写具体科目，班级名称填写“三班”这类班级序号。</p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">班级数量</p>
-            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{classes.length}</p>
-          </div>
-          <div className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">成员数量</p>
-            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{users.length}</p>
-          </div>
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {classSummaryItems.map((item) => (
+            <div key={item.label} className={`${workspaceSoftCardClass} p-4`}>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{item.label}</p>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{item.value}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -9528,108 +10186,108 @@ const ClassManagementPage = ({
         <section className={`${workspaceCardClass} space-y-5 p-6`}>
           <div>
             <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学员管理</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">默认展示全部学员，可按教师、学段、年级、班级和学员逐级点击筛选。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">默认展示全部学员，可按教师、科目、学段、年级、班级筛选，并查询学员姓名。</p>
           </div>
-          <div className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10">
+          <div
+            className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10"
+            onMouseEnter={handleStudentFilterAreaEnter}
+            onMouseLeave={handleStudentFilterAreaLeave}
+          >
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选：{activeStudentFilterSummary}</span>
-              {[
-                { key: 'subject' as const, label: studentSubjectFilter },
-                { key: 'teacher' as const, label: studentTeacherFilter == null ? '全部教师' : users.find((user) => user.id === studentTeacherFilter)?.name || '指定教师' },
-                { key: 'stage' as const, label: studentStageFilter || '全部学段' },
-                { key: 'grade' as const, label: studentGradeFilter || '全部年级' },
-                { key: 'class' as const, label: studentClassFilter == null ? '全部班级' : classes.find((item) => item.id === studentClassFilter)?.name || '指定班级' },
-                { key: 'student' as const, label: studentNameFilter || '学员姓名' },
-              ].map((item) => (
+              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选</span>
+              {studentFilterItems.map((item) => (
                 <button
                   key={item.key}
                   type="button"
+                  onMouseEnter={() => setActiveStudentFilterLayer(item.key)}
                   onClick={() => setActiveStudentFilterLayer(item.key)}
                   className={cn(
-                    'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                    activeStudentFilterLayer === item.key
+                    'inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
+                    item.selected
                       ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
-                      : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                      : activeStudentFilterLayer === item.key
+                        ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
+                        : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
                   )}
                 >
                   {item.label}
+                  {item.selected && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`取消${item.defaultLabel}筛选`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleClearStudentFilter(item.key);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleClearStudentFilter(item.key);
+                        }
+                      }}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/25 text-xs leading-none hover:bg-white/40 dark:bg-slate-950/20 dark:hover:bg-slate-950/30"
+                    >
+                      ×
+                    </span>
+                  )}
                 </button>
               ))}
+              <span className="ml-auto text-xs font-semibold text-slate-400 dark:text-slate-500">
+                {canUseOrganizationClassFilters ? '全机构学员' : '仅本人学员'}
+              </span>
+              <label className="relative w-full sm:ml-2 sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-300" size={16} />
+                <input
+                  value={studentNameFilter}
+                  onChange={(event) => setStudentNameFilter(event.target.value)}
+                  placeholder="学员姓名查询"
+                  className={`${workspaceFieldClass} h-10 rounded-full bg-white py-2 pl-9 pr-9 text-sm dark:bg-slate-900/60`}
+                />
+                {studentNameFilter.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => setStudentNameFilter('')}
+                    className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400 transition hover:bg-sky-100 hover:text-sky-600 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-sky-400/20 dark:hover:text-sky-100"
+                    aria-label="清空学员姓名查询"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </label>
             </div>
-            <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3 dark:border-white/10 dark:bg-white/5">
-              {activeStudentFilterLayer === 'subject' && (
-                <div className="flex flex-wrap gap-2">
-                  {studentSubjectFilterOptions.map((option) => (
-                    <button key={option} type="button" onClick={() => {
-                      setStudentSubjectFilter(option);
-                      setStudentTeacherFilter(null);
-                      setStudentStageFilter('');
-                      setStudentGradeFilter('');
-                      setStudentClassFilter(null);
-                    }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentSubjectFilter === option ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{option}</button>
-                  ))}
-                </div>
-              )}
-              {activeStudentFilterLayer === 'teacher' && (
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => {
-                    setStudentTeacherFilter(null);
-                    setStudentStageFilter('');
-                    setStudentGradeFilter('');
-                    setStudentClassFilter(null);
-                  }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentTeacherFilter == null ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部教师</button>
-                  {studentTeacherFilterOptions.map((user) => (
-                    <button key={user.id} type="button" onClick={() => {
-                      setStudentTeacherFilter(user.id);
-                      setStudentStageFilter('');
-                      setStudentGradeFilter('');
-                      setStudentClassFilter(null);
-                    }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentTeacherFilter === user.id ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{user.name}</button>
-                  ))}
-                </div>
-              )}
-              {activeStudentFilterLayer === 'stage' && (
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => {
-                    setStudentStageFilter('');
-                    setStudentGradeFilter('');
-                    setStudentClassFilter(null);
-                  }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', !studentStageFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部学段</button>
-                  {studentCenterStageOptions.map((stage) => (
-                    <button key={stage} type="button" onClick={() => {
-                      setStudentStageFilter(stage);
-                      setStudentGradeFilter('');
-                      setStudentClassFilter(null);
-                    }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentStageFilter === stage ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{stage}</button>
-                  ))}
-                </div>
-              )}
-              {activeStudentFilterLayer === 'grade' && (
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => {
-                    setStudentGradeFilter('');
-                    setStudentClassFilter(null);
-                  }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', !studentGradeFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部年级</button>
-                  {studentVisibleGradeOptions.map((grade) => (
-                    <button key={grade} type="button" onClick={() => {
-                      setStudentGradeFilter(grade);
-                      setStudentClassFilter(null);
-                    }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentGradeFilter === grade ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{grade}</button>
-                  ))}
-                </div>
-              )}
-              {activeStudentFilterLayer === 'class' && (
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setStudentClassFilter(null)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentClassFilter == null ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部班级</button>
-                  {studentClassFilterOptions.map((item) => (
-                    <button key={item.id} type="button" onClick={() => setStudentClassFilter(item.id)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', studentClassFilter === item.id ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{item.name}</button>
-                  ))}
-                </div>
-              )}
-              {activeStudentFilterLayer === 'student' && (
-                <input value={studentNameFilter} onChange={(event) => setStudentNameFilter(event.target.value)} placeholder="筛选学员姓名" className={`${workspaceFieldClass} max-w-sm bg-white dark:bg-slate-900/60`} />
-              )}
-            </div>
+            {activeStudentFilterLayer && (
+              <div className="rounded-2xl border border-sky-100 bg-white p-3 shadow-[0_12px_30px_rgba(14,165,233,0.08)] dark:border-white/10 dark:bg-slate-900/70">
+                <p className="mb-2 text-xs font-bold text-slate-400 dark:text-slate-500">
+                  {studentFilterItems.find((item) => item.key === activeStudentFilterLayer)?.defaultLabel || '筛选'}筛选
+                </p>
+                {activeStudentFilterOptions.length === 0 ? (
+                  <p className="text-sm text-slate-400 dark:text-slate-500">当前条件下暂无可选项。</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {activeStudentFilterOptions.map((option) => (
+                      <button
+                        key={`${activeStudentFilterLayer}-${option.id}`}
+                        type="button"
+                        onClick={() => handleSelectStudentFilterOption(option.id)}
+                        className={cn(
+                          'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                          option.selected
+                            ? 'border-sky-500 bg-sky-500 text-white'
+                            : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              当前：{activeStudentFilterSummary}。未筛选时默认按年级、班级和姓名排序。
+            </p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {filteredStudentRows.length ? filteredStudentRows.map((item) => {
@@ -9679,16 +10337,21 @@ const ClassManagementPage = ({
           </div>
         </div>
 
-        <div className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10">
+        <div
+          className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10"
+          onMouseEnter={handleClassFilterAreaEnter}
+          onMouseLeave={handleClassFilterAreaLeave}
+        >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选：{activeClassFilterSummary}</span>
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选</span>
             {classFilterItems.map((item) => (
               <button
                 key={item.key}
                 type="button"
-                onClick={() => handleClassFilterLayerClick(item.key, item.selected)}
+                onMouseEnter={() => setActiveClassFilterLayer(item.key)}
+                onClick={() => setActiveClassFilterLayer(item.key)}
                 className={cn(
-                  'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                  'inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
                   item.selected
                     ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
                     : activeClassFilterLayer === item.key
@@ -9696,61 +10359,74 @@ const ClassManagementPage = ({
                     : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
                 )}
               >
-                {item.label}
-              </button>
+                  {item.label}
+                  {item.selected && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`取消${item.defaultLabel}筛选`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleClearClassFilter(item.key);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleClearClassFilter(item.key);
+                        }
+                      }}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/25 text-xs leading-none hover:bg-white/40 dark:bg-slate-950/20 dark:hover:bg-slate-950/30"
+                    >
+                      ×
+                    </span>
+                  )}
+                </button>
             ))}
+            <span className="ml-auto text-xs font-semibold text-slate-400 dark:text-slate-500">
+              {canUseOrganizationClassFilters ? '全机构班级' : '仅本人班级'}
+            </span>
+            <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-sky-100 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={showClassCohortYear}
+                onChange={(event) => setShowClassCohortYear(event.target.checked)}
+                className="h-4 w-4 rounded border-sky-200 text-sky-600 focus:ring-sky-500"
+              />
+              入学年级
+            </label>
           </div>
-          <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3 dark:border-white/10 dark:bg-white/5">
-            {activeClassFilterLayer === 'subject' && (
-              <div className="flex flex-wrap gap-2">
-                {classSubjectFilterOptions.map((option) => (
-                  <button key={option} type="button" onClick={() => {
-                    setSelectedSubjectFilter(option);
-                    setSelectedClassTeacherFilter('all');
-                    setSelectedClassStageFilter('全部学段');
-                    setSelectedGradeFilter('全部');
-                  }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', option === selectedSubjectFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{option}</button>
-                ))}
-              </div>
-            )}
-            {activeClassFilterLayer === 'teacher' && (
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => {
-                  setSelectedClassTeacherFilter('all');
-                  setSelectedClassStageFilter('全部学段');
-                  setSelectedGradeFilter('全部');
-                }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', selectedClassTeacherFilter === 'all' ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部教师</button>
-                {classTeacherFilterOptions.map((teacher) => (
-                  <button key={teacher.id} type="button" onClick={() => {
-                    setSelectedClassTeacherFilter(teacher.id);
-                    setSelectedClassStageFilter('全部学段');
-                    setSelectedGradeFilter('全部');
-                  }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', selectedClassTeacherFilter === teacher.id ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{teacher.name}</button>
-                ))}
-              </div>
-            )}
-            {activeClassFilterLayer === 'stage' && (
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => {
-                  setSelectedClassStageFilter('全部学段');
-                  setSelectedGradeFilter('全部');
-                }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', selectedClassStageFilter === '全部学段' ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>全部学段</button>
-                {studentCenterStageOptions.map((stage) => (
-                  <button key={stage} type="button" onClick={() => {
-                    setSelectedClassStageFilter(stage);
-                    setSelectedGradeFilter('全部');
-                  }} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', selectedClassStageFilter === stage ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{stage}</button>
-                ))}
-              </div>
-            )}
-            {activeClassFilterLayer === 'grade' && (
-              <div className="flex flex-wrap gap-2">
-                {classGradeFilterOptions.map((option) => (
-                  <button key={option} type="button" onClick={() => setSelectedGradeFilter(option)} className={cn('rounded-full border px-3 py-2 text-sm font-semibold', option === selectedGradeFilter ? 'border-sky-500 bg-sky-500 text-white' : 'border-sky-100 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300')}>{option === '全部' ? '全部年级' : option}</button>
-                ))}
-              </div>
-            )}
-          </div>
+          {activeClassFilterLayer && (
+            <div className="rounded-2xl border border-sky-100 bg-white p-3 shadow-[0_12px_30px_rgba(14,165,233,0.08)] dark:border-white/10 dark:bg-slate-900/70">
+              <p className="mb-2 text-xs font-bold text-slate-400 dark:text-slate-500">
+                {classFilterItems.find((item) => item.key === activeClassFilterLayer)?.defaultLabel || '筛选'}筛选
+              </p>
+              {activeClassFilterOptions.length === 0 ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500">当前条件下暂无可选项。</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {activeClassFilterOptions.map((option) => (
+                    <button
+                      key={`${activeClassFilterLayer}-${option.id}`}
+                      type="button"
+                      onClick={() => handleSelectClassFilterOption(option.id)}
+                      className={cn(
+                        'rounded-full border px-3 py-2 text-sm font-semibold transition',
+                        option.selected
+                          ? 'border-sky-500 bg-sky-500 text-white'
+                          : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            当前：{activeClassFilterSummary}。未筛选时默认按年级从低到高排列。
+          </p>
         </div>
 
         {loading ? (
@@ -9758,7 +10434,7 @@ const ClassManagementPage = ({
             正在加载班级数据...
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-3">
             {filteredClasses.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
                 {classes.length === 0 ? '暂无班级，点击右上角“新建班级”开始创建。' : `当前筛选“${activeClassFilterSummary}”下暂无班级。`}
@@ -9767,57 +10443,96 @@ const ClassManagementPage = ({
 
             {filteredClasses.map((item) => {
               const isExpanded = expandedClassId === item.id;
-              const formState = formByClassId[getClassStateKey(item.id)] || toClassFormValues(item);
-              const teacherSearch = teacherSearchByClassId[getClassStateKey(item.id)] || '';
               const currentTeacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
               const currentTeacher = currentTeacherUserId == null ? undefined : users.find((user) => user.id === currentTeacherUserId);
               const teacherSummary = currentTeacher?.name || item.teacher_name || '未分配老师';
-              const teacherBindingSaving = Boolean(teacherBindingSavingByClassId[item.id]);
-              const inviteInfo = inviteByClassId[item.id];
-              const inviteLoading = Boolean(inviteLoadingByClassId[item.id]);
-              const inviteResetting = Boolean(inviteResettingByClassId[item.id]);
-              const inviteError = inviteErrorByClassId[item.id] || '';
-              const filteredUsers = users.filter((user) => {
-                const keyword = teacherSearch.trim().toLowerCase();
-                if (currentTeacherUserId === user.id) {
-                  return true;
-                }
-                if (!keyword) {
-                  return true;
-                }
-                return user.name.toLowerCase().includes(keyword);
-              });
+              const gradeLabel = normalizeAcademicGradeLabel(item.current_grade || item.grade || '') || item.grade || '未填写年级';
+              const stageLabel = item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '') || '未填写学段';
+              const classStudents = studentsByClassId[item.id] || [];
+              const visibleStudentNames = classStudents.slice(0, 4).map((student) => student.name);
+              const missingSubject = !item.subject || !academicSubjectOptions.includes(item.subject);
+              const effectiveSubject = getClassEffectiveSubject(item);
+              const displayName = getClassDisplayName(item);
+              const classInfoIssues = getClassInfoIssues(item);
 
               return (
-                <div key={item.id} className={`${workspaceSoftCardClass} overflow-hidden p-5`}>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleExpandedClass(item.id)}
-                    disabled={classCardInteractionLocked}
+                <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => handleClassCardClick(event, item.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleToggleExpandedClass(item.id);
+                    }
+                  }}
+                  aria-label={`打开班级 ${displayName}`}
+                  className={cn(
+                    `${workspaceSoftCardClass} overflow-hidden p-0 transition hover:border-sky-200 hover:bg-white hover:shadow-[0_14px_34px_rgba(14,165,233,0.10)] dark:hover:border-sky-400/30 dark:hover:bg-white/[0.07]`,
+                    classCardInteractionLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer',
+                  )}
+                >
+                  <div
                     className={cn(
-                      'group flex w-full flex-col gap-4 text-left lg:flex-row lg:items-center lg:justify-between',
-                      classCardInteractionLocked ? 'cursor-not-allowed' : 'cursor-pointer',
+                      'grid gap-4 px-4 py-4 lg:grid-cols-[minmax(14rem,1.25fr)_minmax(18rem,1fr)_auto] lg:items-center',
+                      isExpanded && 'bg-sky-50/60 dark:bg-sky-400/10',
                     )}
                   >
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-lg font-semibold text-slate-900 dark:text-white">{item.name}</span>
-                        {item.subject && (
-                          <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                            {item.subject}
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="truncate text-base font-bold text-slate-900 dark:text-white">{displayName}</span>
+                        {missingSubject ? (
+                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                            需填写科目{effectiveSubject ? ` · 按${effectiveSubject}筛选` : ''}
                           </span>
+                        ) : (
+                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{item.subject}</span>
                         )}
+                        {classInfoIssues.length ? (
+                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                            信息待补全：{classInfoIssues.join(' / ')}
+                          </span>
+                        ) : null}
+                        {item.is_bridge ? (
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-200">衔接</span>
+                        ) : null}
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
-                        <span>{item.grade || '未填写年级'}</span>
-                        <span>当前负责老师：{teacherSummary}</span>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                        <span>{stageLabel}</span>
+                        <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                        <span>{gradeLabel}</span>
+                        <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                        <span>{classStudents.length ? `${classStudents.length}名学员` : '学员未加载'}</span>
                       </div>
                     </div>
-                    <ChevronDown
-                      size={18}
-                      className="text-slate-400 transition-transform duration-200 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300"
-                    />
-                  </button>
+                    <div className="grid grid-cols-3 gap-3 text-sm">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">上课教师</p>
+                        <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{teacherSummary}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">班号</p>
+                        <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{item.class_number ? `${item.class_number}班` : '未填写'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">学员</p>
+                        <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{visibleStudentNames.length ? visibleStudentNames.join('、') : '点击查看'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleExpandedClass(item.id)}
+                        disabled={classCardInteractionLocked}
+                        className={`${workspacePrimaryButtonClass} h-9 px-3 py-2 text-sm`}
+                        title="Command+S / Ctrl+S"
+                      >
+                        编辑
+                      </button>
+                      <ChevronRight size={18} className="text-slate-400 dark:text-slate-500" />
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -9833,7 +10548,7 @@ const ClassManagementPage = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
-            onClick={(e) => e.target === e.currentTarget && !classCardInteractionLocked && setExpandedClassId(null)}
+            onClick={(e) => e.target === e.currentTarget && !classCardInteractionLocked && attemptCloseClassEditor()}
           >
             <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
             <motion.div
@@ -9847,23 +10562,33 @@ const ClassManagementPage = ({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Class Management</p>
                   <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
-                    {newClassExpanded ? '新建班级' : `编辑班级：${editingClass?.name || ''}`}
+                    {newClassExpanded ? '新建班级' : `编辑班级：${editingClass ? getClassDisplayName(editingClass) : ''}`}
                   </h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (classCardInteractionLocked) {
-                      return;
-                    }
-                    setExpandedClassId(null);
-                  }}
-                  disabled={classCardInteractionLocked}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
-                  aria-label="关闭班级编辑窗口"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveClass(newClassExpanded ? 'new' : editingClass?.id || 'new')}
+                    disabled={classCardInteractionLocked}
+                    className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm`}
+                    title="Command+S / Ctrl+S"
+                  >
+                    {saving ? '保存中...' : (newClassExpanded ? '创建班级' : '保存更改')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!classCardInteractionLocked) {
+                        attemptCloseClassEditor();
+                      }
+                    }}
+                    disabled={classCardInteractionLocked}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                    aria-label="关闭班级编辑窗口"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -9888,20 +10613,23 @@ const ClassManagementPage = ({
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">学科</span>
+                        <select
+                          value={academicSubjectOptions.includes(newClassForm.subject) ? newClassForm.subject : ''}
+                          onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
+                          className={workspaceFieldClass}
+                        >
+                          <option value="">请选择学科</option>
+                          {academicSubjectOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-2 text-sm">
                         <span className="text-slate-500 dark:text-slate-400">学段</span>
                         <select value={newClassForm.stage} onChange={(e) => handleFieldChange('new', 'stage', e.target.value)} className={workspaceFieldClass}>
                           {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                         </select>
-                      </label>
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">学科</span>
-                        <input
-                          type="text"
-                          value={newClassForm.subject}
-                          onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
-                          className={workspaceFieldClass}
-                          placeholder="如：数学"
-                        />
                       </label>
                       <label className="space-y-2 text-sm">
                         <span className="text-slate-500 dark:text-slate-400">年级</span>
@@ -9910,7 +10638,7 @@ const ClassManagementPage = ({
                           onChange={(e) => handleFieldChange('new', 'current_grade', e.target.value)}
                           className={workspaceFieldClass}
                         >
-                          {studentCenterGradeOptions.map((option) => (
+                          {newClassGradeOptions.map((option) => (
                             <option key={option} value={option}>{option}</option>
                           ))}
                         </select>
@@ -9927,6 +10655,9 @@ const ClassManagementPage = ({
                         />
                         <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                       </label>
+                      <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
+                        名称预览：{newClassDisplayNamePreview}
+                      </div>
                     </div>
 
                     <div className={`${workspaceCardClass} space-y-5 p-5`}>
@@ -10035,20 +10766,23 @@ const ClassManagementPage = ({
 
                         <div className="grid gap-4 md:grid-cols-2">
                           <label className="space-y-2 text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">学科</span>
+                            <select
+                              value={academicSubjectOptions.includes(editingFormState.subject) ? editingFormState.subject : ''}
+                              onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
+                              className={workspaceFieldClass}
+                            >
+                              <option value="">请选择学科</option>
+                              {academicSubjectOptions.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-2 text-sm">
                             <span className="text-slate-500 dark:text-slate-400">学段</span>
                             <select value={editingFormState.stage} onChange={(e) => handleFieldChange(editingClass.id, 'stage', e.target.value)} className={workspaceFieldClass}>
                               {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                             </select>
-                          </label>
-                          <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">学科</span>
-                            <input
-                              type="text"
-                              value={editingFormState.subject}
-                              onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
-                              className={workspaceFieldClass}
-                              placeholder="如：数学"
-                            />
                           </label>
                           <label className="space-y-2 text-sm">
                             <span className="text-slate-500 dark:text-slate-400">年级</span>
@@ -10057,7 +10791,7 @@ const ClassManagementPage = ({
                               onChange={(e) => handleFieldChange(editingClass.id, 'current_grade', e.target.value)}
                               className={workspaceFieldClass}
                             >
-                              {studentCenterGradeOptions.map((option) => (
+                              {editingClassGradeOptions.map((option) => (
                                 <option key={option} value={option}>{option}</option>
                               ))}
                             </select>
@@ -10077,6 +10811,9 @@ const ClassManagementPage = ({
                             />
                             <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                           </label>
+                          <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
+                            名称预览：{editingClassDisplayNamePreview}
+                          </div>
                         </div>
                       </div>
                     </div>

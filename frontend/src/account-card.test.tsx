@@ -207,10 +207,10 @@ test('consultation modal keeps save beside close and supports keyboard save shor
   assert.match(source, /Save,/);
   assert.match(modalBlock[0], /const saveButtonLabel = submitting \? '保存中\.\.\.' : mode === 'create' \? '创建记录' : '保存修改';/);
   assert.match(modalBlock[0], /const handleSaveShortcut = \(event: KeyboardEvent\) => \{/);
-  assert.match(modalBlock[0], /\(event\.metaKey \|\| event\.altKey\) && event\.key\.toLowerCase\(\) === 's'/);
+  assert.match(modalBlock[0], /\(event\.metaKey \|\| event\.ctrlKey\) && event\.key\.toLowerCase\(\) === 's'/);
   assert.match(modalBlock[0], /event\.preventDefault\(\);/);
   assert.match(modalBlock[0], /formScrollRef\.current\?\.requestSubmit\(\);/);
-  assert.match(modalBlock[0], /title="Command\+S \/ Alt\+S"/);
+  assert.match(modalBlock[0], /title="Command\+S \/ Ctrl\+S"/);
   assert.match(modalBlock[0], /<Save size=\{15\} \/>/);
   assert.match(modalBlock[0], /aria-label="关闭咨询记录窗口"[\s\S]*<form ref=\{formScrollRef\}/);
   assert.doesNotMatch(modalBlock[0], /<button type="submit" className=\{`\$\{workspacePrimaryButtonClass\} w-full sm:w-auto`\}/);
@@ -1390,7 +1390,7 @@ test('class management source opens both existing and new class editors in a mod
   assert.match(classManagementBlock[0], /const editingClass = typeof expandedClassId === 'number' \? classes\.find\(\(item\) => item\.id === expandedClassId\) \?\? null : null;/);
   assert.match(classManagementBlock[0], /<AnimatePresence>/);
   assert.match(classManagementBlock[0], /className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"/);
-  assert.match(classManagementBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !classCardInteractionLocked && setExpandedClassId\(null\)\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !classCardInteractionLocked && attemptCloseClassEditor\(\)\}/);
   assert.match(classManagementBlock[0], /编辑班级：/);
   assert.match(classManagementBlock[0], /关闭班级编辑窗口/);
   assert.doesNotMatch(classManagementBlock[0], /在弹窗里维护班级基础信息、负责老师和家长绑定邀请码。/);
@@ -1402,12 +1402,14 @@ test('class management source explains structured class naming without developme
   const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。[\s\S]*班级命名规则/);
-  assert.match(classManagementBlock[0], /按「学科 \+ 年级 \+ 班级」维护班级信息，例如：数学七年级三班、物理七年级二班。/);
+  assert.match(classManagementBlock[0], /activeClassHelpKey/);
+  assert.match(classManagementBlock[0], /校区总览说明/);
+  assert.match(classManagementBlock[0], /可按科目、教师、学段和年级查看不同范围/);
   assert.match(classManagementBlock[0], /请分别填写学科、年级和班级名称，系统按「学科 \+ 年级 \+ 班级」理解班级，例如：数学七年级三班。/);
-  assert.match(classManagementBlock[0], /placeholder="如：数学"/);
+  assert.match(classManagementBlock[0], /请选择学科/);
+  assert.match(classManagementBlock[0], /academicSubjectOptions\.map\(\(option\) =>/);
   assert.doesNotMatch(classManagementBlock[0], /数学 3\.0/);
-  assert.equal((classManagementBlock[0].match(/班级命名规则/g) || []).length, 1);
+  assert.doesNotMatch(classManagementBlock[0], /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。/);
 });
 
 test('class management source adds a side-by-side student editor card next to the teacher card', () => {
