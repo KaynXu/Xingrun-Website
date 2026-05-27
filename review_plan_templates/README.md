@@ -5,6 +5,7 @@
 ## 文件说明
 
 - `generate_review_pdfs.py`：根据课堂总结自动生成复习计划 PDF。
+- 雅思阅读课专用生成规则已迁至 `docs/ielts/ielts-review-plan-workflow.md`。
 - `pdf_output/`：脚本运行后生成的 PDF 文件目录。
 
 ## 当前生成内容
@@ -53,6 +54,7 @@ python review_plan_templates/generate_review_pdfs.py default review_plan_templat
 
 - PDF 已包含：使用说明、5 个时间节点复习页、填空题、选择题、课堂原话、30 天总复盘、自查答案。
 - 每一个时间节点都要求学生完整扫过整节课，不再按“当天只复习部分内容”的方式分拆。
+- 雅思阅读课使用 `docs/ielts/ielts-review-plan-workflow.md`：每天填空题都要覆盖整节课的阅读策略主线，而不是只考当天主题。
 - 默认正式版为中文版；旧双语版仅作为可选变体保留。
 - 每次重新运行都会生成一个新的带时间戳 PDF，不会删除或覆盖之前的 PDF。
 - 若后续更换课堂总结，可直接修改对应的 `lesson_pack_*.py`，或在运行时传入新的课程包文件。
