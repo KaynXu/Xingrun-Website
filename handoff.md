@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-05-29 已根据 `lingshiwenjian/` 中 6 份雅思逐字稿生成对应课后复习计划：瑶瑶写作2、包同学写作6、Dellen写作、Celine写作6、刘同学听力4、刘同学阅读4。每节课均输出 1 份 PDF 和 1 份源 Markdown，文件保存在 `lingshiwenjian/`，并保留本次专用生成脚本 `lingshiwenjian/generate_ielts_review_plans_20260529.py`。proof：临时脚本验证 6 份 PDF、6 份 Markdown 源文件；每份 PDF 均 8 页，包含第1天/第2天/第7天/第14天/第30天，全文未发现 `暂无文本内容`、raw `$`、`\frac`、`\mathbb`、`ldots` 等坏 token，首尾页渲染非空；另生成 contact sheet 目视抽查首尾页未见明显空白或错位。
 - 2026-05-28 已按业务目录整理 workflow 文档：雅思相关工作流放入 `docs/ielts/`（`ielts-homework-marking-workflow.md`、`ielts-review-plan-workflow.md`），智能错题复习工作流放入 `docs/wrong-questions/wrong-question-review-workflow.md`；`review_plan_templates/` 后续只保留复习计划模板、课程包、生成器和通用课后复习计划工作流。
 - 2026-05-28 已新增雅思作业批改独立工作流文档 `docs/ielts/ielts-homework-marking-workflow.md`，基于 4 份本地 Word 样例提炼老师批改逻辑：Task 1/Task 2 四项评分、红字/删除线/下划线局部批改、逻辑问题表、致命语法清单、基于学生原内容改写和核心问题收束；作文 Task 2 被单独加重，明确优先检查任务回应、论点/论据拆分、因果链、solution 为什么有效，以及基础学生不改就上不了 5 分的致命语法。4 个 Word 原件只作为读取样例，未纳入提交。
 - 2026-05-27 已新增智能错题错题复习 PDF 独立工作流文档 `docs/wrong-questions/wrong-question-review-workflow.md`，用于后续按学生/班级和日期范围从智能错题库生成错题复习 PDF；文档固化了“原题/原图 -> 方法提醒 -> 挖空复盘 -> 订正区”的单题页顺序、封面题量核对、输出命名、zip 打包、排版硬规则，以及 LaTeX/公式清洗 proof 要求。参考样例为陈采薪/李迎萌周一周二错题复习 PDF 的最新版式，特别强调最终 PDF 不应出现 raw `$`、`rac`、`mathbbR`、`ldots` 等坏公式残留。
