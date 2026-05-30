@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ricardo Component Lab</title>
+  <style>
+    :root {
+      --bg: #f4f9ff;
+      --panel: #ffffff;
+      --line: #d8ecff;
+      --soft: #eef8ff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --blue: #0284c7;
+      --blue-strong: #0ea5e9;
+      --shadow: 0 18px 40px rgba(14, 165, 233, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 32px auto;
+      display: grid;
+      gap: 24px;
+    }
+    header, section {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+    .kicker {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 13px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 22px; }
+    .muted { color: var(--muted); margin-top: 8px; font-size: 14px; }
+    .demo-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .pill, button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.88);
+      color: #475569;
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      min-height: 38px;
+      padding: 8px 12px;
+      transition: 0.15s ease;
+    }
+    button:hover, .pill.active {
+      border-color: #93d5ff;
+      background: var(--soft);
+      color: #0369a1;
+      box-shadow: 0 6px 18px rgba(14, 165, 233, 0.08);
+    }
+    .pill.selected {
+      border-color: var(--blue-strong);
+      background: var(--blue-strong);
+      color: white;
+    }
+    .x {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      margin-left: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.28);
+    }
+    .filter-area {
+      position: relative;
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+    .label {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .scope {
+      margin-left: auto;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .popover {
+      width: 100%;
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: white;
+      box-shadow: 0 12px 30px rgba(14, 165, 233, 0.08);
+      padding: 12px;
+    }
+    .options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .summary {
+      width: 100%;
+      color: #94a3b8;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .overview-wrap {
+      position: relative;
+      display: inline-block;
+    }
+    .overview-popover {
+      position: absolute;
+      z-index: 10;
+      top: 46px;
+      left: 0;
+      width: min(448px, calc(100vw - 48px));
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: white;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+    .overview-layer {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--soft);
+      padding: 12px;
+    }
+    .hidden { display: none; }
+    .search {
+      margin-left: 8px;
+      min-height: 38px;
+      width: min(240px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--text);
+      font: inherit;
+    }
+    @media (max-width: 680px) {
+      header, section { padding: 18px; border-radius: 18px; }
+      .scope { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="kicker">Ricardo Component Lab</p>
+      <h1>Ricardo 的组件库</h1>
+      <p class="muted">本页只在本机用于查看组件效果，不接入星润正式组件库。</p>
+    </header>
+
+    <section>
+      <div class="demo-title">
+        <h2>RCF-002 总览浮层筛选器</h2>
+        <div class="overview-wrap" id="overview">
+          <button id="overviewTrigger">全校区</button>
+          <div class="overview-popover hidden" id="overviewPopover">
+            <div class="overview-layer options" id="overviewFirst"></div>
+            <div class="overview-layer options hidden" id="overviewSecond"></div>
+          </div>
+        </div>
+      </div>
+      <p class="muted">用于标题旁边的短入口筛选，例如校区总览。</p>
+    </section>
+
+    <section>
+      <div class="demo-title">
+        <h2>RCF-001 浮层标签筛选器</h2>
+      </div>
+      <div class="filter-area" id="bar">
+        <span class="label">筛选</span>
+        <div class="options" id="barFirst"></div>
+        <span class="scope">全机构班级</span>
+        <input class="search" placeholder="可选额外搜索：学员姓名查询">
+        <div class="popover hidden" id="barSecond">
+          <div class="options" id="barOptions"></div>
+        </div>
+        <p class="summary" id="barSummary">当前：全部。未筛选时默认按年级从低到高排列。</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const filterData = {
+      subject: { label: '科目', options: ['数学', '物理', '国际数学'] },
+      teacher: { label: '教师', options: ['曹老师', '李老师', '王老师'] },
+      stage: { label: '学段', options: ['小奥', '初中', '高中'] },
+      grade: { label: '年级', options: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '高一', '高二', '高三'] }
+    };
+    const order = ['subject', 'teacher', 'stage', 'grade'];
+    const state = { overviewOpen: false, overviewLayer: null, overviewSelected: {}, barLayer: null, barSelected: {} };
+    let closeOverviewTimer = null;
+    let closeBarTimer = null;
+
+    function selectedSummary(selected, emptyLabel) {
+      const parts = order.filter((key) => selected[key]).map((key) => `${filterData[key].label}：${selected[key]}`);
+      return parts.length ? parts.join(' / ') : emptyLabel;
+    }
+
+    function renderOverview() {
+      const trigger = document.querySelector('#overviewTrigger');
+      const popover = document.querySelector('#overviewPopover');
+      const first = document.querySelector('#overviewFirst');
+      const second = document.querySelector('#overviewSecond');
+      const summary = selectedSummary(state.overviewSelected, '全校区');
+      trigger.innerHTML = summary === '全校区' ? '全校区' : `全校区：${summary}<span class="x" data-clear="overview">×</span>`;
+      popover.classList.toggle('hidden', !state.overviewOpen);
+      first.innerHTML = order.map((key) => `<button data-overview-layer="${key}" class="${state.overviewLayer === key || state.overviewSelected[key] ? 'active' : ''}">${filterData[key].label}</button>`).join('');
+      second.classList.toggle('hidden', !state.overviewLayer);
+      second.innerHTML = state.overviewLayer ? filterData[state.overviewLayer].options.map((option) => `<button data-overview-option="${option}" class="${state.overviewSelected[state.overviewLayer] === option ? 'selected' : ''}">${option}</button>`).join('') : '';
+    }
+
+    function renderBar() {
+      const first = document.querySelector('#barFirst');
+      const second = document.querySelector('#barSecond');
+      const options = document.querySelector('#barOptions');
+      const summary = document.querySelector('#barSummary');
+      first.innerHTML = order.map((key) => {
+        const selected = state.barSelected[key];
+        return `<button data-bar-layer="${key}" class="${selected ? 'selected' : state.barLayer === key ? 'active' : ''}">${selected || filterData[key].label}${selected ? '<span class="x" data-clear-bar="' + key + '">×</span>' : ''}</button>`;
+      }).join('');
+      second.classList.toggle('hidden', !state.barLayer);
+      options.innerHTML = state.barLayer ? filterData[state.barLayer].options.map((option) => `<button data-bar-option="${option}" class="${state.barSelected[state.barLayer] === option ? 'selected' : ''}">${option}</button>`).join('') : '';
+      summary.textContent = `当前：${selectedSummary(state.barSelected, '全部')}。未筛选时默认按年级从低到高排列。`;
+    }
+
+    document.querySelector('#overview').addEventListener('mouseenter', () => {
+      clearTimeout(closeOverviewTimer);
+      state.overviewOpen = true;
+      renderOverview();
+    });
+    document.querySelector('#overview').addEventListener('mouseleave', () => {
+      closeOverviewTimer = setTimeout(() => {
+        state.overviewOpen = false;
+        state.overviewLayer = null;
+        renderOverview();
+      }, 120);
+    });
+    document.querySelector('#overviewTrigger').addEventListener('click', (event) => {
+      if (event.target.dataset.clear === 'overview') {
+        state.overviewSelected = {};
+        state.overviewLayer = null;
+        renderOverview();
+        return;
+      }
+      state.overviewOpen = !state.overviewOpen;
+      if (!state.overviewOpen) state.overviewLayer = null;
+      renderOverview();
+    });
+    document.querySelector('#overviewPopover').addEventListener('mouseover', (event) => {
+      const key = event.target.dataset.overviewLayer;
+      if (key) {
+        state.overviewLayer = key;
+        renderOverview();
+      }
+    });
+    document.querySelector('#overviewPopover').addEventListener('click', (event) => {
+      const key = event.target.dataset.overviewLayer;
+      const option = event.target.dataset.overviewOption;
+      if (key) {
+        state.overviewLayer = state.overviewLayer === key ? null : key;
+        renderOverview();
+      }
+      if (option && state.overviewLayer) {
+        state.overviewSelected[state.overviewLayer] = option;
+        renderOverview();
+      }
+    });
+
+    document.querySelector('#bar').addEventListener('mouseenter', () => clearTimeout(closeBarTimer));
+    document.querySelector('#bar').addEventListener('mouseleave', () => {
+      closeBarTimer = setTimeout(() => {
+        state.barLayer = null;
+        renderBar();
+      }, 120);
+    });
+    document.querySelector('#bar').addEventListener('mouseover', (event) => {
+      const key = event.target.dataset.barLayer;
+      if (key) {
+        state.barLayer = key;
+        renderBar();
+      }
+    });
+    document.querySelector('#bar').addEventListener('click', (event) => {
+      const clearKey = event.target.dataset.clearBar;
+      const key = event.target.dataset.barLayer;
+      const option = event.target.dataset.barOption;
+      if (clearKey) {
+        delete state.barSelected[clearKey];
+        renderBar();
+        return;
+      }
+      if (key) {
+        state.barLayer = key;
+        renderBar();
+      }
+      if (option && state.barLayer) {
+        state.barSelected[state.barLayer] = option;
+        renderBar();
+      }
+    });
+
+    renderOverview();
+    renderBar();
+  </script>
+</body>
+</html>

@@ -18,7 +18,6 @@ import {
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
-const workspaceSource = readFileSync(new URL('./ClassFeedbackGenerationWorkspace.tsx', import.meta.url), 'utf8');
 
 function sourceBetween(source: string, startMarker: string, endMarker: string): string {
   const start = source.indexOf(startMarker);
@@ -376,16 +375,51 @@ test('ClassFeedbackGenerationWorkspace renders source summary, stage notes, clas
 });
 
 test('ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for surfaces, fields, and buttons', () => {
-  assert.match(
-    workspaceSource,
-    /workspaceCardClass,\s*workspaceFieldClass,\s*workspacePrimaryButtonClass,\s*workspaceSecondaryButtonClass,\s*workspaceSoftCardClass/,
+  const markup = renderToStaticMarkup(
+    <ClassFeedbackGenerationWorkspace
+      classNameLabel="S01A1"
+      teacherNameLabel="王老师"
+      controlBar={<div>控制栏占位</div>}
+      headerAside={<div>右侧占位</div>}
+      sourceSummaryItems={['已命中 2 节课次记录']}
+      labelGroups={defaultStageLabelGroups}
+      classStatusTags={['进入状态快']}
+      students={[]}
+      classSummaryText="班级反馈草稿"
+      statusMessage="已生成 0 名学生反馈"
+      draftStatusLabel="草稿已保存。"
+      stageNotes={{
+        classStatusNote: '',
+        parentFeedbackNote: '',
+        teachingFocusNote: '',
+        nextStagePreviewNote: '',
+      }}
+      isGenerating={false}
+      isSaving={false}
+      isConfirming={false}
+      onClassSummaryChange={() => undefined}
+      onStageNoteChange={() => undefined}
+      onClassStatusTagToggle={() => undefined}
+      onHighlightToggle={() => undefined}
+      onHighlightNoteChange={() => undefined}
+      onStudentFinalTextChange={() => undefined}
+      onStudentCheckedChange={() => undefined}
+      onGenerate={() => undefined}
+      onSaveDraft={() => undefined}
+      onCopyClassSummary={() => undefined}
+      onCopyAllStudents={() => undefined}
+      onConfirm={() => undefined}
+    />,
   );
-  assert.match(workspaceSource, /const cardClass = `\$\{workspaceCardClass\} p-6`;/);
-  assert.match(workspaceSource, /const softCardClass = `\$\{workspaceSoftCardClass\} p-4`;/);
-  assert.match(workspaceSource, /const fieldClass = workspaceFieldClass;/);
-  assert.match(workspaceSource, /props\.controlBar \? <div className="mt-4">\{props\.controlBar\}<\/div> : null/);
-  assert.match(workspaceSource, /className=\{workspacePrimaryButtonClass\}/);
-  assert.match(workspaceSource, /className=\{workspaceSecondaryButtonClass\}/);
+
+  assert.match(markup, /rounded-\[1\.75rem\][^"]*p-6/);
+  assert.match(markup, /rounded-\[1\.5rem\][^"]*p-4/);
+  assert.match(markup, /w-full rounded-xl border border-sky-200/);
+  assert.match(markup, /class="mt-4"><div>控制栏占位<\/div>/);
+  assert.match(markup, /bg-sky-600/);
+  assert.match(markup, /border border-sky-200/);
+  assert.match(markup, /保存草稿/);
+  assert.match(markup, /确认本次反馈/);
 });
 
 test('App source wires the standalone class feedback page and existing class student APIs', () => {
@@ -435,13 +469,49 @@ test('App source injects the class feedback control bar into the workspace heade
 });
 
 test('App source anchors class feedback period preview to the top-right and task actions to the bottom-right', () => {
+  const workspaceMarkup = renderToStaticMarkup(
+    <ClassFeedbackGenerationWorkspace
+      classNameLabel="S01A1"
+      teacherNameLabel="王老师"
+      headerAside={<div>右侧操作区</div>}
+      sourceSummaryItems={['已命中 2 节课次记录']}
+      labelGroups={defaultStageLabelGroups}
+      classStatusTags={[]}
+      students={[]}
+      classSummaryText=""
+      statusMessage="待生成"
+      draftStatusLabel="草稿"
+      stageNotes={{
+        classStatusNote: '',
+        parentFeedbackNote: '',
+        teachingFocusNote: '',
+        nextStagePreviewNote: '',
+      }}
+      isGenerating={false}
+      isSaving={false}
+      isConfirming={false}
+      onClassSummaryChange={() => undefined}
+      onStageNoteChange={() => undefined}
+      onClassStatusTagToggle={() => undefined}
+      onHighlightToggle={() => undefined}
+      onHighlightNoteChange={() => undefined}
+      onStudentFinalTextChange={() => undefined}
+      onStudentCheckedChange={() => undefined}
+      onGenerate={() => undefined}
+      onSaveDraft={() => undefined}
+      onCopyClassSummary={() => undefined}
+      onCopyAllStudents={() => undefined}
+      onConfirm={() => undefined}
+    />,
+  );
+
   assert.match(
     appSource,
     /return \(\s*<div className=\{`\$\{workspacePageClass\} space-y-6`\}>/,
   );
   assert.match(
-    workspaceSource,
-    /<header className=\{`\$\{cardClass\} grid gap-6 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,20rem\)\] xl:items-stretch`\}>/,
+    workspaceMarkup,
+    /grid gap-6 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,20rem\)\] xl:items-stretch/,
   );
   assert.match(
     appSource,
@@ -456,8 +526,8 @@ test('App source anchors class feedback period preview to the top-right and task
     /const classFeedbackHeaderAside = \(\s*<div className="flex flex-col gap-3 xl:min-h-\[10\.5rem\] xl:justify-between">/,
   );
   assert.match(
-    workspaceSource,
-    /\{props\.headerAside \? props\.headerAside : null\}/,
+    workspaceMarkup,
+    /右侧操作区/,
   );
   assert.match(
     appSource,

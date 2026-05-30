@@ -46,9 +46,27 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { CourseCalendarPage } from './CourseCalendarPage';
 import type { CourseCalendarCustomItemRecord, CourseCalendarCustomScheduleRecord, CourseCalendarScheduleRecord, CourseCalendarTimeBlock } from './courseCalendarData';
 import { getCurrentWeekTuesday } from './courseCalendarData';
+import { StudentCenterPage } from './features/student-center/StudentCenterPage';
+export {
+  resolveTeacherBindingRollbackClassItem,
+  resolveTeacherBindingRollbackTeacherBindings,
+} from './features/student-center/teacherBindingRules';
 import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 import { WorkspaceDashboard } from './WorkspaceDashboard';
+import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
+import {
+  academicGradeGroups,
+  academicGradeOptions,
+  academicStageOptions,
+  buildClassDisplayName,
+  formatClassDisplayName,
+  getAcademicGradeRank,
+  getAcademicStageFromGrade,
+  inferAcademicCohortYear,
+  normalizeAcademicGradeLabel,
+  normalizeClassNameInput,
+} from './domain/classNaming';
 import {
   buildClassFeedbackPeriodPreview,
   buildCreateClassFeedbackTaskRequest,
@@ -83,6 +101,43 @@ import {
   isReviewLessonPending,
   normalizeReviewLessonsResponse,
 } from './reviewGenerationAsync';
+import {
+  apiFetch,
+  buildAuthedPath,
+  cn,
+  getToken,
+  readLocalStorageItem,
+  removeLocalStorageItem,
+  workspaceCardClass,
+  workspaceFieldClass,
+  workspaceGhostButtonClass,
+  workspacePageClass,
+  workspacePrimaryButtonClass,
+  workspaceSecondaryButtonClass,
+  workspaceSectionTextClass,
+  workspaceSectionTitleClass,
+  workspaceSoftCardClass,
+  writeLocalStorageItem,
+} from './workspaceShared';
+
+export {
+  apiFetch,
+  buildAuthedPath,
+  cn,
+  getToken,
+  readLocalStorageItem,
+  removeLocalStorageItem,
+  workspaceCardClass,
+  workspaceFieldClass,
+  workspaceGhostButtonClass,
+  workspacePageClass,
+  workspacePrimaryButtonClass,
+  workspaceSecondaryButtonClass,
+  workspaceSectionTextClass,
+  workspaceSectionTitleClass,
+  workspaceSoftCardClass,
+  writeLocalStorageItem,
+} from './workspaceShared';
 
 // --- Types ---
 
@@ -171,7 +226,7 @@ interface CreditMemberUsageDetailItem {
   created_at: string;
 }
 
-interface ClassItem {
+export interface ClassItem {
   id: number;
   name: string;
   subject: string;
@@ -227,6 +282,18 @@ interface ConsultationRecord {
 }
 
 type ConsultationFormValues = Omit<ConsultationRecord, 'id' | 'created_at' | 'updated_at'>;
+type ConsultationQuickParseKey = keyof Pick<
+  ConsultationFormValues,
+  | 'parent_wechat_name'
+  | 'child_name'
+  | 'grade'
+  | 'receiving_teacher'
+  | 'teacher_id'
+  | 'consultation_subject'
+  | 'need_detail'
+  | 'source_channel'
+  | 'source_channel_note'
+>;
 
 interface ConsultationTeacherOption {
   teacher_id: string;
@@ -247,7 +314,7 @@ interface ConsultationBatchParseResponse {
   warnings: string[];
 }
 
-interface CurrentUser {
+export interface CurrentUser {
   id: number;
   username: string;
   display_name: string;
@@ -285,14 +352,6 @@ interface OrganizationInviteInfo {
   join_path?: string;
 }
 
-interface ClassInviteInfo {
-  id: number;
-  class_id: number;
-  invite_code: string;
-  status: string;
-  created_at: string;
-}
-
 interface OrganizationSummaryItem {
   id: number;
   name: string;
@@ -303,7 +362,7 @@ interface OrganizationSummaryItem {
   lesson_count: number;
 }
 
-interface UserItem {
+export interface UserItem {
   id: number;
   name: string;
   org: string;
@@ -336,48 +395,24 @@ interface ApprovalPageProps {
   onOpenClassBinding: (target: ClassBindingTarget) => void;
 }
 
-type ClassBindingTarget = {
+export type ClassBindingTarget = {
   teacherUserId: number;
   teacherName: string;
 };
 
-interface ClassFormValues {
-  name: string;
-  subject: string;
-  grade: string;
-  teacher_name: string;
-  stage: string;
-  current_grade: string;
-  class_number: string;
-  cohort_year: string;
-  show_cohort_year: boolean;
-  is_bridge: boolean;
-  bridge_target: string;
-  content_track: string;
+function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
+  return formatClassDisplayName(item, { showCohortYear });
 }
 
-type LoadPageResult =
-  | { status: 'success' }
-  | { status: 'stale' }
-  | { status: 'refresh-error'; error: Error };
-
-const GRADE_NORMALIZATION_RULES: Array<[string, string]> = [
-  ['一年级', '一年级'],
-  ['二年级', '二年级'],
-  ['三年级', '三年级'],
-  ['四年级', '四年级'],
-  ['五年级', '五年级'],
-  ['六年级', '六年级'],
-  ['七年级', '七年级'],
-  ['八年级', '八年级'],
-  ['九年级', '九年级'],
-  ['初一', '初一'],
-  ['初二', '初二'],
-  ['初三', '初三'],
-  ['高一', '高一'],
-  ['高二', '高二'],
-  ['高三', '高三'],
-];
+function getCurrentClassDisplayNameById(
+  classes: ClassItem[],
+  classId: number | null | undefined,
+  fallbackName?: string | null,
+  showCohortYear = false,
+): string {
+  const classItem = classId == null ? undefined : classes.find((item) => item.id === classId);
+  return getCurrentClassDisplayName(classItem, showCohortYear) || fallbackName?.trim() || '';
+}
 
 const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
   ['6年级2班', '六年级 2 班'],
@@ -390,13 +425,9 @@ const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五�
 const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const academicSubjectFilterOptions = ['全部学科', ...academicSubjectOptions];
-const studentCenterStageOptions = ['小奥', '初中', '高中'];
-const studentCenterGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '高一', '高二', '高三'];
-const studentCenterGradeGroups: Record<string, string[]> = {
-  小奥: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
-  初中: ['七年级', '八年级', '九年级'],
-  高中: ['高一', '高二', '高三'],
-};
+const studentCenterStageOptions = [...academicStageOptions];
+const studentCenterGradeOptions = [...academicGradeOptions];
+const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
 const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
   { id: 'review-generation', label: '复习生成' },
   { id: 'class-feedback-generation', label: '课堂反馈' },
@@ -420,89 +451,6 @@ function hasOwnerAccess(role: Role): boolean {
 
 function hasStaffAccess(role: Role): boolean {
   return hasOwnerAccess(role) || role === 'admin';
-}
-
-function normalizeAcademicGradeLabel(value: string): string {
-  const normalized = value.trim();
-  const gradeMap: Record<string, string> = {
-    '1年级': '一年级',
-    '2年级': '二年级',
-    '3年级': '三年级',
-    '4年级': '四年级',
-    '5年级': '五年级',
-    '6年级': '六年级',
-    '7年级': '七年级',
-    '8年级': '八年级',
-    '9年级': '九年级',
-    一年级: '一年级',
-    二年级: '二年级',
-    三年级: '三年级',
-    四年级: '四年级',
-    五年级: '五年级',
-    六年级: '六年级',
-    七年级: '七年级',
-    八年级: '八年级',
-    九年级: '九年级',
-    初一: '七年级',
-    初二: '八年级',
-    初三: '九年级',
-    高一: '高一',
-    高二: '高二',
-    高三: '高三',
-  };
-  return gradeMap[normalized] || normalized;
-}
-
-function getAcademicStageFromGrade(value: string): string {
-  const grade = normalizeAcademicGradeLabel(value);
-  if (studentCenterGradeGroups.小奥.includes(grade)) return '小奥';
-  if (studentCenterGradeGroups.初中.includes(grade)) return '初中';
-  if (studentCenterGradeGroups.高中.includes(grade)) return '高中';
-  return '';
-}
-
-function getAcademicGradeRank(value: string): number {
-  const grade = normalizeAcademicGradeLabel(value);
-  const index = studentCenterGradeOptions.indexOf(grade);
-  return index === -1 ? 999 : index;
-}
-
-function getCurrentSchoolYearStart(): number {
-  const now = new Date();
-  return now.getMonth() + 1 >= 7 ? now.getFullYear() : now.getFullYear() - 1;
-}
-
-function inferAcademicCohortYear(grade: string): number {
-  const normalizedGrade = normalizeAcademicGradeLabel(grade);
-  const stage = getAcademicStageFromGrade(normalizedGrade);
-  const stageGrades = studentCenterGradeGroups[stage] || [];
-  const stageOffset = stageGrades.indexOf(normalizedGrade);
-  return getCurrentSchoolYearStart() - Math.max(0, stageOffset);
-}
-
-function buildClassDisplayName(form: Pick<ClassFormValues, 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'show_cohort_year' | 'is_bridge'>): string {
-  const grade = normalizeAcademicGradeLabel(form.current_grade || form.grade);
-  const classNumber = form.class_number.trim();
-  if (!grade || !classNumber) {
-    return '';
-  }
-  const cohortYear = Number(form.cohort_year) || inferAcademicCohortYear(grade);
-  const cohortPrefix = form.show_cohort_year && cohortYear ? `${cohortYear}级·` : '';
-  const bridgeSuffix = form.is_bridge ? '·衔接' : '';
-  return `${cohortPrefix}${grade}·${classNumber}班${bridgeSuffix}`;
-}
-
-function getClassFormDirtySignature(form: Pick<ClassFormValues, 'subject' | 'stage' | 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'is_bridge' | 'bridge_target' | 'content_track'>): string {
-  return JSON.stringify({
-    subject: form.subject.trim(),
-    stage: form.stage,
-    current_grade: normalizeAcademicGradeLabel(form.current_grade || form.grade),
-    class_number: form.class_number.trim(),
-    cohort_year: form.cohort_year ? String(Number(form.cohort_year)) : '',
-    is_bridge: Boolean(form.is_bridge),
-    bridge_target: form.bridge_target || '',
-    content_track: form.content_track || '',
-  });
 }
 
 function canAccessSmartWrongQuestions(role: Role): boolean {
@@ -576,131 +524,6 @@ function getMemberBindingStatusBadgeClass(status: MemberBindingSummaryStatus): s
   }
   return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
 }
-function createEmptyClassForm(): ClassFormValues {
-  return {
-    name: '',
-    subject: '',
-    grade: '',
-    teacher_name: '',
-    stage: '小奥',
-    current_grade: '一年级',
-    class_number: '1',
-    cohort_year: '',
-    show_cohort_year: true,
-    is_bridge: false,
-    bridge_target: '默认下一学段',
-    content_track: '',
-  };
-}
-
-function toClassFormValues(item: ClassItem): ClassFormValues {
-  return {
-    name: item.name || '',
-    subject: item.subject || '',
-    grade: item.grade || '',
-    teacher_name: item.teacher_name || '',
-    stage: item.stage || '',
-    current_grade: normalizeAcademicGradeLabel(item.current_grade || item.grade || ''),
-    class_number: item.class_number || '',
-    cohort_year: item.cohort_year ? String(item.cohort_year) : '',
-    show_cohort_year: item.show_cohort_year !== false && item.show_cohort_year !== 0,
-    is_bridge: Boolean(item.is_bridge),
-    bridge_target: item.bridge_target || '默认下一学段',
-    content_track: item.content_track || '',
-  };
-}
-
-const normalizeClassNameInput = (value: string): string => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  const normalized = trimmed
-    .replace(/\s+/g, '')
-    .replace(/^6年级/, '六年级')
-    .replace(/^9年级/, '九年级')
-    .replace(/^8年级/, '八年级')
-    .replace(/^7年级/, '七年级')
-    .replace(/^5年级/, '五年级')
-    .replace(/^4年级/, '四年级')
-    .replace(/^3年级/, '三年级')
-    .replace(/^2年级/, '二年级')
-    .replace(/^1年级/, '一年级')
-    .replace(/^六年(?=\d+班$)/, '六年级')
-    .replace(/^九年(?=\d+班$)/, '九年级')
-    .replace(/^八年(?=\d+班$)/, '八年级')
-    .replace(/^七年(?=\d+班$)/, '七年级')
-    .replace(/^五年(?=\d+班$)/, '五年级')
-    .replace(/^四年(?=\d+班$)/, '四年级')
-    .replace(/^三年(?=\d+班$)/, '三年级')
-    .replace(/^二年(?=\d+班$)/, '二年级')
-    .replace(/^一年(?=\d+班$)/, '一年级')
-    .replace(/一班$/, '1班')
-    .replace(/二班$/, '2班')
-    .replace(/三班$/, '3班')
-    .replace(/四班$/, '4班')
-    .replace(/五班$/, '5班')
-    .replace(/六班$/, '6班');
-
-  const gradePrefix = GRADE_NORMALIZATION_RULES.find(([alias]) => normalized.startsWith(alias))?.[1];
-  const match = normalized.match(/^(一年级|二年级|三年级|四年级|五年级|六年级|七年级|八年级|九年级|初一|初二|初三|高一|高二|高三)(\d+)班$/);
-  if (!match || !gradePrefix) {
-    return trimmed;
-  }
-
-  return `${gradePrefix} ${match[2]} 班`;
-};
-
-function areClassIdListsEqual(left: number[], right: number[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((value, index) => value === right[index]);
-}
-
-export function resolveAssignmentRollbackClassIds(
-  currentClassIds: number[],
-  previousClassIds: number[],
-  failedNextClassIds: number[],
-): number[] {
-  return areClassIdListsEqual(currentClassIds, failedNextClassIds) ? previousClassIds : currentClassIds;
-}
-
-export function resolveTeacherBindingRollbackClassItem(
-  currentItem: ClassItem,
-  failedNextTeacherUserId: number,
-  previousTeacherUserId: number | null,
-  previousTeacherName: string,
-): ClassItem {
-  if (currentItem.teacher_user_id !== failedNextTeacherUserId) {
-    return currentItem;
-  }
-
-  return {
-    ...currentItem,
-    teacher_name: previousTeacherName,
-    teacher_user_id: previousTeacherUserId,
-  };
-}
-
-export function resolveTeacherBindingRollbackTeacherBindings(
-  currentTeacherBindingByClassId: Record<number, number | null>,
-  classId: number,
-  previousTeacherUserId: number | null,
-  failedNextTeacherUserId: number,
-): Record<number, number | null> {
-  if (currentTeacherBindingByClassId[classId] !== failedNextTeacherUserId) {
-    return currentTeacherBindingByClassId;
-  }
-
-  return {
-    ...currentTeacherBindingByClassId,
-    [classId]: previousTeacherUserId,
-  };
-}
-
 function getRoleBadgeClass(role: Role): string {
   if (role === 'super_owner') {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
@@ -817,74 +640,6 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
   return null;
 }
 
-// --- API helper ---
-
-function readLocalStorageItem(key: string): string {
-  try {
-    return globalThis.localStorage?.getItem?.(key) || '';
-  } catch {
-    return '';
-  }
-}
-
-function writeLocalStorageItem(key: string, value: string): void {
-  try {
-    globalThis.localStorage?.setItem?.(key, value);
-  } catch {
-    // Ignore storage access issues and keep the UI functional.
-  }
-}
-
-function removeLocalStorageItem(key: string): void {
-  try {
-    globalThis.localStorage?.removeItem?.(key);
-  } catch {
-    // Ignore storage access issues and keep the UI functional.
-  }
-}
-
-function getToken(): string {
-  return readLocalStorageItem('xr_token');
-}
-
-function buildAuthedPath(path: string): string {
-  const token = getToken();
-  if (!token) {
-    return path;
-  }
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}token=${encodeURIComponent(token)}`;
-}
-
-interface ApiFetchOptions extends RequestInit {
-  reloadOnUnauthorized?: boolean;
-}
-
-export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOptions): Promise<T> {
-  const { reloadOnUnauthorized = true, ...fetchOptions } = options ?? {};
-  const isFormData = fetchOptions.body instanceof FormData;
-  const token = getToken();
-  const res = await fetch(path, {
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { 'X-Auth-Token': token } : {}),
-      ...(fetchOptions.headers ?? {}),
-    },
-    ...fetchOptions,
-  });
-  if (res.status === 401) {
-    removeLocalStorageItem('xr_token');
-    if (reloadOnUnauthorized) {
-      window.location.reload();
-    }
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error || res.statusText);
-  }
-  return res.json() as Promise<T>;
-}
-
 function apiUploadFormWithProgress<T = unknown>(
   path: string,
   body: FormData,
@@ -924,10 +679,6 @@ function apiUploadFormWithProgress<T = unknown>(
     xhr.onerror = () => reject(new Error('上传失败，请重试'));
     xhr.send(body);
   });
-}
-
-function cn(...classes: Array<string | false | null | undefined>): string {
-  return classes.filter(Boolean).join(' ');
 }
 
 function getInitialDarkModePreference(): boolean {
@@ -1146,8 +897,8 @@ function findConsultationTeacherOption(input: string, teacherOptions: Consultati
 export function parseConsultationQuickEntry(
   input: string,
   teacherOptions: Array<{ teacher_id: string; display_name: string; aliases: string[] }>,
-): Record<string, string> {
-  const parsed: Record<string, string> = {
+): Record<ConsultationQuickParseKey, string> {
+  const parsed: Record<ConsultationQuickParseKey, string> = {
     parent_wechat_name: '',
     child_name: '',
     grade: '',
@@ -1722,13 +1473,6 @@ function getConsultationSourceLabel(record: ConsultationRecord): string {
   return sourceChannelNote ? `${trimmedSourceChannel} · ${sourceChannelNote}` : trimmedSourceChannel;
 }
 
-export const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
-export const workspaceCardClass =
-  'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78 dark:shadow-[0_24px_60px_rgba(2,6,23,0.52)]';
-export const workspaceSoftCardClass =
-  'rounded-[1.5rem] border border-sky-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(239,248,255,0.78)_100%)] shadow-[0_14px_36px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] dark:shadow-[0_18px_40px_rgba(2,6,23,0.44)]';
-export const workspaceFieldClass =
-  'w-full rounded-xl border border-sky-200 bg-white/92 px-4 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:focus:border-sky-500 dark:focus:ring-sky-500/15 dark:placeholder:text-slate-500';
 const consultationSurfaceClass =
   'border border-[#D9EEF7] bg-white shadow-[0_10px_28px_rgba(31,42,68,0.05)] dark:border-white/10 dark:bg-slate-950/78';
 const consultationPanelClass =
@@ -1739,15 +1483,6 @@ const consultationValueClass =
   'consultation-field-value mt-0.5 min-w-0 break-words text-[13px] font-semibold leading-5 text-[#1F2A44] dark:text-slate-100';
 const consultationInputClass =
   'consultation-field-input w-full rounded-lg border border-[#BFE5F8] bg-white px-3 py-2 text-sm text-[#1F2A44] outline-none transition placeholder:text-[#9AAEC4] focus:border-[#0EA5E9] focus:ring-3 focus:ring-sky-100 disabled:bg-[#F6FAFD] disabled:text-[#7188A6] dark:border-white/10 dark:bg-slate-900/75 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-500/15';
-export const workspacePrimaryButtonClass =
-  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-sky-600 px-5 py-3 font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60';
-export const workspaceSecondaryButtonClass =
-  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-sky-200 bg-white px-5 py-3 font-semibold text-slate-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
-const workspaceGhostButtonClass =
-  'inline-flex items-center justify-center gap-2 rounded-xl bg-sky-50/80 px-4 py-2.5 font-medium text-slate-600 transition hover:bg-sky-100 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10';
-const workspaceSectionTitleClass = 'text-2xl font-bold tracking-tight text-slate-900 dark:text-white';
-const workspaceSectionTextClass = 'text-sm leading-relaxed text-slate-500 dark:text-slate-400';
-
 function HeroBackgroundGrainient() {
   const reduceMotion = useReducedMotion();
 
@@ -3492,8 +3227,9 @@ const ClassFeedbackGenerationPage = ({
           ? '有未保存修改，自动保存中。'
           : '草稿已保存。';
 
+  const selectedClassDisplayName = getCurrentClassDisplayName(selectedClass);
   const sourceSummaryItems = [
-    selectedClass ? `当前班级：${selectedClass.name}` : '当前班级：未选择',
+    selectedClassDisplayName ? `当前班级：${selectedClassDisplayName}` : '当前班级：未选择',
     `反馈阶段：${classFeedbackPeriodPreview.label}`,
     `覆盖范围：${classFeedbackPeriodPreview.startDate} 至 ${classFeedbackPeriodPreview.endDate}`,
     `已命中 ${matchedLessonCount} 节课次记录`,
@@ -3520,7 +3256,7 @@ const ClassFeedbackGenerationPage = ({
         <option value="">选择班级</option>
         {classes.map((item) => (
           <option key={item.id} value={item.id}>
-            {item.name}
+            {getCurrentClassDisplayName(item)}
           </option>
         ))}
       </select>
@@ -3662,7 +3398,7 @@ const ClassFeedbackGenerationPage = ({
   return (
     <div className={`${workspacePageClass} space-y-6`}>
       <ClassFeedbackGenerationWorkspace
-        classNameLabel={selectedClass?.name ?? '未选择班级'}
+        classNameLabel={selectedClassDisplayName || '未选择班级'}
         teacherNameLabel={teacherNameLabel}
         controlBar={classFeedbackControlBar}
         headerAside={classFeedbackHeaderAside}
@@ -4165,8 +3901,8 @@ const ConsultationReadOnlyReport = ({
   const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
   const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const sectionStates = getConsultationFlowSectionStates(form);
-  const trialClassName = classes.find((item) => item.id === form.trial_class_id)?.name;
-  const successClassName = classes.find((item) => item.id === form.success_class_id)?.name;
+  const trialClassName = getCurrentClassDisplayNameById(classes, form.trial_class_id);
+  const successClassName = getCurrentClassDisplayNameById(classes, form.success_class_id);
   const resultLabel = form.flow_stage === '成功进班'
     ? '咨询成功'
     : form.flow_stage === '试听失败' || form.flow_stage === '咨询结束'
@@ -4424,9 +4160,9 @@ const ConsultationModal = ({
     const parsed = parseConsultationQuickEntry(quickEntry, consultationTeachers);
     const nextForm: ConsultationFormValues = { ...form };
 
-    (Object.entries(parsed) as Array<[keyof ConsultationFormValues, string]>).forEach(([key, value]) => {
+    Object.entries(parsed).forEach(([key, value]) => {
       if (value) {
-        nextForm[key] = value as ConsultationFormValues[keyof ConsultationFormValues];
+        nextForm[key as ConsultationQuickParseKey] = value;
       }
     });
 
@@ -4880,7 +4616,7 @@ const ConsultationModal = ({
                     >
                       <option value="">请选择系统班级</option>
                       {assignableClassOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
+                        <option key={item.id} value={item.id}>{getCurrentClassDisplayName(item)}</option>
                       ))}
                       <option value="__other__">其他：手动输入</option>
                     </select>
@@ -4929,7 +4665,7 @@ const ConsultationModal = ({
                     >
                       <option value="">请选择系统班级</option>
                       {assignableClassOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
+                        <option key={item.id} value={item.id}>{getCurrentClassDisplayName(item)}</option>
                       ))}
                       <option value="__other__">其他：手动输入</option>
                     </select>
@@ -6939,14 +6675,17 @@ interface TeacherAliasEntry {
 const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) => {
   const [items, setItems] = useState<RegistrationRequestItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationSummaryItem[]>([]);
   const [bindingSummaryByUserId, setBindingSummaryByUserId] = useState<Record<number, MemberBindingSummary>>({});
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [classesLoading, setClassesLoading] = useState(true);
   const [organizationsLoading, setOrganizationsLoading] = useState(currentUser.role === 'super_owner');
   const [bindingSummaryLoading, setBindingSummaryLoading] = useState(true);
   const [error, setError] = useState('');
   const [usersError, setUsersError] = useState('');
+  const [classesError, setClassesError] = useState('');
   const [organizationsError, setOrganizationsError] = useState('');
   const [bindingSummaryError, setBindingSummaryError] = useState('');
   const [actingId, setActingId] = useState<number | null>(null);
@@ -6988,7 +6727,7 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   const organizationInviteRefreshLocked = organizationInviteLoading || organizationInviteResetting;
   const organizationListRefreshLocked = organizationsLoading || deletingOrgId !== null;
   const approvalRefreshLocked = loading || actingId !== null;
-  const memberRefreshLocked = usersLoading || bindingSummaryLoading || roleSavingUserId !== null || visiblePageSavingUserId !== null || displayNameSavingUserId !== null || deletingUserId !== null;
+  const memberRefreshLocked = usersLoading || classesLoading || bindingSummaryLoading || roleSavingUserId !== null || visiblePageSavingUserId !== null || displayNameSavingUserId !== null || deletingUserId !== null;
   const teacherAliasActionLocked = taSubmitting || taDeletingId !== null;
 
   const loadItems = useCallback(async () => {
@@ -7021,6 +6760,20 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
       setUsersError(err instanceof Error ? err.message : '成员权限加载失败');
     } finally {
       setUsersLoading(false);
+    }
+  }, []);
+
+  const loadClasses = useCallback(async () => {
+    setClassesLoading(true);
+    setClassesError('');
+    try {
+      const data = await apiFetch<ClassItem[]>('/api/classes');
+      setClasses(data);
+    } catch (err) {
+      setClasses([]);
+      setClassesError(err instanceof Error ? err.message : '班级列表加载失败');
+    } finally {
+      setClassesLoading(false);
     }
   }, []);
 
@@ -7066,9 +6819,10 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   const refreshApprovalMembers = useCallback(async () => {
     await Promise.all([
       loadUsers(),
+      loadClasses(),
       loadBindingSummaries(),
     ]);
-  }, [loadBindingSummaries, loadUsers]);
+  }, [loadBindingSummaries, loadClasses, loadUsers]);
 
   const loadOrganizationRequests = useCallback(async () => {
     if (currentUser.role !== 'super_owner') {
@@ -7198,12 +6952,13 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
   useEffect(() => {
     loadItems().catch(() => undefined);
     loadUsers().catch(() => undefined);
+    loadClasses().catch(() => undefined);
     loadOrganizations().catch(() => undefined);
     loadBindingSummaries().catch(() => undefined);
     loadOrganizationRequests().catch(() => undefined);
     loadOrganizationInvite().catch(() => undefined);
     loadTeacherAliases().catch(() => undefined);
-  }, [loadItems, loadUsers, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests, loadTeacherAliases]);
+  }, [loadItems, loadUsers, loadClasses, loadOrganizations, loadBindingSummaries, loadOrganizationInvite, loadOrganizationRequests, loadTeacherAliases]);
 
   useEffect(() => {
     const handleWindowFocus = () => {
@@ -7806,6 +7561,12 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
               {usersError}
             </div>
           )}
+          {classesError && (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-300">
+              <AlertCircle size={16} />
+              {classesError}，负责班级名称将暂时使用原始名称。
+            </div>
+          )}
 
           {usersLoading ? (
             <div className="py-10 text-center text-slate-500 dark:text-slate-400">正在加载成员权限...</div>
@@ -7825,7 +7586,9 @@ const ApprovalPage = ({ currentUser, onOpenClassBinding }: ApprovalPageProps) =>
                 const visiblePages = getVisibleWorkspacePages(user);
                 const responsibleClasses = bindingSummary?.responsible_classes ?? [];
                 const bindingStatus = bindingSummary?.mapping_summary.status ?? 'incomplete';
-                const visibleClassNames = responsibleClasses.slice(0, 3).map((item) => item.name);
+                const visibleClassNames = responsibleClasses.slice(0, 3).map((item) =>
+                  getCurrentClassDisplayNameById(classes, item.id, item.name),
+                );
                 const hiddenClassCount = Math.max(responsibleClasses.length - visibleClassNames.length, 0);
                 const unresolvedCount = (bindingSummary?.mapping_summary.needs_review_count ?? 0)
                   + (bindingSummary?.mapping_summary.unmapped_count ?? 0)
@@ -8756,2175 +8519,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   );
 };
 
-const ClassManagementPage = ({
-  currentUser,
-  classBindingTarget,
-  onClearClassBindingTarget,
-}: {
-  currentUser: CurrentUser;
-  classBindingTarget?: ClassBindingTarget | null;
-  onClearClassBindingTarget?: () => void;
-}) => {
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
-  const [inviteByClassId, setInviteByClassId] = useState<Record<number, ClassInviteInfo>>({});
-  const [studentsByClassId, setStudentsByClassId] = useState<Record<number, Array<{ id: number; name: string }>>>({});
-  const [expandedClassId, setExpandedClassId] = useState<number | 'new' | null>(null);
-  const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
-    new: createEmptyClassForm(),
-  }));
-  const [studentCenterTab, setStudentCenterTab] = useState<'classes' | 'students'>('classes');
-  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('全部');
-  const [selectedClassStageFilter, setSelectedClassStageFilter] = useState<string>('全部学段');
-  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
-  const [selectedClassTeacherFilter, setSelectedClassTeacherFilter] = useState<number | 'all'>('all');
-  const [activeClassFilterLayer, setActiveClassFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
-  const [overviewSubjectFilter, setOverviewSubjectFilter] = useState<string>('全部学科');
-  const [overviewTeacherFilter, setOverviewTeacherFilter] = useState<number | 'all'>('all');
-  const [overviewStageFilter, setOverviewStageFilter] = useState<string>('全部学段');
-  const [overviewGradeFilter, setOverviewGradeFilter] = useState<string>('全部');
-  const [activeOverviewFilterLayer, setActiveOverviewFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
-  const [clickedOverviewFilterLayer, setClickedOverviewFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
-  const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
-  const [studentSubjectFilter, setStudentSubjectFilter] = useState<string>('全部学科');
-  const [studentTeacherFilter, setStudentTeacherFilter] = useState<number | 'all'>('all');
-  const [studentStageFilter, setStudentStageFilter] = useState<string>('全部学段');
-  const [studentGradeFilter, setStudentGradeFilter] = useState<string>('全部');
-  const [studentClassFilter, setStudentClassFilter] = useState<number | 'all'>('all');
-  const [studentNameFilter, setStudentNameFilter] = useState('');
-  const [activeStudentFilterLayer, setActiveStudentFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | 'class' | null>(null);
-  const [showClassCohortYear, setShowClassCohortYear] = useState(true);
-  const [activeClassHelpKey, setActiveClassHelpKey] = useState<'overview' | null>(null);
-  const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
-  const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
-  const [studentDraftNameByClassId, setStudentDraftNameByClassId] = useState<Record<number, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState('');
-  const [formError, setFormError] = useState('');
-  const [assignmentError, setAssignmentError] = useState('');
-  const [studentErrorByClassId, setStudentErrorByClassId] = useState<Record<number, string>>({});
-  const [inviteErrorByClassId, setInviteErrorByClassId] = useState<Record<number, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [teacherBindingSavingByClassId, setTeacherBindingSavingByClassId] = useState<Record<number, boolean>>({});
-  const [studentsLoadingByClassId, setStudentsLoadingByClassId] = useState<Record<number, boolean>>({});
-  const [studentSavingByClassId, setStudentSavingByClassId] = useState<Record<number, boolean>>({});
-  const [inviteLoadingByClassId, setInviteLoadingByClassId] = useState<Record<number, boolean>>({});
-  const [inviteResettingByClassId, setInviteResettingByClassId] = useState<Record<number, boolean>>({});
-  const loadPageRequestVersionRef = useRef(0);
-  const classFilterCloseTimerRef = useRef<number | null>(null);
-  const overviewFilterCloseTimerRef = useRef<number | null>(null);
-  const overviewLayerCloseTimerRef = useRef<number | null>(null);
-  const studentFilterCloseTimerRef = useRef<number | null>(null);
-  const classInteractionLocked = saving || deleting;
-  const hasTeacherBindingSavingRows = Object.values(teacherBindingSavingByClassId).some(Boolean);
-  const classCardInteractionLocked = classInteractionLocked || hasTeacherBindingSavingRows;
-  const pageRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
-  const assignmentRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
-  const canManageClassTeachers = hasStaffAccess(currentUser.role);
-  const canUseOrganizationClassFilters = hasOwnerAccess(currentUser.role);
-
-  const getClassStateKey = (classId: number | 'new') => String(classId);
-
-  const loadPage = useCallback(async (preferredExpandedClassId?: number | 'new' | null, options?: { preserveStateOnError?: boolean }): Promise<LoadPageResult> => {
-    const preserveStateOnError = options?.preserveStateOnError ?? false;
-    const requestVersion = ++loadPageRequestVersionRef.current;
-    setLoading(true);
-    setPageError('');
-    try {
-      const [classItems, userItems, teacherBindingData] = await Promise.all([
-        apiFetch<ClassItem[]>('/api/classes'),
-        hasStaffAccess(currentUser.role)
-          ? apiFetch<UserItem[]>('/api/admin/users')
-          : Promise.resolve([] as UserItem[]),
-        hasStaffAccess(currentUser.role)
-          ? apiFetch<{ teacher_bindings: Record<number, number | null> }>('/api/classes/teacher-bindings')
-          : Promise.resolve({ teacher_bindings: {} as Record<number, number | null> }),
-      ]);
-
-      if (requestVersion !== loadPageRequestVersionRef.current) {
-        return { status: 'stale' };
-      }
-
-      const normalizedTeacherBindings = Object.fromEntries(
-        Object.entries(teacherBindingData.teacher_bindings).map(([classId, teacherUserId]) => [Number(classId), teacherUserId]),
-      ) as Record<number, number | null>;
-
-      setClasses(classItems);
-      setUsers(userItems);
-      setTeacherBindingByClassId(normalizedTeacherBindings);
-      setFormByClassId((current) => {
-        const nextForms: Record<string, ClassFormValues> = {
-          new: current.new || createEmptyClassForm(),
-        };
-        classItems.forEach((item) => {
-          nextForms[getClassStateKey(item.id)] = toClassFormValues(item);
-        });
-        return nextForms;
-      });
-      setExpandedClassId((current) => {
-        const requestedExpansion = preferredExpandedClassId === undefined ? current : preferredExpandedClassId;
-        if (requestedExpansion === 'new') {
-          return 'new';
-        }
-        if (typeof requestedExpansion === 'number' && classItems.some((item) => item.id === requestedExpansion)) {
-          return requestedExpansion;
-        }
-        return null;
-      });
-      return { status: 'success' };
-    } catch (err) {
-      if (requestVersion !== loadPageRequestVersionRef.current) {
-        return { status: 'stale' };
-      }
-
-      const error = err instanceof Error ? err : new Error('班级管理数据加载失败');
-      setPageError(error.message);
-      if (!preserveStateOnError) {
-        setClasses([]);
-        setUsers([]);
-        setTeacherBindingByClassId({});
-        setFormByClassId({ new: createEmptyClassForm() });
-        setNewClassTeacherUserId(null);
-        setExpandedClassId(null);
-      }
-      return { status: 'refresh-error', error };
-    } finally {
-      if (requestVersion === loadPageRequestVersionRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [currentUser.role]);
-
-  useEffect(() => {
-    loadPage().catch(() => undefined);
-  }, [loadPage]);
-
-  useEffect(() => () => {
-    if (classFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(classFilterCloseTimerRef.current);
-    }
-    if (overviewFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewFilterCloseTimerRef.current);
-    }
-    if (overviewLayerCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewLayerCloseTimerRef.current);
-    }
-    if (studentFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(studentFilterCloseTimerRef.current);
-    }
-  }, []);
-
-  const handleLoadClassInvite = useCallback(async (classId: number) => {
-    setInviteLoadingByClassId((current) => ({ ...current, [classId]: true }));
-    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
-
-    try {
-      const payload = await apiFetch<ClassInviteInfo>(`/api/classes/${classId}/invite`);
-      setInviteByClassId((current) => ({ ...current, [classId]: payload }));
-    } catch (err) {
-      setInviteErrorByClassId((current) => ({
-        ...current,
-        [classId]: err instanceof Error ? err.message : '邀请码加载失败',
-      }));
-    } finally {
-      setInviteLoadingByClassId((current) => ({ ...current, [classId]: false }));
-    }
-  }, []);
-
-  const handleResetClassInvite = useCallback(async (classId: number) => {
-    setInviteResettingByClassId((current) => ({ ...current, [classId]: true }));
-    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
-
-    try {
-      const payload = await apiFetch<ClassInviteInfo>(`/api/classes/${classId}/invite/reset`, {
-        method: 'POST',
-      });
-      setInviteByClassId((current) => ({ ...current, [classId]: payload }));
-    } catch (err) {
-      setInviteErrorByClassId((current) => ({
-        ...current,
-        [classId]: err instanceof Error ? err.message : '邀请码重置失败',
-      }));
-    } finally {
-      setInviteResettingByClassId((current) => ({ ...current, [classId]: false }));
-    }
-  }, []);
-
-  const loadStudentsForClass = useCallback(async (classId: number) => {
-    setStudentsLoadingByClassId((current) => ({ ...current, [classId]: true }));
-    setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
-
-    try {
-      const payload = await listClassStudents(classId);
-      setStudentsByClassId((current) => ({ ...current, [classId]: payload.students }));
-    } catch (err) {
-      setStudentErrorByClassId((current) => ({
-        ...current,
-        [classId]: err instanceof Error ? err.message : '学生列表加载失败',
-      }));
-    } finally {
-      setStudentsLoadingByClassId((current) => ({ ...current, [classId]: false }));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof expandedClassId !== 'number' || inviteByClassId[expandedClassId]) {
-      return;
-    }
-
-    void handleLoadClassInvite(expandedClassId);
-  }, [expandedClassId, handleLoadClassInvite, inviteByClassId]);
-
-  useEffect(() => {
-    if (typeof expandedClassId !== 'number') {
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(studentsByClassId, expandedClassId)) {
-      return;
-    }
-
-    void loadStudentsForClass(expandedClassId);
-  }, [expandedClassId, loadStudentsForClass, studentsByClassId]);
-
-  useEffect(() => {
-    if (studentCenterTab !== 'students') {
-      return;
-    }
-    classes.forEach((item) => {
-      if (!Object.prototype.hasOwnProperty.call(studentsByClassId, item.id)) {
-        void loadStudentsForClass(item.id);
-      }
-    });
-  }, [classes, loadStudentsForClass, studentCenterTab, studentsByClassId]);
-
-  const handleFieldChange = (classId: number | 'new', field: keyof ClassFormValues, value: string) => {
-    const stateKey = getClassStateKey(classId);
-    setFormByClassId((current) => {
-      const currentForm = current[stateKey] || createEmptyClassForm();
-      const nextForm = {
-        ...currentForm,
-        [field]: field === 'current_grade' ? normalizeAcademicGradeLabel(value) : value,
-      };
-      if (field === 'stage') {
-        const gradeOptionsForStage = studentCenterGradeGroups[value] || studentCenterGradeOptions;
-        if (!gradeOptionsForStage.includes(nextForm.current_grade)) {
-          nextForm.current_grade = gradeOptionsForStage[0] || '';
-        }
-      }
-      return {
-        ...current,
-        [stateKey]: nextForm,
-      };
-    });
-  };
-
-  const handleTeacherSearchChange = (classId: number | 'new', value: string) => {
-    setTeacherSearchByClassId((current) => ({
-      ...current,
-      [getClassStateKey(classId)]: value,
-    }));
-  };
-
-  const handleStudentDraftNameChange = (classId: number, value: string) => {
-    setStudentDraftNameByClassId((current) => ({
-      ...current,
-      [classId]: value,
-    }));
-  };
-
-  const handleToggleExpandedClass = (classId: number | 'new') => {
-    if (classCardInteractionLocked) {
-      return;
-    }
-    setExpandedClassId((current) => current === classId ? null : classId);
-    setFormError('');
-    setAssignmentError('');
-  };
-
-  const findDuplicateClass = (classId: number | 'new', payload: {
-    subject: string;
-    stage: string;
-    current_grade: string;
-    class_number: string;
-    cohort_year?: number;
-  }) => classes.find((item) => {
-    if (classId !== 'new' && item.id === classId) {
-      return false;
-    }
-    const itemCohortYear = Number(item.cohort_year || 0);
-    const payloadCohortYear = Number(payload.cohort_year || 0);
-    return item.subject === payload.subject
-      && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === payload.stage
-      && normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === payload.current_grade
-      && String(item.class_number || '').trim() === payload.class_number
-      && itemCohortYear === payloadCohortYear;
-  });
-
-  useEffect(() => {
-    if (!classBindingTarget || expandedClassId === null) {
-      return;
-    }
-
-    const stateKey = getClassStateKey(expandedClassId);
-    setTeacherSearchByClassId((current) => (
-      current[stateKey]
-        ? current
-        : { ...current, [stateKey]: classBindingTarget.teacherName }
-    ));
-    if (expandedClassId === 'new') {
-      setNewClassTeacherUserId(classBindingTarget.teacherUserId);
-    }
-  }, [classBindingTarget, expandedClassId]);
-
-  const handleSaveClass = async (classId: number | 'new') => {
-    const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
-    const selectedTeacherUserId = classId === 'new'
-      ? newClassTeacherUserId
-      : (teacherBindingByClassId[classId] ?? classes.find((item) => item.id === classId)?.teacher_user_id ?? null);
-    if (classId === 'new' && !selectedTeacherUserId) {
-      setFormError('请先选择负责老师账号');
-      return;
-    }
-    const selectedTeacher = typeof selectedTeacherUserId === 'number' ? users.find((user) => user.id === selectedTeacherUserId) : undefined;
-    const displayName = buildClassDisplayName(currentForm);
-    const inferredCohortYear = Number(currentForm.cohort_year) || inferAcademicCohortYear(currentForm.current_grade || currentForm.grade);
-    const payload = {
-      name: displayName || normalizeClassNameInput(currentForm.name),
-      subject: currentForm.subject.trim(),
-      grade: (currentForm.current_grade || currentForm.grade).trim(),
-      teacher_name: selectedTeacher?.name || '',
-      teacher_email: '',
-      stage: currentForm.stage,
-      current_grade: normalizeAcademicGradeLabel(currentForm.current_grade || currentForm.grade),
-      class_number: currentForm.class_number.trim(),
-      cohort_year: inferredCohortYear,
-      show_cohort_year: true,
-      is_bridge: currentForm.is_bridge,
-      bridge_target: currentForm.bridge_target,
-      content_track: currentForm.content_track,
-      teacher_user_id: classId === 'new' ? selectedTeacherUserId : undefined,
-    };
-
-    if (!payload.class_number) {
-      setFormError('请选择班号');
-      return;
-    }
-
-    if (!payload.subject) {
-      setFormError('学科不能为空');
-      return;
-    }
-
-    if (!payload.current_grade || !studentCenterGradeOptions.includes(payload.current_grade)) {
-      setFormError('请选择年级');
-      return;
-    }
-
-    if (findDuplicateClass(classId, payload)) {
-      setFormError('已存在相同学科、学段、年级、班号和入学级的班级，请调整后再保存。');
-      return;
-    }
-
-    setSaving(true);
-    setFormError('');
-
-    let createdClassId: number | null = null;
-    let teacherBindingSucceeded = false;
-
-    try {
-      if (classId === 'new') {
-        const created = await apiFetch<{ id: number; name: string }>('/api/classes', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        createdClassId = created.id;
-        setFormByClassId((current) => ({
-          ...current,
-          new: createEmptyClassForm(),
-        }));
-        setNewClassTeacherUserId(null);
-        loadPageRequestVersionRef.current += 1;
-        await apiFetch(`/api/classes/${created.id}/teacher`, {
-          method: 'PUT',
-          body: JSON.stringify({ teacher_user_id: selectedTeacherUserId }),
-        });
-        teacherBindingSucceeded = true;
-        const optimisticCreatedClass: ClassItem = {
-          id: created.id,
-          name: payload.name,
-          subject: payload.subject,
-          grade: payload.grade,
-          stage: payload.stage,
-          current_grade: payload.current_grade,
-          class_number: payload.class_number,
-          cohort_year: payload.cohort_year,
-          show_cohort_year: payload.show_cohort_year,
-          is_bridge: payload.is_bridge,
-          bridge_target: payload.bridge_target,
-          content_track: payload.content_track,
-          teacher_name: selectedTeacher?.name || '',
-          teacher_email: '',
-          teacher_user_id: selectedTeacherUserId,
-        };
-        setClasses((current) => {
-          const remaining = current.filter((item) => item.id !== created.id);
-          return [...remaining, optimisticCreatedClass];
-        });
-        setTeacherBindingByClassId((current) => ({ ...current, [created.id]: selectedTeacherUserId }));
-        setFormByClassId((current) => ({
-          ...current,
-          [getClassStateKey(created.id)]: toClassFormValues(optimisticCreatedClass),
-        }));
-        setExpandedClassId(created.id);
-        const refreshResult = await loadPage(created.id, { preserveStateOnError: true });
-        if (refreshResult.status === 'refresh-error') {
-          setFormError(`班级和负责老师已保存，但列表刷新失败：${refreshResult.error.message}`);
-        }
-      } else {
-        await apiFetch(`/api/classes/${classId}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-        const refreshResult = await loadPage(classId, { preserveStateOnError: true });
-        if (refreshResult.status === 'refresh-error') {
-          setFormError(`班级已保存，但列表刷新失败：${refreshResult.error.message}`);
-        }
-      }
-    } catch (err) {
-      if (classId === 'new' && createdClassId != null && !teacherBindingSucceeded) {
-        setFormError(err instanceof Error ? `班级已创建，但负责老师绑定失败：${err.message}` : '班级已创建，但负责老师绑定失败，请在班级卡片中重新选择老师');
-        await loadPage(createdClassId, { preserveStateOnError: true });
-        return;
-      }
-      setFormError(err instanceof Error ? err.message : '班级保存失败');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (expandedClassId === null) {
-      return undefined;
-    }
-    const handleSaveShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        void handleSaveClass(expandedClassId);
-      }
-    };
-    window.addEventListener('keydown', handleSaveShortcut);
-    return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [expandedClassId, formByClassId, newClassTeacherUserId, teacherBindingByClassId, classes, users, saving, deleting]);
-
-  const handleDeleteClass = async (classId: number) => {
-    const targetClass = classes.find((item) => item.id === classId);
-    if (!targetClass) {
-      return;
-    }
-
-    if (!window.confirm(`确定删除班级「${targetClass.name}」吗？`)) {
-      return;
-    }
-
-    setDeleting(true);
-    setFormError('');
-
-    try {
-      await apiFetch(`/api/classes/${classId}`, { method: 'DELETE' });
-      setExpandedClassId((current) => current === classId ? null : current);
-      await loadPage(null);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : '班级删除失败');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const handleSelectTeacherForClass = async (classId: number, teacherUserId: number) => {
-    if (classInteractionLocked || teacherBindingSavingByClassId[classId]) {
-      return;
-    }
-
-    const previousClass = classes.find((item) => item.id === classId);
-    const previousTeacherUserId = teacherBindingByClassId[classId] ?? previousClass?.teacher_user_id ?? null;
-    const previousTeacherName = previousClass?.teacher_name || '';
-    const selectedTeacher = users.find((user) => user.id === teacherUserId);
-
-    setAssignmentError('');
-    loadPageRequestVersionRef.current += 1;
-    setTeacherBindingSavingByClassId((current) => ({ ...current, [classId]: true }));
-    setTeacherBindingByClassId((current) => ({ ...current, [classId]: teacherUserId }));
-    setClasses((current) => current.map((item) => (
-      item.id === classId
-        ? { ...item, teacher_name: selectedTeacher?.name || item.teacher_name, teacher_user_id: teacherUserId }
-        : item
-    )));
-
-    try {
-      await apiFetch(`/api/classes/${classId}/teacher`, {
-        method: 'PUT',
-        body: JSON.stringify({ teacher_user_id: teacherUserId }),
-      });
-      const refreshResult = await loadPage(classId, { preserveStateOnError: true });
-      if (refreshResult.status === 'refresh-error') {
-        setAssignmentError(`老师绑定已保存，但列表刷新失败：${refreshResult.error.message}`);
-      }
-    } catch (err) {
-      setTeacherBindingByClassId((current) => resolveTeacherBindingRollbackTeacherBindings(current, classId, previousTeacherUserId, teacherUserId));
-      setClasses((current) => current.map((item) => (
-        item.id === classId
-          ? resolveTeacherBindingRollbackClassItem(item, teacherUserId, previousTeacherUserId, previousTeacherName)
-          : item
-      )));
-      setAssignmentError(err instanceof Error ? err.message : '负责老师保存失败');
-    } finally {
-      setTeacherBindingSavingByClassId((current) => {
-        const nextState = { ...current };
-        delete nextState[classId];
-        return nextState;
-      });
-    }
-  };
-
-  const handleAddStudentToClass = async (classId: number) => {
-    const draftName = (studentDraftNameByClassId[classId] || '').trim();
-    if (!draftName) {
-      setStudentErrorByClassId((current) => ({ ...current, [classId]: '请输入学生姓名' }));
-      return;
-    }
-
-    setStudentSavingByClassId((current) => ({ ...current, [classId]: true }));
-    setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
-
-    try {
-      const payload = await createClassStudent(classId, draftName);
-      setStudentsByClassId((current) => ({
-        ...current,
-        [classId]: [...(current[classId] || []), payload.student],
-      }));
-      setStudentDraftNameByClassId((current) => ({ ...current, [classId]: '' }));
-    } catch (err) {
-      setStudentErrorByClassId((current) => ({
-        ...current,
-        [classId]: err instanceof Error ? err.message : '新增学生失败，请重试。',
-      }));
-    } finally {
-      setStudentSavingByClassId((current) => ({ ...current, [classId]: false }));
-    }
-  };
-
-  const handleDeleteStudentFromClass = async (classId: number, studentId: number) => {
-    setStudentSavingByClassId((current) => ({ ...current, [classId]: true }));
-    setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
-
-    try {
-      await deleteClassStudent(classId, studentId);
-      setStudentsByClassId((current) => ({
-        ...current,
-        [classId]: (current[classId] || []).filter((student) => student.id !== studentId),
-      }));
-    } catch (err) {
-      setStudentErrorByClassId((current) => ({
-        ...current,
-        [classId]: err instanceof Error ? err.message : '删除学生失败，请重试。',
-      }));
-    } finally {
-      setStudentSavingByClassId((current) => ({ ...current, [classId]: false }));
-    }
-  };
-
-  const getClassTeacherUserId = (item: ClassItem) => teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
-  const classSubjectByTeacherUserId = new Map<number, string>();
-  const classSubjectByTeacherName = new Map<string, string>();
-  classes.forEach((item) => {
-    const subject = item.subject && academicSubjectOptions.includes(item.subject) ? item.subject : '';
-    if (!subject) {
-      return;
-    }
-    const teacherUserId = getClassTeacherUserId(item);
-    if (teacherUserId != null && !classSubjectByTeacherUserId.has(teacherUserId)) {
-      classSubjectByTeacherUserId.set(teacherUserId, subject);
-    }
-    if (item.teacher_name && !classSubjectByTeacherName.has(item.teacher_name)) {
-      classSubjectByTeacherName.set(item.teacher_name, subject);
-    }
-  });
-  const getClassEffectiveSubject = (item: ClassItem) => {
-    if (item.subject && academicSubjectOptions.includes(item.subject)) {
-      return item.subject;
-    }
-    const teacherUserId = getClassTeacherUserId(item);
-    if (teacherUserId != null) {
-      const subjectByUserId = classSubjectByTeacherUserId.get(teacherUserId);
-      if (subjectByUserId) {
-        return subjectByUserId;
-      }
-    }
-    return item.teacher_name ? classSubjectByTeacherName.get(item.teacher_name) || '' : '';
-  };
-  const scopedClassItems = classes.filter((item) => {
-    if (currentUser.role !== 'member') {
-      return true;
-    }
-    const itemTeacherUserId = getClassTeacherUserId(item);
-    return itemTeacherUserId === currentUser.id || item.teacher_name === currentUser.display_name;
-  });
-  const classMatchesSelectedFilters = (item: ClassItem, except?: typeof activeClassFilterLayer) => {
-    if (except !== 'subject' && selectedSubjectFilter !== '全部学科' && getClassEffectiveSubject(item) !== selectedSubjectFilter) {
-      return false;
-    }
-    const itemTeacherUserId = getClassTeacherUserId(item);
-    if (except !== 'teacher' && selectedClassTeacherFilter !== 'all' && itemTeacherUserId !== selectedClassTeacherFilter) {
-      return false;
-    }
-    if (except !== 'stage' && selectedClassStageFilter !== '全部学段' && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) !== selectedClassStageFilter) {
-      return false;
-    }
-    if (except !== 'grade' && selectedGradeFilter !== '全部' && normalizeAcademicGradeLabel(item.current_grade || item.grade || '') !== selectedGradeFilter) {
-      return false;
-    }
-    return true;
-  };
-  const getClassFilterOptionBase = (layer: typeof activeClassFilterLayer) => scopedClassItems.filter((item) => classMatchesSelectedFilters(item, layer));
-  const classSubjectFilterOptions = academicSubjectOptions;
-  const classTeacherFilterOptions = users.filter((user) => getClassFilterOptionBase('teacher').some((item) => getClassTeacherUserId(item) === user.id));
-  const classStageFilterOptions = studentCenterStageOptions.filter((stage) => getClassFilterOptionBase('stage').some((item) => (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === stage));
-  const classGradeFilterOptions = studentCenterGradeOptions.filter((grade) => {
-    if (selectedClassStageFilter !== '全部学段' && !studentCenterGradeGroups[selectedClassStageFilter]?.includes(grade)) {
-      return false;
-    }
-    return getClassFilterOptionBase('grade').some((item) => normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === grade);
-  });
-  const activeClassFilterSummary = [
-    selectedClassTeacherFilter !== 'all' ? users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师' : '',
-    selectedSubjectFilter !== '全部学科' ? selectedSubjectFilter : '',
-    selectedClassStageFilter !== '全部学段' ? selectedClassStageFilter : '',
-    selectedGradeFilter !== '全部' ? selectedGradeFilter : '',
-  ].filter(Boolean).join(' / ') || '全部';
-  const overviewMatchesSelectedFilters = (item: ClassItem, except?: typeof activeOverviewFilterLayer) => {
-    if (except !== 'subject' && overviewSubjectFilter !== '全部学科' && getClassEffectiveSubject(item) !== overviewSubjectFilter) {
-      return false;
-    }
-    const itemTeacherUserId = getClassTeacherUserId(item);
-    if (except !== 'teacher' && overviewTeacherFilter !== 'all' && itemTeacherUserId !== overviewTeacherFilter) {
-      return false;
-    }
-    if (except !== 'stage' && overviewStageFilter !== '全部学段' && (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) !== overviewStageFilter) {
-      return false;
-    }
-    if (except !== 'grade' && overviewGradeFilter !== '全部' && normalizeAcademicGradeLabel(item.current_grade || item.grade || '') !== overviewGradeFilter) {
-      return false;
-    }
-    return true;
-  };
-  const getOverviewFilterOptionBase = (layer: typeof activeOverviewFilterLayer) => scopedClassItems.filter((item) => overviewMatchesSelectedFilters(item, layer));
-  const overviewSubjectFilterOptions = academicSubjectOptions;
-  const overviewTeacherFilterOptions = users.filter((user) => getOverviewFilterOptionBase('teacher').some((item) => getClassTeacherUserId(item) === user.id));
-  const overviewStageFilterOptions = studentCenterStageOptions.filter((stage) => getOverviewFilterOptionBase('stage').some((item) => (item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '')) === stage));
-  const overviewGradeFilterOptions = studentCenterGradeOptions.filter((grade) => {
-    if (overviewStageFilter !== '全部学段' && !studentCenterGradeGroups[overviewStageFilter]?.includes(grade)) {
-      return false;
-    }
-    return getOverviewFilterOptionBase('grade').some((item) => normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === grade);
-  });
-  const activeOverviewFilterSummary = [
-    overviewTeacherFilter !== 'all' ? `教师：${users.find((user) => user.id === overviewTeacherFilter)?.name || '指定教师'}` : '',
-    overviewSubjectFilter !== '全部学科' ? `科目：${overviewSubjectFilter}` : '',
-    overviewStageFilter !== '全部学段' ? `学段：${overviewStageFilter}` : '',
-    overviewGradeFilter !== '全部' ? `年级：${overviewGradeFilter}` : '',
-  ].filter(Boolean).join(' / ') || '全校区';
-  const overviewFilterItems = [
-    {
-      key: 'subject' as const,
-      label: '科目',
-      selected: overviewSubjectFilter !== '全部学科',
-    },
-    ...(canUseOrganizationClassFilters ? [{
-      key: 'teacher' as const,
-      label: '教师',
-      selected: overviewTeacherFilter !== 'all',
-    }] : []),
-    {
-      key: 'stage' as const,
-      label: '学段',
-      selected: overviewStageFilter !== '全部学段',
-    },
-    {
-      key: 'grade' as const,
-      label: '年级',
-      selected: overviewGradeFilter !== '全部',
-    },
-  ];
-  const handleClearOverviewFilters = () => {
-    setOverviewSubjectFilter('全部学科');
-    setOverviewTeacherFilter('all');
-    setOverviewStageFilter('全部学段');
-    setOverviewGradeFilter('全部');
-    setActiveOverviewFilterLayer(null);
-    setClickedOverviewFilterLayer(null);
-  };
-  const handleSelectOverviewFilterOption = (value: string | number) => {
-    if (!activeOverviewFilterLayer) {
-      return;
-    }
-    if (activeOverviewFilterLayer === 'subject') {
-      setOverviewSubjectFilter(String(value));
-    } else if (activeOverviewFilterLayer === 'teacher') {
-      setOverviewTeacherFilter(value === 'all' ? 'all' : Number(value));
-    } else if (activeOverviewFilterLayer === 'stage') {
-      setOverviewStageFilter(String(value));
-    } else {
-      setOverviewGradeFilter(String(value));
-    }
-  };
-  const handleOverviewFilterAreaEnter = () => {
-    if (overviewFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewFilterCloseTimerRef.current);
-      overviewFilterCloseTimerRef.current = null;
-    }
-    setIsOverviewFilterOpen(true);
-  };
-  const handleOverviewFilterAreaLeave = () => {
-    if (overviewFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewFilterCloseTimerRef.current);
-    }
-    if (overviewLayerCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewLayerCloseTimerRef.current);
-    }
-    overviewFilterCloseTimerRef.current = window.setTimeout(() => {
-      setIsOverviewFilterOpen(false);
-      setActiveOverviewFilterLayer(null);
-      setClickedOverviewFilterLayer(null);
-      overviewFilterCloseTimerRef.current = null;
-    }, 120);
-  };
-  const handleOverviewLayerEnter = () => {
-    if (overviewLayerCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewLayerCloseTimerRef.current);
-      overviewLayerCloseTimerRef.current = null;
-    }
-  };
-  const handleOverviewLayerLeave = () => {
-    if (overviewLayerCloseTimerRef.current !== null) {
-      window.clearTimeout(overviewLayerCloseTimerRef.current);
-    }
-    overviewLayerCloseTimerRef.current = window.setTimeout(() => {
-      setActiveOverviewFilterLayer(null);
-      setClickedOverviewFilterLayer(null);
-      overviewLayerCloseTimerRef.current = null;
-    }, 120);
-  };
-  const classFilterItems = [
-    {
-      key: 'subject' as const,
-      defaultLabel: '科目',
-      label: selectedSubjectFilter === '全部学科' ? '科目' : selectedSubjectFilter,
-      selected: selectedSubjectFilter !== '全部学科',
-    },
-    {
-      key: 'teacher' as const,
-      defaultLabel: '教师',
-      label: selectedClassTeacherFilter === 'all' ? '教师' : users.find((user) => user.id === selectedClassTeacherFilter)?.name || '指定教师',
-      selected: selectedClassTeacherFilter !== 'all',
-    },
-    {
-      key: 'stage' as const,
-      defaultLabel: '学段',
-      label: selectedClassStageFilter === '全部学段' ? '学段' : selectedClassStageFilter,
-      selected: selectedClassStageFilter !== '全部学段',
-    },
-    {
-      key: 'grade' as const,
-      defaultLabel: '年级',
-      label: selectedGradeFilter === '全部' ? '年级' : selectedGradeFilter,
-      selected: selectedGradeFilter !== '全部',
-    },
-  ];
-  const handleClearClassFilter = (layer: typeof activeClassFilterLayer) => {
-    if (layer === 'subject') {
-      setSelectedSubjectFilter('全部学科');
-      return;
-    }
-    if (layer === 'teacher') {
-      setSelectedClassTeacherFilter('all');
-      return;
-    }
-    if (layer === 'stage') {
-      setSelectedClassStageFilter('全部学段');
-      return;
-    }
-    setSelectedGradeFilter('全部');
-  };
-  const handleSelectClassFilterOption = (value: string | number) => {
-    if (!activeClassFilterLayer) {
-      return;
-    }
-    if (activeClassFilterLayer === 'subject') {
-      setSelectedSubjectFilter(String(value));
-    } else if (activeClassFilterLayer === 'teacher') {
-      setSelectedClassTeacherFilter(value === 'all' ? 'all' : Number(value));
-    } else if (activeClassFilterLayer === 'stage') {
-      setSelectedClassStageFilter(String(value));
-    } else {
-      setSelectedGradeFilter(String(value));
-    }
-  };
-  const handleClassFilterAreaEnter = () => {
-    if (classFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(classFilterCloseTimerRef.current);
-      classFilterCloseTimerRef.current = null;
-    }
-  };
-  const handleClassFilterAreaLeave = () => {
-    if (classFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(classFilterCloseTimerRef.current);
-    }
-    classFilterCloseTimerRef.current = window.setTimeout(() => {
-      setActiveClassFilterLayer(null);
-      classFilterCloseTimerRef.current = null;
-    }, 120);
-  };
-  useEffect(() => {
-    if (selectedSubjectFilter !== '全部学科' && !classSubjectFilterOptions.includes(selectedSubjectFilter)) {
-      setSelectedSubjectFilter('全部学科');
-    }
-    if (selectedClassTeacherFilter !== 'all' && !classTeacherFilterOptions.some((user) => user.id === selectedClassTeacherFilter)) {
-      setSelectedClassTeacherFilter('all');
-    }
-    if (selectedClassStageFilter !== '全部学段' && !classStageFilterOptions.includes(selectedClassStageFilter)) {
-      setSelectedClassStageFilter('全部学段');
-    }
-    if (selectedGradeFilter !== '全部' && !classGradeFilterOptions.includes(selectedGradeFilter)) {
-      setSelectedGradeFilter('全部');
-    }
-  }, [classSubjectFilterOptions, classTeacherFilterOptions, classStageFilterOptions, classGradeFilterOptions, selectedSubjectFilter, selectedClassTeacherFilter, selectedClassStageFilter, selectedGradeFilter]);
-  useEffect(() => {
-    if (overviewSubjectFilter !== '全部学科' && !overviewSubjectFilterOptions.includes(overviewSubjectFilter)) {
-      setOverviewSubjectFilter('全部学科');
-    }
-    if (overviewTeacherFilter !== 'all' && !overviewTeacherFilterOptions.some((user) => user.id === overviewTeacherFilter)) {
-      setOverviewTeacherFilter('all');
-    }
-    if (overviewStageFilter !== '全部学段' && !overviewStageFilterOptions.includes(overviewStageFilter)) {
-      setOverviewStageFilter('全部学段');
-    }
-    if (overviewGradeFilter !== '全部' && !overviewGradeFilterOptions.includes(overviewGradeFilter)) {
-      setOverviewGradeFilter('全部');
-    }
-  }, [overviewSubjectFilterOptions, overviewTeacherFilterOptions, overviewStageFilterOptions, overviewGradeFilterOptions, overviewSubjectFilter, overviewTeacherFilter, overviewStageFilter, overviewGradeFilter]);
-  const activeClassFilterOptions = !activeClassFilterLayer
-    ? []
-    : activeClassFilterLayer === 'subject'
-      ? classSubjectFilterOptions.map((option) => ({ id: option, label: option, selected: selectedSubjectFilter === option }))
-      : activeClassFilterLayer === 'teacher'
-        ? [
-          ...classTeacherFilterOptions.map((teacher) => ({ id: teacher.id, label: teacher.name, selected: selectedClassTeacherFilter === teacher.id })),
-        ]
-        : activeClassFilterLayer === 'stage'
-          ? classStageFilterOptions.map((stage) => ({ id: stage, label: stage, selected: selectedClassStageFilter === stage }))
-          : classGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: selectedGradeFilter === grade }));
-  const activeOverviewFilterOptions = !activeOverviewFilterLayer
-    ? []
-    : activeOverviewFilterLayer === 'subject'
-      ? overviewSubjectFilterOptions.map((option) => ({ id: option, label: option, selected: overviewSubjectFilter === option }))
-      : activeOverviewFilterLayer === 'teacher'
-        ? overviewTeacherFilterOptions.map((teacher) => ({ id: teacher.id, label: teacher.name, selected: overviewTeacherFilter === teacher.id }))
-        : activeOverviewFilterLayer === 'stage'
-          ? overviewStageFilterOptions.map((stage) => ({ id: stage, label: stage, selected: overviewStageFilter === stage }))
-          : overviewGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: overviewGradeFilter === grade }));
-  const getClassInfoIssues = (item: ClassItem) => {
-    const grade = normalizeAcademicGradeLabel(item.current_grade || item.grade || '');
-    return [
-      (!item.subject || !academicSubjectOptions.includes(item.subject)) ? '缺科目' : '',
-      !(item.stage || getAcademicStageFromGrade(grade)) ? '缺学段' : '',
-      !grade ? '缺年级' : '',
-      !item.class_number ? '缺班号' : '',
-      getClassTeacherUserId(item) == null ? '缺负责教师' : '',
-    ].filter(Boolean);
-  };
-  const isClassInfoIncomplete = (item: ClassItem) => getClassInfoIssues(item).length > 0;
-  const filteredClasses = scopedClassItems.filter((item) => classMatchesSelectedFilters(item)).sort((left, right) => {
-    const incompleteDelta = Number(isClassInfoIncomplete(right)) - Number(isClassInfoIncomplete(left));
-    const gradeDelta = getAcademicGradeRank(left.current_grade || left.grade || '') - getAcademicGradeRank(right.current_grade || right.grade || '');
-    return incompleteDelta || gradeDelta || `${getClassEffectiveSubject(left)}${left.name}`.localeCompare(`${getClassEffectiveSubject(right)}${right.name}`, 'zh-CN') || left.id - right.id;
-  });
-  const overviewFilteredClasses = scopedClassItems.filter((item) => overviewMatchesSelectedFilters(item));
-  const classSummaryTeacherKeys = new Set(overviewFilteredClasses.map((item) => {
-    const teacherUserId = getClassTeacherUserId(item);
-    return teacherUserId == null
-      ? (item.teacher_name ? `name:${item.teacher_name}` : null)
-      : `id:${teacherUserId}`;
-  }).filter(Boolean));
-  const classOwnerSummaryItems = [
-    { label: '教师人数', value: classSummaryTeacherKeys.size },
-    { label: '学员人数', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.student_count || 0), 0) },
-    { label: '班级数量', value: overviewFilteredClasses.length },
-    { label: '小课数量', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.lesson_count || 0), 0) },
-  ];
-  const classTeacherSummaryItems = [
-    { label: '主讲教师', value: currentUser.display_name || currentUser.username },
-    { label: '学员人数', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.student_count || 0), 0) },
-    { label: '班级数量', value: overviewFilteredClasses.length },
-    { label: '小课数量', value: overviewFilteredClasses.reduce((total, item) => total + Number(item.lesson_count || 0), 0) },
-  ];
-  const classSummaryItems = canUseOrganizationClassFilters ? classOwnerSummaryItems : classTeacherSummaryItems;
-
-  const newClassForm = formByClassId.new || createEmptyClassForm();
-  const newClassExpanded = expandedClassId === 'new';
-  const newClassTeacher = newClassTeacherUserId == null ? undefined : users.find((user) => user.id === newClassTeacherUserId);
-  const newClassGradeOptions = studentCenterGradeGroups[newClassForm.stage] || studentCenterGradeOptions;
-  const newClassDisplayNamePreview = buildClassDisplayName({ ...newClassForm, show_cohort_year: true }) || '2025级·四年级·1班';
-  const newClassFilteredUsers = users.filter((user) => {
-    const keyword = (teacherSearchByClassId.new || '').trim().toLowerCase();
-    if (newClassTeacherUserId === user.id) {
-      return true;
-    }
-    if (!keyword) {
-      return true;
-    }
-    return user.name.toLowerCase().includes(keyword);
-  });
-  const editingClass = typeof expandedClassId === 'number' ? classes.find((item) => item.id === expandedClassId) ?? null : null;
-  const editingFormState = editingClass ? (formByClassId[getClassStateKey(editingClass.id)] || toClassFormValues(editingClass)) : null;
-  const editingClassGradeOptions = editingFormState ? (studentCenterGradeGroups[editingFormState.stage] || studentCenterGradeOptions) : studentCenterGradeOptions;
-  const editingClassDisplayNamePreview = editingFormState ? buildClassDisplayName({ ...editingFormState, show_cohort_year: true }) || '2025级·四年级·1班' : '';
-  const getClassDisplayName = (item: ClassItem) => buildClassDisplayName({
-    name: item.name || '',
-    subject: item.subject || '',
-    grade: item.grade || '',
-    teacher_name: item.teacher_name || '',
-    stage: item.stage || '',
-    current_grade: item.current_grade || item.grade || '',
-    class_number: item.class_number || '',
-    cohort_year: item.cohort_year ? String(item.cohort_year) : '',
-    show_cohort_year: showClassCohortYear,
-    is_bridge: Boolean(item.is_bridge),
-    bridge_target: item.bridge_target || '',
-    content_track: item.content_track || '',
-  }) || item.name;
-  const isClassFormDraftDirty = (classId: number | 'new') => {
-    const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
-    const savedClass = classId === 'new' ? null : classes.find((item) => item.id === classId);
-    if (classId !== 'new' && !savedClass) {
-      return false;
-    }
-    const savedForm = classId === 'new' ? createEmptyClassForm() : toClassFormValues(savedClass as ClassItem);
-    if (getClassFormDirtySignature(currentForm) !== getClassFormDirtySignature(savedForm)) {
-      return true;
-    }
-    return classId === 'new' && newClassTeacherUserId !== null;
-  };
-  const resetClassFormDraft = (classId: number | 'new') => {
-    if (classId === 'new') {
-      setFormByClassId((current) => ({ ...current, new: createEmptyClassForm() }));
-      setNewClassTeacherUserId(null);
-      setTeacherSearchByClassId((current) => ({ ...current, new: '' }));
-      return;
-    }
-    const savedClass = classes.find((item) => item.id === classId);
-    if (!savedClass) {
-      return;
-    }
-    setFormByClassId((current) => ({ ...current, [getClassStateKey(classId)]: toClassFormValues(savedClass) }));
-  };
-  const attemptCloseClassEditor = () => {
-    if (expandedClassId === null) {
-      return;
-    }
-    if (isClassFormDraftDirty(expandedClassId) && !window.confirm('有未保存的修改，确定放弃并关闭吗？')) {
-      return;
-    }
-    resetClassFormDraft(expandedClassId);
-    setFormError('');
-    setAssignmentError('');
-    setExpandedClassId(null);
-  };
-  const editingTeacherSearch = editingClass ? (teacherSearchByClassId[getClassStateKey(editingClass.id)] || '') : '';
-  const editingCurrentTeacherUserId = editingClass
-    ? (teacherBindingByClassId[editingClass.id] ?? editingClass.teacher_user_id ?? null)
-    : null;
-  const editingCurrentTeacher = editingCurrentTeacherUserId == null ? undefined : users.find((user) => user.id === editingCurrentTeacherUserId);
-  const editingTeacherSummary = editingCurrentTeacher?.name || editingClass?.teacher_name || '未分配老师';
-  const editingTeacherBindingSaving = editingClass ? Boolean(teacherBindingSavingByClassId[editingClass.id]) : false;
-  const editingInviteInfo = editingClass ? inviteByClassId[editingClass.id] : undefined;
-  const editingInviteLoading = editingClass ? Boolean(inviteLoadingByClassId[editingClass.id]) : false;
-  const editingInviteResetting = editingClass ? Boolean(inviteResettingByClassId[editingClass.id]) : false;
-  const editingInviteError = editingClass ? (inviteErrorByClassId[editingClass.id] || '') : '';
-  const editingStudents = editingClass ? (studentsByClassId[editingClass.id] || []) : [];
-  const editingStudentsLoading = editingClass ? Boolean(studentsLoadingByClassId[editingClass.id]) : false;
-  const editingStudentSaving = editingClass ? Boolean(studentSavingByClassId[editingClass.id]) : false;
-  const editingStudentError = editingClass ? (studentErrorByClassId[editingClass.id] || '') : '';
-  const editingStudentDraftName = editingClass ? (studentDraftNameByClassId[editingClass.id] || '') : '';
-  const editingFilteredUsers = editingClass
-    ? users.filter((user) => {
-        const keyword = editingTeacherSearch.trim().toLowerCase();
-        if (editingCurrentTeacherUserId === user.id) {
-          return true;
-        }
-        if (!keyword) {
-          return true;
-        }
-        return user.name.toLowerCase().includes(keyword);
-      })
-    : [];
-  const studentRows = scopedClassItems.flatMap((classItem) => (studentsByClassId[classItem.id] || []).map((student) => ({
-    ...student,
-    classItem,
-    teacherUserId: teacherBindingByClassId[classItem.id] ?? classItem.teacher_user_id ?? null,
-  })));
-  const studentMatchesSelectedFilters = (item: (typeof studentRows)[number], except?: typeof activeStudentFilterLayer) => {
-    if (except !== 'subject' && studentSubjectFilter !== '全部学科' && getClassEffectiveSubject(item.classItem) !== studentSubjectFilter) {
-      return false;
-    }
-    if (except !== 'teacher' && studentTeacherFilter !== 'all' && item.teacherUserId !== studentTeacherFilter) {
-      return false;
-    }
-    if (except !== 'stage' && studentStageFilter !== '全部学段' && (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) !== studentStageFilter) {
-      return false;
-    }
-    if (except !== 'grade' && studentGradeFilter !== '全部' && normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') !== studentGradeFilter) {
-      return false;
-    }
-    if (except !== 'class' && studentClassFilter !== 'all' && item.classItem.id !== studentClassFilter) {
-      return false;
-    }
-    if (except !== 'student' && studentNameFilter.trim() && !item.name.includes(studentNameFilter.trim())) {
-      return false;
-    }
-    return true;
-  };
-  const getStudentFilterOptionBase = (layer: typeof activeStudentFilterLayer) => studentRows.filter((item) => studentMatchesSelectedFilters(item, layer));
-  const studentSubjectFilterOptions = academicSubjectOptions;
-  const studentTeacherFilterOptions = users.filter((user) => getStudentFilterOptionBase('teacher').some((item) => item.teacherUserId === user.id));
-  const studentStageFilterOptions = studentCenterStageOptions.filter((stage) => getStudentFilterOptionBase('stage').some((item) => (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) === stage));
-  const studentGradeFilterOptions = studentCenterGradeOptions.filter((grade) => {
-    if (studentStageFilter !== '全部学段' && !studentCenterGradeGroups[studentStageFilter]?.includes(grade)) {
-      return false;
-    }
-    return getStudentFilterOptionBase('grade').some((item) => normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') === grade);
-  });
-  const studentClassFilterOptions = scopedClassItems.filter((classItem) => getStudentFilterOptionBase('class').some((item) => item.classItem.id === classItem.id));
-  const filteredStudentRows = studentRows.filter((item) => studentMatchesSelectedFilters(item)).sort((left, right) => {
-    const gradeDelta = getAcademicGradeRank(left.classItem.current_grade || left.classItem.grade || '') - getAcademicGradeRank(right.classItem.current_grade || right.classItem.grade || '');
-    return gradeDelta || left.classItem.name.localeCompare(right.classItem.name, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN') || left.id - right.id;
-  });
-  const activeStudentFilterSummary = [
-    studentTeacherFilter !== 'all' ? users.find((user) => user.id === studentTeacherFilter)?.name || '指定教师' : '',
-    studentSubjectFilter !== '全部学科' ? studentSubjectFilter : '',
-    studentStageFilter !== '全部学段' ? studentStageFilter : '',
-    studentGradeFilter !== '全部' ? studentGradeFilter : '',
-    studentClassFilter !== 'all' ? scopedClassItems.find((item) => item.id === studentClassFilter)?.name || '指定班级' : '',
-    studentNameFilter.trim(),
-  ].filter(Boolean).join(' / ') || '全部';
-  const studentFilterItems = [
-    {
-      key: 'subject' as const,
-      defaultLabel: '科目',
-      label: studentSubjectFilter === '全部学科' ? '科目' : studentSubjectFilter,
-      selected: studentSubjectFilter !== '全部学科',
-    },
-    {
-      key: 'teacher' as const,
-      defaultLabel: '教师',
-      label: studentTeacherFilter === 'all' ? '教师' : users.find((user) => user.id === studentTeacherFilter)?.name || '指定教师',
-      selected: studentTeacherFilter !== 'all',
-    },
-    {
-      key: 'stage' as const,
-      defaultLabel: '学段',
-      label: studentStageFilter === '全部学段' ? '学段' : studentStageFilter,
-      selected: studentStageFilter !== '全部学段',
-    },
-    {
-      key: 'grade' as const,
-      defaultLabel: '年级',
-      label: studentGradeFilter === '全部' ? '年级' : studentGradeFilter,
-      selected: studentGradeFilter !== '全部',
-    },
-    {
-      key: 'class' as const,
-      defaultLabel: '班级',
-      label: studentClassFilter === 'all' ? '班级' : scopedClassItems.find((item) => item.id === studentClassFilter)?.name || '指定班级',
-      selected: studentClassFilter !== 'all',
-    },
-  ];
-  const handleClearStudentFilter = (layer: typeof activeStudentFilterLayer) => {
-    if (layer === 'subject') {
-      setStudentSubjectFilter('全部学科');
-      return;
-    }
-    if (layer === 'teacher') {
-      setStudentTeacherFilter('all');
-      return;
-    }
-    if (layer === 'stage') {
-      setStudentStageFilter('全部学段');
-      return;
-    }
-    if (layer === 'grade') {
-      setStudentGradeFilter('全部');
-      return;
-    }
-    setStudentClassFilter('all');
-  };
-  const handleSelectStudentFilterOption = (value: string | number) => {
-    if (!activeStudentFilterLayer) {
-      return;
-    }
-    if (activeStudentFilterLayer === 'subject') {
-      setStudentSubjectFilter(String(value));
-    } else if (activeStudentFilterLayer === 'teacher') {
-      setStudentTeacherFilter(value === 'all' ? 'all' : Number(value));
-    } else if (activeStudentFilterLayer === 'stage') {
-      setStudentStageFilter(String(value));
-    } else if (activeStudentFilterLayer === 'grade') {
-      setStudentGradeFilter(String(value));
-    } else if (activeStudentFilterLayer === 'class') {
-      setStudentClassFilter(value === 'all' ? 'all' : Number(value));
-    }
-  };
-  const handleStudentFilterAreaEnter = () => {
-    if (studentFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(studentFilterCloseTimerRef.current);
-      studentFilterCloseTimerRef.current = null;
-    }
-  };
-  const handleStudentFilterAreaLeave = () => {
-    if (studentFilterCloseTimerRef.current !== null) {
-      window.clearTimeout(studentFilterCloseTimerRef.current);
-    }
-    studentFilterCloseTimerRef.current = window.setTimeout(() => {
-      setActiveStudentFilterLayer(null);
-      studentFilterCloseTimerRef.current = null;
-    }, 120);
-  };
-  useEffect(() => {
-    if (studentSubjectFilter !== '全部学科' && !studentSubjectFilterOptions.includes(studentSubjectFilter)) {
-      setStudentSubjectFilter('全部学科');
-    }
-    if (studentTeacherFilter !== 'all' && !studentTeacherFilterOptions.some((user) => user.id === studentTeacherFilter)) {
-      setStudentTeacherFilter('all');
-    }
-    if (studentStageFilter !== '全部学段' && !studentStageFilterOptions.includes(studentStageFilter)) {
-      setStudentStageFilter('全部学段');
-    }
-    if (studentGradeFilter !== '全部' && !studentGradeFilterOptions.includes(studentGradeFilter)) {
-      setStudentGradeFilter('全部');
-    }
-    if (studentClassFilter !== 'all' && !studentClassFilterOptions.some((item) => item.id === studentClassFilter)) {
-      setStudentClassFilter('all');
-    }
-  }, [studentSubjectFilterOptions, studentTeacherFilterOptions, studentStageFilterOptions, studentGradeFilterOptions, studentClassFilterOptions, studentSubjectFilter, studentTeacherFilter, studentStageFilter, studentGradeFilter, studentClassFilter]);
-  const activeStudentFilterOptions = !activeStudentFilterLayer
-    ? []
-    : activeStudentFilterLayer === 'subject'
-      ? studentSubjectFilterOptions.map((option) => ({ id: option, label: option, selected: studentSubjectFilter === option }))
-      : activeStudentFilterLayer === 'teacher'
-        ? studentTeacherFilterOptions.map((teacher) => ({ id: teacher.id, label: teacher.name, selected: studentTeacherFilter === teacher.id }))
-        : activeStudentFilterLayer === 'stage'
-          ? studentStageFilterOptions.map((stage) => ({ id: stage, label: stage, selected: studentStageFilter === stage }))
-          : activeStudentFilterLayer === 'grade'
-            ? studentGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: studentGradeFilter === grade }))
-            : studentClassFilterOptions.map((classItem) => ({ id: classItem.id, label: classItem.name, selected: studentClassFilter === classItem.id }));
-  const handleClassCardClick = (event: React.MouseEvent, classId: number) => {
-    if ((event.target as HTMLElement).closest('button, a, input, select, textarea')) {
-      return;
-    }
-    handleToggleExpandedClass(classId);
-  };
-
-  return (
-    <div className={`${workspacePageClass} space-y-8`}>
-      <section className={`${workspaceCardClass} space-y-4 p-6`}>
-        <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Class Workspace</p>
-        <div className="relative flex flex-wrap items-center gap-2">
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">校区总览</h3>
-          <div
-            className="relative"
-            onMouseEnter={() => setActiveClassHelpKey('overview')}
-            onMouseLeave={() => setActiveClassHelpKey(null)}
-          >
-            <button
-              type="button"
-              onClick={() => setActiveClassHelpKey((current) => current === 'overview' ? null : 'overview')}
-              className="inline-flex h-8 w-8 items-center justify-center text-sky-600 transition hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
-              aria-label="查看校区总览说明"
-            >
-              <Info size={16} />
-            </button>
-            {activeClassHelpKey === 'overview' && (
-              <div className="absolute left-0 top-10 z-20 w-[min(24rem,calc(100vw-3rem))] rounded-2xl border border-sky-100 bg-white p-4 text-sm text-slate-500 shadow-[0_18px_40px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
-                <p className="font-semibold text-slate-900 dark:text-white">校区总览说明</p>
-                <p className="mt-2">这里汇总 {currentUser.organization_name} 的教师、学员、班级和小课数量，可按科目、教师、学段和年级查看不同范围。</p>
-              </div>
-            )}
-          </div>
-          <div
-            className="relative"
-            onMouseEnter={handleOverviewFilterAreaEnter}
-            onMouseLeave={handleOverviewFilterAreaLeave}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setIsOverviewFilterOpen((current) => {
-                  if (current) {
-                    setActiveOverviewFilterLayer(null);
-                    setClickedOverviewFilterLayer(null);
-                  }
-                  return !current;
-                });
-              }}
-              className={cn(
-                'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
-                isOverviewFilterOpen || activeOverviewFilterSummary !== '全校区'
-                  ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
-                  : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-              )}
-            >
-              {activeOverviewFilterSummary === '全校区' ? '全校区' : `全校区：${activeOverviewFilterSummary}`}
-              {activeOverviewFilterSummary !== '全校区' ? (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  aria-label="清空校区总览筛选"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleClearOverviewFilters();
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      handleClearOverviewFilters();
-                    }
-                  }}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-xs leading-none text-sky-600 hover:bg-sky-200 dark:bg-slate-950/20 dark:hover:bg-slate-950/30"
-                >
-                  ×
-                </span>
-              ) : null}
-            </button>
-            {isOverviewFilterOpen && (
-              <div className="absolute left-0 top-11 z-20 w-[min(28rem,calc(100vw-3rem))] space-y-3 rounded-2xl border border-sky-100 bg-white p-3 shadow-[0_18px_40px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-900">
-                <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-3 dark:border-white/10 dark:bg-white/5">
-                  <div className="flex flex-wrap gap-2">
-                    {overviewFilterItems.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onMouseEnter={() => {
-                          handleOverviewLayerEnter();
-                          setActiveOverviewFilterLayer(item.key);
-                          setClickedOverviewFilterLayer(null);
-                        }}
-                        onMouseLeave={handleOverviewLayerLeave}
-                        onClick={() => {
-                          handleOverviewLayerEnter();
-                          if (activeOverviewFilterLayer === item.key) {
-                            setActiveOverviewFilterLayer(null);
-                            setClickedOverviewFilterLayer(null);
-                            return;
-                          }
-                          setActiveOverviewFilterLayer(item.key);
-                          setClickedOverviewFilterLayer(item.key);
-                        }}
-                        className={cn(
-                          'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                          activeOverviewFilterLayer === item.key || item.selected
-                            ? 'border-sky-300 bg-sky-50/80 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
-                            : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 hover:shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-100',
-                        )}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {activeOverviewFilterLayer && (
-                  <div
-                    className="rounded-2xl border border-sky-100 bg-sky-50/70 p-3 dark:border-white/10 dark:bg-white/5"
-                    onMouseEnter={handleOverviewLayerEnter}
-                    onMouseLeave={handleOverviewLayerLeave}
-                  >
-                    {activeOverviewFilterOptions.length === 0 ? (
-                      <p className="text-sm text-slate-400 dark:text-slate-500">当前条件下暂无可选项。</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {activeOverviewFilterOptions.map((option) => (
-                          <button
-                            key={`${activeOverviewFilterLayer}-${option.id}`}
-                            type="button"
-                            onClick={() => handleSelectOverviewFilterOption(option.id)}
-                            className={cn(
-                              'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                              option.selected
-                                ? 'border-sky-500 bg-sky-500 text-white'
-                                : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-                            )}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-        {classBindingTarget && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-sky-500/30 dark:bg-sky-500/10">
-            <div>
-              <p className="text-xs uppercase tracking-[0.25em] text-sky-600 dark:text-sky-300">绑定班级</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">目标老师：{classBindingTarget?.teacherName}</p>
-            </div>
-            {onClearClassBindingTarget && (
-              <button
-                type="button"
-                onClick={onClearClassBindingTarget}
-                className={workspaceSecondaryButtonClass}
-              >
-                清除目标
-              </button>
-            )}
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          {classSummaryItems.map((item) => (
-            <div key={item.label} className={`${workspaceSoftCardClass} p-4`}>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{item.label}</p>
-              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{item.value}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {pageError && (
-        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-          <AlertCircle size={16} />
-          {pageError}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-sky-50 p-1 dark:bg-white/5">
-        {[
-          { key: 'classes' as const, label: '班级管理' },
-          { key: 'students' as const, label: '学员管理' },
-        ].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setStudentCenterTab(item.key)}
-            className={cn(
-              'h-10 rounded-xl text-sm font-bold transition',
-              studentCenterTab === item.key
-                ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
-                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      {studentCenterTab === 'students' && (
-        <section className={`${workspaceCardClass} space-y-5 p-6`}>
-          <div>
-            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学员管理</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">默认展示全部学员，可按教师、科目、学段、年级、班级筛选，并查询学员姓名。</p>
-          </div>
-          <div
-            className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10"
-            onMouseEnter={handleStudentFilterAreaEnter}
-            onMouseLeave={handleStudentFilterAreaLeave}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选</span>
-              {studentFilterItems.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onMouseEnter={() => setActiveStudentFilterLayer(item.key)}
-                  onClick={() => setActiveStudentFilterLayer(item.key)}
-                  className={cn(
-                    'inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
-                    item.selected
-                      ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
-                      : activeStudentFilterLayer === item.key
-                        ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
-                        : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-                  )}
-                >
-                  {item.label}
-                  {item.selected && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`取消${item.defaultLabel}筛选`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleClearStudentFilter(item.key);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          handleClearStudentFilter(item.key);
-                        }
-                      }}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/25 text-xs leading-none hover:bg-white/40 dark:bg-slate-950/20 dark:hover:bg-slate-950/30"
-                    >
-                      ×
-                    </span>
-                  )}
-                </button>
-              ))}
-              <span className="ml-auto text-xs font-semibold text-slate-400 dark:text-slate-500">
-                {canUseOrganizationClassFilters ? '全机构学员' : '仅本人学员'}
-              </span>
-              <label className="relative w-full sm:ml-2 sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-300" size={16} />
-                <input
-                  value={studentNameFilter}
-                  onChange={(event) => setStudentNameFilter(event.target.value)}
-                  placeholder="学员姓名查询"
-                  className={`${workspaceFieldClass} h-10 rounded-full bg-white py-2 pl-9 pr-9 text-sm dark:bg-slate-900/60`}
-                />
-                {studentNameFilter.trim() ? (
-                  <button
-                    type="button"
-                    onClick={() => setStudentNameFilter('')}
-                    className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400 transition hover:bg-sky-100 hover:text-sky-600 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-sky-400/20 dark:hover:text-sky-100"
-                    aria-label="清空学员姓名查询"
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </label>
-            </div>
-            {activeStudentFilterLayer && (
-              <div className="rounded-2xl border border-sky-100 bg-white p-3 shadow-[0_12px_30px_rgba(14,165,233,0.08)] dark:border-white/10 dark:bg-slate-900/70">
-                <p className="mb-2 text-xs font-bold text-slate-400 dark:text-slate-500">
-                  {studentFilterItems.find((item) => item.key === activeStudentFilterLayer)?.defaultLabel || '筛选'}筛选
-                </p>
-                {activeStudentFilterOptions.length === 0 ? (
-                  <p className="text-sm text-slate-400 dark:text-slate-500">当前条件下暂无可选项。</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {activeStudentFilterOptions.map((option) => (
-                      <button
-                        key={`${activeStudentFilterLayer}-${option.id}`}
-                        type="button"
-                        onClick={() => handleSelectStudentFilterOption(option.id)}
-                        className={cn(
-                          'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                          option.selected
-                            ? 'border-sky-500 bg-sky-500 text-white'
-                            : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            <p className="text-xs text-slate-400 dark:text-slate-500">
-              当前：{activeStudentFilterSummary}。未筛选时默认按年级、班级和姓名排序。
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {filteredStudentRows.length ? filteredStudentRows.map((item) => {
-              const teacher = item.teacherUserId == null ? undefined : users.find((user) => user.id === item.teacherUserId);
-              return (
-                <div key={`${item.classItem.id}-${item.id}`} className={`${workspaceSoftCardClass} p-4`}>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{item.name}</p>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{item.classItem.name}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{[item.classItem.stage, item.classItem.current_grade || item.classItem.grade, teacher?.name || item.classItem.teacher_name || '未分配老师'].filter(Boolean).join(' · ')}</p>
-                  <button type="button" className={`${workspaceSecondaryButtonClass} mt-4 h-9 px-3 py-2 text-sm`}>班级进出历史</button>
-                </div>
-              );
-            }) : (
-              <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">当前筛选下暂无学员。</div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {studentCenterTab === 'classes' && (
-      <section className={`${workspaceCardClass} space-y-5 p-6`}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级卡片</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">每次只展开一个班级卡片，在卡片内部完成基础信息维护和负责老师设置。</p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => loadPage(expandedClassId, { preserveStateOnError: true }).catch(() => undefined)}
-              disabled={pageRefreshLocked}
-              className={workspaceSecondaryButtonClass}
-            >
-              刷新列表
-            </button>
-            {canManageClassTeachers && (
-              <button
-                type="button"
-                onClick={() => handleToggleExpandedClass('new')}
-                disabled={classCardInteractionLocked}
-                className={workspacePrimaryButtonClass}
-              >
-                <PlusCircle size={18} />
-                新建班级
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div
-          className="space-y-3 border-t border-sky-100/80 pt-4 dark:border-white/10"
-          onMouseEnter={handleClassFilterAreaEnter}
-          onMouseLeave={handleClassFilterAreaLeave}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选</span>
-            {classFilterItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onMouseEnter={() => setActiveClassFilterLayer(item.key)}
-                onClick={() => setActiveClassFilterLayer(item.key)}
-                className={cn(
-                  'inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
-                  item.selected
-                    ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
-                    : activeClassFilterLayer === item.key
-                      ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-100'
-                    : 'border-sky-100 bg-white/80 text-slate-600 hover:border-sky-200 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-                )}
-              >
-                  {item.label}
-                  {item.selected && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`取消${item.defaultLabel}筛选`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleClearClassFilter(item.key);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          handleClearClassFilter(item.key);
-                        }
-                      }}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/25 text-xs leading-none hover:bg-white/40 dark:bg-slate-950/20 dark:hover:bg-slate-950/30"
-                    >
-                      ×
-                    </span>
-                  )}
-                </button>
-            ))}
-            <span className="ml-auto text-xs font-semibold text-slate-400 dark:text-slate-500">
-              {canUseOrganizationClassFilters ? '全机构班级' : '仅本人班级'}
-            </span>
-            <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-sky-100 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={showClassCohortYear}
-                onChange={(event) => setShowClassCohortYear(event.target.checked)}
-                className="h-4 w-4 rounded border-sky-200 text-sky-600 focus:ring-sky-500"
-              />
-              入学年级
-            </label>
-          </div>
-          {activeClassFilterLayer && (
-            <div className="rounded-2xl border border-sky-100 bg-white p-3 shadow-[0_12px_30px_rgba(14,165,233,0.08)] dark:border-white/10 dark:bg-slate-900/70">
-              <p className="mb-2 text-xs font-bold text-slate-400 dark:text-slate-500">
-                {classFilterItems.find((item) => item.key === activeClassFilterLayer)?.defaultLabel || '筛选'}筛选
-              </p>
-              {activeClassFilterOptions.length === 0 ? (
-                <p className="text-sm text-slate-400 dark:text-slate-500">当前条件下暂无可选项。</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {activeClassFilterOptions.map((option) => (
-                    <button
-                      key={`${activeClassFilterLayer}-${option.id}`}
-                      type="button"
-                      onClick={() => handleSelectClassFilterOption(option.id)}
-                      className={cn(
-                        'rounded-full border px-3 py-2 text-sm font-semibold transition',
-                        option.selected
-                          ? 'border-sky-500 bg-sky-500 text-white'
-                          : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <p className="text-xs text-slate-400 dark:text-slate-500">
-            当前：{activeClassFilterSummary}。未筛选时默认按年级从低到高排列。
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-            正在加载班级数据...
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredClasses.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-sky-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                {classes.length === 0 ? '暂无班级，点击右上角“新建班级”开始创建。' : `当前筛选“${activeClassFilterSummary}”下暂无班级。`}
-              </div>
-            ) : null}
-
-            {filteredClasses.map((item) => {
-              const isExpanded = expandedClassId === item.id;
-              const currentTeacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
-              const currentTeacher = currentTeacherUserId == null ? undefined : users.find((user) => user.id === currentTeacherUserId);
-              const teacherSummary = currentTeacher?.name || item.teacher_name || '未分配老师';
-              const gradeLabel = normalizeAcademicGradeLabel(item.current_grade || item.grade || '') || item.grade || '未填写年级';
-              const stageLabel = item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '') || '未填写学段';
-              const classStudents = studentsByClassId[item.id] || [];
-              const visibleStudentNames = classStudents.slice(0, 4).map((student) => student.name);
-              const missingSubject = !item.subject || !academicSubjectOptions.includes(item.subject);
-              const effectiveSubject = getClassEffectiveSubject(item);
-              const displayName = getClassDisplayName(item);
-              const classInfoIssues = getClassInfoIssues(item);
-
-              return (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => handleClassCardClick(event, item.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleToggleExpandedClass(item.id);
-                    }
-                  }}
-                  aria-label={`打开班级 ${displayName}`}
-                  className={cn(
-                    `${workspaceSoftCardClass} overflow-hidden p-0 transition hover:border-sky-200 hover:bg-white hover:shadow-[0_14px_34px_rgba(14,165,233,0.10)] dark:hover:border-sky-400/30 dark:hover:bg-white/[0.07]`,
-                    classCardInteractionLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer',
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'grid gap-4 px-4 py-4 lg:grid-cols-[minmax(14rem,1.25fr)_minmax(18rem,1fr)_auto] lg:items-center',
-                      isExpanded && 'bg-sky-50/60 dark:bg-sky-400/10',
-                    )}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="truncate text-base font-bold text-slate-900 dark:text-white">{displayName}</span>
-                        {missingSubject ? (
-                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                            需填写科目{effectiveSubject ? ` · 按${effectiveSubject}筛选` : ''}
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{item.subject}</span>
-                        )}
-                        {classInfoIssues.length ? (
-                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                            信息待补全：{classInfoIssues.join(' / ')}
-                          </span>
-                        ) : null}
-                        {item.is_bridge ? (
-                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-200">衔接</span>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                        <span>{stageLabel}</span>
-                        <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-                        <span>{gradeLabel}</span>
-                        <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-                        <span>{classStudents.length ? `${classStudents.length}名学员` : '学员未加载'}</span>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">上课教师</p>
-                        <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{teacherSummary}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">班号</p>
-                        <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{item.class_number ? `${item.class_number}班` : '未填写'}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">学员</p>
-                        <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{visibleStudentNames.length ? visibleStudentNames.join('、') : '点击查看'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleExpandedClass(item.id)}
-                        disabled={classCardInteractionLocked}
-                        className={`${workspacePrimaryButtonClass} h-9 px-3 py-2 text-sm`}
-                        title="Command+S / Ctrl+S"
-                      >
-                        编辑
-                      </button>
-                      <ChevronRight size={18} className="text-slate-400 dark:text-slate-500" />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-      )}
-
-      <AnimatePresence>
-        {(newClassExpanded || editingClass) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
-            onClick={(e) => e.target === e.currentTarget && !classCardInteractionLocked && attemptCloseClassEditor()}
-          >
-            <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97, y: 18 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: 18 }}
-              transition={{ duration: 0.2 }}
-              className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
-            >
-              <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Class Management</p>
-                  <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
-                    {newClassExpanded ? '新建班级' : `编辑班级：${editingClass ? getClassDisplayName(editingClass) : ''}`}
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveClass(newClassExpanded ? 'new' : editingClass?.id || 'new')}
-                    disabled={classCardInteractionLocked}
-                    className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm`}
-                    title="Command+S / Ctrl+S"
-                  >
-                    {saving ? '保存中...' : (newClassExpanded ? '创建班级' : '保存更改')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!classCardInteractionLocked) {
-                        attemptCloseClassEditor();
-                      }
-                    }}
-                    disabled={classCardInteractionLocked}
-                    className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
-                    aria-label="关闭班级编辑窗口"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
-                {formError && (
-                  <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                    <AlertCircle size={16} />
-                    {formError}
-                  </div>
-                )}
-
-                {newClassExpanded ? (
-                  <div className="space-y-5">
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                      {newClassForm.subject.trim() ? (
-                        <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                          {newClassForm.subject.trim()}
-                        </span>
-                      ) : null}
-                      <span>当前负责老师：{newClassTeacher?.name || '待选择负责老师'}</span>
-                      <span>创建时会直接绑定该老师账号</span>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">学科</span>
-                        <select
-                          value={academicSubjectOptions.includes(newClassForm.subject) ? newClassForm.subject : ''}
-                          onChange={(e) => handleFieldChange('new', 'subject', e.target.value)}
-                          className={workspaceFieldClass}
-                        >
-                          <option value="">请选择学科</option>
-                          {academicSubjectOptions.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">学段</span>
-                        <select value={newClassForm.stage} onChange={(e) => handleFieldChange('new', 'stage', e.target.value)} className={workspaceFieldClass}>
-                          {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">年级</span>
-                        <select
-                          value={newClassForm.current_grade}
-                          onChange={(e) => handleFieldChange('new', 'current_grade', e.target.value)}
-                          className={workspaceFieldClass}
-                        >
-                          {newClassGradeOptions.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">班号</span>
-                        <input type="number" min="1" value={newClassForm.class_number} onChange={(e) => handleFieldChange('new', 'class_number', e.target.value)} className={workspaceFieldClass} />
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={newClassForm.is_bridge}
-                          onChange={(e) => setFormByClassId((current) => ({ ...current, new: { ...(current.new || createEmptyClassForm()), is_bridge: e.target.checked } }))}
-                        />
-                        <span className="text-slate-500 dark:text-slate-400">衔接班</span>
-                      </label>
-                      <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
-                        名称预览：{newClassDisplayNamePreview}
-                      </div>
-                    </div>
-
-                    <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                      <div>
-                        <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">新建班级时必须选择一个负责老师账号，系统会同步老师姓名。</p>
-                      </div>
-
-                      <label className="relative block">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-                        <input
-                          type="text"
-                          value={teacherSearchByClassId.new || ''}
-                          onChange={(e) => handleTeacherSearchChange('new', e.target.value)}
-                          placeholder="搜索老师"
-                          className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
-                        />
-                      </label>
-
-                      {users.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                          当前暂无成员，成员通过审批后会出现在这里。
-                        </div>
-                      ) : newClassFilteredUsers.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                          没有匹配到老师，请调整搜索关键词。
-                        </div>
-                      ) : (
-                        <select
-                          value={newClassTeacherUserId == null ? '' : String(newClassTeacherUserId)}
-                          onChange={(event) => {
-                            const nextTeacherUserId = Number(event.target.value);
-                            setNewClassTeacherUserId(Number.isFinite(nextTeacherUserId) && nextTeacherUserId > 0 ? nextTeacherUserId : null);
-                          }}
-                          disabled={classInteractionLocked || newClassFilteredUsers.length === 0}
-                          className={workspaceFieldClass}
-                        >
-                          <option value="">请选择负责老师</option>
-                          {newClassFilteredUsers.map((user) => (
-                            <option key={`new-${user.id}`} value={user.id}>{user.name}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => handleSaveClass('new')}
-                        disabled={classCardInteractionLocked}
-                        className={workspacePrimaryButtonClass}
-                      >
-                        {saving ? '保存中...' : '创建班级'}
-                      </button>
-                    </div>
-                  </div>
-                ) : editingClass && editingFormState ? (
-                  <div className="space-y-5">
-                    <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.92fr)_minmax(0,1.08fr)] lg:items-start">
-                      <div className={`${workspaceCardClass} space-y-4 p-4 sm:p-5`}>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h4 className="text-lg font-semibold text-slate-900 dark:text-white">家长绑定邀请码</h4>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">把邀请码发给家长后，家长就能在微信小程序里绑定该班级。</p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleLoadClassInvite(editingClass.id)}
-                              disabled={editingInviteLoading || editingInviteResetting}
-                              className={workspaceSecondaryButtonClass}
-                            >
-                              {editingInviteLoading ? '加载中...' : '查看邀请码'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleResetClassInvite(editingClass.id)}
-                              disabled={editingInviteLoading || editingInviteResetting}
-                              className={workspacePrimaryButtonClass}
-                            >
-                              {editingInviteResetting ? '重置中...' : '重置邀请码'}
-                            </button>
-                          </div>
-                        </div>
-
-                        {editingInviteError ? (
-                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                            <AlertCircle size={16} />
-                            {editingInviteError}
-                          </div>
-                        ) : null}
-
-                        <div className={`${workspaceSoftCardClass} p-4`}>
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">当前邀请码</p>
-                          <p className="mt-3 font-mono text-2xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
-                            {editingInviteInfo?.invite_code || (editingInviteLoading ? '加载中' : '未加载')}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className={`${workspaceCardClass} space-y-4 p-5`}>
-                        <div>
-                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">基础信息</h4>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">请分别填写学科、年级和班级名称，系统按「学科 + 年级 + 班级」理解班级，例如：数学七年级三班。</p>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">学科</span>
-                            <select
-                              value={academicSubjectOptions.includes(editingFormState.subject) ? editingFormState.subject : ''}
-                              onChange={(e) => handleFieldChange(editingClass.id, 'subject', e.target.value)}
-                              className={workspaceFieldClass}
-                            >
-                              <option value="">请选择学科</option>
-                              {academicSubjectOptions.map((option) => (
-                                <option key={option} value={option}>{option}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">学段</span>
-                            <select value={editingFormState.stage} onChange={(e) => handleFieldChange(editingClass.id, 'stage', e.target.value)} className={workspaceFieldClass}>
-                              {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </select>
-                          </label>
-                          <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">年级</span>
-                            <select
-                              value={editingFormState.current_grade || editingFormState.grade}
-                              onChange={(e) => handleFieldChange(editingClass.id, 'current_grade', e.target.value)}
-                              className={workspaceFieldClass}
-                            >
-                              {editingClassGradeOptions.map((option) => (
-                                <option key={option} value={option}>{option}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="space-y-2 text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">班号</span>
-                            <input type="number" min="1" value={editingFormState.class_number} onChange={(e) => handleFieldChange(editingClass.id, 'class_number', e.target.value)} className={workspaceFieldClass} />
-                          </label>
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={editingFormState.is_bridge}
-                              onChange={(e) => {
-                                const stateKey = getClassStateKey(editingClass.id);
-                                setFormByClassId((current) => ({ ...current, [stateKey]: { ...(current[stateKey] || toClassFormValues(editingClass)), is_bridge: e.target.checked } }));
-                              }}
-                            />
-                            <span className="text-slate-500 dark:text-slate-400">衔接班</span>
-                          </label>
-                          <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
-                            名称预览：{editingClassDisplayNamePreview}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                      {canManageClassTeachers && (
-                        <div className={`${workspaceCardClass} space-y-5 p-5`}>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前负责老师：{editingTeacherSummary}，可直接更换。</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => loadPage(editingClass.id, { preserveStateOnError: true }).catch(() => undefined)}
-                            disabled={assignmentRefreshLocked}
-                            className={workspaceSecondaryButtonClass}
-                          >
-                            刷新分配
-                          </button>
-                        </div>
-
-                        {assignmentError && (
-                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                            <AlertCircle size={16} />
-                            {assignmentError}
-                          </div>
-                        )}
-
-                        <label className="relative block">
-                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-                          <input
-                            type="text"
-                            value={editingTeacherSearch}
-                            onChange={(e) => handleTeacherSearchChange(editingClass.id, e.target.value)}
-                            placeholder="搜索老师"
-                            className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
-                          />
-                        </label>
-
-                        {users.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            当前暂无成员，成员通过审批后会出现在这里。
-                          </div>
-                        ) : editingFilteredUsers.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            没有匹配到老师，请调整搜索关键词。
-                          </div>
-                        ) : (
-                          <select
-                            value={editingCurrentTeacherUserId == null ? '' : String(editingCurrentTeacherUserId)}
-                            onChange={(event) => {
-                              const nextTeacherUserId = Number(event.target.value);
-                              if (!Number.isFinite(nextTeacherUserId) || nextTeacherUserId <= 0 || nextTeacherUserId === editingCurrentTeacherUserId) {
-                                return;
-                              }
-                              void handleSelectTeacherForClass(editingClass.id, nextTeacherUserId);
-                            }}
-                            disabled={editingTeacherBindingSaving || classInteractionLocked || editingFilteredUsers.length === 0}
-                            className={workspaceFieldClass}
-                          >
-                            <option value="">请选择负责老师</option>
-                            {editingFilteredUsers.map((user) => (
-                              <option key={`${editingClass.id}-${user.id}`} value={user.id}>{user.name}</option>
-                            ))}
-                          </select>
-                        )}
-
-                          <div className="grid gap-3 border-t border-sky-100/80 pt-5 sm:grid-cols-2 dark:border-white/10">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteClass(editingClass.id)}
-                              disabled={classCardInteractionLocked}
-                              className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                            >
-                              <Trash2 size={18} />
-                              {deleting ? '删除中...' : '删除当前班级'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSaveClass(editingClass.id)}
-                              disabled={classCardInteractionLocked}
-                              className={`${workspacePrimaryButtonClass} w-full`}
-                            >
-                              {saving ? '保存中...' : '保存班级'}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className={`${workspaceCardClass} space-y-4 p-5`}>
-                        <div>
-                          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">编辑学生</h4>
-                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">在这里维护当前班级学生名单。</p>
-                        </div>
-
-                        {editingStudentError ? (
-                          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                            <AlertCircle size={16} />
-                            {editingStudentError}
-                          </div>
-                        ) : null}
-
-                        <div className="flex flex-col gap-3 sm:flex-row">
-                          <input
-                            type="text"
-                            value={editingStudentDraftName}
-                            onChange={(e) => handleStudentDraftNameChange(editingClass.id, e.target.value)}
-                            placeholder="输入学生姓名"
-                            className={workspaceFieldClass}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void handleAddStudentToClass(editingClass.id)}
-                            disabled={editingStudentSaving}
-                            className={workspacePrimaryButtonClass}
-                          >
-                            {editingStudentSaving ? '处理中...' : '新增学生'}
-                          </button>
-                        </div>
-
-                        {editingStudentsLoading ? (
-                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            正在加载学生...
-                          </div>
-                        ) : editingStudents.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            当前班级还没有学生。
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {editingStudents.map((student) => (
-                              <div
-                                key={student.id}
-                                className="flex items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 dark:border-white/10 dark:bg-white/5"
-                              >
-                                <span className="font-medium text-slate-900 dark:text-white">{student.name}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteStudentFromClass(editingClass.id, student.id)}
-                                  disabled={editingStudentSaving}
-                                  className="inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                                >
-                                  删除学生
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 // --- Login Modal ---
 
 type RecoveryMethod = 'phone' | 'security';
@@ -11223,7 +8817,7 @@ const ClassClaimPage = ({
                   }`}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate font-semibold">{item.name}</span>
+                    <span className="block truncate font-semibold">{getCurrentClassDisplayName(item)}</span>
                     <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">
                       {[item.grade, item.subject].filter(Boolean).join(' · ') || '未设置年级科目'}
                     </span>
@@ -13365,7 +10959,7 @@ export default function App() {
                   canOpenWorkspacePage(currentUser, 'smartWrongQuestions') &&
                   <SmartWrongQuestionsPage currentUser={currentUser} />}
                 {activeWorkspacePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
-                  <ClassManagementPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={() => setClassBindingTarget(null)} />
+                  <StudentCenterPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={() => setClassBindingTarget(null)} />
                 )}
                 {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
                 {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}

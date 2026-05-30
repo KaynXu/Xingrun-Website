@@ -155,7 +155,7 @@ test('app source avoids direct auth token reads from localStorage during bootstr
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /window\.localStorage\?\.\s*getItem\?\.\('xr_token'\)/);
-  assert.equal(source.match(/localStorage\?\.\s*getItem\?\./g)?.length ?? 0, 1);
+  assert.equal(source.match(/localStorage\?\.\s*getItem\?\./g)?.length ?? 0, 0);
   assert.doesNotMatch(source, /window\.localStorage\./);
   assert.doesNotMatch(source, /sessionStorage\./);
 });

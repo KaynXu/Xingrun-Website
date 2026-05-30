@@ -1,3 +1,5 @@
+import { formatClassDisplayName } from './domain/classNaming';
+
 export const COURSE_CALENDAR_TIME_BLOCKS = [
   '08:00-10:00',
   '10:00-12:00',
@@ -21,6 +23,10 @@ export interface CourseCalendarClassRecord {
   name: string;
   subject?: string;
   grade?: string;
+  current_grade?: string;
+  class_number?: string | number;
+  cohort_year?: string | number | null;
+  is_bridge?: boolean | number | null;
   teacher_name?: string;
   teacher_email?: string;
   lesson_count?: number;
@@ -196,6 +202,10 @@ function sortByBlockAndDate(a: JoinedCourseCalendarSchedule, b: JoinedCourseCale
   return a.id - b.id;
 }
 
+function getCourseCalendarClassDisplayName(courseClass?: CourseCalendarClassRecord, fallbackName = ''): string {
+  return formatClassDisplayName(courseClass) || fallbackName;
+}
+
 export function getWeekDates(anchorDate: string): string[] {
   const weekStart = startOfIsoWeek(parseIsoDate(anchorDate));
   return Array.from({ length: 7 }, (_, index) => formatIsoDate(addDays(weekStart, index)));
@@ -246,7 +256,7 @@ export function joinClassesAndSchedules(
       return {
         id: schedule.id,
         classId: schedule.class_id,
-        className: courseClass?.name ?? schedule.class_name ?? '',
+        className: getCourseCalendarClassDisplayName(courseClass, schedule.class_name ?? ''),
         subject: courseClass?.subject ?? schedule.subject ?? '',
         grade: courseClass?.grade ?? schedule.grade ?? '',
         teacherName: courseClass?.teacher_name ?? schedule.teacher_name ?? '',
@@ -330,7 +340,7 @@ export function buildClassStatusRailData(
 
       return {
         id: courseClass.id,
-        name: courseClass.name,
+        name: getCourseCalendarClassDisplayName(courseClass),
         subject: courseClass.subject ?? '',
         grade: courseClass.grade ?? '',
         teacherName: courseClass.teacher_name ?? '',

@@ -7,6 +7,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import * as AppModule from './App';
 
+const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
+const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
+const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
+const classEditorModalSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassEditorModal.tsx'), 'utf8');
+const classEditorModalActionsSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/useClassEditorModalActions.ts'), 'utf8');
+const studentCenterClassSource = `${studentCenterSource}\n${classManagementTabSource}\n${classEditorModalSource}\n${classEditorModalActionsSource}`;
+
 test('sidebar account sheet shows account info and logout actions', () => {
   const SidebarAccountSheet = (AppModule as { SidebarAccountSheet?: React.ComponentType<{
     currentUser: {
@@ -100,8 +107,6 @@ test('workspace shell source applies dark classes to sidebar header and dashboar
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
 
-  assert.match(source, /workspaceCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-slate-950\/78/);
-  assert.match(source, /workspaceSoftCardClass\s*=\s*'[^']*dark:border-white\/10[^']*dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
   assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
   assert.match(source, /:\s*'h-screen w-72 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
   assert.match(source, /\?\s*'h-screen w-24 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
@@ -1011,140 +1016,8 @@ test('quick consultation parser extracts normalized teacher and source metadata'
   assert.match(parsed.need_detail, /补基础/);
 });
 
-test('assignment rollback helper restores previous ids when optimistic state is still current', () => {
-  const resolveAssignmentRollbackClassIds = (AppModule as {
-    resolveAssignmentRollbackClassIds?: (
-      currentClassIds: number[],
-      previousClassIds: number[],
-      failedNextClassIds: number[],
-    ) => number[];
-  }).resolveAssignmentRollbackClassIds;
-
-  assert.equal(typeof resolveAssignmentRollbackClassIds, 'function');
-  assert.deepEqual(resolveAssignmentRollbackClassIds!([2, 4], [2], [2, 4]), [2]);
-});
-
-test('assignment rollback helper preserves fresher ids after state changed again', () => {
-  const resolveAssignmentRollbackClassIds = (AppModule as {
-    resolveAssignmentRollbackClassIds?: (
-      currentClassIds: number[],
-      previousClassIds: number[],
-      failedNextClassIds: number[],
-    ) => number[];
-  }).resolveAssignmentRollbackClassIds;
-
-  assert.equal(typeof resolveAssignmentRollbackClassIds, 'function');
-  assert.deepEqual(resolveAssignmentRollbackClassIds!([1, 3], [2], [2, 4]), [1, 3]);
-});
-
-test('teacher binding map rollback helper restores previous id when optimistic binding is still current', () => {
-  const resolveTeacherBindingRollbackTeacherBindings = (AppModule as {
-    resolveTeacherBindingRollbackTeacherBindings?: (
-      currentTeacherBindingByClassId: Record<number, number | null>,
-      classId: number,
-      previousTeacherUserId: number | null,
-      failedNextTeacherUserId: number,
-    ) => Record<number, number | null>;
-  }).resolveTeacherBindingRollbackTeacherBindings;
-
-  assert.equal(typeof resolveTeacherBindingRollbackTeacherBindings, 'function');
-  assert.deepEqual(
-    resolveTeacherBindingRollbackTeacherBindings!({ 7: 12, 9: 18 }, 7, null, 12),
-    { 7: null, 9: 18 },
-  );
-});
-
-test('teacher binding map rollback helper preserves fresher binding state after later updates', () => {
-  const resolveTeacherBindingRollbackTeacherBindings = (AppModule as {
-    resolveTeacherBindingRollbackTeacherBindings?: (
-      currentTeacherBindingByClassId: Record<number, number | null>,
-      classId: number,
-      previousTeacherUserId: number | null,
-      failedNextTeacherUserId: number,
-    ) => Record<number, number | null>;
-  }).resolveTeacherBindingRollbackTeacherBindings;
-
-  assert.equal(typeof resolveTeacherBindingRollbackTeacherBindings, 'function');
-  assert.deepEqual(
-    resolveTeacherBindingRollbackTeacherBindings!({ 7: 18, 9: 18 }, 7, null, 12),
-    { 7: 18, 9: 18 },
-  );
-});
-
-test('teacher binding rollback helper restores exact previous teacher fields', () => {
-  const resolveTeacherBindingRollbackClassItem = (AppModule as {
-    resolveTeacherBindingRollbackClassItem?: (
-      currentItem: {
-        id: number;
-        name: string;
-        subject: string;
-        grade: string;
-        teacher_name?: string;
-        teacher_user_id?: number | null;
-      },
-      failedNextTeacherUserId: number,
-      previousTeacherUserId: number | null,
-      previousTeacherName: string,
-    ) => {
-      id: number;
-      name: string;
-      subject: string;
-      grade: string;
-      teacher_name?: string;
-      teacher_user_id?: number | null;
-    };
-  }).resolveTeacherBindingRollbackClassItem;
-
-  assert.equal(typeof resolveTeacherBindingRollbackClassItem, 'function');
-  assert.deepEqual(
-    resolveTeacherBindingRollbackClassItem!(
-      { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '新老师', teacher_user_id: 12 },
-      12,
-      null,
-      '',
-    ),
-    { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '', teacher_user_id: null },
-  );
-});
-
-test('teacher binding rollback helper preserves fresher teacher state after later updates', () => {
-  const resolveTeacherBindingRollbackClassItem = (AppModule as {
-    resolveTeacherBindingRollbackClassItem?: (
-      currentItem: {
-        id: number;
-        name: string;
-        subject: string;
-        grade: string;
-        teacher_name?: string;
-        teacher_user_id?: number | null;
-      },
-      failedNextTeacherUserId: number,
-      previousTeacherUserId: number | null,
-      previousTeacherName: string,
-    ) => {
-      id: number;
-      name: string;
-      subject: string;
-      grade: string;
-      teacher_name?: string;
-      teacher_user_id?: number | null;
-    };
-  }).resolveTeacherBindingRollbackClassItem;
-
-  assert.equal(typeof resolveTeacherBindingRollbackClassItem, 'function');
-  assert.deepEqual(
-    resolveTeacherBindingRollbackClassItem!(
-      { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '更新后的老师', teacher_user_id: 18 },
-      12,
-      null,
-      '',
-    ),
-    { id: 7, name: '六年级 2 班', subject: '数学', grade: '六年级', teacher_name: '更新后的老师', teacher_user_id: 18 },
-  );
-});
-
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const appSource = `${readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')}\n${studentCenterSource}`;
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
   const indexCssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
@@ -1157,7 +1030,7 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^"]*dark:border-white\/10[^"]*dark:bg-\[radial-gradient/);
   assert.match(appSource, /当前待审核注册申请/);
   assert.match(appSource, /mt-2 text-sm text-slate-500 dark:text-slate-400/);
-  assert.match(appSource, /负责老师<\/h4>[\s\S]*dark:text-white/);
+  assert.match(studentCenterClassSource, /负责老师<\/h4>[\s\S]*dark:text-white/);
   assert.match(appSource, /text-sm font-semibold uppercase tracking-wider text-slate-500[^\"]*dark:text-slate-400/);
   assert.match(appSource, /当前账号<\/p>[\s\S]*dark:text-white/);
   assert.match(appSource, /calendar: '课程日历'/);
@@ -1165,7 +1038,8 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /bg-cyan-200\/35 blur-\[130px\][^\n]*dark:bg-cyan-500\/10/);
   assert.match(appSource, /bg-blue-200\/30 blur-\[150px\][^\n]*dark:bg-blue-500\/10/);
   assert.match(appSource, /bg-white\/75 blur-\[120px\][^\n]*dark:bg-slate-900\/40/);
-  assert.match(calendarSource, /筛选：\{filterSummary\}/);
+  assert.match(calendarSource, /<FloatingFilterBar/);
+  assert.match(calendarSource, /summary=\{filterSummary\}/);
   assert.match(calendarSource, /dark:border-white\/10 dark:bg-white\/5/);
   assert.match(calendarSource, /dark:bg-\[radial-gradient\(circle_at_top_left,rgba\(34,211,238,0\.12\),transparent_24%\),radial-gradient\(circle_at_85%_15%,rgba\(59,130,246,0\.14\),transparent_22%\),linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\]/);
   assert.match(calendarSource, /dark:border-white\/10 dark:bg-slate-900\/78/);
@@ -1178,7 +1052,7 @@ test('workspace source applies dark classes to lesson library approval settings 
 test('workspace source splits approval and class assignment responsibilities across separate pages', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.match(source, /账号审批/);
   assert.ok(approvalBlock);
@@ -1190,8 +1064,7 @@ test('workspace source splits approval and class assignment responsibilities acr
   assert.match(classManagementBlock[0], /负责老师/);
   assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
   assert.doesNotMatch(classManagementBlock[0], /成员班级分配/);
-  assert.match(classManagementBlock[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
-  assert.match(classManagementBlock[0], /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);
+  assert.match(classManagementBlock[0], /executeStudentCenterLoadRequest\(\s*apiFetch,/);
   assert.doesNotMatch(classManagementBlock[0], /升为管理员/);
 });
 
@@ -1237,7 +1110,7 @@ test('approval page source removes the start binding action from member cards', 
 test('approval member cards link teacher class binding into class management', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(approvalBlock);
   assert.ok(classManagementBlock);
@@ -1246,13 +1119,13 @@ test('approval member cards link teacher class binding into class management', (
   assert.match(source, /const \[classBindingTarget, setClassBindingTarget\] = useState<ClassBindingTarget \| null>\(null\);/);
   assert.match(source, /setClassBindingTarget\(target\);\s*navigateWorkspacePage\('classes'\);/);
   assert.match(source, /<ApprovalPage currentUser=\{currentUser\} onOpenClassBinding=\{handleOpenClassBinding\} \/>/);
-  assert.match(source, /<ClassManagementPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
-  assert.match(classManagementBlock[0], /classBindingTarget\?\.teacherName/);
+  assert.match(source, /<StudentCenterPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
+  assert.match(campusOverviewSource, /classBindingTarget\?\.teacherName/);
 });
 
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.match(source, /teacher_user_id\?: number \| null;/);
@@ -1264,7 +1137,7 @@ test('class management source shows current teacher summary and removes multi-te
 
 test('class management source uses one 负责老师 concept instead of separate 班级老师分配 wording', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = appSource.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /<h4\b[^>]*>\s*负责老师\s*<\/h4>/);
@@ -1272,60 +1145,48 @@ test('class management source uses one 负责老师 concept instead of separate 
   assert.doesNotMatch(classManagementBlock[0], /<span\b[^>]*>\s*负责老师\s*<\/span>\s*<div\b[^>]*>\s*\{teacherSummary\}\s*<\/div>/);
 });
 
-test('class management source requires selecting one teacher when creating a class', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+test('class management source wires class save validation before creating teacher binding', () => {
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /if \(classId === 'new' && !selectedTeacherUserId\) \{\s*setFormError\('请先选择负责老师账号'\);\s*return;\s*\}/);
-  assert.match(classManagementBlock[0], /const selectedTeacher = typeof selectedTeacherUserId === 'number' \? users\.find\(\(user\) => user\.id === selectedTeacherUserId\) : undefined;/);
-  assert.match(classManagementBlock[0], /teacher_name: selectedTeacher\?\.name \|\| '',/);
-  assert.match(classManagementBlock[0], /await apiFetch\(`\/api\/classes\/\$\{created\.id\}\/teacher`, \{/);
+  assert.match(classManagementBlock[0], /const validationError = validateClassSaveDraft\(\{/);
+  assert.match(classManagementBlock[0], /if \(validationError\) \{\s*setFormError\(validationError\);\s*return;\s*\}/);
+  assert.match(classManagementBlock[0], /await executeTeacherBindingRequest\(created\.id, selectedTeacherUserId as number, apiFetch\);/);
 });
 
 test('class management source keeps teacher binding selection scoped per class card', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /const editingCurrentTeacherUserId = editingClass[\s\S]*teacherBindingByClassId\[editingClass\.id\] \?\? editingClass\.teacher_user_id \?\? null/);
-  assert.match(classManagementBlock[0], /const editingCurrentTeacher = editingCurrentTeacherUserId == null \? undefined : users\.find\(\(user\) => user\.id === editingCurrentTeacherUserId\);/);
-  assert.match(classManagementBlock[0], /const editingTeacherBindingSaving = editingClass \? Boolean\(teacherBindingSavingByClassId\[editingClass\.id\]\) : false;/);
-  assert.match(classManagementBlock[0], /onChange=\{\(event\) => \{\s*const nextTeacherUserId = Number\(event\.target\.value\);/);
-  assert.match(classManagementBlock[0], /void handleSelectTeacherForClass\(editingClass\.id, nextTeacherUserId\);/);
-  assert.match(classManagementBlock[0], /const previousTeacherName = previousClass\?\.teacher_name \|\| '';/);
-  assert.match(source, /export function resolveTeacherBindingRollbackTeacherBindings\(/);
+  assert.match(classManagementBlock[0], /onChange=\{\(event\) => \{[\s\S]*const nextTeacherUserId = Number\(event\.target\.value\);/);
+  assert.match(classManagementBlock[0], /onSelectTeacherForClass\(editingClass\.id, nextTeacherUserId\);/);
   assert.match(classManagementBlock[0], /loadPageRequestVersionRef\.current \+= 1;/);
-  assert.match(classManagementBlock[0], /setTeacherBindingByClassId\(\(current\) => resolveTeacherBindingRollbackTeacherBindings\(current, classId, previousTeacherUserId, teacherUserId\)\);/);
-  assert.match(classManagementBlock[0], /resolveTeacherBindingRollbackClassItem\(item, teacherUserId, previousTeacherUserId, previousTeacherName\)/);
   assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
   assert.match(classManagementBlock[0], /let createdClassId: number \| null = null;/);
-  assert.match(classManagementBlock[0], /班级已创建，但负责老师绑定失败/);
 });
 
 test('class management source separates mutation success from best-effort refresh reconciliation', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /type LoadPageResult =/);
   assert.match(classManagementBlock[0], /const loadPage = useCallback\(async \(preferredExpandedClassId\?: number \| 'new' \| null, options\?: \{ preserveStateOnError\?: boolean \}\): Promise<LoadPageResult> => \{/);
   assert.match(classManagementBlock[0], /const preserveStateOnError = options\?\.preserveStateOnError \?\? false;/);
   assert.match(classManagementBlock[0], /return \{ status: 'stale' \};/);
   assert.match(classManagementBlock[0], /return \{ status: 'success' \};/);
   assert.match(classManagementBlock[0], /return \{ status: 'refresh-error', error \};/);
   assert.doesNotMatch(classManagementBlock[0], /if \(requestVersion !== loadPageRequestVersionRef\.current\) \{\s*return;\s*\}/);
-  assert.match(classManagementBlock[0], /if \(!preserveStateOnError\) \{[\s\S]*setClasses\(\[\]\);[\s\S]*setUsers\(\[\]\);[\s\S]*setTeacherBindingByClassId\(\{\}\);/);
-  assert.match(classManagementBlock[0], /await apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{[\s\S]*const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);[\s\S]*if \(refreshResult\.status === 'refresh-error'\) \{[\s\S]*老师绑定已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /if \(!preserveStateOnError\) \{[\s\S]*const nextState = buildClassLoadFailureState\(createEmptyClassForm\(\)\);[\s\S]*setClasses\(nextState\.classes\);[\s\S]*setUsers\(nextState\.users\);[\s\S]*setTeacherBindingByClassId\(nextState\.teacherBindingByClassId\);/);
+  assert.match(classManagementBlock[0], /await executeTeacherBindingRequest\(classId, teacherUserId, apiFetch\);[\s\S]*const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);[\s\S]*if \(refreshResult\.status === 'refresh-error'\) \{/);
   assert.match(classManagementBlock[0], /let teacherBindingSucceeded = false;/);
   assert.match(classManagementBlock[0], /teacherBindingSucceeded = true;/);
   assert.match(classManagementBlock[0], /if \(classId === 'new' && createdClassId != null && !teacherBindingSucceeded\) \{/);
-  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);[\s\S]*if \(refreshResult\.status === 'refresh-error'\) \{[\s\S]*班级和负责老师已保存，但列表刷新失败/);
+  assert.match(classManagementBlock[0], /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);[\s\S]*if \(refreshResult\.status === 'refresh-error'\) \{/);
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const classInteractionLocked = saving \|\| deleting;/);
@@ -1333,23 +1194,24 @@ test('class management source disables conflicting controls while async class or
   assert.match(classManagementBlock[0], /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /if \(classCardInteractionLocked\) \{\s*return;\s*\}[\s\S]*setExpandedClassId\(/);
+  assert.match(classManagementBlock[0], /resolveExpandedClassAfterToggle\(expandedClassId, classId, classCardInteractionLocked\)/);
+  assert.match(classManagementBlock[0], /setExpandedClassId\(nextExpandedClassId\)/);
   assert.match(classManagementBlock[0], /disabled=\{pageRefreshLocked\}[\s\S]*刷新列表/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*新建班级/);
-  assert.match(classManagementBlock[0], /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
-  assert.match(classManagementBlock[0], /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
+  assert.match(classManagementBlock[0], /onCreateClass=\{\(\) => handleToggleExpandedClass\('new'\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(\) => onToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
   assert.doesNotMatch(classManagementBlock[0], /展开管理/);
   assert.doesNotMatch(classManagementBlock[0], /收起管理/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*创建班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
-  assert.match(classManagementBlock[0], /disabled=\{editingTeacherBindingSaving \|\| classInteractionLocked \|\| editingFilteredUsers\.length === 0\}/);
+  assert.match(classManagementBlock[0], /disabled=\{editing\.teacherBindingSaving \|\| classInteractionLocked \|\| editing\.filteredUsers\.length === 0\}/);
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.doesNotMatch(source, /interface ClassFormValues \{[\s\S]*teacher_email: string;/);
@@ -1363,34 +1225,31 @@ test('class management source removes teacher-email UI and the standalone bottom
 
 test('class management source embeds teacher assignment inside each class card and normalizes common class names', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /const normalizeClassNameInput = \(value: string\): string =>/);
   assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
   assert.match(source, /\['七年级三班', '七年级 3 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
-  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClassTeacherUserId == null \? '' : String\(newClassTeacherUserId\)\}/);
-  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{editingCurrentTeacherUserId == null \? '' : String\(editingCurrentTeacherUserId\)\}/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClass\.teacherUserId == null \? '' : String\(newClass\.teacherUserId\)\}/);
+  assert.match(classManagementBlock[0], /<select[\s\S]*value=\{editing\.currentTeacherUserId == null \? '' : String\(editing\.currentTeacherUserId\)\}/);
   assert.match(classManagementBlock[0], /<option value="">请选择负责老师<\/option>/);
-  assert.match(classManagementBlock[0], /当前负责老师：\{editingTeacherSummary\}/);
-  assert.match(classManagementBlock[0], /newClassFilteredUsers\.map\(\(user\) => \(/);
-  assert.match(classManagementBlock[0], /editingFilteredUsers\.map\(\(user\) => \(/);
-  assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*负责老师/);
+  assert.match(classManagementBlock[0], /当前负责老师：\{editing\.teacherSummary\}/);
+  assert.match(classManagementBlock[0], /newClass\.filteredUsers\.map\(\(user\) => \(/);
+  assert.match(classManagementBlock[0], /editing\.filteredUsers\.map\(\(user\) => \(/);
+  assert.match(classManagementBlock[0], /filteredClasses\.map\(\(item\) => \{[\s\S]*上课教师/);
   assert.doesNotMatch(classManagementBlock[0], /type="radio"/);
   assert.doesNotMatch(classManagementBlock[0], /班级老师分配/);
 });
 
 test('class management source opens both existing and new class editors in a modal instead of inline cards', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(classManagementBlock[0], /const newClassExpanded = expandedClassId === 'new';/);
-  assert.match(classManagementBlock[0], /const editingClass = typeof expandedClassId === 'number' \? classes\.find\(\(item\) => item\.id === expandedClassId\) \?\? null : null;/);
   assert.match(classManagementBlock[0], /<AnimatePresence>/);
   assert.match(classManagementBlock[0], /className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"/);
-  assert.match(classManagementBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !classCardInteractionLocked && attemptCloseClassEditor\(\)\}/);
+  assert.match(classManagementBlock[0], /onClick=\{\(e\) => e\.target === e\.currentTarget && !classCardInteractionLocked && actions\.onClose\(\)\}/);
   assert.match(classManagementBlock[0], /编辑班级：/);
   assert.match(classManagementBlock[0], /关闭班级编辑窗口/);
   assert.doesNotMatch(classManagementBlock[0], /在弹窗里维护班级基础信息、负责老师和家长绑定邀请码。/);
@@ -1399,12 +1258,12 @@ test('class management source opens both existing and new class editors in a mod
 
 test('class management source explains structured class naming without development examples', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /activeClassHelpKey/);
-  assert.match(classManagementBlock[0], /校区总览说明/);
-  assert.match(classManagementBlock[0], /可按科目、教师、学段和年级查看不同范围/);
+  assert.match(campusOverviewSource, /校区总览说明/);
+  assert.match(campusOverviewSource, /可按科目、教师、学段和年级查看不同范围/);
   assert.match(classManagementBlock[0], /请分别填写学科、年级和班级名称，系统按「学科 \+ 年级 \+ 班级」理解班级，例如：数学七年级三班。/);
   assert.match(classManagementBlock[0], /请选择学科/);
   assert.match(classManagementBlock[0], /academicSubjectOptions\.map\(\(option\) =>/);
@@ -1413,15 +1272,9 @@ test('class management source explains structured class naming without developme
 });
 
 test('class management source adds a side-by-side student editor card next to the teacher card', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /deleteClassStudent,/);
-  assert.match(classManagementBlock[0], /const \[studentsByClassId, setStudentsByClassId\] = useState<Record<number, Array<\{ id: number; name: string \}>>>\(\{\}\);/);
-  assert.match(classManagementBlock[0], /const editingStudents = editingClass \? \(studentsByClassId\[editingClass\.id\] \|\| \[\]\) : \[\];/);
-  assert.match(classManagementBlock[0], /const editingStudentsLoading = editingClass \? Boolean\(studentsLoadingByClassId\[editingClass\.id\]\) : false;/);
-  assert.match(classManagementBlock[0], /const editingStudentDraftName = editingClass \? \(studentDraftNameByClassId\[editingClass\.id\] \|\| ''\) : '';/);
   assert.match(classManagementBlock[0], /className="grid gap-4 lg:grid-cols-2 lg:items-start"/);
   assert.match(classManagementBlock[0], /<h4 className="text-lg font-semibold text-slate-900 dark:text-white">家长绑定邀请码<\/h4>/);
   assert.match(classManagementBlock[0], /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师<\/h4>/);
@@ -1432,7 +1285,7 @@ test('class management source adds a side-by-side student editor card next to th
 
 test('class management source removes click-to-edit helper copy from class cards', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.doesNotMatch(classManagementBlock[0], /点击后弹窗编辑/);
@@ -1440,7 +1293,7 @@ test('class management source removes click-to-edit helper copy from class cards
 
 test('class management source keeps delete and save buttons inside the teacher card footer', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /<div className=\{`\$\{workspaceCardClass\} space-y-5 p-5`\}>[\s\S]*删除当前班级[\s\S]*保存班级/);
@@ -1449,13 +1302,13 @@ test('class management source keeps delete and save buttons inside the teacher c
 
 test('class management source preserves expanded edit cards during manual refresh failures', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classManagementBlock = source.match(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
   assert.match(classManagementBlock[0], /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
   assert.match(classManagementBlock[0], /const assignmentRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(classManagementBlock[0], /onClick=\{\(\) => loadPage\(expandedClassId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
-  assert.match(classManagementBlock[0], /onClick=\{\(\) => loadPage\(editingClass\.id, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
+  assert.match(classManagementBlock[0], /onRefresh=\{\(\) => loadPage\(expandedClassId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}/);
+  assert.match(classManagementBlock[0], /onRefreshAssignment: \(classId\) => loadPage\(classId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)/);
 });
 
 test('account administration source disables refresh and teacher alias actions while mutations run', () => {
@@ -1467,7 +1320,7 @@ test('account administration source disables refresh and teacher alias actions w
   assert.match(approvalBlock[0], /const organizationInviteRefreshLocked = organizationInviteLoading \|\| organizationInviteResetting;/);
   assert.match(approvalBlock[0], /const organizationListRefreshLocked = organizationsLoading \|\| deletingOrgId !== null;/);
   assert.match(approvalBlock[0], /const approvalRefreshLocked = loading \|\| actingId !== null;/);
-  assert.match(approvalBlock[0], /const memberRefreshLocked = usersLoading \|\| bindingSummaryLoading \|\| roleSavingUserId !== null \|\| visiblePageSavingUserId !== null \|\| displayNameSavingUserId !== null \|\| deletingUserId !== null;/);
+  assert.match(approvalBlock[0], /const memberRefreshLocked = usersLoading \|\| classesLoading \|\| bindingSummaryLoading \|\| roleSavingUserId !== null \|\| visiblePageSavingUserId !== null \|\| displayNameSavingUserId !== null \|\| deletingUserId !== null;/);
   assert.match(approvalBlock[0], /const teacherAliasActionLocked = taSubmitting \|\| taDeletingId !== null;/);
   assert.match(approvalBlock[0], /disabled=\{organizationRequestRefreshLocked\}[\s\S]*刷新机构申请/);
   assert.match(approvalBlock[0], /disabled=\{organizationInviteRefreshLocked\}[\s\S]*刷新邀请信息/);

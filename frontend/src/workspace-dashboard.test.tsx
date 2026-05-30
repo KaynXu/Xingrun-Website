@@ -11,7 +11,6 @@ import { WorkspaceDashboard, getOrganizationManagementEntries } from './Workspac
 
 type DashboardRole = 'super_owner' | 'owner' | 'admin' | 'member';
 
-const workspaceSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
 const defaultStyles = {
   pageClass: 'workspace-page',
   cardClass: 'workspace-card',
@@ -140,12 +139,10 @@ test('workspace dashboard copy keeps AI labels and material-generation copy', ()
   const memberMarkup = renderDashboard('member');
   const ownerMarkup = renderDashboard('owner');
   const superOwnerMarkup = renderDashboard('super_owner');
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   assert.match(memberMarkup, /AI 复习生成/);
   assert.match(ownerMarkup, /AI 教学入口/);
   assert.match(superOwnerMarkup, /AI 平台/);
-  assert.match(appSource, /生成 AI 复习资料和教学素材/);
 });
 
 test('super owner platform cards navigate to real platform and organization views', async () => {
@@ -207,8 +204,12 @@ test('app source routes the dashboard page through WorkspaceDashboard', () => {
   assert.doesNotMatch(source, /const Dashboard = \(/);
 });
 
-test('workspace dashboard source does not import shared styles from App directly', () => {
-  assert.doesNotMatch(workspaceSource, /from '\.\/App'/);
+test('workspace dashboard uses styles passed by the shell instead of owning shared style imports', () => {
+  const markup = renderDashboard('member');
+
+  assert.match(markup, /workspace-page/);
+  assert.match(markup, /workspace-card/);
+  assert.match(markup, /workspace-primary/);
 });
 
 test('organization management entries keep owner and admin routes inside their real access bounds', () => {

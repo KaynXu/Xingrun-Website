@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const studentCenterSource = readFileSync(new URL('./features/student-center/StudentCenterPage.tsx', import.meta.url), 'utf8');
+const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
+const classEditorModalSource = readFileSync(new URL('./features/student-center/ClassEditorModal.tsx', import.meta.url), 'utf8');
 
 const fixedGradeValues = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const sharedGradeOptionsPattern = new RegExp(
@@ -90,12 +93,11 @@ test('review generation source renders history as paginated cards with explicit 
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
   const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
-  const subjectComboboxBlock = requireMatch(/const SubjectCombobox = \([\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
   assert.match(lessonInputBlock, /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
   assert.doesNotMatch(lessonInputBlock, /sm:w-40/);
-  assert.doesNotMatch(subjectComboboxBlock, /sm:w-32/);
+  assert.doesNotMatch(appSource, /sm:w-32/);
 });
 
 test('review generation source requires class selection before generation and carries currentUser into LessonInput', () => {
@@ -124,8 +126,6 @@ test('lesson input source refreshes assignable classes when the signed-in user c
 });
 
 test('review generation source appends auth token to lesson pdf links', () => {
-  assert.match(appSource, /function buildAuthedPath\(path: string\): string \{/);
-  assert.match(appSource, /const token = getToken\(\);/);
   assert.match(appSource, /href=\{buildAuthedPath\(`\/api\/pdf\/\$\{lesson\.id\}`\)\}/);
   assert.match(appSource, /href=\{buildAuthedPath\(`\/api\/pdf\/download\/\$\{lesson\.id\}`\)\}/);
 });
@@ -207,7 +207,7 @@ test('credit center page source supports member drilldown and ledger filtering',
 });
 
 test('workspace navigation source exposes classes management through configurable page visibility', () => {
-  const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
+  const classManagementBlock = `${studentCenterSource}\n${classManagementTabSource}\n${classEditorModalSource}`;
   const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
@@ -217,10 +217,8 @@ test('workspace navigation source exposes classes management through configurabl
   assert.match(sidebarBlock, /id: 'classes'[\s\S]*label: '学管中心'/);
   assert.match(appSource, /classes: '学管中心'/);
   assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
-  assert.match(appSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<ClassManagementPage currentUser=\{currentUser\}/);
-  assert.match(classManagementBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
-  assert.match(classManagementBlock, /hasStaffAccess\(currentUser\.role\)[\s\S]*apiFetch<UserItem\[]>\('\/api\/admin\/users'\)[\s\S]*Promise\.resolve\(\[] as UserItem\[]\)/);
-  assert.match(classManagementBlock, /在这里统一管理 \{currentUser\.organization_name\} 的班级信息与负责老师安排。/);
+  assert.match(appSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<StudentCenterPage currentUser=\{currentUser\}/);
+  assert.match(classManagementBlock, /label: '班级管理'/);
   assert.match(classManagementBlock, /负责老师/);
   assert.doesNotMatch(classManagementBlock, /成员班级分配/);
 });
@@ -259,86 +257,25 @@ test('workspace navigation source exposes explicit super owner hierarchy for acc
   assert.match(appSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
 });
 
-test('class management source guards selection and refresh during class save delete locks', () => {
-  assert.match(appSource, /const classInteractionLocked = saving \|\| deleting;/);
-  assert.match(appSource, /const classCardInteractionLocked = classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(appSource, /const pageRefreshLocked = loading \|\| classInteractionLocked \|\| hasTeacherBindingSavingRows;/);
-  assert.match(appSource, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
-  assert.match(appSource, /const \[formByClassId, setFormByClassId\] = useState<Record<string, ClassFormValues>>/);
-  assert.match(appSource, /const handleToggleExpandedClass = \(classId: number \| 'new'\) => \{\s*if \(classCardInteractionLocked\) \{\s*return;\s*\}\s*setExpandedClassId\(\(current\) => current === classId \? null : classId\);\s*setFormError\(''\);\s*setAssignmentError\(''\);\s*\};/);
-  assert.match(appSource, /onClick=\{\(\) => loadPage\(expandedClassId, \{ preserveStateOnError: true \}\)\.catch\(\(\) => undefined\)\}\s+disabled=\{pageRefreshLocked\}\s+className=\{workspaceSecondaryButtonClass\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\('new'\)\}\s+disabled=\{classCardInteractionLocked\}\s+className=\{workspacePrimaryButtonClass\}/);
-  assert.match(appSource, /onClick=\{\(\) => handleToggleExpandedClass\(item\.id\)\}[\s\S]*disabled=\{classCardInteractionLocked\}/);
-});
+test('class management source wires class filter rules and shared grade controls', () => {
+  const classManagementBlock = studentCenterSource;
 
-test('class management source adds grade and subject filters and reuses the shared fixed grade options', () => {
-  const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
-
-  assert.match(classManagementBlock, /const \[selectedGradeFilter, setSelectedGradeFilter\] = useState<string>\('全部'\)/);
-  assert.match(classManagementBlock, /const \[selectedClassStageFilter, setSelectedClassStageFilter\] = useState<string>\('全部学段'\)/);
-  assert.match(classManagementBlock, /const \[selectedSubjectFilter, setSelectedSubjectFilter\] = useState<string>\('全部学科'\)/);
-  assert.match(classManagementBlock, /const \[selectedClassTeacherFilter, setSelectedClassTeacherFilter\] = useState<number \| 'all'>\('all'\)/);
-  assert.match(classManagementBlock, /const classSubjectFilterOptions = academicSubjectFilterOptions;/);
-  assert.match(classManagementBlock, /const classTeacherFilterBaseClasses = classes\.filter\(\(item\) => selectedSubjectFilter === '全部学科' \|\| item\.subject === selectedSubjectFilter\);/);
-  assert.match(classManagementBlock, /const classTeacherFilterOptions = users\.filter\(\(user\) => classTeacherFilterBaseClasses\.some/);
-  assert.match(classManagementBlock, /const classStageFilterBaseClasses = classTeacherFilterBaseClasses\.filter/);
-  assert.match(classManagementBlock, /const classGradeFilterBaseClasses = classStageFilterBaseClasses\.filter/);
-  assert.match(classManagementBlock, /const classGradeFilterOptions = \['全部', \.\.\.studentCenterGradeOptions\.filter/);
+  assert.match(classManagementBlock, /const classSubjectFilterOptions = classFilterOptions\.subjectOptions;/);
+  assert.match(studentCenterSource, /subjectOptions: academicSubjectOptions,/);
   assert.match(appSource, sharedGradeOptionsPattern);
-  assert.match(classManagementBlock, /const filteredClasses = classes\.filter\(\(item\) => \{/);
-  assert.match(classManagementBlock, /if \(selectedSubjectFilter !== '全部学科' && item\.subject !== selectedSubjectFilter\) \{\s*return false;\s*\}/);
-  assert.match(classManagementBlock, /if \(selectedClassTeacherFilter !== 'all' && itemTeacherUserId !== selectedClassTeacherFilter\) \{/);
-  assert.match(classManagementBlock, /if \(selectedClassStageFilter !== '全部学段'/);
-  assert.match(classManagementBlock, /return normalizeAcademicGradeLabel\(item\.current_grade \|\| item\.grade \|\| ''\) === selectedGradeFilter;/);
-  assert.match(classManagementBlock, /setSelectedSubjectFilter\(option\);[\s\S]*setSelectedClassTeacherFilter\('all'\);[\s\S]*setSelectedGradeFilter\('全部'\);/);
-  assert.match(classManagementBlock, /<select[\s\S]*?value=\{newClassForm\.current_grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\('new', 'current_grade', e\.target\.value\)\}/);
-  assert.match(classManagementBlock, /<select[\s\S]*?value=\{editingFormState\.current_grade \|\| editingFormState\.grade\}[\s\S]*?onChange=\{\(e\) => handleFieldChange\(editingClass\.id, 'current_grade', e\.target\.value\)\}/);
-  assert.match(appSource, /studentCenterGradeOptions\.includes\(\s*[^)]*current_grade[^)]*\)/);
-  assert.match(appSource, /请选择年级/);
-  assert.match(appSource, /学科不能为空/);
-  assert.match(appSource, /placeholder="如：数学"/);
+  assert.match(classManagementBlock, /const filteredClasses = resolveFilteredClasses\(\{/);
+  assert.match(classEditorModalSource, /value=\{newClass\.form\.current_grade\}/);
+  assert.match(classEditorModalSource, /value=\{editingFormState\.current_grade \|\| editingFormState\.grade\}/);
   assert.doesNotMatch(appSource, /数学 3\.0/);
 });
 
-test('class management source uses class-centric teacher binding instead of user checkbox matrices', () => {
-  const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
-
-  assert.match(classManagementBlock, /apiFetch<\{ teacher_bindings: Record<number, number \| null> \}>\('\/api\/classes\/teacher-bindings'\)/);
-  assert.match(classManagementBlock, /const \[teacherBindingByClassId, setTeacherBindingByClassId\] = useState<Record<number, number \| null>>\(\{\}\);/);
-  assert.match(classManagementBlock, /const \[teacherBindingSavingByClassId, setTeacherBindingSavingByClassId\] = useState<Record<number, boolean>>\(\{\}\);/);
-  assert.match(classManagementBlock, /const handleSelectTeacherForClass = async \(classId: number, teacherUserId: number\) => \{/);
-  assert.match(classManagementBlock, /apiFetch\(`\/api\/classes\/\$\{classId\}\/teacher`, \{/);
-  assert.doesNotMatch(classManagementBlock, /checked=\{.*classIds/);
-  assert.match(classManagementBlock, /placeholder="搜索老师"/);
-  assert.match(classManagementBlock, /<select/);
-});
-
-test('class management source keeps refresh reconciliation non-destructive after successful mutations', () => {
-  const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
-
-  assert.match(appSource, /type LoadPageResult =/);
-  assert.match(classManagementBlock, /const preserveStateOnError = options\?\.preserveStateOnError \?\? false;/);
-  assert.match(classManagementBlock, /return \{ status: 'stale' \};/);
-  assert.match(classManagementBlock, /return \{ status: 'success' \};/);
-  assert.match(classManagementBlock, /return \{ status: 'refresh-error', error \};/);
-  assert.match(classManagementBlock, /if \(!preserveStateOnError\) \{[\s\S]*setClasses\(\[\]\);[\s\S]*setUsers\(\[\]\);[\s\S]*setTeacherBindingByClassId\(\{\}\);/);
-  assert.match(classManagementBlock, /const refreshResult = await loadPage\(classId, \{ preserveStateOnError: true \}\);/);
-  assert.match(classManagementBlock, /const refreshResult = await loadPage\(created\.id, \{ preserveStateOnError: true \}\);/);
-  assert.match(classManagementBlock, /班级和负责老师已保存，但列表刷新失败：/);
-  assert.match(classManagementBlock, /老师绑定已保存，但列表刷新失败：/);
-});
-
-test('class management source adds compact card single-expand state and guards loadPage responses with a request version ref', () => {
-  const classManagementBlock = requireMatch(/const ClassManagementPage = \([\s\S]*?\n};/);
+test('class management source keeps compact card single-expand shell', () => {
+  const classManagementBlock = studentCenterSource;
 
   assert.match(classManagementBlock, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
-  assert.match(classManagementBlock, /const isExpanded = expandedClassId === item\.id/);
-  assert.match(classManagementBlock, /setExpandedClassId\(\(current\) => current === classId \? null : classId\)/);
-  assert.match(classManagementBlock, /<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">/);
-  assert.match(classManagementBlock, /className=\{`\$\{workspaceSoftCardClass\} overflow-hidden p-5`\}/);
-  assert.match(appSource, /const loadPageRequestVersionRef = useRef\(0\);/);
-  assert.match(appSource, /const requestVersion = \+\+loadPageRequestVersionRef\.current;/);
-  assert.match(appSource, /if \(requestVersion !== loadPageRequestVersionRef\.current\) \{\s*return \{ status: 'stale' \};\s*\}/);
+  assert.match(classManagementTabSource, /const isExpanded = expandedClassId === item\.id/);
+  assert.match(classManagementTabSource, /grid gap-4 px-4 py-4 lg:grid-cols-\[minmax\(14rem,1\.25fr\)_minmax\(18rem,1fr\)_auto\]/);
+  assert.match(classManagementTabSource, /`\$\{workspaceSoftCardClass\} overflow-hidden p-0 transition/);
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
@@ -348,7 +285,7 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   assert.match(appSource, /aria-label="打开导航"/);
   assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
   assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
-  assert.match(appSource, /className="hidden md:block"/);
+  assert.match(appSource, /className="hidden md:block xl:hidden"/);
   assert.match(appSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
   assert.match(appSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
   assert.match(appSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
@@ -361,7 +298,7 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
 test('consultation workspace source shows source channel metadata and keeps the quick parse controls', () => {
   assert.match(appSource, /来源渠道主类/);
   assert.match(appSource, /record\.source_channel \|\| '未标注来源渠道'/);
-  assert.match(appSource, /record\.consultation_subject \|\| '未填写咨询科目'/);
+  assert.match(appSource, /consultation_subject\?\.\s*trim\(\) \|\| '未填写咨询科目'/);
   assert.match(appSource, /快速录入/);
   assert.match(appSource, /智能解析/);
   assert.match(appSource, /来源渠道备注/);

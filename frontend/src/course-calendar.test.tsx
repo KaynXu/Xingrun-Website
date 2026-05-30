@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { JSDOM } from 'jsdom';
 
 import { CourseCalendarPage, type CourseCalendarPageProps } from './CourseCalendarPage';
+import { buildClassStatusRailData, joinClassesAndSchedules } from './courseCalendarData';
 
 type GlobalKey = keyof typeof globalThis;
 
@@ -171,9 +172,9 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.match(markup, /拖动课程到此/);
   assert.match(markup, /添加自定义事项/);
   assert.match(markup, /翻动/);
-  assert.match(markup, /全部学科/);
+  assert.match(markup, /科目/);
   assert.match(markup, /数学/);
-  assert.match(markup, /物理/);
+  assert.doesNotMatch(markup, /全部学科/);
   assert.doesNotMatch(markup, /管理教师筛选/);
   assert.doesNotMatch(markup, /第 1 页/);
   assert.doesNotMatch(markup, /天数/);
@@ -185,6 +186,56 @@ test('course calendar page renders the approved weekly dashboard shell', () => {
   assert.doesNotMatch(markup, /待补录课程/);
   assert.doesNotMatch(markup, /新增班级/);
   assert.doesNotMatch(markup, /函数入门/);
+});
+
+test('course calendar uses unified current class display names for scheduled class cards', () => {
+  const [schedule] = joinClassesAndSchedules(
+    [
+      {
+        id: 1,
+        name: '旧数学四年级1班',
+        subject: '数学',
+        grade: '四年级',
+        teacher_name: 'Alice',
+        teacher_email: 'alice@example.com',
+        lesson_count: 1,
+        current_grade: '4年级',
+        class_number: '1',
+        cohort_year: 2025,
+        is_bridge: false,
+      },
+    ],
+    [
+      {
+        id: 101,
+        class_id: 1,
+        date: '2026-03-31',
+        time_block: '08:00-10:00',
+      },
+    ],
+  );
+
+  assert.equal(schedule.className, '四年级·1班');
+});
+
+test('course calendar uses unified current class display names for draggable class rail', () => {
+  const [railItem] = buildClassStatusRailData([
+    {
+      id: 1,
+      name: '旧数学四年级1班',
+      subject: '数学',
+      grade: '四年级',
+      teacher_name: 'Alice',
+      teacher_email: 'alice@example.com',
+      lesson_count: 1,
+      current_grade: '4年级',
+      class_number: '1',
+      cohort_year: 2025,
+      is_bridge: false,
+    },
+  ]);
+
+  assert.equal(railItem.name, '四年级·1班');
 });
 
 test('course calendar page avoids a nested min-h-screen container inside the workspace shell', () => {
@@ -313,7 +364,7 @@ test('course calendar filters can show an empty draggable course result without 
     });
 
     const findButton = (label: string) => Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.trim() === label);
-    const stageButton = findButton('全部学段');
+    const stageButton = findButton('学段');
     assert.ok(stageButton);
 
     await act(async () => {
@@ -328,6 +379,60 @@ test('course calendar filters can show an empty draggable course result without 
     assert.match(domEnvironment.container.textContent ?? '', /暂无可拖拽课程/);
     assert.equal(domEnvironment.container.querySelectorAll('[data-course-class-id]').length, 0);
     assert.match(domEnvironment.container.textContent ?? '', /课程日历/);
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    domEnvironment.cleanup();
+  }
+});
+
+test('course calendar uses the floating filter pattern without all-options inside option panels', async () => {
+  const domEnvironment = setupDomEnvironment();
+  let root: Root | null = null;
+
+  try {
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        <CourseCalendarPage
+          {...buildCalendarProps({
+            classes: [
+              {
+                id: 1,
+                name: '七年级数学班',
+                subject: '数学',
+                grade: '七年级',
+                teacher_name: 'Alice',
+              },
+              {
+                id: 2,
+                name: '八年级物理班',
+                subject: '物理',
+                grade: '八年级',
+                teacher_name: 'Bob',
+              },
+            ],
+          })}
+        />,
+      );
+    });
+
+    assert.doesNotMatch(domEnvironment.container.textContent ?? '', /全部学科/);
+    assert.doesNotMatch(domEnvironment.container.textContent ?? '', /国际数学/);
+
+    const subjectButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.trim() === '科目');
+    assert.ok(subjectButton);
+    await act(async () => {
+      subjectButton.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
+    });
+
+    assert.match(domEnvironment.container.textContent ?? '', /数学/);
+    assert.match(domEnvironment.container.textContent ?? '', /物理/);
+    assert.match(domEnvironment.container.textContent ?? '', /国际数学/);
+    assert.doesNotMatch(domEnvironment.container.textContent ?? '', /全部学科/);
   } finally {
     if (root) {
       await act(async () => {
@@ -534,8 +639,13 @@ test('course calendar source opens time adjustment after dropping a class', () =
   assert.match(source, /isCalendarExpanded/);
   assert.match(source, /Maximize2/);
   assert.match(source, /Minimize2/);
-  assert.match(source, /const SUBJECT_FILTER_OPTIONS = \['全部学科', '数学', '物理', '国际数学'\]/);
+  assert.match(source, /const SUBJECT_FILTER_OPTIONS = \['数学', '物理', '国际数学'\]/);
   assert.match(source, /const teacherFilterBaseClasses = classes\.filter/);
+  assert.match(source, /<FloatingFilterBar/);
+  assert.match(source, /filterCloseTimerRef/);
+  assert.match(source, /window\.setTimeout\(\(\) => \{\s*setActiveFilterLayer\(null\);/);
+  assert.doesNotMatch(source, /全部教师/);
+  assert.doesNotMatch(source, /全部年级/);
   assert.doesNotMatch(source, /setTeacherEditorOpen\(true\)/);
   assert.doesNotMatch(source, /handleAddTeacherOption/);
   assert.doesNotMatch(source, /handleRemoveTeacherOption/);

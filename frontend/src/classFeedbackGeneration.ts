@@ -121,6 +121,16 @@ function pickString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function pickOptionalString(value: unknown): string | null | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === null) {
+    return null;
+  }
+  return undefined;
+}
+
 function pickNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -159,7 +169,7 @@ export function normalizeClassFeedbackTaskResponse(
         }];
       })
     : [];
-  const studentEntries = Array.isArray(source.student_entries)
+  const studentEntries: ClassFeedbackTask['student_entries'] = Array.isArray(source.student_entries)
     ? source.student_entries.flatMap((item) => {
         if (!isRecord(item)) {
           return [];
@@ -175,8 +185,8 @@ export function normalizeClassFeedbackTaskResponse(
           student_name_snapshot: pickString(item.student_name_snapshot),
           ai_draft: pickString(item.ai_draft),
           final_text: pickString(item.final_text),
-          checked_at: typeof item.checked_at === 'string' || item.checked_at === null ? item.checked_at : undefined,
-          updated_at: typeof item.updated_at === 'string' || item.updated_at === null ? item.updated_at : undefined,
+          checked_at: pickOptionalString(item.checked_at),
+          updated_at: pickOptionalString(item.updated_at),
         }];
       })
     : [];
