@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert single-lesson and monthly review-plan generation from synchronous requests into async task flows so `n1n/gpt-5.4` can stay enabled without blocking the UI.
+**Goal:** Convert single-lesson and monthly review-plan generation from synchronous requests into async task flows so the configured high-quality chat model can stay enabled without blocking the UI.
 
 **Architecture:** Single-lesson generation will reuse `lessons` rows as the task shell by introducing explicit `record_status` and `generation_error` persistence plus a background worker in `app.py`. Monthly generation will use a minimal dedicated `monthly_plan_jobs` table because there is no natural `lesson` record to attach to. Frontend work will stop awaiting long-running `POST` requests, instead refreshing/polling list or job detail state until records move from `pending` to `ready` or `failed`.
 
@@ -604,20 +604,19 @@ git commit -m "feat: make monthly review generation async"
 
 ```python
 class AiProcessorPromptTestCase(unittest.TestCase):
-    def test_parse_and_generate_plan_uses_configured_n1n_model_after_async_rollout(self):
+    def test_parse_and_generate_plan_uses_configured_model_after_async_rollout(self):
         fake_client = _FakeClient({"lesson_info": {}, "days": [], "weekly_review_prompts": []})
         with patch(
             "ai_processor._load_config",
             return_value={
-                "provider": "n1n",
-                "n1n_model": "gpt-5.4",
-                "n1n_api_key": "test-key",
-                "n1n_base_url": "https://api.n1n.ai/v1",
+                "provider": "deepseek",
+                "deepseek_model": "deepseek-chat",
+                "deepseek_api_key": "test-key",
             },
         ), patch("ai_processor._get_client", return_value=fake_client):
             ai_processor.parse_and_generate_plan("课堂总结")
 
-        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "gpt-5.4")
+        self.assertEqual(fake_client.chat.completions.last_kwargs["model"], "deepseek-chat")
 ```
 
 - [ ] **Step 2: Run the regression tests to verify they fail**
@@ -632,8 +631,6 @@ Expected: fail because `_get_structured_generation_model()` still rewrites `gpt-
 def _get_chat_model() -> str:
     cfg = _load_config()
     provider = cfg.get("provider", "openai")
-    if provider == "n1n":
-        return cfg.get("n1n_model", "gpt-4o")
     ...
 
 

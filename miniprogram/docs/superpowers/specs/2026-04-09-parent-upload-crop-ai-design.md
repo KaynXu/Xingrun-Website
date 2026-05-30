@@ -212,21 +212,19 @@ AI 是可选辅助，不是主流程。
 
 这部分之前只写了“接 AI”，但首版落地必须把模型和调用边界写清楚，否则前后端会各自猜。
 
-- AI provider 采用 `N1N`
-- 默认基线路径为 `https://api.n1n.ai/v1/chat/completions`
-- 默认模型使用 `gpt-4o`
+- AI provider 采用 `Qwen`
+- 默认基线路径为 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`
+- 默认模型使用 `qwen-vl-max-latest`
 - 模型名必须支持通过运行时配置覆盖，不允许前端写死
 - 当前服务端建议运行时配置：
-  - `N1N_API_KEY`
-  - `XR_N1N_BASE_URL`
-  - `XR_N1N_MODEL`
-- 服务端请求 N1N 时必须显式带上：
+  - `DASHSCOPE_API_KEY`
+  - `XR_QWEN_BASE_URL`
+  - `XR_VISION_MODEL`
+- 服务端请求 Qwen 时必须显式带上：
   - `Authorization: Bearer ...`
   - `Content-Type: application/json`
-  - `User-Agent`
-  - `Accept: application/json`
 
-原因：本轮联调已验证，N1N 的 URL 和 key 本身可用，但 Python 直连时如果缺少标准请求头，provider 可能返回 `403 error code: 1010`。因此“标准请求头”不是实现细节，而是本功能的接口契约之一。
+原因：服务端统一使用 DashScope OpenAI compatible endpoint，图片识别默认走 Qwen VL 模型，避免依赖已取消的旧 provider。
 
 如果后续需要切换到 `responses` 接口或其他模型，也必须满足两个前提：
 

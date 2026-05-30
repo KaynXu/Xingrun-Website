@@ -171,15 +171,6 @@ interface CreditMemberUsageDetailItem {
   created_at: string;
 }
 
-interface N1nModelPricingItem {
-  quota_type: number;
-  group_name: string;
-  group_ratio: number;
-  input_usd_per_m: number;
-  output_usd_per_m: number;
-  flat_model_price_usd: number;
-}
-
 interface ClassItem {
   id: number;
   name: string;
@@ -8321,8 +8312,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'credit' | 'debit'>('all');
   const [ledgerPage, setLedgerPage] = useState(1);
   const canSeeSensitiveUsageMeta = currentUser.role === 'super_owner';
-  const [n1nPricingByModel, setN1nPricingByModel] = useState<Record<string, N1nModelPricingItem>>({});
-  const [n1nPricingCnyPerUsd, setN1nPricingCnyPerUsd] = useState(1);
 
   const loadSelectedUsageDetail = useCallback(async (userId: number) => {
     setUsageDetailLoading(true);
@@ -8337,26 +8326,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       setUsageDetailLoading(false);
     }
   }, []);
-
-  const loadN1nPricingByModels = useCallback(async (models: string[]) => {
-    const normalizedModels = Array.from(new Set(models.map((item) => item.trim()).filter(Boolean)));
-    if (normalizedModels.length === 0) {
-      return;
-    }
-    const missingModels = normalizedModels.filter((model) => !n1nPricingByModel[model]);
-    if (missingModels.length === 0) {
-      return;
-    }
-    try {
-      const payload = await apiFetch<{ cny_per_usd: number; items: Record<string, N1nModelPricingItem> }>(
-        `/api/credits/pricing/n1n?models=${encodeURIComponent(missingModels.join(','))}`,
-      );
-      setN1nPricingCnyPerUsd(Number(payload.cny_per_usd || 1));
-      setN1nPricingByModel((previous) => ({ ...previous, ...(payload.items || {}) }));
-    } catch {
-      // Keep UI resilient when n1n pricing endpoint is temporarily unavailable.
-    }
-  }, [n1nPricingByModel]);
 
   useEffect(() => {
     selectedUsageUserIdRef.current = selectedUsageUser?.user_id ?? null;
@@ -8460,13 +8429,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   useEffect(() => {
     setLedgerPage(1);
   }, [ledgerFilter, creditLedger]);
-
-  useEffect(() => {
-    const modelsInDetail = usageDetailItems
-      .map((item) => String(item.model || '').trim())
-      .filter(Boolean);
-    void loadN1nPricingByModels(modelsInDetail);
-  }, [usageDetailItems, loadN1nPricingByModels]);
 
   return (
     <div className={`${workspacePageClass} mx-auto max-w-6xl space-y-8`}>
@@ -8649,14 +8611,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         ? (SOURCE_RECORD_TYPE_LABELS[item.source_record_type] ?? item.source_record_type)
                         : '未知';
                       const providerLabel = item.provider || 'AI';
-                      const modelPricing = item.model ? n1nPricingByModel[item.model] : undefined;
-                      const inputTokens = Math.max(0, Number(item.input_tokens ?? 0));
-                      const outputTokens = Math.max(0, Number(item.output_tokens ?? 0));
-                      const estimatedUsdCost = modelPricing && modelPricing.quota_type === 0
-                        ? (inputTokens / 1_000_000) * Number(modelPricing.input_usd_per_m || 0)
-                          + (outputTokens / 1_000_000) * Number(modelPricing.output_usd_per_m || 0)
-                        : null;
-                      const estimatedCnyCost = estimatedUsdCost !== null ? estimatedUsdCost * n1nPricingCnyPerUsd : null;
                       return (
                         <div key={item.id} className={`${workspaceSoftCardClass} space-y-3 p-4`}>
                           <div className="flex items-start justify-between gap-4">
@@ -8679,11 +8633,6 @@ const CreditCenterPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             <p>Tokens：{item.total_tokens ?? 0}（输入 {item.input_tokens ?? 0} / 输出 {item.output_tokens ?? 0}）</p>
                             <p>时间：{new Date(item.created_at).toLocaleString('zh-CN')}</p>
                           </div>
-                          {estimatedCnyCost !== null && (
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              预估花费：¥{estimatedCnyCost.toFixed(4)}（按 n1n 公开价格估算，1 美元按 {n1nPricingCnyPerUsd.toFixed(2)} 人民币换算）
-                            </p>
-                          )}
                         </div>
                       );
                     })}
