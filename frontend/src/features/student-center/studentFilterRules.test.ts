@@ -176,7 +176,7 @@ test('student filter display helpers build summary, tags, and active options', (
 
   assert.equal(buildStudentFilterSummary(filters, teachers, classes), '李老师 / 物理 / 初中 / 七年级 / 七年级·2班 / 李');
   assert.deepEqual(buildStudentFilterItems(filters, teachers, classes).map((item) => [item.key, item.label, item.selected]), [
-    ['subject', '物理', true],
+    ['subject', '科目：物理', true],
     ['teacher', '李老师', true],
     ['stage', '初中', true],
     ['grade', '七年级', true],

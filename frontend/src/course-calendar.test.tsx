@@ -433,6 +433,14 @@ test('course calendar uses the floating filter pattern without all-options insid
     assert.match(domEnvironment.container.textContent ?? '', /物理/);
     assert.match(domEnvironment.container.textContent ?? '', /国际数学/);
     assert.doesNotMatch(domEnvironment.container.textContent ?? '', /全部学科/);
+
+    const mathOption = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.trim() === '数学');
+    assert.ok(mathOption);
+    await act(async () => {
+      mathOption.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
+    });
+
+    assert.ok(Array.from(domEnvironment.container.querySelectorAll('button')).some((button) => button.textContent?.includes('科目：数学')));
   } finally {
     if (root) {
       await act(async () => {

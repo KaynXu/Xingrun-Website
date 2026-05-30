@@ -167,7 +167,7 @@ export function buildClassFilterItems(
     {
       key: 'subject',
       defaultLabel: '科目',
-      label: filters.subjectFilter === '全部学科' ? '科目' : filters.subjectFilter,
+      label: filters.subjectFilter === '全部学科' ? '科目' : `科目：${filters.subjectFilter}`,
       selected: filters.subjectFilter !== '全部学科',
     },
     {

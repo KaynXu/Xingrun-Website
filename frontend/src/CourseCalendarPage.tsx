@@ -360,7 +360,7 @@ export function CourseCalendarPage({
     {
       key: 'subject',
       defaultLabel: '科目',
-      label: subjectFilter === '全部学科' ? '科目' : subjectFilter,
+      label: subjectFilter === '全部学科' ? '科目' : `科目：${subjectFilter}`,
       selected: subjectFilter !== '全部学科',
       icon: <Filter className="h-3.5 w-3.5" />,
     },
