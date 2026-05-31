@@ -40,9 +40,31 @@ function escapeHtml(value) {
 }
 
 function buildQuestionBlock(item) {
+  const preview = buildWrongQuestionLatexPreviewModel(item.question_text_snapshot || '');
+  const questionTextBlock = preview.html
+    ? `
+      <div class="question-latex-card">
+        <div class="xr-latex-preview question-latex-preview-frame">
+          ${preview.html}
+        </div>
+      </div>
+    `
+    : '';
+
+  if (item.image_data_url && item.diagram_type) {
+    return `
+      ${questionTextBlock}
+      <div class="geometry-card">
+        <div class="geometry-title">生成图像</div>
+        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image" />
+      </div>
+    `;
+  }
+
   if (item.is_geometry) {
     if (item.image_data_url) {
       return `
+        ${questionTextBlock}
         <div class="geometry-card">
           <div class="geometry-title">几何原题图片</div>
           <img src="${item.image_data_url}" alt="几何原题图片" class="geometry-image" />
@@ -51,6 +73,7 @@ function buildQuestionBlock(item) {
     }
 
     return `
+      ${questionTextBlock}
       <div class="geometry-card">
         <div class="geometry-title">几何原题图片</div>
         <div class="geometry-placeholder">图片暂时无法载入，已保留原图记录。</div>
@@ -58,7 +81,6 @@ function buildQuestionBlock(item) {
     `;
   }
 
-  const preview = buildWrongQuestionLatexPreviewModel(item.question_text_snapshot || '');
   return `
     <div class="question-latex-card">
       <div class="xr-latex-preview question-latex-preview-frame">

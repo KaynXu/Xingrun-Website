@@ -87,6 +87,28 @@ test('buildDocumentMarkup keeps non-empty question blocks for missing notes and 
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
 });
 
+test('buildDocumentMarkup renders generated diagram with its recognized question text', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherTitle: '平台管理员',
+    records: [
+      {
+        created_at: '2026-04-09 10:10:00',
+        is_geometry: true,
+        question_text: '如图，数轴上点 A 表示 -5，点 B 表示 15。',
+        diagram_type: 'number_line',
+        image_data_url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      },
+    ],
+  });
+
+  assert.match(markup, /如图，数轴上点 A 表示 -5/);
+  assert.match(markup, /生成图像/);
+  assert.match(markup, /src="data:image\/svg\+xml;base64,PHN2Zz48L3N2Zz4="/);
+  assert.doesNotMatch(markup, /保留原图入库/);
+});
+
 test('resolveChromiumLaunchOptions prefers explicit environment paths', async () => {
   const launchOptions = await resolveChromiumLaunchOptions({
     env: {

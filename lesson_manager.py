@@ -1648,6 +1648,8 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "question_text",
             "question_text_edited",
             "question_text_source",
+            "diagram_type",
+            "diagram_spec_json",
             "recognition_error",
             "student_library_pdf_path",
             "created_at",
@@ -1692,6 +1694,8 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             question_text             TEXT NOT NULL DEFAULT '',
             question_text_edited      INTEGER NOT NULL DEFAULT 0,
             question_text_source      TEXT NOT NULL DEFAULT 'ai',
+            diagram_type              TEXT NOT NULL DEFAULT '',
+            diagram_spec_json         TEXT NOT NULL DEFAULT '',
             recognition_error         TEXT NOT NULL DEFAULT '',
             student_library_pdf_path  TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
@@ -2422,6 +2426,8 @@ def init_db():
             question_text             TEXT NOT NULL DEFAULT '',
             question_text_edited      INTEGER NOT NULL DEFAULT 0,
             question_text_source      TEXT NOT NULL DEFAULT 'ai',
+            diagram_type              TEXT NOT NULL DEFAULT '',
+            diagram_spec_json         TEXT NOT NULL DEFAULT '',
             recognition_error         TEXT NOT NULL DEFAULT '',
             student_library_pdf_path  TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
@@ -2476,6 +2482,8 @@ def init_db():
             is_geometry                   INTEGER NOT NULL DEFAULT 0,
             question_text_snapshot        TEXT NOT NULL DEFAULT '',
             image_url_snapshot            TEXT NOT NULL DEFAULT '',
+            diagram_type_snapshot         TEXT NOT NULL DEFAULT '',
+            diagram_spec_json_snapshot    TEXT NOT NULL DEFAULT '',
             child_reason_text_snapshot    TEXT NOT NULL DEFAULT '',
             primary_error_type_snapshot   TEXT NOT NULL DEFAULT '',
             cause_note_snapshot           TEXT NOT NULL DEFAULT '',
@@ -2814,8 +2822,12 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "question_text", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "question_text_edited", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "question_text_source", "TEXT NOT NULL DEFAULT 'ai'")
+        _ensure_column(conn, "wrong_question_submissions", "diagram_type", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "diagram_spec_json", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
@@ -7015,6 +7027,9 @@ def create_wechat_wrong_question_submission(
     image_rotation_degrees: int = 0,
     question_text: str = "",
     question_text_source: str = "ai",
+    diagram_type: str = "",
+    diagram_spec: dict | None = None,
+    diagram_spec_json: str = "",
     recognition_error: str = "",
     student_library_pdf_path: str = "",
 ) -> dict:
@@ -7031,6 +7046,27 @@ def create_wechat_wrong_question_submission(
         normalized_image_rotation_degrees = 0
     if normalized_image_rotation_degrees not in {0, 90, 180, 270}:
         normalized_image_rotation_degrees = 0
+    normalized_diagram_type = str(diagram_type or "").strip()
+    normalized_diagram_spec_json = str(diagram_spec_json or "").strip()
+    if diagram_spec is not None:
+        if isinstance(diagram_spec, dict) and diagram_spec:
+            normalized_diagram_spec_json = json.dumps(diagram_spec, ensure_ascii=False, separators=(",", ":"))
+            if not normalized_diagram_type:
+                normalized_diagram_type = str(diagram_spec.get("type") or "").strip()
+        else:
+            normalized_diagram_spec_json = ""
+    elif normalized_diagram_spec_json:
+        try:
+            parsed_diagram_spec = json.loads(normalized_diagram_spec_json)
+        except json.JSONDecodeError:
+            normalized_diagram_spec_json = ""
+        else:
+            if isinstance(parsed_diagram_spec, dict):
+                normalized_diagram_spec_json = json.dumps(parsed_diagram_spec, ensure_ascii=False, separators=(",", ":"))
+                if not normalized_diagram_type:
+                    normalized_diagram_type = str(parsed_diagram_spec.get("type") or "").strip()
+            else:
+                normalized_diagram_spec_json = ""
 
     with get_conn() as conn:
         binding_row = conn.execute(
@@ -7055,8 +7091,8 @@ def create_wechat_wrong_question_submission(
                 child_reason_core_issue, child_reason_key_omission, child_reason_next_step,
                 topic_category, archive_status, status,
                 recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
-                question_text_source, recognition_error, student_library_pdf_path
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?)
+                question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path
+            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -7081,6 +7117,8 @@ def create_wechat_wrong_question_submission(
                 normalized_image_rotation_degrees,
                 (question_text or "").strip(),
                 (question_text_source or "ai").strip() or "ai",
+                normalized_diagram_type,
+                normalized_diagram_spec_json,
                 (recognition_error or "").strip(),
                 (student_library_pdf_path or "").strip(),
             ),
@@ -7136,6 +7174,13 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     payload["teacher_name_snapshot"] = row["teacher_display_name"]
     payload["mapping_status"] = "mapped"
     payload["is_mastered"] = row["archive_status"] == "archived"
+    payload["diagram_type"] = str(row["diagram_type"] or "")
+    payload["diagram_spec_json"] = str(row["diagram_spec_json"] or "")
+    try:
+        diagram_spec = json.loads(payload["diagram_spec_json"]) if payload["diagram_spec_json"] else None
+    except json.JSONDecodeError:
+        diagram_spec = None
+    payload["diagram_spec"] = diagram_spec if isinstance(diagram_spec, dict) else None
     topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
     payload["topic_category"] = topic_category
     payload["topicCategory"] = topic_category
@@ -8302,10 +8347,12 @@ def create_pending_wrong_question_practice_sheet(
                     is_geometry,
                     question_text_snapshot,
                     image_url_snapshot,
+                    diagram_type_snapshot,
+                    diagram_spec_json_snapshot,
                     child_reason_text_snapshot,
                     primary_error_type_snapshot,
                     cause_note_snapshot
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sheet_id,
@@ -8315,6 +8362,8 @@ def create_pending_wrong_question_practice_sheet(
                     1 if bool(record.get("is_geometry")) else 0,
                     str(record.get("question_text") or "").strip(),
                     str(record.get("image_url") or "").strip(),
+                    str(record.get("diagram_type") or "").strip(),
+                    str(record.get("diagram_spec_json") or "").strip(),
                     str(record.get("child_raw_reason_text") or "").strip(),
                     str(record.get("primary_error_type") or "").strip(),
                     str(record.get("secondary_error_summary") or "").strip(),
@@ -9082,9 +9131,8 @@ def cmd_add(args):
     )
 
     # 4. 生成 PDF
-    from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
-    safe_topic = topic.replace("/", "-").replace(" ", "_")[:30] if topic else "课程"
-    pdf_name = f"{lesson_date}_{subject}_{safe_topic}.pdf"
+    from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
+    pdf_name = build_single_lesson_pdf_filename(plan)
     pdf_path = str(PDF_DIR / pdf_name)
     generate_single_lesson_pdf(plan, pdf_path)
     print(f"PDF 已生成：{pdf_path}")
