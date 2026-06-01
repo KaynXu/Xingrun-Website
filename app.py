@@ -67,6 +67,7 @@ from lesson_manager import (
     approve_organization_request,
     approve_registration_request,
     authenticate_user,
+    add_existing_student_to_class,
     bind_parent_to_student,
     confirm_class_feedback_task,
     create_class_feedback_task,
@@ -75,7 +76,6 @@ from lesson_manager import (
     create_wrong_question_practice_pack_job,
     create_wechat_wrong_question_upload_task,
     create_organization_request,
-    create_student_for_class,
     create_auth_session,
     create_consultation,
     create_course_calendar_custom_item,
@@ -138,6 +138,7 @@ from lesson_manager import (
     list_organization_requests,
     list_parent_student_bindings_for_openid,
     list_primary_topic_category_suggestions,
+    list_students_for_organization,
     list_student_wrong_question_library_records,
     list_students_for_class,
     list_student_class_history,
@@ -4031,29 +4032,48 @@ def api_class_create():
     grade = (data.get("grade") or "").strip()
     class_number = (data.get("class_number") or "").strip()
     current_grade = (data.get("current_grade") or grade).strip()
-    if not name and not class_number:
+    class_type = (data.get("class_type") or "group").strip() or "group"
+    student_ids = data.get("student_ids") or []
+    if not isinstance(student_ids, list):
+        return jsonify({"error": "student_ids must be a list"}), 400
+    if class_type == "group" and not name and not class_number:
         return jsonify({"error": "班级名称不能为空"}), 400
+    if class_type != "group" and not student_ids:
+        return jsonify({"error": "请选择学员"}), 400
     if not subject:
         return jsonify({"error": "学科不能为空"}), 400
-    cid = save_class(
-        name=name,
-        subject=subject,
-        grade=grade,
-        teacher_name=data.get("teacher_name", "").strip(),
-        teacher_email=data.get("teacher_email", "").strip(),
-        organization_id=user.get("organization_id"),
-        stage=(data.get("stage") or "").strip(),
-        current_grade=current_grade,
-        class_number=class_number,
-        cohort_year=data.get("cohort_year"),
-        show_cohort_year=bool(data.get("show_cohort_year", True)),
-        is_bridge=bool(data.get("is_bridge")),
-        bridge_target=(data.get("bridge_target") or "").strip(),
-        content_track=(data.get("content_track") or "").strip(),
-        teacher_user_id=data.get("teacher_user_id"),
-    )
+    try:
+        cid = save_class(
+            name=name,
+            subject=subject,
+            grade=grade,
+            teacher_name=data.get("teacher_name", "").strip(),
+            teacher_email=data.get("teacher_email", "").strip(),
+            organization_id=user.get("organization_id"),
+            stage=(data.get("stage") or "").strip(),
+            current_grade=current_grade,
+            class_number=class_number,
+            class_type=class_type,
+            student_ids=student_ids,
+            cohort_year=data.get("cohort_year"),
+            show_cohort_year=bool(data.get("show_cohort_year", True)),
+            is_bridge=bool(data.get("is_bridge")),
+            bridge_target=(data.get("bridge_target") or "").strip(),
+            content_track=(data.get("content_track") or "").strip(),
+            teacher_user_id=data.get("teacher_user_id"),
+        )
+    except ValueError:
+        return jsonify({"error": "请选择本机构学员"}), 400
     cls = get_class(cid)
     return jsonify({"id": cid, "name": cls["name"] if cls else name}), 201
+
+
+@app.route("/api/students", methods=["GET"])
+def api_students_list():
+    user, error = _require_staff()
+    if error:
+        return error
+    return jsonify({"students": list_students_for_organization(user.get("organization_id"))})
 
 
 @app.route("/api/classes/teacher-bindings", methods=["GET"])
@@ -4124,14 +4144,19 @@ def api_class_students_create(class_id):
     data, error = _get_json_object_payload()
     if error:
         return error
-    requested_name = (data.get("name") or "").strip()
-    if not requested_name:
-        return jsonify({"error": "student name is required"}), 400
-    student = create_student_for_class(class_id, requested_name)
+    student_id = int(data.get("student_id") or 0)
+    if not student_id:
+        return jsonify({"error": "请选择已有学员"}), 400
+    try:
+        student = add_existing_student_to_class(class_id, student_id)
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify({
         "student": student,
-        "requested_name": requested_name,
-        "deduplicated": student["name"] != requested_name,
+        "requested_name": student["name"],
+        "deduplicated": False,
     }), 201
 
 
@@ -4720,7 +4745,8 @@ def api_class_update(class_id):
     grade = (data.get("grade") or "").strip()
     class_number = (data.get("class_number") or "").strip()
     current_grade = (data.get("current_grade") or grade).strip()
-    if not name and not class_number:
+    class_type = (data.get("class_type") or cls.get("class_type") or "group").strip() or "group"
+    if class_type == "group" and not name and not class_number:
         return jsonify({"error": "班级名称不能为空"}), 400
     if not subject:
         return jsonify({"error": "学科不能为空"}), 400
@@ -4740,6 +4766,7 @@ def api_class_update(class_id):
         stage=(data.get("stage") or "").strip(),
         current_grade=current_grade,
         class_number=class_number,
+        class_type=class_type,
         cohort_year=data.get("cohort_year"),
         show_cohort_year=bool(data.get("show_cohort_year", True)),
         is_bridge=bool(data.get("is_bridge")),

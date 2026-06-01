@@ -94,14 +94,12 @@ import {
   executeClassStudentDeleteRequest,
   executeClassStudentListRequest,
   resolveClassStudentDraftAfterCreate,
-  resolveClassStudentDraftName,
   resolveClassStudentErrorMessage,
   resolveClassStudentSavingEndState,
   resolveClassStudentSavingStartState,
   resolveClassStudentsAfterCreate,
   resolveClassStudentsAfterDelete,
   resolveClassStudentsAfterLoad,
-  validateClassStudentDraftName,
 } from './classStudentRules';
 import {
   buildOverviewFilterItems,
@@ -164,6 +162,7 @@ export function StudentCenterPage({
 }) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [allStudents, setAllStudents] = useState<Array<{ id: number; name: string }>>([]);
   const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
   const [inviteByClassId, setInviteByClassId] = useState<Record<number, ClassInviteInfo>>({});
   const [studentsByClassId, setStudentsByClassId] = useState<Record<number, Array<{ id: number; name: string }>>>({});
@@ -241,7 +240,7 @@ export function StudentCenterPage({
     setLoading(loadStartState.loading);
     setPageError(loadStartState.pageError);
     try {
-      const { classItems, userItems, teacherBindingData } = await executeStudentCenterLoadRequest(
+      const { classItems, userItems, teacherBindingData, allStudents: loadedStudents } = await executeStudentCenterLoadRequest(
         apiFetch,
         studentCenterPermissions.canLoadStaffMembers,
       );
@@ -253,6 +252,7 @@ export function StudentCenterPage({
       const nextState = buildClassLoadSuccessState({
         classItems,
         userItems,
+        allStudents: loadedStudents,
         rawTeacherBindings: teacherBindingData.teacher_bindings,
         currentFormByClassId: formByClassIdRef.current,
         currentExpandedClassId: expandedClassIdRef.current,
@@ -262,6 +262,7 @@ export function StudentCenterPage({
 
       setClasses(nextState.classes);
       setUsers(nextState.users);
+      setAllStudents(nextState.allStudents);
       setTeacherBindingByClassId(nextState.teacherBindingByClassId);
       setFormByClassId(nextState.formByClassId);
       setExpandedClassId(nextState.expandedClassId);
@@ -277,6 +278,7 @@ export function StudentCenterPage({
         const nextState = buildClassLoadFailureState(createEmptyClassForm());
         setClasses(nextState.classes);
         setUsers(nextState.users);
+        setAllStudents(nextState.allStudents);
         setTeacherBindingByClassId(nextState.teacherBindingByClassId);
         setFormByClassId(nextState.formByClassId);
         setNewClassTeacherUserId(nextState.newClassTeacherUserId);
@@ -413,6 +415,23 @@ export function StudentCenterPage({
     }));
   };
 
+  const handleNewClassStudentSelectionChange = (studentId: number, checked: boolean) => {
+    setFormByClassId((current) => {
+      const currentForm = current.new || createEmptyClassForm();
+      const currentIds = currentForm.selected_student_ids || [];
+      const nextIds = checked
+        ? [...currentIds.filter((id) => id !== studentId), studentId]
+        : currentIds.filter((id) => id !== studentId);
+      return {
+        ...current,
+        new: {
+          ...currentForm,
+          selected_student_ids: nextIds,
+        },
+      };
+    });
+  };
+
   const handleToggleExpandedClass = (classId: number | 'new') => {
     const nextExpandedClassId = resolveExpandedClassAfterToggle(expandedClassId, classId, classCardInteractionLocked);
     if (nextExpandedClassId === expandedClassId && classCardInteractionLocked) {
@@ -451,6 +470,7 @@ export function StudentCenterPage({
       form: currentForm,
       selectedTeacher,
       selectedTeacherUserId,
+      existingStudents: allStudents,
     });
     const validationError = validateClassSaveDraft({
       classId,
@@ -596,19 +616,12 @@ export function StudentCenterPage({
     }
   };
 
-  const handleAddStudentToClass = async (classId: number) => {
-    const draftName = resolveClassStudentDraftName(studentDraftNameByClassId[classId]);
-    const validationError = validateClassStudentDraftName(draftName);
-    if (validationError) {
-      setStudentErrorByClassId((current) => ({ ...current, [classId]: validationError }));
-      return;
-    }
-
+  const handleAddStudentToClass = async (classId: number, studentId: number) => {
     setStudentSavingByClassId((current) => resolveClassStudentSavingStartState(current, classId));
     setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
 
     try {
-      const payload = await executeClassStudentCreateRequest(classId, draftName, createClassStudent);
+      const payload = await executeClassStudentCreateRequest(classId, studentId, createClassStudent);
       setStudentsByClassId((current) => resolveClassStudentsAfterCreate(current, classId, payload.student));
       setStudentDraftNameByClassId((current) => resolveClassStudentDraftAfterCreate(current, classId));
     } catch (err) {
@@ -843,6 +856,19 @@ export function StudentCenterPage({
     teacherBindingByClassId,
   });
 
+  const isClassFormDraftDirty = (classId: number | 'new') => {
+    const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
+    const savedClass = classId === 'new' ? null : classes.find((item) => item.id === classId) ?? null;
+    const savedForm = classId === 'new' ? createEmptyClassForm() : (savedClass ? toClassFormValues(savedClass) : null);
+    return resolveClassFormDraftDirty({
+      classId,
+      currentForm,
+      savedForm,
+      newClassTeacherUserId,
+    });
+  };
+  const canSaveExpandedClassDraft = expandedClassId !== null && isClassFormDraftDirty(expandedClassId);
+
   const classEditorModalState = buildClassEditorModalState({
     expandedClassId,
     classes,
@@ -858,6 +884,7 @@ export function StudentCenterPage({
     inviteResettingByClassId,
     inviteErrorByClassId,
     studentsByClassId,
+    allStudents,
     studentsLoadingByClassId,
     studentSavingByClassId,
     studentErrorByClassId,
@@ -885,17 +912,6 @@ export function StudentCenterPage({
   } = classEditorModalState;
   const { editingClass, editingFormState } = classEditorMode;
   const getClassDisplayName = (item: ClassItem) => getCurrentClassDisplayName(item, showClassCohortYear);
-  const isClassFormDraftDirty = (classId: number | 'new') => {
-    const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
-    const savedClass = classId === 'new' ? null : classes.find((item) => item.id === classId) ?? null;
-    const savedForm = classId === 'new' ? createEmptyClassForm() : (savedClass ? toClassFormValues(savedClass) : null);
-    return resolveClassFormDraftDirty({
-      classId,
-      currentForm,
-      savedForm,
-      newClassTeacherUserId,
-    });
-  };
   const resetClassFormDraft = (classId: number | 'new') => {
     if (classId === 'new') {
       setFormByClassId((current) => resolveFormsAfterClassDraftReset(current, classId, createEmptyClassForm()));
@@ -1043,6 +1059,7 @@ export function StudentCenterPage({
     handleResetClassInvite,
     handleSelectTeacherForClass,
     handleDeleteClass,
+    handleNewClassStudentSelectionChange,
     handleStudentDraftNameChange,
     handleAddStudentToClass,
     handleDeleteStudentFromClass,
@@ -1186,6 +1203,7 @@ export function StudentCenterPage({
         locks={classEditorLocks}
         errors={classEditorErrors}
         options={classEditorOptions}
+        canSaveClassDraft={canSaveExpandedClassDraft}
         teacherSearchByClassId={teacherSearchByClassId}
         users={users}
         newClass={classEditorNewClass}

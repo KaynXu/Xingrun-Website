@@ -456,10 +456,10 @@ async function callApiFetch<T>(path: string, options?: RequestInit): Promise<T> 
 export const listClassStudents = (classId: number) =>
   callApiFetch<{ students: Array<{ id: number; name: string }> }>(`/api/classes/${classId}/students`);
 
-export const createClassStudent = (classId: number, name: string) =>
+export const createClassStudent = (classId: number, studentId: number) =>
   callApiFetch<{ student: { id: number; name: string }; deduplicated: boolean }>(`/api/classes/${classId}/students`, {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ student_id: studentId }),
   });
 
 export const deleteClassStudent = (classId: number, studentId: number) =>

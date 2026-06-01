@@ -20,7 +20,7 @@ const baseForm: ClassFormValues = {
   cohort_year: '2025',
   show_cohort_year: true,
   is_bridge: false,
-  bridge_target: '默认下一学段',
+  bridge_target: '小学衔接初中',
   content_track: '',
 };
 

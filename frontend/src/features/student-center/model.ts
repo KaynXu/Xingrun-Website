@@ -1,4 +1,4 @@
-import { normalizeAcademicGradeLabel } from '../../domain/classNaming';
+import { normalizeAcademicGradeLabel, serializeBridgeTarget } from '../../domain/classNaming';
 
 export type StudentCenterRole = 'super_owner' | 'owner' | 'admin' | 'member';
 
@@ -18,6 +18,7 @@ export interface CurrentUser {
 export interface ClassItem {
   id: number;
   name: string;
+  class_type?: string;
   subject: string;
   grade: string;
   stage?: string;
@@ -46,6 +47,11 @@ export interface UserItem {
   visible_pages?: string[];
 }
 
+export type ClassStudentOption = {
+  id: number;
+  name: string;
+};
+
 export interface ClassInviteInfo {
   id: number;
   class_id: number;
@@ -61,6 +67,7 @@ export type ClassBindingTarget = {
 
 export interface ClassFormValues {
   name: string;
+  class_type: string;
   subject: string;
   grade: string;
   teacher_name: string;
@@ -72,6 +79,7 @@ export interface ClassFormValues {
   is_bridge: boolean;
   bridge_target: string;
   content_track: string;
+  selected_student_ids: number[];
 }
 
 export type LoadPageResult =
@@ -82,6 +90,7 @@ export type LoadPageResult =
 export function getClassFormDirtySignature(form: Pick<ClassFormValues, 'subject' | 'stage' | 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'is_bridge' | 'bridge_target' | 'content_track'>): string {
   return JSON.stringify({
     subject: form.subject.trim(),
+    class_type: form.class_type || 'group',
     stage: form.stage,
     current_grade: normalizeAcademicGradeLabel(form.current_grade || form.grade),
     class_number: form.class_number.trim(),
@@ -95,6 +104,7 @@ export function getClassFormDirtySignature(form: Pick<ClassFormValues, 'subject'
 export function createEmptyClassForm(): ClassFormValues {
   return {
     name: '',
+    class_type: 'group',
     subject: '',
     grade: '',
     teacher_name: '',
@@ -104,14 +114,16 @@ export function createEmptyClassForm(): ClassFormValues {
     cohort_year: '',
     show_cohort_year: true,
     is_bridge: false,
-    bridge_target: '默认下一学段',
+    bridge_target: serializeBridgeTarget('小学', '初中'),
     content_track: '',
+    selected_student_ids: [],
   };
 }
 
 export function toClassFormValues(item: ClassItem): ClassFormValues {
   return {
     name: item.name || '',
+    class_type: item.class_type || 'group',
     subject: item.subject || '',
     grade: item.grade || '',
     teacher_name: item.teacher_name || '',
@@ -121,7 +133,8 @@ export function toClassFormValues(item: ClassItem): ClassFormValues {
     cohort_year: item.cohort_year ? String(item.cohort_year) : '',
     show_cohort_year: item.show_cohort_year !== false && item.show_cohort_year !== 0,
     is_bridge: Boolean(item.is_bridge),
-    bridge_target: item.bridge_target || '默认下一学段',
+    bridge_target: item.bridge_target || serializeBridgeTarget(item.stage || '', ''),
     content_track: item.content_track || '',
+    selected_student_ids: [],
   };
 }

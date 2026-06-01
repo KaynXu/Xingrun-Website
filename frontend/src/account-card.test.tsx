@@ -214,9 +214,11 @@ test('consultation modal keeps save beside close and supports keyboard save shor
   assert.match(modalBlock[0], /const handleSaveShortcut = \(event: KeyboardEvent\) => \{/);
   assert.match(modalBlock[0], /\(event\.metaKey \|\| event\.ctrlKey\) && event\.key\.toLowerCase\(\) === 's'/);
   assert.match(modalBlock[0], /event\.preventDefault\(\);/);
+  assert.match(modalBlock[0], /const canSaveConsultationDraft = !readOnly && !submitting && \(mode === 'create' \|\| hasConsultationFormChanges\);/);
   assert.match(modalBlock[0], /formScrollRef\.current\?\.requestSubmit\(\);/);
   assert.match(modalBlock[0], /title="Command\+S \/ Ctrl\+S"/);
   assert.match(modalBlock[0], /<Save size=\{15\} \/>/);
+  assert.match(modalBlock[0], /disabled=\{!canSaveConsultationDraft\}/);
   assert.match(modalBlock[0], /aria-label="关闭咨询记录窗口"[\s\S]*<form ref=\{formScrollRef\}/);
   assert.doesNotMatch(modalBlock[0], /<button type="submit" className=\{`\$\{workspacePrimaryButtonClass\} w-full sm:w-auto`\}/);
 });
@@ -288,7 +290,8 @@ test('consultation meeting workbench can directly mark a card processed with mot
   assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(record\.id\)\);/);
   assert.match(workbenchBlock[0], /aria-label="直接进入已处理"/);
   assert.match(workbenchBlock[0], /title="直接进入已处理"/);
-  assert.match(workbenchBlock[0], /<Pencil size=\{13\} \/>[\s\S]*<CheckCircle2 size=\{13\} \/>/);
+  assert.match(workbenchBlock[0], /<Pencil size=\{13\} \/>[\s\S]*<CheckCircle2 size=\{15\} \/>/);
+  assert.match(workbenchBlock[0], /className="flex h-9 w-9 items-center justify-center/);
   assert.match(workbenchBlock[0], /<motion\.div/);
   assert.match(workbenchBlock[0], /layout/);
   assert.match(workbenchBlock[0], /exit=\{\{ opacity: 0, scale: prefersReducedMotion \? 1 : 0\.96, y: prefersReducedMotion \? 0 : 10 \}\}/);
@@ -542,7 +545,8 @@ test('consultation edit form derives lit flow stages from edited fields', () => 
   assert.match(modalBlock[0], /setForm\(\(current\) => deriveConsultationFlowFromFields\(\{ \.\.\.current, \[key\]: value \}\)\);/);
   assert.match(modalBlock[0], /currentUser\.role === 'member'/);
   assert.match(modalBlock[0], /teacher_id: currentUser\.username/);
-  assert.match(modalBlock[0], /setForm\(deriveConsultationFlowFromFields\(defaultAssignedValues\)\);/);
+  assert.match(modalBlock[0], /return deriveConsultationFlowFromFields\(defaultAssignedValues\);/);
+  assert.match(modalBlock[0], /setForm\(initialConsultationForm\);/);
 });
 
 test('consultation edit form uses assignment teacher dropdown and scoped class options', () => {
@@ -1204,7 +1208,7 @@ test('class management source disables conflicting controls while async class or
   assert.doesNotMatch(classManagementBlock[0], /收起管理/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*创建班级/);
   assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*删除当前班级/);
-  assert.match(classManagementBlock[0], /disabled=\{classCardInteractionLocked\}[\s\S]*保存班级/);
+  assert.match(classManagementBlock[0], /disabled=\{saveClassDisabled\}[\s\S]*保存班级/);
   assert.match(classManagementBlock[0], /disabled=\{assignmentRefreshLocked\}[\s\S]*刷新分配/);
   assert.match(classManagementBlock[0], /disabled=\{editing\.teacherBindingSaving \|\| classInteractionLocked \|\| editing\.filteredUsers\.length === 0\}/);
 });
@@ -1279,7 +1283,7 @@ test('class management source adds a side-by-side student editor card next to th
   assert.match(classManagementBlock[0], /<h4 className="text-lg font-semibold text-slate-900 dark:text-white">家长绑定邀请码<\/h4>/);
   assert.match(classManagementBlock[0], /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师<\/h4>/);
   assert.match(classManagementBlock[0], /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">编辑学生<\/h4>/);
-  assert.match(classManagementBlock[0], /placeholder="输入学生姓名"/);
+  assert.match(classManagementBlock[0], /placeholder="搜索已有学员"/);
   assert.match(classManagementBlock[0], /删除学生/);
 });
 

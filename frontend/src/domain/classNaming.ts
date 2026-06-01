@@ -1,6 +1,8 @@
 export const academicStageOptions = ['小奥', '初中', '高中'] as const;
+export const bridgeStageOptions = ['小学', '初中', '高中'] as const;
 
 export type AcademicStage = typeof academicStageOptions[number];
+export type BridgeStage = typeof bridgeStageOptions[number];
 
 export const academicGradeGroups: Record<AcademicStage, string[]> = {
   小奥: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
@@ -60,21 +62,30 @@ const classGradeAliases: Array<[string, string]> = [
 ];
 
 export interface ClassDisplayNameInput {
+  subject?: string;
+  class_type?: string;
+  stage?: string;
   current_grade: string;
   grade: string;
   class_number: string;
   cohort_year: string | number;
   show_cohort_year: boolean;
   is_bridge: boolean;
+  bridge_target?: string;
+  selected_student_names?: string[];
 }
 
 export interface ClassDisplayNameSource {
   name?: string | null;
+  subject?: string | null;
+  class_type?: string | null;
+  stage?: string | null;
   current_grade?: string | null;
   grade?: string | null;
   class_number?: string | number | null;
   cohort_year?: string | number | null;
   is_bridge?: boolean | number | null;
+  bridge_target?: string | null;
 }
 
 export interface FormatClassDisplayNameOptions {
@@ -92,6 +103,87 @@ export function getAcademicStageFromGrade(value: string): AcademicStage | '' {
   if (academicGradeGroups.初中.includes(grade)) return '初中';
   if (academicGradeGroups.高中.includes(grade)) return '高中';
   return '';
+}
+
+export function normalizeBridgeStage(value: string): BridgeStage | '' {
+  const normalized = value.trim();
+  if (normalized === '小学' || normalized === '小奥' || normalized === '小') return '小学';
+  if (normalized === '初中' || normalized === '初') return '初中';
+  if (normalized === '高中' || normalized === '高') return '高中';
+  return '';
+}
+
+function getBridgeStageShortLabel(stage: string): string {
+  const normalized = normalizeBridgeStage(stage);
+  if (normalized === '小学') return '小';
+  if (normalized === '初中') return '初';
+  if (normalized === '高中') return '高';
+  return '';
+}
+
+function getNextBridgeStage(stage: string): BridgeStage {
+  const normalized = normalizeBridgeStage(stage);
+  if (normalized === '初中') return '高中';
+  if (normalized === '高中') return '高中';
+  return '初中';
+}
+
+export function serializeBridgeTarget(fromStage: string, toStage: string): string {
+  const normalizedFrom = normalizeBridgeStage(fromStage) || '小学';
+  const normalizedTo = normalizeBridgeStage(toStage) || getNextBridgeStage(normalizedFrom);
+  return `${normalizedFrom}衔接${normalizedTo}`;
+}
+
+export function parseBridgeTarget(
+  bridgeTarget: string | null | undefined,
+  fallbackStage: string,
+): { fromStage: BridgeStage; toStage: BridgeStage } {
+  const normalizedFallback = normalizeBridgeStage(fallbackStage) || '小学';
+  const raw = (bridgeTarget || '').trim();
+  if (!raw || raw === '默认下一学段') {
+    return {
+      fromStage: normalizedFallback,
+      toStage: getNextBridgeStage(normalizedFallback),
+    };
+  }
+  const compact = raw.replace(/\s+/g, '');
+  const longMatch = compact.match(/^(小学|小奥|小|初中|初|高中|高)衔接(小学|小奥|小|初中|初|高中|高)$/);
+  if (longMatch) {
+    return {
+      fromStage: normalizeBridgeStage(longMatch[1]) || normalizedFallback,
+      toStage: normalizeBridgeStage(longMatch[2]) || getNextBridgeStage(normalizedFallback),
+    };
+  }
+  const shortMatch = compact.match(/^(小|初|高)衔(小|初|高)$/);
+  if (shortMatch) {
+    return {
+      fromStage: normalizeBridgeStage(shortMatch[1]) || normalizedFallback,
+      toStage: normalizeBridgeStage(shortMatch[2]) || getNextBridgeStage(normalizedFallback),
+    };
+  }
+  if (compact === '初中衔接') {
+    return { fromStage: normalizedFallback, toStage: '初中' };
+  }
+  if (compact === '高中衔接') {
+    return { fromStage: normalizedFallback, toStage: '高中' };
+  }
+  return {
+    fromStage: normalizedFallback,
+    toStage: getNextBridgeStage(normalizedFallback),
+  };
+}
+
+export function getBridgeShortLabel(bridgeTarget: string | null | undefined, fallbackStage: string): string {
+  const { fromStage, toStage } = parseBridgeTarget(bridgeTarget, fallbackStage);
+  const fromLabel = getBridgeStageShortLabel(fromStage);
+  const toLabel = getBridgeStageShortLabel(toStage);
+  return fromLabel && toLabel ? `${fromLabel}衔${toLabel}` : '衔接';
+}
+
+export function isReverseBridgeTarget(bridgeTarget: string | null | undefined, fallbackStage: string): boolean {
+  const { fromStage, toStage } = parseBridgeTarget(bridgeTarget, fallbackStage);
+  const rank: Record<BridgeStage, number> = { 小学: 1, 初中: 2, 高中: 3 };
+  return rank[toStage] < rank[fromStage];
 }
 
 export function getAcademicGradeRank(value: string): number {
@@ -133,14 +225,27 @@ export function inferAcademicCohortYear(grade: string, date = new Date()): numbe
 
 export function buildClassDisplayName(form: ClassDisplayNameInput): string {
   const grade = normalizeAcademicGradeLabel(form.current_grade || form.grade);
+  const subject = (form.subject || '').trim();
+  const classType = (form.class_type || 'group').trim() || 'group';
+  const bridgeSuffix = form.is_bridge ? `·${getBridgeShortLabel(form.bridge_target, form.stage || grade)}` : '';
+  if (classType !== 'group') {
+    const studentNames = (form.selected_student_names || []).map((item) => item.trim()).filter(Boolean);
+    if (!grade || !studentNames.length) {
+      return '';
+    }
+    const namePart = classType === '1v1'
+      ? studentNames[0]
+      : studentNames.map((item) => item.slice(0, 1)).join('');
+    return `${namePart}·${classType}·${grade}${bridgeSuffix}`;
+  }
   const classNumber = String(form.class_number).trim();
   if (!grade || !classNumber) {
     return '';
   }
   const cohortYear = Number(form.cohort_year) || inferAcademicCohortYear(grade);
   const cohortPrefix = form.show_cohort_year && cohortYear ? `${cohortYear}级·` : '';
-  const bridgeSuffix = form.is_bridge ? '·衔接' : '';
-  return `${cohortPrefix}${grade}·${classNumber}班${bridgeSuffix}`;
+  const subjectPrefix = subject ? `${subject}·` : '';
+  return `${subjectPrefix}${cohortPrefix}${grade}·${classNumber}班${bridgeSuffix}`;
 }
 
 export function formatClassDisplayName(
@@ -151,12 +256,16 @@ export function formatClassDisplayName(
     return '';
   }
   const displayName = buildClassDisplayName({
+    subject: source.subject || '',
+    class_type: source.class_type || 'group',
+    stage: source.stage || '',
     grade: source.grade || '',
     current_grade: source.current_grade || source.grade || '',
     class_number: source.class_number == null ? '' : String(source.class_number),
     cohort_year: source.cohort_year == null ? '' : source.cohort_year,
     show_cohort_year: Boolean(options.showCohortYear),
     is_bridge: Boolean(source.is_bridge),
+    bridge_target: source.bridge_target || '',
   });
   return displayName || (source.name?.trim() ?? '');
 }

@@ -32,9 +32,9 @@ test('class student request executors call the existing class student API helper
     calls.push(`list:${classId}`);
     return { students: studentsByClassId[11] };
   });
-  const createResult = await executeClassStudentCreateRequest(11, '新学生', async (classId, name) => {
-    calls.push(`create:${classId}:${name}`);
-    return { student: { id: 102, name }, deduplicated: false };
+  const createResult = await executeClassStudentCreateRequest(11, 102, async (classId, studentId) => {
+    calls.push(`create:${classId}:${studentId}`);
+    return { student: { id: studentId, name: '新学生' }, deduplicated: false };
   });
   const deleteResult = await executeClassStudentDeleteRequest(11, 101, async (classId, studentId) => {
     calls.push(`delete:${classId}:${studentId}`);
@@ -44,7 +44,7 @@ test('class student request executors call the existing class student API helper
   assert.deepEqual(listResult.students, studentsByClassId[11]);
   assert.deepEqual(createResult.student, { id: 102, name: '新学生' });
   assert.deepEqual(deleteResult, { ok: true, removed: true });
-  assert.deepEqual(calls, ['list:11', 'create:11:新学生', 'delete:11:101']);
+  assert.deepEqual(calls, ['list:11', 'create:11:102', 'delete:11:101']);
 });
 
 test('class student rules preserve local loading state and error fallback copy', () => {

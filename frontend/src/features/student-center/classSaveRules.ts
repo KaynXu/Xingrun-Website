@@ -4,12 +4,20 @@ import {
   inferAcademicCohortYear,
   normalizeAcademicGradeLabel,
   normalizeClassNameInput,
+  parseBridgeTarget,
+  serializeBridgeTarget,
 } from '../../domain/classNaming';
 import type { ClassFormValues, ClassItem, UserItem } from './model';
 import { getClassFormDirtySignature } from './model';
 
+export type ExistingStudentOption = {
+  id: number;
+  name: string;
+};
+
 export type ClassSavePayload = {
   name: string;
+  class_type: string;
   subject: string;
   grade: string;
   teacher_name: string;
@@ -22,6 +30,7 @@ export type ClassSavePayload = {
   is_bridge: boolean;
   bridge_target: string;
   content_track: string;
+  student_ids: number[];
   teacher_user_id?: number | null;
 };
 
@@ -104,6 +113,7 @@ export function buildOptimisticCreatedClassItem({
   return {
     id: createdClassId,
     name: payload.name,
+    class_type: payload.class_type,
     subject: payload.subject,
     grade: payload.grade,
     stage: payload.stage,
@@ -221,29 +231,41 @@ export function buildClassSavePayload({
   form,
   selectedTeacher,
   selectedTeacherUserId,
+  existingStudents = [],
 }: {
   classId: number | 'new';
   form: ClassFormValues;
   selectedTeacher?: UserItem;
   selectedTeacherUserId: number | null;
+  existingStudents?: ExistingStudentOption[];
 }): ClassSavePayload {
-  const displayName = buildClassDisplayName(form);
+  const selectedStudentIds = form.selected_student_ids || [];
+  const selectedStudentNames = selectedStudentIds
+    .map((studentId) => existingStudents.find((student) => student.id === studentId)?.name || '')
+    .filter(Boolean);
+  const displayName = buildClassDisplayName({ ...form, selected_student_names: selectedStudentNames });
   const inferredCohortYear = Number(form.cohort_year) || inferAcademicCohortYear(form.current_grade || form.grade);
+  const classType = form.class_type || 'group';
+  const parsedBridge = parseBridgeTarget(form.bridge_target, form.stage);
+  const bridgeTarget = form.is_bridge ? serializeBridgeTarget(parsedBridge.fromStage, parsedBridge.toStage) : form.bridge_target;
+  const bridgeContentTrack = form.is_bridge ? parsedBridge.toStage : form.content_track;
 
   return {
     name: displayName || normalizeClassNameInput(form.name),
+    class_type: classType,
     subject: form.subject.trim(),
     grade: (form.current_grade || form.grade).trim(),
     teacher_name: selectedTeacher?.name || '',
     teacher_email: '',
     stage: form.stage,
     current_grade: normalizeAcademicGradeLabel(form.current_grade || form.grade),
-    class_number: form.class_number.trim(),
+    class_number: classType === 'group' ? form.class_number.trim() : '',
     cohort_year: inferredCohortYear,
     show_cohort_year: true,
     is_bridge: form.is_bridge,
-    bridge_target: form.bridge_target,
-    content_track: form.content_track,
+    bridge_target: bridgeTarget,
+    content_track: bridgeContentTrack,
+    student_ids: selectedStudentIds,
     teacher_user_id: classId === 'new' ? selectedTeacherUserId : undefined,
   };
 }
@@ -263,8 +285,18 @@ export function validateClassSaveDraft({
     return '请先选择负责老师账号';
   }
 
-  if (!payload.class_number) {
+  if (payload.class_type === 'group' && !payload.class_number) {
     return '请选择班号';
+  }
+
+  const smallClassSizeByType: Record<string, number> = {
+    '1v1': 1,
+    '1v2': 2,
+    '1v3': 3,
+  };
+  const requiredStudentCount = smallClassSizeByType[payload.class_type];
+  if (requiredStudentCount && payload.student_ids.length !== requiredStudentCount) {
+    return `请选择${requiredStudentCount}名学员`;
   }
 
   if (!payload.subject) {
@@ -281,11 +313,20 @@ export function validateClassSaveDraft({
 export function findDuplicateClass(
   classes: ClassItem[],
   classId: number | 'new',
-  payload: Pick<ClassSavePayload, 'subject' | 'stage' | 'current_grade' | 'class_number' | 'cohort_year'>,
+  payload: Pick<ClassSavePayload, 'name' | 'class_type' | 'subject' | 'stage' | 'current_grade' | 'class_number' | 'cohort_year'>,
 ): ClassItem | undefined {
   return classes.find((item) => {
     if (classId !== 'new' && item.id === classId) {
       return false;
+    }
+    const itemClassType = item.class_type || 'group';
+    const payloadClassType = payload.class_type || 'group';
+    if (itemClassType !== payloadClassType) {
+      return false;
+    }
+    if (payloadClassType !== 'group') {
+      return item.subject === payload.subject
+        && normalizeClassNameInput(item.name || '') === normalizeClassNameInput(payload.name || '');
     }
     const itemCohortYear = Number(item.cohort_year || 0);
     const payloadCohortYear = Number(payload.cohort_year || 0);

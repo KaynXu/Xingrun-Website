@@ -2695,6 +2695,7 @@ def init_db():
 
         master_data.ensure_schema(conn)
         _ensure_column(conn, "classes", "stage", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "class_type", "TEXT DEFAULT 'group'")
         _ensure_column(conn, "classes", "current_grade", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "class_number", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "cohort_year", "INTEGER DEFAULT 0")
@@ -3858,16 +3859,80 @@ def infer_cohort_year(grade: str, today: str | None = None) -> int:
     return current_school_year_start(today) - offset
 
 
-def build_structured_class_name(cohort_year: int, current_grade: str, class_number: str, is_bridge: bool, show_cohort_year: bool = True) -> str:
-    suffix = "·衔接" if is_bridge else ""
+def normalize_bridge_stage(value: str) -> str:
+    normalized = str(value or "").strip()
+    if normalized in {"小学", "小奥", "小"}:
+        return "小学"
+    if normalized in {"初中", "初"}:
+        return "初中"
+    if normalized in {"高中", "高"}:
+        return "高中"
+    return ""
+
+
+def default_bridge_to_stage(from_stage: str) -> str:
+    normalized = normalize_bridge_stage(from_stage)
+    if normalized == "初中":
+        return "高中"
+    if normalized == "高中":
+        return "高中"
+    return "初中"
+
+
+def parse_bridge_target(bridge_target: str, fallback_stage: str) -> tuple[str, str]:
+    fallback = normalize_bridge_stage(fallback_stage) or "小学"
+    raw = str(bridge_target or "").strip().replace(" ", "")
+    if not raw or raw == "默认下一学段":
+        return fallback, default_bridge_to_stage(fallback)
+    long_match = re.match(r"^(小学|小奥|小|初中|初|高中|高)衔接(小学|小奥|小|初中|初|高中|高)$", raw)
+    if long_match:
+        return normalize_bridge_stage(long_match.group(1)) or fallback, normalize_bridge_stage(long_match.group(2)) or default_bridge_to_stage(fallback)
+    short_match = re.match(r"^(小|初|高)衔(小|初|高)$", raw)
+    if short_match:
+        return normalize_bridge_stage(short_match.group(1)) or fallback, normalize_bridge_stage(short_match.group(2)) or default_bridge_to_stage(fallback)
+    if raw == "初中衔接":
+        return fallback, "初中"
+    if raw == "高中衔接":
+        return fallback, "高中"
+    return fallback, default_bridge_to_stage(fallback)
+
+
+def serialize_bridge_target(from_stage: str, to_stage: str) -> str:
+    normalized_from = normalize_bridge_stage(from_stage) or "小学"
+    normalized_to = normalize_bridge_stage(to_stage) or default_bridge_to_stage(normalized_from)
+    return f"{normalized_from}衔接{normalized_to}"
+
+
+def bridge_short_label(bridge_target: str, fallback_stage: str) -> str:
+    from_stage, to_stage = parse_bridge_target(bridge_target, fallback_stage)
+    short_map = {"小学": "小", "初中": "初", "高中": "高"}
+    return f"{short_map.get(from_stage, '')}衔{short_map.get(to_stage, '')}" or "衔接"
+
+
+def build_structured_class_name(subject: str, cohort_year: int, current_grade: str, class_number: str, is_bridge: bool, show_cohort_year: bool = True, bridge_target: str = "", stage: str = "") -> str:
+    suffix = f"·{bridge_short_label(bridge_target, stage)}" if is_bridge else ""
+    subject_prefix = f"{subject.strip()}·" if subject and subject.strip() else ""
     cohort_prefix = f"{cohort_year}级·" if show_cohort_year and cohort_year else ""
-    return f"{cohort_prefix}{current_grade}·{str(class_number).strip()}班{suffix}"
+    return f"{subject_prefix}{cohort_prefix}{current_grade}·{str(class_number).strip()}班{suffix}"
+
+
+def build_small_class_name(class_type: str, current_grade: str, student_names: list[str], is_bridge: bool, bridge_target: str = "", stage: str = "") -> str:
+    normalized_names = [str(name or "").strip() for name in student_names if str(name or "").strip()]
+    if not current_grade or not normalized_names:
+        return ""
+    if class_type == "1v1":
+        name_part = normalized_names[0]
+    else:
+        name_part = "".join(name[:1] for name in normalized_names)
+    suffix = f"·{bridge_short_label(bridge_target, stage)}" if is_bridge else ""
+    return f"{name_part}·{class_type}·{current_grade}{suffix}"
 
 
 def _class_row_to_dict(row) -> dict:
     item = dict(row)
     item["current_grade"] = item.get("current_grade") or item.get("grade") or ""
     item["stage"] = item.get("stage") or infer_class_stage(item["current_grade"])
+    item["class_type"] = item.get("class_type") or "group"
     item["class_number"] = str(item.get("class_number") or "")
     item["cohort_year"] = int(item.get("cohort_year") or 0)
     item["show_cohort_year"] = bool(item.get("show_cohort_year", 1))
@@ -3875,13 +3940,16 @@ def _class_row_to_dict(row) -> dict:
     item["bridge_target"] = item.get("bridge_target") or ""
     item["content_track"] = item.get("content_track") or ""
     item["last_promoted_at"] = item.get("last_promoted_at") or ""
-    if item["cohort_year"] and item["current_grade"] and item["class_number"]:
+    if item["class_type"] == "group" and item["cohort_year"] and item["current_grade"] and item["class_number"]:
         item["name"] = build_structured_class_name(
+            item.get("subject") or "",
             item["cohort_year"],
             item["current_grade"],
             item["class_number"],
             item["is_bridge"],
             item["show_cohort_year"],
+            item["bridge_target"],
+            item["stage"],
         )
     return item
 
@@ -3894,6 +3962,8 @@ def _build_class_payload(
     stage: str = "",
     current_grade: str = "",
     class_number: str = "",
+    class_type: str = "group",
+    student_names: list[str] | None = None,
     cohort_year: int | None = None,
     show_cohort_year: bool = True,
     is_bridge: bool = False,
@@ -3903,15 +3973,20 @@ def _build_class_payload(
 ) -> dict:
     normalized_grade = normalize_class_grade(current_grade or grade)
     normalized_stage = stage or infer_class_stage(normalized_grade)
+    normalized_class_type = (class_type or "group").strip() or "group"
     normalized_class_number = str(class_number or "").strip()
     normalized_cohort_year = int(cohort_year or 0)
     if normalized_grade and not normalized_cohort_year:
         normalized_cohort_year = infer_cohort_year(normalized_grade, today)
     display_name = (name or "").strip()
-    if normalized_grade and normalized_class_number and normalized_cohort_year:
-        display_name = build_structured_class_name(normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year)
+    normalized_bridge_target = serialize_bridge_target(*parse_bridge_target(bridge_target, normalized_stage)) if is_bridge else (bridge_target or "").strip()
+    if normalized_class_type == "group" and normalized_grade and normalized_class_number and normalized_cohort_year:
+        display_name = build_structured_class_name(subject, normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year, normalized_bridge_target, normalized_stage)
+    elif normalized_class_type != "group":
+        display_name = build_small_class_name(normalized_class_type, normalized_grade, student_names or [], is_bridge, normalized_bridge_target, normalized_stage) or display_name
     return {
         "name": display_name,
+        "class_type": normalized_class_type,
         "subject": (subject or "").strip(),
         "grade": normalized_grade or (grade or "").strip(),
         "stage": normalized_stage,
@@ -3920,48 +3995,64 @@ def _build_class_payload(
         "cohort_year": normalized_cohort_year,
         "show_cohort_year": 1 if show_cohort_year else 0,
         "is_bridge": 1 if is_bridge else 0,
-        "bridge_target": (bridge_target or "").strip(),
-        "content_track": (content_track or bridge_target or "").strip(),
+        "bridge_target": normalized_bridge_target,
+        "content_track": (content_track or parse_bridge_target(normalized_bridge_target, normalized_stage)[1] or "").strip(),
     }
 
 
 def save_class(name: str, subject: str = "", grade: str = "",
                teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None,
                stage: str = "", current_grade: str = "", class_number: str = "",
+               class_type: str = "group", student_ids: Optional[list[int]] = None,
                cohort_year: int | None = None, show_cohort_year: bool = True, is_bridge: bool = False, bridge_target: str = "",
                content_track: str = "", teacher_user_id: Optional[int] = None, today: str | None = None) -> int:
-    payload = _build_class_payload(
-        name,
-        subject,
-        grade,
-        stage=stage,
-        current_grade=current_grade,
-        class_number=class_number,
-        cohort_year=cohort_year,
-        show_cohort_year=show_cohort_year,
-        is_bridge=is_bridge,
-        bridge_target=bridge_target,
-        content_track=content_track,
-        today=today,
-    )
+    normalized_student_ids = [int(student_id) for student_id in (student_ids or []) if int(student_id or 0) > 0]
     with get_conn() as conn:
         if organization_id is None:
             organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
+        student_names: list[str] = []
+        if normalized_student_ids:
+            placeholders = ",".join("?" for _ in normalized_student_ids)
+            rows = conn.execute(
+                f"SELECT id, name FROM students WHERE organization_id=? AND id IN ({placeholders}) ORDER BY name",
+                (organization_id, *normalized_student_ids),
+            ).fetchall()
+            if len(rows) != len(set(normalized_student_ids)):
+                raise ValueError("invalid student_ids")
+            student_names = [row["name"] for row in rows]
+        payload = _build_class_payload(
+            name,
+            subject,
+            grade,
+            stage=stage,
+            current_grade=current_grade,
+            class_number=class_number,
+            class_type=class_type,
+            student_names=student_names,
+            cohort_year=cohort_year,
+            show_cohort_year=show_cohort_year,
+            is_bridge=is_bridge,
+            bridge_target=bridge_target,
+            content_track=content_track,
+            today=today,
+        )
         cur = conn.execute(
             """
             INSERT INTO classes (
                 organization_id, name, subject, grade, teacher_name, teacher_email,
-                stage, current_grade, class_number, cohort_year, show_cohort_year, is_bridge, bridge_target, content_track
+                stage, class_type, current_grade, class_number, cohort_year, show_cohort_year, is_bridge, bridge_target, content_track
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id, payload["name"], payload["subject"], payload["grade"], teacher_name, teacher_email,
-                payload["stage"], payload["current_grade"], payload["class_number"], payload["cohort_year"],
+                payload["stage"], payload["class_type"], payload["current_grade"], payload["class_number"], payload["cohort_year"],
                 payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"], payload["content_track"],
             )
         )
         class_id = cur.lastrowid
+        for student_id in normalized_student_ids:
+            conn.execute("INSERT OR IGNORE INTO class_students (class_id, student_id) VALUES (?, ?)", (class_id, student_id))
         if teacher_user_id is not None:
             conn.execute("INSERT INTO user_classes (user_id, class_id) VALUES (?, ?)", (teacher_user_id, class_id))
             _sync_class_teacher_metadata(conn, [class_id])
@@ -4042,9 +4133,21 @@ def list_classes():
 def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                  teacher_name: Optional[str] = None, teacher_email: Optional[str] = None,
                  stage: str = "", current_grade: str = "", class_number: str = "",
+                 class_type: str = "group",
                  cohort_year: int | None = None, show_cohort_year: bool | None = None, is_bridge: bool = False, bridge_target: str = "",
                  content_track: str = "", today: str | None = None):
     before = get_class(class_id)
+    with get_conn() as conn:
+        student_rows = conn.execute(
+            """
+            SELECT s.name
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY s.name
+            """,
+            (class_id,),
+        ).fetchall()
     payload = _build_class_payload(
         name,
         subject,
@@ -4052,6 +4155,8 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
         stage=stage or (before or {}).get("stage", ""),
         current_grade=current_grade or grade,
         class_number=class_number or (before or {}).get("class_number", ""),
+        class_type=class_type or (before or {}).get("class_type", "group"),
+        student_names=[row["name"] for row in student_rows],
         cohort_year=cohort_year if cohort_year is not None else (before or {}).get("cohort_year", 0),
         show_cohort_year=show_cohort_year if show_cohort_year is not None else (before or {}).get("show_cohort_year", True),
         is_bridge=is_bridge,
@@ -4069,12 +4174,12 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             conn.execute(
                 """
                 UPDATE classes
-                SET name=?, subject=?, grade=?, teacher_email='', stage=?, current_grade=?,
+                SET name=?, subject=?, grade=?, teacher_email='', stage=?, class_type=?, current_grade=?,
                     class_number=?, cohort_year=?, show_cohort_year=?, is_bridge=?, bridge_target=?, content_track=?
                 WHERE id=?
                 """,
                 (
-                    payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["current_grade"],
+                    payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["class_type"], payload["current_grade"],
                     payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                     payload["content_track"], class_id,
                 )
@@ -4088,6 +4193,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                 subject=?,
                 grade=?,
                 stage=?,
+                class_type=?,
                 current_grade=?,
                 class_number=?,
                 cohort_year=?,
@@ -4100,7 +4206,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             WHERE id=?
             """,
             (
-                payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["current_grade"],
+                payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["class_type"], payload["current_grade"],
                 payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                 payload["content_track"], teacher_name, teacher_email, class_id,
             )
@@ -4168,10 +4274,11 @@ def list_student_class_history(student_id: int) -> list[dict]:
 
 
 def bridge_crosses_target_stage(current_grade: str, next_grade: str, bridge_target: str) -> bool:
+    _, to_stage = parse_bridge_target(bridge_target, infer_class_stage(current_grade))
     if current_grade == "六年级" and next_grade == "七年级":
-        return bridge_target in {"", "默认下一学段", "初中衔接"}
+        return to_stage == "初中"
     if current_grade == "九年级" and next_grade == "高一":
-        return bridge_target in {"", "默认下一学段", "高中衔接"}
+        return to_stage == "高中"
     return False
 
 
@@ -4200,7 +4307,16 @@ def promote_classes_for_academic_year(today: str | None = None) -> dict:
             next_is_bridge = is_bridge and not bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
             next_stage = infer_class_stage(next_grade)
             class_number = item.get("class_number") or ""
-            next_name = build_structured_class_name(item["cohort_year"], next_grade, class_number, next_is_bridge) if item.get("cohort_year") and class_number else item["name"]
+            next_name = build_structured_class_name(
+                item.get("subject") or "",
+                item["cohort_year"],
+                next_grade,
+                class_number,
+                next_is_bridge,
+                True,
+                item.get("bridge_target") or "",
+                item.get("stage") or "",
+            ) if item.get("cohort_year") and class_number else item["name"]
             conn.execute(
                 """
                 UPDATE classes
@@ -4659,6 +4775,22 @@ def list_students_for_class(class_id: int) -> list:
     return [dict(row) for row in rows]
 
 
+def list_students_for_organization(organization_id: int | None = None) -> list:
+    with get_conn() as conn:
+        if organization_id is None:
+            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
+        rows = conn.execute(
+            """
+            SELECT id, name, created_at
+            FROM students
+            WHERE organization_id=?
+            ORDER BY name COLLATE NOCASE, id
+            """,
+            (organization_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _dedupe_student_name_in_class(
     class_id: int,
     raw_name: str,
@@ -4726,6 +4858,46 @@ def create_student_for_class(class_id: int, raw_name: str):
         )
         row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
     student = dict(row)
+    record_class_history(class_id, "student_added", after={"student_id": student_id, "student_name": student["name"]})
+    record_student_class_history(student_id, class_id, "joined", after={"class_id": class_id, "student_name": student["name"]})
+    return student
+
+
+def add_existing_student_to_class(class_id: int, student_id: int):
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        class_row = conn.execute(
+            "SELECT id, organization_id, class_type FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise LookupError("class not found")
+        student_row = conn.execute(
+            "SELECT * FROM students WHERE id=? AND organization_id=?",
+            (student_id, class_row["organization_id"]),
+        ).fetchone()
+        if not student_row:
+            raise LookupError("student not found")
+        existing_row = conn.execute(
+            "SELECT 1 FROM class_students WHERE class_id=? AND student_id=?",
+            (class_id, student_id),
+        ).fetchone()
+        if existing_row:
+            return dict(student_row)
+        current_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM class_students WHERE class_id=?",
+            (class_id,),
+        ).fetchone()["count"]
+        class_type = class_row["class_type"] or "group"
+        small_class_limits = {"1v1": 1, "1v2": 2, "1v3": 3}
+        limit = small_class_limits.get(class_type)
+        if limit is not None and current_count >= limit:
+            raise ValueError(f"当前班型最多 {limit} 名学员")
+        conn.execute(
+            "INSERT INTO class_students (class_id, student_id) VALUES (?, ?)",
+            (class_id, student_id),
+        )
+    student = dict(student_row)
     record_class_history(class_id, "student_added", after={"student_id": student_id, "student_name": student["name"]})
     record_student_class_history(student_id, class_id, "joined", after={"class_id": class_id, "student_name": student["name"]})
     return student

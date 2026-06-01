@@ -1,4 +1,5 @@
 import { useMemo, type Dispatch, type SetStateAction } from 'react';
+import { parseBridgeTarget, serializeBridgeTarget } from '../../domain/classNaming';
 import type { ClassEditorActions } from './ClassEditorModal';
 import {
   createEmptyClassForm,
@@ -22,8 +23,9 @@ type UseClassEditorModalActionsParams = {
   handleResetClassInvite: (classId: number) => Promise<void>;
   handleSelectTeacherForClass: (classId: number, teacherUserId: number) => Promise<void>;
   handleDeleteClass: (classId: number) => void;
+  handleNewClassStudentSelectionChange: (studentId: number, checked: boolean) => void;
   handleStudentDraftNameChange: (classId: number, value: string) => void;
-  handleAddStudentToClass: (classId: number) => Promise<void>;
+  handleAddStudentToClass: (classId: number, studentId: number) => Promise<void>;
   handleDeleteStudentFromClass: (classId: number, studentId: number) => Promise<void>;
 };
 
@@ -41,6 +43,7 @@ export function useClassEditorModalActions({
   handleResetClassInvite,
   handleSelectTeacherForClass,
   handleDeleteClass,
+  handleNewClassStudentSelectionChange,
   handleStudentDraftNameChange,
   handleAddStudentToClass,
   handleDeleteStudentFromClass,
@@ -54,6 +57,12 @@ export function useClassEditorModalActions({
       new: {
         ...(current.new || createEmptyClassForm()),
         is_bridge: checked,
+        bridge_target: checked
+          ? serializeBridgeTarget(
+            parseBridgeTarget((current.new || createEmptyClassForm()).bridge_target, (current.new || createEmptyClassForm()).stage).fromStage,
+            parseBridgeTarget((current.new || createEmptyClassForm()).bridge_target, (current.new || createEmptyClassForm()).stage).toStage,
+          )
+          : (current.new || createEmptyClassForm()).bridge_target,
       },
     })),
     onEditingClassBridgeChange: (checked) => {
@@ -63,10 +72,15 @@ export function useClassEditorModalActions({
       const stateKey = getClassStateKey(editingClass.id);
       setFormByClassId((current) => ({
         ...current,
-        [stateKey]: {
-          ...(current[stateKey] || toClassFormValues(editingClass)),
-          is_bridge: checked,
-        },
+        [stateKey]: (() => {
+          const currentForm = current[stateKey] || toClassFormValues(editingClass);
+          const bridge = parseBridgeTarget(currentForm.bridge_target, currentForm.stage);
+          return {
+            ...currentForm,
+            is_bridge: checked,
+            bridge_target: checked ? serializeBridgeTarget(bridge.fromStage, bridge.toStage) : currentForm.bridge_target,
+          };
+        })(),
       }));
     },
     onTeacherSearchChange: handleTeacherSearchChange,
@@ -76,8 +90,9 @@ export function useClassEditorModalActions({
     onRefreshAssignment: (classId) => loadPage(classId, { preserveStateOnError: true }).catch(() => undefined),
     onSelectTeacherForClass: (classId, teacherUserId) => void handleSelectTeacherForClass(classId, teacherUserId),
     onDeleteClass: handleDeleteClass,
+    onNewClassStudentSelectionChange: handleNewClassStudentSelectionChange,
     onStudentDraftNameChange: handleStudentDraftNameChange,
-    onAddStudentToClass: (classId) => void handleAddStudentToClass(classId),
+    onAddStudentToClass: (classId, studentId) => void handleAddStudentToClass(classId, studentId),
     onDeleteStudentFromClass: (classId, studentId) => void handleDeleteStudentFromClass(classId, studentId),
   }), [
     attemptCloseClassEditor,
@@ -88,6 +103,7 @@ export function useClassEditorModalActions({
     handleDeleteStudentFromClass,
     handleFieldChange,
     handleLoadClassInvite,
+    handleNewClassStudentSelectionChange,
     handleResetClassInvite,
     handleSaveClass,
     handleSelectTeacherForClass,

@@ -1,4 +1,4 @@
-import type { ClassFormValues, ClassItem, UserItem } from './model';
+import type { ClassFormValues, ClassItem, ClassStudentOption, UserItem } from './model';
 import { toClassFormValues } from './model';
 import type { ExpandedClassId } from './classDeleteRules';
 
@@ -10,9 +10,10 @@ export async function executeStudentCenterLoadRequest(
 ): Promise<{
   classItems: ClassItem[];
   userItems: UserItem[];
+  allStudents: ClassStudentOption[];
   teacherBindingData: { teacher_bindings: Record<number, number | null> };
 }> {
-  const [classItems, userItems, teacherBindingData] = await Promise.all([
+  const [classItems, userItems, teacherBindingData, studentData] = await Promise.all([
     apiFetch<ClassItem[]>('/api/classes'),
     canLoadStaffMembers
       ? apiFetch<UserItem[]>('/api/admin/users')
@@ -20,9 +21,10 @@ export async function executeStudentCenterLoadRequest(
     canLoadStaffMembers
       ? apiFetch<{ teacher_bindings: Record<number, number | null> }>('/api/classes/teacher-bindings')
       : Promise.resolve({ teacher_bindings: {} as Record<number, number | null> }),
+    apiFetch<{ students: ClassStudentOption[] }>('/api/students'),
   ]);
 
-  return { classItems, userItems, teacherBindingData };
+  return { classItems, userItems, teacherBindingData, allStudents: studentData.students };
 }
 
 export function resolveClassLoadStartState(currentRequestVersion: number): {
@@ -47,6 +49,7 @@ export function isCurrentClassLoadRequest(
 export function buildClassLoadSuccessState({
   classItems,
   userItems,
+  allStudents,
   rawTeacherBindings,
   currentFormByClassId,
   currentExpandedClassId,
@@ -55,6 +58,7 @@ export function buildClassLoadSuccessState({
 }: {
   classItems: ClassItem[];
   userItems: UserItem[];
+  allStudents: ClassStudentOption[];
   rawTeacherBindings: Record<number, number | null>;
   currentFormByClassId: Record<string, ClassFormValues>;
   currentExpandedClassId: ExpandedClassId;
@@ -63,6 +67,7 @@ export function buildClassLoadSuccessState({
 }): {
   classes: ClassItem[];
   users: UserItem[];
+  allStudents: ClassStudentOption[];
   teacherBindingByClassId: Record<number, number | null>;
   formByClassId: Record<string, ClassFormValues>;
   expandedClassId: ExpandedClassId;
@@ -71,6 +76,7 @@ export function buildClassLoadSuccessState({
   return {
     classes: classItems,
     users: userItems,
+    allStudents,
     teacherBindingByClassId,
     formByClassId: resolveFormsAfterClassLoad(currentFormByClassId, classItems, emptyClassForm),
     expandedClassId: resolveExpandedClassAfterLoad(currentExpandedClassId, preferredExpandedClassId, classItems),
@@ -82,6 +88,7 @@ export function buildClassLoadFailureState(
 ): {
   classes: ClassItem[];
   users: UserItem[];
+  allStudents: ClassStudentOption[];
   teacherBindingByClassId: Record<number, number | null>;
   formByClassId: Record<string, ClassFormValues>;
   newClassTeacherUserId: null;
@@ -90,6 +97,7 @@ export function buildClassLoadFailureState(
   return {
     classes: [],
     users: [],
+    allStudents: [],
     teacherBindingByClassId: {},
     formByClassId: resolveFormsAfterClassLoadFailure(emptyClassForm),
     newClassTeacherUserId: resolveNewClassTeacherAfterClassLoadFailure(),

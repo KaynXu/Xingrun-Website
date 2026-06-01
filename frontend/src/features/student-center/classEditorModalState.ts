@@ -12,6 +12,7 @@ import {
   type ClassFormValues,
   type ClassInviteInfo,
   type ClassItem,
+  type ClassStudentOption,
   type UserItem,
 } from './model';
 import type { ClassStudent } from './classStudentRules';
@@ -60,6 +61,7 @@ export function buildClassEditorModalState({
   inviteResettingByClassId,
   inviteErrorByClassId,
   studentsByClassId,
+  allStudents,
   studentsLoadingByClassId,
   studentSavingByClassId,
   studentErrorByClassId,
@@ -91,6 +93,7 @@ export function buildClassEditorModalState({
   inviteResettingByClassId: Record<number, boolean>;
   inviteErrorByClassId: Record<number, string>;
   studentsByClassId: Record<number, ClassStudent[]>;
+  allStudents: ClassStudentOption[];
   studentsLoadingByClassId: Record<number, boolean>;
   studentSavingByClassId: Record<number, boolean>;
   studentErrorByClassId: Record<number, string>;
@@ -113,7 +116,10 @@ export function buildClassEditorModalState({
     ? undefined
     : users.find((user) => user.id === newClassTeacherUserId);
   const newClassGradeOptions = [...(gradeGroups[newClassForm.stage] || gradeOptions)];
-  const newClassDisplayNamePreview = buildClassDisplayName({ ...newClassForm, show_cohort_year: true }) || '2025级·四年级·1班';
+  const newClassSelectedStudentNames = (newClassForm.selected_student_ids || [])
+    .map((studentId) => allStudents.find((student) => student.id === studentId)?.name || '')
+    .filter(Boolean);
+  const newClassDisplayNamePreview = buildClassDisplayName({ ...newClassForm, selected_student_names: newClassSelectedStudentNames, show_cohort_year: true }) || '数学·2025级·四年级·1班';
 
   const editingClass = typeof expandedClassId === 'number'
     ? classes.find((item) => item.id === expandedClassId) ?? null
@@ -157,11 +163,12 @@ export function buildClassEditorModalState({
       filteredUsers: filterUsersByKeyword(users, teacherSearchByClassId.new || '', newClassTeacherUserId),
       gradeOptions: newClassGradeOptions,
       displayNamePreview: newClassDisplayNamePreview,
+      allStudents,
     },
     editing: {
       canEditTeacherBinding,
       gradeOptions: editingFormState ? [...(gradeGroups[editingFormState.stage] || gradeOptions)] : [...gradeOptions],
-      displayNamePreview: editingFormState ? buildClassDisplayName({ ...editingFormState, show_cohort_year: true }) || '2025级·四年级·1班' : '',
+      displayNamePreview: editingFormState ? buildClassDisplayName({ ...editingFormState, selected_student_names: (studentsByClassId[editingClass?.id || 0] || []).map((student) => student.name), show_cohort_year: true }) || '数学·2025级·四年级·1班' : '',
       teacherSearch: editingTeacherSearch,
       currentTeacherUserId: editingCurrentTeacherUserId,
       teacherSummary: editingCurrentTeacher?.name || editingClass?.teacher_name || '未分配老师',
@@ -172,6 +179,7 @@ export function buildClassEditorModalState({
       inviteResetting: editingClass ? Boolean(inviteResettingByClassId[editingClass.id]) : false,
       inviteError: editingClass ? (inviteErrorByClassId[editingClass.id] || '') : '',
       students: editingClass ? (studentsByClassId[editingClass.id] || []) : [],
+      allStudents,
       studentsLoading: editingClass ? Boolean(studentsLoadingByClassId[editingClass.id]) : false,
       studentSaving: editingClass ? Boolean(studentSavingByClassId[editingClass.id]) : false,
       studentError: editingClass ? (studentErrorByClassId[editingClass.id] || '') : '',

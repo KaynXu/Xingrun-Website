@@ -4053,26 +4053,32 @@ const ConsultationModal = ({
   const successSectionRef = useRef<HTMLDivElement | null>(null);
   const endSectionRef = useRef<HTMLLabelElement | null>(null);
   const jumpHighlightTimerRef = useRef<number | null>(null);
+  const initialConsultationForm = useMemo(() => {
+    const initialValues = toConsultationFormValues(record);
+    const defaultAssignedValues = !record && currentUser.role === 'member'
+      ? {
+          ...initialValues,
+          teacher_id: currentUser.username,
+          receiving_teacher: currentUser.display_name || currentUser.username,
+        }
+      : initialValues;
+    return deriveConsultationFlowFromFields(defaultAssignedValues);
+  }, [record, currentUser.role, currentUser.username, currentUser.display_name]);
+  const readOnly = mode === 'view';
+  const hasConsultationFormChanges = JSON.stringify(form) !== JSON.stringify(initialConsultationForm);
+  const canSaveConsultationDraft = !readOnly && !submitting && (mode === 'create' || hasConsultationFormChanges);
 
   useEffect(() => {
     if (open) {
-      const initialValues = toConsultationFormValues(record);
-      const defaultAssignedValues = !record && currentUser.role === 'member'
-        ? {
-            ...initialValues,
-            teacher_id: currentUser.username,
-            receiving_teacher: currentUser.display_name || currentUser.username,
-          }
-        : initialValues;
-      setForm(deriveConsultationFlowFromFields(defaultAssignedValues));
+      setForm(initialConsultationForm);
       setQuickEntry('');
       setParseFeedback('');
       setConfirmRestoreOpen(false);
       setHighlightedJumpStage('');
-      setTrialManualClassActive(Boolean(defaultAssignedValues.trial_class_manual && !defaultAssignedValues.trial_class_id));
-      setSuccessManualClassActive(Boolean(defaultAssignedValues.success_class_manual && !defaultAssignedValues.success_class_id));
+      setTrialManualClassActive(Boolean(initialConsultationForm.trial_class_manual && !initialConsultationForm.trial_class_id));
+      setSuccessManualClassActive(Boolean(initialConsultationForm.success_class_manual && !initialConsultationForm.success_class_id));
     }
-  }, [open, mode, record, currentUser]);
+  }, [open, mode, initialConsultationForm]);
 
   useEffect(() => () => {
     if (jumpHighlightTimerRef.current !== null) {
@@ -4087,18 +4093,19 @@ const ConsultationModal = ({
     const handleSaveShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
-        formScrollRef.current?.requestSubmit();
+        if (canSaveConsultationDraft) {
+          formScrollRef.current?.requestSubmit();
+        }
       }
     };
     window.addEventListener('keydown', handleSaveShortcut);
     return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [open, mode]);
+  }, [open, mode, canSaveConsultationDraft]);
 
   if (!open) {
     return null;
   }
 
-  const readOnly = mode === 'view';
   const stageFrozen = isConsultationEnded(form.flow_stage);
   const canEdit = hasStaffAccess(currentUser.role) || currentUser.role === 'member';
   const saveButtonLabel = submitting ? '保存中...' : mode === 'create' ? '创建记录' : '保存修改';
@@ -4128,7 +4135,7 @@ const ConsultationModal = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (readOnly) {
+    if (!canSaveConsultationDraft) {
       return;
     }
     if (form.flow_stage === '成功进班' && !form.success_class_id && !form.success_class_manual.trim()) {
@@ -4282,7 +4289,7 @@ const ConsultationModal = ({
                 type="button"
                 onClick={() => formScrollRef.current?.requestSubmit()}
                 className={`${workspacePrimaryButtonClass} h-10 px-4 text-sm`}
-                disabled={submitting}
+                disabled={!canSaveConsultationDraft}
                 title="Command+S / Ctrl+S"
               >
                 <Save size={15} />
@@ -5382,8 +5389,8 @@ const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUse
       <button type="button" onClick={() => openEditModal(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D9EEF7] bg-sky-50 text-[#0EA5E9] transition hover:bg-sky-100 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200" aria-label="编辑咨询">
         <Pencil size={13} />
       </button>
-      <button type="button" onClick={() => handleDirectProcess(record)} className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-100 bg-emerald-50 text-[#22B981] transition hover:bg-emerald-100 dark:border-white/10 dark:bg-emerald-400/10 dark:text-emerald-200" title="直接进入已处理" aria-label="直接进入已处理">
-        <CheckCircle2 size={13} />
+      <button type="button" onClick={() => handleDirectProcess(record)} className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-100 bg-emerald-50 text-[#22B981] transition hover:bg-emerald-100 dark:border-white/10 dark:bg-emerald-400/10 dark:text-emerald-200" title="直接进入已处理" aria-label="直接进入已处理">
+        <CheckCircle2 size={15} />
       </button>
     </div>
   );

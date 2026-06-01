@@ -18,6 +18,7 @@ import type { ClassFormValues, ClassItem, UserItem } from './model';
 
 const emptyForm: ClassFormValues = {
   name: '',
+  class_type: 'group',
   subject: '',
   grade: '',
   teacher_name: '',
@@ -27,14 +28,15 @@ const emptyForm: ClassFormValues = {
   cohort_year: '',
   show_cohort_year: true,
   is_bridge: false,
-  bridge_target: '默认下一学段',
+  bridge_target: '小学衔接初中',
   content_track: '',
+  selected_student_ids: [],
 };
 
 const classes: ClassItem[] = [
   {
     id: 8,
-    name: '2025级·四年级·1班',
+    name: '数学·2025级·四年级·1班',
     subject: '数学',
     grade: '四年级',
     stage: '小奥',
@@ -44,7 +46,7 @@ const classes: ClassItem[] = [
   },
   {
     id: 9,
-    name: '2025级·七年级·2班',
+    name: '物理·2025级·七年级·2班',
     subject: '物理',
     grade: '七年级',
     stage: '初中',
@@ -77,7 +79,7 @@ test('resolveFormsAfterClassLoad keeps the new draft and rebuilds loaded class f
       new: newDraft,
       8: {
         ...emptyForm,
-        name: '2025级·四年级·1班',
+        name: '数学·2025级·四年级·1班',
         subject: '数学',
         grade: '四年级',
         stage: '小奥',
@@ -87,13 +89,14 @@ test('resolveFormsAfterClassLoad keeps the new draft and rebuilds loaded class f
       },
       9: {
         ...emptyForm,
-        name: '2025级·七年级·2班',
+        name: '物理·2025级·七年级·2班',
         subject: '物理',
         grade: '七年级',
         stage: '初中',
         current_grade: '七年级',
         class_number: '2',
         cohort_year: '2025',
+        bridge_target: '初中衔接高中',
       },
     },
   );
@@ -123,6 +126,7 @@ test('class load failure rules reset editor state to a clean new draft', () => {
 test('executeStudentCenterLoadRequest loads classes, staff users, and teacher bindings when allowed', async () => {
   const requests: Array<{ endpoint: string; init?: RequestInit }> = [];
   const users: UserItem[] = [{ id: 3, name: '曹老师', org: '星润', role: 'member' }];
+  const students = [{ id: 21, name: '张三' }];
   const apiFetch = async <T>(endpoint: string, init?: RequestInit): Promise<T> => {
     requests.push({ endpoint, init });
     if (endpoint === '/api/classes') {
@@ -131,18 +135,23 @@ test('executeStudentCenterLoadRequest loads classes, staff users, and teacher bi
     if (endpoint === '/api/admin/users') {
       return users as T;
     }
+    if (endpoint === '/api/students') {
+      return { students } as T;
+    }
     return { teacher_bindings: { 8: 3, 9: null } } as T;
   };
 
   assert.deepEqual(await executeStudentCenterLoadRequest(apiFetch, true), {
     classItems: classes,
     userItems: users,
+    allStudents: students,
     teacherBindingData: { teacher_bindings: { 8: 3, 9: null } },
   });
   assert.deepEqual(requests, [
     { endpoint: '/api/classes', init: undefined },
     { endpoint: '/api/admin/users', init: undefined },
     { endpoint: '/api/classes/teacher-bindings', init: undefined },
+    { endpoint: '/api/students', init: undefined },
   ]);
 });
 
@@ -150,15 +159,19 @@ test('executeStudentCenterLoadRequest skips staff-only requests when not allowed
   const requests: string[] = [];
   const apiFetch = async <T>(endpoint: string): Promise<T> => {
     requests.push(endpoint);
+    if (endpoint === '/api/students') {
+      return { students: [] } as T;
+    }
     return classes as T;
   };
 
   assert.deepEqual(await executeStudentCenterLoadRequest(apiFetch, false), {
     classItems: classes,
     userItems: [],
+    allStudents: [],
     teacherBindingData: { teacher_bindings: {} },
   });
-  assert.deepEqual(requests, ['/api/classes']);
+  assert.deepEqual(requests, ['/api/classes', '/api/students']);
 });
 
 test('class load request lifecycle rules increment versions and identify stale requests', () => {
@@ -178,6 +191,7 @@ test('buildClassLoadSuccessState bundles loaded classes, users, bindings, forms,
   assert.deepEqual(buildClassLoadSuccessState({
     classItems: classes,
     userItems: users,
+    allStudents: [{ id: 21, name: '张三' }],
     rawTeacherBindings: { 8: 3 },
     currentFormByClassId: { new: newDraft, 8: { ...emptyForm, name: '旧缓存' } },
     currentExpandedClassId: 8,
@@ -186,12 +200,13 @@ test('buildClassLoadSuccessState bundles loaded classes, users, bindings, forms,
   }), {
     classes,
     users,
+    allStudents: [{ id: 21, name: '张三' }],
     teacherBindingByClassId: { 8: 3 },
     formByClassId: {
       new: newDraft,
       8: {
         ...emptyForm,
-        name: '2025级·四年级·1班',
+        name: '数学·2025级·四年级·1班',
         subject: '数学',
         grade: '四年级',
         stage: '小奥',
@@ -201,13 +216,14 @@ test('buildClassLoadSuccessState bundles loaded classes, users, bindings, forms,
       },
       9: {
         ...emptyForm,
-        name: '2025级·七年级·2班',
+        name: '物理·2025级·七年级·2班',
         subject: '物理',
         grade: '七年级',
         stage: '初中',
         current_grade: '七年级',
         class_number: '2',
         cohort_year: '2025',
+        bridge_target: '初中衔接高中',
       },
     },
     expandedClassId: 9,
@@ -218,6 +234,7 @@ test('buildClassLoadFailureState bundles reset state for non-preserved failures'
   assert.deepEqual(buildClassLoadFailureState(emptyForm), {
     classes: [],
     users: [],
+    allStudents: [],
     teacherBindingByClassId: {},
     formByClassId: { new: emptyForm },
     newClassTeacherUserId: null,

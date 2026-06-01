@@ -90,7 +90,37 @@ test('builds class display names with optional cohort and bridge suffix', () => 
       show_cohort_year: false,
       is_bridge: true,
     }),
-    '四年级·1班·衔接',
+    '四年级·1班·小衔初',
+  );
+});
+
+test('builds subject-prefixed group names and existing-student small class names', () => {
+  assert.equal(
+    buildClassDisplayName({
+      subject: '数学',
+      class_type: 'group',
+      current_grade: '七年级',
+      grade: '',
+      class_number: '2',
+      cohort_year: '2025',
+      show_cohort_year: true,
+      is_bridge: false,
+    }),
+    '数学·2025级·七年级·2班',
+  );
+  assert.equal(
+    buildClassDisplayName({
+      subject: '数学',
+      class_type: '1v2',
+      current_grade: '七年级',
+      grade: '',
+      class_number: '',
+      cohort_year: '2025',
+      show_cohort_year: true,
+      is_bridge: false,
+      selected_student_names: ['张三', '李四'],
+    }),
+    '张李·1v2·七年级',
   );
 });
 

@@ -22,7 +22,7 @@ const emptyForm: ClassFormValues = {
   cohort_year: '',
   show_cohort_year: true,
   is_bridge: false,
-  bridge_target: '默认下一学段',
+  bridge_target: '小学衔接初中',
   content_track: '',
 };
 
@@ -78,6 +78,7 @@ test('buildClassEditorModalState assembles new class modal state from page state
     inviteResettingByClassId: {},
     inviteErrorByClassId: {},
     studentsByClassId: {},
+    allStudents: [],
     studentsLoadingByClassId: {},
     studentSavingByClassId: {},
     studentErrorByClassId: {},
@@ -121,7 +122,7 @@ test('buildClassEditorModalState assembles new class modal state from page state
   assert.equal(state.newClass.teacherUserId, 1);
   assert.deepEqual(state.newClass.filteredUsers.map((user) => user.name), ['曹老师']);
   assert.deepEqual(state.newClass.gradeOptions, gradeGroups.小奥);
-  assert.equal(state.newClass.displayNamePreview, '2025级·四年级·2班');
+  assert.equal(state.newClass.displayNamePreview, '数学·2025级·四年级·2班');
 });
 
 test('buildClassEditorModalState assembles editing modal state and falls back to saved class form', () => {
@@ -140,6 +141,7 @@ test('buildClassEditorModalState assembles editing modal state and falls back to
     inviteResettingByClassId: { 8: false },
     inviteErrorByClassId: { 8: '邀请码加载失败' },
     studentsByClassId: { 8: [{ id: 3, name: '学生A' }] },
+    allStudents: [],
     studentsLoadingByClassId: { 8: false },
     studentSavingByClassId: { 8: true },
     studentErrorByClassId: { 8: '新增失败' },
@@ -177,7 +179,7 @@ test('buildClassEditorModalState assembles editing modal state and falls back to
   assert.equal(state.mode.editingClass?.id, 8);
   assert.equal(state.mode.editingFormState?.current_grade, '七年级');
   assert.deepEqual(state.editing.gradeOptions, gradeGroups.初中);
-  assert.equal(state.editing.displayNamePreview, '2025级·七年级·3班');
+  assert.equal(state.editing.displayNamePreview, '物理·2025级·七年级·3班');
   assert.equal(state.editing.teacherSearch, '王');
   assert.equal(state.editing.currentTeacherUserId, 2);
   assert.equal(state.editing.teacherSummary, '王老师');
@@ -188,6 +190,7 @@ test('buildClassEditorModalState assembles editing modal state and falls back to
   assert.equal(state.editing.inviteResetting, false);
   assert.equal(state.editing.inviteError, '邀请码加载失败');
   assert.deepEqual(state.editing.students, [{ id: 3, name: '学生A' }]);
+  assert.deepEqual(state.editing.allStudents, []);
   assert.equal(state.editing.studentsLoading, false);
   assert.equal(state.editing.studentSaving, true);
   assert.equal(state.editing.studentError, '新增失败');

@@ -1,5 +1,12 @@
 import { AlertCircle, Search, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useState } from 'react';
+import {
+  bridgeStageOptions,
+  isReverseBridgeTarget,
+  parseBridgeTarget,
+  serializeBridgeTarget,
+} from '../../domain/classNaming';
 import {
   workspaceCardClass,
   workspaceFieldClass,
@@ -7,7 +14,7 @@ import {
   workspaceSecondaryButtonClass,
   workspaceSoftCardClass,
 } from '../../workspaceShared';
-import type { ClassFormValues, ClassInviteInfo, ClassItem, UserItem } from './model';
+import type { ClassFormValues, ClassInviteInfo, ClassItem, ClassStudentOption, UserItem } from './model';
 
 type ClassStudent = { id: number; name: string };
 
@@ -42,6 +49,7 @@ export type ClassEditorNewClassState = {
   filteredUsers: UserItem[];
   gradeOptions: string[];
   displayNamePreview: string;
+  allStudents: ClassStudentOption[];
 };
 
 export type ClassEditorEditingState = {
@@ -58,6 +66,7 @@ export type ClassEditorEditingState = {
   inviteResetting: boolean;
   inviteError: string;
   students: ClassStudent[];
+  allStudents: ClassStudentOption[];
   studentsLoading: boolean;
   studentSaving: boolean;
   studentError: string;
@@ -72,13 +81,14 @@ export type ClassEditorActions = {
   onEditingClassBridgeChange: (checked: boolean) => void;
   onTeacherSearchChange: (classId: number | 'new', value: string) => void;
   onNewClassTeacherUserIdChange: (teacherUserId: number | null) => void;
+  onNewClassStudentSelectionChange: (studentId: number, checked: boolean) => void;
   onLoadClassInvite: (classId: number) => void;
   onResetClassInvite: (classId: number) => void;
   onRefreshAssignment: (classId: number) => void;
   onSelectTeacherForClass: (classId: number, teacherUserId: number) => void;
   onDeleteClass: (classId: number) => void;
   onStudentDraftNameChange: (classId: number, value: string) => void;
-  onAddStudentToClass: (classId: number) => void;
+  onAddStudentToClass: (classId: number, studentId: number) => void;
   onDeleteStudentFromClass: (classId: number, studentId: number) => void;
 };
 
@@ -87,6 +97,7 @@ type ClassEditorModalProps = {
   locks: ClassEditorModalLocks;
   errors: ClassEditorModalErrors;
   options: ClassEditorModalOptions;
+  canSaveClassDraft: boolean;
   teacherSearchByClassId: Record<string, string>;
   users: UserItem[];
   newClass: ClassEditorNewClassState;
@@ -100,6 +111,7 @@ export function ClassEditorModal({
   locks,
   errors,
   options,
+  canSaveClassDraft,
   teacherSearchByClassId,
   users,
   newClass,
@@ -111,6 +123,38 @@ export function ClassEditorModal({
   const { classCardInteractionLocked, classInteractionLocked, assignmentRefreshLocked, saving, deleting } = locks;
   const { formError, assignmentError } = errors;
   const { academicSubjectOptions, studentCenterStageOptions } = options;
+  const [newClassStudentSearch, setNewClassStudentSearch] = useState('');
+  const [editingStudentSearch, setEditingStudentSearch] = useState('');
+  const normalizedNewClassStudentSearch = newClassStudentSearch.trim().toLowerCase();
+  const selectedNewClassStudents = useMemo(
+    () => newClass.allStudents.filter((student) => newClass.form.selected_student_ids.includes(student.id)),
+    [newClass.allStudents, newClass.form.selected_student_ids],
+  );
+  const filteredNewClassStudents = useMemo(
+    () => newClass.allStudents.filter((student) => (
+      !normalizedNewClassStudentSearch
+      || student.name.toLowerCase().includes(normalizedNewClassStudentSearch)
+    )),
+    [newClass.allStudents, normalizedNewClassStudentSearch],
+  );
+  const normalizedEditingStudentSearch = editingStudentSearch.trim().toLowerCase();
+  const editingStudentIds = useMemo(() => new Set(editing.students.map((student) => student.id)), [editing.students]);
+  const editingSmallClassLimit = editingClass?.class_type === '1v1' ? 1 : editingClass?.class_type === '1v2' ? 2 : editingClass?.class_type === '1v3' ? 3 : null;
+  const editingSmallClassFull = editingSmallClassLimit != null && editing.students.length >= editingSmallClassLimit;
+  const filteredEditingStudentOptions = useMemo(
+    () => editing.allStudents.filter((student) => (
+      !editingStudentIds.has(student.id)
+      && (!normalizedEditingStudentSearch || student.name.toLowerCase().includes(normalizedEditingStudentSearch))
+    )),
+    [editing.allStudents, editingStudentIds, normalizedEditingStudentSearch],
+  );
+  const newClassBridge = parseBridgeTarget(newClass.form.bridge_target, newClass.form.stage);
+  const editingBridge = editingFormState ? parseBridgeTarget(editingFormState.bridge_target, editingFormState.stage) : null;
+  const saveClassDisabled = classCardInteractionLocked || !canSaveClassDraft;
+  const updateBridgeTarget = (classId: number | 'new', fromStage: string, toStage: string) => {
+    actions.onFieldChange(classId, 'bridge_target', serializeBridgeTarget(fromStage, toStage));
+    actions.onFieldChange(classId, 'content_track', toStage);
+  };
 
   return (
     <AnimatePresence>
@@ -141,7 +185,7 @@ export function ClassEditorModal({
                 <button
                   type="button"
                   onClick={() => void actions.onSaveClass(newClassExpanded ? 'new' : editingClass?.id || 'new')}
-                  disabled={classCardInteractionLocked}
+                  disabled={saveClassDisabled}
                   className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm`}
                   title="Command+S / Ctrl+S"
                 >
@@ -185,6 +229,19 @@ export function ClassEditorModal({
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">班型</span>
+                      <select
+                        value={newClass.form.class_type}
+                        onChange={(e) => actions.onFieldChange('new', 'class_type', e.target.value)}
+                        className={workspaceFieldClass}
+                      >
+                        <option value="group">多人班课</option>
+                        <option value="1v1">1v1</option>
+                        <option value="1v2">1v2</option>
+                        <option value="1v3">1v3</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
                       <span className="text-slate-500 dark:text-slate-400">学科</span>
                       <select
                         value={academicSubjectOptions.includes(newClass.form.subject) ? newClass.form.subject : ''}
@@ -215,10 +272,62 @@ export function ClassEditorModal({
                         ))}
                       </select>
                     </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="text-slate-500 dark:text-slate-400">班号</span>
-                      <input type="number" min="1" value={newClass.form.class_number} onChange={(e) => actions.onFieldChange('new', 'class_number', e.target.value)} className={workspaceFieldClass} />
-                    </label>
+                    {newClass.form.class_type === 'group' ? (
+                      <label className="space-y-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">班号</span>
+                        <input type="number" min="1" value={newClass.form.class_number} onChange={(e) => actions.onFieldChange('new', 'class_number', e.target.value)} className={workspaceFieldClass} />
+                      </label>
+                    ) : (
+                      <div className="space-y-2 text-sm md:col-span-2">
+                        <span className="text-slate-500 dark:text-slate-400">选择学员</span>
+                        <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-white/5">
+                          <label className="relative block">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={16} />
+                            <input
+                              value={newClassStudentSearch}
+                              onChange={(event) => setNewClassStudentSearch(event.target.value)}
+                              placeholder="搜索学员姓名"
+                              className={`${workspaceFieldClass} h-10 pl-9`}
+                            />
+                          </label>
+                          {selectedNewClassStudents.length ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedNewClassStudents.map((student) => (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  onClick={() => actions.onNewClassStudentSelectionChange(student.id, false)}
+                                  className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                                >
+                                  {student.name} ×
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto sm:grid-cols-2">
+                            {newClass.allStudents.length ? filteredNewClassStudents.map((student) => (
+                              <label key={student.id} className="flex items-center gap-2 rounded-xl px-2 py-1 text-sm text-slate-700 hover:bg-sky-50 dark:text-slate-200 dark:hover:bg-white/10">
+                                <input
+                                  type="checkbox"
+                                  checked={newClass.form.selected_student_ids.includes(student.id)}
+                                  onChange={(event) => actions.onNewClassStudentSelectionChange(student.id, event.target.checked)}
+                                />
+                                <span>{student.name}</span>
+                              </label>
+                            )) : (
+                              <div className="rounded-xl border border-dashed border-sky-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
+                              暂无已有学员，请先在学员管理中建立学员档案。
+                              </div>
+                            )}
+                            {newClass.allStudents.length && !filteredNewClassStudents.length ? (
+                              <div className="rounded-xl border border-dashed border-sky-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
+                                没有匹配的学员
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -227,6 +336,31 @@ export function ClassEditorModal({
                       />
                       <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                     </label>
+                    {newClass.form.is_bridge ? (
+                      <div className="space-y-2 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 text-sm md:col-span-2 dark:border-white/10 dark:bg-white/5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">衔接方向</span>
+                          <select
+                            value={newClassBridge.fromStage}
+                            onChange={(event) => updateBridgeTarget('new', event.target.value, newClassBridge.toStage)}
+                            className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                          >
+                            {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                          <span className="text-slate-500 dark:text-slate-400">衔</span>
+                          <select
+                            value={newClassBridge.toStage}
+                            onChange={(event) => updateBridgeTarget('new', newClassBridge.fromStage, event.target.value)}
+                            className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                          >
+                            {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </div>
+                        {isReverseBridgeTarget(newClass.form.bridge_target, newClass.form.stage) ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-400">提醒：当前是反向衔接方向，请确认后再保存。</p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
                       名称预览：{newClass.displayNamePreview}
                     </div>
@@ -279,7 +413,7 @@ export function ClassEditorModal({
                     <button
                       type="button"
                       onClick={() => actions.onSaveClass('new')}
-                      disabled={classCardInteractionLocked}
+                      disabled={saveClassDisabled}
                       className={workspacePrimaryButtonClass}
                     >
                       {saving ? '保存中...' : '创建班级'}
@@ -338,6 +472,19 @@ export function ClassEditorModal({
 
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="space-y-2 text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">班型</span>
+                          <select
+                            value={editingFormState.class_type}
+                            onChange={(e) => actions.onFieldChange(editingClass.id, 'class_type', e.target.value)}
+                            className={workspaceFieldClass}
+                          >
+                            <option value="group">多人班课</option>
+                            <option value="1v1">1v1</option>
+                            <option value="1v2">1v2</option>
+                            <option value="1v3">1v3</option>
+                          </select>
+                        </label>
+                        <label className="space-y-2 text-sm">
                           <span className="text-slate-500 dark:text-slate-400">学科</span>
                           <select
                             value={academicSubjectOptions.includes(editingFormState.subject) ? editingFormState.subject : ''}
@@ -368,10 +515,12 @@ export function ClassEditorModal({
                             ))}
                           </select>
                         </label>
-                        <label className="space-y-2 text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">班号</span>
-                          <input type="number" min="1" value={editingFormState.class_number} onChange={(e) => actions.onFieldChange(editingClass.id, 'class_number', e.target.value)} className={workspaceFieldClass} />
-                        </label>
+                        {editingFormState.class_type === 'group' ? (
+                          <label className="space-y-2 text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">班号</span>
+                            <input type="number" min="1" value={editingFormState.class_number} onChange={(e) => actions.onFieldChange(editingClass.id, 'class_number', e.target.value)} className={workspaceFieldClass} />
+                          </label>
+                        ) : null}
                         <label className="flex items-center gap-2 text-sm">
                           <input
                             type="checkbox"
@@ -380,6 +529,31 @@ export function ClassEditorModal({
                           />
                           <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                         </label>
+                        {editingFormState.is_bridge && editingBridge ? (
+                          <div className="space-y-2 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 text-sm md:col-span-2 dark:border-white/10 dark:bg-white/5">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                              <span className="font-semibold text-slate-700 dark:text-slate-200">衔接方向</span>
+                              <select
+                                value={editingBridge.fromStage}
+                                onChange={(event) => updateBridgeTarget(editingClass.id, event.target.value, editingBridge.toStage)}
+                                className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                              >
+                                {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                              <span className="text-slate-500 dark:text-slate-400">衔</span>
+                              <select
+                                value={editingBridge.toStage}
+                                onChange={(event) => updateBridgeTarget(editingClass.id, editingBridge.fromStage, event.target.value)}
+                                className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                              >
+                                {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                            </div>
+                            {isReverseBridgeTarget(editingFormState.bridge_target, editingFormState.stage) ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">提醒：当前是反向衔接方向，请确认后再保存。</p>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
                           名称预览：{editing.displayNamePreview}
                         </div>
@@ -464,7 +638,7 @@ export function ClassEditorModal({
                           <button
                             type="button"
                             onClick={() => actions.onSaveClass(editingClass.id)}
-                            disabled={classCardInteractionLocked}
+                            disabled={saveClassDisabled}
                             className={`${workspacePrimaryButtonClass} w-full`}
                           >
                             {saving ? '保存中...' : '保存班级'}
@@ -476,7 +650,7 @@ export function ClassEditorModal({
                     <div className={`${workspaceCardClass} space-y-4 p-5`}>
                       <div>
                         <h4 className="text-xl font-semibold text-slate-900 dark:text-white">编辑学生</h4>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">在这里维护当前班级学生名单。</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">从已有学员档案中搜索添加，避免重复建立学生。</p>
                       </div>
 
                       {editing.studentError ? (
@@ -486,23 +660,46 @@ export function ClassEditorModal({
                         </div>
                       ) : null}
 
-                      <div className="flex flex-col gap-3 sm:flex-row">
-                        <input
-                          type="text"
-                          value={editing.studentDraftName}
-                          onChange={(e) => actions.onStudentDraftNameChange(editingClass.id, e.target.value)}
-                          placeholder="输入学生姓名"
-                          className={workspaceFieldClass}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => actions.onAddStudentToClass(editingClass.id)}
-                          disabled={editing.studentSaving}
-                          className={workspacePrimaryButtonClass}
-                        >
-                          {editing.studentSaving ? '处理中...' : '新增学生'}
-                        </button>
-                      </div>
+                      {editingClass.class_type === 'group' && editing.students.length >= 10 ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                          提醒：当前多人班课已超过 10 人，请确认班级容量。
+                        </div>
+                      ) : null}
+                      {editingSmallClassFull ? (
+                        <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          当前班型最多 {editingSmallClassLimit} 名学员，如需调整请先移除原学员。
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <label className="relative block">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                            <input
+                              type="text"
+                              value={editingStudentSearch}
+                              onChange={(e) => setEditingStudentSearch(e.target.value)}
+                              placeholder="搜索已有学员"
+                              className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                            />
+                          </label>
+                          <div className="grid max-h-40 gap-2 overflow-y-auto rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-white/5 sm:grid-cols-2">
+                            {filteredEditingStudentOptions.length ? filteredEditingStudentOptions.map((student) => (
+                              <button
+                                key={student.id}
+                                type="button"
+                                onClick={() => actions.onAddStudentToClass(editingClass.id, student.id)}
+                                disabled={editing.studentSaving}
+                                className="rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-white/10"
+                              >
+                                {student.name}
+                              </button>
+                            )) : (
+                              <div className="rounded-xl border border-dashed border-sky-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
+                                {editing.allStudents.length ? '没有匹配的可添加学员' : '暂无已有学员，请先在学员管理中建立学员档案。'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {editing.studentsLoading ? (
                         <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">

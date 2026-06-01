@@ -6,7 +6,7 @@ export type ClassStudent = {
 export type ClassStudentMap = Record<number, ClassStudent[]>;
 
 type ListClassStudents = (classId: number) => Promise<{ students: ClassStudent[] }>;
-type CreateClassStudent = (classId: number, name: string) => Promise<{ student: ClassStudent; deduplicated: boolean }>;
+type CreateClassStudent = (classId: number, studentId: number) => Promise<{ student: ClassStudent; deduplicated: boolean }>;
 type DeleteClassStudent = (classId: number, studentId: number) => Promise<{ ok: boolean; removed: boolean }>;
 
 export function resolveClassStudentDraftName(rawName: string | undefined): string {
@@ -26,10 +26,10 @@ export async function executeClassStudentListRequest(
 
 export async function executeClassStudentCreateRequest(
   classId: number,
-  draftName: string,
+  studentId: number,
   createClassStudent: CreateClassStudent,
 ): Promise<{ student: ClassStudent; deduplicated: boolean }> {
-  return createClassStudent(classId, draftName);
+  return createClassStudent(classId, studentId);
 }
 
 export async function executeClassStudentDeleteRequest(
@@ -85,7 +85,9 @@ export function resolveClassStudentsAfterCreate(
 ): ClassStudentMap {
   return {
     ...current,
-    [classId]: [...(current[classId] || []), student],
+    [classId]: (current[classId] || []).some((item) => item.id === student.id)
+      ? current[classId]
+      : [...(current[classId] || []), student],
   };
 }
 

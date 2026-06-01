@@ -27,6 +27,7 @@ import type { ClassFormValues, ClassItem, UserItem } from './model';
 
 const baseForm: ClassFormValues = {
   name: '',
+  class_type: 'group',
   subject: '数学',
   grade: '',
   teacher_name: '',
@@ -36,8 +37,9 @@ const baseForm: ClassFormValues = {
   cohort_year: '2025',
   show_cohort_year: true,
   is_bridge: false,
-  bridge_target: '默认下一学段',
+  bridge_target: '小学衔接初中',
   content_track: '',
+  selected_student_ids: [],
 };
 
 const teacher: UserItem = {
@@ -56,7 +58,8 @@ test('buildClassSavePayload uses unified naming and teacher account for new clas
   });
 
   assert.deepEqual(payload, {
-    name: '2025级·四年级·1班',
+    name: '数学·2025级·四年级·1班',
+    class_type: 'group',
     subject: '数学',
     grade: '四年级',
     teacher_name: '曹老师',
@@ -67,8 +70,9 @@ test('buildClassSavePayload uses unified naming and teacher account for new clas
     cohort_year: 2025,
     show_cohort_year: true,
     is_bridge: false,
-    bridge_target: '默认下一学段',
+    bridge_target: '小学衔接初中',
     content_track: '',
+    student_ids: [],
     teacher_user_id: 12,
   });
 });
@@ -92,7 +96,8 @@ test('buildClassSavePayload uses the same naming rules for existing class fixes 
   });
 
   assert.deepEqual(payload, {
-    name: '2025级·七年级·3班',
+    name: '物理·2025级·七年级·3班',
+    class_type: 'group',
     subject: '物理',
     grade: '七年级',
     teacher_name: '曹老师',
@@ -103,8 +108,9 @@ test('buildClassSavePayload uses the same naming rules for existing class fixes 
     cohort_year: 2025,
     show_cohort_year: true,
     is_bridge: false,
-    bridge_target: '默认下一学段',
+    bridge_target: '小学衔接初中',
     content_track: '',
+    student_ids: [],
     teacher_user_id: undefined,
   });
 });
@@ -192,7 +198,8 @@ test('buildOptimisticCreatedClassItem mirrors the newly created class with selec
     }),
     {
       id: 8,
-      name: '2025级·四年级·1班',
+      name: '数学·2025级·四年级·1班',
+      class_type: 'group',
       subject: '数学',
       grade: '四年级',
       stage: '小奥',
@@ -201,7 +208,7 @@ test('buildOptimisticCreatedClassItem mirrors the newly created class with selec
       cohort_year: 2025,
       show_cohort_year: true,
       is_bridge: false,
-      bridge_target: '默认下一学段',
+      bridge_target: '小学衔接初中',
       content_track: '',
       teacher_name: '曹老师',
       teacher_email: '',
@@ -251,7 +258,7 @@ test('resolveTeacherBindingsAfterOptimisticCreate records the new class teacher 
 test('resolveFormsAfterOptimisticCreate stores the created class form without clearing other form drafts', () => {
   const createdForm: ClassFormValues = {
     ...baseForm,
-    name: '2025级·四年级·1班',
+    name: '数学·2025级·四年级·1班',
   };
 
   assert.deepEqual(
@@ -432,6 +439,48 @@ test('validateClassSaveDraft returns the same user-facing validation messages', 
   assert.equal(
     validateClassSaveDraft({ classId: 1, selectedTeacherUserId: null, payload: { ...buildClassSavePayload({ classId: 1, form: baseForm, selectedTeacher: undefined, selectedTeacherUserId: null }), current_grade: '未知年级' }, gradeOptions: ['四年级'] }),
     '请选择年级',
+  );
+});
+
+test('small class save payload uses existing student names and validates required size', () => {
+  const smallClassForm: ClassFormValues = {
+    ...baseForm,
+    class_type: '1v2',
+    class_number: '',
+    current_grade: '七年级',
+    stage: '初中',
+    selected_student_ids: [21, 22],
+  };
+  const payload = buildClassSavePayload({
+    classId: 'new',
+    form: smallClassForm,
+    selectedTeacher: teacher,
+    selectedTeacherUserId: teacher.id,
+    existingStudents: [
+      { id: 21, name: '张三' },
+      { id: 22, name: '李四' },
+    ],
+  });
+
+  assert.deepEqual({
+    name: payload.name,
+    class_type: payload.class_type,
+    class_number: payload.class_number,
+    student_ids: payload.student_ids,
+  }, {
+    name: '张李·1v2·七年级',
+    class_type: '1v2',
+    class_number: '',
+    student_ids: [21, 22],
+  });
+  assert.equal(
+    validateClassSaveDraft({
+      classId: 'new',
+      selectedTeacherUserId: teacher.id,
+      payload: { ...payload, student_ids: [21] },
+      gradeOptions: ['七年级'],
+    }),
+    '请选择2名学员',
   );
 });
 
