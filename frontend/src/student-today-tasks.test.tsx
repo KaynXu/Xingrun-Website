@@ -5,6 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
+  StudentPortalPage,
   StudentTodayTasksContent,
   buildStudentTaskPdfPreviewPath,
   type StudentReviewTask,
@@ -73,4 +74,14 @@ test('workspace source exposes student portal outside teacher navigation', () =>
   assert.match(appSource, /<StudentPortalPage today=\{getTodayIsoDate\(\)\}/);
   assert.doesNotMatch(appSource, /id: 'student-tasks'/);
   assert.doesNotMatch(appSource, /activeWorkspacePage === 'student-tasks'/);
+});
+
+test('student portal login page omits the dark intro panel', () => {
+  const markup = renderToStaticMarkup(<StudentPortalPage today="2026-06-03" />);
+
+  assert.match(markup, /学生端登录/);
+  assert.match(markup, /登录学生端/);
+  assert.doesNotMatch(markup, /Xingrun Student/);
+  assert.doesNotMatch(markup, /权限/);
+  assert.doesNotMatch(markup, /PDF 页面/);
 });

@@ -8,7 +8,6 @@ import {
   FileText,
   KeyRound,
   Loader2,
-  LockKeyhole,
   LogOut,
   RefreshCw,
   UserRound,
@@ -535,39 +534,13 @@ export function StudentPortalPage({ today }: { today: string }) {
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 dark:bg-slate-950 dark:text-slate-50 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl items-center">
-        <div className="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-slate-900 lg:grid-cols-[0.95fr_1.05fr]">
-          <section className="flex flex-col justify-between gap-10 bg-slate-950 p-6 text-white md:p-8">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-sky-100">
-                <BookOpenCheck size={14} />
-                Xingrun Student
-              </div>
-              <h1 className="mt-8 text-4xl font-bold tracking-tight md:text-5xl">今日复习</h1>
-              <p className="mt-4 max-w-md text-sm leading-7 text-slate-300">
-                登录后只展示自己的今日任务, 并直接打开老师生成的 PDF 对应页面.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <CalendarDays size={18} className="text-sky-300" />
-                <p className="mt-3 text-xs text-slate-400">日期</p>
-                <p className="mt-1 text-sm font-semibold">{today}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <FileText size={18} className="text-emerald-300" />
-                <p className="mt-3 text-xs text-slate-400">资料</p>
-                <p className="mt-1 text-sm font-semibold">PDF 页面</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <LockKeyhole size={18} className="text-amber-300" />
-                <p className="mt-3 text-xs text-slate-400">权限</p>
-                <p className="mt-1 text-sm font-semibold">仅本人</p>
-              </div>
-            </div>
-          </section>
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-xl items-center justify-center">
+        <section className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.10)] dark:border-white/10 dark:bg-slate-900 md:p-8">
+          <div className="mb-7">
+            <p className="text-sm font-semibold text-sky-600 dark:text-sky-300">学生端</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">学生端登录</h1>
+          </div>
 
-          <section className="p-5 md:p-8">
             <div className="flex rounded-2xl bg-slate-100 p-1 text-sm font-semibold dark:bg-white/8">
               <button
                 type="button"
@@ -694,8 +667,7 @@ export function StudentPortalPage({ today }: { today: string }) {
                 </button>
               </form>
             )}
-          </section>
-        </div>
+        </section>
       </div>
     </div>
   );
