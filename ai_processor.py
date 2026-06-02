@@ -385,8 +385,11 @@ items 中每一项必须包含：
 18. 句子要自然，适合小学/初中学生抄写和填写，不要出现工程术语。
 19. 像复习计划里的填空题一样，把空放在“本题具体要核对的词、条件、关系、范围、单位、顺序”上；避免只写“这题可能因为对 ______ 的性质理解不透彻”这种泛化句。
 20. 示例：若题目出现“定义域 [m-4,3m]、x∈[0,3m]、f(x) 单调递减、比较 f(x+1) 与 f(2x-m)”，不要写“复习函数定义和性质”；可以写“本题先核对两个自变量 x+1、2x-m 是否都落在 ______，再利用 f(x) 单调递减把 f(x+1)>f(2x-m) 转成 ______ 的不等式。”
-21. answer 要简洁准确；key_steps 要能独立解释答案从哪里来，不要只写“计算可得”“由题意得”这类空泛步骤。
-22. title 控制在 8 到 24 个字。"""
+21. reason_blank_prompt 和 improvement_summary_prompt 要像老师手写给学生的一两句短提醒，自然、有逻辑、少废话；不要出现“这题不是简单写”“AI”“模型”“生成”“分析如下”等 AI 套话。
+22. 不要出现“本题重点修正”；不要出现“订正时先补全”；不要写“这一步”“重新写完整过程并检查答案范围”这类统一模板句；要直接写这题真正要补的动作。
+23. 不要使用项目符号、圆点、编号列表或类似 bullet 的符号；每个书写区正文直接写 1 到 2 句短句。
+24. answer 要简洁准确；key_steps 要能独立解释答案从哪里来，不要只写“计算可得”“由题意得”这类空泛步骤。
+25. title 控制在 8 到 24 个字。"""
 
 WRONG_QUESTION_PRACTICE_PACK_VARIANT_PROMPT = """你是错题练习变式题设计助手。
 你会收到某个学生的真实错题、目标复习方向和需要补足的题数。请生成同错因变式题。
@@ -766,6 +769,25 @@ def classify_wrong_question_reason(child_reason_text: str, *, question_text: str
     }
 
 
+_WRONG_QUESTION_PRACTICE_PROMPT_BULLET_PREFIX_RE = re.compile(
+    r"^\s*(?:[-*•·●◆◇▪▫■□▶▷①②③④⑤⑥⑦⑧⑨⑩]|\d+[.、]|[（(]?\d+[）)])\s*"
+)
+
+
+def _clean_wrong_question_practice_prompt_text(value: str) -> str:
+    cleaned_lines = []
+    for raw_line in str(value or "").split("\n"):
+        line = _WRONG_QUESTION_PRACTICE_PROMPT_BULLET_PREFIX_RE.sub("", raw_line).strip()
+        line = line.replace("本题重点修正：", "")
+        line = line.replace("本题重点修正:", "")
+        line = line.replace("订正时先补全", "先补上")
+        line = line.replace("这一步", "")
+        line = line.replace("再重新写完整过程并检查答案范围", "再检查答案范围")
+        if line:
+            cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
 def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected_record_ids: list[str]) -> dict:
     title = str(payload.get("title") or "").strip()
     raw_items = payload.get("items")
@@ -794,6 +816,8 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
 
         reason_blank_prompt = reason_blank_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
         improvement_summary_prompt = improvement_summary_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
+        reason_blank_prompt = _clean_wrong_question_practice_prompt_text(reason_blank_prompt)
+        improvement_summary_prompt = _clean_wrong_question_practice_prompt_text(improvement_summary_prompt)
 
         reason_lines = [line.strip() for line in reason_blank_prompt.split("\n") if line.strip()]
         improvement_lines = [line.strip() for line in improvement_summary_prompt.split("\n") if line.strip()]

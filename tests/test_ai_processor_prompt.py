@@ -242,6 +242,14 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         user_payload = json.loads(fake_client.chat.completions.last_kwargs["messages"][1]["content"])
         self.assertEqual(user_payload["items"][0]["topic_category"], "一元一次方程去分母")
 
+    def test_wrong_question_practice_prompt_bans_template_copy_and_bullets(self):
+        prompt = ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT
+
+        self.assertIn("不要出现“本题重点修正”", prompt)
+        self.assertIn("不要出现“订正时先补全”", prompt)
+        self.assertIn("不要使用项目符号", prompt)
+        self.assertIn("像老师手写给学生的一两句短提醒", prompt)
+
     def test_wrong_question_recognition_uses_vision_model_when_text_provider_is_deepseek(self):
         fake_client = _FakeClient(
             {
