@@ -170,6 +170,10 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("key_steps: array[string]", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("pitfall_reminder: string", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("题目内容必须用于提取本题的对象、条件、问法或符号", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("topic_category 当成知识点靶心", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要只写“错因”“计算错因”“方法问题”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("【相遇关系辨析】", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("【分类讨论补全】", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("优先把孩子语音/文字里提到的具体遗漏、误判、步骤顺序写进填空句", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("像复习计划里的填空题一样", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("定义域 [m-4,3m]", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
@@ -200,6 +204,43 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         source = (Path(ai_processor.__file__).resolve().parent / "pdf_engine.py").read_text(encoding="utf-8")
         self.assertNotIn('Paragraph("AI 提示"', source)
         self.assertNotIn('Paragraph("下次提醒"', source)
+
+    def test_wrong_question_practice_material_payload_includes_topic_category(self):
+        fake_client = _FakeClient(
+            {
+                "title": "去分母错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "reason_blank_prompt": "【去分母检查】\n这题先给等式两边每一项同乘 ______，容易漏乘的是 ______。",
+                        "improvement_summary_prompt": "【下次先标分母】\n下次做去分母题，我先圈出 ______，再检查 ______ 是否同乘。",
+                        "answer": "x=7",
+                        "key_steps": ["两边同乘 2", "解得 x=7"],
+                        "pitfall_reminder": "不要漏乘常数项。",
+                    }
+                ],
+            }
+        )
+        with patch("ai_processor._get_client", return_value=fake_client):
+            ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name="Alice",
+                class_name="六年级 9 班",
+                teacher_name="Kayn",
+                items=[
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "question_order": 1,
+                        "question_text_snapshot": "解方程 $\\frac{x-1}{2}=3$。",
+                        "child_reason_text_snapshot": "我去分母时漏乘右边常数",
+                        "primary_error_type_snapshot": "知识点问题",
+                        "cause_note_snapshot": "去分母时常数项漏乘",
+                        "topic_category_snapshot": "一元一次方程去分母",
+                    }
+                ],
+            )
+
+        user_payload = json.loads(fake_client.chat.completions.last_kwargs["messages"][1]["content"])
+        self.assertEqual(user_payload["items"][0]["topic_category"], "一元一次方程去分母")
 
     def test_wrong_question_recognition_uses_vision_model_when_text_provider_is_deepseek(self):
         fake_client = _FakeClient(
