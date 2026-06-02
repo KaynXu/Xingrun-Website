@@ -68,10 +68,10 @@
 - [x] Add `POST /api/wrong-question-ingestions/<run_id>/ocr`.
 - [x] Add `POST /api/wrong-question-ingestions/<run_id>/split`.
 - [x] Add `POST /api/wrong-question-ingestions/<run_id>/archive`.
-- [ ] Refactor the current upload worker so `wechat_wrong_question_upload_tasks` can hand off into generic ingestion runs instead of owning the only async path.
-- [ ] Preserve current mini-program behavior by adapting WeChat upload into the new backend boundary rather than deleting it.
+- [x] Refactor the current upload worker so `wechat_wrong_question_upload_tasks` can hand off into generic ingestion runs instead of owning the only async path.
+- [x] Preserve current mini-program behavior by adapting WeChat upload into the new backend boundary rather than deleting it.
 - [x] Add targeted API tests for generic ingestion endpoints.
-- [ ] Add worker tests for generic ingestion handoff.
+- [x] Add worker tests for generic ingestion handoff.
 
 ### Phase 3: AI Chat Guided Wrong-Question Loop
 
@@ -137,4 +137,4 @@ The complete product shape should also include:
 
 ## Current Round
 
-The latest completed slices are **Phase 1** data foundations plus the first **Phase 2** backend API contract. The next highest-value task is the **worker handoff refactor**, so the existing WeChat async upload path starts writing through generic ingestion runs instead of remaining a parallel special-case pipeline.
+The latest completed slices are **Phase 1** data foundations and the core of **Phase 2**: generic ingestion APIs plus WeChat worker handoff into ingestion runs. The next highest-value task is **Phase 3 chat-session persistence and guided dialogue orchestration**, because the storage/API base is now strong enough to support the intended AI chat upload loop.

@@ -1,13 +1,21 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import ai_processor
 import pdf_engine
 from lesson_manager import (
     attach_student_library_pdf_path,
+    create_wrong_question_asset,
+    create_wrong_question_ingestion_run,
     create_wechat_wrong_question_submission,
     get_wechat_wrong_question_upload_task,
+    get_wrong_question_ingestion_run,
     list_student_wrong_question_library_records,
     set_student_wrong_question_library_pdf_path,
+    update_wrong_question_ingestion_run,
     update_wechat_wrong_question_upload_task,
 )
 
@@ -75,12 +83,91 @@ def _refresh_student_wrong_question_library_cache(student_id: int) -> str:
     return pdf_path
 
 
+def _guess_upload_filename(file_url: str) -> str:
+    path = urlparse(str(file_url or "").strip()).path
+    filename = Path(path).name.strip()
+    return filename
+
+
+def _load_run_metadata(run: dict | None) -> dict:
+    if not isinstance(run, dict):
+        return {}
+    raw = str(run.get("metadata_json") or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _update_ingestion_run_with_metadata(run_id: str, *, status: str, error_message: str = "", **extra_metadata) -> dict | None:
+    existing = get_wrong_question_ingestion_run(run_id)
+    metadata = _load_run_metadata(existing)
+    metadata.update({key: value for key, value in extra_metadata.items() if value is not None})
+    return update_wrong_question_ingestion_run(
+        run_id,
+        status=status,
+        error_message=error_message,
+        metadata_json=metadata,
+    )
+
+
+def _ensure_upload_task_ingestion_run(task: dict) -> dict:
+    existing_run_id = str(task.get("ingestion_run_id") or "").strip()
+    existing_run = get_wrong_question_ingestion_run(existing_run_id) if existing_run_id else None
+    if existing_run:
+        return existing_run
+
+    run = create_wrong_question_ingestion_run(
+        organization_id=int(task.get("organization_id") or 0),
+        source="wechat_mp",
+        class_id=int(task.get("class_id") or 0),
+        student_id=int(task.get("student_id") or 0),
+        teacher_user_id=int(task.get("teacher_user_id") or 0),
+        parent_wechat_account_id=int(task.get("parent_wechat_account_id") or 0),
+        status="processing",
+        original_filename=_guess_upload_filename(str(task.get("image_url") or "")),
+        metadata_json={
+            "wechat_upload_task_id": int(task.get("id") or 0),
+            "topic_category": str(task.get("topic_category") or ""),
+            "child_reason_input_mode": str(task.get("child_reason_input_mode") or "text"),
+        },
+    )
+    create_wrong_question_asset(
+        ingestion_run_id=run["id"],
+        asset_role="original_upload",
+        file_url=str(task.get("image_url") or ""),
+        metadata_json={"source": "wechat_mp"},
+    )
+    child_reason_audio_url = str(task.get("child_reason_audio_url") or "").strip()
+    if child_reason_audio_url:
+        create_wrong_question_asset(
+            ingestion_run_id=run["id"],
+            asset_role="reason_audio",
+            file_url=child_reason_audio_url,
+            metadata_json={"source": "wechat_mp"},
+        )
+    update_wechat_wrong_question_upload_task(
+        int(task["id"]),
+        status=str(task.get("status") or "pending"),
+        ingestion_run_id=run["id"],
+        record_id=str(task.get("record_id") or ""),
+        error_message=str(task.get("error_message") or ""),
+        retryable=bool(task.get("retryable")),
+    )
+    return run
+
+
 def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
     task = get_wechat_wrong_question_upload_task(int(task_id))
     if not task:
         raise LookupError("wrong question upload task not found")
 
-    update_wechat_wrong_question_upload_task(task["id"], status="processing", retryable=False)
+    task = update_wechat_wrong_question_upload_task(task["id"], status="processing", retryable=False) or task
+    ingestion_run = _ensure_upload_task_ingestion_run(task)
+    ingestion_run_id = str(ingestion_run.get("id") or "")
     created_record_id = ""
     reason_text = str(task.get("child_raw_reason_text") or "").strip()
     display_text = ""
@@ -118,6 +205,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
             child_reason_next_step=str(classification.get("next_step") or ""),
             topic_category=str(task.get("topic_category") or ""),
             recognition_status="recognized",
+            ingestion_run_id=ingestion_run_id,
             is_geometry=bool(recognition.get("is_geometry")),
             image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0),
             question_text=str(recognition.get("question_text") or ""),
@@ -128,18 +216,37 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
         created_record_id = str(record.get("id") or "")
         pdf_path = _refresh_student_wrong_question_library_cache(int(task["student_id"]))
         record = attach_student_library_pdf_path(record["id"], pdf_path) or record
+        _update_ingestion_run_with_metadata(
+            ingestion_run_id,
+            status="archived",
+            record_id=str(record.get("id") or ""),
+            recognition_status="recognized",
+            is_geometry=bool(recognition.get("is_geometry")),
+            image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0),
+            question_text_present=bool(str(recognition.get("question_text") or "").strip()),
+            student_library_pdf_path=pdf_path,
+        )
         return update_wechat_wrong_question_upload_task(
             task["id"],
             status="ready",
+            ingestion_run_id=ingestion_run_id,
             record_id=str(record.get("id") or ""),
             error_message="",
             retryable=False,
         ) or {}
     except Exception as exc:
+        _update_ingestion_run_with_metadata(
+            ingestion_run_id,
+            status="failed",
+            error_message=str(exc),
+            recognition_status="failed" if created_record_id else "processing_failed",
+            record_id=created_record_id or "",
+        )
         if not created_record_id and _is_retryable_upload_error(exc):
             return update_wechat_wrong_question_upload_task(
                 task["id"],
                 status="failed",
+                ingestion_run_id=ingestion_run_id,
                 record_id="",
                 error_message=str(exc),
                 retryable=True,
@@ -160,6 +267,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
                     child_reason_next_step="请老师先查看原图和孩子说明，再补充可执行的订正步骤。",
                     topic_category=str(task.get("topic_category") or ""),
                     recognition_status="failed",
+                    ingestion_run_id=ingestion_run_id,
                     is_geometry=bool(recognition.get("is_geometry")) if isinstance(recognition, dict) else False,
                     image_rotation_degrees=int(recognition.get("image_rotation_degrees") or 0) if isinstance(recognition, dict) else 0,
                     question_text=str(recognition.get("question_text") or "") if isinstance(recognition, dict) else "",
@@ -171,9 +279,17 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
                 created_record_id = str(failed_record.get("id") or "")
             except Exception:
                 created_record_id = ""
+        _update_ingestion_run_with_metadata(
+            ingestion_run_id,
+            status="failed",
+            error_message=str(exc),
+            recognition_status="failed",
+            record_id=created_record_id or "",
+        )
         return update_wechat_wrong_question_upload_task(
             task["id"],
             status="failed",
+            ingestion_run_id=ingestion_run_id,
             record_id=created_record_id,
             error_message=str(exc),
             retryable=False,

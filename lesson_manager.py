@@ -2512,6 +2512,7 @@ def init_db():
             child_reason_audio_url    TEXT NOT NULL DEFAULT '',
             topic_category            TEXT NOT NULL DEFAULT '未分类',
             status                    TEXT NOT NULL DEFAULT 'pending',
+            ingestion_run_id          TEXT NOT NULL DEFAULT '',
             record_id                 TEXT NOT NULL DEFAULT '',
             error_message             TEXT NOT NULL DEFAULT '',
             retryable                 INTEGER NOT NULL DEFAULT 0,
@@ -2868,6 +2869,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
+        _ensure_column(conn, "wechat_wrong_question_upload_tasks", "ingestion_run_id", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
@@ -6616,8 +6618,8 @@ def create_wechat_wrong_question_upload_task(
                 class_id, student_id, teacher_user_id, image_url,
                 child_raw_reason_text, child_reason_input_mode, child_reason_audio_url,
                 topic_category,
-                status, record_id, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+                status, ingestion_run_id, record_id, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '', '')
             """,
             (
                 binding_row["organization_id"],
@@ -6670,6 +6672,7 @@ def update_wechat_wrong_question_upload_task(
     task_id: int,
     *,
     status: str,
+    ingestion_run_id: str | None = None,
     record_id: str = "",
     error_message: str = "",
     retryable: Optional[bool] = None,
@@ -6679,42 +6682,31 @@ def update_wechat_wrong_question_upload_task(
         raise ValueError("upload task status is invalid")
 
     with get_conn() as conn:
-        if retryable is None:
-            conn.execute(
-                """
-                UPDATE wechat_wrong_question_upload_tasks
-                SET status=?,
-                    record_id=?,
-                    error_message=?,
-                    updated_at=datetime('now','localtime')
-                WHERE id=?
-                """,
-                (
-                    normalized_status,
-                    (record_id or "").strip(),
-                    (error_message or "").strip(),
-                    int(task_id or 0),
-                ),
-            )
-        else:
-            conn.execute(
-                """
-                UPDATE wechat_wrong_question_upload_tasks
-                SET status=?,
-                    record_id=?,
-                    error_message=?,
-                    retryable=?,
-                    updated_at=datetime('now','localtime')
-                WHERE id=?
-                """,
-                (
-                    normalized_status,
-                    (record_id or "").strip(),
-                    (error_message or "").strip(),
-                    1 if retryable else 0,
-                    int(task_id or 0),
-                ),
-            )
+        assignments = [
+            "status=?",
+            "record_id=?",
+            "error_message=?",
+        ]
+        params: list[object] = [
+            normalized_status,
+            (record_id or "").strip(),
+            (error_message or "").strip(),
+        ]
+        if ingestion_run_id is not None:
+            assignments.append("ingestion_run_id=?")
+            params.append((ingestion_run_id or "").strip())
+        if retryable is not None:
+            assignments.append("retryable=?")
+            params.append(1 if retryable else 0)
+        conn.execute(
+            f"""
+            UPDATE wechat_wrong_question_upload_tasks
+            SET {", ".join(assignments)},
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (*params, int(task_id or 0)),
+        )
         refreshed = conn.execute(
             "SELECT * FROM wechat_wrong_question_upload_tasks WHERE id=?",
             (int(task_id or 0),),
