@@ -2,7 +2,7 @@ import React from 'react';
 import { ArrowRight, PlusCircle } from 'lucide-react';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
-type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'student-tasks' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
+type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
 type WorkspaceStyles = {
   pageClass: string;
   cardClass: string;
@@ -42,11 +42,6 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
       page: 'class-feedback-generation' as WorkspacePage,
       title: '课堂反馈',
       description: '进入班级反馈生成，整理本节课教学结论。',
-    },
-    {
-      page: 'student-tasks' as WorkspacePage,
-      title: '学生端',
-      description: '查看学生今天的复习任务和对应 PDF 页面。',
     },
     {
       page: 'calendar' as WorkspacePage,

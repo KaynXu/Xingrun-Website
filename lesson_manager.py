@@ -47,7 +47,6 @@ MEMBER_ROLE = "member"
 CONFIGURABLE_VISIBLE_PAGES = (
     "review-generation",
     "class-feedback-generation",
-    "student-tasks",
     "consultation",
     "calendar",
     "smartWrongQuestions",
@@ -2357,6 +2356,24 @@ def init_db():
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS student_accounts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            student_id      INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            username        TEXT NOT NULL UNIQUE,
+            password_hash   TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'active',
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            last_login      TEXT,
+            UNIQUE(student_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS student_auth_sessions (
+            token       TEXT PRIMARY KEY,
+            account_id  INTEGER NOT NULL REFERENCES student_accounts(id) ON DELETE CASCADE,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS user_classes (
             user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
@@ -3015,6 +3032,15 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_lessons_organization_class_date
             ON lessons (organization_id, class_id, date);
 
+            CREATE INDEX IF NOT EXISTS idx_student_accounts_student
+            ON student_accounts (student_id);
+
+            CREATE INDEX IF NOT EXISTS idx_student_accounts_username_lower
+            ON student_accounts (lower(username));
+
+            CREATE INDEX IF NOT EXISTS idx_student_auth_sessions_account
+            ON student_auth_sessions (account_id, created_at);
+
             CREATE INDEX IF NOT EXISTS idx_course_calendar_schedules_org_date
             ON course_calendar_schedules (organization_id, date, time_block);
 
@@ -3478,6 +3504,232 @@ def _public_user_dict(row):
         "visible_pages": _load_visible_pages_for_user(row),
         "requires_class_claim": _requires_initial_class_claim(row),
     }
+
+
+def _class_names_from_csv(value: object) -> list[str]:
+    return [
+        class_name.strip()
+        for class_name in str(value or "").split(",")
+        if class_name.strip()
+    ]
+
+
+def _public_student_account_dict(row):
+    if not row:
+        return None
+    keys = row.keys() if hasattr(row, "keys") else []
+    return {
+        "id": int(row["id"]),
+        "username": row["username"],
+        "status": row["status"],
+        "organization_id": int(row["organization_id"]),
+        "organization_name": row["organization_name"] if "organization_name" in keys else "",
+        "student": {
+            "id": int(row["student_id"]),
+            "name": row["student_name"] if "student_name" in keys else "",
+            "organization_id": int(row["student_organization_id"] if "student_organization_id" in keys else row["organization_id"]),
+            "class_names": _class_names_from_csv(row["class_names"] if "class_names" in keys else ""),
+            "class_count": int(row["class_count"] if "class_count" in keys and row["class_count"] is not None else 0),
+        },
+        "created_at": row["created_at"],
+        "last_login": row["last_login"] if "last_login" in keys else None,
+    }
+
+
+def _student_account_select_sql(where_sql: str) -> str:
+    return f"""
+        SELECT
+            sa.*,
+            o.name AS organization_name,
+            s.name AS student_name,
+            s.organization_id AS student_organization_id,
+            GROUP_CONCAT(DISTINCT c.name) AS class_names,
+            COUNT(DISTINCT c.id) AS class_count
+        FROM student_accounts sa
+        JOIN organizations o ON o.id=sa.organization_id
+        JOIN students s ON s.id=sa.student_id
+        LEFT JOIN class_students cs ON cs.student_id=s.id
+        LEFT JOIN classes c ON c.id=cs.class_id
+        WHERE {where_sql}
+        GROUP BY sa.id
+        LIMIT 1
+    """
+
+
+def _fetch_student_account_row_by_id(conn: sqlite3.Connection, account_id: int):
+    return conn.execute(
+        _student_account_select_sql("sa.id=?"),
+        (account_id,),
+    ).fetchone()
+
+
+def _fetch_student_account_row_by_username(conn: sqlite3.Connection, username: str):
+    normalized_username = _normalize_username(username)
+    return conn.execute(
+        _student_account_select_sql("lower(sa.username)=lower(?)"),
+        (normalized_username,),
+    ).fetchone()
+
+
+def _get_active_class_invite_by_code_row(conn: sqlite3.Connection, invite_code: str):
+    normalized_code = (invite_code or "").strip()
+    return conn.execute(
+        """
+        SELECT
+            i.*,
+            c.name AS class_name,
+            c.subject AS class_subject,
+            c.grade AS class_grade
+        FROM class_invite_codes i
+        JOIN classes c ON c.id=i.class_id
+        WHERE upper(i.invite_code)=upper(?) AND i.status='active'
+        ORDER BY i.id DESC
+        LIMIT 1
+        """,
+        (normalized_code,),
+    ).fetchone()
+
+
+def get_active_class_invite_by_code(invite_code: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _get_active_class_invite_by_code_row(conn, invite_code)
+    return dict(row) if row else None
+
+
+def preview_student_class_invite(invite_code: str) -> Optional[dict]:
+    with get_conn() as conn:
+        invite = _get_active_class_invite_by_code_row(conn, invite_code)
+        if not invite:
+            return None
+        students = conn.execute(
+            """
+            SELECT s.*
+            FROM class_students cs
+            JOIN students s ON s.id=cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY cs.id
+            """,
+            (invite["class_id"],),
+        ).fetchall()
+    return {
+        "class": {
+            "id": int(invite["class_id"]),
+            "name": invite["class_name"],
+            "subject": invite["class_subject"] or "",
+            "grade": invite["class_grade"] or "",
+            "organization_id": int(invite["organization_id"]),
+        },
+        "students": [dict(row) for row in students],
+    }
+
+
+def create_student_account_by_invite(
+    *,
+    invite_code: str,
+    student_id: int,
+    username: str,
+    password: str,
+) -> dict:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        raise ValueError("username required")
+    if len(password or "") < 6:
+        raise ValueError("password too short")
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        invite = _get_active_class_invite_by_code_row(conn, invite_code)
+        if not invite:
+            raise LookupError("invite not found")
+        student_row = conn.execute(
+            """
+            SELECT s.*
+            FROM class_students cs
+            JOIN students s ON s.id=cs.student_id
+            WHERE cs.class_id=? AND s.id=?
+            LIMIT 1
+            """,
+            (invite["class_id"], int(student_id)),
+        ).fetchone()
+        if not student_row:
+            raise LookupError("student not found")
+        if _fetch_student_account_row_by_username(conn, normalized_username):
+            raise ValueError("username exists")
+        existing_student_account = conn.execute(
+            "SELECT 1 FROM student_accounts WHERE student_id=? LIMIT 1",
+            (int(student_id),),
+        ).fetchone()
+        if existing_student_account:
+            raise ValueError("student account exists")
+        cur = conn.execute(
+            """
+            INSERT INTO student_accounts (
+                organization_id, student_id, username, password_hash, status
+            ) VALUES (?, ?, ?, ?, 'active')
+            """,
+            (
+                int(invite["organization_id"]),
+                int(student_id),
+                normalized_username,
+                hash_password(password),
+            ),
+        )
+        account_row = _fetch_student_account_row_by_id(conn, cur.lastrowid)
+    return _public_student_account_dict(account_row)
+
+
+def authenticate_student_account(username: str, password: str):
+    normalized_username = _normalize_username(username)
+    with get_conn() as conn:
+        row = _fetch_student_account_row_by_username(conn, normalized_username)
+        if not row:
+            return None, "username or password incorrect"
+        if row["status"] != "active":
+            return None, "account disabled"
+        if row["password_hash"] != hash_password(password):
+            return None, "username or password incorrect"
+        conn.execute(
+            "UPDATE student_accounts SET last_login=datetime('now','localtime') WHERE id=?",
+            (row["id"],),
+        )
+        row = _fetch_student_account_row_by_id(conn, row["id"])
+    return _public_student_account_dict(row), None
+
+
+def create_student_auth_session(account_id: int) -> str:
+    token = secrets.token_hex(32)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO student_auth_sessions (token, account_id) VALUES (?, ?)",
+            (token, int(account_id)),
+        )
+        conn.execute(
+            """
+            DELETE FROM student_auth_sessions
+            WHERE account_id=? AND token NOT IN (
+                SELECT token FROM student_auth_sessions
+                WHERE account_id=?
+                ORDER BY created_at DESC, token DESC
+                LIMIT 10
+            )
+            """,
+            (int(account_id), int(account_id)),
+        )
+    return token
+
+
+def get_current_student_account(token: str):
+    if not token:
+        return None
+    with get_conn() as conn:
+        session = conn.execute(
+            "SELECT account_id FROM student_auth_sessions WHERE token=?",
+            (token,),
+        ).fetchone()
+        if not session:
+            return None
+        row = _fetch_student_account_row_by_id(conn, session["account_id"])
+    return _public_student_account_dict(row)
 
 
 def _ensure_organization(conn: sqlite3.Connection, name: str = DEFAULT_ORGANIZATION_NAME) -> sqlite3.Row:
@@ -5198,64 +5450,6 @@ def get_student_profile(student_id: int, organization_id: int | None = None) -> 
 _REVIEW_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def _student_review_task_scope_sql(actor_user: dict, class_alias: str = "c") -> tuple[str, list[object]]:
-    role = (actor_user or {}).get("role")
-    if role == SUPER_OWNER_ROLE:
-        return "", []
-
-    clauses = [f"{class_alias}.organization_id=?"]
-    params: list[object] = [actor_user["organization_id"]]
-    if role == MEMBER_ROLE:
-        class_ids = [int(class_id) for class_id in get_user_class_ids(actor_user["id"])]
-        if not class_ids:
-            return "0=1", []
-        placeholders = ",".join("?" for _ in class_ids)
-        clauses.append(f"{class_alias}.id IN ({placeholders})")
-        params.extend(class_ids)
-    return " AND ".join(clauses), params
-
-
-def list_student_review_task_students_for_actor(actor_user: dict) -> list[dict]:
-    scope_sql, scope_params = _student_review_task_scope_sql(actor_user)
-    where_sql = f"WHERE {scope_sql}" if scope_sql else ""
-    with get_conn() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT
-                s.id,
-                s.name,
-                s.organization_id,
-                GROUP_CONCAT(DISTINCT c.name) AS class_names,
-                COUNT(DISTINCT c.id) AS class_count
-            FROM students s
-            JOIN class_students cs ON cs.student_id=s.id
-            JOIN classes c ON c.id=cs.class_id
-            {where_sql}
-            GROUP BY s.id, s.name, s.organization_id
-            ORDER BY s.name COLLATE NOCASE ASC, s.id ASC
-            """,
-            scope_params,
-        ).fetchall()
-
-    items: list[dict] = []
-    for row in rows:
-        class_names = [
-            class_name.strip()
-            for class_name in str(row["class_names"] or "").split(",")
-            if class_name.strip()
-        ]
-        items.append(
-            {
-                "id": int(row["id"]),
-                "name": row["name"],
-                "organization_id": row["organization_id"],
-                "class_names": class_names,
-                "class_count": int(row["class_count"] or 0),
-            }
-        )
-    return items
-
-
 def _load_review_plan_days(raw_plan_json: str) -> tuple[dict, list[dict]]:
     try:
         plan = json.loads(raw_plan_json or "{}")
@@ -5323,16 +5517,9 @@ def _extract_review_day_pdf_page(day_plan: dict, day_index: int) -> tuple[int, b
     return max(1, 2 + int(day_index)), True
 
 
-def _student_review_student_row_for_actor(conn: sqlite3.Connection, actor_user: dict, student_id: int):
-    scope_sql, scope_params = _student_review_task_scope_sql(actor_user)
-    where_clauses = ["s.id=?"]
-    params: list[object] = [student_id]
-    if scope_sql:
-        where_clauses.append(scope_sql)
-        params.extend(scope_params)
-    where_sql = " AND ".join(where_clauses)
+def _student_review_student_row(conn: sqlite3.Connection, student_id: int):
     return conn.execute(
-        f"""
+        """
         SELECT
             s.id,
             s.name,
@@ -5342,31 +5529,43 @@ def _student_review_student_row_for_actor(conn: sqlite3.Connection, actor_user: 
         FROM students s
         JOIN class_students cs ON cs.student_id=s.id
         JOIN classes c ON c.id=cs.class_id
-        WHERE {where_sql}
+        WHERE s.id=?
         GROUP BY s.id, s.name, s.organization_id
         """,
-        params,
+        (int(student_id),),
     ).fetchone()
 
 
-def list_student_review_tasks_for_actor(actor_user: dict, student_id: int, review_date: str) -> Optional[dict]:
+def student_account_can_access_lesson(account: dict, lesson_id: int) -> bool:
+    student_id = int(((account or {}).get("student") or {}).get("id") or 0)
+    if not student_id:
+        return False
     with get_conn() as conn:
-        student_row = _student_review_student_row_for_actor(conn, actor_user, int(student_id))
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM lessons l
+            JOIN class_students cs ON cs.class_id=l.class_id
+            WHERE l.id=? AND cs.student_id=?
+            LIMIT 1
+            """,
+            (int(lesson_id), student_id),
+        ).fetchone()
+    return row is not None
+
+
+def list_student_review_tasks_for_student_account(account: dict, review_date: str) -> Optional[dict]:
+    student_id = int(((account or {}).get("student") or {}).get("id") or 0)
+    organization_id = int((account or {}).get("organization_id") or 0)
+    if not student_id or not organization_id:
+        return None
+    with get_conn() as conn:
+        student_row = _student_review_student_row(conn, student_id)
         if not student_row:
             return None
 
-        scope_sql, scope_params = _student_review_task_scope_sql(actor_user)
-        where_clauses = [
-            "cs.student_id=?",
-            "COALESCE(l.plan_json, '') <> ''",
-            "COALESCE(l.record_status, 'ready') = 'ready'",
-        ]
-        params: list[object] = [int(student_id)]
-        if scope_sql:
-            where_clauses.append(scope_sql)
-            params.extend(scope_params)
         rows = conn.execute(
-            f"""
+            """
             SELECT
                 l.*,
                 c.name AS class_name,
@@ -5375,10 +5574,13 @@ def list_student_review_tasks_for_actor(actor_user: dict, student_id: int, revie
             FROM lessons l
             JOIN classes c ON c.id=l.class_id
             JOIN class_students cs ON cs.class_id=c.id
-            WHERE {" AND ".join(where_clauses)}
+            WHERE cs.student_id=?
+              AND c.organization_id=?
+              AND COALESCE(l.plan_json, '') <> ''
+              AND COALESCE(l.record_status, 'ready') = 'ready'
             ORDER BY l.date DESC, l.id DESC
             """,
-            params,
+            (student_id, organization_id),
         ).fetchall()
 
     tasks: list[dict] = []
@@ -5407,8 +5609,8 @@ def list_student_review_tasks_for_actor(actor_user: dict, student_id: int, revie
                     "review_label": label,
                     "estimated_time": estimated_time,
                     "steps": _extract_review_day_steps(day_plan),
-                    "pdf_url": f"/api/pdf/{lesson_id}",
-                    "pdf_download_url": f"/api/pdf/download/{lesson_id}",
+                    "pdf_url": f"/api/student/pdf/{lesson_id}",
+                    "pdf_download_url": f"/api/student/pdf/download/{lesson_id}",
                     "pdf_filename": Path(pdf_path).name if pdf_path else "",
                     "pdf_available": bool(pdf_path and Path(pdf_path).exists()),
                     "pdf_page": pdf_page,
@@ -5416,18 +5618,13 @@ def list_student_review_tasks_for_actor(actor_user: dict, student_id: int, revie
                 }
             )
 
-    class_names = [
-        class_name.strip()
-        for class_name in str(student_row["class_names"] or "").split(",")
-        if class_name.strip()
-    ]
     return {
         "date": review_date,
         "student": {
             "id": int(student_row["id"]),
             "name": student_row["name"],
             "organization_id": student_row["organization_id"],
-            "class_names": class_names,
+            "class_names": _class_names_from_csv(student_row["class_names"]),
             "class_count": int(student_row["class_count"] or 0),
         },
         "tasks": tasks,

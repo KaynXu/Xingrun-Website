@@ -21,8 +21,8 @@ const sampleTask: StudentReviewTask = {
   review_label: '课后第1天复习 (2026-06-03)',
   estimated_time: '10-20分钟',
   steps: ['复习目标: 回忆二次函数最值问题的整体框架', '完成填空主任务'],
-  pdf_url: '/api/pdf/70',
-  pdf_download_url: '/api/pdf/download/70',
+  pdf_url: '/api/student/pdf/70',
+  pdf_download_url: '/api/student/pdf/download/70',
   pdf_filename: '二次函数最值-70.pdf',
   pdf_available: true,
   pdf_page: 2,
@@ -32,28 +32,25 @@ const sampleTask: StudentReviewTask = {
 test('student task pdf preview path keeps auth query before page fragment', () => {
   const previewPath = buildStudentTaskPdfPreviewPath(sampleTask, (path) => `${path}?token=abc`);
 
-  assert.equal(previewPath, '/api/pdf/70?token=abc#page=2');
+  assert.equal(previewPath, '/api/student/pdf/70?token=abc#page=2');
 });
 
-test('student today tasks content renders a polished today-only pdf focused page', () => {
+test('student today tasks content renders a student-owned today-only pdf focused page', () => {
   const markup = renderToStaticMarkup(
     <StudentTodayTasksContent
       today="2026-06-03"
-      selectedStudentName="袁玲轩"
-      students={[
+      student={
         {
           id: 178,
           name: '袁玲轩',
           class_names: ['华老师小课'],
-        },
-      ]}
-      selectedStudentId={178}
+        }
+      }
       loading={false}
       taskLoading={false}
       error=""
       tasks={[sampleTask]}
       activeTask={sampleTask}
-      onStudentChange={() => undefined}
       onTaskSelect={() => undefined}
       buildAuthedPath={(path) => path}
     />,
@@ -66,12 +63,14 @@ test('student today tasks content renders a polished today-only pdf focused page
   assert.match(markup, /PDF 第 2 页/);
   assert.match(markup, /iframe/);
   assert.match(markup, /复习目标: 回忆二次函数最值问题的整体框架/);
+  assert.doesNotMatch(markup, /选择学生/);
   assert.doesNotMatch(markup, /2026-06-04/);
 });
 
-test('workspace source wires student tasks into navigation and page switch', () => {
-  assert.match(appSource, /'student-tasks'/);
-  assert.match(appSource, /label: '学生端'/);
-  assert.match(appSource, /student-tasks': '学生端今日任务'/);
-  assert.match(appSource, /activeWorkspacePage === 'student-tasks'[\s\S]*<StudentTodayTasksPage/);
+test('workspace source exposes student portal outside teacher navigation', () => {
+  assert.match(appSource, /StudentPortalPage/);
+  assert.match(appSource, /window\.location\.pathname\.startsWith\('\/student'\)/);
+  assert.match(appSource, /<StudentPortalPage today=\{getTodayIsoDate\(\)\}/);
+  assert.doesNotMatch(appSource, /id: 'student-tasks'/);
+  assert.doesNotMatch(appSource, /activeWorkspacePage === 'student-tasks'/);
 });

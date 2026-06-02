@@ -68,6 +68,7 @@ from lesson_manager import (
     approve_registration_request,
     authenticate_user,
     add_existing_student_to_class,
+    authenticate_student_account,
     bind_parent_to_student,
     confirm_class_feedback_task,
     create_class_feedback_task,
@@ -82,6 +83,8 @@ from lesson_manager import (
     create_wechat_wrong_question_upload_task,
     create_organization_request,
     create_auth_session,
+    create_student_account_by_invite,
+    create_student_auth_session,
     create_consultation,
     create_course_calendar_custom_item,
     create_course_calendar_custom_schedule,
@@ -111,8 +114,10 @@ from lesson_manager import (
     get_course_calendar_custom_schedule,
     get_course_calendar_schedule,
     get_current_user,
+    get_current_student_account,
     get_parent_student_binding,
     get_parent_student_binding_for_student,
+    get_active_class_invite_by_code,
     get_or_create_active_class_invite,
     get_lesson,
     get_student_profile,
@@ -158,6 +163,7 @@ from lesson_manager import (
     list_wrong_question_submissions_for_ingestion_run,
     list_student_review_task_students_for_actor,
     list_student_review_tasks_for_actor,
+    list_student_review_tasks_for_student_account,
     list_students_for_class,
     list_student_class_history,
     list_wechat_wrong_question_submissions_for_parent_student,
@@ -170,6 +176,7 @@ from lesson_manager import (
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
     normalize_consultation_batch_parse_result,
+    preview_student_class_invite,
     reject_organization_request,
     reject_registration_request,
     reset_class_invite,
@@ -220,6 +227,7 @@ from lesson_manager import (
     upsert_teacher_alias,
     delete_teacher_alias,
     reset_user_password_by_recovery,
+    student_account_can_access_lesson,
 )
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
@@ -1659,6 +1667,34 @@ def download_pdf(lesson_id):
                      download_name=Path(pdf_path).name)
 
 
+@app.route("/api/student/pdf/<int:lesson_id>")
+def serve_student_pdf(lesson_id):
+    account, error = _require_student_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not student_account_can_access_lesson(account, lesson_id):
+        abort(404)
+    pdf_path = lesson.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        abort(404)
+    return send_file(pdf_path, mimetype="application/pdf", download_name=Path(pdf_path).name)
+
+
+@app.route("/api/student/pdf/download/<int:lesson_id>")
+def download_student_pdf(lesson_id):
+    account, error = _require_student_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not student_account_can_access_lesson(account, lesson_id):
+        abort(404)
+    pdf_path = lesson.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        abort(404)
+    return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
+
+
 @app.route("/pdf/answer/<int:lesson_id>")
 @app.route("/api/pdf/answer/<int:lesson_id>")
 def serve_answer_pdf(lesson_id):
@@ -1703,6 +1739,77 @@ def api_login():
         return jsonify({"error": error}), 401
     token = create_auth_session(user["id"])
     return jsonify({"token": token, "user": user})
+
+
+@app.route("/api/student/class-invite/<invite_code>", methods=["GET"])
+def api_student_class_invite_preview(invite_code):
+    payload = preview_student_class_invite(invite_code)
+    if not payload:
+        return jsonify({"error": "invite not found"}), 404
+    return jsonify(payload)
+
+
+@app.route("/api/student/register", methods=["POST"])
+def api_student_register():
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    raw_student_id = data.get("student_id")
+    if isinstance(raw_student_id, bool) or not isinstance(raw_student_id, int):
+        return jsonify({"error": "student_id required"}), 400
+    try:
+        account = create_student_account_by_invite(
+            invite_code=(data.get("invite_code") or "").strip(),
+            student_id=raw_student_id,
+            username=(data.get("username") or "").strip(),
+            password=(data.get("password") or "").strip(),
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        status_code = 409 if str(exc) in {"username exists", "student account exists"} else 400
+        return jsonify({"error": str(exc)}), status_code
+    token = create_student_auth_session(account["id"])
+    return jsonify({"token": token, "account": account}), 201
+
+
+@app.route("/api/student/login", methods=["POST"])
+def api_student_login():
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    account, message = authenticate_student_account(
+        username=(data.get("username") or "").strip(),
+        password=(data.get("password") or "").strip(),
+    )
+    if not account:
+        return jsonify({"error": message}), 401
+    token = create_student_auth_session(account["id"])
+    return jsonify({"token": token, "account": account})
+
+
+@app.route("/api/student/me", methods=["GET"])
+def api_student_me():
+    account, error = _require_student_auth()
+    if error:
+        return error
+    return jsonify({"account": account})
+
+
+@app.route("/api/student/review-tasks", methods=["GET"])
+def api_student_review_tasks():
+    account, error = _require_student_auth()
+    if error:
+        return error
+    raw_date = str(request.args.get("date") or date.today().isoformat()).strip()
+    try:
+        date.fromisoformat(raw_date)
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    payload = list_student_review_tasks_for_student_account(account, raw_date)
+    if payload is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(payload)
 
 
 def _is_recovery_setup_error(message: str) -> bool:
@@ -1855,6 +1962,17 @@ def _require_auth():
     if not user:
         return None, (jsonify({"error": "未授权"}), 401)
     return user, None
+
+
+def _require_student_auth():
+    token = (
+        request.headers.get("X-Student-Auth-Token", "").strip()
+        or request.args.get("token", "").strip()
+    )
+    account = get_current_student_account(token)
+    if not account:
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    return account, None
 
 
 def _require_staff():
@@ -2823,19 +2941,6 @@ def _get_parent_wechat_account_by_openid(open_id: str):
     return dict(row) if row else None
 
 
-def _get_active_class_invite_by_code(invite_code: str):
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM class_invite_codes
-            WHERE invite_code=? AND status='active'
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (invite_code,),
-        ).fetchone()
-    return dict(row) if row else None
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
     return (int(user_id), str(platform_order_id or "").strip().lower())
 
@@ -5816,35 +5921,6 @@ def api_class_students_list(class_id):
     return jsonify({"students": list_students_for_class(class_id)})
 
 
-@app.route("/api/student-review-tasks/students", methods=["GET"])
-def api_student_review_task_students():
-    user, error = _require_auth()
-    if error:
-        return error
-    return jsonify({"items": list_student_review_task_students_for_actor(user)})
-
-
-@app.route("/api/student-review-tasks", methods=["GET"])
-def api_student_review_tasks():
-    user, error = _require_auth()
-    if error:
-        return error
-
-    raw_student_id = str(request.args.get("student_id") or "").strip()
-    if not raw_student_id.isdigit():
-        return jsonify({"error": "student_id is required"}), 400
-    raw_date = str(request.args.get("date") or date.today().isoformat()).strip()
-    try:
-        date.fromisoformat(raw_date)
-    except ValueError:
-        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
-
-    payload = list_student_review_tasks_for_actor(user, int(raw_student_id), raw_date)
-    if payload is None:
-        return jsonify({"error": "not found"}), 404
-    return jsonify(payload)
-
-
 @app.route("/api/classes/<int:class_id>/students", methods=["POST"])
 def api_class_students_create(class_id):
     user, error = _require_auth()
@@ -5972,7 +6048,7 @@ def api_wechat_bind_class():
     if not account:
         return jsonify({"error": "parent wechat account not found"}), 404
 
-    invite = _get_active_class_invite_by_code(invite_code)
+    invite = get_active_class_invite_by_code(invite_code)
     if not invite:
         return jsonify({"error": "invite not found"}), 404
 
