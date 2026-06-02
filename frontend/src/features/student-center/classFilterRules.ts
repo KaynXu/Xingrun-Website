@@ -222,11 +222,12 @@ export function getClassInfoIssues(
   subjectOptions: string[],
 ): string[] {
   const grade = normalizeAcademicGradeLabel(item.current_grade || item.grade || '');
+  const requiresClassNumber = !item.class_type || item.class_type === 'group';
   return [
     (!item.subject || !subjectOptions.includes(item.subject)) ? '缺科目' : '',
     !(item.stage || getAcademicStageFromGrade(grade)) ? '缺学段' : '',
     !grade ? '缺年级' : '',
-    !item.class_number ? '缺班号' : '',
+    requiresClassNumber && !item.class_number ? '缺班号' : '',
     getClassTeacherUserId(item, teacherBindingByClassId) == null ? '缺负责教师' : '',
   ].filter(Boolean);
 }

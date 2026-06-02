@@ -23,6 +23,7 @@ import {
   type ClassFormValues,
   type ClassInviteInfo,
   type ClassItem,
+  type ClassStudentOption,
   type CurrentUser,
   type LoadPageResult,
   type UserItem,
@@ -31,6 +32,7 @@ import { CampusOverview } from './CampusOverview';
 import { ClassEditorModal } from './ClassEditorModal';
 import { ClassManagementTab } from './ClassManagementTab';
 import { StudentManagementTab } from './StudentManagementTab';
+import { StudentProfileModal, type StudentProfileModalMode } from './StudentProfileModal';
 import { getStudentCenterPermissions } from './permissions';
 import {
   buildOptimisticCreatedClassItem,
@@ -39,6 +41,7 @@ import {
   executeClassUpdateRequest,
   findDuplicateClass,
   resolveClassesAfterOptimisticCreate,
+  resolveClassSaveFormWithCurrentStudents,
   resolveClassFormDraftDirty,
   resolveExpandedClassAfterOptimisticCreate,
   resolveFormsAfterClassDraftReset,
@@ -64,13 +67,7 @@ import {
   resolveTeacherSearchAfterClassDelete,
 } from './classDeleteRules';
 import {
-  buildTeacherBindingRefreshErrorMessage,
   executeTeacherBindingRequest,
-  resolveTeacherBindingSaveErrorMessage,
-  resolveClassesAfterTeacherBindingOptimisticUpdate,
-  resolveClassesAfterTeacherBindingRollback,
-  resolveTeacherBindingPreviousState,
-  resolveTeacherBindingRollbackTeacherBindings,
   resolveTeacherBindingSavingEndState,
   resolveTeacherBindingSavingStartState,
 } from './teacherBindingRules';
@@ -90,9 +87,13 @@ import {
   resolveInviteLoadingStartState,
 } from './classInviteRules';
 import {
+  buildStudentProfileSavePayload,
   executeClassStudentCreateRequest,
   executeClassStudentDeleteRequest,
   executeClassStudentListRequest,
+  executeStudentProfileCreateRequest,
+  executeStudentProfileGetRequest,
+  executeStudentProfileUpdateRequest,
   resolveClassStudentDraftAfterCreate,
   resolveClassStudentErrorMessage,
   resolveClassStudentSavingEndState,
@@ -100,6 +101,10 @@ import {
   resolveClassStudentsAfterCreate,
   resolveClassStudentsAfterDelete,
   resolveClassStudentsAfterLoad,
+  resolveStudentProfileDraftDirty,
+  validateStudentProfileDraft,
+  type ClassStudent,
+  type StudentProfileDraft,
 } from './classStudentRules';
 import {
   buildOverviewFilterItems,
@@ -125,6 +130,7 @@ import {
   resolveActiveStudentFilterOptions,
   resolveFilteredStudentRows,
   resolveStudentFilterOptions,
+  type StudentScheduleStatusFilter,
 } from './studentFilterRules';
 import {
   resolveClassEditorErrorsAfterToggle,
@@ -146,9 +152,37 @@ const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const studentCenterStageOptions = [...academicStageOptions];
 const studentCenterGradeOptions = [...academicGradeOptions];
 const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
+const emptyStudentProfileDraft: StudentProfileDraft = { name: '', source: '', parent_contact: '' };
 
 function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
   return formatClassDisplayName(item, { showCohortYear });
+}
+
+async function copyTextToClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) {
+    throw new Error('邀请码复制失败');
+  }
+}
+
+function buildStudentProfileDraft(student: Partial<ClassStudent> | null | undefined): StudentProfileDraft {
+  return {
+    name: student?.name || '',
+    source: student?.source || '',
+    parent_contact: student?.parent_contact || '',
+  };
 }
 
 export function StudentCenterPage({
@@ -162,10 +196,11 @@ export function StudentCenterPage({
 }) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [allStudents, setAllStudents] = useState<Array<{ id: number; name: string }>>([]);
+  const [allStudents, setAllStudents] = useState<ClassStudentOption[]>([]);
   const [teacherBindingByClassId, setTeacherBindingByClassId] = useState<Record<number, number | null>>({});
   const [inviteByClassId, setInviteByClassId] = useState<Record<number, ClassInviteInfo>>({});
   const [studentsByClassId, setStudentsByClassId] = useState<Record<number, Array<{ id: number; name: string }>>>({});
+  const [savedStudentsByClassId, setSavedStudentsByClassId] = useState<Record<number, Array<{ id: number; name: string }>>>({});
   const [expandedClassId, setExpandedClassId] = useState<number | 'new' | null>(null);
   const [formByClassId, setFormByClassId] = useState<Record<string, ClassFormValues>>(() => ({
     new: createEmptyClassForm(),
@@ -189,8 +224,17 @@ export function StudentCenterPage({
   const [studentGradeFilter, setStudentGradeFilter] = useState<string>('全部');
   const [studentClassFilter, setStudentClassFilter] = useState<number | 'all'>('all');
   const [studentNameFilter, setStudentNameFilter] = useState('');
+  const [studentScheduleStatusFilter, setStudentScheduleStatusFilter] = useState<StudentScheduleStatusFilter>('all');
   const [activeStudentFilterLayer, setActiveStudentFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | 'class' | null>(null);
-  const [showClassCohortYear, setShowClassCohortYear] = useState(true);
+  const [studentProfileMode, setStudentProfileMode] = useState<StudentProfileModalMode>(null);
+  const [studentProfileStudentId, setStudentProfileStudentId] = useState<number | null>(null);
+  const [studentProfileDraft, setStudentProfileDraft] = useState<StudentProfileDraft>(emptyStudentProfileDraft);
+  const [savedStudentProfileDraft, setSavedStudentProfileDraft] = useState<StudentProfileDraft | null>(null);
+  const [studentProfileDetail, setStudentProfileDetail] = useState<ClassStudent | null>(null);
+  const [studentProfileLoading, setStudentProfileLoading] = useState(false);
+  const [studentProfileSaving, setStudentProfileSaving] = useState(false);
+  const [studentProfileError, setStudentProfileError] = useState('');
+  const [showClassCohortYear, setShowClassCohortYear] = useState(false);
   const [activeClassHelpKey, setActiveClassHelpKey] = useState<'overview' | null>(null);
   const [newClassTeacherUserId, setNewClassTeacherUserId] = useState<number | null>(null);
   const [teacherSearchByClassId, setTeacherSearchByClassId] = useState<Record<string, string>>({});
@@ -328,6 +372,30 @@ export function StudentCenterPage({
     }
   }, []);
 
+  const handleCopyClassInvite = useCallback(async (classId: number) => {
+    setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
+    let inviteInfo = inviteByClassId[classId];
+
+    try {
+      if (!inviteInfo) {
+        setInviteLoadingByClassId((current) => resolveInviteLoadingStartState(current, classId));
+        inviteInfo = await executeClassInviteLoadRequest(classId, apiFetch);
+        setInviteByClassId((current) => ({ ...current, [classId]: inviteInfo }));
+      }
+      await copyTextToClipboard(inviteInfo.invite_code);
+    } catch (err) {
+      setInviteErrorByClassId((current) => ({
+        ...current,
+        [classId]: resolveClassInviteErrorMessage(err, 'copy'),
+      }));
+      throw err;
+    } finally {
+      if (!inviteByClassId[classId]) {
+        setInviteLoadingByClassId((current) => resolveInviteLoadingEndState(current, classId));
+      }
+    }
+  }, [inviteByClassId]);
+
   const handleResetClassInvite = useCallback(async (classId: number) => {
     setInviteResettingByClassId((current) => resolveInviteLoadingStartState(current, classId));
     setInviteErrorByClassId((current) => ({ ...current, [classId]: '' }));
@@ -352,6 +420,7 @@ export function StudentCenterPage({
     try {
       const payload = await executeClassStudentListRequest(classId, listClassStudents);
       setStudentsByClassId((current) => resolveClassStudentsAfterLoad(current, classId, payload.students));
+      setSavedStudentsByClassId((current) => resolveClassStudentsAfterLoad(current, classId, payload.students));
     } catch (err) {
       setStudentErrorByClassId((current) => ({
         ...current,
@@ -460,10 +529,17 @@ export function StudentCenterPage({
   }, [classBindingTarget, expandedClassId]);
 
   const handleSaveClass = async (classId: number | 'new') => {
-    const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
+    const currentForm = resolveClassSaveFormWithCurrentStudents({
+      classId,
+      form: formByClassId[getClassStateKey(classId)] || createEmptyClassForm(),
+      studentsByClassId,
+    });
     const selectedTeacherUserId = classId === 'new'
       ? newClassTeacherUserId
       : (teacherBindingByClassId[classId] ?? classes.find((item) => item.id === classId)?.teacher_user_id ?? null);
+    const savedTeacherUserId = classId === 'new'
+      ? null
+      : (classes.find((item) => item.id === classId)?.teacher_user_id ?? null);
     const selectedTeacher = typeof selectedTeacherUserId === 'number' ? users.find((user) => user.id === selectedTeacherUserId) : undefined;
     const payload = buildClassSavePayload({
       classId,
@@ -524,6 +600,27 @@ export function StudentCenterPage({
         }
       } else {
         await executeClassUpdateRequest(classId, payload, apiFetch);
+        if (selectedTeacherUserId !== savedTeacherUserId && typeof selectedTeacherUserId === 'number') {
+          setTeacherBindingSavingByClassId((current) => resolveTeacherBindingSavingStartState(current, classId));
+          await executeTeacherBindingRequest(classId, selectedTeacherUserId, apiFetch);
+          setTeacherBindingByClassId((current) => ({ ...current, [classId]: selectedTeacherUserId }));
+        }
+        const savedStudents = savedStudentsByClassId[classId] || [];
+        const currentStudents = studentsByClassId[classId] || [];
+        const savedStudentIds = new Set(savedStudents.map((student) => student.id));
+        const currentStudentIds = new Set(currentStudents.map((student) => student.id));
+        const studentsToAdd = currentStudents.filter((student) => !savedStudentIds.has(student.id));
+        const studentsToDelete = savedStudents.filter((student) => !currentStudentIds.has(student.id));
+        if (studentsToAdd.length || studentsToDelete.length) {
+          setStudentSavingByClassId((current) => resolveClassStudentSavingStartState(current, classId));
+          for (const student of studentsToAdd) {
+            await executeClassStudentCreateRequest(classId, student.id, createClassStudent);
+          }
+          for (const student of studentsToDelete) {
+            await executeClassStudentDeleteRequest(classId, student.id, deleteClassStudent);
+          }
+          setSavedStudentsByClassId((current) => resolveClassStudentsAfterLoad(current, classId, currentStudents));
+        }
         const refreshResult = await loadPage(classId, { preserveStateOnError: true });
         if (refreshResult.status === 'refresh-error') {
           setFormError(resolveClassSaveRefreshErrorMessage(classId, refreshResult.error));
@@ -537,6 +634,10 @@ export function StudentCenterPage({
       }
       setFormError(resolveClassSaveErrorMessage(err));
     } finally {
+      if (classId !== 'new') {
+        setTeacherBindingSavingByClassId((current) => resolveTeacherBindingSavingEndState(current, classId));
+        setStudentSavingByClassId((current) => resolveClassStudentSavingEndState(current, classId));
+      }
       setSaving(false);
     }
   };
@@ -553,7 +654,7 @@ export function StudentCenterPage({
     };
     window.addEventListener('keydown', handleSaveShortcut);
     return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [expandedClassId, formByClassId, newClassTeacherUserId, teacherBindingByClassId, classes, users, saving, deleting]);
+  }, [expandedClassId, formByClassId, newClassTeacherUserId, teacherBindingByClassId, studentsByClassId, savedStudentsByClassId, classes, users, saving, deleting]);
 
   const handleDeleteClass = async (classId: number) => {
     const targetClass = classes.find((item) => item.id === classId);
@@ -588,68 +689,158 @@ export function StudentCenterPage({
       return;
     }
 
-    const { previousTeacherUserId, previousTeacherName } = resolveTeacherBindingPreviousState(
-      classId,
-      classes,
-      teacherBindingByClassId,
-    );
-    const selectedTeacher = users.find((user) => user.id === teacherUserId);
-
     setAssignmentError('');
-    loadPageRequestVersionRef.current += 1;
-    setTeacherBindingSavingByClassId((current) => resolveTeacherBindingSavingStartState(current, classId));
     setTeacherBindingByClassId((current) => ({ ...current, [classId]: teacherUserId }));
-    setClasses((current) => resolveClassesAfterTeacherBindingOptimisticUpdate(current, classId, selectedTeacher, teacherUserId));
-
-    try {
-      await executeTeacherBindingRequest(classId, teacherUserId, apiFetch);
-      const refreshResult = await loadPage(classId, { preserveStateOnError: true });
-      if (refreshResult.status === 'refresh-error') {
-        setAssignmentError(buildTeacherBindingRefreshErrorMessage(refreshResult.error));
-      }
-    } catch (err) {
-      setTeacherBindingByClassId((current) => resolveTeacherBindingRollbackTeacherBindings(current, classId, previousTeacherUserId, teacherUserId));
-      setClasses((current) => resolveClassesAfterTeacherBindingRollback(current, classId, teacherUserId, previousTeacherUserId, previousTeacherName));
-      setAssignmentError(resolveTeacherBindingSaveErrorMessage(err));
-    } finally {
-      setTeacherBindingSavingByClassId((current) => resolveTeacherBindingSavingEndState(current, classId));
-    }
   };
 
   const handleAddStudentToClass = async (classId: number, studentId: number) => {
-    setStudentSavingByClassId((current) => resolveClassStudentSavingStartState(current, classId));
     setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
-
-    try {
-      const payload = await executeClassStudentCreateRequest(classId, studentId, createClassStudent);
-      setStudentsByClassId((current) => resolveClassStudentsAfterCreate(current, classId, payload.student));
-      setStudentDraftNameByClassId((current) => resolveClassStudentDraftAfterCreate(current, classId));
-    } catch (err) {
-      setStudentErrorByClassId((current) => ({
-        ...current,
-        [classId]: resolveClassStudentErrorMessage(err, 'create'),
-      }));
-    } finally {
-      setStudentSavingByClassId((current) => resolveClassStudentSavingEndState(current, classId));
+    const selectedStudent = allStudents.find((student) => student.id === studentId);
+    if (!selectedStudent) {
+      setStudentErrorByClassId((current) => ({ ...current, [classId]: '没有找到该学员，请先在学员管理中建立学员档案。' }));
+      return;
     }
+    setStudentsByClassId((current) => resolveClassStudentsAfterCreate(current, classId, selectedStudent));
+    setStudentDraftNameByClassId((current) => resolveClassStudentDraftAfterCreate(current, classId));
   };
 
   const handleDeleteStudentFromClass = async (classId: number, studentId: number) => {
-    setStudentSavingByClassId((current) => resolveClassStudentSavingStartState(current, classId));
     setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
+    setStudentsByClassId((current) => resolveClassStudentsAfterDelete(current, classId, studentId));
+  };
+
+  const updateStudentCaches = (student: ClassStudent) => {
+    setAllStudents((current) => {
+      const existing = current.some((item) => item.id === student.id);
+      if (existing) {
+        return current.map((item) => (item.id === student.id ? { ...item, ...student } : item));
+      }
+      return [...current, student];
+    });
+    setStudentsByClassId((current) => Object.fromEntries(
+      Object.entries(current).map(([classId, students]) => [
+        classId,
+        students.map((item) => (item.id === student.id ? { ...item, ...student } : item)),
+      ]),
+    ));
+    setSavedStudentsByClassId((current) => Object.fromEntries(
+      Object.entries(current).map(([classId, students]) => [
+        classId,
+        students.map((item) => (item.id === student.id ? { ...item, ...student } : item)),
+      ]),
+    ));
+  };
+
+  const openCreateStudentProfile = () => {
+    if (!studentCenterPermissions.canManageStudents) {
+      return;
+    }
+    setStudentProfileMode('create');
+    setStudentProfileStudentId(null);
+    setStudentProfileDraft(emptyStudentProfileDraft);
+    setSavedStudentProfileDraft(null);
+    setStudentProfileDetail(null);
+    setStudentProfileError('');
+    setStudentProfileLoading(false);
+  };
+
+  const openStudentProfile = async (studentId: number) => {
+    const listStudent = allStudents.find((student) => student.id === studentId) || null;
+    const initialDraft = buildStudentProfileDraft(listStudent);
+    setStudentProfileMode('edit');
+    setStudentProfileStudentId(studentId);
+    setStudentProfileDraft(initialDraft);
+    setSavedStudentProfileDraft(initialDraft);
+    setStudentProfileDetail(listStudent);
+    setStudentProfileError('');
+    setStudentProfileLoading(true);
 
     try {
-      await executeClassStudentDeleteRequest(classId, studentId, deleteClassStudent);
-      setStudentsByClassId((current) => resolveClassStudentsAfterDelete(current, classId, studentId));
+      const payload = await executeStudentProfileGetRequest(studentId, apiFetch);
+      const detailDraft = buildStudentProfileDraft(payload.student);
+      setStudentProfileDetail(payload.student);
+      setStudentProfileDraft(detailDraft);
+      setSavedStudentProfileDraft(detailDraft);
+      updateStudentCaches(payload.student);
     } catch (err) {
-      setStudentErrorByClassId((current) => ({
-        ...current,
-        [classId]: resolveClassStudentErrorMessage(err, 'delete'),
-      }));
+      setStudentProfileError(err instanceof Error ? err.message : '学员档案加载失败');
     } finally {
-      setStudentSavingByClassId((current) => resolveClassStudentSavingEndState(current, classId));
+      setStudentProfileLoading(false);
     }
   };
+
+  const handleStudentProfileDraftChange = (key: keyof StudentProfileDraft, value: string) => {
+    setStudentProfileDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const isStudentProfileDraftDirty = () => resolveStudentProfileDraftDirty(studentProfileDraft, savedStudentProfileDraft);
+
+  const closeStudentProfile = () => {
+    if (studentProfileSaving) {
+      return;
+    }
+    if (isStudentProfileDraftDirty() && !window.confirm('有未保存的修改，确定放弃并关闭吗？')) {
+      return;
+    }
+    setStudentProfileMode(null);
+    setStudentProfileStudentId(null);
+    setStudentProfileDraft(emptyStudentProfileDraft);
+    setSavedStudentProfileDraft(null);
+    setStudentProfileDetail(null);
+    setStudentProfileError('');
+  };
+
+  const saveStudentProfile = async () => {
+    if (!studentCenterPermissions.canManageStudents || studentProfileSaving || studentProfileLoading || !isStudentProfileDraftDirty()) {
+      return;
+    }
+    const payload = buildStudentProfileSavePayload(studentProfileDraft);
+    const validationError = validateStudentProfileDraft(payload);
+    if (validationError) {
+      setStudentProfileError(validationError);
+      return;
+    }
+
+    setStudentProfileSaving(true);
+    setStudentProfileError('');
+    try {
+      const result = studentProfileMode === 'create'
+        ? await executeStudentProfileCreateRequest(payload, apiFetch)
+        : studentProfileStudentId != null
+          ? await executeStudentProfileUpdateRequest(studentProfileStudentId, payload, apiFetch)
+          : null;
+      if (!result) {
+        setStudentProfileError('学员档案保存失败，请重新打开后再试。');
+        return;
+      }
+      const nextDraft = buildStudentProfileDraft(result.student);
+      setStudentProfileMode('edit');
+      setStudentProfileStudentId(result.student.id);
+      setStudentProfileDetail(result.student);
+      setStudentProfileDraft(nextDraft);
+      setSavedStudentProfileDraft(nextDraft);
+      updateStudentCaches(result.student);
+      await loadPage(expandedClassId, { preserveStateOnError: true });
+    } catch (err) {
+      setStudentProfileError(err instanceof Error ? err.message : '学员档案保存失败，请重试。');
+    } finally {
+      setStudentProfileSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (studentProfileMode === null || !isStudentProfileDraftDirty()) {
+      return undefined;
+    }
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void saveStudentProfile();
+      }
+    };
+    window.addEventListener('keydown', handleSaveShortcut);
+    return () => window.removeEventListener('keydown', handleSaveShortcut);
+  }, [studentProfileMode, studentProfileDraft, savedStudentProfileDraft, studentProfileSaving, studentProfileLoading, studentCenterPermissions.canManageStudents]);
 
   const getClassTeacherUserId = (item: ClassItem) => resolveClassTeacherUserId(item, teacherBindingByClassId);
   const getClassEffectiveSubject = (item: ClassItem) => resolveClassEffectiveSubject(item, classes, teacherBindingByClassId, academicSubjectOptions);
@@ -860,11 +1051,17 @@ export function StudentCenterPage({
     const currentForm = formByClassId[getClassStateKey(classId)] || createEmptyClassForm();
     const savedClass = classId === 'new' ? null : classes.find((item) => item.id === classId) ?? null;
     const savedForm = classId === 'new' ? createEmptyClassForm() : (savedClass ? toClassFormValues(savedClass) : null);
+    const currentTeacherUserId = classId === 'new' ? null : (teacherBindingByClassId[classId] ?? savedClass?.teacher_user_id ?? null);
+    const savedTeacherUserId = classId === 'new' ? null : (savedClass?.teacher_user_id ?? null);
     return resolveClassFormDraftDirty({
       classId,
       currentForm,
       savedForm,
       newClassTeacherUserId,
+      currentTeacherUserId,
+      savedTeacherUserId,
+      currentStudentIds: classId === 'new' ? undefined : (studentsByClassId[classId] || []).map((student) => student.id),
+      savedStudentIds: classId === 'new' ? undefined : (savedStudentsByClassId[classId] || []).map((student) => student.id),
     });
   };
   const canSaveExpandedClassDraft = expandedClassId !== null && isClassFormDraftDirty(expandedClassId);
@@ -924,6 +1121,10 @@ export function StudentCenterPage({
       return;
     }
     setFormByClassId((current) => resolveFormsAfterClassDraftReset(current, classId, toClassFormValues(savedClass)));
+    setTeacherBindingByClassId((current) => ({ ...current, [classId]: savedClass.teacher_user_id ?? null }));
+    if (Object.prototype.hasOwnProperty.call(savedStudentsByClassId, classId)) {
+      setStudentsByClassId((current) => ({ ...current, [classId]: savedStudentsByClassId[classId] || [] }));
+    }
   };
   const attemptCloseClassEditor = () => {
     if (expandedClassId === null) {
@@ -940,6 +1141,7 @@ export function StudentCenterPage({
   const studentRows = buildStudentRows({
     classes: scopedClassItems,
     studentsByClassId,
+    allStudents,
     teacherBindingByClassId,
   });
   const studentFilters = {
@@ -949,6 +1151,7 @@ export function StudentCenterPage({
     gradeFilter: studentGradeFilter,
     classFilter: studentClassFilter,
     nameFilter: studentNameFilter,
+    scheduleStatusFilter: studentScheduleStatusFilter,
   };
   const studentFilterOptions = resolveStudentFilterOptions({
     rows: studentRows,
@@ -1021,6 +1224,12 @@ export function StudentCenterPage({
       onClose: () => setActiveStudentFilterLayer(null),
     });
   };
+  const handleStudentScheduleStatusFilterChange = (value: StudentScheduleStatusFilter) => {
+    setStudentScheduleStatusFilter(value);
+    if (value !== 'scheduled') {
+      setActiveStudentFilterLayer(null);
+    }
+  };
   useEffect(() => {
     if (studentSubjectFilter !== '全部学科' && !studentSubjectFilterOptions.includes(studentSubjectFilter)) {
       setStudentSubjectFilter('全部学科');
@@ -1056,6 +1265,7 @@ export function StudentCenterPage({
     handleTeacherSearchChange,
     setNewClassTeacherUserId,
     handleLoadClassInvite,
+    handleCopyClassInvite,
     handleResetClassInvite,
     handleSelectTeacherForClass,
     handleDeleteClass,
@@ -1063,6 +1273,9 @@ export function StudentCenterPage({
     handleStudentDraftNameChange,
     handleAddStudentToClass,
     handleDeleteStudentFromClass,
+    handleOpenStudentProfile: (studentId) => {
+      void openStudentProfile(studentId);
+    },
   });
 
   return (
@@ -1153,12 +1366,19 @@ export function StudentCenterPage({
           studentScopeLabel={studentCenterPermissions.studentScopeLabel}
           activeStudentFilterSummary={activeStudentFilterSummary}
           studentNameFilter={studentNameFilter}
+          scheduleStatusFilter={studentScheduleStatusFilter}
+          canManageStudents={studentCenterPermissions.canManageStudents}
           onStudentFilterAreaEnter={handleStudentFilterAreaEnter}
           onStudentFilterAreaLeave={handleStudentFilterAreaLeave}
           onActivateStudentFilter={setActiveStudentFilterLayer}
           onClearStudentFilter={handleClearStudentFilter}
           onSelectStudentFilterOption={handleSelectStudentFilterOption}
           onStudentNameFilterChange={setStudentNameFilter}
+          onScheduleStatusFilterChange={handleStudentScheduleStatusFilterChange}
+          onCreateStudent={openCreateStudentProfile}
+          onOpenStudentProfile={(studentId) => {
+            void openStudentProfile(studentId);
+          }}
           getClassDisplayName={getClassDisplayName}
         />
       )}
@@ -1210,6 +1430,20 @@ export function StudentCenterPage({
         editing={classEditorEditing}
         actions={classEditorActions}
         getClassDisplayName={getClassDisplayName}
+      />
+
+      <StudentProfileModal
+        mode={studentProfileMode}
+        draft={studentProfileDraft}
+        savedDraft={savedStudentProfileDraft}
+        detail={studentProfileDetail}
+        canManageStudents={studentCenterPermissions.canManageStudents}
+        loading={studentProfileLoading}
+        saving={studentProfileSaving}
+        error={studentProfileError}
+        onDraftChange={handleStudentProfileDraftChange}
+        onSave={() => void saveStudentProfile()}
+        onClose={closeStudentProfile}
       />
     </div>
   );

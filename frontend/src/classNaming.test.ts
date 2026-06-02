@@ -6,6 +6,8 @@ import {
   academicGradeOptions,
   academicStageOptions,
   buildClassDisplayName,
+  buildGroupClassDisplayName,
+  buildSmallClassDisplayName,
   formatClassDisplayName,
   getAcademicGradeRank,
   getAcademicGradeRankFromText,
@@ -62,10 +64,11 @@ test('finds grade rank from class names used outside student center', () => {
   assert.equal(getAcademicGradeRankFromText('未识别'), 999);
 });
 
-test('infers cohort year from the July school-year boundary', () => {
-  assert.equal(getCurrentSchoolYearStart(new Date('2026-06-30T23:59:59+08:00')), 2025);
+test('infers cohort year from the June 30 school-year boundary', () => {
+  assert.equal(getCurrentSchoolYearStart(new Date('2026-06-29T23:59:59+08:00')), 2025);
+  assert.equal(getCurrentSchoolYearStart(new Date('2026-06-30T00:00:00+08:00')), 2026);
   assert.equal(getCurrentSchoolYearStart(new Date('2026-07-01T00:00:00+08:00')), 2026);
-  assert.equal(inferAcademicCohortYear('七年级', new Date('2026-06-30T23:59:59+08:00')), 2025);
+  assert.equal(inferAcademicCohortYear('七年级', new Date('2026-06-29T23:59:59+08:00')), 2025);
   assert.equal(inferAcademicCohortYear('八年级', new Date('2026-07-01T00:00:00+08:00')), 2025);
 });
 
@@ -79,7 +82,7 @@ test('builds class display names with optional cohort and bridge suffix', () => 
       show_cohort_year: true,
       is_bridge: false,
     }),
-    '2025级·四年级·1班',
+    '小2025级·四年级·1班',
   );
   assert.equal(
     buildClassDisplayName({
@@ -106,7 +109,7 @@ test('builds subject-prefixed group names and existing-student small class names
       show_cohort_year: true,
       is_bridge: false,
     }),
-    '数学·2025级·七年级·2班',
+    '数学·初2025级·七年级·2班',
   );
   assert.equal(
     buildClassDisplayName({
@@ -120,7 +123,86 @@ test('builds subject-prefixed group names and existing-student small class names
       is_bridge: false,
       selected_student_names: ['张三', '李四'],
     }),
-    '张李·1v2·七年级',
+    '数学·1v2·初2025级·七年级·张李',
+  );
+});
+
+test('keeps group class and small class naming rules as separate entry points', () => {
+  assert.equal(
+    buildGroupClassDisplayName({
+      subject: '数学',
+      class_type: 'group',
+      stage: '初中',
+      current_grade: '七年级',
+      grade: '',
+      class_number: '3',
+      cohort_year: '2025',
+      show_cohort_year: true,
+      is_bridge: false,
+    }),
+    '数学·初2025级·七年级·3班',
+  );
+  assert.equal(
+    buildSmallClassDisplayName({
+      subject: '数学',
+      class_type: '1v2',
+      stage: '初中',
+      current_grade: '七年级',
+      grade: '',
+      class_number: '',
+      cohort_year: '2025',
+      show_cohort_year: true,
+      is_bridge: false,
+      selected_student_names: ['张三', '李四'],
+    }),
+    '数学·1v2·初2025级·七年级·张李',
+  );
+});
+
+test('class display names hide cohort by default and use bridge target stage for cohort label', () => {
+  assert.equal(
+    buildClassDisplayName({
+      subject: '数学',
+      class_type: 'group',
+      stage: '小奥',
+      current_grade: '六年级',
+      grade: '',
+      class_number: '1',
+      cohort_year: '2026',
+      show_cohort_year: true,
+      is_bridge: true,
+      bridge_target: '小学衔接初中',
+    }),
+    '数学·初2026级·六年级·1班·小衔初',
+  );
+  assert.equal(
+    buildClassDisplayName({
+      subject: '数学',
+      class_type: 'group',
+      stage: '初中',
+      current_grade: '七年级',
+      grade: '',
+      class_number: '3',
+      cohort_year: '2025',
+      show_cohort_year: false,
+      is_bridge: false,
+    }),
+    '数学·七年级·3班',
+  );
+  assert.equal(
+    buildClassDisplayName({
+      subject: '物理',
+      class_type: '1v1',
+      stage: '初中',
+      current_grade: '七年级',
+      grade: '',
+      class_number: '',
+      cohort_year: '2025',
+      show_cohort_year: false,
+      is_bridge: false,
+      selected_student_names: ['张三'],
+    }),
+    '物理·1v1·七年级·张三',
   );
 });
 
@@ -135,8 +217,24 @@ test('formats current class display names for page and permission layers', () =>
   };
 
   assert.equal(formatClassDisplayName(classItem), '四年级·1班');
-  assert.equal(formatClassDisplayName(classItem, { showCohortYear: true }), '2025级·四年级·1班');
+  assert.equal(formatClassDisplayName(classItem, { showCohortYear: true }), '小2025级·四年级·1班');
   assert.equal(formatClassDisplayName({ name: '历史手动班级' }), '历史手动班级');
+});
+
+test('formats saved small class names by the page cohort-year switch', () => {
+  const smallClassItem = {
+    name: '数学·1v1·小2025级·四年级·何晨煜',
+    subject: '数学',
+    class_type: '1v1',
+    current_grade: '四年级',
+    grade: '',
+    class_number: '',
+    cohort_year: '2025',
+    is_bridge: false,
+  };
+
+  assert.equal(formatClassDisplayName(smallClassItem), '数学·1v1·四年级·何晨煜');
+  assert.equal(formatClassDisplayName(smallClassItem, { showCohortYear: true }), '数学·1v1·小2025级·四年级·何晨煜');
 });
 
 test('normalizes handwritten class names for legacy invite matching', () => {

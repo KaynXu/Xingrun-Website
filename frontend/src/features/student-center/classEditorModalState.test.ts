@@ -37,6 +37,7 @@ const newForm: ClassFormValues = {
 const users: UserItem[] = [
   { id: 1, name: '曹老师', org: '星润', role: 'member' },
   { id: 2, name: '王老师', org: '星润', role: 'member' },
+  { id: 3, name: '陈老师', org: '星润', role: 'member' },
 ];
 
 const classes: ClassItem[] = [
@@ -51,6 +52,17 @@ const classes: ClassItem[] = [
     cohort_year: 2025,
     teacher_name: '王老师',
     teacher_user_id: 2,
+  },
+  {
+    id: 9,
+    name: '数学四年级1班',
+    subject: '数学',
+    grade: '四年级',
+    stage: '小奥',
+    current_grade: '四年级',
+    class_number: '1',
+    teacher_name: '曹老师',
+    teacher_user_id: 1,
   },
 ];
 
@@ -122,7 +134,7 @@ test('buildClassEditorModalState assembles new class modal state from page state
   assert.equal(state.newClass.teacherUserId, 1);
   assert.deepEqual(state.newClass.filteredUsers.map((user) => user.name), ['曹老师']);
   assert.deepEqual(state.newClass.gradeOptions, gradeGroups.小奥);
-  assert.equal(state.newClass.displayNamePreview, '数学·2025级·四年级·2班');
+  assert.equal(state.newClass.displayNamePreview, '数学·小2025级·四年级·2班');
 });
 
 test('buildClassEditorModalState assembles editing modal state and falls back to saved class form', () => {
@@ -179,12 +191,16 @@ test('buildClassEditorModalState assembles editing modal state and falls back to
   assert.equal(state.mode.editingClass?.id, 8);
   assert.equal(state.mode.editingFormState?.current_grade, '七年级');
   assert.deepEqual(state.editing.gradeOptions, gradeGroups.初中);
-  assert.equal(state.editing.displayNamePreview, '物理·2025级·七年级·3班');
+  assert.equal(state.editing.displayNamePreview, '物理·初2025级·七年级·3班');
   assert.equal(state.editing.teacherSearch, '王');
   assert.equal(state.editing.currentTeacherUserId, 2);
   assert.equal(state.editing.teacherSummary, '王老师');
   assert.equal(state.editing.teacherBindingSaving, true);
   assert.deepEqual(state.editing.filteredUsers.map((user) => user.name), ['王老师']);
+  assert.deepEqual(state.editing.teacherFilterContext, [
+    { teacherUserId: 2, subject: '物理', stage: '初中' },
+    { teacherUserId: 1, subject: '数学', stage: '小奥' },
+  ]);
   assert.equal(state.editing.inviteInfo, inviteInfo);
   assert.equal(state.editing.inviteLoading, true);
   assert.equal(state.editing.inviteResetting, false);

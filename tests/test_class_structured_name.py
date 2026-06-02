@@ -36,7 +36,7 @@ class ClassStructuredNameTestCase(unittest.TestCase):
             cohort_year=2025,
             show_cohort_year=True,
         )
-        self.assertEqual(lesson_manager.get_class(class_id)["name"], "数学·2025级·四年级·1班")
+        self.assertEqual(lesson_manager.get_class(class_id)["name"], "数学·小2025级·四年级·1班")
 
         lesson_manager.update_class(
             class_id,
@@ -78,9 +78,47 @@ class ClassStructuredNameTestCase(unittest.TestCase):
         )
         small_class = lesson_manager.get_class(class_id)
 
-        self.assertEqual(small_class["name"], "张李·1v2·七年级")
+        self.assertEqual(small_class["name"], "数学·1v2·七年级·张李")
         self.assertEqual(small_class["class_type"], "1v2")
         self.assertEqual(small_class["class_number"], "")
+
+        lesson_manager.update_class(
+            class_id,
+            "",
+            subject="数学",
+            grade="七年级",
+            stage="初中",
+            current_grade="七年级",
+            class_type="1v2",
+            show_cohort_year=True,
+        )
+        self.assertEqual(lesson_manager.get_class(class_id)["name"], "数学·1v2·初2025级·七年级·张李")
+
+    def test_bridge_class_name_uses_target_stage_for_cohort_label(self):
+        class_id = lesson_manager.save_class(
+            "",
+            subject="数学",
+            grade="六年级",
+            stage="小奥",
+            current_grade="六年级",
+            class_number="1",
+            cohort_year=2026,
+            show_cohort_year=True,
+            is_bridge=True,
+            bridge_target="小学衔接初中",
+        )
+
+        self.assertEqual(lesson_manager.get_class(class_id)["name"], "数学·初2026级·六年级·1班·小衔初")
+
+    def test_group_and_small_class_names_have_separate_rules(self):
+        self.assertEqual(
+            lesson_manager.build_group_class_name("数学", 2025, "七年级", "3", False, True, "", "初中"),
+            "数学·初2025级·七年级·3班",
+        )
+        self.assertEqual(
+            lesson_manager.build_small_class_name("1v2", "七年级", ["张三", "李四"], False, "", "初中", "数学", 2025, True),
+            "数学·1v2·初2025级·七年级·张李",
+        )
 
 
 if __name__ == "__main__":

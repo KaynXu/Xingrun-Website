@@ -50,6 +50,34 @@ export interface UserItem {
 export type ClassStudentOption = {
   id: number;
   name: string;
+  source?: string;
+  parent_contact?: string;
+  created_at?: string;
+  study_status?: string;
+  study_duration_label?: string;
+  first_lesson_date?: string | null;
+  last_lesson_date?: string | null;
+  study_records?: Array<{
+    class_id: number;
+    class_name?: string;
+    class_type?: string;
+    subject?: string;
+    stage?: string;
+    current_grade?: string;
+    grade?: string;
+    teacher_name?: string;
+    lesson_count?: number;
+    first_lesson_date?: string | null;
+    last_lesson_date?: string | null;
+  }>;
+  history_items?: Array<{
+    id?: number;
+    class_id?: number;
+    class_name?: string;
+    action?: string;
+    created_at?: string;
+    note?: string;
+  }>;
 };
 
 export interface ClassInviteInfo {
@@ -112,7 +140,7 @@ export function createEmptyClassForm(): ClassFormValues {
     current_grade: '一年级',
     class_number: '1',
     cohort_year: '',
-    show_cohort_year: true,
+    show_cohort_year: false,
     is_bridge: false,
     bridge_target: serializeBridgeTarget('小学', '初中'),
     content_track: '',

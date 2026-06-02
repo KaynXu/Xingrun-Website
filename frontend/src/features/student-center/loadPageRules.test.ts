@@ -36,7 +36,7 @@ const emptyForm: ClassFormValues = {
 const classes: ClassItem[] = [
   {
     id: 8,
-    name: '数学·2025级·四年级·1班',
+    name: '数学·小2025级·四年级·1班',
     subject: '数学',
     grade: '四年级',
     stage: '小奥',
@@ -46,7 +46,7 @@ const classes: ClassItem[] = [
   },
   {
     id: 9,
-    name: '物理·2025级·七年级·2班',
+    name: '物理·初2025级·七年级·2班',
     subject: '物理',
     grade: '七年级',
     stage: '初中',
@@ -79,7 +79,7 @@ test('resolveFormsAfterClassLoad keeps the new draft and rebuilds loaded class f
       new: newDraft,
       8: {
         ...emptyForm,
-        name: '数学·2025级·四年级·1班',
+        name: '数学·小2025级·四年级·1班',
         subject: '数学',
         grade: '四年级',
         stage: '小奥',
@@ -89,7 +89,7 @@ test('resolveFormsAfterClassLoad keeps the new draft and rebuilds loaded class f
       },
       9: {
         ...emptyForm,
-        name: '物理·2025级·七年级·2班',
+        name: '物理·初2025级·七年级·2班',
         subject: '物理',
         grade: '七年级',
         stage: '初中',
@@ -206,7 +206,7 @@ test('buildClassLoadSuccessState bundles loaded classes, users, bindings, forms,
       new: newDraft,
       8: {
         ...emptyForm,
-        name: '数学·2025级·四年级·1班',
+        name: '数学·小2025级·四年级·1班',
         subject: '数学',
         grade: '四年级',
         stage: '小奥',
@@ -216,7 +216,7 @@ test('buildClassLoadSuccessState bundles loaded classes, users, bindings, forms,
       },
       9: {
         ...emptyForm,
-        name: '物理·2025级·七年级·2班',
+        name: '物理·初2025级·七年级·2班',
         subject: '物理',
         grade: '七年级',
         stage: '初中',

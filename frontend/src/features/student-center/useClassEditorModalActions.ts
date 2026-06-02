@@ -20,6 +20,7 @@ type UseClassEditorModalActionsParams = {
   handleTeacherSearchChange: (classId: number | 'new', value: string) => void;
   setNewClassTeacherUserId: Dispatch<SetStateAction<number | null>>;
   handleLoadClassInvite: (classId: number) => Promise<void>;
+  handleCopyClassInvite: (classId: number) => Promise<void>;
   handleResetClassInvite: (classId: number) => Promise<void>;
   handleSelectTeacherForClass: (classId: number, teacherUserId: number) => Promise<void>;
   handleDeleteClass: (classId: number) => void;
@@ -27,6 +28,7 @@ type UseClassEditorModalActionsParams = {
   handleStudentDraftNameChange: (classId: number, value: string) => void;
   handleAddStudentToClass: (classId: number, studentId: number) => Promise<void>;
   handleDeleteStudentFromClass: (classId: number, studentId: number) => Promise<void>;
+  handleOpenStudentProfile: (studentId: number) => void;
 };
 
 export function useClassEditorModalActions({
@@ -40,6 +42,7 @@ export function useClassEditorModalActions({
   handleTeacherSearchChange,
   setNewClassTeacherUserId,
   handleLoadClassInvite,
+  handleCopyClassInvite,
   handleResetClassInvite,
   handleSelectTeacherForClass,
   handleDeleteClass,
@@ -47,6 +50,7 @@ export function useClassEditorModalActions({
   handleStudentDraftNameChange,
   handleAddStudentToClass,
   handleDeleteStudentFromClass,
+  handleOpenStudentProfile,
 }: UseClassEditorModalActionsParams): ClassEditorActions {
   return useMemo(() => ({
     onClose: attemptCloseClassEditor,
@@ -86,6 +90,7 @@ export function useClassEditorModalActions({
     onTeacherSearchChange: handleTeacherSearchChange,
     onNewClassTeacherUserIdChange: setNewClassTeacherUserId,
     onLoadClassInvite: (classId) => void handleLoadClassInvite(classId),
+    onCopyClassInvite: handleCopyClassInvite,
     onResetClassInvite: (classId) => void handleResetClassInvite(classId),
     onRefreshAssignment: (classId) => loadPage(classId, { preserveStateOnError: true }).catch(() => undefined),
     onSelectTeacherForClass: (classId, teacherUserId) => void handleSelectTeacherForClass(classId, teacherUserId),
@@ -94,6 +99,7 @@ export function useClassEditorModalActions({
     onStudentDraftNameChange: handleStudentDraftNameChange,
     onAddStudentToClass: (classId, studentId) => void handleAddStudentToClass(classId, studentId),
     onDeleteStudentFromClass: (classId, studentId) => void handleDeleteStudentFromClass(classId, studentId),
+    onOpenStudentProfile: handleOpenStudentProfile,
   }), [
     attemptCloseClassEditor,
     editingClass,
@@ -103,7 +109,9 @@ export function useClassEditorModalActions({
     handleDeleteStudentFromClass,
     handleFieldChange,
     handleLoadClassInvite,
+    handleCopyClassInvite,
     handleNewClassStudentSelectionChange,
+    handleOpenStudentProfile,
     handleResetClassInvite,
     handleSaveClass,
     handleSelectTeacherForClass,

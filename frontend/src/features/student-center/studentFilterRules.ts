@@ -1,6 +1,5 @@
 import {
   formatClassDisplayName,
-  getAcademicGradeRank,
   getAcademicStageFromGrade,
   normalizeAcademicGradeLabel,
 } from '../../domain/classNaming';
@@ -14,6 +13,7 @@ import {
 import type { StudentManagementFilterLayer } from './StudentManagementTab';
 
 export type StudentClassFilter = number | 'all';
+export type StudentScheduleStatusFilter = 'all' | 'scheduled' | 'unscheduled';
 
 export type StudentFilterState = {
   subjectFilter: string;
@@ -22,13 +22,15 @@ export type StudentFilterState = {
   gradeFilter: string;
   classFilter: StudentClassFilter;
   nameFilter: string;
+  scheduleStatusFilter: StudentScheduleStatusFilter;
 };
 
 export type StudentRow = {
   id: number;
   name: string;
-  classItem: ClassItem;
+  classItem: ClassItem | null;
   teacherUserId: number | null;
+  scheduled: boolean;
 };
 
 type StudentRuleBase = {
@@ -50,13 +52,25 @@ type StudentOptionArgs = StudentRuleBase & {
 export function buildStudentRows(args: {
   classes: ClassItem[];
   studentsByClassId: Record<number, Array<{ id: number; name: string }>>;
+  allStudents?: Array<{ id: number; name: string }>;
   teacherBindingByClassId: Record<number, number | null>;
 }): StudentRow[] {
-  return args.classes.flatMap((classItem) => (args.studentsByClassId[classItem.id] || []).map((student) => ({
+  const scheduledRows = args.classes.flatMap((classItem) => (args.studentsByClassId[classItem.id] || []).map((student) => ({
     ...student,
     classItem,
     teacherUserId: getClassTeacherUserId(classItem, args.teacherBindingByClassId),
+    scheduled: true,
   })));
+  const scheduledStudentIds = new Set(scheduledRows.map((student) => student.id));
+  const unscheduledRows = (args.allStudents || [])
+    .filter((student) => !scheduledStudentIds.has(student.id))
+    .map((student) => ({
+      ...student,
+      classItem: null,
+      teacherUserId: null,
+      scheduled: false,
+    }));
+  return [...scheduledRows, ...unscheduledRows];
 }
 
 export function studentMatchesFilters({
@@ -71,25 +85,40 @@ export function studentMatchesFilters({
   filters: StudentFilterState;
   except?: StudentManagementFilterLayer | null;
 }): boolean {
+  if (filters.scheduleStatusFilter === 'scheduled' && !item.scheduled) {
+    return false;
+  }
+  if (filters.scheduleStatusFilter === 'unscheduled' && item.scheduled) {
+    return false;
+  }
+  if (filters.scheduleStatusFilter !== 'scheduled') {
+    return true;
+  }
   if (
     except !== 'subject'
     && filters.subjectFilter !== '全部学科'
+    && item.classItem
     && getClassEffectiveSubject(item.classItem, classes, teacherBindingByClassId, subjectOptions) !== filters.subjectFilter
   ) {
+    return false;
+  }
+  if (except !== 'subject' && filters.subjectFilter !== '全部学科' && !item.classItem) {
     return false;
   }
   if (except !== 'teacher' && filters.teacherFilter !== 'all' && item.teacherUserId !== filters.teacherFilter) {
     return false;
   }
-  const itemStage = item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '');
+  const itemStage = item.classItem
+    ? item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')
+    : '';
   if (except !== 'stage' && filters.stageFilter !== '全部学段' && itemStage !== filters.stageFilter) {
     return false;
   }
-  const itemGrade = normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '');
+  const itemGrade = item.classItem ? normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') : '';
   if (except !== 'grade' && filters.gradeFilter !== '全部' && itemGrade !== filters.gradeFilter) {
     return false;
   }
-  if (except !== 'class' && filters.classFilter !== 'all' && item.classItem.id !== filters.classFilter) {
+  if (except !== 'class' && filters.classFilter !== 'all' && item.classItem?.id !== filters.classFilter) {
     return false;
   }
   const keyword = filters.nameFilter.trim();
@@ -114,17 +143,17 @@ export function resolveStudentFilterOptions(args: StudentOptionArgs): {
     subjectOptions: args.subjectOptions,
     teacherOptions: args.users.filter((user) => getStudentFilterOptionBase(args, 'teacher').some((item) => item.teacherUserId === user.id)),
     stageOptions: args.stageOptions.filter((stage) => getStudentFilterOptionBase(args, 'stage').some((item) => (
-      (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) === stage
+      item.classItem && (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) === stage
     ))),
     gradeOptions: args.gradeOptions.filter((grade) => {
       if (args.filters.stageFilter !== '全部学段' && !args.gradeGroups[args.filters.stageFilter]?.includes(grade)) {
         return false;
       }
       return getStudentFilterOptionBase(args, 'grade').some((item) => (
-        normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') === grade
+        item.classItem && normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') === grade
       ));
     }),
-    classOptions: args.scopedClasses.filter((classItem) => getStudentFilterOptionBase(args, 'class').some((item) => item.classItem.id === classItem.id)),
+    classOptions: args.scopedClasses.filter((classItem) => getStudentFilterOptionBase(args, 'class').some((item) => item.classItem?.id === classItem.id)),
   };
 }
 
@@ -132,11 +161,9 @@ export function resolveFilteredStudentRows(args: StudentRuleBase & {
   filters: StudentFilterState;
 }): StudentRow[] {
   return args.rows.filter((item) => studentMatchesFilters({ ...args, item })).sort((left, right) => {
-    const gradeDelta = getAcademicGradeRank(left.classItem.current_grade || left.classItem.grade || '') - getAcademicGradeRank(right.classItem.current_grade || right.classItem.grade || '');
-    return gradeDelta
-      || formatClassDisplayName(left.classItem).localeCompare(formatClassDisplayName(right.classItem), 'zh-CN')
-      || left.name.localeCompare(right.name, 'zh-CN')
-      || left.id - right.id;
+    return left.name.localeCompare(right.name, 'zh-CN')
+      || left.id - right.id
+      || formatClassDisplayName(left.classItem).localeCompare(formatClassDisplayName(right.classItem), 'zh-CN');
   });
 }
 

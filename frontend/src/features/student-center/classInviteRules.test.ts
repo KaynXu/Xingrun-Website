@@ -5,6 +5,7 @@ import {
   buildClassInviteResetRequest,
   executeClassInviteLoadRequest,
   executeClassInviteResetRequest,
+  getClassInviteCopyButtonLabel,
   resolveClassInviteErrorMessage,
   resolveInviteLoadingEndState,
   resolveInviteLoadingStartState,
@@ -50,4 +51,12 @@ test('class invite rules preserve loading maps and error fallback copy', () => {
   assert.equal(resolveClassInviteErrorMessage(new Error('无效邀请码'), 'load'), '无效邀请码');
   assert.equal(resolveClassInviteErrorMessage('boom', 'load'), '邀请码加载失败');
   assert.equal(resolveClassInviteErrorMessage('boom', 'reset'), '邀请码重置失败');
+  assert.equal(resolveClassInviteErrorMessage('boom', 'copy'), '邀请码复制失败');
+});
+
+test('class invite copy button copy uses copy-first labels', () => {
+  assert.equal(getClassInviteCopyButtonLabel({ loading: true, copying: false, copied: false }), '加载中');
+  assert.equal(getClassInviteCopyButtonLabel({ loading: false, copying: true, copied: false }), '复制中');
+  assert.equal(getClassInviteCopyButtonLabel({ loading: false, copying: false, copied: true }), '已复制');
+  assert.equal(getClassInviteCopyButtonLabel({ loading: false, copying: false, copied: false }), '复制');
 });

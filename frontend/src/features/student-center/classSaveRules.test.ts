@@ -14,6 +14,7 @@ import {
   resolveFormsAfterClassDraftReset,
   resolveFormsAfterCreateDraftReset,
   resolveFormsAfterOptimisticCreate,
+  resolveClassSaveFormWithCurrentStudents,
   resolveNewClassTeacherAfterDraftReset,
   resolveNewClassTeacherAfterCreate,
   resolveTeacherSearchAfterClassDraftReset,
@@ -58,7 +59,7 @@ test('buildClassSavePayload uses unified naming and teacher account for new clas
   });
 
   assert.deepEqual(payload, {
-    name: '数学·2025级·四年级·1班',
+    name: '数学·小2025级·四年级·1班',
     class_type: 'group',
     subject: '数学',
     grade: '四年级',
@@ -96,7 +97,7 @@ test('buildClassSavePayload uses the same naming rules for existing class fixes 
   });
 
   assert.deepEqual(payload, {
-    name: '物理·2025级·七年级·3班',
+    name: '物理·初2025级·七年级·3班',
     class_type: 'group',
     subject: '物理',
     grade: '七年级',
@@ -198,7 +199,7 @@ test('buildOptimisticCreatedClassItem mirrors the newly created class with selec
     }),
     {
       id: 8,
-      name: '数学·2025级·四年级·1班',
+      name: '数学·小2025级·四年级·1班',
       class_type: 'group',
       subject: '数学',
       grade: '四年级',
@@ -258,7 +259,7 @@ test('resolveTeacherBindingsAfterOptimisticCreate records the new class teacher 
 test('resolveFormsAfterOptimisticCreate stores the created class form without clearing other form drafts', () => {
   const createdForm: ClassFormValues = {
     ...baseForm,
-    name: '数学·2025级·四年级·1班',
+    name: '数学·小2025级·四年级·1班',
   };
 
   assert.deepEqual(
@@ -345,6 +346,41 @@ test('resolveClassFormDraftDirty handles new and existing class drafts with one 
       currentForm: baseForm,
       savedForm: null,
       newClassTeacherUserId: null,
+    }),
+    false,
+  );
+  assert.equal(
+    resolveClassFormDraftDirty({
+      classId: 8,
+      currentForm: baseForm,
+      savedForm: { ...baseForm },
+      newClassTeacherUserId: null,
+      currentTeacherUserId: 2,
+      savedTeacherUserId: 1,
+    }),
+    true,
+  );
+  assert.equal(
+    resolveClassFormDraftDirty({
+      classId: 8,
+      currentForm: baseForm,
+      savedForm: { ...baseForm },
+      newClassTeacherUserId: null,
+      currentStudentIds: [3],
+      savedStudentIds: [3, 4],
+    }),
+    true,
+  );
+  assert.equal(
+    resolveClassFormDraftDirty({
+      classId: 8,
+      currentForm: baseForm,
+      savedForm: { ...baseForm },
+      newClassTeacherUserId: null,
+      currentTeacherUserId: 1,
+      savedTeacherUserId: 1,
+      currentStudentIds: [4, 3],
+      savedStudentIds: [3, 4],
     }),
     false,
   );
@@ -468,7 +504,7 @@ test('small class save payload uses existing student names and validates require
     class_number: payload.class_number,
     student_ids: payload.student_ids,
   }, {
-    name: '张李·1v2·七年级',
+    name: '数学·1v2·初2025级·七年级·张李',
     class_type: '1v2',
     class_number: '',
     student_ids: [21, 22],
@@ -481,6 +517,39 @@ test('small class save payload uses existing student names and validates require
       gradeOptions: ['七年级'],
     }),
     '请选择2名学员',
+  );
+});
+
+test('existing class save form uses the currently loaded student list for small class validation', () => {
+  const syncedForm = resolveClassSaveFormWithCurrentStudents({
+    classId: 9,
+    form: {
+      ...baseForm,
+      class_type: '1v1',
+      selected_student_ids: [],
+    },
+    studentsByClassId: {
+      9: [{ id: 88, name: '何晨煜' }],
+    },
+  });
+
+  const payload = buildClassSavePayload({
+    classId: 9,
+    form: syncedForm,
+    selectedTeacher: teacher,
+    selectedTeacherUserId: teacher.id,
+    existingStudents: [{ id: 88, name: '何晨煜' }],
+  });
+
+  assert.deepEqual(payload.student_ids, [88]);
+  assert.equal(
+    validateClassSaveDraft({
+      classId: 9,
+      selectedTeacherUserId: null,
+      payload,
+      gradeOptions: ['四年级'],
+    }),
+    null,
   );
 });
 

@@ -26,9 +26,11 @@ type FloatingFilterBarProps<Key extends string = string> = {
   summaryText?: string;
   extraControls?: ReactNode;
   floatingOptions?: boolean;
+  compact?: boolean;
+  activateOnHover?: boolean;
   onAreaEnter: () => void;
   onAreaLeave: () => void;
-  onActivate: (key: Key) => void;
+  onActivate: (key: Key | null) => void;
   onClear: (key: Key) => void;
   onSelect: (value: FloatingFilterValue) => void;
 };
@@ -67,6 +69,8 @@ export function FloatingFilterBar<Key extends string = string>({
   summaryText,
   extraControls,
   floatingOptions = false,
+  compact = false,
+  activateOnHover = true,
   onAreaEnter,
   onAreaLeave,
   onActivate,
@@ -77,20 +81,29 @@ export function FloatingFilterBar<Key extends string = string>({
 
   return (
     <div
-      className={cn('relative border-t border-sky-100/80 pt-4 dark:border-white/10', !floatingOptions && 'space-y-3')}
+      className={cn(
+        'relative',
+        compact ? '' : 'border-t border-sky-100/80 pt-4 dark:border-white/10',
+        !floatingOptions && !compact && 'space-y-3',
+      )}
       onMouseEnter={onAreaEnter}
       onMouseLeave={onAreaLeave}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">筛选</span>
+        <span className={cn('font-semibold text-slate-500 dark:text-slate-400', compact ? 'text-xs' : 'text-sm')}>筛选</span>
         {items.map((item) => (
           <button
             key={item.key}
             type="button"
-            onMouseEnter={() => onActivate(item.key)}
-            onClick={() => onActivate(item.key)}
+            onMouseEnter={() => {
+              if (activateOnHover) {
+                onActivate(item.key);
+              }
+            }}
+            onClick={() => onActivate(activeKey === item.key ? null : item.key)}
             className={cn(
               'inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
+              compact && 'min-h-9 px-3 py-1.5',
               item.selected
                 ? 'border-sky-500 bg-sky-500 text-white shadow-sm dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
                 : activeKey === item.key

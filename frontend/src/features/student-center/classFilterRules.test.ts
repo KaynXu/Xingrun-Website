@@ -173,3 +173,21 @@ test('class filter display helpers build summary, tags, options, and info issues
   assert.deepEqual(resolveActiveClassFilterOptions('teacher', filters, options).map((item) => item.id), [2]);
   assert.deepEqual(getClassInfoIssues(classes[3], {}, subjectOptions), ['缺科目', '缺学段', '缺年级', '缺班号', '缺负责教师']);
 });
+
+test('small classes do not require class number in info issue checks', () => {
+  assert.deepEqual(
+    getClassInfoIssues({
+      id: 21,
+      name: '何晨煜·1v1·四年级',
+      subject: '数学',
+      grade: '四年级',
+      current_grade: '四年级',
+      stage: '小奥',
+      class_type: '1v1',
+      class_number: '',
+      teacher_user_id: 1,
+      teacher_name: '曹老师',
+    }, {}, subjectOptions),
+    [],
+  );
+});

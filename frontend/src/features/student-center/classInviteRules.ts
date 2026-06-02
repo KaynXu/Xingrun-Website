@@ -52,10 +52,30 @@ export function resolveInviteLoadingEndState(
 
 export function resolveClassInviteErrorMessage(
   err: unknown,
-  action: 'load' | 'reset',
+  action: 'load' | 'reset' | 'copy',
 ): string {
   if (err instanceof Error) {
     return err.message;
   }
+  if (action === 'copy') {
+    return '邀请码复制失败';
+  }
   return action === 'load' ? '邀请码加载失败' : '邀请码重置失败';
+}
+
+export function getClassInviteCopyButtonLabel(state: {
+  loading: boolean;
+  copying: boolean;
+  copied: boolean;
+}): string {
+  if (state.loading) {
+    return '加载中';
+  }
+  if (state.copying) {
+    return '复制中';
+  }
+  if (state.copied) {
+    return '已复制';
+  }
+  return '复制';
 }

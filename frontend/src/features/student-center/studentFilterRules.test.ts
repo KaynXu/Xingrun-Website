@@ -63,7 +63,7 @@ const classes: ClassItem[] = [
 
 const studentsByClassId = {
   11: [
-    { id: 101, name: '陈一' },
+    { id: 101, name: '曾一' },
     { id: 102, name: '安安' },
   ],
   12: [
@@ -74,6 +74,14 @@ const studentsByClassId = {
   ],
 };
 
+const allStudents = [
+  { id: 101, name: '曾一' },
+  { id: 102, name: '安安' },
+  { id: 201, name: '李物理' },
+  { id: 301, name: '王物理' },
+  { id: 401, name: '白未排' },
+];
+
 const allFilters: StudentFilterState = {
   subjectFilter: '全部学科',
   teacherFilter: 'all',
@@ -81,20 +89,23 @@ const allFilters: StudentFilterState = {
   gradeFilter: '全部',
   classFilter: 'all',
   nameFilter: '',
+  scheduleStatusFilter: 'all',
 };
 
-test('buildStudentRows and resolveFilteredStudentRows keep existing filtering and sorting behavior', () => {
+test('buildStudentRows and resolveFilteredStudentRows include unscheduled students and sort by student name', () => {
   const rows = buildStudentRows({
     classes,
     studentsByClassId,
+    allStudents,
     teacherBindingByClassId: { 13: 2 },
   });
 
-  assert.deepEqual(rows.map((item) => [item.id, item.classItem.id, item.teacherUserId]), [
-    [101, 11, 1],
-    [102, 11, 1],
-    [201, 12, 2],
-    [301, 13, 2],
+  assert.deepEqual(rows.map((item) => [item.id, item.classItem?.id ?? null, item.teacherUserId, item.scheduled]), [
+    [101, 11, 1, true],
+    [102, 11, 1, true],
+    [201, 12, 2, true],
+    [301, 13, 2, true],
+    [401, null, null, false],
   ]);
 
   assert.deepEqual(
@@ -103,7 +114,7 @@ test('buildStudentRows and resolveFilteredStudentRows keep existing filtering an
       classes,
       teacherBindingByClassId: { 13: 2 },
       subjectOptions,
-      filters: { ...allFilters, subjectFilter: '物理' },
+      filters: { ...allFilters, scheduleStatusFilter: 'scheduled', subjectFilter: '物理' },
     }).map((item) => item.id),
     [201, 301],
   );
@@ -114,7 +125,40 @@ test('buildStudentRows and resolveFilteredStudentRows keep existing filtering an
       classes,
       teacherBindingByClassId: { 13: 2 },
       subjectOptions,
+      filters: { ...allFilters, subjectFilter: '物理' },
+    }).map((item) => item.id),
+    [102, 401, 101, 201, 301],
+  );
+
+  assert.deepEqual(
+    resolveFilteredStudentRows({
+      rows,
+      classes,
+      teacherBindingByClassId: { 13: 2 },
+      subjectOptions,
       filters: allFilters,
+    }).map((item) => item.id),
+    [102, 401, 101, 201, 301],
+  );
+
+  assert.deepEqual(
+    resolveFilteredStudentRows({
+      rows,
+      classes,
+      teacherBindingByClassId: { 13: 2 },
+      subjectOptions,
+      filters: { ...allFilters, scheduleStatusFilter: 'unscheduled' },
+    }).map((item) => item.id),
+    [401],
+  );
+
+  assert.deepEqual(
+    resolveFilteredStudentRows({
+      rows,
+      classes,
+      teacherBindingByClassId: { 13: 2 },
+      subjectOptions,
+      filters: { ...allFilters, scheduleStatusFilter: 'scheduled' },
     }).map((item) => item.id),
     [102, 101, 201, 301],
   );
@@ -124,6 +168,7 @@ test('resolveStudentFilterOptions cascades options while ignoring the active lay
   const rows = buildStudentRows({
     classes,
     studentsByClassId,
+    allStudents,
     teacherBindingByClassId: { 13: 2 },
   });
 
@@ -137,7 +182,7 @@ test('resolveStudentFilterOptions cascades options while ignoring the active lay
     stageOptions,
     gradeOptions,
     gradeGroups,
-    filters: { ...allFilters, subjectFilter: '物理', stageFilter: '初中' },
+    filters: { ...allFilters, scheduleStatusFilter: 'scheduled', subjectFilter: '物理', stageFilter: '初中' },
   });
 
   assert.deepEqual(options.subjectOptions, subjectOptions);
@@ -151,6 +196,7 @@ test('student filter display helpers build summary, tags, and active options', (
   const rows = buildStudentRows({
     classes,
     studentsByClassId,
+    allStudents,
     teacherBindingByClassId: { 13: 2 },
   });
   const filters: StudentFilterState = {
@@ -160,6 +206,7 @@ test('student filter display helpers build summary, tags, and active options', (
     gradeFilter: '七年级',
     classFilter: 12,
     nameFilter: '李',
+    scheduleStatusFilter: 'scheduled',
   };
   const options = resolveStudentFilterOptions({
     rows,
@@ -174,13 +221,13 @@ test('student filter display helpers build summary, tags, and active options', (
     filters,
   });
 
-  assert.equal(buildStudentFilterSummary(filters, teachers, classes), '李老师 / 物理 / 初中 / 七年级 / 七年级·2班 / 李');
+  assert.equal(buildStudentFilterSummary(filters, teachers, classes), '李老师 / 物理 / 初中 / 七年级 / 物理·七年级·2班 / 李');
   assert.deepEqual(buildStudentFilterItems(filters, teachers, classes).map((item) => [item.key, item.label, item.selected]), [
     ['subject', '科目：物理', true],
     ['teacher', '李老师', true],
     ['stage', '初中', true],
     ['grade', '七年级', true],
-    ['class', '七年级·2班', true],
+    ['class', '物理·七年级·2班', true],
   ]);
   assert.deepEqual(resolveActiveStudentFilterOptions('class', filters, options).map((item) => item.id), [12]);
 });

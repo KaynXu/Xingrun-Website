@@ -31,12 +31,14 @@ test('student center permissions centralize staff-only class management actions'
     assert.equal(permissions.canLoadStaffMembers, true);
     assert.equal(permissions.canCreateClass, true);
     assert.equal(permissions.canManageClassTeachers, true);
+    assert.equal(permissions.canManageStudents, true);
     assert.equal(permissions.canEditTeacherBinding, true);
   }
 
   assert.equal(member.canLoadStaffMembers, false);
   assert.equal(member.canCreateClass, false);
   assert.equal(member.canManageClassTeachers, false);
+  assert.equal(member.canManageStudents, false);
   assert.equal(member.canEditTeacherBinding, false);
 });
 

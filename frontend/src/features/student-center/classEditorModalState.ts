@@ -1,4 +1,5 @@
 import { buildClassDisplayName } from '../../domain/classNaming';
+import { getAcademicStageFromGrade, normalizeAcademicGradeLabel } from '../../domain/classNaming';
 import type {
   ClassEditorEditingState,
   ClassEditorModalErrors,
@@ -43,6 +44,24 @@ export function filterUsersByKeyword(
       return true;
     }
     return user.name.toLowerCase().includes(normalizedKeyword);
+  });
+}
+
+export function buildTeacherFilterContext(
+  classes: ClassItem[],
+  teacherBindingByClassId: Record<number, number | null>,
+): Array<{ teacherUserId: number; subject: string; stage: string }> {
+  return classes.flatMap((item) => {
+    const teacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
+    if (teacherUserId == null || !item.subject) {
+      return [];
+    }
+    const grade = normalizeAcademicGradeLabel(item.current_grade || item.grade || '');
+    return [{
+      teacherUserId,
+      subject: item.subject,
+      stage: item.stage || getAcademicStageFromGrade(grade),
+    }];
   });
 }
 
@@ -119,7 +138,7 @@ export function buildClassEditorModalState({
   const newClassSelectedStudentNames = (newClassForm.selected_student_ids || [])
     .map((studentId) => allStudents.find((student) => student.id === studentId)?.name || '')
     .filter(Boolean);
-  const newClassDisplayNamePreview = buildClassDisplayName({ ...newClassForm, selected_student_names: newClassSelectedStudentNames, show_cohort_year: true }) || '数学·2025级·四年级·1班';
+  const newClassDisplayNamePreview = buildClassDisplayName({ ...newClassForm, selected_student_names: newClassSelectedStudentNames }) || '数学·四年级·1班';
 
   const editingClass = typeof expandedClassId === 'number'
     ? classes.find((item) => item.id === expandedClassId) ?? null
@@ -168,12 +187,13 @@ export function buildClassEditorModalState({
     editing: {
       canEditTeacherBinding,
       gradeOptions: editingFormState ? [...(gradeGroups[editingFormState.stage] || gradeOptions)] : [...gradeOptions],
-      displayNamePreview: editingFormState ? buildClassDisplayName({ ...editingFormState, selected_student_names: (studentsByClassId[editingClass?.id || 0] || []).map((student) => student.name), show_cohort_year: true }) || '数学·2025级·四年级·1班' : '',
+      displayNamePreview: editingFormState ? buildClassDisplayName({ ...editingFormState, selected_student_names: (studentsByClassId[editingClass?.id || 0] || []).map((student) => student.name) }) || '数学·四年级·1班' : '',
       teacherSearch: editingTeacherSearch,
       currentTeacherUserId: editingCurrentTeacherUserId,
       teacherSummary: editingCurrentTeacher?.name || editingClass?.teacher_name || '未分配老师',
       teacherBindingSaving: editingClass ? Boolean(teacherBindingSavingByClassId[editingClass.id]) : false,
       filteredUsers: editingClass ? filterUsersByKeyword(users, editingTeacherSearch, editingCurrentTeacherUserId) : [],
+      teacherFilterContext: buildTeacherFilterContext(classes, teacherBindingByClassId),
       inviteInfo: editingClass ? inviteByClassId[editingClass.id] : undefined,
       inviteLoading: editingClass ? Boolean(inviteLoadingByClassId[editingClass.id]) : false,
       inviteResetting: editingClass ? Boolean(inviteResettingByClassId[editingClass.id]) : false,

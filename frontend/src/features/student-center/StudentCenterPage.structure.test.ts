@@ -7,6 +7,7 @@ const studentCenterPageUrl = new URL('./StudentCenterPage.tsx', import.meta.url)
 const campusOverviewUrl = new URL('./CampusOverview.tsx', import.meta.url);
 const classManagementTabUrl = new URL('./ClassManagementTab.tsx', import.meta.url);
 const studentManagementTabUrl = new URL('./StudentManagementTab.tsx', import.meta.url);
+const studentProfileModalUrl = new URL('./StudentProfileModal.tsx', import.meta.url);
 const classEditorModalUrl = new URL('./ClassEditorModal.tsx', import.meta.url);
 const classEditorModalActionsUrl = new URL('./useClassEditorModalActions.ts', import.meta.url);
 const classEditorModalStateUrl = new URL('./classEditorModalState.ts', import.meta.url);
@@ -54,19 +55,30 @@ test('class management tab display is extracted from the student center page', (
 
 test('student management tab display is extracted from the student center page', () => {
   assert.ok(existsSync(studentManagementTabUrl), 'StudentManagementTab.tsx should exist');
+  assert.ok(existsSync(studentProfileModalUrl), 'StudentProfileModal.tsx should exist');
 
   const studentCenterSource = readFileSync(studentCenterPageUrl, 'utf8');
   const studentManagementTabSource = readFileSync(studentManagementTabUrl, 'utf8');
+  const studentProfileModalSource = readFileSync(studentProfileModalUrl, 'utf8');
 
   assert.match(studentCenterSource, /import \{ StudentManagementTab \} from '\.\/StudentManagementTab';/);
+  assert.match(studentCenterSource, /import \{ StudentProfileModal[\s\S]*\} from '\.\/StudentProfileModal';/);
   assert.match(studentCenterSource, /<StudentManagementTab[\s\S]*filteredStudentRows=\{filteredStudentRows\}/);
+  assert.match(studentCenterSource, /<StudentManagementTab[\s\S]*canManageStudents=\{studentCenterPermissions\.canManageStudents\}/);
   assert.match(studentCenterSource, /<StudentManagementTab[\s\S]*getClassDisplayName=\{getClassDisplayName\}/);
+  assert.match(studentCenterSource, /<StudentProfileModal[\s\S]*mode=\{studentProfileMode\}/);
   assert.doesNotMatch(studentCenterSource, /<StudentManagementTab[\s\S]*getClassDisplayName=\{getCurrentClassDisplayName\}/);
   assert.doesNotMatch(studentCenterSource, /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">学员管理<\/h4>/);
 
   assert.match(studentManagementTabSource, /export function StudentManagementTab/);
   assert.match(studentManagementTabSource, /<FloatingFilterBar/);
   assert.match(studentManagementTabSource, /学员姓名查询/);
+  assert.match(studentManagementTabSource, /新建学员/);
+  assert.match(studentManagementTabSource, /divide-y divide-sky-100/);
+  assert.doesNotMatch(studentManagementTabSource, /grid gap-3 md:grid-cols-2 xl:grid-cols-3/);
+  assert.match(studentProfileModalSource, /export function StudentProfileModal/);
+  assert.match(studentProfileModalSource, /学员档案/);
+  assert.match(studentProfileModalSource, /就读时长/);
 });
 
 test('class editor modal display is extracted from the student center page', () => {
@@ -110,6 +122,9 @@ test('class editor modal display is extracted from the student center page', () 
   assert.match(classEditorModalSource, /export type ClassEditorActions =/);
   assert.match(classEditorModalSource, /export function ClassEditorModal/);
   assert.match(classEditorModalSource, /<AnimatePresence>/);
-  assert.match(classEditorModalSource, /家长绑定邀请码/);
+  assert.match(classEditorModalSource, /邀请码：/);
+  assert.doesNotMatch(classEditorModalSource, /<h4 className="text-lg font-semibold text-slate-900 dark:text-white">家长绑定邀请码<\/h4>/);
   assert.match(classEditorModalSource, /编辑学生/);
+  assert.match(classEditorModalSource, /移除/);
+  assert.doesNotMatch(classEditorModalSource, /删除学生/);
 });

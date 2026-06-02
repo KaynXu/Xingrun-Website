@@ -82,6 +82,7 @@ from lesson_manager import (
     create_course_calendar_custom_schedule,
     create_course_calendar_schedule,
     create_registration_request,
+    create_student_profile,
     claim_classes_for_user,
     delete_course_calendar_custom_item,
     delete_course_calendar_schedule,
@@ -108,6 +109,7 @@ from lesson_manager import (
     get_parent_student_binding_for_student,
     get_or_create_active_class_invite,
     get_lesson,
+    get_student_profile,
     get_weekly_wrong_question_followup_message,
     get_wrong_question_practice_pack_job,
     get_wrong_question_practice_sheet,
@@ -187,6 +189,7 @@ from lesson_manager import (
     update_user_visible_pages_for_actor,
     update_class,
     update_consultation,
+    update_student_profile,
     update_user_profile,
     resolve_teacher_username_to_user_id,
     update_user_role,
@@ -4056,7 +4059,7 @@ def api_class_create():
             class_type=class_type,
             student_ids=student_ids,
             cohort_year=data.get("cohort_year"),
-            show_cohort_year=bool(data.get("show_cohort_year", True)),
+            show_cohort_year=bool(data.get("show_cohort_year", False)),
             is_bridge=bool(data.get("is_bridge")),
             bridge_target=(data.get("bridge_target") or "").strip(),
             content_track=(data.get("content_track") or "").strip(),
@@ -4074,6 +4077,60 @@ def api_students_list():
     if error:
         return error
     return jsonify({"students": list_students_for_organization(user.get("organization_id"))})
+
+
+@app.route("/api/students", methods=["POST"])
+def api_students_create():
+    user, error = _require_staff()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    try:
+        student = create_student_profile(
+            data.get("name") or "",
+            source=data.get("source") or "",
+            parent_contact=data.get("parent_contact") or "",
+            organization_id=user.get("organization_id"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"student": student}), 201
+
+
+@app.route("/api/students/<int:student_id>", methods=["GET"])
+def api_student_profile_get(student_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    student = get_student_profile(student_id, user.get("organization_id"))
+    if not student:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"student": student})
+
+
+@app.route("/api/students/<int:student_id>", methods=["PUT"])
+def api_student_profile_update(student_id):
+    user, error = _require_staff()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    try:
+        student = update_student_profile(
+            student_id,
+            data.get("name") or "",
+            source=data.get("source") or "",
+            parent_contact=data.get("parent_contact") or "",
+            organization_id=user.get("organization_id"),
+        )
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"student": student})
 
 
 @app.route("/api/classes/teacher-bindings", methods=["GET"])
@@ -4768,7 +4825,7 @@ def api_class_update(class_id):
         class_number=class_number,
         class_type=class_type,
         cohort_year=data.get("cohort_year"),
-        show_cohort_year=bool(data.get("show_cohort_year", True)),
+        show_cohort_year=bool(data.get("show_cohort_year", False)),
         is_bridge=bool(data.get("is_bridge")),
         bridge_target=(data.get("bridge_target") or "").strip(),
         content_track=(data.get("content_track") or "").strip(),

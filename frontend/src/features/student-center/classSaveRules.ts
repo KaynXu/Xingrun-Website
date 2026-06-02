@@ -2,6 +2,7 @@ import {
   buildClassDisplayName,
   getAcademicStageFromGrade,
   inferAcademicCohortYear,
+  inferAcademicCohortYearForStage,
   normalizeAcademicGradeLabel,
   normalizeClassNameInput,
   parseBridgeTarget,
@@ -183,11 +184,19 @@ export function resolveClassFormDraftDirty({
   currentForm,
   savedForm,
   newClassTeacherUserId,
+  currentTeacherUserId,
+  savedTeacherUserId,
+  currentStudentIds,
+  savedStudentIds,
 }: {
   classId: number | 'new';
   currentForm: ClassFormValues;
   savedForm: ClassFormValues | null;
   newClassTeacherUserId: number | null;
+  currentTeacherUserId?: number | null;
+  savedTeacherUserId?: number | null;
+  currentStudentIds?: number[];
+  savedStudentIds?: number[];
 }): boolean {
   if (!savedForm) {
     return false;
@@ -195,7 +204,21 @@ export function resolveClassFormDraftDirty({
   if (getClassFormDirtySignature(currentForm) !== getClassFormDirtySignature(savedForm)) {
     return true;
   }
-  return classId === 'new' && newClassTeacherUserId !== null;
+  if (classId === 'new') {
+    return newClassTeacherUserId !== null;
+  }
+  if (currentTeacherUserId !== undefined || savedTeacherUserId !== undefined) {
+    if ((currentTeacherUserId ?? null) !== (savedTeacherUserId ?? null)) {
+      return true;
+    }
+  }
+  if (currentStudentIds || savedStudentIds) {
+    const normalizeIds = (ids: number[] | undefined) => [...(ids || [])].sort((left, right) => left - right).join(',');
+    if (normalizeIds(currentStudentIds) !== normalizeIds(savedStudentIds)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function resolveFormsAfterClassDraftReset(
@@ -226,6 +249,24 @@ export function resolveTeacherSearchAfterClassDraftReset(
   };
 }
 
+export function resolveClassSaveFormWithCurrentStudents({
+  classId,
+  form,
+  studentsByClassId,
+}: {
+  classId: number | 'new';
+  form: ClassFormValues;
+  studentsByClassId: Record<number, Array<{ id: number; name: string }>>;
+}): ClassFormValues {
+  if (classId === 'new' || !Object.prototype.hasOwnProperty.call(studentsByClassId, classId)) {
+    return form;
+  }
+  return {
+    ...form,
+    selected_student_ids: studentsByClassId[classId].map((student) => student.id),
+  };
+}
+
 export function buildClassSavePayload({
   classId,
   form,
@@ -243,12 +284,13 @@ export function buildClassSavePayload({
   const selectedStudentNames = selectedStudentIds
     .map((studentId) => existingStudents.find((student) => student.id === studentId)?.name || '')
     .filter(Boolean);
-  const displayName = buildClassDisplayName({ ...form, selected_student_names: selectedStudentNames });
-  const inferredCohortYear = Number(form.cohort_year) || inferAcademicCohortYear(form.current_grade || form.grade);
   const classType = form.class_type || 'group';
   const parsedBridge = parseBridgeTarget(form.bridge_target, form.stage);
   const bridgeTarget = form.is_bridge ? serializeBridgeTarget(parsedBridge.fromStage, parsedBridge.toStage) : form.bridge_target;
   const bridgeContentTrack = form.is_bridge ? parsedBridge.toStage : form.content_track;
+  const cohortStage = form.is_bridge ? parsedBridge.toStage : form.stage;
+  const inferredCohortYear = Number(form.cohort_year) || inferAcademicCohortYearForStage(form.current_grade || form.grade, cohortStage) || inferAcademicCohortYear(form.current_grade || form.grade);
+  const displayName = buildClassDisplayName({ ...form, cohort_year: inferredCohortYear, selected_student_names: selectedStudentNames });
 
   return {
     name: displayName || normalizeClassNameInput(form.name),
@@ -261,7 +303,7 @@ export function buildClassSavePayload({
     current_grade: normalizeAcademicGradeLabel(form.current_grade || form.grade),
     class_number: classType === 'group' ? form.class_number.trim() : '',
     cohort_year: inferredCohortYear,
-    show_cohort_year: true,
+    show_cohort_year: form.show_cohort_year,
     is_bridge: form.is_bridge,
     bridge_target: bridgeTarget,
     content_track: bridgeContentTrack,

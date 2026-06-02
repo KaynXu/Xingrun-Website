@@ -212,7 +212,9 @@ export function getAcademicGradeRankFromText(value: string): number {
 }
 
 export function getCurrentSchoolYearStart(date = new Date()): number {
-  return date.getMonth() + 1 >= 7 ? date.getFullYear() : date.getFullYear() - 1;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return month > 6 || (month === 6 && day >= 30) ? date.getFullYear() : date.getFullYear() - 1;
 }
 
 export function inferAcademicCohortYear(grade: string, date = new Date()): number {
@@ -223,29 +225,69 @@ export function inferAcademicCohortYear(grade: string, date = new Date()): numbe
   return getCurrentSchoolYearStart(date) - Math.max(0, stageOffset);
 }
 
-export function buildClassDisplayName(form: ClassDisplayNameInput): string {
+export function inferAcademicCohortYearForStage(grade: string, stage: string, date = new Date()): number {
+  const gradeRank = getAcademicGradeRank(grade);
+  const normalizedStage = normalizeBridgeStage(stage);
+  const stageFirstRank = normalizedStage === '高中' ? 9 : normalizedStage === '初中' ? 6 : 0;
+  if (gradeRank === 999) {
+    return inferAcademicCohortYear(grade, date);
+  }
+  return getCurrentSchoolYearStart(date) - (gradeRank - stageFirstRank);
+}
+
+function getCohortStageForDisplay(form: Pick<ClassDisplayNameInput, 'is_bridge' | 'bridge_target' | 'stage' | 'current_grade' | 'grade'>): BridgeStage {
+  if (form.is_bridge) {
+    return parseBridgeTarget(form.bridge_target, form.stage || form.current_grade || form.grade).toStage;
+  }
+  return normalizeBridgeStage(form.stage || getAcademicStageFromGrade(form.current_grade || form.grade)) || '小学';
+}
+
+export function buildGroupClassDisplayName(form: ClassDisplayNameInput): string {
   const grade = normalizeAcademicGradeLabel(form.current_grade || form.grade);
   const subject = (form.subject || '').trim();
-  const classType = (form.class_type || 'group').trim() || 'group';
+  const cohortStage = getCohortStageForDisplay({ ...form, current_grade: grade });
+  const cohortStageLabel = getBridgeStageShortLabel(cohortStage);
   const bridgeSuffix = form.is_bridge ? `·${getBridgeShortLabel(form.bridge_target, form.stage || grade)}` : '';
-  if (classType !== 'group') {
-    const studentNames = (form.selected_student_names || []).map((item) => item.trim()).filter(Boolean);
-    if (!grade || !studentNames.length) {
-      return '';
-    }
-    const namePart = classType === '1v1'
-      ? studentNames[0]
-      : studentNames.map((item) => item.slice(0, 1)).join('');
-    return `${namePart}·${classType}·${grade}${bridgeSuffix}`;
-  }
   const classNumber = String(form.class_number).trim();
   if (!grade || !classNumber) {
     return '';
   }
-  const cohortYear = Number(form.cohort_year) || inferAcademicCohortYear(grade);
-  const cohortPrefix = form.show_cohort_year && cohortYear ? `${cohortYear}级·` : '';
+  const cohortYear = Number(form.cohort_year) || inferAcademicCohortYearForStage(grade, cohortStage);
+  const cohortPrefix = form.show_cohort_year && cohortYear ? `${cohortStageLabel}${cohortYear}级·` : '';
   const subjectPrefix = subject ? `${subject}·` : '';
   return `${subjectPrefix}${cohortPrefix}${grade}·${classNumber}班${bridgeSuffix}`;
+}
+
+export function buildSmallClassDisplayName(form: ClassDisplayNameInput): string {
+  const grade = normalizeAcademicGradeLabel(form.current_grade || form.grade);
+  const subject = (form.subject || '').trim();
+  const classType = (form.class_type || '').trim();
+  const studentNames = (form.selected_student_names || []).map((item) => item.trim()).filter(Boolean);
+  if (!classType || classType === 'group' || !grade || !studentNames.length) {
+    return '';
+  }
+  const cohortStage = getCohortStageForDisplay({ ...form, current_grade: grade });
+  const cohortStageLabel = getBridgeStageShortLabel(cohortStage);
+  const bridgeSuffix = form.is_bridge ? `·${getBridgeShortLabel(form.bridge_target, form.stage || grade)}` : '';
+  const namePart = classType === '1v1'
+    ? studentNames[0]
+    : studentNames.map((item) => item.slice(0, 1)).join('');
+  const cohortYear = Number(form.cohort_year) || inferAcademicCohortYearForStage(grade, cohortStage);
+  const cohortPart = form.show_cohort_year && cohortYear ? `·${cohortStageLabel}${cohortYear}级` : '';
+  const subjectPrefix = subject ? `${subject}·` : '';
+  return `${subjectPrefix}${classType}${cohortPart}·${grade}·${namePart}${bridgeSuffix}`;
+}
+
+export function buildClassDisplayName(form: ClassDisplayNameInput): string {
+  const classType = (form.class_type || 'group').trim() || 'group';
+  if (classType !== 'group') {
+    return buildSmallClassDisplayName(form);
+  }
+  return buildGroupClassDisplayName(form);
+}
+
+function stripCohortYearFromSavedName(value: string): string {
+  return value.replace(/·[小初高]\d{4}级(?=·)/g, '');
 }
 
 export function formatClassDisplayName(
@@ -267,7 +309,11 @@ export function formatClassDisplayName(
     is_bridge: Boolean(source.is_bridge),
     bridge_target: source.bridge_target || '',
   });
-  return displayName || (source.name?.trim() ?? '');
+  const savedName = source.name?.trim() ?? '';
+  if (displayName) {
+    return displayName;
+  }
+  return options.showCohortYear ? savedName : stripCohortYearFromSavedName(savedName);
 }
 
 export function normalizeClassNameInput(value: string): string {

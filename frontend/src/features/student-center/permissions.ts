@@ -8,6 +8,7 @@ export interface StudentCenterPermissions {
   canLoadStaffMembers: boolean;
   canManageClassTeachers: boolean;
   canCreateClass: boolean;
+  canManageStudents: boolean;
   canEditTeacherBinding: boolean;
   canUseOrganizationScope: boolean;
   isTeacherScoped: boolean;
@@ -32,6 +33,7 @@ export function getStudentCenterPermissions(user: StudentCenterPermissionUser): 
     canLoadStaffMembers: canManageClassTeachers,
     canManageClassTeachers,
     canCreateClass: canManageClassTeachers,
+    canManageStudents: canManageClassTeachers,
     canEditTeacherBinding: canManageClassTeachers,
     canUseOrganizationScope,
     isTeacherScoped,

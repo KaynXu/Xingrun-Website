@@ -4,6 +4,10 @@ import {
   executeClassStudentCreateRequest,
   executeClassStudentDeleteRequest,
   executeClassStudentListRequest,
+  buildStudentProfileSavePayload,
+  executeStudentProfileCreateRequest,
+  resolveStudentProfileDraftDirty,
+  validateStudentProfileDraft,
   resolveClassStudentDraftName,
   resolveClassStudentErrorMessage,
   resolveClassStudentsAfterCreate,
@@ -80,4 +84,40 @@ test('class student rules update class student cache and draft state', () => {
     11: '',
     12: '保留',
   });
+});
+
+test('student profile save rules normalize optional source and parent contact fields', async () => {
+  const payload = buildStudentProfileSavePayload({
+    name: ' 张三 ',
+    source: ' 转介绍 ',
+    parent_contact: ' 妈妈微信 zhang ',
+  });
+
+  assert.deepEqual(payload, {
+    name: '张三',
+    source: '转介绍',
+    parent_contact: '妈妈微信 zhang',
+  });
+  assert.equal(validateStudentProfileDraft(payload), null);
+  assert.equal(validateStudentProfileDraft({ ...payload, name: '' }), '请输入学员姓名');
+  assert.equal(
+    resolveStudentProfileDraftDirty(payload, { name: '张三', source: '转介绍', parent_contact: '妈妈微信 zhang' }),
+    false,
+  );
+  assert.equal(
+    resolveStudentProfileDraftDirty({ ...payload, source: '咨询转化' }, { name: '张三', source: '转介绍', parent_contact: '妈妈微信 zhang' }),
+    true,
+  );
+
+  const calls: Array<{ path: string; init: { method: 'POST'; body: string } }> = [];
+  const created = await executeStudentProfileCreateRequest(payload, async (path, init) => {
+    calls.push({ path, init });
+    return { student: { id: 9, ...payload } };
+  });
+
+  assert.deepEqual(created.student, { id: 9, ...payload });
+  assert.deepEqual(calls, [{
+    path: '/api/students',
+    init: { method: 'POST', body: JSON.stringify(payload) },
+  }]);
 });

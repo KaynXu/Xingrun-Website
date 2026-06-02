@@ -2045,19 +2045,21 @@ def _enforce_students_organization_contract(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE students RENAME TO students__org_scope_legacy")
         conn.execute(
             """
-            CREATE TABLE students (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-                name            TEXT NOT NULL,
-                created_at      TEXT DEFAULT (datetime('now','localtime'))
-            )
+	        CREATE TABLE students (
+	            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+	            name            TEXT NOT NULL,
+	            source          TEXT NOT NULL DEFAULT '',
+	            parent_contact  TEXT NOT NULL DEFAULT '',
+	            created_at      TEXT DEFAULT (datetime('now','localtime'))
+	        )
             """
         )
         conn.execute(
             """
-            INSERT INTO students (id, organization_id, name, created_at)
-            SELECT id, organization_id, name, created_at
-            FROM students__org_scope_legacy
+	        INSERT INTO students (id, organization_id, name, source, parent_contact, created_at)
+	        SELECT id, organization_id, name, '', '', created_at
+	        FROM students__org_scope_legacy
             """
         )
         conn.execute("DROP TABLE students__org_scope_legacy")
@@ -2348,12 +2350,14 @@ def init_db():
         );
 
 
-        CREATE TABLE IF NOT EXISTS students (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-            name            TEXT NOT NULL,
-            created_at      TEXT DEFAULT (datetime('now','localtime'))
-        );
+	        CREATE TABLE IF NOT EXISTS students (
+	            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+	            name            TEXT NOT NULL,
+	            source          TEXT NOT NULL DEFAULT '',
+	            parent_contact  TEXT NOT NULL DEFAULT '',
+	            created_at      TEXT DEFAULT (datetime('now','localtime'))
+	        );
 
         CREATE TABLE IF NOT EXISTS class_students (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2836,6 +2840,8 @@ def init_db():
         _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "course_calendar_custom_items", "visibility", "TEXT NOT NULL DEFAULT 'private'")
         _ensure_column(conn, "course_calendar_custom_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "students", "source", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "students", "parent_contact", "TEXT NOT NULL DEFAULT ''")
         _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn)
         _migrate_course_calendar_time_blocks(conn)
         _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn)
@@ -3859,6 +3865,19 @@ def infer_cohort_year(grade: str, today: str | None = None) -> int:
     return current_school_year_start(today) - offset
 
 
+def infer_cohort_year_for_stage(grade: str, stage: str, today: str | None = None) -> int:
+    normalized = normalize_class_grade(grade)
+    grade_order = [
+        "一年级", "二年级", "三年级", "四年级", "五年级", "六年级",
+        "七年级", "八年级", "九年级", "高一", "高二", "高三",
+    ]
+    if normalized not in grade_order:
+        return infer_cohort_year(grade, today)
+    normalized_stage = normalize_bridge_stage(stage)
+    first_rank = 9 if normalized_stage == "高中" else 6 if normalized_stage == "初中" else 0
+    return current_school_year_start(today) - (grade_order.index(normalized) - first_rank)
+
+
 def normalize_bridge_stage(value: str) -> str:
     normalized = str(value or "").strip()
     if normalized in {"小学", "小奥", "小"}:
@@ -3909,14 +3928,29 @@ def bridge_short_label(bridge_target: str, fallback_stage: str) -> str:
     return f"{short_map.get(from_stage, '')}衔{short_map.get(to_stage, '')}" or "衔接"
 
 
-def build_structured_class_name(subject: str, cohort_year: int, current_grade: str, class_number: str, is_bridge: bool, show_cohort_year: bool = True, bridge_target: str = "", stage: str = "") -> str:
+def cohort_stage_short_label(stage: str) -> str:
+    short_map = {"小学": "小", "初中": "初", "高中": "高"}
+    return short_map.get(normalize_bridge_stage(stage), "小")
+
+
+def display_cohort_stage(stage: str, is_bridge: bool, bridge_target: str) -> str:
+    if is_bridge:
+        return parse_bridge_target(bridge_target, stage)[1]
+    return normalize_bridge_stage(stage) or "小学"
+
+
+def build_group_class_name(subject: str, cohort_year: int, current_grade: str, class_number: str, is_bridge: bool, show_cohort_year: bool = True, bridge_target: str = "", stage: str = "") -> str:
     suffix = f"·{bridge_short_label(bridge_target, stage)}" if is_bridge else ""
     subject_prefix = f"{subject.strip()}·" if subject and subject.strip() else ""
-    cohort_prefix = f"{cohort_year}级·" if show_cohort_year and cohort_year else ""
+    cohort_prefix = f"{cohort_stage_short_label(display_cohort_stage(stage, is_bridge, bridge_target))}{cohort_year}级·" if show_cohort_year and cohort_year else ""
     return f"{subject_prefix}{cohort_prefix}{current_grade}·{str(class_number).strip()}班{suffix}"
 
 
-def build_small_class_name(class_type: str, current_grade: str, student_names: list[str], is_bridge: bool, bridge_target: str = "", stage: str = "") -> str:
+def build_structured_class_name(subject: str, cohort_year: int, current_grade: str, class_number: str, is_bridge: bool, show_cohort_year: bool = True, bridge_target: str = "", stage: str = "") -> str:
+    return build_group_class_name(subject, cohort_year, current_grade, class_number, is_bridge, show_cohort_year, bridge_target, stage)
+
+
+def build_small_class_name(class_type: str, current_grade: str, student_names: list[str], is_bridge: bool, bridge_target: str = "", stage: str = "", subject: str = "", cohort_year: int = 0, show_cohort_year: bool = True) -> str:
     normalized_names = [str(name or "").strip() for name in student_names if str(name or "").strip()]
     if not current_grade or not normalized_names:
         return ""
@@ -3925,7 +3959,9 @@ def build_small_class_name(class_type: str, current_grade: str, student_names: l
     else:
         name_part = "".join(name[:1] for name in normalized_names)
     suffix = f"·{bridge_short_label(bridge_target, stage)}" if is_bridge else ""
-    return f"{name_part}·{class_type}·{current_grade}{suffix}"
+    subject_prefix = f"{subject.strip()}·" if subject and subject.strip() else ""
+    cohort_part = f"·{cohort_stage_short_label(display_cohort_stage(stage, is_bridge, bridge_target))}{cohort_year}级" if show_cohort_year and cohort_year else ""
+    return f"{subject_prefix}{class_type}{cohort_part}·{current_grade}·{name_part}{suffix}"
 
 
 def _class_row_to_dict(row) -> dict:
@@ -3941,7 +3977,7 @@ def _class_row_to_dict(row) -> dict:
     item["content_track"] = item.get("content_track") or ""
     item["last_promoted_at"] = item.get("last_promoted_at") or ""
     if item["class_type"] == "group" and item["cohort_year"] and item["current_grade"] and item["class_number"]:
-        item["name"] = build_structured_class_name(
+        item["name"] = build_group_class_name(
             item.get("subject") or "",
             item["cohort_year"],
             item["current_grade"],
@@ -3965,7 +4001,7 @@ def _build_class_payload(
     class_type: str = "group",
     student_names: list[str] | None = None,
     cohort_year: int | None = None,
-    show_cohort_year: bool = True,
+    show_cohort_year: bool = False,
     is_bridge: bool = False,
     bridge_target: str = "",
     content_track: str = "",
@@ -3976,14 +4012,15 @@ def _build_class_payload(
     normalized_class_type = (class_type or "group").strip() or "group"
     normalized_class_number = str(class_number or "").strip()
     normalized_cohort_year = int(cohort_year or 0)
-    if normalized_grade and not normalized_cohort_year:
-        normalized_cohort_year = infer_cohort_year(normalized_grade, today)
-    display_name = (name or "").strip()
     normalized_bridge_target = serialize_bridge_target(*parse_bridge_target(bridge_target, normalized_stage)) if is_bridge else (bridge_target or "").strip()
+    cohort_stage = parse_bridge_target(normalized_bridge_target, normalized_stage)[1] if is_bridge else normalized_stage
+    if normalized_grade and not normalized_cohort_year:
+        normalized_cohort_year = infer_cohort_year_for_stage(normalized_grade, cohort_stage, today)
+    display_name = (name or "").strip()
     if normalized_class_type == "group" and normalized_grade and normalized_class_number and normalized_cohort_year:
-        display_name = build_structured_class_name(subject, normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year, normalized_bridge_target, normalized_stage)
+        display_name = build_group_class_name(subject, normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year, normalized_bridge_target, normalized_stage)
     elif normalized_class_type != "group":
-        display_name = build_small_class_name(normalized_class_type, normalized_grade, student_names or [], is_bridge, normalized_bridge_target, normalized_stage) or display_name
+        display_name = build_small_class_name(normalized_class_type, normalized_grade, student_names or [], is_bridge, normalized_bridge_target, normalized_stage, subject, normalized_cohort_year, show_cohort_year) or display_name
     return {
         "name": display_name,
         "class_type": normalized_class_type,
@@ -4004,7 +4041,7 @@ def save_class(name: str, subject: str = "", grade: str = "",
                teacher_name: str = "", teacher_email: str = "", organization_id: Optional[int] = None,
                stage: str = "", current_grade: str = "", class_number: str = "",
                class_type: str = "group", student_ids: Optional[list[int]] = None,
-               cohort_year: int | None = None, show_cohort_year: bool = True, is_bridge: bool = False, bridge_target: str = "",
+               cohort_year: int | None = None, show_cohort_year: bool = False, is_bridge: bool = False, bridge_target: str = "",
                content_track: str = "", teacher_user_id: Optional[int] = None, today: str | None = None) -> int:
     normalized_student_ids = [int(student_id) for student_id in (student_ids or []) if int(student_id or 0) > 0]
     with get_conn() as conn:
@@ -4307,7 +4344,7 @@ def promote_classes_for_academic_year(today: str | None = None) -> dict:
             next_is_bridge = is_bridge and not bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
             next_stage = infer_class_stage(next_grade)
             class_number = item.get("class_number") or ""
-            next_name = build_structured_class_name(
+            next_name = build_group_class_name(
                 item.get("subject") or "",
                 item["cohort_year"],
                 next_grade,
@@ -4781,7 +4818,7 @@ def list_students_for_organization(organization_id: int | None = None) -> list:
             organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
         rows = conn.execute(
             """
-            SELECT id, name, created_at
+            SELECT id, name, source, parent_contact, created_at
             FROM students
             WHERE organization_id=?
             ORDER BY name COLLATE NOCASE, id
@@ -4789,6 +4826,130 @@ def list_students_for_organization(organization_id: int | None = None) -> list:
             (organization_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _format_student_study_duration(first_date: str, last_date: str) -> str:
+    if not first_date or not last_date:
+        return "暂未上课"
+    try:
+        first = datetime.strptime(first_date[:10], "%Y-%m-%d").date()
+        last = datetime.strptime(last_date[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return "暂未上课"
+    month_delta = max(0, (last.year - first.year) * 12 + (last.month - first.month))
+    years, months = divmod(month_delta, 12)
+    if years and months:
+        return f"{years}年{months}个月"
+    if years:
+        return f"{years}年"
+    return f"{months}个月" if months else "不足1个月"
+
+
+def _build_student_profile_from_row(conn: sqlite3.Connection, row) -> dict:
+    student = dict(row)
+    lesson_row = conn.execute(
+        """
+        SELECT MIN(l.date) AS first_lesson_date, MAX(l.date) AS last_lesson_date
+        FROM class_students cs
+        JOIN lessons l ON l.class_id = cs.class_id
+        WHERE cs.student_id=? AND COALESCE(l.record_status, 'ready') != 'failed'
+        """,
+        (student["id"],),
+    ).fetchone()
+    study_records = conn.execute(
+        """
+        SELECT
+            c.id AS class_id,
+            c.name AS class_name,
+            c.class_type,
+            c.subject,
+            c.stage,
+            c.current_grade,
+            c.grade,
+            c.teacher_name,
+            COUNT(l.id) AS lesson_count,
+            MIN(l.date) AS first_lesson_date,
+            MAX(l.date) AS last_lesson_date
+        FROM class_students cs
+        JOIN classes c ON c.id = cs.class_id
+        LEFT JOIN lessons l ON l.class_id = c.id AND COALESCE(l.record_status, 'ready') != 'failed'
+        WHERE cs.student_id=?
+        GROUP BY c.id
+        ORDER BY c.subject COLLATE NOCASE, c.id
+        """,
+        (student["id"],),
+    ).fetchall()
+    first_lesson_date = str(lesson_row["first_lesson_date"] or "") if lesson_row else ""
+    last_lesson_date = str(lesson_row["last_lesson_date"] or "") if lesson_row else ""
+    has_current_classes = bool(study_records)
+    if has_current_classes:
+        study_status = "在读"
+    elif first_lesson_date:
+        study_status = "暂停/待确认"
+    else:
+        study_status = "未排课"
+    student.update({
+        "source": student.get("source") or "",
+        "parent_contact": student.get("parent_contact") or "",
+        "first_lesson_date": first_lesson_date,
+        "last_lesson_date": last_lesson_date,
+        "study_duration_label": _format_student_study_duration(first_lesson_date, last_lesson_date),
+        "study_status": study_status,
+        "study_records": [dict(item) for item in study_records],
+        "history_items": list_student_class_history(int(student["id"])),
+    })
+    return student
+
+
+def create_student_profile(raw_name: str, source: str = "", parent_contact: str = "", organization_id: int | None = None) -> dict:
+    name = (raw_name or "").strip()
+    if not name:
+        raise ValueError("student name is required")
+    with get_conn() as conn:
+        if organization_id is None:
+            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
+        cur = conn.execute(
+            """
+            INSERT INTO students (organization_id, name, source, parent_contact)
+            VALUES (?, ?, ?, ?)
+            """,
+            (organization_id, name, (source or "").strip(), (parent_contact or "").strip()),
+        )
+        row = conn.execute("SELECT * FROM students WHERE id=?", (cur.lastrowid,)).fetchone()
+        return _build_student_profile_from_row(conn, row)
+
+
+def update_student_profile(student_id: int, raw_name: str, source: str = "", parent_contact: str = "", organization_id: int | None = None) -> dict:
+    name = (raw_name or "").strip()
+    if not name:
+        raise ValueError("student name is required")
+    with get_conn() as conn:
+        params: list[object] = [name, (source or "").strip(), (parent_contact or "").strip(), student_id]
+        scope_sql = ""
+        if organization_id is not None:
+            scope_sql = " AND organization_id=?"
+            params.append(organization_id)
+        cur = conn.execute(
+            f"UPDATE students SET name=?, source=?, parent_contact=? WHERE id=?{scope_sql}",
+            tuple(params),
+        )
+        if cur.rowcount == 0:
+            raise LookupError("student not found")
+        row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+        return _build_student_profile_from_row(conn, row)
+
+
+def get_student_profile(student_id: int, organization_id: int | None = None) -> dict | None:
+    with get_conn() as conn:
+        params: list[object] = [student_id]
+        scope_sql = ""
+        if organization_id is not None:
+            scope_sql = " AND organization_id=?"
+            params.append(organization_id)
+        row = conn.execute(f"SELECT * FROM students WHERE id=?{scope_sql}", tuple(params)).fetchone()
+        if not row:
+            return None
+        return _build_student_profile_from_row(conn, row)
 
 
 def _dedupe_student_name_in_class(
