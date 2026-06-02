@@ -156,6 +156,8 @@ from lesson_manager import (
     list_wrong_question_submissions_for_chat_session,
     list_wrong_question_assets,
     list_wrong_question_submissions_for_ingestion_run,
+    list_student_review_task_students_for_actor,
+    list_student_review_tasks_for_actor,
     list_students_for_class,
     list_student_class_history,
     list_wechat_wrong_question_submissions_for_parent_student,
@@ -5812,6 +5814,35 @@ def api_class_students_list(class_id):
     if error:
         return error
     return jsonify({"students": list_students_for_class(class_id)})
+
+
+@app.route("/api/student-review-tasks/students", methods=["GET"])
+def api_student_review_task_students():
+    user, error = _require_auth()
+    if error:
+        return error
+    return jsonify({"items": list_student_review_task_students_for_actor(user)})
+
+
+@app.route("/api/student-review-tasks", methods=["GET"])
+def api_student_review_tasks():
+    user, error = _require_auth()
+    if error:
+        return error
+
+    raw_student_id = str(request.args.get("student_id") or "").strip()
+    if not raw_student_id.isdigit():
+        return jsonify({"error": "student_id is required"}), 400
+    raw_date = str(request.args.get("date") or date.today().isoformat()).strip()
+    try:
+        date.fromisoformat(raw_date)
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+
+    payload = list_student_review_tasks_for_actor(user, int(raw_student_id), raw_date)
+    if payload is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(payload)
 
 
 @app.route("/api/classes/<int:class_id>/students", methods=["POST"])

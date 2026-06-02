@@ -16,6 +16,7 @@ import {
   Search,
   Bell,
   User,
+  BookOpenCheck,
   MessageSquare,
   FileText,
   Download,
@@ -67,6 +68,7 @@ import {
   normalizeAcademicGradeLabel,
   normalizeClassNameInput,
 } from './domain/classNaming';
+import { StudentTodayTasksPage } from './StudentTodayTasksPage';
 import {
   buildClassFeedbackPeriodPreview,
   buildCreateClassFeedbackTaskRequest,
@@ -146,6 +148,7 @@ type Page =
   | 'dashboard'
   | 'review-generation'
   | 'class-feedback-generation'
+  | 'student-tasks'
   | 'consultation'
   | 'calendar'
   | 'smartWrongQuestions'
@@ -431,6 +434,7 @@ const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
 const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
   { id: 'review-generation', label: '复习生成' },
   { id: 'class-feedback-generation', label: '课堂反馈' },
+  { id: 'student-tasks', label: '学生端' },
   { id: 'consultation', label: '咨询记录' },
   { id: 'calendar', label: '课程日历' },
   { id: 'smartWrongQuestions', label: '智能错题' },
@@ -1759,6 +1763,7 @@ const Sidebar = ({
       { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
       { id: 'review-generation', icon: Library, label: '复习生成' },
       { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
+      { id: 'student-tasks', icon: BookOpenCheck, label: '学生端' },
       { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
       { id: 'calendar', icon: CalendarDays, label: '课程日历' },
       ...(canAccessSmartWrongQuestions(currentUser.role)
@@ -10745,6 +10750,7 @@ export default function App() {
     dashboard: '工作台',
     'review-generation': '复习生成',
     'class-feedback-generation': '课堂反馈',
+    'student-tasks': '学生端今日任务',
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
@@ -10924,6 +10930,9 @@ export default function App() {
                   <ReviewGenerationPage onSuccess={handleReviewGenerationSuccess} currentUser={currentUser} />
                 )}
                 {activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage(currentUser, 'class-feedback-generation') && <ClassFeedbackGenerationPage currentUser={currentUser} />}
+                {activeWorkspacePage === 'student-tasks' && canOpenWorkspacePage(currentUser, 'student-tasks') && (
+                  <StudentTodayTasksPage today={getTodayIsoDate()} apiFetch={apiFetch} buildAuthedPath={buildAuthedPath} />
+                )}
                 {activeWorkspacePage === 'consultation' && canOpenWorkspacePage(currentUser, 'consultation') && <ConsultationPage currentUser={currentUser} />}
                 {activeWorkspacePage === 'calendar' && canOpenWorkspacePage(currentUser, 'calendar') &&
                   (calendarLoading ? (

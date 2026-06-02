@@ -47,6 +47,7 @@ MEMBER_ROLE = "member"
 CONFIGURABLE_VISIBLE_PAGES = (
     "review-generation",
     "class-feedback-generation",
+    "student-tasks",
     "consultation",
     "calendar",
     "smartWrongQuestions",
@@ -5194,6 +5195,243 @@ def get_student_profile(student_id: int, organization_id: int | None = None) -> 
         if not row:
             return None
         return _build_student_profile_from_row(conn, row)
+_REVIEW_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _student_review_task_scope_sql(actor_user: dict, class_alias: str = "c") -> tuple[str, list[object]]:
+    role = (actor_user or {}).get("role")
+    if role == SUPER_OWNER_ROLE:
+        return "", []
+
+    clauses = [f"{class_alias}.organization_id=?"]
+    params: list[object] = [actor_user["organization_id"]]
+    if role == MEMBER_ROLE:
+        class_ids = [int(class_id) for class_id in get_user_class_ids(actor_user["id"])]
+        if not class_ids:
+            return "0=1", []
+        placeholders = ",".join("?" for _ in class_ids)
+        clauses.append(f"{class_alias}.id IN ({placeholders})")
+        params.extend(class_ids)
+    return " AND ".join(clauses), params
+
+
+def list_student_review_task_students_for_actor(actor_user: dict) -> list[dict]:
+    scope_sql, scope_params = _student_review_task_scope_sql(actor_user)
+    where_sql = f"WHERE {scope_sql}" if scope_sql else ""
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                s.id,
+                s.name,
+                s.organization_id,
+                GROUP_CONCAT(DISTINCT c.name) AS class_names,
+                COUNT(DISTINCT c.id) AS class_count
+            FROM students s
+            JOIN class_students cs ON cs.student_id=s.id
+            JOIN classes c ON c.id=cs.class_id
+            {where_sql}
+            GROUP BY s.id, s.name, s.organization_id
+            ORDER BY s.name COLLATE NOCASE ASC, s.id ASC
+            """,
+            scope_params,
+        ).fetchall()
+
+    items: list[dict] = []
+    for row in rows:
+        class_names = [
+            class_name.strip()
+            for class_name in str(row["class_names"] or "").split(",")
+            if class_name.strip()
+        ]
+        items.append(
+            {
+                "id": int(row["id"]),
+                "name": row["name"],
+                "organization_id": row["organization_id"],
+                "class_names": class_names,
+                "class_count": int(row["class_count"] or 0),
+            }
+        )
+    return items
+
+
+def _load_review_plan_days(raw_plan_json: str) -> tuple[dict, list[dict]]:
+    try:
+        plan = json.loads(raw_plan_json or "{}")
+    except json.JSONDecodeError:
+        return {}, []
+    if not isinstance(plan, dict):
+        return {}, []
+    days = plan.get("days")
+    if not isinstance(days, list):
+        return plan, []
+    return plan, [day for day in days if isinstance(day, dict)]
+
+
+def _extract_review_day_date(day_plan: dict) -> str:
+    for key in ("review_date", "date", "target_date"):
+        value = str(day_plan.get(key) or "").strip()
+        if _REVIEW_DATE_PATTERN.fullmatch(value):
+            return value
+    for key in ("label", "title", "day_label"):
+        match = _REVIEW_DATE_PATTERN.search(str(day_plan.get(key) or ""))
+        if match:
+            return match.group(0)
+    return ""
+
+
+def _extract_review_day_steps(day_plan: dict) -> list[str]:
+    raw_steps = day_plan.get("steps")
+    if not isinstance(raw_steps, list):
+        raw_steps = day_plan.get("tasks")
+    if not isinstance(raw_steps, list):
+        raw_steps = day_plan.get("items")
+    if not isinstance(raw_steps, list):
+        return ["按本课复习计划完成当天复习"]
+
+    steps: list[str] = []
+    for raw_step in raw_steps:
+        if isinstance(raw_step, str):
+            text = raw_step.strip()
+        elif isinstance(raw_step, dict):
+            text = str(
+                raw_step.get("title")
+                or raw_step.get("text")
+                or raw_step.get("content")
+                or raw_step.get("prompt")
+                or ""
+            ).strip()
+        else:
+            text = ""
+        if text:
+            steps.append(text)
+    return steps or ["按本课复习计划完成当天复习"]
+
+
+def _extract_review_day_pdf_page(day_plan: dict, day_index: int) -> tuple[int, bool]:
+    for key in ("pdf_page", "page", "start_page"):
+        value = day_plan.get(key)
+        if isinstance(value, bool):
+            continue
+        try:
+            page = int(value)
+        except (TypeError, ValueError):
+            continue
+        if page > 0:
+            return page, False
+    return max(1, 2 + int(day_index)), True
+
+
+def _student_review_student_row_for_actor(conn: sqlite3.Connection, actor_user: dict, student_id: int):
+    scope_sql, scope_params = _student_review_task_scope_sql(actor_user)
+    where_clauses = ["s.id=?"]
+    params: list[object] = [student_id]
+    if scope_sql:
+        where_clauses.append(scope_sql)
+        params.extend(scope_params)
+    where_sql = " AND ".join(where_clauses)
+    return conn.execute(
+        f"""
+        SELECT
+            s.id,
+            s.name,
+            s.organization_id,
+            GROUP_CONCAT(DISTINCT c.name) AS class_names,
+            COUNT(DISTINCT c.id) AS class_count
+        FROM students s
+        JOIN class_students cs ON cs.student_id=s.id
+        JOIN classes c ON c.id=cs.class_id
+        WHERE {where_sql}
+        GROUP BY s.id, s.name, s.organization_id
+        """,
+        params,
+    ).fetchone()
+
+
+def list_student_review_tasks_for_actor(actor_user: dict, student_id: int, review_date: str) -> Optional[dict]:
+    with get_conn() as conn:
+        student_row = _student_review_student_row_for_actor(conn, actor_user, int(student_id))
+        if not student_row:
+            return None
+
+        scope_sql, scope_params = _student_review_task_scope_sql(actor_user)
+        where_clauses = [
+            "cs.student_id=?",
+            "COALESCE(l.plan_json, '') <> ''",
+            "COALESCE(l.record_status, 'ready') = 'ready'",
+        ]
+        params: list[object] = [int(student_id)]
+        if scope_sql:
+            where_clauses.append(scope_sql)
+            params.extend(scope_params)
+        rows = conn.execute(
+            f"""
+            SELECT
+                l.*,
+                c.name AS class_name,
+                c.subject AS class_subject,
+                c.grade AS class_grade
+            FROM lessons l
+            JOIN classes c ON c.id=l.class_id
+            JOIN class_students cs ON cs.class_id=c.id
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY l.date DESC, l.id DESC
+            """,
+            params,
+        ).fetchall()
+
+    tasks: list[dict] = []
+    for row in rows:
+        lesson = dict(row)
+        plan, day_plans = _load_review_plan_days(str(lesson.get("plan_json") or ""))
+        lesson_info = plan.get("lesson_info") if isinstance(plan.get("lesson_info"), dict) else {}
+        for day_index, day_plan in enumerate(day_plans):
+            if _extract_review_day_date(day_plan) != review_date:
+                continue
+            pdf_path = str(lesson.get("pdf_path") or "").strip()
+            pdf_page, pdf_page_estimated = _extract_review_day_pdf_page(day_plan, day_index)
+            lesson_id = int(lesson["id"])
+            topic = str(lesson.get("topic") or lesson_info.get("topic") or "").strip()
+            subject = str(lesson.get("subject") or lesson.get("class_subject") or lesson_info.get("subject") or "").strip()
+            label = str(day_plan.get("label") or day_plan.get("title") or f"{review_date} 复习").strip()
+            estimated_time = str(day_plan.get("time") or day_plan.get("estimated_time") or "").strip()
+            tasks.append(
+                {
+                    "lesson_id": lesson_id,
+                    "lesson_date": lesson.get("date") or "",
+                    "lesson_subject": subject,
+                    "lesson_topic": topic,
+                    "class_id": lesson.get("class_id"),
+                    "class_name": lesson.get("class_name") or "",
+                    "review_label": label,
+                    "estimated_time": estimated_time,
+                    "steps": _extract_review_day_steps(day_plan),
+                    "pdf_url": f"/api/pdf/{lesson_id}",
+                    "pdf_download_url": f"/api/pdf/download/{lesson_id}",
+                    "pdf_filename": Path(pdf_path).name if pdf_path else "",
+                    "pdf_available": bool(pdf_path and Path(pdf_path).exists()),
+                    "pdf_page": pdf_page,
+                    "pdf_page_estimated": pdf_page_estimated,
+                }
+            )
+
+    class_names = [
+        class_name.strip()
+        for class_name in str(student_row["class_names"] or "").split(",")
+        if class_name.strip()
+    ]
+    return {
+        "date": review_date,
+        "student": {
+            "id": int(student_row["id"]),
+            "name": student_row["name"],
+            "organization_id": student_row["organization_id"],
+            "class_names": class_names,
+            "class_count": int(student_row["class_count"] or 0),
+        },
+        "tasks": tasks,
+    }
 
 
 def _dedupe_student_name_in_class(
