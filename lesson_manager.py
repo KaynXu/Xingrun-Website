@@ -2475,6 +2475,7 @@ def init_db():
             child_reason_text_snapshot    TEXT NOT NULL DEFAULT '',
             primary_error_type_snapshot   TEXT NOT NULL DEFAULT '',
             cause_note_snapshot           TEXT NOT NULL DEFAULT '',
+            topic_category_snapshot       TEXT NOT NULL DEFAULT '',
             ai_hint                       TEXT NOT NULL DEFAULT '',
             reason_blank_prompt           TEXT NOT NULL DEFAULT '',
             improvement_summary_prompt    TEXT NOT NULL DEFAULT '',
@@ -2782,6 +2783,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
@@ -7974,8 +7976,9 @@ def create_pending_wrong_question_practice_sheet(
                     diagram_spec_json_snapshot,
                     child_reason_text_snapshot,
                     primary_error_type_snapshot,
-                    cause_note_snapshot
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    cause_note_snapshot,
+                    topic_category_snapshot
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sheet_id,
@@ -7990,6 +7993,7 @@ def create_pending_wrong_question_practice_sheet(
                     str(record.get("child_raw_reason_text") or "").strip(),
                     str(record.get("primary_error_type") or "").strip(),
                     str(record.get("secondary_error_summary") or "").strip(),
+                    str(record.get("topic_category") or "").strip(),
                 ),
             )
         saved = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)

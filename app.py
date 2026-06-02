@@ -989,6 +989,7 @@ def _practice_pack_item_from_real_record(record: dict, index: int) -> dict:
         "child_reason_text_snapshot": str(record.get("child_raw_reason_text") or "").strip(),
         "primary_error_type_snapshot": str(record.get("primary_error_type") or "").strip(),
         "cause_note_snapshot": str(record.get("secondary_error_summary") or "").strip(),
+        "topic_category_snapshot": str(record.get("topic_category") or "").strip(),
     }
 
 

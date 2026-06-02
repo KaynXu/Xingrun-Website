@@ -34,6 +34,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             child_raw_reason_text="我把乘法放到最后算了",
             primary_error_type="细节问题",
             secondary_error_summary="运算顺序判断不稳定",
+            topic_category="四则混合运算",
             recognition_status="recognized",
             is_geometry=False,
             question_text="计算 $2+3\\times4$ 的结果。",
@@ -45,6 +46,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             child_raw_reason_text="我没有看清辅助线",
             primary_error_type="审题问题",
             secondary_error_summary="图形关系判断不完整",
+            topic_category="几何辅助线",
             recognition_status="recognized",
             is_geometry=True,
             question_text="",
@@ -87,6 +89,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["items"][0]["wrong_question_record_id"], self.record_two["id"])
         self.assertTrue(saved["items"][0]["is_geometry"])
         self.assertEqual(saved["items"][0]["cause_note_snapshot"], "图形关系判断不完整")
+        self.assertEqual(saved["items"][0]["topic_category_snapshot"], "几何辅助线")
         self.assertEqual(saved["items"][0]["diagram_type_snapshot"], "geometry")
         self.assertEqual(
             json.loads(saved["items"][0]["diagram_spec_json_snapshot"])["points"][0]["label"],
@@ -95,6 +98,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["items"][1]["wrong_question_record_id"], self.record_one["id"])
         self.assertEqual(saved["items"][1]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
         self.assertEqual(saved["items"][1]["child_reason_text_snapshot"], "我把乘法放到最后算了")
+        self.assertEqual(saved["items"][1]["topic_category_snapshot"], "四则混合运算")
 
     def test_mark_wrong_question_practice_sheet_succeeded_saves_generated_prompts_and_pdf(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
