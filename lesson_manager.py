@@ -7414,6 +7414,38 @@ def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     return _serialize_wechat_wrong_question_submission_row(row)
 
 
+def list_wrong_question_submissions_for_ingestion_run(ingestion_run_id: str) -> list[dict]:
+    normalized_run_id = (ingestion_run_id or "").strip()
+    if not normalized_run_id:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                c.grade AS grade,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.ingestion_run_id=?
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            (normalized_run_id,),
+        ).fetchall()
+    return [
+        item
+        for item in (
+            _serialize_wechat_wrong_question_submission_row(row)
+            for row in rows
+        )
+        if item is not None
+    ]
+
+
 def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
