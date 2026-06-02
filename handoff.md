@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-03 已在 `docs/wrong-questions/wrong-question-system-review-20260603.md` 追加 `# 10. error_correction 源码调研与产品形态迁移评估`：记录 `/Users/xiaodi/Desktop/error_correction` 的上传、EnsExam 擦除、PaddleOCR/AI 识别、OCR 简化、重叠页分割、结构化纠错、去重、导出/入库和 AI 对话链路；补充可直接复用模块矩阵、需重写适配项、完整工作台 + AI 对话上传闭环目标形态、建议新增数据表/API、LangGraph/知识图谱渐进接入策略和后续验收场景。原 `# 10. 优先级行动清单` 已顺延为 `# 11`。
 - 2026-06-03 已补充 `docs/wrong-questions/wrong-question-system-review-20260603.md` 的结构建议：不再把“四段式”写成唯一模板，而是明确 `原题 / 原图`、`方法提醒`、`挖空复盘`、`订正区` 是最低必备功能区；专业推荐结构应再包含页眉元信息、错因定位 / 本次目标、老师反馈区和需老师确认提示。优先级行动清单也同步改为“最低四区 + 完整错题本结构”。
 - 2026-06-03 已补充 `docs/wrong-questions/wrong-question-system-review-20260603.md` 第 9 节：明确“不看当前成熟度、只看未来方向”时，数据标注 + eval + 分类器 / fine-tuning 是提高题型分类、错因分类、挖空策略选择准确率的最合适长期路径之一；同时强调训练不能单独解决题干保真、图片保留、数学正确性和排版稳定，仍需 schema、规则、模板、质量检查和人审兜底。
 - 2026-06-03 已将“学生错题回顾 / 错题本自动生成系统”整体评估沉淀为项目文档 `docs/wrong-questions/wrong-question-system-review-20260603.md`。文档只记录审查、诊断和改进建议，不改业务代码、prompt 或模板；覆盖当前工作流地图、高风险问题、UI 设计、文案风格、内容结构、题型规则、稳定性链路、Human-in-the-loop、数据标注/训练建议和优先级行动清单，并保留文件路径、代码位置、样例 PDF 统计或“未找到依据”。

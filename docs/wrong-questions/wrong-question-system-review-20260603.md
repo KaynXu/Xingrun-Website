@@ -369,7 +369,122 @@ UI 渲染层
 - 轻量分类器：先训练或校准题型、错因、是否需老师确认、是否疑似超纲这几类标签，用于给生成链路选规则，不直接生成学生可见内容。
 - 训练触发条件：当已有 500 到 1000 张高质量标注卡片，且 eval 显示同类文案问题反复出现、规则和 few-shot 仍无法稳定解决时，再考虑 fine-tuning 或小模型分类器。
 
-# 10. 优先级行动清单
+# 10. error_correction 源码调研与产品形态迁移评估
+
+本节基于 `/Users/xiaodi/Desktop/error_correction` 源码调研，评估其产品形态如何并入当前星润错题系统。用户已确认允许直接复用源码；但该项目 README 和 LICENSE 标明 AGPL-3.0，因此后续若直接复制、修改或部署其代码，仍应在实施前保留授权/开源义务确认记录，避免许可风险被遗忘。
+
+## 10.1 源码能力结论
+
+`error_correction` 不是一个单点 OCR 工具，而是一套完整错题工作台。其核心链路为：
+
+```text
+上传 PDF / 图片
+→ prepare_input 标准化输入
+→ 可选 EnsExam 擦除手写笔迹
+→ PaddleOCR / AI 识别并生成 bbox 预览
+→ simplify_ocr_results 统一 OCR block 边界
+→ 2 页一组、1 页重叠的批量分割
+→ LLM structured output 生成题目 schema
+→ OCR 纠错与跨批次去重
+→ 导出 Markdown / 入库
+→ 错题绑定 AI 教学对话
+```
+
+关键源码依据：
+
+- `/Users/xiaodi/Desktop/error_correction/backend/routes/upload.py`：覆盖 `/api/upload`、`/api/erase`、`/api/ocr`、`/api/split`、`/api/export`。
+- `/Users/xiaodi/Desktop/error_correction/backend/src/workflow.py`：定义 LangGraph workflow、重叠页分割、并行批次、去重、纠错、导出。
+- `/Users/xiaodi/Desktop/error_correction/backend/src/utils.py`：`prepare_input()`、`simplify_ocr_results()`、`export_wrongbook()`。
+- `/Users/xiaodi/Desktop/error_correction/backend/agents/error_correction/schemas.py`：题目分割和 OCR 纠错 Pydantic schema。
+- `/Users/xiaodi/Desktop/error_correction/backend/agents/error_correction/agent.py`：structured output 自动探测和 fallback。
+- `/Users/xiaodi/Desktop/error_correction/backend/agents/teach/prompts.py`：题目绑定 AI 辅导的第一轮引导规则。
+- `/Users/xiaodi/Desktop/error_correction/frontend/src/views/app/WorkspaceView.vue`、`ChatPageView.vue`、`ErrorBankView.vue`：工作台、AI 对话、错题库三类产品入口。
+
+## 10.2 可复用模块矩阵
+
+建议直接迁移或改造：
+
+- OCR 简化边界：`simplify_ocr_results()` 把 PaddleOCR 原始结果压成 `page_index + blocks[]`，适合成为星润后续 OCR 到 Agent 的统一输入边界。
+- 重叠批次分割：`batch_size=2 / overlap=1 / is_primary` 的设计能处理跨页题和页首延续图，适合迁移到多页试卷/PDF 工作台。
+- 题目 schema：`ContentBlock / Question / QuestionSplitResult / CorrectionResult` 可作为星润 `question_structured_json` 的初版结构。
+- structured output fallback：先探测 provider schema / function calling / json mode，最后回落 prompt JSON，适合星润多 provider 现状。
+- 分割 / 纠错 prompt：包含跨页续题、表格、图片、公式、知识点复用、OCR 错误标记等规则，适合直接改写为星润题型规则库的基础。
+- Teach Agent 引导 prompt：第一轮先概括知识点再问学生卡在哪一步，适合升级成“先收集错因自述，再进入归档”的学生对话入口。
+
+需要重写适配：
+
+- Vue 工作台 UI：当前星润前端是 React/TypeScript，不能直接搬 Vue 组件；应复用产品结构和状态，而不是复用页面代码。
+- SQLAlchemy ORM：星润当前错题链路以 `lesson_manager.py` 的 SQLite 数据层为主，不应并行引入 `error_correction` 的 ORM 模型。
+- 全局 session 状态：`error_correction` 用内存 session 管上传文件和当前 thread，星润需要用 RQ/SQLite job 表持久化，避免刷新、并发和多学生串数据。
+
+可选接入：
+
+- EnsExam 擦除模型：作为上传预处理 adapter 接入；模型未配置时必须降级，不应阻断普通上传。
+- PaddleOCR 客户端：适合多页 PDF/试卷工作台；单张错题仍可沿用现有 `ai_processor.recognize_wrong_question_image()`。
+- LangGraph workflow：适合作为未来可中断、可恢复、多 agent 编排层；V1 不建议作为主执行框架。
+
+## 10.3 目标产品形态
+
+最终形态应同时保留“完整工作台”和“学生 AI 对话闭环”两条入口。
+
+工作台入口：
+
+- 老师或运营上传 PDF / 多张图片。
+- 系统可选擦除手写笔迹，随后 OCR 识别并展示 bbox 预览。
+- 老师确认 OCR 后进入 AI 分割、OCR 纠错、知识点标注。
+- 分割结果可重排、勾选、编辑答案/学生作答，再导入现有错题库或导出归档。
+
+AI 对话入口：
+
+- 学生在 AI 对话界面上传错题图片或 PDF 页。
+- Agent 不直接给完整答案，先追问：`你觉得错在哪里？`、`哪一步不理解？`、`要先看提示还是先自己复盘？`
+- 系统异步完成识别、分割、知识点标注和错因整理。
+- 学生确认或老师复核后，把错题、原图、识别详情、错因自述、对话摘要归档到现有错题库。
+- 归档后的错题详情页可回看原始对话、上传资源、处理状态和老师确认原因。
+
+这比原有“四区错题本 PDF”更完整：前者解决纸面复盘结构，新增产品形态解决“上传、追问、理解、归档、复习”的闭环。
+
+## 10.4 接口与数据建议
+
+建议新增后端能力：
+
+- `wrong_question_ingestion_runs`：记录一次上传/识别/分割/归档任务，字段至少包含 `id`、`source`、`organization_id`、`class_id`、`student_id`、`teacher_user_id`、`chat_session_id`、`status`、`current_step`、`error_message`、`created_at`、`updated_at`。
+- `wrong_question_assets`：保存原图、PDF 页、擦除图、OCR 页图和 bbox 预览，字段至少包含 `run_id`、`asset_type`、`file_path`、`public_url`、`page_index`、`checksum`。
+- `wrong_question_chat_sessions/messages`：保存学生错题对话与归档记录的关系；若复用现有会话表，也要补 `wrong_question_record_id`、`ingestion_run_id` 关联。
+
+扩展现有 `wrong_question_submissions`：
+
+- 增加 `source=wechat_mp|workspace|ai_chat`，区分微信上传、工作台导入和 AI 对话上传。
+- 增加 `ingestion_run_id`、`chat_session_id`、`question_structured_json`、`knowledge_tags_json`、`needs_teacher_confirmation`、`confirmation_reasons_json`。
+- 对非微信来源，规划放宽 `parent_wechat_account_id / binding_id` 强约束，或新增专门创建函数，避免为了入库强行伪造微信绑定关系。
+
+建议 API：
+
+- `POST /api/wrong-question-ingestions`：创建上传/识别任务，支持 `source=workspace|ai_chat`。
+- `GET /api/wrong-question-ingestions/<run_id>`：查询上传、擦除、OCR、分割、归档状态。
+- `POST /api/wrong-question-ingestions/<run_id>/ocr`：触发或重跑 OCR。
+- `POST /api/wrong-question-ingestions/<run_id>/split`：触发 AI 分割与纠错。
+- `POST /api/wrong-question-ingestions/<run_id>/archive`：把确认后的题目归档到错题库。
+- `POST /api/wrong-question-chats/<session_id>/stream`：学生错题对话流式接口，支持上传后的追问和归档动作。
+
+## 10.5 LangGraph 与知识图谱策略
+
+V1 建议渐进接入：
+
+- 主执行仍使用星润现有 Flask + RQ + SQLite job 状态，原因是当前项目已经有上传任务、错题库、练习单和周跟进链路。
+- LangGraph 暂时作为未来编排接口，不在第一版替换主流程。等上传、识别、分割、对话和归档状态稳定后，再把可中断节点迁移到 LangGraph。
+- 知识图谱第一版不引入独立图数据库。先在 SQLite 内建立知识点标签、先修关系、错因关系和题目映射，服务于推荐复习和相似错题检索。
+- 当标注数据和错题量稳定后，再评估是否升级到图数据库或 LangGraph + graph retrieval。
+
+## 10.6 后续实现验收场景
+
+- 单张错题图片在 AI 对话上传后，agent 先追问错因，再归档到错题库。
+- 多页 PDF 走工作台：上传、擦除、OCR 预览、分割、纠错、导入错题库。
+- 识别失败、图片缺失、题干为空、知识点不确定时触发 `needs_teacher_confirmation`。
+- 错题归档后，错题库详情可打开原始对话和处理记录。
+- 无 EnsExam 或 PaddleOCR 配置时，系统降级到现有 AI 视觉识别，不阻断基础上传。
+
+# 11. 优先级行动清单
 
 1. **P0：把 PDF 渲染模板改成“最低四区 + 完整错题本结构”。**
    - 为什么：当前最新 PDF 没有稳定承载 `原题 / 原图`、`方法提醒`、`挖空复盘`、`订正区`，也缺少错因定位、老师反馈和需确认提示。
