@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-05-31
+最后更新：2026-06-02
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-02 已新增每日错题练习包企业微信自动发送工作流文档 `docs/wrong-questions/daily-wecom-wrong-question-automation-workflow.md`，把自动化口径从旧 practice pack/API 调用收口为“直接读取本地 SQLite/后端数据层、每学生独立 topic/reason 轮换、每位老师一个 zip、zip 内按班级分文件夹、企业微信群 `错题发送` 直接发送、proof 回传”。本轮只新增文档并更新本 handoff，未改业务代码。
 - 2026-06-02 已按浏览器评论把官网首页首屏 H1 从 `Starain，用 AI 赋能教育机构。` 改为 `用ai创造教育`；同步更新 landing 页测试，旧 H1 在生产源码中不再出现。本轮在临时分支 `codex/hero-ai-education-copy` 和临时 worktree `/tmp/xingrun-hero-ai-education-copy` 完成，未触碰主工作区既有脏文件。proof `/tmp/xingrun_hero_ai_education_copy_proof.sh` 已通过：源码与测试均包含新文案，定向前端测试 `npx tsx --test src/landing-legal-pages.test.tsx` 13 条通过，`npm run build` 通过，`git diff --check` 通过；本地浏览器核对 `http://127.0.0.1:3007/` 首个 H1 为 `用ai创造教育`，旧文案出现次数 0。
 - 2026-06-02 已按 `review_plan_templates/review-plan-workflow.md` 和用户提供的 `pasted-text.txt` 生成《二次函数最值：表示线段与将军饮马》课后复习计划：新增课程纪要 `review_plan_templates/source_transcripts/quadratic_segment_extrema_class_notes_20260602.txt` 和课程包 `review_plan_templates/lesson_pack_quadratic_function_segment_extrema_20260602.py`，主题收口为“化归、表示线段、斜线转化、二次函数顶点与将军饮马入口”，覆盖竖横线段的上减下/右减左、绝对值使用时机、斜率与比值关系、3:4:5 与特殊角转化、设参数 a 表示线段、顶点 `-b/2a`、PE/PF 组合线段倍数转化以及最终的符号/倍率检查。已导出本地 PDF `review_plan_templates/pdf_output/二次函数最值-表示线段与将军饮马-20260602-174541.pdf`（PDF 输出目录按 `.gitignore` 不入库）。proof `/tmp/xingrun_quadratic_segment_review_plan_proof.sh` 已通过：课程包和生成脚本 `py_compile` 通过；PDF 8 页 187271 bytes，包含 `表示线段 / 将军饮马 / 上减下 / 右减左 / 斜率 / 比值 / 顶点横坐标 / PE+PF` 和 5 个复习日期 `2026-06-03 / 2026-06-04 / 2026-06-09 / 2026-06-16 / 2026-07-02`，未发现 `暂无文本内容`、`TODO`、`TBD`、raw `\frac`、`\mathbb`、`ldots`、`LESON` 等坏 token，抽查第 1/2/8 页渲染非空。
 - 2026-06-02 已把网站默认 DeepSeek 文本模型从 `deepseek-chat` 切到 `deepseek-v4-pro`：`config_runtime.py` 默认值、`app.py` 网页/API 默认聊天模型、`ai_processor.py` 结构化生成 fallback，以及 `.env.runtime.example` 示例环境变量已同步更新；相关默认值与异步复习计划 API 测试断言也已改为 `deepseek-v4-pro`。proof `/tmp/xingrun_switch_deepseek_v4_pro_proof.sh` 已通过：默认配置读取为 `provider=deepseek / deepseek_model=deepseek-v4-pro`，`app._default_chat_model_name()` / `ai_processor._get_chat_model()` / `_get_structured_generation_model()` 均返回 `deepseek-v4-pro`，`py_compile` 通过，定向单测 `tests.test_ai_provider_defaults` 与 `tests.test_review_plan_async_api` 共 20 条通过，`git diff --check` 通过。
