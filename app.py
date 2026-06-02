@@ -239,7 +239,7 @@ def _default_chat_model_name() -> str:
     cfg = get_config()
     provider = _default_ai_provider_name()
     if provider == "deepseek":
-        return str(cfg.get("deepseek_model", "deepseek-chat") or "deepseek-chat")
+        return str(cfg.get("deepseek_model", "deepseek-v4-pro") or "deepseek-v4-pro")
     if provider == "mimo":
         return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
     return "gpt-4o"

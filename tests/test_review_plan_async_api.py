@@ -89,7 +89,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
         self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
         self.assertEqual(thread_kwargs["chat_provider"], "deepseek")
-        self.assertEqual(thread_kwargs["chat_model"], "deepseek-chat")
+        self.assertEqual(thread_kwargs["chat_model"], "deepseek-v4-pro")
         self.assertIn("request_key", thread_kwargs)
         self.assertNotIn("lesson_date", thread_kwargs)
         self.assertNotIn("class_id", thread_kwargs)
@@ -140,7 +140,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertTrue(lesson["review_request_key"])
         self.assertTrue(lesson["review_request_id"])
         self.assertEqual(lesson["review_chat_provider"], "deepseek")
-        self.assertEqual(lesson["review_chat_model"], "deepseek-chat")
+        self.assertEqual(lesson["review_chat_model"], "deepseek-v4-pro")
 
         mock_transcribe_audio.assert_not_called()
         mock_start_thread.assert_called_once()
