@@ -164,32 +164,32 @@ export function StudentTodayTasksContent({
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 dark:bg-slate-950 dark:text-slate-50 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4">
-        <header className="px-1">
+      <div className="mx-auto flex max-w-7xl flex-col gap-5">
+        <header className="rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
           <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white">今日复习</h1>
         </header>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
         )}
 
-        <section className="grid min-h-[38rem] gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
-          <div className="border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-            <div className="flex items-center justify-between gap-3">
+        <section className="grid min-h-[38rem] gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
+            <div className="flex items-center justify-between gap-3 px-1">
               <p className="text-lg font-bold text-slate-900 dark:text-slate-100">今日任务</p>
               {taskLoading && <Loader2 size={18} className="animate-spin text-sky-500" />}
             </div>
 
             <div className="mt-3 space-y-3">
               {loading || taskLoading ? (
-                <div className="flex min-h-64 items-center justify-center border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                <div className="flex min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                   正在加载今日任务
                 </div>
               ) : tasks.length === 0 ? (
-                <div className="flex min-h-64 flex-col items-center justify-center border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-white/10 dark:bg-white/5">
+                <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-white/10 dark:bg-white/5">
                   <BookOpenCheck size={34} className="text-emerald-500" />
                   <p className="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">今天暂无复习任务</p>
                 </div>
@@ -202,9 +202,9 @@ export function StudentTodayTasksContent({
                       type="button"
                       onClick={() => onTaskSelect(task)}
                       className={cx(
-                        'w-full border p-4 text-left transition',
+                        'w-full rounded-3xl border p-4 text-left transition',
                         active
-                          ? 'border-sky-300 bg-sky-50 dark:border-sky-400/40 dark:bg-sky-500/10'
+                          ? 'border-sky-300 bg-sky-50 shadow-[0_16px_34px_rgba(14,165,233,0.14)] dark:border-sky-400/40 dark:bg-sky-500/10'
                           : 'border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/70 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/8',
                       )}
                     >
@@ -216,7 +216,7 @@ export function StudentTodayTasksContent({
             </div>
           </div>
 
-          <div className="min-h-[38rem] overflow-hidden border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
+          <div className="min-h-[38rem] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
             {activeTask && previewPath ? (
               <iframe title={`${activeTask.lesson_topic} PDF`} src={previewPath} className="h-full min-h-[38rem] w-full border-0" />
             ) : (
