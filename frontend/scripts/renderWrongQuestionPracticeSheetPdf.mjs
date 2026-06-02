@@ -40,7 +40,7 @@ function escapeHtml(value) {
 }
 
 function buildQuestionBlock(item) {
-  const preview = buildWrongQuestionLatexPreviewModel(item.question_text_snapshot || '');
+  const preview = buildWrongQuestionLatexPreviewModel(formatQuestionTextForPractice(item.question_text_snapshot || ''));
   const questionTextBlock = preview.html
     ? `
       <div class="question-latex-card">
@@ -102,6 +102,21 @@ function normalizePromptText(prompt) {
     .replaceAll('\\n', '\n')
     .replaceAll('\r\n', '\n')
     .replaceAll('\r', '\n');
+}
+
+function formatQuestionTextForPractice(value) {
+  const text = normalizePromptText(value);
+  const hasCompactChoices =
+    /(?:^|\s)A[.．、]\s*\S+[\s\S]*\sB[.．、]\s*\S+[\s\S]*\sC[.．、]\s*\S+[\s\S]*\sD[.．、]\s*\S+/.test(text);
+
+  if (!hasCompactChoices) {
+    return text;
+  }
+
+  return text
+    .replace(/([^\n])\s+(A[.．、]\s*)/g, '$1\n$2')
+    .replace(/[ \t]+(?=[BCD][.．、]\s*)/g, '\n')
+    .replace(/(^|\n)([ABCD])[.．、]\s*/g, '$1$2. ');
 }
 
 function stripPromptHeading(value) {

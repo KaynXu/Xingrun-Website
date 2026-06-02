@@ -67,6 +67,25 @@ test('buildDocumentMarkup normalizes literal newline escapes in question and pro
   assert.match(markup, /接下来我准备先补/);
 });
 
+test('buildDocumentMarkup splits compact multiple-choice options onto separate lines', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '七年级 4 班',
+    teacherName: '何老师',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 22,
+        wrong_question_record_id: 'wechat-choice',
+        is_geometry: false,
+        question_text_snapshot: '22. 设 a=x-2023，b=x-2025，c=x-2024。若 a◇+b◇=16，则 c◇ 的值是（ ） A.6 B.7 C.8 D.9',
+      },
+    ],
+  });
+
+  assert.match(markup, /值是（ ）<br \/>A\. 6<br \/>B\. 7<br \/>C\. 8<br \/>D\. 9/);
+});
+
 test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geometry practice records', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
