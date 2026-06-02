@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-03 已补充 `docs/wrong-questions/wrong-question-system-review-20260603.md` 第 9 节：明确“不看当前成熟度、只看未来方向”时，数据标注 + eval + 分类器 / fine-tuning 是提高题型分类、错因分类、挖空策略选择准确率的最合适长期路径之一；同时强调训练不能单独解决题干保真、图片保留、数学正确性和排版稳定，仍需 schema、规则、模板、质量检查和人审兜底。
 - 2026-06-03 已将“学生错题回顾 / 错题本自动生成系统”整体评估沉淀为项目文档 `docs/wrong-questions/wrong-question-system-review-20260603.md`。文档只记录审查、诊断和改进建议，不改业务代码、prompt 或模板；覆盖当前工作流地图、高风险问题、UI 设计、文案风格、内容结构、题型规则、稳定性链路、Human-in-the-loop、数据标注/训练建议和优先级行动清单，并保留文件路径、代码位置、样例 PDF 统计或“未找到依据”。
 - 2026-06-02 已按用户截图优化错题 PDF 的“方法提醒 / 挖空复盘”生成口径：正式错题练习项新增 `topic_category_snapshot` 快照并传入 `ai_processor.generate_wrong_question_practice_sheet_material()`，AI prompt 明确要求知识点问题落到具体知识点、错因问题落到具体错因，禁止只写“知识点/错因/方法问题”等空泛标题；手动错题工作流和每日企业微信自动化工作流也同步增加具体化规则与反例。proof `/tmp/xingrun_wrong_question_specific_prompts_proof.sh` 已通过：`py_compile` 通过，定向 unittest 3 条通过，smoke 验证 `topic_category=行程` 可生成 `【相遇关系辨析】`、`速度和时间的对应关系`、`总路程` 等具体提示，两个 workflow 文档规则检查通过，`git diff --check` 通过。
 - 2026-06-02 已新增每日错题练习包企业微信自动发送工作流文档 `docs/wrong-questions/daily-wecom-wrong-question-automation-workflow.md`，把自动化口径从旧 practice pack/API 调用收口为“直接读取本地 SQLite/后端数据层、每学生独立 topic/reason 轮换、每位老师一个 zip、zip 内按班级分文件夹、企业微信群 `错题发送` 直接发送、proof 回传”。本轮只新增文档并更新本 handoff，未改业务代码。
