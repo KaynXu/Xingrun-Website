@@ -2,15 +2,11 @@ import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BookOpenCheck,
-  CalendarDays,
   ChevronRight,
-  Download,
   FileText,
   KeyRound,
   Loader2,
-  LogOut,
   RefreshCw,
-  UserRound,
   Users,
 } from 'lucide-react';
 
@@ -142,13 +138,6 @@ export function buildStudentTaskPdfPreviewPath(task: StudentReviewTask, buildAut
   return `${pathWithoutFragment}#page=${task.pdf_page}`;
 }
 
-function summarizeClasses(student: StudentReviewTaskStudent | null): string {
-  if (!student?.class_names?.length) {
-    return '未绑定班级';
-  }
-  return student.class_names.join(' / ');
-}
-
 function buildStudentAuthedPath(path: string, token: string): string {
   if (!token) {
     return path;
@@ -158,8 +147,8 @@ function buildStudentAuthedPath(path: string, token: string): string {
 }
 
 export function StudentTodayTasksContent({
-  today,
-  student,
+  today: _today,
+  student: _student,
   loading,
   taskLoading,
   error,
@@ -167,79 +156,42 @@ export function StudentTodayTasksContent({
   activeTask,
   onTaskSelect,
   buildAuthedPath,
-  onLogout,
+  onLogout: _onLogout,
 }: StudentTodayTasksContentProps) {
   const previewPath = activeTask && activeTask.pdf_available
     ? buildStudentTaskPdfPreviewPath(activeTask, buildAuthedPath)
     : '';
-  const downloadPath = activeTask?.pdf_download_url ? buildAuthedPath(activeTask.pdf_download_url) : '';
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 dark:bg-slate-950 dark:text-slate-50 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900 md:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/10 dark:text-sky-200">
-                <CalendarDays size={14} />
-                {today}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">学生端</p>
-                <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white md:text-4xl">今日复习</h1>
-              </div>
-              <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-300">
-                {student ? `${student.name} 今天需要完成 ${tasks.length} 项复习任务` : '登录后只显示今天需要完成的复习内容'}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:min-w-[22rem] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
-                <p className="text-xs font-semibold text-slate-400 dark:text-slate-400">学生</p>
-                <p className="mt-1 truncate text-base font-bold text-slate-900 dark:text-slate-100">{student?.name || '未登录'}</p>
-                <p className="mt-1 truncate text-xs font-medium text-slate-500 dark:text-slate-400">{summarizeClasses(student)}</p>
-              </div>
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="inline-flex h-full min-h-14 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
-                >
-                  <LogOut size={16} />
-                  退出
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
+      <div className="mx-auto flex max-w-7xl flex-col gap-4">
+        <header className="px-1">
+          <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white">今日复习</h1>
+        </header>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+          <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
         )}
 
-        <section className="grid min-h-[34rem] gap-5 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.18fr)]">
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
-            <div className="flex items-center justify-between gap-3 px-2 py-2">
-              <div>
-                <p className="text-lg font-bold text-slate-900 dark:text-slate-100">今日任务</p>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{tasks.length} 项</p>
-              </div>
+        <section className="grid min-h-[38rem] gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
+          <div className="border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-lg font-bold text-slate-900 dark:text-slate-100">今日任务</p>
               {taskLoading && <Loader2 size={18} className="animate-spin text-sky-500" />}
             </div>
 
             <div className="mt-3 space-y-3">
               {loading || taskLoading ? (
-                <div className="flex min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                <div className="flex min-h-64 items-center justify-center border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                   正在加载今日任务
                 </div>
               ) : tasks.length === 0 ? (
-                <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-white/10 dark:bg-white/5">
+                <div className="flex min-h-64 flex-col items-center justify-center border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-white/10 dark:bg-white/5">
                   <BookOpenCheck size={34} className="text-emerald-500" />
                   <p className="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">今天暂无复习任务</p>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">这里只显示今天要完成的内容</p>
                 </div>
               ) : (
                 tasks.map((task) => {
@@ -250,28 +202,13 @@ export function StudentTodayTasksContent({
                       type="button"
                       onClick={() => onTaskSelect(task)}
                       className={cx(
-                        'w-full rounded-3xl border p-4 text-left transition',
+                        'w-full border p-4 text-left transition',
                         active
-                          ? 'border-sky-300 bg-sky-50 shadow-[0_16px_34px_rgba(14,165,233,0.14)] dark:border-sky-400/40 dark:bg-sky-500/10'
+                          ? 'border-sky-300 bg-sky-50 dark:border-sky-400/40 dark:bg-sky-500/10'
                           : 'border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/70 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/8',
                       )}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-bold text-slate-900 dark:text-slate-100">{task.lesson_topic || '未命名课程'}</p>
-                          <p className="mt-1 truncate text-xs font-medium text-slate-500 dark:text-slate-400">{task.class_name} / {task.lesson_subject}</p>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-200">
-                          {task.estimated_time || '今日'}
-                        </span>
-                      </div>
-                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 dark:bg-white/8">
-                          <FileText size={13} />
-                          {task.pdf_page ? `PDF 第 ${task.pdf_page} 页${task.pdf_page_estimated ? ' 估算' : ''}` : 'PDF'}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 dark:bg-white/8">{task.review_label}</span>
-                      </div>
+                      <p className="truncate text-base font-bold text-slate-900 dark:text-slate-100">{task.lesson_topic || '未命名课程'}</p>
                     </button>
                   );
                 })
@@ -279,62 +216,12 @@ export function StudentTodayTasksContent({
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
-            {activeTask ? (
-              <div className="flex h-full min-h-[34rem] flex-col">
-                <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 dark:border-white/10 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-sky-600 dark:text-sky-300">{activeTask.review_label}</p>
-                    <h2 className="mt-1 truncate text-xl font-bold text-slate-900 dark:text-slate-100">{activeTask.lesson_topic || '今日复习资料'}</h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {activeTask.pdf_page ? `PDF 第 ${activeTask.pdf_page} 页${activeTask.pdf_page_estimated ? ' 估算' : ''}` : activeTask.pdf_filename || 'PDF 资料'}
-                    </p>
-                  </div>
-                  {downloadPath && (
-                    <a
-                      href={downloadPath}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
-                    >
-                      <Download size={16} />
-                      下载
-                    </a>
-                  )}
-                </div>
-
-                <div className="grid flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_20rem]">
-                  <div className="min-h-[28rem] bg-slate-100 dark:bg-slate-950">
-                    {previewPath ? (
-                      <iframe title={`${activeTask.lesson_topic} PDF`} src={previewPath} className="h-full min-h-[28rem] w-full border-0" />
-                    ) : (
-                      <div className="flex h-full min-h-[28rem] flex-col items-center justify-center px-6 text-center">
-                        <FileText size={38} className="text-slate-400" />
-                        <p className="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">PDF 资料待同步</p>
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{activeTask.pdf_filename || '生成完成后这里会显示预览'}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <aside className="border-t border-slate-200 p-5 dark:border-white/10 lg:border-l lg:border-t-0">
-                    <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
-                      <BookOpenCheck size={17} className="text-emerald-500" />
-                      完成清单
-                    </div>
-                    <ol className="mt-4 space-y-3">
-                      {activeTask.steps.map((step, index) => (
-                        <li key={`${activeTask.lesson_id}-${index}`} className="flex gap-3 rounded-2xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-600 dark:bg-white/5 dark:text-slate-300">
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">{index + 1}</span>
-                          <span>{step}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </aside>
-                </div>
-              </div>
+          <div className="min-h-[38rem] overflow-hidden border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
+            {activeTask && previewPath ? (
+              <iframe title={`${activeTask.lesson_topic} PDF`} src={previewPath} className="h-full min-h-[38rem] w-full border-0" />
             ) : (
-              <div className="flex min-h-[34rem] flex-col items-center justify-center px-8 text-center">
-                <UserRound size={38} className="text-sky-500" />
-                <p className="mt-4 text-lg font-bold text-slate-900 dark:text-slate-100">今日任务会显示在这里</p>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">任务会自动打开对应 PDF 页面</p>
+              <div className="flex h-full min-h-[38rem] items-center justify-center bg-slate-100 dark:bg-slate-950">
+                <FileText size={38} className="text-slate-400" />
               </div>
             )}
           </div>

@@ -36,7 +36,7 @@ test('student task pdf preview path keeps auth query before page fragment', () =
   assert.equal(previewPath, '/api/student/pdf/70?token=abc#page=2');
 });
 
-test('student today tasks content renders a student-owned today-only pdf focused page', () => {
+test('student today tasks content renders a flat task list and pdf-only preview', () => {
   const markup = renderToStaticMarkup(
     <StudentTodayTasksContent
       today="2026-06-03"
@@ -58,12 +58,17 @@ test('student today tasks content renders a student-owned today-only pdf focused
   );
 
   assert.match(markup, /今日复习/);
-  assert.match(markup, /袁玲轩/);
-  assert.match(markup, /2026-06-03/);
+  assert.match(markup, /今日任务/);
   assert.match(markup, /二次函数最值/);
-  assert.match(markup, /PDF 第 2 页/);
   assert.match(markup, /iframe/);
-  assert.match(markup, /复习目标: 回忆二次函数最值问题的整体框架/);
+  assert.doesNotMatch(markup, /袁玲轩/);
+  assert.doesNotMatch(markup, /华老师小课/);
+  assert.doesNotMatch(markup, /学生端/);
+  assert.doesNotMatch(markup, /2026-06-03/);
+  assert.doesNotMatch(markup, /下载/);
+  assert.doesNotMatch(markup, /完成清单/);
+  assert.doesNotMatch(markup, /复习目标: 回忆二次函数最值问题的整体框架/);
+  assert.doesNotMatch(markup, /1 项/);
   assert.doesNotMatch(markup, /选择学生/);
   assert.doesNotMatch(markup, /2026-06-04/);
 });
