@@ -108,14 +108,14 @@ def _get_chat_model() -> str:
     cfg = _load_config()
     provider = cfg.get("provider", "deepseek")
     if provider == "deepseek":
-        return cfg.get("deepseek_model", "deepseek-chat")
+        return cfg.get("deepseek_model", "deepseek-v4-pro")
     elif provider == "mimo":
         return cfg.get("mimo_model", "MiMo-7B-RL")
     return "gpt-4o"
 
 
 def _get_structured_generation_model() -> str:
-    return str(_get_chat_model() or "deepseek-chat")
+    return str(_get_chat_model() or "deepseek-v4-pro")
 
 
 def _get_vision_model() -> str:

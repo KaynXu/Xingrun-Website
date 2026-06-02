@@ -38,7 +38,7 @@ DEFAULTS = {
     "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "vision_provider": "qwen",
     "vision_model": "qwen-vl-max-latest",
-    "deepseek_model": "deepseek-chat",
+    "deepseek_model": "deepseek-v4-pro",
     "wrong_question_service_url": "",
     "wrong_question_service_token": "",
     "wechat_service_token": "",
