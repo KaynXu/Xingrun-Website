@@ -370,33 +370,36 @@ Progress note (2026-06-03):
 
 ## Recommended Priority Order
 
-This is the practical execution order after the work already completed, reordered around the final product spine rather than around individual code surfaces:
+This is the practical execution order after the work already completed, reordered around the final student-facing product rather than around whichever teacher surface happens to need a button next:
 
-1. **Keep `Track S` as the authority layer**
-   - Continue to treat shared content schema, generation metadata, reviewer metadata, and mastery metadata as the common contract across AI chat, teacher review, practice PDF, weekly follow-up, and any future workbench.
-   - Why first: the final product only stays coherent if every later surface keeps writing back onto the same record spine instead of inventing one-off payloads.
+1. **Finish the archive/reflection authority layer inside `Track S + E1`**
+   - Treat `question_structured_json`, `knowledge_tags_json`, `reflection_summary`, generation metadata, reviewer metadata, and mastery metadata as the canonical wrong-question record contract.
+   - Make the AI-chat reflection itself first-class record data, not just a transient session summary or a few legacy free-text columns.
+   - Why first: the desired product starts with `student uploads in AI chat -> AI guides reflection -> same record gets archived into the library`. If that reflection spine is not canonical, every later review, PDF, follow-up, and workbench surface will keep re-inventing partial payloads.
 
-2. **Finish the same-record lifecycle before adding more入口**
-   - Prioritize `E2 + B3`: teacher confirmation, return-for-rework, confirmed-to-practice, mastery follow-up, and durable mastery outcomes all need to stay on one wrong-question record.
-   - Why second: the target product is not “many separate tools around a题”, but one continuous chain: `AI chat -> archive -> review -> re-practice -> mastery follow-up -> later grading`.
+2. **Finish the same-record lifecycle before broadening surface count**
+   - Prioritize `E2 + B3`: teacher confirmation, return-for-rework, confirmed-to-practice, mastery follow-up, durable mastery outcomes, and later relapse signals must all keep writing onto one wrong-question record.
+   - Why second: the product is one continuous chain, not many loosely related tools around the same problem: `AI chat -> archive -> review -> re-practice -> mastery follow-up -> later grading`.
 
-3. **Broaden those continuity actions across user-facing surfaces**
-   - Reuse the same rework/follow-up actions from notebook modal, archive detail, weekly follow-up cards, and later student-facing entrypoints.
-   - Why third: once the continuity semantics are stable, multiplying入口 is cheap and does not fragment state.
+3. **Make the student-facing AI chat path the primary product front door**
+   - Keep teacher surfaces as operators on the same archived record chain, but do not let notebook/workbench convenience features redefine the data model.
+   - Why third: the end-state product the user wants is centered on the student upload + guided reflection loop. Teacher notebook, weekly follow-up, and activity views should reuse that spine rather than becoming the source of truth.
 
-4. **F1 + F2 + F3**
-   - Rebuild the practice/PDF artifact on top of the shared schema and quality rules.
-   - Why fourth: the current output still does not fully match the review document’s minimum four-area teaching structure, but it is safer to rebuild it after the record spine is stable.
+4. **Rebuild practice/PDF artifacts on top of the shared archive/reflection schema**
+   - Complete `F1 + F2 + F3` so the printable artifact consumes the same structured record fields instead of reconstructing teaching intent from loosely coupled strings.
+   - Why fourth: the current output still needs to converge toward the review document’s teaching shape, but it should be rebuilt from the canonical record, not from one-off rendering logic.
 
 5. **Transplant low-coupling `error_correction` backend capability, not the whole architecture**
    - Land `prepare_input()`, `simplify_ocr_results()`, overlap split batching, and structured fallback logic onto the generic ingestion backbone.
-   - Why fifth: these are high-value recognition/workbench blocks, but `error_correction` should act as an adapter layer, not become the system’s source of truth too early.
+   - Why fifth: these are high-value recognition/workbench blocks, but `error_correction` should act as an adapter layer feeding the same record spine, not become the system’s source of truth too early.
 
-6. **C3 + D1-D2**
-   - Add the React workbench UI and optional adapters only after the shared runtime is stable enough that the workbench does not fork behavior from the AI-chat path.
+6. **Only then add the React workbench and optional adapters**
+   - Build `C3 + D1-D2` after the shared runtime is stable enough that the workbench cannot fork behavior away from the AI-chat path.
 
-7. **G1-G3**
-   - Turn the whole system into a measurable long-term loop with evals, labels, and lightweight classifiers.
+7. **Close the loop with evals, labels, and lightweight classifiers**
+   - Turn the whole system into a measurable long-term loop with `G1-G3`.
+
+Additional entrypoint reuse is still valuable, but it is now explicitly a follow-on optimization once the archive/reflection authority layer and same-record lifecycle are stable.
 
 ## Product Structure Recommendation
 
@@ -467,11 +470,18 @@ The current round now also reuses the same continuity from the weekly activity s
 - from `本周活跃学生`, the teacher can now jump straight into mastery follow-up on that same single-record continuity chain, instead of stopping at a class/student activity summary and then manually reopening the notebook to hunt for the record again
 - the frontend uses the same deferred notebook-open + scheduled follow-up start pattern as the other summary entrypoints, so the modal transition does not clobber the newly opened mastery-followup session
 
-The next highest-value task is now **the next continuity reuse slice after weekly follow-up reuse**:
+The current round now also lands the first explicit archive/reflection authority slice on the wrong-question record itself:
 
-- extend the same mastery-followup entrypoint to the remaining archive-detail and summary surfaces that still stop at “open record”
-- keep those alternate entrypoints on the same single-record continuity chain instead of inventing a second mastery workflow
-- only after that, decide whether any extra mastery-specific structured card or classifier layer is actually needed
+- `wrong_question_submissions` now persist `reflection_summary_json` as a first-class field instead of relying only on `summary_text + child_reason_*`
+- the archived record now keeps a normalized reflection payload with `mode / summary_text / why_wrong / unknown_step / help_preference / answered_stages / session_entrypoint`
+- existing historical rows keep a backward-compatible fallback summary synthesized from legacy child-reason fields, so the new spine can be adopted without breaking older records
+- this keeps the student AI-chat reflection legible to later review, practice, and mastery steps without requiring each downstream surface to reconstruct the same semantics again
+
+The next highest-value task is now **the first reflection-authority follow-through slice after persistence**:
+
+- make teacher review and rework consume/edit the same `reflection_summary` spine rather than only reading `child_reason_*`
+- let practice generation and later PDF sections read from `reflection_summary + question_structured + knowledge_tags` as the default teaching inputs
+- only after those core downstream consumers are on the shared reflection spine should we spend more time multiplying alternate entrypoints or introducing mastery-specific classifiers
 
 This keeps the implementation path aligned with the final desired product:
 

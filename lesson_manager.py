@@ -1677,6 +1677,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "chat_session_id",
             "question_structured_json",
             "knowledge_tags_json",
+            "reflection_summary_json",
             "generation_metadata_json",
             "mastery_tracking_json",
             "needs_teacher_confirmation",
@@ -1731,6 +1732,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             chat_session_id           TEXT NOT NULL DEFAULT '',
             question_structured_json  TEXT NOT NULL DEFAULT '',
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
+            reflection_summary_json   TEXT NOT NULL DEFAULT '{}',
             generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
             mastery_tracking_json     TEXT NOT NULL DEFAULT '{}',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
@@ -2466,6 +2468,7 @@ def init_db():
             chat_session_id           TEXT NOT NULL DEFAULT '',
             question_structured_json  TEXT NOT NULL DEFAULT '',
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
+            reflection_summary_json   TEXT NOT NULL DEFAULT '{}',
             generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
             mastery_tracking_json     TEXT NOT NULL DEFAULT '{}',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
@@ -2904,6 +2907,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "chat_session_id", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "question_structured_json", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "knowledge_tags_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_submissions", "reflection_summary_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_submissions", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_submissions", "mastery_tracking_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_submissions", "needs_teacher_confirmation", "INTEGER NOT NULL DEFAULT 0")
@@ -7207,6 +7211,7 @@ def _normalize_wrong_question_submission_fields(
     chat_session_id: str = "",
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
     generation_metadata_json: object = None,
     needs_teacher_confirmation: bool = False,
     confirmation_reasons_json: object = None,
@@ -7277,6 +7282,11 @@ def _normalize_wrong_question_submission_fields(
             field_name="knowledge_tags_json",
             default="[]",
         ),
+        "reflection_summary_json": _normalize_json_storage_value(
+            reflection_summary_json,
+            field_name="reflection_summary_json",
+            default="{}",
+        ),
         "generation_metadata_json": _normalize_json_storage_value(
             generation_metadata_json,
             field_name="generation_metadata_json",
@@ -7321,10 +7331,10 @@ def _create_wrong_question_submission_record(
             topic_category, archive_status, status,
             recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
             question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path,
-            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json, generation_metadata_json, mastery_tracking_json,
+            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json, reflection_summary_json, generation_metadata_json, mastery_tracking_json,
             needs_teacher_confirmation, confirmation_reasons_json,
             confirmation_status, confirmation_reviewed_by, confirmation_reviewed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record_id,
@@ -7358,6 +7368,7 @@ def _create_wrong_question_submission_record(
             normalized_payload["chat_session_id"],
             normalized_payload["question_structured_json"],
             normalized_payload["knowledge_tags_json"],
+            normalized_payload["reflection_summary_json"],
             normalized_payload["generation_metadata_json"],
             normalized_payload["mastery_tracking_json"],
             normalized_payload["needs_teacher_confirmation"],
@@ -7407,6 +7418,7 @@ def create_wrong_question_submission(
     chat_session_id: str = "",
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
     generation_metadata_json: object = None,
     needs_teacher_confirmation: bool = False,
     confirmation_reasons_json: object = None,
@@ -7437,6 +7449,7 @@ def create_wrong_question_submission(
         chat_session_id=chat_session_id,
         question_structured_json=question_structured_json,
         knowledge_tags_json=knowledge_tags_json,
+        reflection_summary_json=reflection_summary_json,
         generation_metadata_json=generation_metadata_json,
         needs_teacher_confirmation=needs_teacher_confirmation,
         confirmation_reasons_json=confirmation_reasons_json,
@@ -7517,6 +7530,7 @@ def create_wechat_wrong_question_submission(
     chat_session_id: str = "",
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
     generation_metadata_json: object = None,
     needs_teacher_confirmation: bool = False,
     confirmation_reasons_json: object = None,
@@ -7548,6 +7562,7 @@ def create_wechat_wrong_question_submission(
         chat_session_id=chat_session_id,
         question_structured_json=question_structured_json,
         knowledge_tags_json=knowledge_tags_json,
+        reflection_summary_json=reflection_summary_json,
         generation_metadata_json=generation_metadata_json,
         needs_teacher_confirmation=needs_teacher_confirmation,
         confirmation_reasons_json=confirmation_reasons_json,
@@ -7567,6 +7582,7 @@ def update_wrong_question_submission_from_chat_archive(
     question_text_source: str | None = None,
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
     generation_metadata_json: object = None,
     needs_teacher_confirmation: bool | None = None,
     confirmation_reasons_json: object = None,
@@ -7633,6 +7649,15 @@ def update_wrong_question_submission_from_chat_archive(
             if knowledge_tags_json is not None
             else str(row["knowledge_tags_json"] or "[]")
         )
+        next_reflection_summary_json = (
+            _normalize_json_storage_value(
+                reflection_summary_json,
+                field_name="reflection_summary_json",
+                default="{}",
+            )
+            if reflection_summary_json is not None
+            else str(row["reflection_summary_json"] or "{}")
+        )
         next_generation_metadata_json = (
             _normalize_json_storage_value(
                 generation_metadata_json,
@@ -7694,6 +7719,7 @@ def update_wrong_question_submission_from_chat_archive(
                 question_text_source=?,
                 question_structured_json=?,
                 knowledge_tags_json=?,
+                reflection_summary_json=?,
                 generation_metadata_json=?,
                 needs_teacher_confirmation=?,
                 confirmation_reasons_json=?,
@@ -7714,6 +7740,7 @@ def update_wrong_question_submission_from_chat_archive(
                 next_question_text_source,
                 next_question_structured_json,
                 next_knowledge_tags_json,
+                next_reflection_summary_json,
                 next_generation_metadata_json,
                 1 if next_confirmation_state else 0,
                 next_confirmation_reasons_json,
@@ -8091,6 +8118,39 @@ def _serialize_wechat_wrong_question_submission_row(
         if str(item or "").strip()
     ]
     try:
+        reflection_summary = json.loads(str(row["reflection_summary_json"] or "{}"))
+    except json.JSONDecodeError:
+        reflection_summary = {}
+    if not isinstance(reflection_summary, dict):
+        reflection_summary = {}
+    if not reflection_summary:
+        fallback_reflection_summary = {}
+        child_raw_reason_text = str(row["child_raw_reason_text"] or "").strip()
+        child_reason_core_issue = str(row["child_reason_core_issue"] or "").strip()
+        child_reason_next_step = str(row["child_reason_next_step"] or "").strip()
+        child_reason_transcript = str(row["child_reason_transcript"] or "").strip()
+        if child_raw_reason_text:
+            fallback_reflection_summary["why_wrong"] = child_raw_reason_text
+        if child_reason_core_issue:
+            fallback_reflection_summary["unknown_step"] = child_reason_core_issue
+        if child_reason_next_step:
+            fallback_reflection_summary["help_preference"] = child_reason_next_step
+        if child_reason_transcript:
+            fallback_reflection_summary["summary_text"] = child_reason_transcript
+        answered_stages = []
+        if child_raw_reason_text:
+            answered_stages.append("ask_why_wrong")
+        if child_reason_core_issue:
+            answered_stages.append("ask_unknown_step")
+        if child_reason_next_step:
+            answered_stages.append("ask_help_mode")
+        if answered_stages:
+            fallback_reflection_summary["answered_stages"] = answered_stages
+        if fallback_reflection_summary:
+            fallback_reflection_summary["mode"] = "archive_reflection"
+            fallback_reflection_summary["schema_version"] = "wrong_question_reflection_summary.v1"
+            reflection_summary = fallback_reflection_summary
+    try:
         generation_metadata = json.loads(str(row["generation_metadata_json"] or "{}"))
     except json.JSONDecodeError:
         generation_metadata = {}
@@ -8107,6 +8167,7 @@ def _serialize_wechat_wrong_question_submission_row(
         else:
             confirmation_status = "not_required"
     payload["knowledge_tags"] = normalized_knowledge_tags
+    payload["reflection_summary"] = reflection_summary
     payload["generation_metadata"] = generation_metadata if isinstance(generation_metadata, dict) else {}
     payload["mastery_tracking"] = mastery_tracking if isinstance(mastery_tracking, dict) else {}
     payload["mastery_assessment"] = _build_wrong_question_mastery_assessment(

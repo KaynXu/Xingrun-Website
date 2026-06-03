@@ -69,6 +69,17 @@ export interface WrongQuestionGenerationMetadata {
   archiveSource?: string;
 }
 
+export interface WrongQuestionReflectionSummary {
+  schemaVersion?: string;
+  mode: string;
+  summaryText: string;
+  whyWrong?: string;
+  unknownStep?: string;
+  helpPreference?: string;
+  answeredStages: string[];
+  sessionEntrypoint?: string;
+}
+
 export interface WrongQuestionMasteryTracking {
   practiceSheetCount: number;
   followupCount: number;
@@ -144,6 +155,7 @@ export interface WrongQuestionRecord {
   confirmationReviewedBy?: number | null;
   confirmationReviewedAt?: string;
   confirmationReviewerName?: string;
+  reflectionSummary?: WrongQuestionReflectionSummary;
   generationMetadata?: WrongQuestionGenerationMetadata;
   masteryTracking?: WrongQuestionMasteryTracking;
   masteryAssessment?: WrongQuestionMasteryAssessment;
@@ -538,6 +550,61 @@ function normalizeWrongQuestionGenerationMetadata(rawMetadata: unknown): WrongQu
 
   const hasValue = Object.values(metadata).some((value) => typeof value === 'string' ? value.trim() : Boolean(value));
   return hasValue ? metadata : undefined;
+}
+
+function normalizeWrongQuestionReflectionSummary(rawSummary: unknown): WrongQuestionReflectionSummary | undefined {
+  let source = rawSummary;
+  if (typeof rawSummary === 'string') {
+    try {
+      source = JSON.parse(rawSummary);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const summary: WrongQuestionReflectionSummary = {
+    mode: pickStringValue(source, ['mode']) || '',
+    summaryText: pickStringValue(source, ['summaryText', 'summary_text']) || '',
+    answeredStages: normalizePossiblyJsonStringList(source.answered_stages ?? source.answeredStages),
+  };
+
+  const schemaVersion = pickStringValue(source, ['schemaVersion', 'schema_version']);
+  if (schemaVersion) {
+    summary.schemaVersion = schemaVersion;
+  }
+
+  const whyWrong = pickStringValue(source, ['whyWrong', 'why_wrong']);
+  if (whyWrong) {
+    summary.whyWrong = whyWrong;
+  }
+
+  const unknownStep = pickStringValue(source, ['unknownStep', 'unknown_step']);
+  if (unknownStep) {
+    summary.unknownStep = unknownStep;
+  }
+
+  const helpPreference = pickStringValue(source, ['helpPreference', 'help_preference']);
+  if (helpPreference) {
+    summary.helpPreference = helpPreference;
+  }
+
+  const sessionEntrypoint = pickStringValue(source, ['sessionEntrypoint', 'session_entrypoint']);
+  if (sessionEntrypoint) {
+    summary.sessionEntrypoint = sessionEntrypoint;
+  }
+
+  const hasValue = Boolean(summary.mode)
+    || Boolean(summary.summaryText)
+    || summary.answeredStages.length > 0
+    || Boolean(summary.schemaVersion)
+    || Boolean(summary.whyWrong)
+    || Boolean(summary.unknownStep)
+    || Boolean(summary.helpPreference)
+    || Boolean(summary.sessionEntrypoint);
+  return hasValue ? summary : undefined;
 }
 
 function normalizeWrongQuestionMasteryTracking(rawTracking: unknown): WrongQuestionMasteryTracking | undefined {
@@ -971,6 +1038,13 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
   const confirmationReviewerName = pickStringValue(source, ['confirmationReviewerName', 'confirmation_reviewer_name']);
   if (confirmationReviewerName) {
     record.confirmationReviewerName = confirmationReviewerName;
+  }
+
+  const reflectionSummary = normalizeWrongQuestionReflectionSummary(
+    source.reflection_summary ?? source.reflectionSummary ?? source.reflection_summary_json,
+  );
+  if (reflectionSummary) {
+    record.reflectionSummary = reflectionSummary;
   }
 
   const generationMetadata = normalizeWrongQuestionGenerationMetadata(

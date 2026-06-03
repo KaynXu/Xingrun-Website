@@ -164,6 +164,17 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertEqual(record["question_text"], "解方程 2x+5=17。")
         self.assertEqual(json.loads(record["knowledge_tags_json"]), ["一元一次方程", "移项"])
         self.assertEqual(record["needs_teacher_confirmation"], 0)
+        self.assertEqual(record["reflection_summary"]["schema_version"], "wrong_question_reflection_summary.v1")
+        self.assertEqual(record["reflection_summary"]["mode"], "archive_reflection")
+        self.assertEqual(record["reflection_summary"]["summary_text"], "错因自述：我不知道为什么要先减 5；卡点：我卡在移项这一步，不知道符号为什么会变；期望支持：先给我一点提示，再带我完整复盘")
+        self.assertEqual(record["reflection_summary"]["why_wrong"], "我不知道为什么要先减 5")
+        self.assertEqual(record["reflection_summary"]["unknown_step"], "我卡在移项这一步，不知道符号为什么会变")
+        self.assertEqual(record["reflection_summary"]["help_preference"], "先给我一点提示，再带我完整复盘")
+        self.assertEqual(
+            record["reflection_summary"]["answered_stages"],
+            ["ask_why_wrong", "ask_unknown_step", "ask_help_mode"],
+        )
+        self.assertEqual(record["reflection_summary"]["session_entrypoint"], "wrong_question_chat")
         self.assertEqual(record["generation_metadata"]["schema_version"], "wrong_question_archive_schema.v1")
         self.assertEqual(record["generation_metadata"]["prompt_version"], "wrong_question_chat_prompt.2026-06-03")
         self.assertEqual(record["generation_metadata"]["model_version"], "local-guided-loop")
@@ -243,6 +254,10 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
             json.loads(record["confirmation_reasons_json"]),
             ["missing_question_text", "knowledge_tags_unconfirmed"],
         )
+        self.assertEqual(record["reflection_summary"]["mode"], "archive_reflection")
+        self.assertEqual(record["reflection_summary"]["why_wrong"], "我就是不知道为什么错了")
+        self.assertEqual(record["reflection_summary"]["unknown_step"], "我感觉是列式这里没跟上")
+        self.assertEqual(record["reflection_summary"]["help_preference"], "先给提示")
         self.assertEqual(record["generation_metadata"]["archive_source"], "ai_chat")
         self.assertEqual(payload["session"]["status"], "archived")
 

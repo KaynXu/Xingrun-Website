@@ -2623,6 +2623,50 @@ def _summarize_wrong_question_chat_reflection(reflection: dict) -> str:
     return "；".join(parts)
 
 
+def _infer_wrong_question_chat_reflection_mode(session_metadata: dict) -> str:
+    if not isinstance(session_metadata, dict):
+        return "archive_reflection"
+    if str(session_metadata.get("followup_record_id") or "").strip():
+        return "mastery_followup"
+    if str(session_metadata.get("rework_record_id") or "").strip():
+        return "teacher_rework"
+    return "archive_reflection"
+
+
+def _build_wrong_question_chat_reflection_summary(
+    reflection: dict,
+    summary_text: str,
+    session_metadata: dict,
+) -> dict:
+    normalized_reflection = reflection if isinstance(reflection, dict) else {}
+    answered_stages = []
+    why_wrong = str(normalized_reflection.get("why_wrong") or "").strip()
+    unknown_step = str(normalized_reflection.get("unknown_step") or "").strip()
+    help_preference = str(normalized_reflection.get("help_preference") or "").strip()
+    if why_wrong:
+        answered_stages.append("ask_why_wrong")
+    if unknown_step:
+        answered_stages.append("ask_unknown_step")
+    if help_preference:
+        answered_stages.append("ask_help_mode")
+    reflection_summary = {
+        "schema_version": "wrong_question_reflection_summary.v1",
+        "mode": _infer_wrong_question_chat_reflection_mode(session_metadata),
+        "summary_text": str(summary_text or "").strip(),
+        "answered_stages": answered_stages,
+    }
+    if why_wrong:
+        reflection_summary["why_wrong"] = why_wrong
+    if unknown_step:
+        reflection_summary["unknown_step"] = unknown_step
+    if help_preference:
+        reflection_summary["help_preference"] = help_preference
+    entrypoint = str(session_metadata.get("entrypoint") or "").strip() if isinstance(session_metadata, dict) else ""
+    if entrypoint:
+        reflection_summary["session_entrypoint"] = entrypoint
+    return reflection_summary
+
+
 def _resolve_wrong_question_archive_image_url(run: object, archive_payload: dict) -> str:
     direct_image_url = str(archive_payload.get("image_url") or "").strip()
     if direct_image_url:
@@ -4338,6 +4382,7 @@ def api_wrong_question_ingestion_archive(run_id: str):
                     chat_session_id=str(item.get("chat_session_id") or run.get("chat_session_id") or "").strip(),
                     question_structured_json=item.get("question_structured_json"),
                     knowledge_tags_json=item.get("knowledge_tags_json"),
+                    reflection_summary_json=item.get("reflection_summary_json", item.get("reflection_summary")),
                     generation_metadata_json=item.get("generation_metadata_json", item.get("generation_metadata")),
                     needs_teacher_confirmation=bool(item.get("needs_teacher_confirmation")),
                     confirmation_reasons_json=item.get("confirmation_reasons_json"),
@@ -4523,6 +4568,11 @@ def api_wrong_question_chat_stream(session_id: str):
     messages = list_wrong_question_chat_messages(normalized_session_id)
     reflection = _collect_wrong_question_chat_reflection(messages)
     summary_text = _summarize_wrong_question_chat_reflection(reflection)
+    reflection_summary = _build_wrong_question_chat_reflection_summary(
+        reflection,
+        summary_text,
+        session_metadata,
+    )
     next_stage = _WRONG_QUESTION_CHAT_NEXT_STAGE.get(current_stage, "ready_to_archive")
     assistant_message = create_wrong_question_chat_message(
         session_id=normalized_session_id,
@@ -4532,6 +4582,7 @@ def api_wrong_question_chat_stream(session_id: str):
     )
 
     session_metadata["reflection"] = reflection
+    session_metadata["reflection_summary"] = reflection_summary
 
     archive_result = None
     should_finalize = bool(data.get("finalize_archive")) or current_stage == "ask_help_mode"
@@ -4611,6 +4662,7 @@ def api_wrong_question_chat_stream(session_id: str):
                     knowledge_tags_json=archive_payload.get("knowledge_tags_json")
                     if "knowledge_tags_json" in archive_payload
                     else None,
+                    reflection_summary_json=reflection_summary,
                     generation_metadata_json=generation_metadata,
                     needs_teacher_confirmation=needs_teacher_confirmation,
                     confirmation_reasons_json=confirmation_reasons_json,
@@ -4636,6 +4688,7 @@ def api_wrong_question_chat_stream(session_id: str):
                     chat_session_id=normalized_session_id,
                     question_structured_json=archive_payload.get("question_structured_json"),
                     knowledge_tags_json=archive_payload.get("knowledge_tags_json"),
+                    reflection_summary_json=reflection_summary,
                     generation_metadata_json=generation_metadata,
                     needs_teacher_confirmation=needs_teacher_confirmation,
                     confirmation_reasons_json=confirmation_reasons_json,

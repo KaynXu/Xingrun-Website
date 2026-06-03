@@ -1306,6 +1306,16 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
     confirmation_reviewed_by: 7,
     confirmation_reviewed_at: '2026-06-03 11:00:00',
     confirmation_reviewer_name: '管理员',
+    reflection_summary: {
+      schema_version: 'wrong_question_reflection_summary.v1',
+      mode: 'archive_reflection',
+      summary_text: '错因自述：移项前没看清等式两边；卡点：移项后不知道为什么要变号；期望支持：先给提示，再完整复盘。',
+      why_wrong: '移项前没看清等式两边',
+      unknown_step: '移项后不知道为什么要变号',
+      help_preference: '先给提示，再完整复盘',
+      answered_stages: ['ask_why_wrong', 'ask_unknown_step', 'ask_help_mode'],
+      session_entrypoint: 'wrong_question_chat',
+    },
     generation_metadata: {
       schema_version: 'wrong_question_archive_schema.v1',
       prompt_version: 'wrong_question_chat_prompt.2026-06-03',
@@ -1399,6 +1409,14 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
   assert.equal(normalized.confirmationReviewedBy, 7);
   assert.equal(normalized.confirmationReviewedAt, '2026-06-03 11:00:00');
   assert.equal(normalized.confirmationReviewerName, '管理员');
+  assert.equal(normalized.reflectionSummary?.schemaVersion, 'wrong_question_reflection_summary.v1');
+  assert.equal(normalized.reflectionSummary?.mode, 'archive_reflection');
+  assert.equal(normalized.reflectionSummary?.summaryText, '错因自述：移项前没看清等式两边；卡点：移项后不知道为什么要变号；期望支持：先给提示，再完整复盘。');
+  assert.equal(normalized.reflectionSummary?.whyWrong, '移项前没看清等式两边');
+  assert.equal(normalized.reflectionSummary?.unknownStep, '移项后不知道为什么要变号');
+  assert.equal(normalized.reflectionSummary?.helpPreference, '先给提示，再完整复盘');
+  assert.deepEqual(normalized.reflectionSummary?.answeredStages, ['ask_why_wrong', 'ask_unknown_step', 'ask_help_mode']);
+  assert.equal(normalized.reflectionSummary?.sessionEntrypoint, 'wrong_question_chat');
   assert.equal(normalized.generationMetadata?.schemaVersion, 'wrong_question_archive_schema.v1');
   assert.equal(normalized.generationMetadata?.modelVersion, 'local-guided-loop');
   assert.equal(normalized.generationMetadata?.ingestionEntrypoint, 'chat');

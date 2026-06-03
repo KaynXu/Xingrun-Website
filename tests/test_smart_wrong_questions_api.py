@@ -860,6 +860,16 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             question_text="解方程 2x+5=17。",
             ingestion_run_id=run["id"],
             chat_session_id="chat-session-record-detail",
+            reflection_summary_json={
+                "schema_version": "wrong_question_reflection_summary.v1",
+                "mode": "archive_reflection",
+                "summary_text": "错因自述：移项前没有先看清等式两边；卡点：不知道什么时候要同步变号；期望支持：先给提示，再完整复盘。",
+                "why_wrong": "移项前没有先看清等式两边",
+                "unknown_step": "不知道什么时候要同步变号",
+                "help_preference": "先给提示，再完整复盘",
+                "answered_stages": ["ask_why_wrong", "ask_unknown_step", "ask_help_mode"],
+                "session_entrypoint": "wrong_question_chat",
+            },
         )
         practice_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
             created_by=owner_payload["user"]["id"],
@@ -911,6 +921,15 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(payload["linked_chat_session"]["summary_text"], "错因自述：移项前没有先看清等式两边。")
         self.assertEqual(len(payload["linked_chat_session"]["messages"]), 1)
         self.assertEqual(payload["linked_chat_session"]["messages"][0]["content"], "你是在哪一步开始不确定的？")
+        self.assertEqual(payload["reflection_summary"]["schema_version"], "wrong_question_reflection_summary.v1")
+        self.assertEqual(payload["reflection_summary"]["mode"], "archive_reflection")
+        self.assertEqual(payload["reflection_summary"]["why_wrong"], "移项前没有先看清等式两边")
+        self.assertEqual(payload["reflection_summary"]["unknown_step"], "不知道什么时候要同步变号")
+        self.assertEqual(payload["reflection_summary"]["help_preference"], "先给提示，再完整复盘")
+        self.assertEqual(
+            payload["reflection_summary"]["answered_stages"],
+            ["ask_why_wrong", "ask_unknown_step", "ask_help_mode"],
+        )
         self.assertEqual(payload["mastery_tracking"]["practice_sheet_count"], 1)
         self.assertEqual(payload["mastery_tracking"]["followup_count"], 1)
         self.assertEqual(payload["mastery_tracking"]["latest_practice_sheet_id"], practice_sheet["id"])
