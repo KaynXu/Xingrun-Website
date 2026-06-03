@@ -111,6 +111,22 @@ function normalizePossiblyJsonStringList(value) {
   }
 }
 
+function normalizePossiblyJsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function normalizePromptText(prompt) {
   return String(prompt ?? '')
     .replaceAll('\\r\\n', '\n')
@@ -201,6 +217,67 @@ function normalizeStructuredContent(item) {
   };
 }
 
+function normalizeReflectionSummary(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const reflection = normalizePossiblyJsonObject(
+    source.reflection_summary_snapshot_json
+    ?? source.reflectionSummarySnapshot
+    ?? source.reflection_summary_snapshot
+    ?? source.reflectionSummary,
+  );
+  return {
+    whyWrong: String(reflection.why_wrong ?? reflection.whyWrong ?? '').trim(),
+    unknownStep: String(reflection.unknown_step ?? reflection.unknownStep ?? '').trim(),
+    helpPreference: String(reflection.help_preference ?? reflection.helpPreference ?? '').trim(),
+    summaryText: String(reflection.summary_text ?? reflection.summaryText ?? '').trim(),
+  };
+}
+
+function normalizeQuestionStructured(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const structured = normalizePossiblyJsonObject(
+    source.question_structured_snapshot_json
+    ?? source.questionStructuredSnapshot
+    ?? source.question_structured_snapshot
+    ?? source.questionStructured,
+  );
+  return {
+    stem: String(structured.stem ?? '').trim(),
+    subject: String(structured.subject ?? '').trim(),
+  };
+}
+
+function normalizeKnowledgeTags(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  return normalizePossiblyJsonStringList(
+    source.knowledge_tags_snapshot_json
+    ?? source.knowledgeTagsSnapshot
+    ?? source.knowledge_tags_snapshot
+    ?? source.knowledgeTags,
+  );
+}
+
+function buildReflectionFallbackMethodHints(item) {
+  const reflection = normalizeReflectionSummary(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const knowledgeTags = normalizeKnowledgeTags(item);
+  const hintLines = [];
+
+  if (knowledgeTags.length > 0) {
+    hintLines.push(`先回到 ${knowledgeTags.slice(0, 2).join(' / ')} 这组知识点。`);
+  } else if (questionStructured.subject) {
+    hintLines.push(`先回到这道${questionStructured.subject}题对应的基础规则。`);
+  }
+  if (reflection.unknownStep) {
+    hintLines.push(`先补清：${reflection.unknownStep}`);
+  }
+  if (reflection.helpPreference) {
+    hintLines.push(`这次先按“${reflection.helpPreference}”的方式复盘。`);
+  }
+
+  return hintLines.slice(0, 3);
+}
+
 function buildLegacyWritingBlocks(reasonPrompt, improvementPrompt) {
   const sections = [
     extractWritingPromptBody(reasonPrompt),
@@ -216,7 +293,9 @@ function buildLegacyWritingBlocks(reasonPrompt, improvementPrompt) {
 
 function buildMethodHintSection(item) {
   const structured = normalizeStructuredContent(item);
-  const hintLines = structured.methodHintLines;
+  const hintLines = structured.methodHintLines.length > 0
+    ? structured.methodHintLines
+    : buildReflectionFallbackMethodHints(item);
   if (hintLines.length === 0) {
     return '';
   }
@@ -232,9 +311,16 @@ function buildMethodHintSection(item) {
 
 function buildReviewMeta(item) {
   const structured = normalizeStructuredContent(item);
+  const reflection = normalizeReflectionSummary(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const knowledgeTags = normalizeKnowledgeTags(item);
+  const mistakeFocus = structured.mistakeFocus || reflection.whyWrong;
+  const reviewGoal = structured.reviewGoal || reflection.helpPreference || reflection.unknownStep;
   const chips = [
-    structured.mistakeFocus ? `错因定位：${structured.mistakeFocus}` : '',
-    structured.reviewGoal ? `本次目标：${structured.reviewGoal}` : '',
+    mistakeFocus ? `错因定位：${mistakeFocus}` : '',
+    reviewGoal ? `本次目标：${reviewGoal}` : '',
+    knowledgeTags.length > 0 ? `知识点：${knowledgeTags.slice(0, 2).join(' / ')}` : '',
+    !knowledgeTags.length && questionStructured.stem ? `题眼：${questionStructured.stem}` : '',
   ].filter(Boolean);
   if (chips.length === 0) {
     return '';
@@ -278,6 +364,20 @@ function buildWritingSection(item, title = '挖空复盘') {
   `;
 }
 
+function buildTeacherFeedbackSection(item) {
+  const structured = normalizeStructuredContent(item);
+  const teacherFeedback = structured.teacherFeedback;
+  if (!teacherFeedback) {
+    return '';
+  }
+  return `
+    <section class="confirmation-card">
+      <div class="section-title">老师提示</div>
+      <div class="confirmation-copy">${buildLatexTextBlock(teacherFeedback)}</div>
+    </section>
+  `;
+}
+
 function buildTeacherConfirmationSection(item) {
   const structured = normalizeStructuredContent(item);
   const reasons = structured.confirmationReasons;
@@ -317,6 +417,7 @@ function buildItemMarkup(item) {
       ${buildQuestionBlock(item)}
       ${buildMethodHintSection(item)}
       ${buildWritingSection(item)}
+      ${buildTeacherFeedbackSection(item)}
       ${buildTeacherConfirmationSection(item)}
       ${buildRedoWorkArea()}
     </section>
@@ -338,6 +439,7 @@ function buildScheduledItemMarkup(item, label) {
       ${buildQuestionBlock(item)}
       ${buildMethodHintSection(item)}
       ${writingSection}
+      ${buildTeacherFeedbackSection(item)}
       ${buildTeacherConfirmationSection(item)}
       ${buildRedoWorkArea(redoLabel)}
     </section>

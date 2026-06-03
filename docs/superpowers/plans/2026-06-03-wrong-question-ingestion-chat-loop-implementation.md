@@ -483,7 +483,8 @@ The current round now also lands the first explicit archive/reflection authority
 The next highest-value task is now **the first artifact-consumption slice after review-save + rework continuity**:
 
 - practice generation inputs now already carry `reflection_summary + question_structured + knowledge_tags` through both stored practice-sheet item snapshots and live practice-pack items, so downstream artifact generation has a durable shared spine instead of request-local transient fields
-- the next slice is to make PDF-facing rendering and remaining practice artifact surfaces read and show that same spine more explicitly, rather than continuing to infer teacher/student guidance primarily from legacy `child_reason_*`
+- runtime PDF rendering now also receives `structured_content` plus the same practice snapshots, and the browser renderer can fall back to `reflection_summary + knowledge_tags + question_structured` for review meta, method hints, and teacher feedback when structured content is sparse
+- the next slice is to tighten the generated artifact copy itself around that same spine, so even the AI-produced `structured_content / blank_review_blocks / answer-page framing` stop leaning on legacy `child_reason_*` as their main semantic fallback
 - only after those core downstream consumers are on the shared reflection spine should we spend more time multiplying alternate entrypoints or introducing mastery-specific classifiers
 
 This keeps the implementation path aligned with the final desired product:

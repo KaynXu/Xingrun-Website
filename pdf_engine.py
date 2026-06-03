@@ -957,6 +957,23 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
             "ai_hint": str(item.get("ai_hint") or ""),
             "reason_blank_prompt": str(item.get("reason_blank_prompt") or ""),
             "improvement_summary_prompt": str(item.get("improvement_summary_prompt") or ""),
+            "structured_content": (
+                item.get("structured_content")
+                if isinstance(item.get("structured_content"), dict)
+                else {}
+            ),
+            "question_structured_snapshot_json": item.get(
+                "question_structured_snapshot_json",
+                item.get("question_structured_snapshot"),
+            ),
+            "knowledge_tags_snapshot_json": item.get(
+                "knowledge_tags_snapshot_json",
+                item.get("knowledge_tags_snapshot"),
+            ),
+            "reflection_summary_snapshot_json": item.get(
+                "reflection_summary_snapshot_json",
+                item.get("reflection_summary_snapshot"),
+            ),
             "image_data_url": "",
             "practiceItemId": practice_item_id,
             "itemType": str(item.get("item_type") or "real").strip() or "real",

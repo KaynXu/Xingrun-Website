@@ -759,6 +759,62 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertNotIn("status", captured_env)
         self.assertNotIn("env", captured_env)
 
+    def test_generate_wrong_question_practice_sheet_pdf_passes_structured_content_and_reflection_snapshots(self):
+        items = [
+            {
+                "question_order": 1,
+                "wrong_question_record_id": "wechat-1",
+                "is_geometry": 0,
+                "question_text_snapshot": "解方程 $\\frac{x-1}{2}=3$。",
+                "reason_blank_prompt": "先复盘这题错因\n我这题错在 ______，因为 ______。",
+                "improvement_summary_prompt": "再写下次提醒\n下次我会先 ______，再检查 ______。",
+                "structured_content": {
+                    "mistake_focus": "去分母时漏乘右边常数",
+                    "teacher_feedback": "继续追问为什么右边也要同乘。",
+                },
+                "question_structured_snapshot_json": {
+                    "stem": "解方程 (x-1)/2=3",
+                    "subject": "数学",
+                },
+                "knowledge_tags_snapshot_json": ["一元一次方程", "去分母"],
+                "reflection_summary_snapshot_json": {
+                    "schema_version": "wrong_question_reflection_summary.v1",
+                    "why_wrong": "我去分母时漏乘了右边常数",
+                    "unknown_step": "不知道等式右边也要同乘 2",
+                    "help_preference": "先提醒我要两边一起乘，再让我自己重做",
+                },
+            }
+        ]
+        output_path = self.base / "practice-reflection-payload.pdf"
+        captured_payloads = []
+
+        def fake_run(command, **kwargs):
+            payload = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+            captured_payloads.append(payload)
+            Path(command[3]).write_bytes(b"%PDF-1.4 fake practice reflection pdf")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            result = pdf_engine.generate_wrong_question_practice_sheet_pdf(
+                student_name="Alice",
+                class_name="六年级 1 班",
+                teacher_name="平台管理员",
+                title="Alice 错题练习",
+                items=items,
+                output_path=str(output_path),
+            )
+
+        self.assertEqual(result, str(output_path.resolve()))
+        payload_item = captured_payloads[0]["items"][0]
+        self.assertEqual(payload_item["structured_content"]["mistake_focus"], "去分母时漏乘右边常数")
+        self.assertEqual(payload_item["structured_content"]["teacher_feedback"], "继续追问为什么右边也要同乘。")
+        self.assertEqual(payload_item["question_structured_snapshot_json"]["stem"], "解方程 (x-1)/2=3")
+        self.assertEqual(payload_item["knowledge_tags_snapshot_json"], ["一元一次方程", "去分母"])
+        self.assertEqual(
+            payload_item["reflection_summary_snapshot_json"]["help_preference"],
+            "先提醒我要两边一起乘，再让我自己重做",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

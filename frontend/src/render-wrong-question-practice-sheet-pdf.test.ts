@@ -68,6 +68,7 @@ test('buildDocumentMarkup prefers structured content for method hints, review bl
               lines: ['先补出总路程和 ______ 的对应关系。'],
             },
           ],
+          teacher_feedback: '可继续追问单位。',
           confirmation_reasons: ['needs_unit_check', 'teacher_review_required'],
         },
         reason_blank_prompt: '旧提示\n这题我错在 ______。',
@@ -81,9 +82,48 @@ test('buildDocumentMarkup prefers structured content for method hints, review bl
   assert.match(markup, /错因定位：速度和时间对应关系写反/);
   assert.match(markup, /本次目标：先标相遇总路程再列式/);
   assert.match(markup, /相遇关系补全/);
+  assert.match(markup, /老师提示/);
+  assert.match(markup, /可继续追问单位。/);
   assert.match(markup, /需老师确认/);
   assert.match(markup, /needs_unit_check/);
   assert.doesNotMatch(markup, /旧提示/);
+});
+
+test('buildDocumentMarkup falls back to reflection spine when structured content is missing', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-reflection',
+        is_geometry: false,
+        question_text_snapshot: '解方程 $\\frac{x-1}{2}=3$。',
+        reason_blank_prompt: '先复盘这题错因\n我这题错在 ______，因为 ______。',
+        improvement_summary_prompt: '再写下次提醒\n下次我会先 ______，再检查 ______。',
+        question_structured_snapshot_json: {
+          stem: '解方程 (x-1)/2=3',
+          subject: '数学',
+        },
+        knowledge_tags_snapshot_json: ['一元一次方程', '去分母'],
+        reflection_summary_snapshot_json: {
+          schema_version: 'wrong_question_reflection_summary.v1',
+          mode: 'archive_reflection',
+          why_wrong: '我去分母时漏乘了右边常数',
+          unknown_step: '不知道等式右边也要同乘 2',
+          help_preference: '先提醒我要两边一起乘，再让我自己重做',
+        },
+      },
+    ],
+  });
+
+  assert.match(markup, /错因定位：我去分母时漏乘了右边常数/);
+  assert.match(markup, /本次目标：先提醒我要两边一起乘，再让我自己重做/);
+  assert.match(markup, /知识点：一元一次方程 \/ 去分母/);
+  assert.match(markup, /先回到 一元一次方程 \/ 去分母 这组知识点。/);
+  assert.match(markup, /先补清：不知道等式右边也要同乘 2/);
 });
 
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
