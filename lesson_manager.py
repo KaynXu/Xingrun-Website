@@ -7547,6 +7547,154 @@ def create_wechat_wrong_question_submission(
     )
 
 
+def update_wrong_question_submission_from_chat_archive(
+    record_id: str,
+    *,
+    chat_session_id: str | None = None,
+    child_raw_reason_text: str | None = None,
+    child_reason_transcript: str | None = None,
+    child_reason_core_issue: str | None = None,
+    child_reason_next_step: str | None = None,
+    topic_category: str | None = None,
+    question_text: str | None = None,
+    question_text_source: str | None = None,
+    question_structured_json: object = None,
+    knowledge_tags_json: object = None,
+    generation_metadata_json: object = None,
+    needs_teacher_confirmation: bool | None = None,
+    confirmation_reasons_json: object = None,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+
+        next_chat_session_id = (
+            str(chat_session_id).strip()
+            if chat_session_id is not None
+            else str(row["chat_session_id"] or "").strip()
+        )
+        next_child_raw_reason_text = (
+            str(child_raw_reason_text).strip()
+            if child_raw_reason_text is not None
+            else str(row["child_raw_reason_text"] or "").strip()
+        )
+        next_child_reason_transcript = (
+            str(child_reason_transcript).strip()
+            if child_reason_transcript is not None
+            else str(row["child_reason_transcript"] or "").strip()
+        )
+        next_child_reason_core_issue = (
+            str(child_reason_core_issue).strip()
+            if child_reason_core_issue is not None
+            else str(row["child_reason_core_issue"] or "").strip()
+        )
+        next_child_reason_next_step = (
+            str(child_reason_next_step).strip()
+            if child_reason_next_step is not None
+            else str(row["child_reason_next_step"] or "").strip()
+        )
+        next_topic_category = normalize_primary_wrong_question_topic_category(
+            topic_category if topic_category is not None else str(row["topic_category"] or "")
+        )
+        next_question_text = (
+            str(question_text).strip()
+            if question_text is not None
+            else str(row["question_text"] or "").strip()
+        )
+        next_question_text_source = (
+            str(question_text_source).strip()
+            if question_text_source is not None
+            else str(row["question_text_source"] or "").strip()
+        ) or "ai"
+        next_question_structured_json = (
+            _normalize_json_storage_value(
+                question_structured_json,
+                field_name="question_structured_json",
+                default="",
+            )
+            if question_structured_json is not None
+            else str(row["question_structured_json"] or "")
+        )
+        next_knowledge_tags_json = (
+            _normalize_json_storage_value(
+                knowledge_tags_json,
+                field_name="knowledge_tags_json",
+                default="[]",
+            )
+            if knowledge_tags_json is not None
+            else str(row["knowledge_tags_json"] or "[]")
+        )
+        next_generation_metadata_json = (
+            _normalize_json_storage_value(
+                generation_metadata_json,
+                field_name="generation_metadata_json",
+                default="{}",
+            )
+            if generation_metadata_json is not None
+            else str(row["generation_metadata_json"] or "{}")
+        )
+        next_confirmation_state = (
+            bool(needs_teacher_confirmation)
+            if needs_teacher_confirmation is not None
+            else bool(row["needs_teacher_confirmation"])
+        )
+        next_confirmation_reasons_json = (
+            _normalize_json_storage_value(
+                confirmation_reasons_json,
+                field_name="confirmation_reasons_json",
+                default="[]",
+            )
+            if confirmation_reasons_json is not None
+            else str(row["confirmation_reasons_json"] or "[]")
+        )
+        if not next_confirmation_state:
+            next_confirmation_reasons_json = "[]"
+
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET chat_session_id=?,
+                child_raw_reason_text=?,
+                child_reason_transcript=?,
+                child_reason_core_issue=?,
+                child_reason_next_step=?,
+                topic_category=?,
+                question_text=?,
+                question_text_source=?,
+                question_structured_json=?,
+                knowledge_tags_json=?,
+                generation_metadata_json=?,
+                needs_teacher_confirmation=?,
+                confirmation_reasons_json=?,
+                confirmation_status=?,
+                confirmation_reviewed_by=NULL,
+                confirmation_reviewed_at='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                next_chat_session_id,
+                next_child_raw_reason_text,
+                next_child_reason_transcript,
+                next_child_reason_core_issue,
+                next_child_reason_next_step,
+                next_topic_category,
+                next_question_text,
+                next_question_text_source,
+                next_question_structured_json,
+                next_knowledge_tags_json,
+                next_generation_metadata_json,
+                1 if next_confirmation_state else 0,
+                next_confirmation_reasons_json,
+                "pending" if next_confirmation_state else "not_required",
+                record_id,
+            ),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    return _serialize_wechat_wrong_question_submission_row(refreshed)
+
+
 def update_wechat_wrong_question_question_text(
     record_id: str,
     *,

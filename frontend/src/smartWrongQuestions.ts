@@ -1394,6 +1394,10 @@ export function buildWrongQuestionChatStreamPath(sessionId: string): string {
   return `/api/wrong-question-chats/${encodeURIComponent(sessionId)}/stream`;
 }
 
+export function buildWrongQuestionChatReopenPath(recordId: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}/reopen-chat`;
+}
+
 export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): WeeklyWrongQuestionFollowupResponse {
   const source = isObjectRecord(payload) ? payload : {};
   const rawItems = Array.isArray(source.items) ? source.items : [];

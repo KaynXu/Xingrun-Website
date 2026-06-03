@@ -20,6 +20,7 @@ import {
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
+  buildWrongQuestionChatReopenPath,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
   buildWrongQuestionReviewDraft,
@@ -633,6 +634,13 @@ test('record detail and review paths keep roomId when the downstream contract re
   assert.equal(
     buildWrongQuestionReviewPath('record-1', 'ROOM A/1'),
     '/api/wrong-questions/record-1/review?roomId=ROOM%20A%2F1',
+  );
+});
+
+test('wrong question chat reopen path builder encodes record ids consistently', () => {
+  assert.equal(
+    buildWrongQuestionChatReopenPath('record/with space?#x'),
+    '/api/wrong-questions/record%2Fwith%20space%3F%23x/reopen-chat',
   );
 });
 
@@ -1418,6 +1426,7 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /本题已掌握，后续周跟进可不再优先推送/);
   assert.match(pageSource, /编辑后确认/);
   assert.match(pageSource, /退回待补充/);
+  assert.match(pageSource, /按老师意见继续补充/);
 });
 
 test('smart wrong question page source exposes teacher confirmation queue filters', () => {

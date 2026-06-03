@@ -235,6 +235,7 @@ Progress note (2026-06-03):
 - Weekly follow-up candidates now include archived `ai_chat` records, return source-record navigation context, and expose repeated-category signals.
 - Unified local review now lets teachers mark `ai_chat` archive records as mastered so they can fall out of later weekly follow-up priority.
 - A first compatibility slice has started on the practice-sheet side: practice items can now carry a structured content payload in parallel with the legacy dual-prompt fields, so later PDF and review work can migrate incrementally instead of via a big-bang rewrite.
+- Returned local `ai_chat` archive records can now reopen into a fresh rework chat session from the existing notebook chat panel. The rework session reuses the same ingestion context, seeds a teacher-return prompt, and on re-archive updates the original wrong-question record in place instead of creating a duplicate card.
 
 ### Track C: Workbench / error_correction Product Entry
 
@@ -295,6 +296,7 @@ These are deliberately delayed until the shared ingestion backbone is stable.
 
 Progress note (2026-06-03):
 - The web smart-wrong-question page now exposes a first explicit teacher-confirmation queue slice for local records: list filtering by `待老师复核 / 已退回 / 已确认`, reviewer/outcome metadata in record detail, and concrete `编辑后确认 / 退回待补充` actions wired into the local review save path.
+- `退回待补充` no longer stops at a status tag: returned `ai_chat` records can now reopen the AI reflection loop directly, and the follow-up archive pass will reset reviewer metadata and overwrite the same record so teacher review and student补充 stay on one chain.
 
 ### Track F: PDF / Practice Sheet Product Surface
 

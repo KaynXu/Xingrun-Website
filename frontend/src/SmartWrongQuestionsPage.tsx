@@ -27,6 +27,7 @@ import {
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
   buildWrongQuestionChatDetailPath,
+  buildWrongQuestionChatReopenPath,
   buildWrongQuestionChatStreamPath,
   buildWrongQuestionIngestionAssetUploadPath,
   buildWrongQuestionIngestionCreatePath,
@@ -733,6 +734,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       : wrongQuestionChatPredictedConfirmationReasons;
     return sourceReasons.map((reason) => WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS[reason] || reason);
   }, [wrongQuestionChatPredictedConfirmationReasons, wrongQuestionChatSession]);
+  const wrongQuestionChatArchivedRecord = useMemo(() => {
+    return wrongQuestionChatSession?.records[0] ?? null;
+  }, [wrongQuestionChatSession]);
+  const wrongQuestionChatArchivedRecordConfirmationStatus = useMemo(() => {
+    return normalizeWrongQuestionConfirmationStatus(wrongQuestionChatArchivedRecord);
+  }, [wrongQuestionChatArchivedRecord]);
 
   const resetWrongQuestionChatState = useCallback(() => {
     setWrongQuestionChatRun(null);
@@ -1073,6 +1080,38 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     wrongQuestionChatDraft.topicCategory,
     wrongQuestionChatRun,
     wrongQuestionChatSession,
+  ]);
+
+  const handleReopenWrongQuestionChat = useCallback(async () => {
+    if (!wrongQuestionChatArchivedRecord?.id) {
+      setWrongQuestionChatError('当前没有可继续补充的归档记录。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
+    setWrongQuestionChatSending(true);
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+    try {
+      const response = await apiFetch<{ session?: unknown; run?: unknown }>(
+        buildWrongQuestionChatReopenPath(wrongQuestionChatArchivedRecord.id),
+        {
+          method: 'POST',
+          body: JSON.stringify({}),
+        },
+      );
+      const nextSession = response.session ? normalizeWrongQuestionChatSession(response.session) : null;
+      const nextRun = response.run ? normalizeWrongQuestionIngestionRun(response.run) : wrongQuestionChatRun;
+      hydrateWrongQuestionChatState(nextSession, nextRun);
+      setWrongQuestionChatNotice('已按老师意见重新开启这条对话，继续补充后会覆盖原归档。');
+    } catch (reopenError) {
+      setWrongQuestionChatError(reopenError instanceof Error ? reopenError.message : '重新开启错题对话失败');
+    } finally {
+      setWrongQuestionChatSending(false);
+    }
+  }, [
+    hydrateWrongQuestionChatState,
+    wrongQuestionChatArchivedRecord,
+    wrongQuestionChatRun,
   ]);
 
   const resetWeeklyFollowupContext = useCallback(() => {
@@ -2171,7 +2210,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       )}
     </>
   );
-  const archivedChatRecord = wrongQuestionChatSession?.records[0] ?? null;
   const wrongQuestionChatPanel = (
     <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2196,6 +2234,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {wrongQuestionChatSession?.status === 'archived' && wrongQuestionChatArchivedRecordConfirmationStatus === 'returned' ? (
+            <button
+              type="button"
+              onClick={() => void handleReopenWrongQuestionChat()}
+              disabled={wrongQuestionChatSending}
+              className={workspacePrimaryButtonClass}
+            >
+              按老师意见继续补充
+            </button>
+          ) : null}
           {wrongQuestionChatSession?.status === 'archived' ? (
             <button
               type="button"
@@ -2433,7 +2481,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             )}
           </div>
 
-          {archivedChatRecord ? (
+          {wrongQuestionChatArchivedRecord ? (
             <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-400/20 dark:bg-emerald-500/10">
               <div className="flex items-start gap-3">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-600 dark:border-emerald-400/20 dark:bg-slate-950 dark:text-emerald-300">
@@ -2441,16 +2489,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">已归档到错题库</p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{archivedChatRecord.questionText || '题目文本待老师补充'}</p>
-                  {archivedChatRecord.needsTeacherConfirmation ? (
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{wrongQuestionChatArchivedRecord.questionText || '题目文本待老师补充'}</p>
+                  {wrongQuestionChatArchivedRecord.needsTeacherConfirmation ? (
                     <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                      需要老师复核：{(archivedChatRecord.confirmationReasons ?? []).join('、') || '信息不完整'}
+                      需要老师复核：{(wrongQuestionChatArchivedRecord.confirmationReasons ?? []).join('、') || '信息不完整'}
+                    </p>
+                  ) : null}
+                  {wrongQuestionChatArchivedRecordConfirmationStatus === 'returned' ? (
+                    <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">
+                      老师已退回这条归档，补充完成后会覆盖原错题记录。
                     </p>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {archivedChatRecord.detailUrl ? (
+                    {wrongQuestionChatArchivedRecord.detailUrl ? (
                       <a
-                        href={buildWrongQuestionAuthedPath(archivedChatRecord.detailUrl)}
+                        href={buildWrongQuestionAuthedPath(wrongQuestionChatArchivedRecord.detailUrl)}
                         target="_blank"
                         rel="noreferrer"
                         className={workspaceSecondaryButtonClass}
@@ -2458,9 +2511,19 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         打开错题详情
                       </a>
                     ) : null}
-                    {archivedChatRecord.archiveContext?.ingestionRunUrl ? (
+                    {wrongQuestionChatArchivedRecordConfirmationStatus === 'returned' ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleReopenWrongQuestionChat()}
+                        disabled={wrongQuestionChatSending}
+                        className={workspaceSecondaryButtonClass}
+                      >
+                        按老师意见继续补充
+                      </button>
+                    ) : null}
+                    {wrongQuestionChatArchivedRecord.archiveContext?.ingestionRunUrl ? (
                       <a
-                        href={buildWrongQuestionAuthedPath(archivedChatRecord.archiveContext.ingestionRunUrl)}
+                        href={buildWrongQuestionAuthedPath(wrongQuestionChatArchivedRecord.archiveContext.ingestionRunUrl)}
                         target="_blank"
                         rel="noreferrer"
                         className={workspaceSecondaryButtonClass}
