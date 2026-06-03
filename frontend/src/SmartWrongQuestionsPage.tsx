@@ -110,6 +110,7 @@ type WrongQuestionChatDraftState = {
   questionText: string;
   topicCategory: string;
   knowledgeTagsText: string;
+  followupOutcome: string;
   replyText: string;
 };
 
@@ -306,6 +307,9 @@ function getWrongQuestionMasterySuggestedActionLabel(action: string): string {
   if (action === 'continue_rework_chat') {
     return '继续 AI 补充';
   }
+  if (action === 'continue_follow_up') {
+    return '继续掌握追问';
+  }
   if (action === 'teacher_review') {
     return '先完成老师复核';
   }
@@ -325,6 +329,19 @@ function getWrongQuestionMasterySuggestedActionLabel(action: string): string {
     return '继续观察后续表现';
   }
   return '继续跟进';
+}
+
+function getWrongQuestionMasteryFollowupOutcomeLabel(outcome: string): string {
+  if (outcome === 'still_confused') {
+    return '仍然没吃透';
+  }
+  if (outcome === 'needs_another_practice') {
+    return '需要再练一轮';
+  }
+  if (outcome === 'likely_mastered') {
+    return '大概率已掌握';
+  }
+  return '未记录';
 }
 
 function readWrongQuestionToken(): string {
@@ -546,6 +563,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     questionText: '',
     topicCategory: '',
     knowledgeTagsText: '',
+    followupOutcome: '',
     replyText: '',
   });
   const [wrongQuestionChatFiles, setWrongQuestionChatFiles] = useState<File[]>([]);
@@ -808,6 +826,28 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const wrongQuestionChatArchivedRecordConfirmationStatus = useMemo(() => {
     return normalizeWrongQuestionConfirmationStatus(wrongQuestionChatArchivedRecord);
   }, [wrongQuestionChatArchivedRecord]);
+  const wrongQuestionChatMode = useMemo(() => {
+    if (!wrongQuestionChatSession?.metadataJson.trim()) {
+      return 'archive';
+    }
+    try {
+      const metadata = JSON.parse(wrongQuestionChatSession.metadataJson);
+      if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+        return 'archive';
+      }
+      const entrypoint = String((metadata as { entrypoint?: unknown }).entrypoint || '').trim();
+      if (entrypoint === 'wrong_question_chat_mastery_followup') {
+        return 'mastery_followup';
+      }
+      if (entrypoint === 'wrong_question_chat_rework') {
+        return 'rework';
+      }
+    } catch {
+      return 'archive';
+    }
+    return 'archive';
+  }, [wrongQuestionChatSession?.metadataJson]);
+  const wrongQuestionChatIsMasteryFollowup = wrongQuestionChatMode === 'mastery_followup';
 
   const resetWrongQuestionChatState = useCallback(() => {
     setWrongQuestionChatRun(null);
@@ -816,6 +856,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       questionText: '',
       topicCategory: '',
       knowledgeTagsText: '',
+      followupOutcome: '',
       replyText: '',
     });
     setWrongQuestionChatFiles([]);
@@ -839,6 +880,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       questionText: firstRecord?.questionText?.trim() || current.questionText,
       topicCategory: firstRecord?.topicCategory?.trim() || current.topicCategory,
       knowledgeTagsText: firstRecord?.analysis.knowledgePoints?.join(', ') || current.knowledgeTagsText,
+      followupOutcome: firstRecord?.masteryTracking?.latestFollowupOutcome?.trim() || '',
       replyText: '',
     }));
   }, []);
@@ -1096,6 +1138,15 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       setWrongQuestionChatNotice('');
       return;
     }
+    if (
+      wrongQuestionChatIsMasteryFollowup
+      && wrongQuestionChatSession.currentStage === 'ask_help_mode'
+      && !wrongQuestionChatDraft.followupOutcome.trim()
+    ) {
+      setWrongQuestionChatError('归档这轮掌握追问前，请先选择追问结果。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
     setWrongQuestionChatSending(true);
     setWrongQuestionChatError('');
     setWrongQuestionChatNotice('');
@@ -1114,6 +1165,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               .split(/\n|,/)
               .map((item) => item.trim())
               .filter(Boolean),
+            mastery_followup_outcome: wrongQuestionChatDraft.followupOutcome.trim(),
           },
         }),
       });
@@ -1143,9 +1195,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [
     hydrateWrongQuestionChatState,
     wrongQuestionChatDraft.knowledgeTagsText,
+    wrongQuestionChatDraft.followupOutcome,
     wrongQuestionChatDraft.questionText,
     wrongQuestionChatDraft.replyText,
     wrongQuestionChatDraft.topicCategory,
+    wrongQuestionChatIsMasteryFollowup,
     wrongQuestionChatRun,
     wrongQuestionChatSession,
   ]);
@@ -2553,6 +2607,34 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             </div>
           ) : null}
 
+          {wrongQuestionChatIsMasteryFollowup && wrongQuestionChatSession && wrongQuestionChatSession.status !== 'archived' ? (
+            <div className="mt-4 rounded-2xl border border-sky-200/80 bg-sky-50/80 p-4 dark:border-sky-500/20 dark:bg-sky-500/10">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700 dark:text-sky-200">掌握追问结果</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { value: 'still_confused', label: '仍然没吃透' },
+                  { value: 'needs_another_practice', label: '需要再练一轮' },
+                  { value: 'likely_mastered', label: '大概率已掌握' },
+                ].map((option) => {
+                  const isActive = wrongQuestionChatDraft.followupOutcome === option.value;
+                  return (
+                    <button
+                      key={`followup-outcome-${option.value}`}
+                      type="button"
+                      onClick={() => handleWrongQuestionChatDraftChange('followupOutcome', option.value)}
+                      className={isActive ? workspacePrimaryButtonClass : workspaceSecondaryButtonClass}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-3 text-xs leading-6 text-sky-700/80 dark:text-sky-100/80">
+                归档这轮掌握追问时，系统会把这个结果写回同一条错题记录，后面继续据此判断是再练、再追问，还是准备确认掌握。
+              </p>
+            </div>
+          ) : null}
+
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
             {!wrongQuestionChatSession ? (
               <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
@@ -3017,6 +3099,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       最近练习：{getWrongQuestionPracticeStatusLabel(selectedRecordMasteryTracking.latestPracticeStatus || '')}
                       {selectedRecordMasteryTracking.latestPracticeCreatedAt ? ` · ${selectedRecordMasteryTracking.latestPracticeCreatedAt}` : ''}
                     </p>
+                    {selectedRecordMasteryTracking.latestFollowupOutcome ? (
+                      <p>
+                        最近追问：{getWrongQuestionMasteryFollowupOutcomeLabel(selectedRecordMasteryTracking.latestFollowupOutcome)}
+                        {selectedRecordMasteryTracking.latestFollowupCompletedAt ? ` · ${selectedRecordMasteryTracking.latestFollowupCompletedAt}` : ''}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       {selectedRecordMasteryTracking.relatedTopicCategories.map((topic) => (
                         <span
@@ -3035,6 +3123,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         </span>
                       ))}
                     </div>
+                    {selectedRecordMasteryTracking.latestFollowupSummary ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        最近追问摘要：{selectedRecordMasteryTracking.latestFollowupSummary}
+                      </p>
+                    ) : null}
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       这层记录会继续作为后续掌握评级和相似错因复发判断的基础信号。
                     </p>

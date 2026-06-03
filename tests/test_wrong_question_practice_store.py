@@ -281,6 +281,45 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertIn("已进入 1 次再练链路。", refreshed["mastery_assessment"]["evidence"])
         self.assertIn("同专题未掌握错题还有 1 条。", refreshed["mastery_assessment"]["evidence"])
 
+    def test_mastery_followup_outcome_updates_same_record_tracking_and_assessment(self):
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=self._selected_records_in_order(self.record_one["id"]),
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": self.record_one["id"],
+                    "ai_hint": "先确定乘除的位置。",
+                    "reason_blank_prompt": "我错在 ______。",
+                    "improvement_summary_prompt": "下次先 ______。",
+                },
+            ],
+            pdf_path="/tmp/mastery-followup.pdf",
+        )
+
+        refreshed = lesson_manager.update_wrong_question_submission_mastery_followup(
+            self.record_one["id"],
+            session_id="followup-session-1",
+            outcome="needs_another_practice",
+            summary_text="学生能说出核心步骤，但仍想再做一轮同类题。",
+        )
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(refreshed["mastery_tracking"]["followup_count"], 1)
+        self.assertEqual(refreshed["mastery_tracking"]["latest_followup_outcome"], "needs_another_practice")
+        self.assertEqual(
+            refreshed["mastery_tracking"]["latest_followup_summary"],
+            "学生能说出核心步骤，但仍想再做一轮同类题。",
+        )
+        self.assertEqual(refreshed["mastery_assessment"]["status"], "needs_practice")
+        self.assertEqual(refreshed["mastery_assessment"]["label"], "需要再练")
+        self.assertEqual(refreshed["mastery_assessment"]["suggested_action"], "create_practice")
+        self.assertEqual(refreshed["mastery_assessment"]["followup_count"], 1)
+        self.assertEqual(refreshed["mastery_assessment"]["latest_followup_outcome"], "needs_another_practice")
+        self.assertIn("已完成 1 次掌握追问。", refreshed["mastery_assessment"]["evidence"])
+        self.assertIn("最近一次掌握追问结论：需要再来一轮同类练习。", refreshed["mastery_assessment"]["evidence"])
+
     def test_delete_wrong_question_practice_sheet_removes_sheet_and_items(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
             created_by=self.owner["id"],

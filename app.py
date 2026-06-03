@@ -193,6 +193,7 @@ from lesson_manager import (
     update_wechat_wrong_question_question_text,
     update_wechat_wrong_question_topic_category,
     update_wrong_question_submission_from_chat_archive,
+    update_wrong_question_submission_mastery_followup,
     update_wrong_question_chat_session,
     update_wrong_question_ingestion_run,
     update_user_display_name_for_actor,
@@ -4606,6 +4607,21 @@ def api_wrong_question_chat_stream(session_id: str):
                     needs_teacher_confirmation=needs_teacher_confirmation,
                     confirmation_reasons_json=confirmation_reasons_json,
                 )
+            if archived_record and followup_record_id and not rework_record_id:
+                mastery_followup_outcome = str(
+                    archive_payload.get("mastery_followup_outcome")
+                    or archive_payload.get("masteryFollowupOutcome")
+                    or ""
+                ).strip()
+                if mastery_followup_outcome:
+                    refreshed_record = update_wrong_question_submission_mastery_followup(
+                        archived_record["id"],
+                        session_id=normalized_session_id,
+                        outcome=mastery_followup_outcome,
+                        summary_text=summary_text,
+                    )
+                    if refreshed_record is not None:
+                        archived_record = refreshed_record
             student_id = int(session.get("student_id") or 0)
             pdf_path = _refresh_student_wrong_question_library_cache(student_id) if student_id else ""
             if pdf_path:

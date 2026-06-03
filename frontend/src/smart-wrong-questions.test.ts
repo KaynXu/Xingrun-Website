@@ -1301,25 +1301,31 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
     },
     mastery_tracking: {
       practice_sheet_count: 2,
+      followup_count: 1,
       latest_practice_sheet_id: 18,
       latest_practice_status: 'ready',
       latest_practice_created_at: '2026-06-03 20:00:00',
       latest_practice_pdf_path: '/tmp/archive-practice.pdf',
+      latest_followup_outcome: 'likely_mastered',
+      latest_followup_completed_at: '2026-06-03 21:00:00',
+      latest_followup_summary: '学生已经能独立说清移项和等式性质。',
       related_topic_categories: ['一元一次方程'],
       related_error_types: ['概念错误'],
     },
     mastery_assessment: {
-      status: 'watch',
-      label: '仍需观察',
-      score: 2,
-      suggested_action: 'follow_up',
+      status: 'likely_mastered',
+      label: '大概率已掌握',
+      score: 3,
+      suggested_action: 'review_mastery',
       practice_sheet_count: 2,
+      followup_count: 1,
       latest_practice_status: 'ready',
+      latest_followup_outcome: 'likely_mastered',
       same_topic_active_count: 1,
       same_error_active_count: 1,
       repeated_active_count: 1,
       manual_is_mastered: false,
-      evidence: ['已进入 2 次再练链路。', '同专题未掌握错题还有 1 条。'],
+      evidence: ['已完成 1 次掌握追问。', '最近一次掌握追问结论：学生大概率已经掌握。'],
     },
     archive_context: {
       source: 'ai_chat',
@@ -1384,10 +1390,16 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
   assert.equal(normalized.masteryTracking?.latestPracticeStatus, 'ready');
   assert.deepEqual(normalized.masteryTracking?.relatedTopicCategories, ['一元一次方程']);
   assert.deepEqual(normalized.masteryTracking?.relatedErrorTypes, ['概念错误']);
-  assert.equal(normalized.masteryAssessment?.status, 'watch');
-  assert.equal(normalized.masteryAssessment?.label, '仍需观察');
+  assert.equal(normalized.masteryTracking?.followupCount, 1);
+  assert.equal(normalized.masteryTracking?.latestFollowupOutcome, 'likely_mastered');
+  assert.equal(normalized.masteryTracking?.latestFollowupCompletedAt, '2026-06-03 21:00:00');
+  assert.equal(normalized.masteryTracking?.latestFollowupSummary, '学生已经能独立说清移项和等式性质。');
+  assert.equal(normalized.masteryAssessment?.status, 'likely_mastered');
+  assert.equal(normalized.masteryAssessment?.label, '大概率已掌握');
+  assert.equal(normalized.masteryAssessment?.followupCount, 1);
+  assert.equal(normalized.masteryAssessment?.latestFollowupOutcome, 'likely_mastered');
   assert.equal(normalized.masteryAssessment?.sameTopicActiveCount, 1);
-  assert.deepEqual(normalized.masteryAssessment?.evidence, ['已进入 2 次再练链路。', '同专题未掌握错题还有 1 条。']);
+  assert.deepEqual(normalized.masteryAssessment?.evidence, ['已完成 1 次掌握追问。', '最近一次掌握追问结论：学生大概率已经掌握。']);
   assert.deepEqual(normalized.archiveContext, {
     source: 'ai_chat',
     ingestionRunId: 'run-123',
@@ -1461,6 +1473,8 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /生成版本/);
   assert.match(pageSource, /再练闭环/);
   assert.match(pageSource, /打开最近练习/);
+  assert.match(pageSource, /最近追问：/);
+  assert.match(pageSource, /最近追问摘要：/);
   assert.match(pageSource, /这层记录会继续作为后续掌握评级和相似错因复发判断的基础信号。/);
   assert.match(pageSource, /掌握证据/);
   assert.match(pageSource, /系统判断：/);
@@ -1475,6 +1489,8 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /退回待补充/);
   assert.match(pageSource, /按老师意见继续补充/);
   assert.match(pageSource, /开启掌握追问/);
+  assert.match(pageSource, /掌握追问结果/);
+  assert.match(pageSource, /归档这轮掌握追问时，系统会把这个结果写回同一条错题记录/);
   assert.match(pageSource, /buildWrongQuestionChatFollowupPath/);
 });
 

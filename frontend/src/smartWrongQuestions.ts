@@ -71,10 +71,14 @@ export interface WrongQuestionGenerationMetadata {
 
 export interface WrongQuestionMasteryTracking {
   practiceSheetCount: number;
+  followupCount: number;
   latestPracticeSheetId?: number | null;
   latestPracticeStatus?: string;
   latestPracticeCreatedAt?: string;
   latestPracticePdfPath?: string;
+  latestFollowupOutcome?: string;
+  latestFollowupCompletedAt?: string;
+  latestFollowupSummary?: string;
   relatedTopicCategories: string[];
   relatedErrorTypes: string[];
 }
@@ -85,7 +89,9 @@ export interface WrongQuestionMasteryAssessment {
   score: number;
   suggestedAction: string;
   practiceSheetCount: number;
+  followupCount: number;
   latestPracticeStatus?: string;
+  latestFollowupOutcome?: string;
   sameTopicActiveCount: number;
   sameErrorActiveCount: number;
   repeatedActiveCount: number;
@@ -191,6 +197,7 @@ export interface WrongQuestionChatSession {
   status: string;
   currentStage: string;
   summaryText: string;
+  metadataJson: string;
   ingestionRunId: string;
   classId: number | null;
   studentId: number | null;
@@ -545,6 +552,7 @@ function normalizeWrongQuestionMasteryTracking(rawTracking: unknown): WrongQuest
 
   const tracking: WrongQuestionMasteryTracking = {
     practiceSheetCount: pickNumberValue(source, ['practiceSheetCount', 'practice_sheet_count']) ?? 0,
+    followupCount: pickNumberValue(source, ['followupCount', 'followup_count']) ?? 0,
     relatedTopicCategories: normalizePossiblyJsonStringList(
       source.related_topic_categories ?? source.relatedTopicCategories,
     ),
@@ -573,13 +581,32 @@ function normalizeWrongQuestionMasteryTracking(rawTracking: unknown): WrongQuest
     tracking.latestPracticePdfPath = latestPracticePdfPath;
   }
 
+  const latestFollowupOutcome = pickStringValue(source, ['latestFollowupOutcome', 'latest_followup_outcome']);
+  if (latestFollowupOutcome) {
+    tracking.latestFollowupOutcome = latestFollowupOutcome;
+  }
+
+  const latestFollowupCompletedAt = pickStringValue(source, ['latestFollowupCompletedAt', 'latest_followup_completed_at']);
+  if (latestFollowupCompletedAt) {
+    tracking.latestFollowupCompletedAt = latestFollowupCompletedAt;
+  }
+
+  const latestFollowupSummary = pickStringValue(source, ['latestFollowupSummary', 'latest_followup_summary']);
+  if (latestFollowupSummary) {
+    tracking.latestFollowupSummary = latestFollowupSummary;
+  }
+
   const hasValue = tracking.practiceSheetCount > 0
+    || tracking.followupCount > 0
     || tracking.relatedTopicCategories.length > 0
     || tracking.relatedErrorTypes.length > 0
     || typeof tracking.latestPracticeSheetId === 'number'
     || Boolean(tracking.latestPracticeStatus)
     || Boolean(tracking.latestPracticeCreatedAt)
-    || Boolean(tracking.latestPracticePdfPath);
+    || Boolean(tracking.latestPracticePdfPath)
+    || Boolean(tracking.latestFollowupOutcome)
+    || Boolean(tracking.latestFollowupCompletedAt)
+    || Boolean(tracking.latestFollowupSummary);
   return hasValue ? tracking : undefined;
 }
 
@@ -601,24 +628,28 @@ function normalizeWrongQuestionMasteryAssessment(rawAssessment: unknown): WrongQ
   const suggestedAction = pickStringValue(source, ['suggestedAction', 'suggested_action']) || '';
   const score = pickNumberValue(source, ['score']) ?? 0;
   const practiceSheetCount = pickNumberValue(source, ['practiceSheetCount', 'practice_sheet_count']) ?? 0;
+  const followupCount = pickNumberValue(source, ['followupCount', 'followup_count']) ?? 0;
   const sameTopicActiveCount = pickNumberValue(source, ['sameTopicActiveCount', 'same_topic_active_count']) ?? 0;
   const sameErrorActiveCount = pickNumberValue(source, ['sameErrorActiveCount', 'same_error_active_count']) ?? 0;
   const repeatedActiveCount = pickNumberValue(source, ['repeatedActiveCount', 'repeated_active_count']) ?? 0;
   const manualIsMastered = pickBooleanValue(source, ['manualIsMastered', 'manual_is_mastered']) ?? false;
   const evidence = normalizePossiblyJsonStringList(source.evidence);
   const latestPracticeStatus = pickStringValue(source, ['latestPracticeStatus', 'latest_practice_status']);
+  const latestFollowupOutcome = pickStringValue(source, ['latestFollowupOutcome', 'latest_followup_outcome']);
 
   const hasValue = Boolean(status)
     || Boolean(label)
     || Boolean(suggestedAction)
     || score > 0
     || practiceSheetCount > 0
+    || followupCount > 0
     || sameTopicActiveCount > 0
     || sameErrorActiveCount > 0
     || repeatedActiveCount > 0
     || manualIsMastered
     || evidence.length > 0
-    || Boolean(latestPracticeStatus);
+    || Boolean(latestPracticeStatus)
+    || Boolean(latestFollowupOutcome);
   if (!hasValue) {
     return undefined;
   }
@@ -629,7 +660,9 @@ function normalizeWrongQuestionMasteryAssessment(rawAssessment: unknown): WrongQ
     score,
     suggestedAction,
     practiceSheetCount,
+    followupCount,
     latestPracticeStatus: latestPracticeStatus || undefined,
+    latestFollowupOutcome: latestFollowupOutcome || undefined,
     sameTopicActiveCount,
     sameErrorActiveCount,
     repeatedActiveCount,
@@ -1456,6 +1489,7 @@ export function normalizeWrongQuestionChatSession(rawSession: unknown): WrongQue
     status: pickStringValue(source, ['status']),
     currentStage: pickStringValue(source, ['currentStage', 'current_stage']),
     summaryText: pickStringValue(source, ['summaryText', 'summary_text']),
+    metadataJson: pickStringValue(source, ['metadataJson', 'metadata_json']),
     ingestionRunId: pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']),
     classId: pickNumberValue(source, ['classId', 'class_id']),
     studentId: pickNumberValue(source, ['studentId', 'student_id']),

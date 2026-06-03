@@ -7726,6 +7726,102 @@ def update_wrong_question_submission_from_chat_archive(
         return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
+WRONG_QUESTION_MASTERY_FOLLOWUP_OUTCOMES = {
+    "still_confused",
+    "needs_another_practice",
+    "likely_mastered",
+}
+WRONG_QUESTION_MASTERY_TRACKING_FOLLOWUP_KEYS = (
+    "followup_count",
+    "latest_followup_session_id",
+    "latest_followup_outcome",
+    "latest_followup_completed_at",
+    "latest_followup_summary",
+)
+
+
+def _normalize_wrong_question_mastery_followup_outcome(value: object) -> str:
+    normalized = str(value or "").strip()
+    return normalized if normalized in WRONG_QUESTION_MASTERY_FOLLOWUP_OUTCOMES else ""
+
+
+def _load_wrong_question_mastery_tracking_dict(raw_tracking: object) -> dict:
+    if isinstance(raw_tracking, dict):
+        return dict(raw_tracking)
+    if isinstance(raw_tracking, str):
+        try:
+            parsed = json.loads(raw_tracking or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _preserve_wrong_question_mastery_followup_tracking(existing_tracking: dict) -> dict:
+    preserved: dict[str, object] = {}
+    if not isinstance(existing_tracking, dict):
+        return preserved
+    for key in WRONG_QUESTION_MASTERY_TRACKING_FOLLOWUP_KEYS:
+        if key in existing_tracking:
+            preserved[key] = existing_tracking[key]
+    return preserved
+
+
+def update_wrong_question_submission_mastery_followup(
+    record_id: str,
+    *,
+    session_id: str,
+    outcome: str,
+    summary_text: str,
+) -> Optional[dict]:
+    normalized_record_id = str(record_id or "").strip()
+    normalized_session_id = str(session_id or "").strip()
+    normalized_outcome = _normalize_wrong_question_mastery_followup_outcome(outcome)
+    if not normalized_record_id or not normalized_session_id or not normalized_outcome:
+        return None
+
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, normalized_record_id)
+        if not row:
+            return None
+
+        tracking = _load_wrong_question_mastery_tracking_dict(row["mastery_tracking_json"])
+        previous_session_id = str(tracking.get("latest_followup_session_id") or "").strip()
+        try:
+            followup_count = int(tracking.get("followup_count") or 0)
+        except (TypeError, ValueError):
+            followup_count = 0
+        if previous_session_id != normalized_session_id:
+            followup_count += 1
+        elif followup_count <= 0:
+            followup_count = 1
+
+        tracking["followup_count"] = followup_count
+        tracking["latest_followup_session_id"] = normalized_session_id
+        tracking["latest_followup_outcome"] = normalized_outcome
+        tracking["latest_followup_completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        normalized_summary_text = str(summary_text or "").strip()
+        if normalized_summary_text:
+            tracking["latest_followup_summary"] = normalized_summary_text
+        else:
+            tracking.pop("latest_followup_summary", None)
+
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET mastery_tracking_json=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                json.dumps(tracking, ensure_ascii=False, separators=(",", ":")),
+                normalized_record_id,
+            ),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, normalized_record_id)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
+
+
 def update_wechat_wrong_question_question_text(
     record_id: str,
     *,
@@ -7812,7 +7908,20 @@ def _build_wrong_question_mastery_assessment(
     repeat_counts = _load_wrong_question_mastery_repeat_signal_counts(conn, row)
     practice_sheet_count = int(tracking.get("practice_sheet_count") or 0)
     latest_practice_status = str(tracking.get("latest_practice_status") or "").strip()
+    latest_practice_created_at = str(tracking.get("latest_practice_created_at") or "").strip()
+    followup_count = int(tracking.get("followup_count") or 0)
+    latest_followup_outcome = _normalize_wrong_question_mastery_followup_outcome(
+        tracking.get("latest_followup_outcome")
+    )
+    latest_followup_completed_at = str(tracking.get("latest_followup_completed_at") or "").strip()
     is_manually_mastered = str(row["archive_status"] or "").strip() == "archived"
+    followup_is_current = bool(
+        latest_followup_outcome
+        and (
+            not latest_practice_created_at
+            or latest_followup_completed_at >= latest_practice_created_at
+        )
+    )
 
     status = "monitor"
     label = "继续跟进"
@@ -7839,6 +7948,21 @@ def _build_wrong_question_mastery_assessment(
         label = "已掌握"
         score = 4
         suggested_action = "monitor"
+    elif followup_is_current and latest_followup_outcome == "still_confused":
+        status = "still_confused"
+        label = "仍未掌握"
+        score = 1
+        suggested_action = "continue_follow_up"
+    elif followup_is_current and latest_followup_outcome == "needs_another_practice":
+        status = "needs_practice"
+        label = "需要再练"
+        score = 1
+        suggested_action = "create_practice"
+    elif followup_is_current and latest_followup_outcome == "likely_mastered":
+        status = "likely_mastered"
+        label = "大概率已掌握"
+        score = 3
+        suggested_action = "review_mastery"
     elif latest_practice_status in {"pending", "generating"}:
         status = "practice_in_progress"
         label = "练习生成中"
@@ -7879,12 +8003,22 @@ def _build_wrong_question_mastery_assessment(
     else:
         evidence.append("还没有进入再练链路。")
 
+    if followup_count > 0:
+        evidence.append(f"已完成 {followup_count} 次掌握追问。")
+
     if latest_practice_status in {"ready", "partial_failed"}:
         evidence.append("最近一次再练已生成，可结合完成情况判断是否掌握。")
     elif latest_practice_status in {"pending", "generating"}:
         evidence.append("最近一次再练仍在生成中。")
     elif latest_practice_status == "failed":
         evidence.append("最近一次再练生成失败，需要重新发起。")
+
+    if latest_followup_outcome == "still_confused":
+        evidence.append("最近一次掌握追问结论：学生仍然卡在关键步骤。")
+    elif latest_followup_outcome == "needs_another_practice":
+        evidence.append("最近一次掌握追问结论：需要再来一轮同类练习。")
+    elif latest_followup_outcome == "likely_mastered":
+        evidence.append("最近一次掌握追问结论：学生大概率已经掌握。")
 
     if repeat_counts["same_topic_active_count"] > 0:
         evidence.append(f"同专题未掌握错题还有 {repeat_counts['same_topic_active_count']} 条。")
@@ -7898,6 +8032,8 @@ def _build_wrong_question_mastery_assessment(
         "suggested_action": suggested_action,
         "practice_sheet_count": practice_sheet_count,
         "latest_practice_status": latest_practice_status,
+        "followup_count": followup_count,
+        "latest_followup_outcome": latest_followup_outcome,
         "same_topic_active_count": repeat_counts["same_topic_active_count"],
         "same_error_active_count": repeat_counts["same_error_active_count"],
         "repeated_active_count": repeat_counts["repeated_active_count"],
@@ -9235,6 +9371,11 @@ def _build_wrong_question_mastery_tracking_payload(
     conn: sqlite3.Connection,
     record_id: str,
 ) -> dict:
+    existing_row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    existing_tracking = _load_wrong_question_mastery_tracking_dict(
+        existing_row["mastery_tracking_json"] if existing_row else "{}"
+    )
+    payload = _preserve_wrong_question_mastery_followup_tracking(existing_tracking)
     rows = conn.execute(
         """
         SELECT
@@ -9252,7 +9393,7 @@ def _build_wrong_question_mastery_tracking_payload(
         (str(record_id or "").strip(),),
     ).fetchall()
     if not rows:
-        return {}
+        return payload
 
     unique_sheet_ids: list[int] = []
     seen_sheet_ids: set[int] = set()
@@ -9276,7 +9417,7 @@ def _build_wrong_question_mastery_tracking_payload(
             seen_error_types.add(error_type)
 
     latest = rows[0]
-    return {
+    payload.update({
         "practice_sheet_count": len(unique_sheet_ids),
         "latest_practice_sheet_id": int(latest["id"]),
         "latest_practice_status": str(latest["status"] or "").strip(),
@@ -9284,7 +9425,8 @@ def _build_wrong_question_mastery_tracking_payload(
         "latest_practice_pdf_path": str(latest["pdf_path"] or "").strip(),
         "related_topic_categories": related_topic_categories,
         "related_error_types": related_error_types,
-    }
+    })
+    return payload
 
 
 def _refresh_wrong_question_submission_mastery_tracking(

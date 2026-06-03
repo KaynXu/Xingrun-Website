@@ -578,6 +578,7 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
                 "message": "先给我一点提示，我再试一次",
                 "archive_payload": {
                     "knowledge_tags_json": ["一元一次方程", "移项", "等式性质"],
+                    "mastery_followup_outcome": "likely_mastered",
                 },
             },
         )
@@ -592,6 +593,10 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertEqual(json.loads(final_record["knowledge_tags_json"]), ["一元一次方程", "移项", "等式性质"])
         self.assertEqual(final_record["confirmation_status"], "not_required")
         self.assertEqual(final_record["generation_metadata"]["entrypoint"], "wrong_question_chat_mastery_followup")
+        self.assertEqual(final_record["mastery_tracking"]["followup_count"], 1)
+        self.assertEqual(final_record["mastery_tracking"]["latest_followup_outcome"], "likely_mastered")
+        self.assertEqual(final_record["mastery_assessment"]["status"], "likely_mastered")
+        self.assertEqual(final_record["mastery_assessment"]["suggested_action"], "review_mastery")
         self.assertEqual(
             len(lesson_manager.list_student_wrong_question_library_records(self.student["id"])),
             1,

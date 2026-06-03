@@ -370,28 +370,32 @@ Progress note (2026-06-03):
 
 ## Recommended Priority Order
 
-This is the practical execution order after the work already completed:
+This is the practical execution order after the work already completed, reordered around the final product spine rather than around individual code surfaces:
 
-1. **S1 + S2**
-   - Establish the shared content/schema boundary and version metadata before deepening any one surface.
-   - Why first: this is the cheapest way to support AI chat, teacher review, PDF, and future workbench without redoing each one separately.
+1. **Keep `Track S` as the authority layer**
+   - Continue to treat shared content schema, generation metadata, reviewer metadata, and mastery metadata as the common contract across AI chat, teacher review, practice PDF, weekly follow-up, and any future workbench.
+   - Why first: the final product only stays coherent if every later surface keeps writing back onto the same record spine instead of inventing one-off payloads.
 
-2. **B3 mastery spine + E2 continuity**
-   - First persist later re-practice evidence back onto the same archive record, then keep extending teacher confirmation / return-for-rework continuity.
-   - Why second: once the archive is real, the highest-value missing piece is not another new入口, but making the same record survive “确认 -> 再练 -> 复发 -> 再确认”.
+2. **Finish the same-record lifecycle before adding more入口**
+   - Prioritize `E2 + B3`: teacher confirmation, return-for-rework, confirmed-to-practice, mastery follow-up, and durable mastery outcomes all need to stay on one wrong-question record.
+   - Why second: the target product is not “many separate tools around a题”, but one continuous chain: `AI chat -> archive -> review -> re-practice -> mastery follow-up -> later grading`.
 
-3. **F1 + F2 + F3**
+3. **Broaden those continuity actions across user-facing surfaces**
+   - Reuse the same rework/follow-up actions from notebook modal, archive detail, weekly follow-up cards, and later student-facing entrypoints.
+   - Why third: once the continuity semantics are stable, multiplying入口 is cheap and does not fragment state.
+
+4. **F1 + F2 + F3**
    - Rebuild the practice/PDF artifact on top of the shared schema and quality rules.
-   - Why third: the current output still does not match the review document’s minimum four-area teaching structure.
+   - Why fourth: the current output still does not fully match the review document’s minimum four-area teaching structure, but it is safer to rebuild it after the record spine is stable.
 
-4. **C1 + C2**
-   - Make ingestion workbench-ready, then transplant the highest-value `error_correction` backend blocks: `prepare_input()`, `simplify_ocr_results()`, overlapping split, and schema fallback.
-   - Why fourth: these pieces are valuable, but they should land onto a stable shared data model rather than force an early architecture fork.
+5. **Transplant low-coupling `error_correction` backend capability, not the whole architecture**
+   - Land `prepare_input()`, `simplify_ocr_results()`, overlap split batching, and structured fallback logic onto the generic ingestion backbone.
+   - Why fifth: these are high-value recognition/workbench blocks, but `error_correction` should act as an adapter layer, not become the system’s source of truth too early.
 
-5. **C3 + D1-D2**
-   - Add the React workbench UI and optional adapters only after the shared runtime is stable.
+6. **C3 + D1-D2**
+   - Add the React workbench UI and optional adapters only after the shared runtime is stable enough that the workbench does not fork behavior from the AI-chat path.
 
-6. **G1-G3**
+7. **G1-G3**
    - Turn the whole system into a measurable long-term loop with evals, labels, and lightweight classifiers.
 
 ## Product Structure Recommendation
@@ -422,14 +426,21 @@ The complete product shape should also include:
 
 ## Current Round
 
-The latest completed slices already cover the generic ingestion base, local AI-chat archive loop, teacher review queue starter flow, structured PDF sections, generation metadata, returned-record rework, and “confirmed AI archive -> existing practice-sheet pipeline”.
+The latest completed slices already cover the generic ingestion base, local AI-chat archive loop, teacher review queue starter flow, structured PDF sections, generation metadata, returned-record rework, “confirmed AI archive -> existing practice-sheet pipeline”, and a first evidence-based mastery spine.
 
-The next highest-value task is now **the next E2 continuity slice on top of the B3 mastery spine**:
+The current round now also writes explicit mastery-followup outcome signals back onto the same record via the existing mastery metadata spine, using the smallest durable shape needed for later automation:
 
-- reuse this new mastery-followup entrypoint from weekly follow-up cards and other archive-detail entrypoints instead of only the notebook panel
-- let later mastery-followup outcomes write explicit outcome signals back onto the same record + metadata spine, not only refreshed reflection text
-- decide the smallest durable representation for “掌握追问后的结果” so later automation can distinguish `still_confused / needs_another_practice / likely_mastered`
+- `followup_count`
+- `latest_followup_outcome`
+- `latest_followup_completed_at`
+- `latest_followup_summary`
 
-This keeps the next implementation step small, but directly aligned with the final product shape:
+The next highest-value task is now **the next continuity reuse slice on top of that outcome spine**:
 
-`AI chat upload -> guided reflection -> archive -> teacher confirmation -> later re-practice -> mastery signal -> later follow-up`
+- reuse the mastery-followup entrypoint from weekly follow-up cards and other archive-detail entrypoints instead of only the notebook panel
+- let those alternate entrypoints keep writing into the same `mastery_tracking / mastery_assessment / generation_metadata` chain
+- only after that, decide whether any extra mastery-specific structured card or classifier layer is actually needed
+
+This keeps the implementation path aligned with the final desired product:
+
+`AI chat upload -> guided reflection -> archive -> teacher confirmation -> later re-practice -> mastery follow-up outcome -> later grading / relapse detection`

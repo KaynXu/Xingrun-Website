@@ -877,6 +877,12 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             ],
             pdf_path="/tmp/archive-detail-practice.pdf",
         )
+        lesson_manager.update_wrong_question_submission_mastery_followup(
+            record["id"],
+            session_id="chat-session-record-detail-followup",
+            outcome="likely_mastered",
+            summary_text="学生已经能独立说清移项和等式性质。",
+        )
 
         detail = self.client.get(
             f"/api/wrong-questions/{record['id']}",
@@ -906,14 +912,18 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(len(payload["linked_chat_session"]["messages"]), 1)
         self.assertEqual(payload["linked_chat_session"]["messages"][0]["content"], "你是在哪一步开始不确定的？")
         self.assertEqual(payload["mastery_tracking"]["practice_sheet_count"], 1)
+        self.assertEqual(payload["mastery_tracking"]["followup_count"], 1)
         self.assertEqual(payload["mastery_tracking"]["latest_practice_sheet_id"], practice_sheet["id"])
         self.assertEqual(payload["mastery_tracking"]["latest_practice_status"], "ready")
         self.assertEqual(payload["mastery_tracking"]["latest_practice_pdf_path"], "/tmp/archive-detail-practice.pdf")
-        self.assertEqual(payload["mastery_assessment"]["status"], "ready_for_mastery_review")
-        self.assertEqual(payload["mastery_assessment"]["label"], "待确认是否掌握")
+        self.assertEqual(payload["mastery_tracking"]["latest_followup_outcome"], "likely_mastered")
+        self.assertEqual(payload["mastery_assessment"]["status"], "likely_mastered")
+        self.assertEqual(payload["mastery_assessment"]["label"], "大概率已掌握")
         self.assertEqual(payload["mastery_assessment"]["suggested_action"], "review_mastery")
+        self.assertEqual(payload["mastery_assessment"]["followup_count"], 1)
+        self.assertEqual(payload["mastery_assessment"]["latest_followup_outcome"], "likely_mastered")
         self.assertEqual(payload["mastery_assessment"]["same_topic_active_count"], 0)
-        self.assertIn("最近一次再练已生成，可结合完成情况判断是否掌握。", payload["mastery_assessment"]["evidence"])
+        self.assertIn("最近一次掌握追问结论：学生大概率已经掌握。", payload["mastery_assessment"]["evidence"])
 
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive-detail.pdf")
     def test_local_ai_chat_review_can_update_archive_detail_fields(self, _mock_rebuild):
