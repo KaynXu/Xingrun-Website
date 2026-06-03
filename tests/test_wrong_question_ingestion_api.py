@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import tempfile
@@ -13,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 import config_runtime
 import lesson_manager
+import app as app_module
 from app import app
 
 
@@ -23,6 +25,9 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         lesson_manager.DB_PATH = self.base / "xingrun.db"
         config_runtime.CFG_PATH = self.base / "config.json"
         config_runtime.write_file_config({})
+        self.original_upload_dir = app_module.UPLOAD_DIR
+        app_module.UPLOAD_DIR = self.base / "uploads"
+        app_module.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         lesson_manager.init_db()
         self.client = app.test_client()
 
@@ -39,6 +44,7 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.student = lesson_manager.create_student_for_class(self.class_id, "Alice")
 
     def tearDown(self):
+        app_module.UPLOAD_DIR = self.original_upload_dir
         self.temp_dir.cleanup()
 
     @staticmethod
@@ -181,6 +187,43 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.assertEqual(visible.status_code, 200)
         self.assertEqual(visible.get_json()["run"]["id"], created["id"])
         self.assertEqual(hidden.status_code, 404)
+
+    def test_asset_upload_endpoint_persists_multiple_images_on_run(self):
+        run = self.client.post(
+            "/api/wrong-question-ingestions",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "source": "ai_chat",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+                "chat_session_id": "chat-session-upload",
+                "original_filename": "wrong-1.png",
+                "mime_type": "image/png",
+            },
+        ).get_json()["run"]
+
+        response = self.client.post(
+            f"/api/wrong-question-ingestions/{run['id']}/assets/upload",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            data={
+                "files": [
+                    (io.BytesIO(b"fake-image-one"), "wrong-1.png"),
+                    (io.BytesIO(b"fake-image-two"), "wrong-2.jpg"),
+                ],
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(len(payload["assets"]), 2)
+        self.assertEqual(payload["run"]["current_step"], "uploaded")
+        self.assertEqual(payload["run"]["original_filename"], "wrong-1.png")
+        self.assertEqual([item["asset_role"] for item in payload["run"]["assets"]], ["original_upload", "original_upload"])
+        self.assertTrue(payload["run"]["assets"][0]["storage_path"].startswith(str(self.base / "uploads")))
+        self.assertTrue(payload["run"]["assets"][0]["file_url"].startswith("/api/wrong-question-ingestion-assets/"))
+        self.assertTrue((self.base / "uploads").joinpath(Path(payload["run"]["assets"][0]["storage_path"]).name).exists())
 
     def test_ocr_and_split_endpoints_update_status_and_append_assets(self):
         run = self.client.post(

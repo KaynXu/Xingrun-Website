@@ -121,10 +121,11 @@ What is already true:
 - Generic wrong-question ingestion storage exists.
 - WeChat upload now hands off into generic ingestion runs.
 - AI chat can already run a minimal guided reflection loop and archive into the same wrong-question library.
+- A first AI chat upload UI now exists inside the smart wrong-question notebook modal, including image upload, three-step reflection, resume, and inline archive result.
 
 What is **not** true yet:
 
-- There is no end-user AI chat upload UI that fully uses this loop.
+- There is no standalone student-facing AI chat entry outside the current smart wrong-question notebook modal.
 - There is no operator workbench for multi-page PDF / batch ingestion.
 - `error_correction` OCR simplification / overlapping split / correction flow has not yet been transplanted into live product code.
 - Teacher confirmation, archived detail review, and mastery follow-up are not yet complete product flows.
@@ -175,11 +176,14 @@ This track is the shortest path to the intended end-user product.
 
 #### B1. Minimal end-user chat surface
 
-- [ ] Connect the current AI chat UI to `wrong-question-chats/<session_id>/stream`.
-- [ ] Support upload of one or more wrong-question images into the chat session.
-- [ ] Show current reflection stage and assistant prompt in UI.
-- [ ] Support session reload / resume using persisted chat history.
-- [ ] Show archive result inline after final reflection step.
+- [x] Connect the current AI chat UI to `wrong-question-chats/<session_id>/stream`.
+- [x] Support upload of one or more wrong-question images into the chat session.
+- [x] Show current reflection stage and assistant prompt in UI.
+- [x] Support session reload / resume using persisted chat history.
+- [x] Show archive result inline after final reflection step.
+
+Current V1 note:
+- This first UI slice lives inside `frontend/src/SmartWrongQuestionsPage.tsx` as a notebook-modal chat panel. It is intentionally a low-complexity bridge into the existing workspace, not yet the final standalone student chat surface.
 
 #### B2. Archive-quality chat experience
 

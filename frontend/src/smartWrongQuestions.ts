@@ -43,6 +43,14 @@ export interface WrongQuestionReviewPayload {
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
 
+export interface WrongQuestionArchiveContext {
+  source: string;
+  ingestionRunId: string;
+  ingestionRunUrl: string;
+  chatSessionId: string;
+  chatSessionUrl: string;
+}
+
 export interface WrongQuestionRecord {
   id: string;
   roomId: string;
@@ -78,6 +86,68 @@ export interface WrongQuestionRecord {
   teacherComment: string;
   reviewStatus: string;
   analysis: WrongQuestionAnalysis;
+  detailUrl?: string;
+  ingestionRunId?: string;
+  chatSessionId?: string;
+  archiveContext?: WrongQuestionArchiveContext;
+  needsTeacherConfirmation?: boolean;
+  confirmationReasons?: string[];
+}
+
+export interface WrongQuestionIngestionAsset {
+  id: number;
+  ingestionRunId: string;
+  assetRole: string;
+  storagePath: string;
+  fileUrl: string;
+  mimeType: string;
+  pageNumber: number;
+  width: number;
+  height: number;
+  metadataJson: string;
+}
+
+export interface WrongQuestionIngestionRun {
+  id: string;
+  source: string;
+  status: string;
+  currentStep: string;
+  classId: number | null;
+  studentId: number | null;
+  teacherUserId: number | null;
+  chatSessionId: string;
+  originalFilename: string;
+  mimeType: string;
+  metadataJson: string;
+  errorMessage: string;
+  createdAt: string;
+  detailUrl: string;
+  assets: WrongQuestionIngestionAsset[];
+  records: WrongQuestionRecord[];
+}
+
+export interface WrongQuestionChatMessage {
+  id: number;
+  sessionId: string;
+  role: string;
+  stage: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface WrongQuestionChatSession {
+  id: string;
+  status: string;
+  currentStage: string;
+  summaryText: string;
+  ingestionRunId: string;
+  classId: number | null;
+  studentId: number | null;
+  teacherUserId: number | null;
+  detailUrl: string;
+  streamUrl: string;
+  messages: WrongQuestionChatMessage[];
+  records: WrongQuestionRecord[];
 }
 
 export interface WrongQuestionFilters {
@@ -349,6 +419,20 @@ function normalizeStringList(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item ?? '').trim()).filter(Boolean) : [];
 }
 
+function normalizePossiblyJsonStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return normalizeStringList(value);
+  }
+  if (typeof value !== 'string') {
+    return [];
+  }
+  try {
+    return normalizeStringList(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
 function normalizeWrongQuestionTopicCategory(value = ''): string {
   const normalized = value.trim();
   return normalized || '未分类';
@@ -601,6 +685,46 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
 
   if (studentLibraryPdfPath) {
     record.studentLibraryPdfPath = studentLibraryPdfPath;
+  }
+
+  const detailUrl = pickStringValue(source, ['detailUrl', 'detail_url']);
+  if (detailUrl) {
+    record.detailUrl = detailUrl;
+  }
+
+  const ingestionRunId = pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']);
+  if (ingestionRunId) {
+    record.ingestionRunId = ingestionRunId;
+  }
+
+  const chatSessionId = pickStringValue(source, ['chatSessionId', 'chat_session_id']);
+  if (chatSessionId) {
+    record.chatSessionId = chatSessionId;
+  }
+
+  const needsTeacherConfirmation = pickBooleanValue(source, ['needsTeacherConfirmation', 'needs_teacher_confirmation']);
+  if (needsTeacherConfirmation !== null) {
+    record.needsTeacherConfirmation = needsTeacherConfirmation;
+  }
+
+  const confirmationReasons = normalizePossiblyJsonStringList(source.confirmation_reasons_json ?? source.confirmationReasonsJson);
+  if (confirmationReasons.length > 0) {
+    record.confirmationReasons = confirmationReasons;
+  }
+
+  const archiveContextCandidate = isObjectRecord(source.archive_context)
+    ? source.archive_context
+    : isObjectRecord(source.archiveContext)
+      ? source.archiveContext
+      : null;
+  if (archiveContextCandidate) {
+    record.archiveContext = {
+      source: pickStringValue(archiveContextCandidate, ['source']),
+      ingestionRunId: pickStringValue(archiveContextCandidate, ['ingestionRunId', 'ingestion_run_id']),
+      ingestionRunUrl: pickStringValue(archiveContextCandidate, ['ingestionRunUrl', 'ingestion_run_url']),
+      chatSessionId: pickStringValue(archiveContextCandidate, ['chatSessionId', 'chat_session_id']),
+      chatSessionUrl: pickStringValue(archiveContextCandidate, ['chatSessionUrl', 'chat_session_url']),
+    };
   }
 
   return record;
@@ -955,6 +1079,74 @@ export function buildMemberStudentNotebookSummaries(
   return Array.from(buckets.values()).sort((left, right) => right.latestCreatedAt.localeCompare(left.latestCreatedAt));
 }
 
+export function normalizeWrongQuestionIngestionAsset(rawAsset: unknown): WrongQuestionIngestionAsset {
+  const source = isObjectRecord(rawAsset) ? rawAsset : {};
+  return {
+    id: pickNumberValue(source, ['id']) ?? 0,
+    ingestionRunId: pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']),
+    assetRole: pickStringValue(source, ['assetRole', 'asset_role']),
+    storagePath: pickStringValue(source, ['storagePath', 'storage_path']),
+    fileUrl: pickStringValue(source, ['fileUrl', 'file_url']),
+    mimeType: pickStringValue(source, ['mimeType', 'mime_type']),
+    pageNumber: pickNumberValue(source, ['pageNumber', 'page_number']) ?? 0,
+    width: pickNumberValue(source, ['width']) ?? 0,
+    height: pickNumberValue(source, ['height']) ?? 0,
+    metadataJson: pickStringValue(source, ['metadataJson', 'metadata_json']),
+  };
+}
+
+export function normalizeWrongQuestionIngestionRun(rawRun: unknown): WrongQuestionIngestionRun {
+  const source = isObjectRecord(rawRun) ? rawRun : {};
+  return {
+    id: pickStringValue(source, ['id']),
+    source: pickStringValue(source, ['source']),
+    status: pickStringValue(source, ['status']),
+    currentStep: pickStringValue(source, ['currentStep', 'current_step']),
+    classId: pickNumberValue(source, ['classId', 'class_id']),
+    studentId: pickNumberValue(source, ['studentId', 'student_id']),
+    teacherUserId: pickNumberValue(source, ['teacherUserId', 'teacher_user_id']),
+    chatSessionId: pickStringValue(source, ['chatSessionId', 'chat_session_id']),
+    originalFilename: pickStringValue(source, ['originalFilename', 'original_filename']),
+    mimeType: pickStringValue(source, ['mimeType', 'mime_type']),
+    metadataJson: pickStringValue(source, ['metadataJson', 'metadata_json']),
+    errorMessage: pickStringValue(source, ['errorMessage', 'error_message']),
+    createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+    detailUrl: pickStringValue(source, ['detailUrl', 'detail_url']),
+    assets: Array.isArray(source.assets) ? source.assets.map((item) => normalizeWrongQuestionIngestionAsset(item)) : [],
+    records: Array.isArray(source.records) ? source.records.map((item, index) => normalizeWrongQuestionRecord(item, index)) : [],
+  };
+}
+
+export function normalizeWrongQuestionChatMessage(rawMessage: unknown): WrongQuestionChatMessage {
+  const source = isObjectRecord(rawMessage) ? rawMessage : {};
+  return {
+    id: pickNumberValue(source, ['id']) ?? 0,
+    sessionId: pickStringValue(source, ['sessionId', 'session_id']),
+    role: pickStringValue(source, ['role']),
+    stage: pickStringValue(source, ['stage']),
+    content: pickStringValue(source, ['content']),
+    createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+  };
+}
+
+export function normalizeWrongQuestionChatSession(rawSession: unknown): WrongQuestionChatSession {
+  const source = isObjectRecord(rawSession) ? rawSession : {};
+  return {
+    id: pickStringValue(source, ['id']),
+    status: pickStringValue(source, ['status']),
+    currentStage: pickStringValue(source, ['currentStage', 'current_stage']),
+    summaryText: pickStringValue(source, ['summaryText', 'summary_text']),
+    ingestionRunId: pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']),
+    classId: pickNumberValue(source, ['classId', 'class_id']),
+    studentId: pickNumberValue(source, ['studentId', 'student_id']),
+    teacherUserId: pickNumberValue(source, ['teacherUserId', 'teacher_user_id']),
+    detailUrl: pickStringValue(source, ['detailUrl', 'detail_url']),
+    streamUrl: pickStringValue(source, ['streamUrl', 'stream_url']),
+    messages: Array.isArray(source.messages) ? source.messages.map((item) => normalizeWrongQuestionChatMessage(item)) : [],
+    records: Array.isArray(source.records) ? source.records.map((item, index) => normalizeWrongQuestionRecord(item, index)) : [],
+  };
+}
+
 export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {
   const parts: string[] = [];
 
@@ -989,6 +1181,53 @@ export function buildWrongQuestionDetailPath(recordId: string, roomId?: string):
 
 export function buildWrongQuestionReviewPath(recordId: string, roomId?: string): string {
   return `/api/wrong-questions/${encodeURIComponent(recordId)}/review${buildWrongQuestionRoomQuery(roomId)}`;
+}
+
+export function buildWrongQuestionIngestionListPath(params: {
+  source?: string;
+  status?: string;
+  classId?: number | null;
+  studentId?: number | null;
+  chatSessionId?: string;
+  limit?: number;
+}): string {
+  const search = new URLSearchParams();
+  if (params.source?.trim()) {
+    search.set('source', params.source.trim());
+  }
+  if (params.status?.trim()) {
+    search.set('status', params.status.trim());
+  }
+  if (typeof params.classId === 'number' && Number.isFinite(params.classId) && params.classId > 0) {
+    search.set('class_id', String(params.classId));
+  }
+  if (typeof params.studentId === 'number' && Number.isFinite(params.studentId) && params.studentId > 0) {
+    search.set('student_id', String(params.studentId));
+  }
+  if (params.chatSessionId?.trim()) {
+    search.set('chat_session_id', params.chatSessionId.trim());
+  }
+  if (typeof params.limit === 'number' && Number.isFinite(params.limit) && params.limit > 0) {
+    search.set('limit', String(params.limit));
+  }
+  const query = search.toString();
+  return query ? `/api/wrong-question-ingestions?${query}` : '/api/wrong-question-ingestions';
+}
+
+export function buildWrongQuestionIngestionCreatePath(): string {
+  return '/api/wrong-question-ingestions';
+}
+
+export function buildWrongQuestionIngestionAssetUploadPath(runId: string): string {
+  return `/api/wrong-question-ingestions/${encodeURIComponent(runId)}/assets/upload`;
+}
+
+export function buildWrongQuestionChatDetailPath(sessionId: string): string {
+  return `/api/wrong-question-chats/${encodeURIComponent(sessionId)}`;
+}
+
+export function buildWrongQuestionChatStreamPath(sessionId: string): string {
+  return `/api/wrong-question-chats/${encodeURIComponent(sessionId)}/stream`;
 }
 
 export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): WeeklyWrongQuestionFollowupResponse {

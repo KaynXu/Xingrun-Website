@@ -756,7 +756,7 @@ export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOpti
   return res.json() as Promise<T>;
 }
 
-function apiUploadFormWithProgress<T = unknown>(
+export function apiUploadFormWithProgress<T = unknown>(
   path: string,
   body: FormData,
   onProgress: (progress: number) => void,

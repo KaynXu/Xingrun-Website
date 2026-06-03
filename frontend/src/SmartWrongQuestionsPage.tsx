@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, RefreshCw, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, MessageSquare, RefreshCw, Upload, X } from 'lucide-react';
 
 import {
   apiFetch,
+  apiUploadFormWithProgress,
   workspaceCardClass,
   workspaceFieldClass,
   workspacePageClass,
@@ -25,6 +26,11 @@ import {
   buildWrongQuestionPracticeSheetsPath,
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
+  buildWrongQuestionChatDetailPath,
+  buildWrongQuestionChatStreamPath,
+  buildWrongQuestionIngestionAssetUploadPath,
+  buildWrongQuestionIngestionCreatePath,
+  buildWrongQuestionIngestionListPath,
   buildWrongQuestionReviewPayload,
   buildWrongQuestionReviewPath,
   buildWrongQuestionTopicSummaries,
@@ -37,6 +43,8 @@ import {
   isWechatMiniProgramWrongQuestionRecord,
   normalizeWeeklyWrongQuestionActivitySummaryResponse,
   normalizeWeeklyWrongQuestionFollowupResponse,
+  normalizeWrongQuestionChatSession,
+  normalizeWrongQuestionIngestionRun,
   normalizeWrongQuestionPracticePackJobResponse,
   normalizeWrongQuestionPracticePackListResponse,
   normalizeWrongQuestionPracticeSheetListResponse,
@@ -47,6 +55,8 @@ import {
   type MemberStudentNotebookSummary,
   type WeeklyWrongQuestionActivitySummary,
   type WeeklyWrongQuestionFollowupItem,
+  type WrongQuestionChatSession,
+  type WrongQuestionIngestionRun,
   type WrongQuestionPracticePackJob,
   type WrongQuestionPracticePackListApiResponse,
   type WrongQuestionPracticePackMode,
@@ -93,6 +103,18 @@ type WrongQuestionOrganizationOption = {
 
 type NotebookModalView = 'questions' | 'practice_history';
 
+type WrongQuestionChatDraftState = {
+  questionText: string;
+  topicCategory: string;
+  knowledgeTagsText: string;
+  replyText: string;
+};
+
+type WrongQuestionChatLocalPreview = {
+  name: string;
+  url: string;
+};
+
 const WRONG_QUESTION_ERROR_TYPE_OPTIONS = [
   '知识点问题',
   '细节问题',
@@ -110,6 +132,13 @@ const WRONG_QUESTION_TOPIC_CATEGORY_OPTIONS = [
   '几何',
   '数论',
 ];
+
+const WRONG_QUESTION_CHAT_STAGE_LABELS: Record<string, string> = {
+  ask_why_wrong: '先说错因',
+  ask_unknown_step: '定位卡点',
+  ask_help_mode: '选择帮助方式',
+  ready_to_archive: '已归档',
+};
 
 const practicePackStatusLabels: Record<string, string> = {
   pending: '等待生成',
@@ -229,6 +258,11 @@ function getCurrentMondayDateInputValue(): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const dayOfMonth = String(date.getDate()).padStart(2, '0');
   return `${date.getFullYear()}-${month}-${dayOfMonth}`;
+}
+
+function buildWrongQuestionChatSessionId(): string {
+  const randomPart = Math.random().toString(36).slice(2, 8);
+  return `wrong-question-chat-${Date.now()}-${randomPart}`;
 }
 
 function parseWeeklyFollowupMessageId(value: unknown): number {
@@ -370,6 +404,23 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [practicePackVolume, setPracticePackVolume] = useState<WrongQuestionPracticePackVolume>('standard');
   const [practicePackJobs, setPracticePackJobs] = useState<WrongQuestionPracticePackJob[]>([]);
   const [practicePackGenerating, setPracticePackGenerating] = useState(false);
+  const [wrongQuestionChatRun, setWrongQuestionChatRun] = useState<WrongQuestionIngestionRun | null>(null);
+  const [wrongQuestionChatSession, setWrongQuestionChatSession] = useState<WrongQuestionChatSession | null>(null);
+  const [wrongQuestionChatDraft, setWrongQuestionChatDraft] = useState<WrongQuestionChatDraftState>({
+    questionText: '',
+    topicCategory: '',
+    knowledgeTagsText: '',
+    replyText: '',
+  });
+  const [wrongQuestionChatFiles, setWrongQuestionChatFiles] = useState<File[]>([]);
+  const [wrongQuestionChatLocalPreviews, setWrongQuestionChatLocalPreviews] = useState<WrongQuestionChatLocalPreview[]>([]);
+  const [wrongQuestionChatLoading, setWrongQuestionChatLoading] = useState(false);
+  const [wrongQuestionChatUploading, setWrongQuestionChatUploading] = useState(false);
+  const [wrongQuestionChatSending, setWrongQuestionChatSending] = useState(false);
+  const [wrongQuestionChatUploadProgress, setWrongQuestionChatUploadProgress] = useState(0);
+  const [wrongQuestionChatError, setWrongQuestionChatError] = useState('');
+  const [wrongQuestionChatNotice, setWrongQuestionChatNotice] = useState('');
+  const wrongQuestionChatRequestVersionRef = useRef(0);
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -499,6 +550,133 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       }),
     ]);
   }, [practicePackMode, practicePackTargetRecords]);
+  const wrongQuestionChatLastAssistantMessage = useMemo(() => {
+    if (!wrongQuestionChatSession) {
+      return null;
+    }
+    return [...wrongQuestionChatSession.messages].reverse().find((item) => item.role === 'assistant') ?? null;
+  }, [wrongQuestionChatSession]);
+  const wrongQuestionChatCurrentStageLabel = useMemo(() => {
+    const stage = wrongQuestionChatSession?.currentStage?.trim() || 'ask_why_wrong';
+    return WRONG_QUESTION_CHAT_STAGE_LABELS[stage] || '对话中';
+  }, [wrongQuestionChatSession]);
+  const wrongQuestionChatAssetPreviews = useMemo(() => {
+    if (!wrongQuestionChatRun) {
+      return [];
+    }
+    return wrongQuestionChatRun.assets
+      .map((item) => item.fileUrl.trim())
+      .filter(Boolean);
+  }, [wrongQuestionChatRun]);
+
+  const resetWrongQuestionChatState = useCallback(() => {
+    setWrongQuestionChatRun(null);
+    setWrongQuestionChatSession(null);
+    setWrongQuestionChatDraft({
+      questionText: '',
+      topicCategory: '',
+      knowledgeTagsText: '',
+      replyText: '',
+    });
+    setWrongQuestionChatFiles([]);
+    setWrongQuestionChatLocalPreviews((current) => {
+      current.forEach((item) => globalThis.URL?.revokeObjectURL?.(item.url));
+      return [];
+    });
+    setWrongQuestionChatLoading(false);
+    setWrongQuestionChatUploading(false);
+    setWrongQuestionChatSending(false);
+    setWrongQuestionChatUploadProgress(0);
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+  }, []);
+
+  const hydrateWrongQuestionChatState = useCallback((session: WrongQuestionChatSession | null, run: WrongQuestionIngestionRun | null) => {
+    setWrongQuestionChatSession(session);
+    setWrongQuestionChatRun(run);
+    const firstRecord = session?.records[0] ?? run?.records[0] ?? null;
+    setWrongQuestionChatDraft((current) => ({
+      questionText: firstRecord?.questionText?.trim() || current.questionText,
+      topicCategory: firstRecord?.topicCategory?.trim() || current.topicCategory,
+      knowledgeTagsText: firstRecord?.analysis.knowledgePoints?.join(', ') || current.knowledgeTagsText,
+      replyText: '',
+    }));
+  }, []);
+
+  const handleWrongQuestionChatFileChange = useCallback((fileList: FileList | null) => {
+    const files = fileList ? Array.from(fileList).filter((item) => item.name) : [];
+    setWrongQuestionChatFiles(files);
+    setWrongQuestionChatLocalPreviews((current) => {
+      current.forEach((item) => globalThis.URL?.revokeObjectURL?.(item.url));
+      return files.map((file) => ({
+        name: file.name,
+        url: globalThis.URL?.createObjectURL?.(file) || '',
+      }));
+    });
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+  }, []);
+
+  const loadLatestWrongQuestionChatSession = useCallback(async () => {
+    if (!activeNotebookClassId || !selectedNotebookStudentId || !selectedStudentName || notebookModalView !== 'questions') {
+      resetWrongQuestionChatState();
+      return;
+    }
+    const requestVersion = wrongQuestionChatRequestVersionRef.current + 1;
+    wrongQuestionChatRequestVersionRef.current = requestVersion;
+    setWrongQuestionChatLoading(true);
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+    try {
+      const response = await apiFetch<{ items?: unknown[] }>(
+        buildWrongQuestionIngestionListPath({
+          source: 'ai_chat',
+          classId: activeNotebookClassId,
+          studentId: selectedNotebookStudentId,
+          limit: 10,
+        }),
+      );
+      if (requestVersion !== wrongQuestionChatRequestVersionRef.current) {
+        return;
+      }
+      const runs = Array.isArray(response.items)
+        ? response.items.map((item) => normalizeWrongQuestionIngestionRun(item))
+        : [];
+      const latestRun = runs.find((item) => item.chatSessionId) ?? null;
+      if (!latestRun?.chatSessionId) {
+        setWrongQuestionChatRun(null);
+        setWrongQuestionChatSession(null);
+        return;
+      }
+      const detail = await apiFetch<{ session?: unknown }>(buildWrongQuestionChatDetailPath(latestRun.chatSessionId));
+      if (requestVersion !== wrongQuestionChatRequestVersionRef.current) {
+        return;
+      }
+      const normalizedSession = detail.session ? normalizeWrongQuestionChatSession(detail.session) : null;
+      hydrateWrongQuestionChatState(normalizedSession, latestRun);
+      if (normalizedSession?.messages.length) {
+        setWrongQuestionChatNotice(normalizedSession.status === 'archived' ? '已恢复最近一次错题归档记录。' : '已恢复最近一次错题对话。');
+      }
+    } catch (loadError) {
+      if (requestVersion !== wrongQuestionChatRequestVersionRef.current) {
+        return;
+      }
+      setWrongQuestionChatRun(null);
+      setWrongQuestionChatSession(null);
+      setWrongQuestionChatError(loadError instanceof Error ? loadError.message : '错题对话恢复失败');
+    } finally {
+      if (requestVersion === wrongQuestionChatRequestVersionRef.current) {
+        setWrongQuestionChatLoading(false);
+      }
+    }
+  }, [
+    activeNotebookClassId,
+    hydrateWrongQuestionChatState,
+    notebookModalView,
+    resetWrongQuestionChatState,
+    selectedNotebookStudentId,
+    selectedStudentName,
+  ]);
 
   useEffect(() => {
     if (!showNotebookTopicCategory && notebookTopicFilter !== '全部') {
@@ -597,6 +775,140 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       }
     }
   }, []);
+
+  const handleStartWrongQuestionChat = useCallback(async () => {
+    if (!activeNotebookClassId || !selectedNotebookStudentId) {
+      setWrongQuestionChatError('请先选择学生。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
+    if (wrongQuestionChatFiles.length === 0) {
+      setWrongQuestionChatError('请先上传至少一张错题图片。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
+
+    const sessionId = buildWrongQuestionChatSessionId();
+    setWrongQuestionChatUploading(true);
+    setWrongQuestionChatUploadProgress(0);
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+    try {
+      const created = await apiFetch<{ run: unknown }>(buildWrongQuestionIngestionCreatePath(), {
+        method: 'POST',
+        body: JSON.stringify({
+          source: 'ai_chat',
+          class_id: activeNotebookClassId,
+          student_id: selectedNotebookStudentId,
+          chat_session_id: sessionId,
+          original_filename: wrongQuestionChatFiles[0]?.name ?? 'wrong-question.png',
+          mime_type: wrongQuestionChatFiles[0]?.type || 'image/png',
+        }),
+      });
+      const createdRun = normalizeWrongQuestionIngestionRun(created.run);
+      const uploadForm = new FormData();
+      wrongQuestionChatFiles.forEach((file) => uploadForm.append('files', file));
+      const uploaded = await apiUploadFormWithProgress<{ run: unknown }>(
+        buildWrongQuestionIngestionAssetUploadPath(createdRun.id),
+        uploadForm,
+        setWrongQuestionChatUploadProgress,
+      );
+      const uploadedRun = normalizeWrongQuestionIngestionRun(uploaded.run);
+      const opening = await apiFetch<{ session?: unknown }>(buildWrongQuestionChatStreamPath(sessionId), {
+        method: 'POST',
+        body: JSON.stringify({
+          ingestion_run_id: uploadedRun.id,
+          class_id: activeNotebookClassId,
+          student_id: selectedNotebookStudentId,
+        }),
+      });
+      const openedSession = opening.session ? normalizeWrongQuestionChatSession(opening.session) : null;
+      hydrateWrongQuestionChatState(openedSession, uploadedRun);
+      setWrongQuestionChatNotice('图片已上传，先说说你觉得这题错在哪里。');
+    } catch (startError) {
+      setWrongQuestionChatError(startError instanceof Error ? startError.message : '错题对话创建失败');
+    } finally {
+      setWrongQuestionChatUploading(false);
+    }
+  }, [
+    activeNotebookClassId,
+    hydrateWrongQuestionChatState,
+    selectedNotebookStudentId,
+    wrongQuestionChatFiles,
+  ]);
+
+  const handleWrongQuestionChatDraftChange = useCallback((key: keyof WrongQuestionChatDraftState, value: string) => {
+    setWrongQuestionChatDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }, []);
+
+  const handleSendWrongQuestionChatMessage = useCallback(async () => {
+    if (!wrongQuestionChatSession?.id) {
+      setWrongQuestionChatError('请先上传错题图片并开启对话。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
+    const message = wrongQuestionChatDraft.replyText.trim();
+    if (!message) {
+      setWrongQuestionChatError('请先输入你的回答。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
+    setWrongQuestionChatSending(true);
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+    try {
+      const response = await apiFetch<{
+        session?: unknown;
+        archive?: { record?: unknown; created?: boolean; idempotent_reuse?: boolean } | null;
+      }>(buildWrongQuestionChatStreamPath(wrongQuestionChatSession.id), {
+        method: 'POST',
+        body: JSON.stringify({
+          message,
+          archive_payload: {
+            question_text: wrongQuestionChatDraft.questionText.trim(),
+            topic_category: wrongQuestionChatDraft.topicCategory.trim(),
+            knowledge_tags_json: wrongQuestionChatDraft.knowledgeTagsText
+              .split(/\n|,/)
+              .map((item) => item.trim())
+              .filter(Boolean),
+          },
+        }),
+      });
+      const nextSession = response.session ? normalizeWrongQuestionChatSession(response.session) : wrongQuestionChatSession;
+      hydrateWrongQuestionChatState(nextSession, wrongQuestionChatRun);
+      setWrongQuestionChatDraft((current) => ({
+        ...current,
+        replyText: '',
+      }));
+
+      const archivedRecord = response.archive?.record ? normalizeWrongQuestionRecord(response.archive.record) : null;
+      if (archivedRecord) {
+        setRecords((current) => {
+          const exists = current.some((item) => item.id === archivedRecord.id);
+          return exists
+            ? current.map((item) => item.id === archivedRecord.id ? archivedRecord : item)
+            : [...current, archivedRecord];
+        });
+        setSelectedId(archivedRecord.id);
+        setWrongQuestionChatNotice(response.archive?.created ? '已归档到错题库，可以继续在右侧查看详情。' : '这次归档已经存在，已恢复到已有记录。');
+      }
+    } catch (sendError) {
+      setWrongQuestionChatError(sendError instanceof Error ? sendError.message : '错题对话发送失败');
+    } finally {
+      setWrongQuestionChatSending(false);
+    }
+  }, [
+    hydrateWrongQuestionChatState,
+    wrongQuestionChatDraft.knowledgeTagsText,
+    wrongQuestionChatDraft.questionText,
+    wrongQuestionChatDraft.replyText,
+    wrongQuestionChatDraft.topicCategory,
+    wrongQuestionChatRun,
+    wrongQuestionChatSession,
+  ]);
 
   const resetWeeklyFollowupContext = useCallback(() => {
     weeklyFollowupRequestVersionRef.current += 1;
@@ -715,7 +1027,18 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setNotebookModalView('questions');
     setPracticeActionError('');
     setPracticeActionNotice('');
-  }, [selectedStudentName]);
+    resetWrongQuestionChatState();
+  }, [resetWrongQuestionChatState, selectedStudentName]);
+
+  useEffect(() => {
+    void loadLatestWrongQuestionChatSession();
+  }, [loadLatestWrongQuestionChatSession]);
+
+  useEffect(() => {
+    return () => {
+      wrongQuestionChatLocalPreviews.forEach((item) => globalThis.URL?.revokeObjectURL?.(item.url));
+    };
+  }, [wrongQuestionChatLocalPreviews]);
 
   useEffect(() => {
     if (!selectedRecord) {
@@ -1643,6 +1966,281 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </div>
       )}
     </>
+  );
+  const archivedChatRecord = wrongQuestionChatSession?.records[0] ?? null;
+  const wrongQuestionChatPanel = (
+    <section className={`${workspaceSoftCardClass} mb-5 space-y-4 p-4`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+              <MessageSquare size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">AI 对话归档</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">上传错题图，先问错因，再整理进错题库。</p>
+            </div>
+          </div>
+          {wrongQuestionChatSession ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                {wrongQuestionChatCurrentStageLabel}
+              </span>
+              <span>会话：{wrongQuestionChatSession.id}</span>
+              {wrongQuestionChatRun?.assets.length ? <span>{wrongQuestionChatRun.assets.length} 张图片</span> : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {wrongQuestionChatSession?.status === 'archived' ? (
+            <button
+              type="button"
+              onClick={resetWrongQuestionChatState}
+              className={workspaceSecondaryButtonClass}
+            >
+              开始新对话
+            </button>
+          ) : null}
+          {wrongQuestionChatSession?.detailUrl ? (
+            <a
+              href={buildWrongQuestionAuthedPath(wrongQuestionChatSession.detailUrl)}
+              target="_blank"
+              rel="noreferrer"
+              className={workspaceSecondaryButtonClass}
+            >
+              打开会话详情
+            </a>
+          ) : null}
+        </div>
+      </div>
+
+      {wrongQuestionChatError ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <AlertCircle size={16} />
+          {wrongQuestionChatError}
+        </div>
+      ) : null}
+
+      {wrongQuestionChatNotice ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+          {wrongQuestionChatNotice}
+        </div>
+      ) : null}
+
+      {wrongQuestionChatLoading ? (
+        <div className="rounded-2xl border border-dashed border-sky-200 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+          正在恢复最近一次错题对话...
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="space-y-4">
+          <label className={`${workspaceCardClass} flex cursor-pointer flex-col gap-3 border-dashed p-4 transition hover:border-sky-300 dark:hover:border-sky-400/30`}>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+              <Upload size={16} />
+              上传错题图片
+            </div>
+            <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">支持一次选多张，先保存在同一条归档 run 里。</p>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              multiple
+              onChange={(event) => handleWrongQuestionChatFileChange((event.target as HTMLInputElement).files)}
+              className="hidden"
+            />
+            <span className={workspaceSecondaryButtonClass}>选择图片</span>
+          </label>
+
+          {wrongQuestionChatUploading ? (
+            <div className={`${workspaceCardClass} space-y-3 p-4`}>
+              <div className="flex items-center justify-between gap-3 text-sm text-slate-600 dark:text-slate-300">
+                <span>上传进度</span>
+                <span>{wrongQuestionChatUploadProgress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-sky-500 transition-all"
+                  style={{ width: `${wrongQuestionChatUploadProgress}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {wrongQuestionChatLocalPreviews.length > 0 || wrongQuestionChatAssetPreviews.length > 0 ? (
+            <div className={`${workspaceCardClass} space-y-3 p-4`}>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">当前图片</p>
+              <div className="grid grid-cols-2 gap-3">
+                {(wrongQuestionChatAssetPreviews.length > 0
+                  ? wrongQuestionChatAssetPreviews.map((url, index) => ({ name: `已上传图片 ${index + 1}`, url }))
+                  : wrongQuestionChatLocalPreviews
+                ).map((item) => (
+                  <a
+                    key={`${item.name}-${item.url}`}
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white dark:border-white/10 dark:bg-slate-950/70"
+                  >
+                    <img src={item.url} alt={item.name} className="h-28 w-full object-cover" />
+                    <div className="border-t border-slate-200/80 px-3 py-2 text-xs text-slate-500 dark:border-white/10 dark:text-slate-400">{item.name}</div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className={`${workspaceCardClass} space-y-3 p-4`}>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">题目文本</span>
+              <textarea
+                value={wrongQuestionChatDraft.questionText}
+                onChange={(event) => handleWrongQuestionChatDraftChange('questionText', event.target.value)}
+                className={`${workspaceFieldClass} min-h-24 resize-y`}
+                placeholder="可先手动补上题干，归档时会一起保存。"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">专题</span>
+                <input
+                  value={wrongQuestionChatDraft.topicCategory}
+                  onChange={(event) => handleWrongQuestionChatDraftChange('topicCategory', event.target.value)}
+                  className={workspaceFieldClass}
+                  placeholder="如：一元一次方程"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">知识点</span>
+                <input
+                  value={wrongQuestionChatDraft.knowledgeTagsText}
+                  onChange={(event) => handleWrongQuestionChatDraftChange('knowledgeTagsText', event.target.value)}
+                  className={workspaceFieldClass}
+                  placeholder="逗号分隔，如：移项, 方程"
+                />
+              </label>
+            </div>
+            {!wrongQuestionChatSession ? (
+              <button
+                type="button"
+                onClick={() => void handleStartWrongQuestionChat()}
+                disabled={wrongQuestionChatUploading || wrongQuestionChatFiles.length === 0}
+                className={workspacePrimaryButtonClass}
+              >
+                {wrongQuestionChatUploading ? '正在创建对话...' : '开始 AI 追问'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className={`${workspaceCardClass} flex min-h-[24rem] flex-col p-4`}>
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 pb-3 dark:border-white/10">
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">对话过程</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按三步走：错因、卡点、帮助方式。</p>
+            </div>
+            {wrongQuestionChatSession?.status === 'archived' ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                已归档
+              </span>
+            ) : null}
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
+            {!wrongQuestionChatSession ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                先上传错题图并开启对话，AI 会先问学生为什么错。
+              </div>
+            ) : wrongQuestionChatSession.messages.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                正在等待第一条追问。
+              </div>
+            ) : (
+              wrongQuestionChatSession.messages.map((item) => {
+                const isAssistant = item.role === 'assistant';
+                return (
+                  <article
+                    key={`${item.id}-${item.createdAt}`}
+                    className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-6 ${isAssistant ? 'mr-auto border border-sky-100 bg-sky-50/80 text-slate-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-slate-100' : 'ml-auto border border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100'}`}
+                  >
+                    <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      <span>{isAssistant ? 'AI' : '学生'}</span>
+                      <span>{WRONG_QUESTION_CHAT_STAGE_LABELS[item.stage] || item.stage}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap">{item.content}</p>
+                  </article>
+                );
+              })
+            )}
+          </div>
+
+          {archivedChatRecord ? (
+            <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-400/20 dark:bg-emerald-500/10">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-600 dark:border-emerald-400/20 dark:bg-slate-950 dark:text-emerald-300">
+                  <CheckCircle2 size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">已归档到错题库</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{archivedChatRecord.questionText || '题目文本待老师补充'}</p>
+                  {archivedChatRecord.needsTeacherConfirmation ? (
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                      需要老师复核：{(archivedChatRecord.confirmationReasons ?? []).join('、') || '信息不完整'}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {archivedChatRecord.detailUrl ? (
+                      <a
+                        href={buildWrongQuestionAuthedPath(archivedChatRecord.detailUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={workspaceSecondaryButtonClass}
+                      >
+                        打开错题详情
+                      </a>
+                    ) : null}
+                    {archivedChatRecord.archiveContext?.ingestionRunUrl ? (
+                      <a
+                        href={buildWrongQuestionAuthedPath(archivedChatRecord.archiveContext.ingestionRunUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={workspaceSecondaryButtonClass}
+                      >
+                        打开处理链路
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="border-t border-slate-200/80 pt-3 dark:border-white/10">
+            {wrongQuestionChatLastAssistantMessage ? (
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                当前提示：{wrongQuestionChatLastAssistantMessage.content}
+              </p>
+            ) : null}
+            <textarea
+              value={wrongQuestionChatDraft.replyText}
+              onChange={(event) => handleWrongQuestionChatDraftChange('replyText', event.target.value)}
+              className={`${workspaceFieldClass} min-h-24 resize-y`}
+              placeholder={wrongQuestionChatSession?.status === 'archived' ? '这条对话已经归档完成。可以开始新的对话。' : '输入学生回答，继续这条错题追问。'}
+              disabled={!wrongQuestionChatSession || wrongQuestionChatSession.status === 'archived'}
+            />
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void handleSendWrongQuestionChatMessage()}
+                disabled={!wrongQuestionChatSession || wrongQuestionChatSession.status === 'archived' || wrongQuestionChatSending}
+                className={workspacePrimaryButtonClass}
+              >
+                {wrongQuestionChatSending ? '发送中...' : '发送回答'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
   const detailPanel = selectedRecord ? (
     <>
@@ -2765,6 +3363,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
                 {notebookModalView === 'questions' ? (
                   <>
+                    {wrongQuestionChatPanel}
                     {detailHeader}
 
                     {detailError && (

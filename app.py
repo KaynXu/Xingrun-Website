@@ -3706,6 +3706,63 @@ def api_wrong_question_ingestion_create():
     return jsonify({"run": created}), 201
 
 
+@app.route("/api/wrong-question-ingestions/<run_id>/assets/upload", methods=["POST"])
+def api_wrong_question_ingestion_asset_upload(run_id: str):
+    user, error = _require_auth()
+    if error:
+        return error
+
+    run = get_wrong_question_ingestion_run(run_id)
+    if not run or not _can_access_wrong_question_ingestion_run(user, run):
+        return jsonify({"error": "not found"}), 404
+
+    upload_items = request.files.getlist("files")
+    if not upload_items:
+        single_file = request.files.get("file")
+        if single_file is not None:
+            upload_items = [single_file]
+    upload_items = [item for item in upload_items if item and item.filename]
+    if not upload_items:
+        return jsonify({"error": "at least one file is required"}), 400
+
+    allowed_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
+    created_assets = []
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    for index, file_storage in enumerate(upload_items):
+        original_filename = str(file_storage.filename or "").strip()
+        suffix = Path(original_filename).suffix.lower()
+        if suffix not in allowed_suffixes:
+            return jsonify({"error": "只支持 png、jpg、jpeg、webp 图片"}), 400
+        safe_filename = secure_filename(original_filename) or f"wrong-question-{index + 1}{suffix}"
+        filename = (
+            f"wrong-question-ingestion-{run_id}-{int(time() * 1000)}-{index + 1}-{safe_filename}"
+        )
+        save_path = UPLOAD_DIR / filename
+        file_storage.save(save_path)
+        created_assets.append(
+            create_wrong_question_asset(
+                ingestion_run_id=run_id,
+                asset_role="original_upload",
+                storage_path=str(save_path),
+                file_url=f"/api/wrong-question-ingestion-assets/{filename}",
+                mime_type=str(file_storage.mimetype or "").strip() or "image/png",
+                page_number=index + 1,
+                metadata_json={
+                    "original_filename": original_filename,
+                    "upload_index": index,
+                },
+            )
+        )
+
+    updated = update_wrong_question_ingestion_run(
+        run_id,
+        status=str(run.get("status") or "pending").strip() or "pending",
+        current_step="uploaded",
+    ) or run
+    serialized = _serialize_wrong_question_ingestion_run_for_response(updated)
+    return jsonify({"ok": True, "run": serialized, "assets": created_assets}), 201
+
+
 @app.route("/api/wrong-question-ingestions/<run_id>", methods=["GET"])
 def api_wrong_question_ingestion_detail(run_id: str):
     user, error = _require_auth()
@@ -4142,6 +4199,11 @@ def api_wrong_question_chat_detail(session_id: str):
     if serialized is None:
         return jsonify({"error": "not found"}), 404
     return jsonify({"session": serialized})
+
+
+@app.route("/api/wrong-question-ingestion-assets/<path:filename>", methods=["GET"])
+def api_wrong_question_ingestion_asset_file(filename: str):
+    return send_from_directory(UPLOAD_DIR, filename)
 
 
 @app.route("/api/wrong-question-practice-packs", methods=["GET"])

@@ -1236,6 +1236,38 @@ test('normalizeWrongQuestionRecord keeps local recognition fields', () => {
   assert.equal(normalized.studentLibraryPdfPath, '/api/wechat/student-libraries/1');
 });
 
+test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields for ai chat records', () => {
+  const normalized = normalizeWrongQuestionRecord({
+    id: 'ai-chat-record-1',
+    source: 'ai_chat',
+    detail_url: '/api/wrong-questions/ai-chat-record-1',
+    ingestion_run_id: 'run-123',
+    chat_session_id: 'session-456',
+    needs_teacher_confirmation: 1,
+    confirmation_reasons_json: '["missing_question_text","knowledge_tags_unconfirmed"]',
+    archive_context: {
+      source: 'ai_chat',
+      ingestion_run_id: 'run-123',
+      ingestion_run_url: '/api/wrong-question-ingestions/run-123',
+      chat_session_id: 'session-456',
+      chat_session_url: '/api/wrong-question-chats/session-456',
+    },
+  });
+
+  assert.equal(normalized.detailUrl, '/api/wrong-questions/ai-chat-record-1');
+  assert.equal(normalized.ingestionRunId, 'run-123');
+  assert.equal(normalized.chatSessionId, 'session-456');
+  assert.equal(normalized.needsTeacherConfirmation, true);
+  assert.deepEqual(normalized.confirmationReasons, ['missing_question_text', 'knowledge_tags_unconfirmed']);
+  assert.deepEqual(normalized.archiveContext, {
+    source: 'ai_chat',
+    ingestionRunId: 'run-123',
+    ingestionRunUrl: '/api/wrong-question-ingestions/run-123',
+    chatSessionId: 'session-456',
+    chatSessionUrl: '/api/wrong-question-chats/session-456',
+  });
+});
+
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
@@ -1285,6 +1317,20 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
   assert.match(pageSource, /预览 PDF/);
   assert.match(pageSource, /下载 PDF/);
   assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
+});
+
+test('SmartWrongQuestionsPage wires the AI wrong-question chat upload and resume panel', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /AI 对话归档/);
+  assert.match(pageSource, /上传错题图片/);
+  assert.match(pageSource, /buildWrongQuestionIngestionListPath/);
+  assert.match(pageSource, /buildWrongQuestionIngestionAssetUploadPath/);
+  assert.match(pageSource, /buildWrongQuestionChatStreamPath/);
+  assert.match(pageSource, /loadLatestWrongQuestionChatSession/);
+  assert.match(pageSource, /已恢复最近一次错题对话/);
+  assert.match(pageSource, /开始 AI 追问/);
+  assert.match(pageSource, /已归档到错题库/);
 });
 
 test('SmartWrongQuestionsPage source exposes a hard delete action for local wechat records', () => {
