@@ -3532,11 +3532,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         <div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">智能错题</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-            {hasStaffScope
-              ? `查看 ${currentUser.organization_name} 的错题记录，按班级或学生打开错题本。`
-              : '查看负责范围内的错题记录。'}
+            {hasStaffScope ? '按班级或学生查看错题本。' : '查看负责范围内错题。'}
           </p>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">当前操作人：{currentUser.display_name}</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{currentUser.display_name}</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className={`${workspaceSoftCardClass} p-4`}>
