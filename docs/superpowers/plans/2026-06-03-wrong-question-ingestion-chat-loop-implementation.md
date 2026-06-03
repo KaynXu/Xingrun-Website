@@ -193,6 +193,9 @@ This track is now the highest-leverage foundation. It keeps us from overfitting 
 - [ ] Add explicit reviewer/outcome metadata anywhere a teacher confirmation changes the final record.
 - [ ] Keep AI-generated rule suggestions separate from approved production rules.
 
+Progress note (2026-06-03):
+- Local wrong-question archive records now carry confirmation reviewer/outcome metadata (`confirmation_status / confirmation_reviewed_by / confirmation_reviewed_at`) and expose it through the unified wrong-question API, so later workbench and queue flows can reuse the same review spine instead of inventing a second approval model.
+
 #### S3. Human feedback loop
 
 - [ ] Add a structured feedback table for teacher/student/parent corrections on wrong-question cards and practice sheets.
@@ -288,6 +291,9 @@ These are deliberately delayed until the shared ingestion backbone is stable.
 - [ ] Add explicit review queue/filter for records needing confirmation.
 - [ ] Add confirmation actions: confirm, edit-then-confirm, return-for-rework.
 - [ ] Persist confirmation outcome and reviewer identity.
+
+Progress note (2026-06-03):
+- The web smart-wrong-question page now exposes a first explicit teacher-confirmation queue slice for local records: list filtering by `待老师复核 / 已退回 / 已确认`, reviewer/outcome metadata in record detail, and concrete `编辑后确认 / 退回待补充` actions wired into the local review save path.
 
 ### Track F: PDF / Practice Sheet Product Surface
 

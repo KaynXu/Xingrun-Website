@@ -43,6 +43,7 @@ export interface WrongQuestionReviewPayload {
   question_text?: string;
   needs_teacher_confirmation?: boolean;
   confirmation_reasons_json?: string[];
+  confirmation_action?: string;
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
@@ -96,6 +97,10 @@ export interface WrongQuestionRecord {
   archiveContext?: WrongQuestionArchiveContext;
   needsTeacherConfirmation?: boolean;
   confirmationReasons?: string[];
+  confirmationStatus?: string;
+  confirmationReviewedBy?: number | null;
+  confirmationReviewedAt?: string;
+  confirmationReviewerName?: string;
   linkedIngestionRun?: WrongQuestionIngestionRun;
   linkedChatSession?: WrongQuestionChatSession;
 }
@@ -162,6 +167,7 @@ export interface WrongQuestionFilters {
   subject?: string;
   teacherName?: string;
   errorType?: string;
+  confirmationState?: string;
 }
 
 export interface WrongQuestionTopicSummary {
@@ -721,6 +727,26 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     record.confirmationReasons = confirmationReasons;
   }
 
+  const confirmationStatus = pickStringValue(source, ['confirmationStatus', 'confirmation_status']);
+  if (confirmationStatus) {
+    record.confirmationStatus = confirmationStatus;
+  }
+
+  const confirmationReviewedBy = pickNumberValue(source, ['confirmationReviewedBy', 'confirmation_reviewed_by']);
+  if (confirmationReviewedBy !== null) {
+    record.confirmationReviewedBy = confirmationReviewedBy;
+  }
+
+  const confirmationReviewedAt = pickStringValue(source, ['confirmationReviewedAt', 'confirmation_reviewed_at']);
+  if (confirmationReviewedAt) {
+    record.confirmationReviewedAt = confirmationReviewedAt;
+  }
+
+  const confirmationReviewerName = pickStringValue(source, ['confirmationReviewerName', 'confirmation_reviewer_name']);
+  if (confirmationReviewerName) {
+    record.confirmationReviewerName = confirmationReviewerName;
+  }
+
   const archiveContextCandidate = isObjectRecord(source.archive_context)
     ? source.archive_context
     : isObjectRecord(source.archiveContext)
@@ -927,6 +953,10 @@ export function resolveSavedWrongQuestionRecord(
     const hasTopicCategory = hasOwnKey(responseSource, ['topicCategory', 'topic_category']);
     const hasNeedsTeacherConfirmation = hasOwnKey(responseSource, ['needsTeacherConfirmation', 'needs_teacher_confirmation']);
     const hasConfirmationReasons = hasOwnKey(responseSource, ['confirmationReasons', 'confirmation_reasons_json', 'confirmationReasonsJson']);
+    const hasConfirmationStatus = hasOwnKey(responseSource, ['confirmationStatus', 'confirmation_status']);
+    const hasConfirmationReviewedBy = hasOwnKey(responseSource, ['confirmationReviewedBy', 'confirmation_reviewed_by']);
+    const hasConfirmationReviewedAt = hasOwnKey(responseSource, ['confirmationReviewedAt', 'confirmation_reviewed_at']);
+    const hasConfirmationReviewerName = hasOwnKey(responseSource, ['confirmationReviewerName', 'confirmation_reviewer_name']);
 
     return {
       ...normalizedResponse,
@@ -957,6 +987,18 @@ export function resolveSavedWrongQuestionRecord(
       confirmationReasons: hasConfirmationReasons
         ? normalizedResponse.confirmationReasons
         : currentRecord.confirmationReasons,
+      confirmationStatus: hasConfirmationStatus
+        ? normalizedResponse.confirmationStatus
+        : currentRecord.confirmationStatus,
+      confirmationReviewedBy: hasConfirmationReviewedBy
+        ? normalizedResponse.confirmationReviewedBy
+        : currentRecord.confirmationReviewedBy,
+      confirmationReviewedAt: hasConfirmationReviewedAt
+        ? normalizedResponse.confirmationReviewedAt
+        : currentRecord.confirmationReviewedAt,
+      confirmationReviewerName: hasConfirmationReviewerName
+        ? normalizedResponse.confirmationReviewerName
+        : currentRecord.confirmationReviewerName,
     };
   }
 

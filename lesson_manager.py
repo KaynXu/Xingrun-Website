@@ -1731,6 +1731,9 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
             confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
+            confirmation_status      TEXT NOT NULL DEFAULT '',
+            confirmation_reviewed_by INTEGER,
+            confirmation_reviewed_at TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         )
@@ -2461,6 +2464,9 @@ def init_db():
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
             confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
+            confirmation_status      TEXT NOT NULL DEFAULT '',
+            confirmation_reviewed_by INTEGER,
+            confirmation_reviewed_at TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -2892,6 +2898,9 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "knowledge_tags_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_submissions", "needs_teacher_confirmation", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reasons_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_status", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_by", "INTEGER")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_ingestion_runs", "current_step", "TEXT NOT NULL DEFAULT 'uploaded'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
@@ -7293,8 +7302,9 @@ def _create_wrong_question_submission_record(
             recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
             question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path,
             ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json,
-            needs_teacher_confirmation, confirmation_reasons_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            needs_teacher_confirmation, confirmation_reasons_json,
+            confirmation_status, confirmation_reviewed_by, confirmation_reviewed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record_id,
@@ -7330,6 +7340,9 @@ def _create_wrong_question_submission_record(
             normalized_payload["knowledge_tags_json"],
             normalized_payload["needs_teacher_confirmation"],
             normalized_payload["confirmation_reasons_json"],
+            "pending" if normalized_payload["needs_teacher_confirmation"] else "not_required",
+            None,
+            "",
         ),
     )
     created = conn.execute(
@@ -7589,8 +7602,24 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         for item in (confirmation_reasons if isinstance(confirmation_reasons, list) else [])
         if str(item or "").strip()
     ]
+    confirmation_status = str(row["confirmation_status"] or "").strip()
+    if confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
+        if row["needs_teacher_confirmation"]:
+            confirmation_status = "pending"
+        elif row["confirmation_reviewed_by"] is not None or str(row["confirmation_reviewed_at"] or "").strip():
+            confirmation_status = "confirmed"
+        else:
+            confirmation_status = "not_required"
     payload["knowledge_tags"] = normalized_knowledge_tags
     payload["confirmation_reasons"] = normalized_confirmation_reasons
+    payload["confirmation_status"] = confirmation_status
+    payload["confirmation_reviewed_by"] = (
+        int(row["confirmation_reviewed_by"])
+        if row["confirmation_reviewed_by"] is not None
+        else None
+    )
+    payload["confirmation_reviewed_at"] = str(row["confirmation_reviewed_at"] or "").strip()
+    payload["confirmation_reviewer_name"] = str(row["confirmation_reviewer_display_name"] or "").strip()
     topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
     payload["topic_category"] = topic_category
     payload["topicCategory"] = topic_category
@@ -7624,11 +7653,13 @@ def _fetch_wechat_wrong_question_submission_row_by_id(
             c.name AS class_display_name,
             c.grade AS grade,
             s.name AS student_name,
-            u.display_name AS teacher_display_name
+            u.display_name AS teacher_display_name,
+            reviewer.display_name AS confirmation_reviewer_display_name
         FROM wrong_question_submissions wqs
         JOIN classes c ON c.id = wqs.class_id
         JOIN students s ON s.id = wqs.student_id
         JOIN users u ON u.id = wqs.teacher_user_id
+        LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
         WHERE wqs.id=?
         """,
         (record_id,),
@@ -7644,11 +7675,13 @@ def list_wechat_wrong_question_submissions() -> list[dict]:
                 c.name AS class_display_name,
                 c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """
         ).fetchall()
@@ -7675,11 +7708,13 @@ def list_wechat_wrong_question_submissions_for_parent_student(
                 c.name AS class_display_name,
                 c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             WHERE wqs.student_id=?
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
@@ -7713,11 +7748,13 @@ def list_wrong_question_submissions_for_chat_session(chat_session_id: str) -> li
                 c.name AS class_display_name,
                 c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             WHERE wqs.chat_session_id=?
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
@@ -7745,11 +7782,13 @@ def list_wrong_question_submissions_for_ingestion_run(ingestion_run_id: str) -> 
                 c.name AS class_display_name,
                 c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             WHERE wqs.ingestion_run_id=?
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
@@ -7910,7 +7949,7 @@ def list_primary_topic_category_suggestions(
     return suggestions
 
 
-def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:
+def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer_user_id: int | None = None) -> Optional[dict]:
     raw_is_mastered = payload.get("is_mastered")
     normalized_is_mastered = bool(raw_is_mastered)
     if isinstance(raw_is_mastered, str):
@@ -7963,6 +8002,14 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
         else payload.get("confirmationReasons")
     )
     normalized_confirmation_reasons = normalize_string_list(confirmation_reasons_payload)
+    confirmation_action = str(
+        payload.get("confirmation_action")
+        if "confirmation_action" in payload
+        else payload.get("confirmationAction")
+        or ""
+    ).strip()
+    if confirmation_action not in {"", "save", "confirm", "edit_then_confirm", "return_for_rework"}:
+        confirmation_action = ""
 
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
@@ -7978,6 +8025,10 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
             except json.JSONDecodeError:
                 existing_knowledge_tags = []
             selected_knowledge_points = normalize_string_list(existing_knowledge_tags)
+        try:
+            existing_confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
+        except json.JSONDecodeError:
+            existing_confirmation_reasons = []
         next_confirmation_state = bool(row["needs_teacher_confirmation"])
         next_confirmation_reasons = normalized_confirmation_reasons
         if has_confirmation_state and normalized_confirmation_state is not None:
@@ -7985,11 +8036,45 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
             if not next_confirmation_state:
                 next_confirmation_reasons = []
         elif not normalized_confirmation_reasons:
-            try:
-                parsed_confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
-            except json.JSONDecodeError:
-                parsed_confirmation_reasons = []
-            next_confirmation_reasons = normalize_string_list(parsed_confirmation_reasons)
+            next_confirmation_reasons = normalize_string_list(existing_confirmation_reasons)
+
+        next_confirmation_status = str(row["confirmation_status"] or "").strip()
+        if next_confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
+            if bool(row["needs_teacher_confirmation"]):
+                next_confirmation_status = "pending"
+            elif row["confirmation_reviewed_by"] is not None or str(row["confirmation_reviewed_at"] or "").strip():
+                next_confirmation_status = "confirmed"
+            else:
+                next_confirmation_status = "not_required"
+        next_confirmation_reviewed_by = int(row["confirmation_reviewed_by"]) if row["confirmation_reviewed_by"] is not None else None
+        next_confirmation_reviewed_at = str(row["confirmation_reviewed_at"] or "").strip()
+        reviewed_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if confirmation_action in {"confirm", "edit_then_confirm"}:
+            next_confirmation_state = False
+            next_confirmation_reasons = []
+            next_confirmation_status = "confirmed"
+            next_confirmation_reviewed_by = int(reviewer_user_id) if reviewer_user_id is not None else next_confirmation_reviewed_by
+            next_confirmation_reviewed_at = reviewed_timestamp
+        elif confirmation_action == "return_for_rework":
+            next_confirmation_state = True
+            if not next_confirmation_reasons:
+                next_confirmation_reasons = normalize_string_list(existing_confirmation_reasons)
+            next_confirmation_status = "returned"
+            next_confirmation_reviewed_by = int(reviewer_user_id) if reviewer_user_id is not None else next_confirmation_reviewed_by
+            next_confirmation_reviewed_at = reviewed_timestamp
+        elif has_confirmation_state and normalized_confirmation_state is not None:
+            if next_confirmation_state:
+                next_confirmation_status = "returned" if next_confirmation_status == "returned" else "pending"
+            else:
+                next_confirmation_status = "confirmed"
+                next_confirmation_reviewed_by = int(reviewer_user_id) if reviewer_user_id is not None else next_confirmation_reviewed_by
+                next_confirmation_reviewed_at = reviewed_timestamp
+        else:
+            if next_confirmation_state:
+                next_confirmation_status = next_confirmation_status if next_confirmation_status in {"pending", "returned"} else "pending"
+            elif next_confirmation_status != "confirmed":
+                next_confirmation_status = "not_required"
         conn.execute(
             """
             UPDATE wrong_question_submissions
@@ -8000,6 +8085,9 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
                 knowledge_tags_json=?,
                 needs_teacher_confirmation=?,
                 confirmation_reasons_json=?,
+                confirmation_status=?,
+                confirmation_reviewed_by=?,
+                confirmation_reviewed_at=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
@@ -8011,6 +8099,9 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
                 json.dumps(selected_knowledge_points, ensure_ascii=False, separators=(",", ":")),
                 1 if next_confirmation_state else 0,
                 json.dumps(next_confirmation_reasons, ensure_ascii=False, separators=(",", ":")),
+                next_confirmation_status,
+                next_confirmation_reviewed_by,
+                next_confirmation_reviewed_at,
                 record_id,
             ),
         )

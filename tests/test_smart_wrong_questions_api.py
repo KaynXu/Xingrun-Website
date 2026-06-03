@@ -261,6 +261,103 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         )
 
     @patch("smart_wrong_questions.fetch_wrong_question_records")
+    def test_staff_can_filter_wrong_question_records_by_confirmation_state(self, fetch_wrong_question_records):
+        owner_payload = self.login_owner()
+        fetch_wrong_question_records.return_value = {"items": [], "total": 0}
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=owner_payload["user"]["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_payload["user"]["id"])
+        student = lesson_manager.create_student_for_class(class_id, "Queue Student")
+
+        pending_record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/queue-pending.png",
+            recognition_status="recognized",
+            needs_teacher_confirmation=True,
+            confirmation_reasons_json=["missing_question_text"],
+        )
+        confirmed_record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/queue-confirmed.png",
+            recognition_status="recognized",
+        )
+        returned_record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/queue-returned.png",
+            recognition_status="recognized",
+            needs_teacher_confirmation=True,
+            confirmation_reasons_json=["student_confused_step"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET confirmation_status='confirmed',
+                    confirmation_reviewed_by=?,
+                    confirmation_reviewed_at='2026-06-03 10:00:00'
+                WHERE id=?
+                """,
+                (owner_payload["user"]["id"], confirmed_record["id"]),
+            )
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET confirmation_status='returned',
+                    confirmation_reviewed_by=?,
+                    confirmation_reviewed_at='2026-06-03 11:00:00'
+                WHERE id=?
+                """,
+                (owner_payload["user"]["id"], returned_record["id"]),
+            )
+
+        pending_response = self.client.get(
+            "/api/wrong-questions?confirmationState=pending",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        self.assertEqual(pending_response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in pending_response.get_json()["items"]],
+            [pending_record["id"]],
+        )
+
+        returned_response = self.client.get(
+            "/api/wrong-questions?confirmationState=returned",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        self.assertEqual(returned_response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in returned_response.get_json()["items"]],
+            [returned_record["id"]],
+        )
+
+        confirmed_response = self.client.get(
+            "/api/wrong-questions?confirmationState=confirmed",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+        self.assertEqual(confirmed_response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in confirmed_response.get_json()["items"]],
+            [confirmed_record["id"]],
+        )
+
+    @patch("smart_wrong_questions.fetch_wrong_question_records")
     def test_staff_can_see_unmapped_org_records_in_global_workspace(self, fetch_wrong_question_records):
         owner_payload = self.login_owner()
         fetch_wrong_question_records.return_value = {
@@ -861,6 +958,56 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(refreshed["question_text_source"], "teacher")
         self.assertEqual(refreshed["needs_teacher_confirmation"], 0)
         self.assertEqual(json.loads(refreshed["confirmation_reasons_json"]), [])
+        self.assertEqual(refreshed["confirmation_status"], "confirmed")
+        self.assertEqual(refreshed["confirmation_reviewed_by"], owner_payload["user"]["id"])
+        self.assertTrue(refreshed["confirmation_reviewed_at"])
+
+    @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive-detail.pdf")
+    def test_local_ai_chat_review_can_return_record_for_rework(self, _mock_rebuild):
+        owner_payload = self.login_owner()
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=owner_payload["user"]["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_payload["user"]["id"])
+        student = lesson_manager.create_student_for_class(class_id, "Bob")
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/archive-review-returned.png",
+            recognition_status="recognized",
+            question_text="原始题干",
+            knowledge_tags_json=["移项"],
+            needs_teacher_confirmation=True,
+            confirmation_reasons_json=["student_confused_step"],
+        )
+
+        response = self.client.put(
+            f"/api/wrong-questions/{record['id']}/review",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "selectedErrorType": "概念错误",
+                "confirmation_action": "return_for_rework",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        saved = response.get_json()["record"]
+        self.assertTrue(saved["needs_teacher_confirmation"])
+        self.assertEqual(saved["confirmation_status"], "returned")
+        self.assertEqual(saved["confirmation_reviewer_name"], owner_payload["user"]["display_name"])
+
+        refreshed = lesson_manager.get_wechat_wrong_question_submission(record["id"])
+        self.assertIsNotNone(refreshed)
+        assert refreshed is not None
+        self.assertEqual(refreshed["confirmation_status"], "returned")
+        self.assertEqual(refreshed["confirmation_reviewed_by"], owner_payload["user"]["id"])
+        self.assertTrue(refreshed["confirmation_reviewed_at"])
 
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
     def test_local_wrong_question_review_can_update_question_text(self, _mock_rebuild):

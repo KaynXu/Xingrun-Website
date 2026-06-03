@@ -147,6 +147,13 @@ const WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS: Record<string, string> = {
   student_confused_step: '学生卡点描述还不够清楚',
 };
 
+const WRONG_QUESTION_CONFIRMATION_STATUS_LABELS: Record<string, string> = {
+  pending: '待老师复核',
+  confirmed: '已确认',
+  returned: '已退回',
+  not_required: '无需复核',
+};
+
 const WRONG_QUESTION_INGESTION_ASSET_ROLE_LABELS: Record<string, string> = {
   original_upload: '原始上传',
   ocr_page_image: 'OCR 页图',
@@ -173,6 +180,7 @@ const initialFilters: WrongQuestionFilters = {
   subject: '',
   teacherName: '',
   errorType: '',
+  confirmationState: '',
 };
 
 function hasSnapshotDifference(canonicalValue: string, snapshotValue: string): boolean {
@@ -185,6 +193,35 @@ function getWrongQuestionSourceBadgeClass(source: string): string {
   return source === 'wechat_mp'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
     : 'border-sky-200 bg-white/80 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
+}
+
+function normalizeWrongQuestionConfirmationStatus(record: WrongQuestionRecord | null): string {
+  if (!record) {
+    return 'not_required';
+  }
+  if (record.confirmationStatus && WRONG_QUESTION_CONFIRMATION_STATUS_LABELS[record.confirmationStatus]) {
+    return record.confirmationStatus;
+  }
+  if (record.needsTeacherConfirmation) {
+    return 'pending';
+  }
+  if (record.confirmationReviewedAt || typeof record.confirmationReviewedBy === 'number') {
+    return 'confirmed';
+  }
+  return 'not_required';
+}
+
+function getWrongQuestionConfirmationStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'confirmed':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300';
+    case 'returned':
+      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300';
+    case 'pending':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300';
+    default:
+      return 'border-slate-200 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300';
+  }
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -529,6 +566,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
   const selectedRecordIsPrimarySchool = selectedRecord ? isPrimarySchoolWrongQuestionRecord(selectedRecord) : false;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
+  const selectedRecordConfirmationStatus = useMemo(() => {
+    return normalizeWrongQuestionConfirmationStatus(selectedRecord);
+  }, [selectedRecord]);
   const selectedRecordArchiveAssets = useMemo(() => {
     return selectedRecord?.linkedIngestionRun?.assets ?? [];
   }, [selectedRecord]);
@@ -625,6 +665,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     wrongQuestionChatLocalPreviews.length,
     wrongQuestionChatSession,
   ]);
+  const pendingTeacherConfirmationCount = useMemo(() => {
+    return records.filter((record) => normalizeWrongQuestionConfirmationStatus(record) === 'pending').length;
+  }, [records]);
+  const returnedTeacherConfirmationCount = useMemo(() => {
+    return records.filter((record) => normalizeWrongQuestionConfirmationStatus(record) === 'returned').length;
+  }, [records]);
   const wrongQuestionChatKnowledgeTagList = useMemo(() => {
     return wrongQuestionChatDraft.knowledgeTagsText
       .split(/\n|,/)
@@ -1360,7 +1406,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     updateDraftDirtyState(selectedRecord.id, true);
   };
 
-  const handleSaveReview = async () => {
+  const handleSaveReview = async (action: 'save' | 'edit_then_confirm' | 'return_for_rework' = 'save') => {
     if (!selectedRecord) {
       return;
     }
@@ -1372,6 +1418,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
     try {
       const payload = buildWrongQuestionReviewPayload(latestDraft);
+      if (action === 'edit_then_confirm') {
+        payload.needs_teacher_confirmation = false;
+        payload.confirmation_reasons_json = [];
+        payload.confirmation_action = action;
+      } else if (action === 'return_for_rework') {
+        payload.needs_teacher_confirmation = true;
+        payload.confirmation_reasons_json = payload.confirmation_reasons_json?.length
+          ? payload.confirmation_reasons_json
+          : (selectedRecord.confirmationReasons ?? []);
+        payload.confirmation_action = action;
+      }
       const response = await apiFetch<unknown>(buildWrongQuestionReviewPath(selectedRecord.id, selectedRecord.roomId), {
         method: 'PUT',
         body: JSON.stringify(payload),
@@ -2670,6 +2727,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 <div className={`${workspaceCardClass} space-y-3 p-4`}>
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">老师复核原因</p>
                   <div className="flex flex-wrap gap-2">
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getWrongQuestionConfirmationStatusBadgeClass(selectedRecordConfirmationStatus)}`}>
+                      {WRONG_QUESTION_CONFIRMATION_STATUS_LABELS[selectedRecordConfirmationStatus] || selectedRecordConfirmationStatus}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     {(selectedDraft?.confirmationReasons ?? selectedRecord.confirmationReasons ?? []).length > 0 ? (
                       (selectedDraft?.confirmationReasons ?? selectedRecord.confirmationReasons ?? []).map((reason) => (
                         <span
@@ -2683,6 +2745,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       <span className="text-sm text-slate-500 dark:text-slate-400">当前没有待复核原因</span>
                     )}
                   </div>
+                  {selectedRecord.confirmationReviewerName || selectedRecord.confirmationReviewedAt ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      最近处理：{selectedRecord.confirmationReviewerName || '未记录老师'}
+                      {selectedRecord.confirmationReviewedAt ? ` · ${selectedRecord.confirmationReviewedAt}` : ''}
+                    </p>
+                  ) : null}
                   {selectedRecord.needsTeacherConfirmation ? (
                     <p className="text-sm text-slate-500 dark:text-slate-400">这条记录目前仍会出现在老师复核链路里。</p>
                   ) : (
@@ -2822,14 +2890,36 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="text-sm font-semibold text-slate-900 dark:text-white">跟进记录</p>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败后保留当前草稿。</p>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleSaveReview()}
-              disabled={savingReview}
-                className={workspacePrimaryButtonClass}
+            <div className="flex flex-wrap gap-3">
+              {selectedRecord.source === 'ai_chat' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveReview('return_for_rework')}
+                    disabled={savingReview}
+                    className={workspaceSecondaryButtonClass}
+                  >
+                    退回待补充
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveReview('edit_then_confirm')}
+                    disabled={savingReview}
+                    className={workspacePrimaryButtonClass}
+                  >
+                    编辑后确认
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleSaveReview()}
+                disabled={savingReview}
+                className={workspaceSecondaryButtonClass}
               >
-              保存跟进记录
-            </button>
+                保存跟进记录
+              </button>
+            </div>
           </div>
 
           {selectedRecord.source === 'ai_chat' ? (
@@ -3388,6 +3478,14 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
 
         {hasStaffScope && (
           <form className="grid gap-4 lg:grid-cols-3" onSubmit={handleSubmit}>
+            <div className="flex flex-wrap gap-3 lg:col-span-3">
+              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300">
+                待老师复核 {pendingTeacherConfirmationCount}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                已退回 {returnedTeacherConfirmationCount}
+              </span>
+            </div>
             <label className="space-y-2 text-sm">
               <span className="text-slate-500 dark:text-slate-400">学生姓名</span>
               {selectedStaffClassOption ? (
@@ -3469,6 +3567,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 {WRONG_QUESTION_ERROR_TYPE_OPTIONS.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
+              </select>
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">老师复核</span>
+              <select
+                aria-label="老师复核"
+                value={filters.confirmationState ?? ''}
+                onChange={(event) => handleFilterChange('confirmationState', event.target.value)}
+                className={workspaceFieldClass}
+              >
+                <option value="">全部状态</option>
+                <option value="pending">待老师复核</option>
+                <option value="returned">已退回</option>
+                <option value="confirmed">已确认</option>
               </select>
             </label>
             <div className="flex flex-wrap gap-3 lg:col-span-3 lg:justify-end">

@@ -604,8 +604,9 @@ test('buildWrongQuestionQuery serializes only non-empty trimmed filters', () => 
       subject: ' 数学 ',
       teacherName: '',
       errorType: '  ',
+      confirmationState: ' pending ',
     }),
-    '?studentName=Alice&className=%E5%85%AD%E5%B9%B4%E7%BA%A7%201%20%E7%8F%AD&subject=%E6%95%B0%E5%AD%A6',
+    '?studentName=Alice&className=%E5%85%AD%E5%B9%B4%E7%BA%A7%201%20%E7%8F%AD&subject=%E6%95%B0%E5%AD%A6&confirmationState=pending',
   );
 
   assert.equal(buildWrongQuestionQuery({ studentName: '   ' }), '');
@@ -1268,6 +1269,10 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
     chat_session_id: 'session-456',
     needs_teacher_confirmation: 1,
     confirmation_reasons_json: '["missing_question_text","knowledge_tags_unconfirmed"]',
+    confirmation_status: 'returned',
+    confirmation_reviewed_by: 7,
+    confirmation_reviewed_at: '2026-06-03 11:00:00',
+    confirmation_reviewer_name: '管理员',
     archive_context: {
       source: 'ai_chat',
       ingestion_run_id: 'run-123',
@@ -1319,6 +1324,10 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
   assert.equal(normalized.chatSessionId, 'session-456');
   assert.equal(normalized.needsTeacherConfirmation, true);
   assert.deepEqual(normalized.confirmationReasons, ['missing_question_text', 'knowledge_tags_unconfirmed']);
+  assert.equal(normalized.confirmationStatus, 'returned');
+  assert.equal(normalized.confirmationReviewedBy, 7);
+  assert.equal(normalized.confirmationReviewedAt, '2026-06-03 11:00:00');
+  assert.equal(normalized.confirmationReviewerName, '管理员');
   assert.deepEqual(normalized.archiveContext, {
     source: 'ai_chat',
     ingestionRunId: 'run-123',
@@ -1387,11 +1396,23 @@ test('smart wrong question page exposes archive detail panels for ai chat review
 
   assert.match(pageSource, /归档来源/);
   assert.match(pageSource, /老师复核原因/);
+  assert.match(pageSource, /最近处理：/);
   assert.match(pageSource, /对话归档摘要/);
   assert.match(pageSource, /来源素材/);
   assert.match(pageSource, /OCR \/ 切题轨迹/);
   assert.match(pageSource, /仍需老师复核/);
   assert.match(pageSource, /本题已掌握，后续周跟进可不再优先推送/);
+  assert.match(pageSource, /编辑后确认/);
+  assert.match(pageSource, /退回待补充/);
+});
+
+test('smart wrong question page source exposes teacher confirmation queue filters', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /待老师复核/);
+  assert.match(pageSource, /已退回/);
+  assert.match(pageSource, /aria-label="老师复核"/);
+  assert.match(pageSource, /handleFilterChange\('confirmationState'/);
 });
 
 test('SmartWrongQuestionsPage loads selected record detail into a review draft state', () => {

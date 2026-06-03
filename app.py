@@ -1849,6 +1849,44 @@ def _summarize_wrong_question_records(items: list[dict]) -> dict[str, int]:
     return summary
 
 
+def _normalize_wrong_question_confirmation_status(record: object) -> str:
+    if not isinstance(record, dict):
+        return "not_required"
+    status = str(record.get("confirmation_status") or record.get("confirmationStatus") or "").strip()
+    if status in {"pending", "confirmed", "returned", "not_required"}:
+        return status
+    needs_teacher_confirmation = record.get("needs_teacher_confirmation")
+    if needs_teacher_confirmation is None:
+        needs_teacher_confirmation = record.get("needsTeacherConfirmation")
+    if isinstance(needs_teacher_confirmation, str):
+        needs_teacher_confirmation = needs_teacher_confirmation.strip().lower() in {"1", "true", "yes", "on"}
+    elif isinstance(needs_teacher_confirmation, (int, float)):
+        needs_teacher_confirmation = bool(needs_teacher_confirmation)
+    elif not isinstance(needs_teacher_confirmation, bool):
+        needs_teacher_confirmation = False
+    if needs_teacher_confirmation:
+        return "pending"
+    if (
+        record.get("confirmation_reviewed_at")
+        or record.get("confirmationReviewedAt")
+        or record.get("confirmation_reviewed_by") is not None
+        or record.get("confirmationReviewedBy") is not None
+    ):
+        return "confirmed"
+    return "not_required"
+
+
+def _filter_wrong_question_items_by_confirmation_state(items: list[dict], raw_confirmation_state: str) -> list[dict]:
+    confirmation_state = (raw_confirmation_state or "").strip()
+    if confirmation_state not in {"pending", "confirmed", "returned"}:
+        return items
+    return [
+        item
+        for item in items
+        if _normalize_wrong_question_confirmation_status(item) == confirmation_state
+    ]
+
+
 def _filter_wrong_question_items_for_user(user, items: object) -> list[dict]:
     if not isinstance(items, list):
         return []
@@ -3428,8 +3466,11 @@ def api_wrong_questions_list():
     user, error = _require_auth()
     if error:
         return error
+    forwarded_args = request.args.copy()
+    forwarded_args.pop("confirmationState", None)
+    forwarded_args.pop("confirmation_state", None)
     try:
-        payload = smart_wrong_questions.fetch_wrong_question_records(request.args)
+        payload = smart_wrong_questions.fetch_wrong_question_records(forwarded_args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
         if exc.status_code == 503 and str(exc) == "智能错题服务尚未配置":
             payload = {"items": [], "total": 0}
@@ -3439,6 +3480,10 @@ def api_wrong_questions_list():
     local_items = list_wechat_wrong_question_submissions()
     merged_items = [*local_items, *payload.get("items", [])]
     scoped_items = _filter_wrong_question_items_for_user(user, merged_items)
+    scoped_items = _filter_wrong_question_items_by_confirmation_state(
+        scoped_items,
+        str(request.args.get("confirmationState") or request.args.get("confirmation_state") or ""),
+    )
     payload["items"] = scoped_items
     payload["total"] = len(scoped_items)
     payload["summary"] = _summarize_wrong_question_records(scoped_items)
@@ -3508,7 +3553,11 @@ def api_wrong_question_review_save(record_id):
     if local_record:
         if not _can_access_wrong_question_record(user, local_record):
             return jsonify({"error": "not found"}), 404
-        saved_record = save_wechat_wrong_question_review(record_id, request.json or {})
+        saved_record = save_wechat_wrong_question_review(
+            record_id,
+            request.json or {},
+            reviewer_user_id=int(user["id"]),
+        )
         if not saved_record:
             return jsonify({"error": "not found"}), 404
         question_text = str(((request.json or {}).get("question_text") or "")).strip()
