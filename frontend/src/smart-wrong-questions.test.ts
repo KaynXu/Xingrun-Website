@@ -1300,6 +1300,19 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
       related_topic_categories: ['一元一次方程'],
       related_error_types: ['概念错误'],
     },
+    mastery_assessment: {
+      status: 'watch',
+      label: '仍需观察',
+      score: 2,
+      suggested_action: 'follow_up',
+      practice_sheet_count: 2,
+      latest_practice_status: 'ready',
+      same_topic_active_count: 1,
+      same_error_active_count: 1,
+      repeated_active_count: 1,
+      manual_is_mastered: false,
+      evidence: ['已进入 2 次再练链路。', '同专题未掌握错题还有 1 条。'],
+    },
     archive_context: {
       source: 'ai_chat',
       ingestion_run_id: 'run-123',
@@ -1363,6 +1376,10 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
   assert.equal(normalized.masteryTracking?.latestPracticeStatus, 'ready');
   assert.deepEqual(normalized.masteryTracking?.relatedTopicCategories, ['一元一次方程']);
   assert.deepEqual(normalized.masteryTracking?.relatedErrorTypes, ['概念错误']);
+  assert.equal(normalized.masteryAssessment?.status, 'watch');
+  assert.equal(normalized.masteryAssessment?.label, '仍需观察');
+  assert.equal(normalized.masteryAssessment?.sameTopicActiveCount, 1);
+  assert.deepEqual(normalized.masteryAssessment?.evidence, ['已进入 2 次再练链路。', '同专题未掌握错题还有 1 条。']);
   assert.deepEqual(normalized.archiveContext, {
     source: 'ai_chat',
     ingestionRunId: 'run-123',
@@ -1437,6 +1454,11 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /再练闭环/);
   assert.match(pageSource, /打开最近练习/);
   assert.match(pageSource, /这层记录会继续作为后续掌握评级和相似错因复发判断的基础信号。/);
+  assert.match(pageSource, /掌握证据/);
+  assert.match(pageSource, /系统判断：/);
+  assert.match(pageSource, /建议下一步/);
+  assert.match(pageSource, /同专题未掌握/);
+  assert.match(pageSource, /同错因未掌握/);
   assert.match(pageSource, /来源素材/);
   assert.match(pageSource, /OCR \/ 切题轨迹/);
   assert.match(pageSource, /仍需老师复核/);

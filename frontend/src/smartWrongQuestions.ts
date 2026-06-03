@@ -79,6 +79,20 @@ export interface WrongQuestionMasteryTracking {
   relatedErrorTypes: string[];
 }
 
+export interface WrongQuestionMasteryAssessment {
+  status: string;
+  label: string;
+  score: number;
+  suggestedAction: string;
+  practiceSheetCount: number;
+  latestPracticeStatus?: string;
+  sameTopicActiveCount: number;
+  sameErrorActiveCount: number;
+  repeatedActiveCount: number;
+  manualIsMastered: boolean;
+  evidence: string[];
+}
+
 export interface WrongQuestionRecord {
   id: string;
   roomId: string;
@@ -126,6 +140,7 @@ export interface WrongQuestionRecord {
   confirmationReviewerName?: string;
   generationMetadata?: WrongQuestionGenerationMetadata;
   masteryTracking?: WrongQuestionMasteryTracking;
+  masteryAssessment?: WrongQuestionMasteryAssessment;
   linkedIngestionRun?: WrongQuestionIngestionRun;
   linkedChatSession?: WrongQuestionChatSession;
 }
@@ -568,6 +583,61 @@ function normalizeWrongQuestionMasteryTracking(rawTracking: unknown): WrongQuest
   return hasValue ? tracking : undefined;
 }
 
+function normalizeWrongQuestionMasteryAssessment(rawAssessment: unknown): WrongQuestionMasteryAssessment | undefined {
+  let source = rawAssessment;
+  if (typeof rawAssessment === 'string') {
+    try {
+      source = JSON.parse(rawAssessment);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const status = pickStringValue(source, ['status']) || '';
+  const label = pickStringValue(source, ['label']) || '';
+  const suggestedAction = pickStringValue(source, ['suggestedAction', 'suggested_action']) || '';
+  const score = pickNumberValue(source, ['score']) ?? 0;
+  const practiceSheetCount = pickNumberValue(source, ['practiceSheetCount', 'practice_sheet_count']) ?? 0;
+  const sameTopicActiveCount = pickNumberValue(source, ['sameTopicActiveCount', 'same_topic_active_count']) ?? 0;
+  const sameErrorActiveCount = pickNumberValue(source, ['sameErrorActiveCount', 'same_error_active_count']) ?? 0;
+  const repeatedActiveCount = pickNumberValue(source, ['repeatedActiveCount', 'repeated_active_count']) ?? 0;
+  const manualIsMastered = pickBooleanValue(source, ['manualIsMastered', 'manual_is_mastered']) ?? false;
+  const evidence = normalizePossiblyJsonStringList(source.evidence);
+  const latestPracticeStatus = pickStringValue(source, ['latestPracticeStatus', 'latest_practice_status']);
+
+  const hasValue = Boolean(status)
+    || Boolean(label)
+    || Boolean(suggestedAction)
+    || score > 0
+    || practiceSheetCount > 0
+    || sameTopicActiveCount > 0
+    || sameErrorActiveCount > 0
+    || repeatedActiveCount > 0
+    || manualIsMastered
+    || evidence.length > 0
+    || Boolean(latestPracticeStatus);
+  if (!hasValue) {
+    return undefined;
+  }
+
+  return {
+    status,
+    label,
+    score,
+    suggestedAction,
+    practiceSheetCount,
+    latestPracticeStatus: latestPracticeStatus || undefined,
+    sameTopicActiveCount,
+    sameErrorActiveCount,
+    repeatedActiveCount,
+    manualIsMastered,
+    evidence,
+  };
+}
+
 function normalizeWrongQuestionTopicCategory(value = ''): string {
   const normalized = value.trim();
   return normalized || '未分类';
@@ -881,6 +951,13 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     record.masteryTracking = masteryTracking;
   }
 
+  const masteryAssessment = normalizeWrongQuestionMasteryAssessment(
+    source.mastery_assessment ?? source.masteryAssessment ?? source.mastery_assessment_json,
+  );
+  if (masteryAssessment) {
+    record.masteryAssessment = masteryAssessment;
+  }
+
   const archiveContextCandidate = isObjectRecord(source.archive_context)
     ? source.archive_context
     : isObjectRecord(source.archiveContext)
@@ -1093,6 +1170,7 @@ export function resolveSavedWrongQuestionRecord(
     const hasConfirmationReviewerName = hasOwnKey(responseSource, ['confirmationReviewerName', 'confirmation_reviewer_name']);
     const hasGenerationMetadata = hasOwnKey(responseSource, ['generationMetadata', 'generation_metadata', 'generation_metadata_json']);
     const hasMasteryTracking = hasOwnKey(responseSource, ['masteryTracking', 'mastery_tracking', 'mastery_tracking_json']);
+    const hasMasteryAssessment = hasOwnKey(responseSource, ['masteryAssessment', 'mastery_assessment', 'mastery_assessment_json']);
 
     return {
       ...normalizedResponse,
@@ -1141,6 +1219,9 @@ export function resolveSavedWrongQuestionRecord(
       masteryTracking: hasMasteryTracking
         ? normalizedResponse.masteryTracking
         : currentRecord.masteryTracking,
+      masteryAssessment: hasMasteryAssessment
+        ? normalizedResponse.masteryAssessment
+        : currentRecord.masteryAssessment,
     };
   }
 

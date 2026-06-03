@@ -7698,7 +7698,7 @@ def update_wrong_question_submission_from_chat_archive(
             ),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def update_wechat_wrong_question_question_text(
@@ -7728,10 +7728,163 @@ def update_wechat_wrong_question_question_text(
             ),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
-def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> Optional[dict]:
+def _load_wrong_question_mastery_repeat_signal_counts(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+) -> dict:
+    topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+    if topic_category == PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED:
+        topic_category = ""
+    error_type = str(row["primary_error_type"] or "").strip()
+    counts = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN ?<>'' AND peer.topic_category=? THEN 1 ELSE 0 END) AS same_topic_active_count,
+            SUM(CASE WHEN ?<>'' AND peer.primary_error_type=? THEN 1 ELSE 0 END) AS same_error_active_count,
+            SUM(
+                CASE
+                    WHEN ((?<>'' AND peer.topic_category=?) OR (?<>'' AND peer.primary_error_type=?))
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS repeated_active_count
+        FROM wrong_question_submissions peer
+        WHERE peer.student_id=?
+          AND peer.id<>?
+          AND peer.archive_status='active'
+          AND peer.recognition_status='recognized'
+        """,
+        (
+            topic_category,
+            topic_category,
+            error_type,
+            error_type,
+            topic_category,
+            topic_category,
+            error_type,
+            error_type,
+            int(row["student_id"] or 0),
+            str(row["id"] or "").strip(),
+        ),
+    ).fetchone()
+    return {
+        "same_topic_active_count": int((counts["same_topic_active_count"] if counts else 0) or 0),
+        "same_error_active_count": int((counts["same_error_active_count"] if counts else 0) or 0),
+        "repeated_active_count": int((counts["repeated_active_count"] if counts else 0) or 0),
+    }
+
+
+def _build_wrong_question_mastery_assessment(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    mastery_tracking: dict,
+    confirmation_status: str,
+) -> dict:
+    tracking = mastery_tracking if isinstance(mastery_tracking, dict) else {}
+    repeat_counts = _load_wrong_question_mastery_repeat_signal_counts(conn, row)
+    practice_sheet_count = int(tracking.get("practice_sheet_count") or 0)
+    latest_practice_status = str(tracking.get("latest_practice_status") or "").strip()
+    is_manually_mastered = str(row["archive_status"] or "").strip() == "archived"
+
+    status = "monitor"
+    label = "继续跟进"
+    score = 2
+    suggested_action = "follow_up"
+
+    if confirmation_status == "returned":
+        status = "returned_for_rework"
+        label = "待补充"
+        score = 0
+        suggested_action = "continue_rework_chat"
+    elif confirmation_status == "pending":
+        status = "needs_teacher_review"
+        label = "待老师确认"
+        score = 0
+        suggested_action = "teacher_review"
+    elif is_manually_mastered and repeat_counts["repeated_active_count"] > 0:
+        status = "relapsed"
+        label = "疑似复发"
+        score = 1
+        suggested_action = "follow_up"
+    elif is_manually_mastered:
+        status = "mastered"
+        label = "已掌握"
+        score = 4
+        suggested_action = "monitor"
+    elif latest_practice_status in {"pending", "generating"}:
+        status = "practice_in_progress"
+        label = "练习生成中"
+        score = 1
+        suggested_action = "wait_practice"
+    elif latest_practice_status == "failed":
+        status = "needs_practice"
+        label = "需重新出练习"
+        score = 1
+        suggested_action = "retry_practice"
+    elif practice_sheet_count <= 0:
+        status = "needs_practice"
+        label = "需进入再练"
+        score = 1
+        suggested_action = "create_practice"
+    elif repeat_counts["repeated_active_count"] > 0:
+        status = "watch"
+        label = "仍需观察"
+        score = 2
+        suggested_action = "follow_up"
+    elif latest_practice_status in {"ready", "partial_failed"}:
+        status = "ready_for_mastery_review"
+        label = "待确认是否掌握"
+        score = 3
+        suggested_action = "review_mastery"
+
+    evidence: list[str] = []
+    if confirmation_status == "returned":
+        evidence.append("老师已退回，需先补充后再确认。")
+    elif confirmation_status == "pending":
+        evidence.append("当前仍在老师复核队列中。")
+
+    if is_manually_mastered:
+        evidence.append("老师已手动标记为已掌握。")
+
+    if practice_sheet_count > 0:
+        evidence.append(f"已进入 {practice_sheet_count} 次再练链路。")
+    else:
+        evidence.append("还没有进入再练链路。")
+
+    if latest_practice_status in {"ready", "partial_failed"}:
+        evidence.append("最近一次再练已生成，可结合完成情况判断是否掌握。")
+    elif latest_practice_status in {"pending", "generating"}:
+        evidence.append("最近一次再练仍在生成中。")
+    elif latest_practice_status == "failed":
+        evidence.append("最近一次再练生成失败，需要重新发起。")
+
+    if repeat_counts["same_topic_active_count"] > 0:
+        evidence.append(f"同专题未掌握错题还有 {repeat_counts['same_topic_active_count']} 条。")
+    if repeat_counts["same_error_active_count"] > 0:
+        evidence.append(f"同错因未掌握错题还有 {repeat_counts['same_error_active_count']} 条。")
+
+    return {
+        "status": status,
+        "label": label,
+        "score": score,
+        "suggested_action": suggested_action,
+        "practice_sheet_count": practice_sheet_count,
+        "latest_practice_status": latest_practice_status,
+        "same_topic_active_count": repeat_counts["same_topic_active_count"],
+        "same_error_active_count": repeat_counts["same_error_active_count"],
+        "repeated_active_count": repeat_counts["repeated_active_count"],
+        "manual_is_mastered": is_manually_mastered,
+        "evidence": evidence,
+    }
+
+
+def _serialize_wechat_wrong_question_submission_row(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row | None,
+) -> Optional[dict]:
     if not row:
         return None
 
@@ -7794,6 +7947,12 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     payload["knowledge_tags"] = normalized_knowledge_tags
     payload["generation_metadata"] = generation_metadata if isinstance(generation_metadata, dict) else {}
     payload["mastery_tracking"] = mastery_tracking if isinstance(mastery_tracking, dict) else {}
+    payload["mastery_assessment"] = _build_wrong_question_mastery_assessment(
+        conn,
+        row,
+        payload["mastery_tracking"],
+        confirmation_status,
+    )
     payload["confirmation_reasons"] = normalized_confirmation_reasons
     payload["confirmation_status"] = confirmation_status
     payload["confirmation_reviewed_by"] = (
@@ -7868,14 +8027,14 @@ def list_wechat_wrong_question_submissions() -> list[dict]:
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def list_wechat_wrong_question_submissions_for_parent_student(
@@ -7903,20 +8062,20 @@ def list_wechat_wrong_question_submissions_for_parent_student(
             """,
             (student_id,),
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(row)
+        return _serialize_wechat_wrong_question_submission_row(conn, row)
 
 
 def list_wrong_question_submissions_for_chat_session(chat_session_id: str) -> list[dict]:
@@ -7943,14 +8102,14 @@ def list_wrong_question_submissions_for_chat_session(chat_session_id: str) -> li
             """,
             (normalized_session_id,),
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def list_wrong_question_submissions_for_ingestion_run(ingestion_run_id: str) -> list[dict]:
@@ -7977,14 +8136,14 @@ def list_wrong_question_submissions_for_ingestion_run(ingestion_run_id: str) -> 
             """,
             (normalized_run_id,),
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
@@ -8010,14 +8169,14 @@ def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
             """,
             (student_id,),
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[dict]:
@@ -8035,7 +8194,7 @@ def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[d
             ((pdf_path or "").strip(), record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def set_student_wrong_question_library_pdf_path(student_id: int, pdf_path: str) -> None:
@@ -8056,7 +8215,7 @@ def delete_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
         if not row:
             return None
-        serialized = _serialize_wechat_wrong_question_submission_row(row)
+        serialized = _serialize_wechat_wrong_question_submission_row(conn, row)
         conn.execute("DELETE FROM wrong_question_submissions WHERE id=?", (record_id,))
     return serialized
 
@@ -8081,7 +8240,7 @@ def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str
             (normalized_status, normalized_status, record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def update_wechat_wrong_question_topic_category(record_id: str, *, topic_category: str) -> Optional[dict]:
@@ -8100,7 +8259,7 @@ def update_wechat_wrong_question_topic_category(record_id: str, *, topic_categor
             (normalized_topic_category, record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def list_primary_topic_category_suggestions(
@@ -8299,7 +8458,7 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
             ),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def _serialize_weekly_wrong_question_followup_message_row(row: sqlite3.Row | None) -> Optional[dict]:

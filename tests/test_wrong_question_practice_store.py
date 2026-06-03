@@ -238,6 +238,49 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertIsNotNone(deleted_record)
         self.assertEqual(deleted_record["mastery_tracking"], {})
 
+    def test_mastery_assessment_reads_practice_and_repeat_signals(self):
+        related_record = lesson_manager.create_wechat_wrong_question_submission(
+            binding_id=self.binding_id,
+            image_url="https://files.example.com/repeated-topic.png",
+            child_raw_reason_text="我还是把顺序看错了",
+            primary_error_type="细节问题",
+            secondary_error_summary="第二次还是漏看乘法",
+            topic_category="四则混合运算",
+            recognition_status="recognized",
+            is_geometry=False,
+            question_text="计算 8-2\\times3。",
+            question_text_source="teacher",
+        )
+        self.assertTrue(related_record["id"])
+
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=self._selected_records_in_order(self.record_one["id"]),
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": self.record_one["id"],
+                    "ai_hint": "先确定乘除的位置。",
+                    "reason_blank_prompt": "我错在 ______。",
+                    "improvement_summary_prompt": "下次先 ______。",
+                },
+            ],
+            pdf_path="/tmp/mastery-assessment.pdf",
+        )
+
+        refreshed = lesson_manager.get_wechat_wrong_question_submission(self.record_one["id"])
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(refreshed["mastery_assessment"]["status"], "watch")
+        self.assertEqual(refreshed["mastery_assessment"]["label"], "仍需观察")
+        self.assertEqual(refreshed["mastery_assessment"]["practice_sheet_count"], 1)
+        self.assertEqual(refreshed["mastery_assessment"]["same_topic_active_count"], 1)
+        self.assertEqual(refreshed["mastery_assessment"]["same_error_active_count"], 1)
+        self.assertEqual(refreshed["mastery_assessment"]["repeated_active_count"], 1)
+        self.assertIn("已进入 1 次再练链路。", refreshed["mastery_assessment"]["evidence"])
+        self.assertIn("同专题未掌握错题还有 1 条。", refreshed["mastery_assessment"]["evidence"])
+
     def test_delete_wrong_question_practice_sheet_removes_sheet_and_items(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
             created_by=self.owner["id"],

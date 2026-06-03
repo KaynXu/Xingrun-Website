@@ -242,7 +242,8 @@ Progress note (2026-06-03):
 - A first compatibility slice has started on the practice-sheet side: practice items can now carry a structured content payload in parallel with the legacy dual-prompt fields, so later PDF and review work can migrate incrementally instead of via a big-bang rewrite.
 - Returned local `ai_chat` archive records can now reopen into a fresh rework chat session from the existing notebook chat panel. The rework session reuses the same ingestion context, seeds a teacher-return prompt, and on re-archive updates the original wrong-question record in place instead of creating a duplicate card.
 - Confirmed or review-free local `ai_chat` archive records can now flow into the existing notebook practice-sheet pipeline. Teachers can select them alongside local wechat records once confirmation is complete, and the same async practice worker now consumes `ai_chat` snapshots without needing a parallel repractice product surface.
-- The next slice should stop treating practice-sheet history as a side table only: the archive record itself should carry mastery evidence from those later attempts, so follow-up and评级 can read one chain instead of stitching joins ad hoc everywhere.
+- Archive records now also carry a minimal mastery-evidence spine: later practice-sheet lifecycle changes write `practice_sheet_count / latest_practice_* / related_topic_categories / related_error_types` back onto the same wrong-question record, and unified detail now derives a first evidence-based mastery assessment from teacher confirmation state, re-practice status, and same-student repeated topic/error signals.
+- The next slice should keep extending this same chain into explicit follow-up / mastery-check entrypoints, so “再练后追问是否真的掌握” can reuse the archive record instead of spawning parallel history.
 
 ### Track C: Workbench / error_correction Product Entry
 
@@ -423,11 +424,11 @@ The complete product shape should also include:
 
 The latest completed slices already cover the generic ingestion base, local AI-chat archive loop, teacher review queue starter flow, structured PDF sections, generation metadata, returned-record rework, and “confirmed AI archive -> existing practice-sheet pipeline”.
 
-The next highest-value task is now **B3 mastery spine**:
+The next highest-value task is now **E2 continuity on top of the B3 mastery spine**:
 
-- write later practice evidence back onto the same archive record
-- expose that evidence in unified wrong-question detail
-- use it as the foundation for future mastery评级 by repeated wrong topics / error causes / knowledge tags
+- reuse the new mastery assessment from archive detail / weekly follow-up / practice history entrypoints
+- let the system trigger a later mastery check or follow-up message on the same archive/chat chain
+- keep writing those later outcomes back onto the same record + metadata spine
 
 This keeps the next implementation step small, but directly aligned with the final product shape:
 

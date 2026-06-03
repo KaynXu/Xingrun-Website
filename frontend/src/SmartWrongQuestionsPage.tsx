@@ -285,6 +285,31 @@ function getWrongQuestionPracticeStatusLabel(status: string): string {
   return '生成中';
 }
 
+function getWrongQuestionMasterySuggestedActionLabel(action: string): string {
+  if (action === 'continue_rework_chat') {
+    return '继续 AI 补充';
+  }
+  if (action === 'teacher_review') {
+    return '先完成老师复核';
+  }
+  if (action === 'create_practice') {
+    return '先进入再练';
+  }
+  if (action === 'wait_practice') {
+    return '等待练习生成';
+  }
+  if (action === 'retry_practice') {
+    return '重新生成练习';
+  }
+  if (action === 'review_mastery') {
+    return '结合再练结果确认是否掌握';
+  }
+  if (action === 'monitor') {
+    return '继续观察后续表现';
+  }
+  return '继续跟进';
+}
+
 function readWrongQuestionToken(): string {
   try {
     return globalThis.localStorage?.getItem?.('xr_token') || '';
@@ -614,6 +639,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     return buildWrongQuestionGenerationMetadataEntries(selectedRecord?.generationMetadata);
   }, [selectedRecord?.generationMetadata]);
   const selectedRecordMasteryTracking = selectedRecord?.masteryTracking;
+  const selectedRecordMasteryAssessment = selectedRecord?.masteryAssessment;
   const selectedRecordLatestPracticePreviewUrl = useMemo(() => {
     const sheetId = selectedRecordMasteryTracking?.latestPracticeSheetId;
     if (typeof sheetId !== 'number' || sheetId <= 0) {
@@ -3038,12 +3064,63 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
         </>
       )}
 
+      {selectedDraft && selectedRecordMasteryAssessment ? (
+        <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">掌握证据</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">系统会结合老师确认、再练记录和同专题 / 同错因复发情况给出当前判断。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                系统判断：{selectedRecordMasteryAssessment.label || '继续跟进'}
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">证据评分 {selectedRecordMasteryAssessment.score}/4</span>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/60">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">建议下一步</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                {getWrongQuestionMasterySuggestedActionLabel(selectedRecordMasteryAssessment.suggestedAction)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/60">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">同专题未掌握</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                {selectedRecordMasteryAssessment.sameTopicActiveCount} 条
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/60">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">同错因未掌握</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                {selectedRecordMasteryAssessment.sameErrorActiveCount} 条
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/60">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">证据说明</p>
+            {selectedRecordMasteryAssessment.evidence.length > 0 ? (
+              <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {selectedRecordMasteryAssessment.evidence.map((item) => (
+                  <p key={`mastery-evidence-${item}`}>{item}</p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-400">当前还没有足够证据，先保留老师判断。</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {selectedDraft && selectedRecord.source === 'wechat_mp' && (
         <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900 dark:text-white">掌握情况</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">仅保留掌握状态。标记为已掌握后，后续错题练习会自动排除。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">系统会先给出证据判断，老师仍可手动确认掌握状态。标记为已掌握后，后续错题练习会自动排除。</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button
@@ -3082,7 +3159,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900 dark:text-white">跟进记录</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">保存失败后保留当前草稿。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">系统证据会和老师处理结果一起保留；保存失败后当前草稿不会丢。</p>
             </div>
             <div className="flex flex-wrap gap-3">
               {selectedRecord.source === 'ai_chat' ? (

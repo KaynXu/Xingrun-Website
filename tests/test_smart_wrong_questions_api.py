@@ -909,6 +909,11 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(payload["mastery_tracking"]["latest_practice_sheet_id"], practice_sheet["id"])
         self.assertEqual(payload["mastery_tracking"]["latest_practice_status"], "ready")
         self.assertEqual(payload["mastery_tracking"]["latest_practice_pdf_path"], "/tmp/archive-detail-practice.pdf")
+        self.assertEqual(payload["mastery_assessment"]["status"], "ready_for_mastery_review")
+        self.assertEqual(payload["mastery_assessment"]["label"], "待确认是否掌握")
+        self.assertEqual(payload["mastery_assessment"]["suggested_action"], "review_mastery")
+        self.assertEqual(payload["mastery_assessment"]["same_topic_active_count"], 0)
+        self.assertIn("最近一次再练已生成，可结合完成情况判断是否掌握。", payload["mastery_assessment"]["evidence"])
 
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive-detail.pdf")
     def test_local_ai_chat_review_can_update_archive_detail_fields(self, _mock_rebuild):
