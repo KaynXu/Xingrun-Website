@@ -446,9 +446,14 @@ The current round now also reuses the same continuity from the archived AI-chat 
 - an archived `ai_chat` session that already has a confirmed record and at least one completed re-practice can now start mastery follow-up directly from the chat archive header
 - this keeps “upload -> guided reflection -> archive -> later re-practice -> follow-up” navigable from the original chat surface, not only from notebook detail or weekly cards
 
+The current round now also reuses the same continuity from the student notebook directory itself:
+
+- an eligible `ai_chat` record can now start mastery follow-up directly from the left-side notebook directory row, instead of forcing the teacher to first select the row and then hunt for the action again in the detail pane
+- this keeps the most common “scan student mistakes -> pick one candidate -> continue follow-up” workflow on the same single-record continuity chain, even before the detail pane fully becomes the operator’s focus
+
 The next highest-value task is now **the next continuity reuse slice after weekly follow-up reuse**:
 
-- extend the same mastery-followup entrypoint to the remaining archive-detail and follow-up surfaces that still stop at “open record”
+- extend the same mastery-followup entrypoint to the remaining archive-detail and summary surfaces that still stop at “open record”
 - keep those alternate entrypoints on the same single-record continuity chain instead of inventing a second mastery workflow
 - only after that, decide whether any extra mastery-specific structured card or classifier layer is actually needed
 

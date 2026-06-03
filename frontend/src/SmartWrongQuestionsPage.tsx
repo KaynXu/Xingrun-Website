@@ -2365,6 +2365,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     handleStartWrongQuestionMasteryFollowup,
     openWrongQuestionRecordInNotebook,
   ]);
+
+  const handleStartNotebookDirectoryMasteryFollowup = useCallback(async (record: WrongQuestionRecord) => {
+    setSelectedId(record.id);
+    setNotebookModalView('questions');
+    await handleStartWrongQuestionMasteryFollowup(record);
+  }, [handleStartWrongQuestionMasteryFollowup]);
+
   const practiceHistoryPanel = (
     <>
       <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
@@ -4310,6 +4317,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                         const active = item.id === selectedRecord?.id;
                         const questionNumber = memberNotebookQuestionNumberById.get(item.id) ?? 0;
                         const canSelect = canGenerateWrongQuestionPractice(item);
+                        const canStartMasteryFollowupFromDirectory = canStartWrongQuestionMasteryFollowup(item);
                         const checked = effectiveSelectedPracticeRecordIds.includes(item.id);
                         return (
                           <div
@@ -4352,6 +4360,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                                 </p>
                               ) : null}
                             </button>
+                            {canStartMasteryFollowupFromDirectory ? (
+                              <button
+                                type="button"
+                                aria-label={`对第 ${questionNumber} 题开启掌握追问`}
+                                onClick={() => void handleStartNotebookDirectoryMasteryFollowup(item)}
+                                disabled={wrongQuestionChatSending}
+                                className="shrink-0 rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/30 dark:bg-slate-950/70 dark:text-sky-300 dark:hover:bg-sky-500/10"
+                              >
+                                开启掌握追问
+                              </button>
+                            ) : null}
                           </div>
                         );
                       })}
