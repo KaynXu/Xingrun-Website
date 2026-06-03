@@ -1489,6 +1489,7 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /退回待补充/);
   assert.match(pageSource, /按老师意见继续补充/);
   assert.match(pageSource, /开启掌握追问/);
+  assert.match(pageSource, /已跳转到 AI 归档，并准备开启掌握追问。/);
   assert.match(pageSource, /掌握追问结果/);
   assert.match(pageSource, /归档这轮掌握追问时，系统会把这个结果写回同一条错题记录/);
   assert.match(pageSource, /buildWrongQuestionChatFollowupPath/);
@@ -4215,6 +4216,384 @@ test('SmartWrongQuestionsPage updates one weekly followup card after generating 
       const pageText = domEnvironment.container.textContent || '';
       assert.match(pageText, /王睿博妈妈，这周我会重点盯一下计算步骤。/);
       assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-question-followups/weekly/messages' && call.init?.method === 'POST'));
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
+});
+
+test('SmartWrongQuestionsPage can start mastery followup directly from a weekly followup ai archive card', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', grade: '六年级', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 501, name: '王睿博' }],
+        });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            makeNotebookApiRecord({
+              id: 'weekly-record-a',
+              student_id: 501,
+              student_name: '王睿博',
+              class_id: 42,
+              class_display_name: '六年级 1 班',
+              teacher_user_id: 7,
+              teacher_display_name: 'Kayn',
+            }),
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/followup-record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse(makeNotebookApiRecord({
+          id: 'followup-record-a',
+          source: 'ai_chat',
+          student_id: 501,
+          student_name: '王睿博',
+          class_id: 42,
+          class_display_name: '六年级 1 班',
+          teacher_user_id: 7,
+          teacher_display_name: 'Kayn',
+          confirmation_status: 'confirmed',
+          archive_context: {
+            source: 'ai_chat',
+            ingestion_run_id: 'run-followup-1',
+            ingestion_run_url: '/api/wrong-question-ingestions/run-followup-1',
+            chat_session_id: 'session-followup-1',
+            chat_session_url: '/api/wrong-question-chats/session-followup-1',
+          },
+          mastery_tracking: {
+            practice_sheet_count: 1,
+            latest_practice_sheet_id: 89,
+            latest_practice_status: 'ready',
+            latest_practice_created_at: '2026-05-04 10:00:00',
+          },
+          mastery_assessment: {
+            status: 'ready_for_mastery_review',
+            label: '待确认是否掌握',
+            score: 3,
+            suggested_action: 'review_mastery',
+            practice_sheet_count: 1,
+            followup_count: 0,
+            latest_practice_status: 'ready',
+            same_topic_active_count: 0,
+            same_error_active_count: 0,
+            repeated_active_count: 0,
+            manual_is_mastered: false,
+            evidence: ['最近一次再练已生成，可结合完成情况判断是否掌握。'],
+          },
+        }));
+      }
+
+      if (input === '/api/wrong-question-followups/weekly?class_id=42&week_start=2026-05-04') {
+        return createJsonResponse({
+          class_id: 42,
+          class_name: '六年级 1 班',
+          week_start_date: '2026-05-04',
+          week_end_date: '2026-05-10',
+          total: 1,
+          items: [
+            {
+              student_id: 501,
+              student_name: '王睿博',
+              status: 'has_practice_sheet',
+              practice_sheet: {
+                id: 89,
+                status: 'ready',
+                question_count: 3,
+                pdf_path: '/tmp/wrb-2.pdf',
+                pdf_url: '/api/wrong-question-practice-sheets/89/pdf',
+              },
+              weekly_question_count: 3,
+              total_active_question_count: 5,
+              topic_categories: ['计算'],
+              representative_reason_summaries: ['审题遗漏'],
+              source_record_ids: ['followup-record-a'],
+              source_records: [
+                makeNotebookApiRecord({
+                  id: 'followup-record-a',
+                  source: 'ai_chat',
+                  student_id: 501,
+                  student_name: '王睿博',
+                  class_id: 42,
+                  class_display_name: '六年级 1 班',
+                  teacher_user_id: 7,
+                  teacher_display_name: 'Kayn',
+                  confirmation_status: 'confirmed',
+                  archive_context: {
+                    source: 'ai_chat',
+                    ingestion_run_id: 'run-followup-1',
+                    ingestion_run_url: '/api/wrong-question-ingestions/run-followup-1',
+                    chat_session_id: 'session-followup-1',
+                    chat_session_url: '/api/wrong-question-chats/session-followup-1',
+                  },
+                  mastery_tracking: {
+                    practice_sheet_count: 1,
+                    latest_practice_sheet_id: 89,
+                    latest_practice_status: 'ready',
+                    latest_practice_created_at: '2026-05-04 10:00:00',
+                  },
+                  mastery_assessment: {
+                    status: 'ready_for_mastery_review',
+                    label: '待确认是否掌握',
+                    score: 3,
+                    suggested_action: 'review_mastery',
+                    practice_sheet_count: 1,
+                    followup_count: 0,
+                    latest_practice_status: 'ready',
+                    same_topic_active_count: 0,
+                    same_error_active_count: 0,
+                    repeated_active_count: 0,
+                    manual_is_mastered: false,
+                    evidence: ['最近一次再练已生成，可结合完成情况判断是否掌握。'],
+                  },
+                }),
+              ],
+              message: {
+                id: 8,
+                message_text: '这周可以继续确认孩子是否已经掌握。',
+                source_record_ids: ['followup-record-a'],
+              },
+            },
+          ],
+        });
+      }
+
+      if (typeof input === 'string' && input.startsWith('/api/wrong-question-followups/weekly?class_id=42&week_start=')) {
+        return createJsonResponse({
+          class_id: 42,
+          class_name: '六年级 1 班',
+          week_start_date: '2026-05-04',
+          week_end_date: '2026-05-10',
+          total: 1,
+          items: [
+            {
+              student_id: 501,
+              student_name: '王睿博',
+              status: 'has_practice_sheet',
+              practice_sheet: {
+                id: 89,
+                status: 'ready',
+                question_count: 3,
+                pdf_path: '/tmp/wrb-2.pdf',
+                pdf_url: '/api/wrong-question-practice-sheets/89/pdf',
+              },
+              weekly_question_count: 3,
+              total_active_question_count: 5,
+              topic_categories: ['计算'],
+              representative_reason_summaries: ['审题遗漏'],
+              source_record_ids: ['followup-record-a'],
+              source_records: [
+                makeNotebookApiRecord({
+                  id: 'followup-record-a',
+                  source: 'ai_chat',
+                  student_id: 501,
+                  student_name: '王睿博',
+                  class_id: 42,
+                  class_display_name: '六年级 1 班',
+                  teacher_user_id: 7,
+                  teacher_display_name: 'Kayn',
+                  confirmation_status: 'confirmed',
+                  archive_context: {
+                    source: 'ai_chat',
+                    ingestion_run_id: 'run-followup-1',
+                    ingestion_run_url: '/api/wrong-question-ingestions/run-followup-1',
+                    chat_session_id: 'session-followup-1',
+                    chat_session_url: '/api/wrong-question-chats/session-followup-1',
+                  },
+                  mastery_tracking: {
+                    practice_sheet_count: 1,
+                    latest_practice_sheet_id: 89,
+                    latest_practice_status: 'ready',
+                    latest_practice_created_at: '2026-05-04 10:00:00',
+                  },
+                  mastery_assessment: {
+                    status: 'ready_for_mastery_review',
+                    label: '待确认是否掌握',
+                    score: 3,
+                    suggested_action: 'review_mastery',
+                    practice_sheet_count: 1,
+                    followup_count: 0,
+                    latest_practice_status: 'ready',
+                    same_topic_active_count: 0,
+                    same_error_active_count: 0,
+                    repeated_active_count: 0,
+                    manual_is_mastered: false,
+                    evidence: ['最近一次再练已生成，可结合完成情况判断是否掌握。'],
+                  },
+                }),
+              ],
+              message: {
+                id: 8,
+                message_text: '这周可以继续确认孩子是否已经掌握。',
+                source_record_ids: ['followup-record-a'],
+              },
+            },
+          ],
+        });
+      }
+
+      if (input === '/api/wrong-questions/followup-record-a/followup-chat' && init?.method === 'POST') {
+        return createJsonResponse({
+          session: {
+            id: 'session-followup-2',
+            status: 'active',
+            current_stage: 'ask_help_mode',
+            summary_text: '继续判断这题是否已经掌握。',
+            metadata_json: JSON.stringify({
+              mode: 'mastery_followup',
+              followup_record_id: 'followup-record-a',
+            }),
+            ingestion_run_id: 'run-followup-1',
+            class_id: 42,
+            student_id: 501,
+            teacher_user_id: 7,
+            detail_url: '/api/wrong-question-chats/session-followup-2',
+            stream_url: '/api/wrong-question-chats/session-followup-2/stream',
+            messages: [
+              {
+                id: 1,
+                role: 'assistant',
+                stage: 'ask_help_mode',
+                content: '这次再说说，你现在觉得这题已经完全会了吗？',
+                created_at: '2026-05-04T09:00:00Z',
+              },
+            ],
+            records: [],
+          },
+          run: {
+            id: 'run-followup-1',
+            source: 'ai_chat',
+            status: 'completed',
+            current_step: 'chat_followup',
+            class_id: 42,
+            student_id: 501,
+            teacher_user_id: 7,
+            chat_session_id: 'session-followup-2',
+            original_filename: 'followup.png',
+            mime_type: 'image/png',
+            metadata_json: '{}',
+            error_message: '',
+            created_at: '2026-05-04T08:00:00Z',
+            detail_url: '/api/wrong-question-ingestions/run-followup-1',
+            assets: [],
+            records: [],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-question-ingestions?source=ai_chat&class_id=42&student_id=501&limit=10') {
+        return createJsonResponse({
+          items: [],
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+
+    await waitForAssertion(() => {
+      const button = Array.from(domEnvironment.container.querySelectorAll('button')).find((candidate) => candidate.textContent?.includes('每周练习跟进'));
+      assert.ok(button instanceof HTMLButtonElement);
+    });
+
+    const followupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('每周练习跟进'));
+    assert.ok(followupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      followupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const weekInput = domEnvironment.container.querySelector('input[aria-label="周次"]') as HTMLInputElement | null;
+    assert.ok(weekInput instanceof HTMLInputElement);
+
+    await act(async () => {
+      setDateInputValue(weekInput, '2026-05-04');
+      weekInput.dispatchEvent(new Event('input', { bubbles: true }));
+      weekInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    const loadButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.includes('查看跟进清单'));
+    assert.ok(loadButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      loadButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /开启掌握追问/);
+      assert.match(pageText, /这周可以继续确认孩子是否已经掌握。/);
+    });
+
+    const startFollowupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find((button) => button.textContent?.trim() === '开启掌握追问');
+    assert.ok(startFollowupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      startFollowupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /已开启这道题的掌握追问，后续归档会继续覆盖同一条错题记录。/);
+      assert.match(pageText, /会话：session-followup-2/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-questions/followup-record-a/followup-chat' && call.init?.method === 'POST'));
+      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-questions/followup-record-a' && (!call.init?.method || call.init.method === 'GET')));
     });
   } finally {
     if (root) {

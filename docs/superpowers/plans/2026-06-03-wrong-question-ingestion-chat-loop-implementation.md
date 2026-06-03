@@ -435,10 +435,16 @@ The current round now also writes explicit mastery-followup outcome signals back
 - `latest_followup_completed_at`
 - `latest_followup_summary`
 
-The next highest-value task is now **the next continuity reuse slice on top of that outcome spine**:
+The current round now also reuses that same mastery-followup continuity from weekly follow-up cards, instead of leaving it only inside the notebook modal:
 
-- reuse the mastery-followup entrypoint from weekly follow-up cards and other archive-detail entrypoints instead of only the notebook panel
-- let those alternate entrypoints keep writing into the same `mastery_tracking / mastery_assessment / generation_metadata` chain
+- weekly follow-up cards can now open the matching `ai_chat` archive directly into the existing mastery-followup flow
+- the card action still writes into the same `mastery_tracking / mastery_assessment / generation_metadata` chain rather than creating a side channel
+- the frontend now guards the context-switch timing so “jump from weekly card -> open notebook record -> start mastery follow-up” does not get reset by the notebook chat auto-restore effect
+
+The next highest-value task is now **the next continuity reuse slice after weekly follow-up reuse**:
+
+- extend the same mastery-followup entrypoint to other archive-detail and follow-up surfaces that still stop at “open record”
+- keep those alternate entrypoints on the same single-record continuity chain instead of inventing a second mastery workflow
 - only after that, decide whether any extra mastery-specific structured card or classifier layer is actually needed
 
 This keeps the implementation path aligned with the final desired product:

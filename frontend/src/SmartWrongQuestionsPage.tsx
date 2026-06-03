@@ -575,6 +575,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [wrongQuestionChatError, setWrongQuestionChatError] = useState('');
   const [wrongQuestionChatNotice, setWrongQuestionChatNotice] = useState('');
   const wrongQuestionChatRequestVersionRef = useRef(0);
+  const pendingWeeklyMasteryFollowupRecordIdRef = useRef('');
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -900,6 +901,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, []);
 
   const loadLatestWrongQuestionChatSession = useCallback(async () => {
+    if (pendingWeeklyMasteryFollowupRecordIdRef.current) {
+      return;
+    }
     if (!activeNotebookClassId || !selectedNotebookStudentId || !selectedStudentName || notebookModalView !== 'questions') {
       resetWrongQuestionChatState();
       return;
@@ -1236,8 +1240,53 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     wrongQuestionChatRun,
   ]);
 
-  const handleStartWrongQuestionMasteryFollowup = useCallback(async () => {
-    if (!selectedRecord?.id) {
+  const openWrongQuestionRecordInNotebook = useCallback((
+    record: WrongQuestionRecord,
+    options: {
+      classId?: number | null;
+      studentName?: string;
+      notice?: string;
+    } = {},
+  ) => {
+    const targetStudentName = options.studentName?.trim() || record.studentName.trim();
+    if (!targetStudentName) {
+      setWeeklyFollowupError('当前来源错题缺少学生信息，暂时无法打开。');
+      setWeeklyFollowupNotice('');
+      return false;
+    }
+    if (!hasStaffScope) {
+      const nextClassId = typeof options.classId === 'number' && options.classId > 0
+        ? options.classId
+        : typeof record.classId === 'number' && record.classId > 0
+          ? record.classId
+          : activeWeeklyFollowupClassId;
+      if (nextClassId) {
+        setSelectedClassId(nextClassId);
+      }
+    }
+    setRecords((current) => {
+      const exists = current.some((item) => item.id === record.id);
+      return exists
+        ? current.map((item) => item.id === record.id ? record : item)
+        : [...current, record];
+    });
+    setSelectedStudentName(targetStudentName);
+    setSelectedId(record.id);
+    setNotebookModalView('questions');
+    setSelectedPracticeRecordIds([]);
+    setPracticeSelectionTouched(false);
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice(options.notice ?? '已跳转到来源错题。');
+    return true;
+  }, [
+    activeWeeklyFollowupClassId,
+    hasStaffScope,
+    setRecords,
+  ]);
+
+  const handleStartWrongQuestionMasteryFollowup = useCallback(async (recordOverride?: WrongQuestionRecord | null) => {
+    const targetRecord = recordOverride ?? selectedRecord;
+    if (!targetRecord?.id) {
       setWrongQuestionChatError('当前没有可继续追问的错题记录。');
       setWrongQuestionChatNotice('');
       return;
@@ -1247,7 +1296,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setWrongQuestionChatNotice('');
     try {
       const response = await apiFetch<{ session?: unknown; run?: unknown }>(
-        buildWrongQuestionChatFollowupPath(selectedRecord.id),
+        buildWrongQuestionChatFollowupPath(targetRecord.id),
         {
           method: 'POST',
           body: JSON.stringify({}),
@@ -2260,8 +2309,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setPracticeSelectionTouched(false);
   };
   const handleOpenWeeklyFollowupSourceRecord = (item: WeeklyWrongQuestionFollowupItem, preferredRecordId = '') => {
-    const targetRecordId = preferredRecordId.trim()
-      || item.sourceRecords[0]?.id
+    const preferredSourceRecord = preferredRecordId.trim()
+      ? item.sourceRecords.find((record) => record.id === preferredRecordId.trim()) ?? null
+      : null;
+    const targetSourceRecord = preferredSourceRecord
+      ?? item.sourceRecords[0]
+      ?? null;
+    const targetRecordId = targetSourceRecord?.id
       || item.candidateRecordIds[0]
       || item.sourceRecordIds[0]
       || '';
@@ -2270,23 +2324,47 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       setWeeklyFollowupNotice('');
       return;
     }
-    const targetRecord = records.find((record) => record.id === targetRecordId);
+    const targetRecord = targetSourceRecord ?? records.find((record) => record.id === targetRecordId) ?? null;
     if (!targetRecord) {
       setWeeklyFollowupError('当前列表还没有加载这条来源错题，请先刷新列表。');
       setWeeklyFollowupNotice('');
       return;
     }
-    if (!hasStaffScope && activeWeeklyFollowupClassId) {
-      setSelectedClassId(activeWeeklyFollowupClassId);
-    }
-    setSelectedStudentName(item.studentName);
-    setSelectedId(targetRecord.id);
-    setNotebookModalView('questions');
-    setSelectedPracticeRecordIds([]);
-    setPracticeSelectionTouched(false);
-    setWeeklyFollowupError('');
-    setWeeklyFollowupNotice('已跳转到来源错题。');
+    openWrongQuestionRecordInNotebook(targetRecord, {
+      classId: activeWeeklyFollowupClassId,
+      studentName: item.studentName,
+      notice: '已跳转到来源错题。',
+    });
   };
+  const handleStartWeeklyFollowupMasteryFollowup = useCallback(async (
+    item: WeeklyWrongQuestionFollowupItem,
+    sourceRecord: WrongQuestionRecord,
+  ) => {
+    const opened = openWrongQuestionRecordInNotebook(sourceRecord, {
+      classId: activeWeeklyFollowupClassId,
+      studentName: item.studentName,
+      notice: '已跳转到 AI 归档，并准备开启掌握追问。',
+    });
+    if (!opened) {
+      return;
+    }
+    pendingWeeklyMasteryFollowupRecordIdRef.current = sourceRecord.id;
+    globalThis.setTimeout(() => {
+      void (async () => {
+        try {
+          await handleStartWrongQuestionMasteryFollowup(sourceRecord);
+        } finally {
+          if (pendingWeeklyMasteryFollowupRecordIdRef.current === sourceRecord.id) {
+            pendingWeeklyMasteryFollowupRecordIdRef.current = '';
+          }
+        }
+      })();
+    }, 0);
+  }, [
+    activeWeeklyFollowupClassId,
+    handleStartWrongQuestionMasteryFollowup,
+    openWrongQuestionRecordInNotebook,
+  ]);
   const practiceHistoryPanel = (
     <>
       <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
@@ -3872,6 +3950,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                             className={workspaceSecondaryButtonClass}
                           >
                             打开 AI 归档
+                          </button>
+                        ) : null}
+                        {latestAiChatSourceRecord && canStartWrongQuestionMasteryFollowup(latestAiChatSourceRecord) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleStartWeeklyFollowupMasteryFollowup(item, latestAiChatSourceRecord)}
+                            disabled={wrongQuestionChatSending}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            开启掌握追问
                           </button>
                         ) : null}
                         {isReadyPractice ? (
