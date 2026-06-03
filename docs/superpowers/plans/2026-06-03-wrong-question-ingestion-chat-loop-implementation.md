@@ -441,9 +441,14 @@ The current round now also reuses that same mastery-followup continuity from wee
 - the card action still writes into the same `mastery_tracking / mastery_assessment / generation_metadata` chain rather than creating a side channel
 - the frontend now guards the context-switch timing so “jump from weekly card -> open notebook record -> start mastery follow-up” does not get reset by the notebook chat auto-restore effect
 
+The current round now also reuses the same continuity from the archived AI-chat panel itself:
+
+- an archived `ai_chat` session that already has a confirmed record and at least one completed re-practice can now start mastery follow-up directly from the chat archive header
+- this keeps “upload -> guided reflection -> archive -> later re-practice -> follow-up” navigable from the original chat surface, not only from notebook detail or weekly cards
+
 The next highest-value task is now **the next continuity reuse slice after weekly follow-up reuse**:
 
-- extend the same mastery-followup entrypoint to other archive-detail and follow-up surfaces that still stop at “open record”
+- extend the same mastery-followup entrypoint to the remaining archive-detail and follow-up surfaces that still stop at “open record”
 - keep those alternate entrypoints on the same single-record continuity chain instead of inventing a second mastery workflow
 - only after that, decide whether any extra mastery-specific structured card or classifier layer is actually needed
 

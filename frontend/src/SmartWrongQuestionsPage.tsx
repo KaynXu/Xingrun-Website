@@ -2466,6 +2466,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {wrongQuestionChatSession?.status === 'archived' && canStartWrongQuestionMasteryFollowup(wrongQuestionChatArchivedRecord) ? (
+            <button
+              type="button"
+              onClick={() => void handleStartWrongQuestionMasteryFollowup(wrongQuestionChatArchivedRecord)}
+              disabled={wrongQuestionChatSending}
+              className={workspacePrimaryButtonClass}
+            >
+              开启掌握追问
+            </button>
+          ) : null}
           {wrongQuestionChatSession?.status === 'archived' && wrongQuestionChatArchivedRecordConfirmationStatus === 'returned' ? (
             <button
               type="button"

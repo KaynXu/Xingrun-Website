@@ -1545,6 +1545,7 @@ test('SmartWrongQuestionsPage wires the AI wrong-question chat upload and resume
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 
   assert.match(pageSource, /AI 对话归档/);
+  assert.match(pageSource, /wrongQuestionChatSession\?\.status === 'archived' && canStartWrongQuestionMasteryFollowup\(wrongQuestionChatArchivedRecord\)/);
   assert.match(pageSource, /上传错题图片/);
   assert.match(pageSource, /buildWrongQuestionIngestionListPath/);
   assert.match(pageSource, /buildWrongQuestionIngestionAssetUploadPath/);
@@ -1558,6 +1559,325 @@ test('SmartWrongQuestionsPage wires the AI wrong-question chat upload and resume
   assert.match(pageSource, /先看提示/);
   assert.match(pageSource, /完整复盘/);
   assert.match(pageSource, /当前信息不足，归档后会进入老师复核/);
+});
+
+test('SmartWrongQuestionsPage can start mastery followup directly from the archived ai chat panel', async () => {
+  const domEnvironment = setupDomEnvironment();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: SmartWrongQuestionFetchCall[] = [];
+  let root: Root | null = null;
+
+  try {
+    localStorage.setItem('xr_token', 'token-123');
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init });
+
+      if (input === '/api/classes') {
+        return createJsonResponse([
+          { id: 42, name: '六年级 1 班', subject: '数学', teacher_user_id: 7 },
+        ]);
+      }
+
+      if (input === '/api/classes/42/students') {
+        return createJsonResponse({
+          students: [{ id: 501, name: '王睿博' }],
+        });
+      }
+
+      if (input === '/api/admin/users') {
+        return createJsonResponse([{ id: 7, name: 'Kayn' }]);
+      }
+
+      if (input === '/api/wrong-questions' || (typeof input === 'string' && input.startsWith('/api/wrong-questions?'))) {
+        return createJsonResponse({
+          items: [
+            makeNotebookApiRecord({
+              id: 'chat-record-a',
+              source: 'ai_chat',
+              student_id: 501,
+              student_name: '王睿博',
+              class_id: 42,
+              class_display_name: '六年级 1 班',
+              teacher_user_id: 7,
+              teacher_display_name: 'Kayn',
+              confirmation_status: 'confirmed',
+              archive_context: {
+                source: 'ai_chat',
+                ingestion_run_id: 'run-archived-1',
+                ingestion_run_url: '/api/wrong-question-ingestions/run-archived-1',
+                chat_session_id: 'session-archived-1',
+                chat_session_url: '/api/wrong-question-chats/session-archived-1',
+              },
+              mastery_tracking: {
+                practice_sheet_count: 1,
+                latest_practice_sheet_id: 92,
+                latest_practice_status: 'ready',
+                latest_practice_created_at: '2026-06-03 18:00:00',
+              },
+              mastery_assessment: {
+                status: 'ready_for_mastery_review',
+                label: '待确认是否掌握',
+                score: 3,
+                suggested_action: 'review_mastery',
+                practice_sheet_count: 1,
+                followup_count: 0,
+                latest_practice_status: 'ready',
+                same_topic_active_count: 0,
+                same_error_active_count: 0,
+                repeated_active_count: 0,
+                manual_is_mastered: false,
+                evidence: ['最近一次再练已生成，可结合完成情况判断是否掌握。'],
+              },
+            }),
+          ],
+          summary: {
+            total_count: 1,
+            repeated_mistake_count: 0,
+            high_priority_count: 0,
+            pending_review_count: 1,
+            unique_class_count: 1,
+            unique_student_count: 1,
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/chat-record-a' && (!init?.method || init.method === 'GET')) {
+        return createJsonResponse(makeNotebookApiRecord({
+          id: 'chat-record-a',
+          source: 'ai_chat',
+          student_id: 501,
+          student_name: '王睿博',
+          class_id: 42,
+          class_display_name: '六年级 1 班',
+          teacher_user_id: 7,
+          teacher_display_name: 'Kayn',
+          confirmation_status: 'confirmed',
+          archive_context: {
+            source: 'ai_chat',
+            ingestion_run_id: 'run-archived-1',
+            ingestion_run_url: '/api/wrong-question-ingestions/run-archived-1',
+            chat_session_id: 'session-archived-1',
+            chat_session_url: '/api/wrong-question-chats/session-archived-1',
+          },
+          mastery_tracking: {
+            practice_sheet_count: 1,
+            latest_practice_sheet_id: 92,
+            latest_practice_status: 'ready',
+            latest_practice_created_at: '2026-06-03 18:00:00',
+          },
+          mastery_assessment: {
+            status: 'ready_for_mastery_review',
+            label: '待确认是否掌握',
+            score: 3,
+            suggested_action: 'review_mastery',
+            practice_sheet_count: 1,
+            followup_count: 0,
+            latest_practice_status: 'ready',
+            same_topic_active_count: 0,
+            same_error_active_count: 0,
+            repeated_active_count: 0,
+            manual_is_mastered: false,
+            evidence: ['最近一次再练已生成，可结合完成情况判断是否掌握。'],
+          },
+        }));
+      }
+
+      if (input === '/api/wrong-question-ingestions?source=ai_chat&class_id=42&student_id=501&limit=10') {
+        return createJsonResponse({
+          items: [
+            {
+              id: 'run-archived-1',
+              source: 'ai_chat',
+              status: 'completed',
+              current_step: 'archive',
+              class_id: 42,
+              student_id: 501,
+              teacher_user_id: 7,
+              chat_session_id: 'session-archived-1',
+              original_filename: 'archive-1.png',
+              mime_type: 'image/png',
+              metadata_json: '{}',
+              error_message: '',
+              created_at: '2026-06-03T18:00:00Z',
+              detail_url: '/api/wrong-question-ingestions/run-archived-1',
+              assets: [],
+              records: [],
+            },
+          ],
+        });
+      }
+
+      if (input === '/api/wrong-question-chats/session-archived-1') {
+        return createJsonResponse({
+          session: {
+            id: 'session-archived-1',
+            status: 'archived',
+            current_stage: 'ready_to_archive',
+            summary_text: '学生已经完成一轮再练，等待后续掌握确认。',
+            metadata_json: JSON.stringify({
+              mode: 'archive',
+              archived_record_id: 'chat-record-a',
+            }),
+            ingestion_run_id: 'run-archived-1',
+            class_id: 42,
+            student_id: 501,
+            teacher_user_id: 7,
+            detail_url: '/api/wrong-question-chats/session-archived-1',
+            stream_url: '/api/wrong-question-chats/session-archived-1/stream',
+            messages: [
+              {
+                id: 1,
+                role: 'assistant',
+                stage: 'ask_help_mode',
+                content: '你现在再说说，这题最大的卡点是什么？',
+                created_at: '2026-06-03T18:01:00Z',
+              },
+            ],
+            records: [
+              makeNotebookApiRecord({
+                id: 'chat-record-a',
+                source: 'ai_chat',
+                student_id: 501,
+                student_name: '王睿博',
+                class_id: 42,
+                class_display_name: '六年级 1 班',
+                teacher_user_id: 7,
+                teacher_display_name: 'Kayn',
+                confirmation_status: 'confirmed',
+                archive_context: {
+                  source: 'ai_chat',
+                  ingestion_run_id: 'run-archived-1',
+                  ingestion_run_url: '/api/wrong-question-ingestions/run-archived-1',
+                  chat_session_id: 'session-archived-1',
+                  chat_session_url: '/api/wrong-question-chats/session-archived-1',
+                },
+                mastery_tracking: {
+                  practice_sheet_count: 1,
+                  latest_practice_sheet_id: 92,
+                  latest_practice_status: 'ready',
+                  latest_practice_created_at: '2026-06-03 18:00:00',
+                },
+                mastery_assessment: {
+                  status: 'ready_for_mastery_review',
+                  label: '待确认是否掌握',
+                  score: 3,
+                  suggested_action: 'review_mastery',
+                  practice_sheet_count: 1,
+                  followup_count: 0,
+                  latest_practice_status: 'ready',
+                  same_topic_active_count: 0,
+                  same_error_active_count: 0,
+                  repeated_active_count: 0,
+                  manual_is_mastered: false,
+                  evidence: ['最近一次再练已生成，可结合完成情况判断是否掌握。'],
+                },
+              }),
+            ],
+          },
+        });
+      }
+
+      if (input === '/api/wrong-questions/chat-record-a/followup-chat' && init?.method === 'POST') {
+        return createJsonResponse({
+          session: {
+            id: 'session-followup-archived-2',
+            status: 'active',
+            current_stage: 'ask_help_mode',
+            summary_text: '继续判断是否已经掌握。',
+            metadata_json: JSON.stringify({
+              mode: 'mastery_followup',
+              followup_record_id: 'chat-record-a',
+            }),
+            ingestion_run_id: 'run-archived-1',
+            class_id: 42,
+            student_id: 501,
+            teacher_user_id: 7,
+            detail_url: '/api/wrong-question-chats/session-followup-archived-2',
+            stream_url: '/api/wrong-question-chats/session-followup-archived-2/stream',
+            messages: [
+              {
+                id: 2,
+                role: 'assistant',
+                stage: 'ask_help_mode',
+                content: '这轮再练之后，你能自己完整讲出方法了吗？',
+                created_at: '2026-06-03T18:30:00Z',
+              },
+            ],
+            records: [],
+          },
+          run: {
+            id: 'run-archived-1',
+            source: 'ai_chat',
+            status: 'completed',
+            current_step: 'chat_followup',
+            class_id: 42,
+            student_id: 501,
+            teacher_user_id: 7,
+            chat_session_id: 'session-followup-archived-2',
+            original_filename: 'archive-1.png',
+            mime_type: 'image/png',
+            metadata_json: '{}',
+            error_message: '',
+            created_at: '2026-06-03T18:00:00Z',
+            detail_url: '/api/wrong-question-ingestions/run-archived-1',
+            assets: [],
+            records: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+
+    root = createRoot(domEnvironment.container);
+    await act(async () => {
+      root?.render(
+        React.createElement(SmartWrongQuestionsPage, {
+          currentUser: {
+            display_name: '机构负责人',
+            organization_name: '星润Starain',
+            role: 'owner',
+          },
+        }),
+      );
+    });
+
+    await selectNotebookClass(domEnvironment.container, '42');
+    await openNotebookStudent(domEnvironment.container, '王睿博');
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /AI 对话归档/);
+      assert.match(pageText, /会话：session-archived-1/);
+      assert.match(pageText, /开启掌握追问/);
+    });
+
+    const startFollowupButton = Array.from(domEnvironment.container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '开启掌握追问',
+    );
+    assert.ok(startFollowupButton instanceof HTMLButtonElement);
+
+    await act(async () => {
+      startFollowupButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    });
+
+    await waitForAssertion(() => {
+      const pageText = domEnvironment.container.textContent || '';
+      assert.match(pageText, /已开启这道题的掌握追问，后续归档会继续覆盖同一条错题记录。/);
+      assert.match(pageText, /会话：session-followup-archived-2/);
+      assert.ok(fetchCalls.some((call) => call.input === '/api/wrong-questions/chat-record-a/followup-chat' && call.init?.method === 'POST'));
+    });
+  } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+      });
+    }
+    globalThis.fetch = originalFetch;
+    domEnvironment.cleanup();
+  }
 });
 
 test('SmartWrongQuestionsPage source exposes a hard delete action for local wechat records', () => {
