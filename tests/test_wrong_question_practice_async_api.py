@@ -100,6 +100,59 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         mock_generate_pdf.assert_called_once()
         mock_finalize.assert_called_once()
 
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
+    @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", return_value="/tmp/practice-chat-sheet.pdf")
+    @patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_generates_pdf_for_ai_chat_record_sheet(
+        self,
+        mock_generate_material,
+        mock_generate_pdf,
+        _mock_credits,
+        mock_finalize,
+    ):
+        ai_chat_record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            image_url="https://files.example.com/practice-worker-chat.png",
+            recognition_status="recognized",
+            question_text="解方程 $x+5=12$。",
+            child_raw_reason_text="我移项时把符号看反了",
+        )
+        ai_chat_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(ai_chat_record["id"])],
+        )
+        mock_generate_material.return_value = {
+            "title": "Alice 错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": ai_chat_record["id"],
+                    "reason_blank_prompt": "先把真正错因写出来\n这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么做\n下次再碰到这种题时，你准备先检查哪里？",
+                }
+            ],
+        }
+
+        app_module._run_wrong_question_practice_generation_job(
+            sheet_id=ai_chat_sheet["id"],
+            user={"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+        )
+
+        saved = lesson_manager.get_wrong_question_practice_sheet(ai_chat_sheet["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["status"], "ready")
+        self.assertEqual(saved["pdf_path"], "/tmp/practice-chat-sheet.pdf")
+        material_kwargs = mock_generate_material.call_args.kwargs
+        self.assertEqual(material_kwargs["items"][0]["wrong_question_record_id"], ai_chat_record["id"])
+        self.assertEqual(material_kwargs["items"][0]["source"], "ai_chat")
+        self.assertEqual(material_kwargs["items"][0]["question_text_snapshot"], "解方程 $x+5=12$。")
+        mock_generate_pdf.assert_called_once()
+        mock_finalize.assert_called_once()
+
     @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf")
     @patch("ai_processor.generate_wrong_question_practice_sheet_material")
     def test_worker_skips_non_pending_sheet(

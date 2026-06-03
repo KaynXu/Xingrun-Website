@@ -1126,6 +1126,106 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         mock_start_thread.assert_called_once()
         self.assertEqual(mock_start_thread.call_args.kwargs["sheet_id"], payload["id"])
 
+    @patch("app.has_api_key", return_value=True)
+    @patch("app._start_wrong_question_practice_generation_thread")
+    def test_staff_can_create_pending_wrong_question_practice_sheet_from_confirmed_ai_chat_record(self, mock_start_thread, _mock_has_api_key):
+        owner_payload = self.login_owner()
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=owner_payload["user"]["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_payload["user"]["id"])
+        student = lesson_manager.create_student_for_class(class_id, "Practice Chat Student")
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/practice-chat.png",
+            recognition_status="recognized",
+            question_text="解方程 $x+5=12$。",
+            child_raw_reason_text="我移项时把符号看反了",
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET confirmation_status='confirmed',
+                    confirmation_reviewed_by=?,
+                    confirmation_reviewed_at='2026-06-03 12:00:00'
+                WHERE id=?
+                """,
+                (owner_payload["user"]["id"], record["id"]),
+            )
+
+        response = self.client.post(
+            "/api/wrong-question-practice-sheets",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "student_id": student["id"],
+                "wrong_question_ids": [record["id"]],
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "pending")
+
+        saved = lesson_manager.get_wrong_question_practice_sheet(payload["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["question_count"], 1)
+        self.assertEqual(saved["items"][0]["wrong_question_record_id"], record["id"])
+        self.assertEqual(saved["items"][0]["source"], "ai_chat")
+        self.assertEqual(saved["items"][0]["question_text_snapshot"], "解方程 $x+5=12$。")
+        mock_start_thread.assert_called_once()
+        self.assertEqual(mock_start_thread.call_args.kwargs["sheet_id"], payload["id"])
+
+    @patch("app.has_api_key", return_value=True)
+    @patch("app._start_wrong_question_practice_generation_thread")
+    def test_staff_cannot_create_pending_wrong_question_practice_sheet_from_unconfirmed_ai_chat_record(self, mock_start_thread, _mock_has_api_key):
+        owner_payload = self.login_owner()
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=owner_payload["user"]["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_payload["user"]["id"])
+        student = lesson_manager.create_student_for_class(class_id, "Pending Chat Student")
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/practice-chat-pending.png",
+            recognition_status="recognized",
+            question_text="解方程 $x+7=11$。",
+            needs_teacher_confirmation=True,
+            confirmation_reasons_json=["missing_question_text"],
+        )
+
+        response = self.client.post(
+            "/api/wrong-question-practice-sheets",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "student_id": student["id"],
+                "wrong_question_ids": [record["id"]],
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()["error"],
+            "selected ai chat records must be confirmed before generating practice",
+        )
+        mock_start_thread.assert_not_called()
+
     def test_staff_can_list_wrong_question_practice_sheets_for_student(self):
         owner_payload = self.login_owner()
         bundle = self.create_local_wechat_binding(owner_payload["user"]["id"], owner_payload["user"]["organization_id"])

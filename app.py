@@ -4667,12 +4667,17 @@ def api_wrong_question_practice_sheet_create():
             return jsonify({"error": "not found"}), 404
         if int(record.get("student_id") or 0) != student_id:
             return jsonify({"error": "selected records must belong to the same student"}), 400
-        if str(record.get("source") or "") != "wechat_mp":
+        record_source = str(record.get("source") or "").strip()
+        if record_source not in {"wechat_mp", "ai_chat"}:
             return jsonify({"error": "selected records must be local wrong questions"}), 400
         if str(record.get("recognition_status") or "") != "recognized":
             return jsonify({"error": "selected records must be recognized before generating practice"}), 400
         if str(record.get("archive_status") or "").strip() == "archived":
             return jsonify({"error": "selected records must stay active before generating practice"}), 400
+        if record_source == "ai_chat":
+            confirmation_status = _normalize_wrong_question_confirmation_status(record)
+            if confirmation_status not in {"confirmed", "not_required"}:
+                return jsonify({"error": "selected ai chat records must be confirmed before generating practice"}), 400
         selected_records.append(record)
 
     try:

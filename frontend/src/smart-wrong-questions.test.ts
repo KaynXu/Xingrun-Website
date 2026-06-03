@@ -1429,6 +1429,14 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /按老师意见继续补充/);
 });
 
+test('smart wrong question page lets confirmed ai chat records re-enter practice generation', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /record\.source === 'ai_chat'/);
+  assert.match(pageSource, /confirmationStatus === 'confirmed' \|\| confirmationStatus === 'not_required'/);
+  assert.match(pageSource, /AI 归档题需要先完成老师确认或补充后，才能加入错题练习。/);
+});
+
 test('smart wrong question page source exposes teacher confirmation queue filters', () => {
   const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
 

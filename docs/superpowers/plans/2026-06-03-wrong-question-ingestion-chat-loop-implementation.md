@@ -236,6 +236,7 @@ Progress note (2026-06-03):
 - Unified local review now lets teachers mark `ai_chat` archive records as mastered so they can fall out of later weekly follow-up priority.
 - A first compatibility slice has started on the practice-sheet side: practice items can now carry a structured content payload in parallel with the legacy dual-prompt fields, so later PDF and review work can migrate incrementally instead of via a big-bang rewrite.
 - Returned local `ai_chat` archive records can now reopen into a fresh rework chat session from the existing notebook chat panel. The rework session reuses the same ingestion context, seeds a teacher-return prompt, and on re-archive updates the original wrong-question record in place instead of creating a duplicate card.
+- Confirmed or review-free local `ai_chat` archive records can now flow into the existing notebook practice-sheet pipeline. Teachers can select them alongside local wechat records once confirmation is complete, and the same async practice worker now consumes `ai_chat` snapshots without needing a parallel repractice product surface.
 
 ### Track C: Workbench / error_correction Product Entry
 

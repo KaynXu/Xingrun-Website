@@ -262,10 +262,17 @@ function buildUniquePracticePackTargets(values: string[]): string[] {
 }
 
 function canGenerateWrongQuestionPractice(record: WrongQuestionRecord): boolean {
-  return record.source === 'wechat_mp'
-    && Boolean(record.studentId)
-    && record.recognitionStatus === 'recognized'
-    && !record.isMastered;
+  if (!Boolean(record.studentId) || record.recognitionStatus !== 'recognized' || record.isMastered) {
+    return false;
+  }
+  if (record.source === 'wechat_mp') {
+    return true;
+  }
+  if (record.source === 'ai_chat') {
+    const confirmationStatus = normalizeWrongQuestionConfirmationStatus(record);
+    return confirmationStatus === 'confirmed' || confirmationStatus === 'not_required';
+  }
+  return false;
 }
 
 function getWrongQuestionPracticeStatusLabel(status: string): string {
@@ -3928,7 +3935,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                               </div>
                               {!canSelect ? (
                                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                  {item.isMastered ? '已掌握题目不会加入新的错题练习。' : '当前题目还不能加入错题练习。'}
+                                  {item.isMastered
+                                    ? '已掌握题目不会加入新的错题练习。'
+                                    : item.source === 'ai_chat'
+                                      ? 'AI 归档题需要先完成老师确认或补充后，才能加入错题练习。'
+                                      : '当前题目还不能加入错题练习。'}
                                 </p>
                               ) : null}
                             </button>
