@@ -112,6 +112,229 @@ Current V1 note:
   - knowledge-graph enrichment
 - [ ] Add fallback behavior: if EnsExam or PaddleOCR is unavailable, fall back to existing AI vision recognition without blocking upload.
 
+## Reality Check
+
+The repository now has a meaningful amount of the **backend backbone**, but the **final product shape is still incomplete**.
+
+What is already true:
+
+- Generic wrong-question ingestion storage exists.
+- WeChat upload now hands off into generic ingestion runs.
+- AI chat can already run a minimal guided reflection loop and archive into the same wrong-question library.
+
+What is **not** true yet:
+
+- There is no end-user AI chat upload UI that fully uses this loop.
+- There is no operator workbench for multi-page PDF / batch ingestion.
+- `error_correction` OCR simplification / overlapping split / correction flow has not yet been transplanted into live product code.
+- Teacher confirmation, archived detail review, and mastery follow-up are not yet complete product flows.
+
+That distinction matters. The plan below should be read as:
+
+- **Phase 1-3:** backend base and minimal archive loop
+- **Phase 4-7:** the work needed to turn that base into the actual target product
+
+## Detailed Development List
+
+The list below is intentionally more detailed than the high-level phase plan. It reflects:
+
+- the original wrong-question review document
+- the `error_correction` migration assessment
+- the current codebase state after Phase 1-3 backend work
+- the final desired product shape: `AI chat upload -> guided reflection -> archive -> later follow-up`
+
+### Track A: Backend Backbone And Orchestration
+
+#### A1. Generic ingestion foundation
+
+- [x] Cross-source wrong-question archive model (`wechat_mp | workspace | ai_chat`)
+- [x] `wrong_question_ingestion_runs`
+- [x] `wrong_question_assets`
+- [x] Generic archive APIs (`create / detail / ocr / split / archive`)
+- [x] WeChat worker handoff into ingestion runs
+
+#### A2. AI chat archival foundation
+
+- [x] `wrong_question_chat_sessions`
+- [x] `wrong_question_chat_messages`
+- [x] Minimal guided reflection loop
+- [x] Archive into wrong-question library from AI chat
+- [x] Teacher-confirmation fallback for missing stem / missing tags / missing image
+
+#### A3. Next backend hardening tasks
+
+- [x] Add chat-session read/recovery API for UI resume and page reload.
+- [ ] Add ingestion-run list/history API so a future workbench can reopen unfinished runs.
+- [ ] Add explicit `current_step` / stage tracking on ingestion runs instead of relying only on `status`.
+- [ ] Add richer archive detail linkage so wrong-question detail can open the related ingestion run and chat session directly.
+- [ ] Add retry-safe idempotency rules for chat archive finalization and workbench archive finalization.
+
+### Track B: AI Chat Product Entry
+
+This track is the shortest path to the intended end-user product.
+
+#### B1. Minimal end-user chat surface
+
+- [ ] Connect the current AI chat UI to `wrong-question-chats/<session_id>/stream`.
+- [ ] Support upload of one or more wrong-question images into the chat session.
+- [ ] Show current reflection stage and assistant prompt in UI.
+- [ ] Support session reload / resume using persisted chat history.
+- [ ] Show archive result inline after final reflection step.
+
+#### B2. Archive-quality chat experience
+
+- [ ] Add archive preview before final save: original image, recognized stem, tags, reflection summary.
+- [ ] Let student choose `先看提示` vs `完整复盘` without losing the archive loop.
+- [ ] Preserve assistant-side structured summary separately from student-visible reply text.
+- [ ] Add explicit `needs_teacher_confirmation` banner in chat when archive confidence is low.
+
+#### B3. Closed-loop follow-up
+
+- [ ] Link archived wrong question back into later AI follow-up.
+- [ ] Use same chat record to drive later re-practice and mastery checks.
+- [ ] Add mastery status inputs and repeated-error signals after later practice attempts.
+
+### Track C: Workbench / error_correction Product Entry
+
+This is the shortest path to the operator/teacher workbench requested by the review.
+
+#### C1. Workbench-ready ingestion state
+
+- [ ] Add batch upload support for multi-page PDF and image sets.
+- [ ] Store per-page asset metadata needed for OCR preview and split review.
+- [ ] Support unfinished run reopen / continue.
+- [ ] Support manual correction of OCR and split results before archive.
+
+#### C2. Reuse `error_correction` backend building blocks
+
+- [ ] Transplant `prepare_input()`-style normalization where it reduces preprocessing drift.
+- [ ] Reuse `simplify_ocr_results()` as the OCR-to-agent boundary.
+- [ ] Reuse overlapping-page split batching (`batch_size=2`, `overlap=1`) for multi-page papers.
+- [ ] Reuse structured-output schema concepts for `question_structured_json`.
+- [ ] Reuse split / OCR correction prompt rules where they fit current provider setup.
+
+#### C3. Workbench UI
+
+- [ ] Build a React workbench entry for upload / OCR preview / split review / archive.
+- [ ] Do not port Vue pages directly; port flows and information architecture only.
+- [ ] Support PDF page thumbnails, OCR block preview, split result list, archive selection.
+- [ ] Support teacher/operator editing before import into the wrong-question library.
+
+### Track D: Recognition And Processing Adapters
+
+These are deliberately delayed until the shared ingestion backbone is stable.
+
+#### D1. Optional adapters
+
+- [ ] EnsExam handwriting erasure adapter
+- [ ] PaddleOCR adapter for workbench-oriented OCR
+- [ ] LangGraph orchestration adapter for resumable graph execution
+- [ ] Knowledge-graph enrichment adapter for concept relations and similar-question retrieval
+
+#### D2. Fallback rules
+
+- [ ] If EnsExam is unavailable, continue without erasure.
+- [ ] If PaddleOCR is unavailable, fall back to current AI-vision recognition.
+- [ ] If LangGraph is unavailable, keep Flask + RQ orchestration as the default runtime.
+
+### Track E: Wrong-Question Record Detail And Teacher Review
+
+#### E1. Archive detail completeness
+
+- [ ] Wrong-question detail should show original assets, OCR/split trail, chat summary, and archive source.
+- [ ] Teacher should be able to see why `needs_teacher_confirmation` was triggered.
+- [ ] Teacher should be able to fix question text, tags, and confirmation state from the archive detail.
+
+#### E2. Teacher confirmation workflow
+
+- [ ] Add explicit review queue/filter for records needing confirmation.
+- [ ] Add confirmation actions: confirm, edit-then-confirm, return-for-rework.
+- [ ] Persist confirmation outcome and reviewer identity.
+
+### Track F: PDF / Practice Sheet Product Surface
+
+This track turns the archived wrong-question record into the student-facing revision artifact.
+
+#### F1. Template structure
+
+- [ ] Upgrade PDF/practice output to the minimum four core areas:
+  - `原题 / 原图`
+  - `方法提醒`
+  - `挖空复盘`
+  - `订正区`
+- [ ] Add the broader recommended structure:
+  - metadata header
+  - `错因定位 / 本次目标`
+  - `老师反馈区`
+  - `需老师确认`
+
+#### F2. Content schema
+
+- [ ] Split current prompt output into:
+  - `mistake_focus`
+  - `review_goal`
+  - `method_hint_lines[]`
+  - `blank_review_blocks[]`
+  - `teacher_feedback`
+  - `confirmation_reasons[]`
+- [ ] Stop passing two opaque writing prompts straight into layout.
+
+#### F3. Quality rules
+
+- [ ] Geometric / diagram-heavy records must preserve image traceability.
+- [ ] Add banned-phrasing scan to reduce template-sounding AI wording.
+- [ ] Add PDF eval cases for long problems, multi-image problems, proofs, function graphs, and review-required records.
+
+### Track G: Evaluation, Labeling, And Long-Term Accuracy
+
+#### G1. Evaluation layer
+
+- [ ] Create a representative eval set for recognition, structure, archive quality, and practice-sheet quality.
+- [ ] Run eval on every prompt/template/rule change.
+- [ ] Track archive quality regressions separately from OCR quality regressions.
+
+#### G2. Human feedback and labeling
+
+- [ ] Add explicit labels for:
+  -题型
+  -错因
+  -知识点
+  -是否需老师确认
+  -老师修改原因
+  -掌握情况/复发情况
+- [ ] Store feedback so repeated-error patterns can drive mastery grading.
+
+#### G3. Model strategy
+
+- [ ] Start with rules + schema + eval + few-shot.
+- [ ] Add lightweight classifiers before fine-tuning.
+- [ ] Only consider fine-tuning after enough high-quality labeled cards exist.
+
+## Recommended Priority Order
+
+This is the practical execution order after the work already completed:
+
+1. **A3 + B1**
+   - Make the AI chat loop recoverable and UI-ready.
+   - Why first: this is the shortest path from today’s backend base to the target product shape.
+
+2. **E1**
+   - Make archived records explainable and reviewable.
+   - Why second: once chat archive exists, teachers need to trust and inspect it.
+
+3. **C1**
+   - Make the ingestion runtime workbench-ready before building a full operator UI.
+   - Why third: this preserves extensibility without introducing UI complexity too early.
+
+4. **C2 + C3**
+   - Migrate the highest-value `error_correction` backend flows and then add the React workbench.
+
+5. **F1-F3**
+   - Upgrade the student-facing revision artifact and review sheet structure.
+
+6. **G1-G3**
+   - Turn the system into a measurable, improvable long-term loop.
+
 ## Product Structure Recommendation
 
 The final product should not be limited to a rigid four-block rendering, but it must at least preserve the pedagogically critical core:

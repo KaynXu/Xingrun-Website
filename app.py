@@ -3897,6 +3897,23 @@ def api_wrong_question_chat_stream(session_id: str):
     )
 
 
+@app.route("/api/wrong-question-chats/<session_id>", methods=["GET"])
+def api_wrong_question_chat_detail(session_id: str):
+    user, error = _require_auth()
+    if error:
+        return error
+    normalized_session_id = str(session_id or "").strip()
+    if not normalized_session_id:
+        return jsonify({"error": "session_id is required"}), 400
+    session = get_wrong_question_chat_session(normalized_session_id)
+    if not session or not _can_access_wrong_question_chat_session(user, session):
+        return jsonify({"error": "not found"}), 404
+    serialized = _serialize_wrong_question_chat_session_for_response(session)
+    if serialized is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"session": serialized})
+
+
 @app.route("/api/wrong-question-practice-packs", methods=["GET"])
 def api_wrong_question_practice_pack_list():
     user, error = _require_auth()

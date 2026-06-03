@@ -54,6 +54,23 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload
 
+    def _create_other_owner_headers(self) -> dict[str, str]:
+        request_row = lesson_manager.create_organization_request(
+            "另一个错题机构",
+            "other_chat_owner",
+            "另一位负责人",
+            "owner-pass",
+            recovery_phone="13800000012",
+        )
+        super_owner = lesson_manager.get_user_by_username("Kayn")
+        lesson_manager.approve_organization_request(request_row["id"], super_owner["id"])
+        login = self.client.post(
+            "/api/login",
+            json={"username": "other_chat_owner", "password": "owner-pass"},
+        )
+        self.assertEqual(login.status_code, 200)
+        return self.auth_headers(login.get_json()["token"])
+
     def _create_ai_chat_run(self, *, chat_session_id: str, file_url: str = "", storage_path: str = "") -> dict:
         response = self.client.post(
             "/api/wrong-question-ingestions",
@@ -206,6 +223,50 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
             ["missing_question_text", "knowledge_tags_unconfirmed"],
         )
         self.assertEqual(payload["session"]["status"], "archived")
+
+    def test_chat_detail_returns_messages_records_and_enforces_scope(self):
+        run = self._create_ai_chat_run(
+            chat_session_id="chat-session-detail",
+            file_url="https://files.example.com/chat-detail.png",
+        )
+
+        opening = self.client.post(
+            "/api/wrong-question-chats/chat-session-detail/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "ingestion_run_id": run["id"],
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.assertEqual(opening.status_code, 200)
+
+        reflected = self.client.post(
+            "/api/wrong-question-chats/chat-session-detail/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我没想清楚为什么要先化简"},
+        )
+        self.assertEqual(reflected.status_code, 200)
+
+        visible = self.client.get(
+            "/api/wrong-question-chats/chat-session-detail",
+            headers=self.auth_headers(self.owner_payload["token"]),
+        )
+        hidden = self.client.get(
+            "/api/wrong-question-chats/chat-session-detail",
+            headers=self._create_other_owner_headers(),
+        )
+
+        self.assertEqual(visible.status_code, 200)
+        payload = visible.get_json()
+        self.assertEqual(payload["session"]["id"], "chat-session-detail")
+        self.assertEqual(payload["session"]["ingestion_run_id"], run["id"])
+        self.assertEqual(payload["session"]["current_stage"], "ask_unknown_step")
+        self.assertEqual(len(payload["session"]["messages"]), 3)
+        self.assertEqual(payload["session"]["messages"][0]["role"], "assistant")
+        self.assertEqual(payload["session"]["messages"][1]["role"], "user")
+        self.assertEqual(payload["session"]["records"], [])
+        self.assertEqual(hidden.status_code, 404)
 
 
 if __name__ == "__main__":
