@@ -187,10 +187,10 @@ Current V1 note:
 
 #### B2. Archive-quality chat experience
 
-- [ ] Add archive preview before final save: original image, recognized stem, tags, reflection summary.
-- [ ] Let student choose `先看提示` vs `完整复盘` without losing the archive loop.
-- [ ] Preserve assistant-side structured summary separately from student-visible reply text.
-- [ ] Add explicit `needs_teacher_confirmation` banner in chat when archive confidence is low.
+- [x] Add archive preview before final save: original image, recognized stem, tags, reflection summary.
+- [x] Let student choose `先看提示` vs `完整复盘` without losing the archive loop.
+- [x] Preserve assistant-side structured summary separately from student-visible reply text.
+- [x] Add explicit `needs_teacher_confirmation` banner in chat when archive confidence is low.
 
 #### B3. Closed-loop follow-up
 

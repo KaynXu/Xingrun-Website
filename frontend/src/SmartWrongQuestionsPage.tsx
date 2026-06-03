@@ -140,6 +140,13 @@ const WRONG_QUESTION_CHAT_STAGE_LABELS: Record<string, string> = {
   ready_to_archive: '已归档',
 };
 
+const WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS: Record<string, string> = {
+  missing_image_asset: '缺少原始图片',
+  missing_question_text: '题目文本还不完整',
+  knowledge_tags_unconfirmed: '知识点还没确认',
+  student_confused_step: '学生卡点描述还不够清楚',
+};
+
 const practicePackStatusLabels: Record<string, string> = {
   pending: '等待生成',
   running: '生成中',
@@ -568,6 +575,61 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       .map((item) => item.fileUrl.trim())
       .filter(Boolean);
   }, [wrongQuestionChatRun]);
+  const wrongQuestionChatArchivePreviewVisible = useMemo(() => {
+    if (!wrongQuestionChatSession || wrongQuestionChatSession.status === 'archived') {
+      return false;
+    }
+    return Boolean(
+      wrongQuestionChatDraft.questionText.trim()
+      || wrongQuestionChatDraft.topicCategory.trim()
+      || wrongQuestionChatDraft.knowledgeTagsText.trim()
+      || wrongQuestionChatSession.summaryText.trim()
+      || wrongQuestionChatAssetPreviews.length > 0
+      || wrongQuestionChatLocalPreviews.length > 0,
+    );
+  }, [
+    wrongQuestionChatAssetPreviews.length,
+    wrongQuestionChatDraft.knowledgeTagsText,
+    wrongQuestionChatDraft.questionText,
+    wrongQuestionChatDraft.topicCategory,
+    wrongQuestionChatLocalPreviews.length,
+    wrongQuestionChatSession,
+  ]);
+  const wrongQuestionChatKnowledgeTagList = useMemo(() => {
+    return wrongQuestionChatDraft.knowledgeTagsText
+      .split(/\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }, [wrongQuestionChatDraft.knowledgeTagsText]);
+  const wrongQuestionChatPredictedConfirmationReasons = useMemo(() => {
+    const reasons: string[] = [];
+    const hasPreviewImage = wrongQuestionChatAssetPreviews.length > 0 || wrongQuestionChatLocalPreviews.length > 0;
+    if (!hasPreviewImage) {
+      reasons.push('missing_image_asset');
+    }
+    if (!wrongQuestionChatDraft.questionText.trim()) {
+      reasons.push('missing_question_text');
+    }
+    if (wrongQuestionChatKnowledgeTagList.length === 0) {
+      reasons.push('knowledge_tags_unconfirmed');
+    }
+    if (wrongQuestionChatSession && !wrongQuestionChatSession.summaryText.includes('卡点：')) {
+      reasons.push('student_confused_step');
+    }
+    return reasons;
+  }, [
+    wrongQuestionChatAssetPreviews.length,
+    wrongQuestionChatDraft.questionText,
+    wrongQuestionChatKnowledgeTagList.length,
+    wrongQuestionChatLocalPreviews.length,
+    wrongQuestionChatSession,
+  ]);
+  const wrongQuestionChatConfirmationReasonLabels = useMemo(() => {
+    const sourceReasons = wrongQuestionChatSession?.status === 'archived'
+      ? (wrongQuestionChatSession.records[0]?.confirmationReasons ?? [])
+      : wrongQuestionChatPredictedConfirmationReasons;
+    return sourceReasons.map((reason) => WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS[reason] || reason);
+  }, [wrongQuestionChatPredictedConfirmationReasons, wrongQuestionChatSession]);
 
   const resetWrongQuestionChatState = useCallback(() => {
     setWrongQuestionChatRun(null);
@@ -844,13 +906,13 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }));
   }, []);
 
-  const handleSendWrongQuestionChatMessage = useCallback(async () => {
+  const handleSendWrongQuestionChatMessage = useCallback(async (overrideMessage?: string) => {
     if (!wrongQuestionChatSession?.id) {
       setWrongQuestionChatError('请先上传错题图片并开启对话。');
       setWrongQuestionChatNotice('');
       return;
     }
-    const message = wrongQuestionChatDraft.replyText.trim();
+    const message = (overrideMessage ?? wrongQuestionChatDraft.replyText).trim();
     if (!message) {
       setWrongQuestionChatError('请先输入你的回答。');
       setWrongQuestionChatNotice('');
@@ -2145,6 +2207,62 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             ) : null}
           </div>
 
+          {wrongQuestionChatArchivePreviewVisible ? (
+            <div className="mt-4 space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-slate-950/50">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">归档预览</p>
+                <span className="text-xs text-slate-500 dark:text-slate-400">最终保存前会按这里的内容归档</span>
+              </div>
+              {wrongQuestionChatAssetPreviews.length > 0 || wrongQuestionChatLocalPreviews.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {(wrongQuestionChatAssetPreviews.length > 0
+                    ? wrongQuestionChatAssetPreviews.map((url, index) => ({ name: `已上传图片 ${index + 1}`, url }))
+                    : wrongQuestionChatLocalPreviews
+                  ).map((item) => (
+                    <a
+                      key={`archive-preview-${item.name}-${item.url}`}
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white dark:border-white/10 dark:bg-slate-950/70"
+                    >
+                      <img src={item.url} alt={item.name} className="h-20 w-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">题目文本</p>
+                  <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">{wrongQuestionChatDraft.questionText.trim() || '待补充'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">专题 / 知识点</p>
+                  <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">
+                    {wrongQuestionChatDraft.topicCategory.trim() || '未填写'}
+                    {wrongQuestionChatKnowledgeTagList.length > 0 ? ` / ${wrongQuestionChatKnowledgeTagList.join('、')}` : ' / 待确认'}
+                  </p>
+                </div>
+              </div>
+              {wrongQuestionChatSession?.summaryText.trim() ? (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">归档摘要（仅归档）</p>
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{wrongQuestionChatSession.summaryText.trim()}</p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {wrongQuestionChatSession && wrongQuestionChatSession.status !== 'archived' && wrongQuestionChatConfirmationReasonLabels.length > 0 ? (
+            <div className="mt-4 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">当前信息不足，归档后会进入老师复核</p>
+                <p className="mt-1 leading-6">{wrongQuestionChatConfirmationReasonLabels.join('、')}</p>
+              </div>
+            </div>
+          ) : null}
+
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
             {!wrongQuestionChatSession ? (
               <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
@@ -2219,6 +2337,26 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                 当前提示：{wrongQuestionChatLastAssistantMessage.content}
               </p>
+            ) : null}
+            {wrongQuestionChatSession?.currentStage === 'ask_help_mode' && wrongQuestionChatSession.status !== 'archived' ? (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSendWrongQuestionChatMessage('先给我一点提示，我想自己再试试。')}
+                  disabled={wrongQuestionChatSending}
+                  className={workspaceSecondaryButtonClass}
+                >
+                  先看提示
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSendWrongQuestionChatMessage('请带我完整复盘一遍这道题。')}
+                  disabled={wrongQuestionChatSending}
+                  className={workspaceSecondaryButtonClass}
+                >
+                  完整复盘
+                </button>
+              </div>
             ) : null}
             <textarea
               value={wrongQuestionChatDraft.replyText}

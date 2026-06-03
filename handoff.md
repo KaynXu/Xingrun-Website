@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-03 已把实施计划里的 B2 归档质量层补齐：`frontend/src/SmartWrongQuestionsPage.tsx` 现在会在 `AI 对话归档` 面板里显示归档预览，明确展示原图、题目文本、专题/知识点和 `归档摘要（仅归档）`，把 assistant 侧结构化摘要和学生可见对话拆开；在 `ask_help_mode` 阶段新增 `先看提示` / `完整复盘` 快捷按钮，不会打断原有 archive loop；当当前素材不足时也会在聊天面板里提前亮出“归档后会进入老师复核”的提示和原因列表。`frontend/src/smart-wrong-questions.test.ts` 已补 source 回归，proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_chat_b2_proof.sh`。
 - 2026-06-03 已把实施计划里的 B1 最小 AI 对话入口真正接到现有产品界面：`app.py` 新增 `POST /api/wrong-question-ingestions/<run_id>/assets/upload` 和 `/api/wrong-question-ingestion-assets/<filename>`，允许先创建通用 ingestion run、再上传 1 张或多张错题图片成为同一条 `ai_chat` 归档链路的 source assets；`frontend/src/SmartWrongQuestionsPage.tsx` 在学生错题本 modal 右侧新增 `AI 对话归档` 面板，现可上传错题图、填写题目文本/专题/知识点、自动创建 `wrong_question_ingestion_runs`、接入 `POST /api/wrong-question-chats/<session_id>/stream` 的三步追问、刷新后通过 `GET /api/wrong-question-ingestions` + `GET /api/wrong-question-chats/<session_id>` 恢复最近会话，并在完成后内联显示归档结果与跳转链接。`frontend/src/smartWrongQuestions.ts` 也补了 ai_chat/ingestion/chat session 的前端归一化结构。这个切片把实施计划里的 B1 五条全部补齐，但当前入口仍是工作区里的 notebook modal，不是最终独立学生聊天页。proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_chat_ui_proof.sh`。
 - 2026-06-03 已补上 archive finalization 的 retry-safe 防重：`app.py` 里的 `POST /api/wrong-question-ingestions/<run_id>/archive` 现在如果该 run 已经归档出错题记录，会直接返回已有 records，并把 `created=false`、`idempotent_reuse=true` 明确打回响应，不再重复创建第二条；`POST /api/wrong-question-chats/<session_id>/stream` 也会在 session 已归档且已有 records 时直接复用已有归档结果，不再追加新的 user/assistant message 或再落第二条错题。这个切片把 A3 第五条补齐了，先用最低复杂度把 UI 重试/网络抖动下最容易发生的重复归档问题堵住。proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_archive_idempotency_proof.sh`。
 - 2026-06-03 已补上错题 archive detail 的直接联通能力：`app.py` 现在会给归档后的错题记录统一补 `detail_url` 和 `archive_context`，其中包含 `ingestion_run_id/url`、`chat_session_id/url`；本地 `GET /api/wrong-questions/<record_id>` 详情还会额外带 `linked_ingestion_run`、`linked_chat_session` 紧凑摘要，`GET /api/wrong-question-ingestions/<run_id>` 和 `GET /api/wrong-question-chats/<session_id>` 里的 `records` 也都能直接反查同一条链路。这样 AI 对话、工作台和错题详情终于能围绕同一条 archive record 互相跳转，不用再靠人工拼 id。proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_archive_detail_linkage_proof.sh`。
@@ -468,6 +469,8 @@
 - 2026-06-02 已按用户截图继续优化错题 PDF 文案和排版：错题练习材料 prompt 禁止 AI 套话、`本题重点修正`、`订正时先补全`、bullet/编号列表；服务端归一化会清理这些模板前缀；前端 PDF 渲染会把 `A.6 B.7 C.8 D.9` 拆成 `A. 6`、`B. 7`、`C. 8`、`D. 9` 分行。工作流文档也同步改成自然短句和选项拆行规则。proof 已通过：`py_compile ai_processor.py pdf_engine.py`、`tests.test_ai_processor_prompt` 20 条、前端 PDF 渲染测试 9 条、`git diff --check`；临时 PDF 文本抽取显示 `has_options_with_space=True`、`bad_template_count=0`，第二页目视确认选项分行正常。
 - 2026-06-02 已确认 Codex 自动化 `automation-2` 使用新工作流 `docs/wrong-questions/daily-wecom-wrong-question-automation-workflow.md`，并明确禁止网页 HTTP API、Flask 路由、前端页面和旧 practice-pack/API 口径；已删除旧 practice-pack 设计/计划维护文档，新 daily-wecom workflow 顶部也改为“旧文档已废弃并移除”。
 - 当前工作区应保持短生命周期、干净状态；不要再把长流水追加回这个文件。
+- 下一步优先做 E1：把 `needs_teacher_confirmation` 触发原因、source assets、OCR/split 轨迹和老师修正入口挂到统一错题详情里，让聊天入口和未来工作台共用同一条老师复核链路。
+- E1 之后继续做 B3：把已归档错题重新接回后续 AI 跟进、再练和掌握度判断，开始形成真正的长期闭环。
 - 后续更新这份文件时，只写：
   - 当前状态有没有变化
   - 下一步最值得做什么

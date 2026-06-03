@@ -1331,6 +1331,11 @@ test('SmartWrongQuestionsPage wires the AI wrong-question chat upload and resume
   assert.match(pageSource, /已恢复最近一次错题对话/);
   assert.match(pageSource, /开始 AI 追问/);
   assert.match(pageSource, /已归档到错题库/);
+  assert.match(pageSource, /归档预览/);
+  assert.match(pageSource, /归档摘要（仅归档）/);
+  assert.match(pageSource, /先看提示/);
+  assert.match(pageSource, /完整复盘/);
+  assert.match(pageSource, /当前信息不足，归档后会进入老师复核/);
 });
 
 test('SmartWrongQuestionsPage source exposes a hard delete action for local wechat records', () => {
