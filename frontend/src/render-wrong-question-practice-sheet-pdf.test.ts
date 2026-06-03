@@ -245,6 +245,28 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
 });
 
+test('buildDocumentMarkup renders original image for non-geometry practice items when image data exists', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: false,
+        question_text_snapshot: '计算 18÷3×2 的结果。',
+        image_data_url: 'data:image/png;base64,ZmFrZQ==',
+      },
+    ],
+  });
+
+  assert.match(markup, /计算 18÷3×2 的结果/);
+  assert.match(markup, /原题图片/);
+  assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
+});
+
 test('buildDocumentMarkup renders generated diagram practice items with question text', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',

@@ -988,7 +988,7 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
         if diagram_data_url:
             normalized_item["image_data_url"] = diagram_data_url
             normalized_item["diagram_type"] = diagram_type
-        elif normalized_item["is_geometry"]:
+        else:
             image_url = str(item.get("image_url_snapshot") or "")
             image_bytes = _fetch_wrong_question_image_bytes(image_url)
             if image_bytes:

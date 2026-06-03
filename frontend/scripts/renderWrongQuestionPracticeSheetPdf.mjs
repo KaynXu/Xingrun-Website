@@ -61,17 +61,18 @@ function buildQuestionBlock(item) {
     `;
   }
 
-  if (item.is_geometry) {
-    if (item.image_data_url) {
-      return `
-        ${questionTextBlock}
-        <div class="geometry-card">
-          <div class="geometry-title">几何原题图片</div>
-          <img src="${item.image_data_url}" alt="几何原题图片" class="geometry-image" />
-        </div>
-      `;
-    }
+  if (item.image_data_url) {
+    const imageTitle = item.is_geometry ? '几何原题图片' : '原题图片';
+    return `
+      ${questionTextBlock}
+      <div class="geometry-card">
+        <div class="geometry-title">${imageTitle}</div>
+        <img src="${item.image_data_url}" alt="${imageTitle}" class="geometry-image" />
+      </div>
+    `;
+  }
 
+  if (item.is_geometry) {
     return `
       ${questionTextBlock}
       <div class="geometry-card">
