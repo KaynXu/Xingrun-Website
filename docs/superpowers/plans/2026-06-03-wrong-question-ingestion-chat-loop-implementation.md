@@ -317,6 +317,9 @@ This track turns the archived wrong-question record into the student-facing revi
   - `confirmation_reasons[]`
 - [ ] Stop passing two opaque writing prompts straight into layout.
 
+Progress note (2026-06-03):
+- The browser PDF renderer has started consuming `structured_content` directly for `方法提醒 / 挖空复盘 / 需老师确认`, while still falling back to the legacy dual-prompt fields for older records and partially migrated generation paths.
+
 #### F3. Quality rules
 
 - [ ] Geometric / diagram-heavy records must preserve image traceability.

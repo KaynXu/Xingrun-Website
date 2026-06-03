@@ -95,6 +95,22 @@ function buildLatexTextBlock(value) {
   return preview.html || escapeHtml(value || '');
 }
 
+function normalizePossiblyJsonStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 function normalizePromptText(prompt) {
   return String(prompt ?? '')
     .replaceAll('\\r\\n', '\n')
@@ -144,24 +160,116 @@ function renderPromptHtml(prompt) {
     .replaceAll('\n', '<br />');
 }
 
-function buildWritingSection(reasonPrompt, improvementPrompt, title = '') {
+function normalizeStructuredContent(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const structured = source.structured_content && typeof source.structured_content === 'object'
+    ? source.structured_content
+    : (source.structuredContent && typeof source.structuredContent === 'object' ? source.structuredContent : {});
+  const blankReviewBlocks = Array.isArray(structured.blank_review_blocks)
+    ? structured.blank_review_blocks
+    : (Array.isArray(structured.blankReviewBlocks) ? structured.blankReviewBlocks : []);
+
+  return {
+    mistakeFocus: String(structured.mistake_focus ?? structured.mistakeFocus ?? '').trim(),
+    reviewGoal: String(structured.review_goal ?? structured.reviewGoal ?? '').trim(),
+    methodHintLines: Array.isArray(structured.method_hint_lines)
+      ? structured.method_hint_lines.map((line) => String(line || '').trim()).filter(Boolean)
+      : (Array.isArray(structured.methodHintLines)
+        ? structured.methodHintLines.map((line) => String(line || '').trim()).filter(Boolean)
+        : []),
+    blankReviewBlocks: blankReviewBlocks
+      .map((block) => {
+        const sourceBlock = block && typeof block === 'object' ? block : {};
+        const lines = Array.isArray(sourceBlock.lines)
+          ? sourceBlock.lines.map((line) => String(line || '').trim()).filter(Boolean)
+          : [];
+        return {
+          title: String(sourceBlock.title || '').trim(),
+          lines,
+        };
+      })
+      .filter((block) => block.title || block.lines.length > 0),
+    teacherFeedback: String(structured.teacher_feedback ?? structured.teacherFeedback ?? '').trim(),
+    confirmationReasons: normalizePossiblyJsonStringList(
+      structured.confirmation_reasons
+      ?? structured.confirmationReasons
+      ?? source.confirmation_reasons
+      ?? source.confirmation_reasons_json
+      ?? source.confirmationReasons
+      ?? source.confirmationReasonsJson,
+    ),
+  };
+}
+
+function buildLegacyWritingBlocks(reasonPrompt, improvementPrompt) {
   const sections = [
     extractWritingPromptBody(reasonPrompt),
     extractWritingPromptBody(improvementPrompt),
   ].filter(Boolean);
 
-  if (sections.length === 0) {
+  return sections.map((section) => ({
+    title: '',
+    contentHtml: renderPromptHtml(section),
+    kind: 'legacy',
+  }));
+}
+
+function buildMethodHintSection(item) {
+  const structured = normalizeStructuredContent(item);
+  const hintLines = structured.methodHintLines;
+  if (hintLines.length === 0) {
+    return '';
+  }
+  return `
+    <section class="method-hint-card">
+      <div class="section-title">方法提醒</div>
+      <div class="method-hint-list">
+        ${hintLines.map((line) => `<div class="method-hint-line">${buildLatexTextBlock(line)}</div>`).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function buildReviewMeta(item) {
+  const structured = normalizeStructuredContent(item);
+  const chips = [
+    structured.mistakeFocus ? `错因定位：${structured.mistakeFocus}` : '',
+    structured.reviewGoal ? `本次目标：${structured.reviewGoal}` : '',
+  ].filter(Boolean);
+  if (chips.length === 0) {
+    return '';
+  }
+  return `
+    <div class="review-meta-row">
+      ${chips.map((chip) => `<span class="review-meta-chip">${escapeHtml(chip)}</span>`).join('')}
+    </div>
+  `;
+}
+
+function buildWritingSection(item, title = '挖空复盘') {
+  const structured = normalizeStructuredContent(item);
+  const blocks = structured.blankReviewBlocks.length > 0
+    ? structured.blankReviewBlocks.map((block) => ({
+      title: block.title,
+      contentHtml: block.lines.map((line) => renderPromptHtml(line)).join('<br />'),
+      kind: 'structured',
+    }))
+    : buildLegacyWritingBlocks(item.reason_blank_prompt || '', item.improvement_summary_prompt || '');
+
+  if (blocks.length === 0) {
     return '';
   }
 
   return `
     <section class="writing-card">
-      ${title ? `<div class="writing-title">${escapeHtml(title)}</div>` : ''}
-      ${sections
+      ${title ? `<div class="section-title">${escapeHtml(title)}</div>` : ''}
+      ${buildReviewMeta(item)}
+      ${blocks
         .map(
-          (section) => `
+          (block) => `
             <div class="writing-prompt-block">
-              <div class="writing-prompt">${renderPromptHtml(section)}</div>
+              ${block.title ? `<div class="writing-prompt-title">${escapeHtml(block.title)}</div>` : ''}
+              <div class="writing-prompt">${block.contentHtml}</div>
             </div>
           `,
         )
@@ -170,10 +278,28 @@ function buildWritingSection(reasonPrompt, improvementPrompt, title = '') {
   `;
 }
 
-function buildRedoWorkArea() {
+function buildTeacherConfirmationSection(item) {
+  const structured = normalizeStructuredContent(item);
+  const reasons = structured.confirmationReasons;
+  if (reasons.length === 0) {
+    return '';
+  }
+  return `
+    <section class="confirmation-card">
+      <div class="section-title">需老师确认</div>
+      <div class="confirmation-copy">当前识别或归档信息仍需老师复核。</div>
+      <div class="confirmation-reasons">
+        ${reasons.map((reason) => `<span class="confirmation-chip">${escapeHtml(reason)}</span>`).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function buildRedoWorkArea(label = '重做这题') {
   return `
     <section class="redo-work-area">
-      <div class="redo-work-label">重做这题</div>
+      <div class="section-title">订正区</div>
+      <div class="redo-work-label">${escapeHtml(label)}</div>
       <div class="redo-lines">
         ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
       </div>
@@ -187,10 +313,11 @@ function buildItemMarkup(item) {
       <div class="record-header">
         <div class="record-index">第 ${escapeHtml(item.question_order || '')} 题</div>
       </div>
-      <div class="record-label">题目内容</div>
+      <div class="record-label">原题 / 原图</div>
       ${buildQuestionBlock(item)}
-
-      ${buildWritingSection(item.reason_blank_prompt || '', item.improvement_summary_prompt || '')}
+      ${buildMethodHintSection(item)}
+      ${buildWritingSection(item)}
+      ${buildTeacherConfirmationSection(item)}
       ${buildRedoWorkArea()}
     </section>
   `;
@@ -198,11 +325,7 @@ function buildItemMarkup(item) {
 
 function buildScheduledItemMarkup(item, label) {
   const trainingGoal = String(item.trainingGoal || '').trim();
-  const writingSection = buildWritingSection(
-    item.reason_blank_prompt || '',
-    item.improvement_summary_prompt || '',
-    '错题复习',
-  );
+  const writingSection = buildWritingSection(item, '挖空复盘');
   const redoLabel = item.itemType === 'variant' ? '重做变式' : '重做原题';
   return `
     <section class="record-page">
@@ -211,10 +334,12 @@ function buildScheduledItemMarkup(item, label) {
         <div class="record-type">${escapeHtml(item.itemType === 'variant' ? '变式题' : '原错题')}</div>
       </div>
       ${trainingGoal ? `<div class="pack-goal">训练目标：${escapeHtml(trainingGoal)}</div>` : ''}
-      ${writingSection}
-      <div class="record-label redo-question-label">${redoLabel}</div>
+      <div class="record-label">原题 / 原图</div>
       ${buildQuestionBlock(item)}
-      ${buildRedoWorkArea()}
+      ${buildMethodHintSection(item)}
+      ${writingSection}
+      ${buildTeacherConfirmationSection(item)}
+      ${buildRedoWorkArea(redoLabel)}
     </section>
   `;
 }
@@ -382,7 +507,9 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-card,
-          .writing-card {
+          .writing-card,
+          .method-hint-card,
+          .confirmation-card {
             border: 1px solid #dbe2ea;
             border-radius: 10px;
             padding: 16px;
@@ -409,15 +536,56 @@ export async function buildDocumentMarkup(payload) {
             padding-bottom: 22px;
           }
 
-          .writing-title {
+          .section-title {
             margin-bottom: 12px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
+          .method-hint-card,
+          .confirmation-card {
+            margin-top: 14px;
+          }
+
+          .method-hint-line {
+            font-size: 14px;
+            line-height: 1.8;
+            color: #334155;
+          }
+
+          .method-hint-line + .method-hint-line {
+            margin-top: 8px;
+          }
+
+          .review-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+          }
+
+          .review-meta-chip,
+          .confirmation-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.5;
+          }
+
           .writing-prompt-block + .writing-prompt-block {
             margin-top: 18px;
+          }
+
+          .writing-prompt-title {
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
           }
 
           .writing-prompt {
@@ -472,6 +640,19 @@ export async function buildDocumentMarkup(payload) {
           .geometry-placeholder {
             color: #64748b;
             font-size: 14px;
+          }
+
+          .confirmation-copy {
+            font-size: 13px;
+            line-height: 1.7;
+            color: #475569;
+          }
+
+          .confirmation-reasons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
           }
 
           .xr-latex-preview {

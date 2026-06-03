@@ -36,11 +36,54 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.equal((markup.match(/class="writing-card"/g) || []).length, 1);
   assert.match(markup, /redo-work-area/);
   assert.match(markup, /redo-line/);
+  assert.match(markup, /原题 \/ 原图/);
+  assert.match(markup, /挖空复盘/);
+  assert.match(markup, /订正区/);
   assert.match(markup, /重做这题/);
   assert.doesNotMatch(markup, /可选/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
   assert.match(markup, /xr-latex-preview/);
+});
+
+test('buildDocumentMarkup prefers structured content for method hints, review blocks, and confirmation copy', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 2,
+        wrong_question_record_id: 'wechat-structured',
+        is_geometry: false,
+        question_text_snapshot: '甲乙相向而行，求相遇时间。',
+        structured_content: {
+          mistake_focus: '速度和时间对应关系写反',
+          review_goal: '先标相遇总路程再列式',
+          method_hint_lines: ['先把总路程和速度和对应起来。', '再检查时间是不是同一段。'],
+          blank_review_blocks: [
+            {
+              title: '相遇关系补全',
+              lines: ['先补出总路程和 ______ 的对应关系。'],
+            },
+          ],
+          confirmation_reasons: ['needs_unit_check', 'teacher_review_required'],
+        },
+        reason_blank_prompt: '旧提示\n这题我错在 ______。',
+        improvement_summary_prompt: '旧提醒\n下次我会先 ______。',
+      },
+    ],
+  });
+
+  assert.match(markup, /方法提醒/);
+  assert.match(markup, /先把总路程和速度和对应起来。/);
+  assert.match(markup, /错因定位：速度和时间对应关系写反/);
+  assert.match(markup, /本次目标：先标相遇总路程再列式/);
+  assert.match(markup, /相遇关系补全/);
+  assert.match(markup, /需老师确认/);
+  assert.match(markup, /needs_unit_check/);
+  assert.doesNotMatch(markup, /旧提示/);
 });
 
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
@@ -183,7 +226,7 @@ test('buildDocumentMarkup renders scheduled answer math through latex preview', 
   assert.doesNotMatch(answerSection, /\$x=2\$/);
 });
 
-test('buildDocumentMarkup puts scheduled error-review blanks before redo questions', async () => {
+test('buildDocumentMarkup keeps scheduled practice pages in the final four-area order', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
     className: '六年级 1 班',
@@ -209,15 +252,19 @@ test('buildDocumentMarkup puts scheduled error-review blanks before redo questio
     answerItems: [],
   });
 
-  const reviewIndex = markup.indexOf('错题复习');
-  const reasonIndex = markup.indexOf('我这题错在');
-  const redoIndex = markup.indexOf('重做原题');
+  const sourceIndex = markup.indexOf('原题 / 原图');
   const questionIndex = markup.indexOf('解方程');
+  const reviewIndex = markup.indexOf('挖空复盘');
+  const reasonIndex = markup.indexOf('我这题错在');
+  const correctionIndex = markup.indexOf('订正区');
+  const redoIndex = markup.indexOf('重做原题');
 
+  assert.ok(sourceIndex > -1);
+  assert.ok(questionIndex > sourceIndex);
   assert.ok(reviewIndex > -1);
   assert.ok(reasonIndex > reviewIndex);
-  assert.ok(redoIndex > reasonIndex);
-  assert.ok(questionIndex > redoIndex);
+  assert.ok(correctionIndex > reasonIndex);
+  assert.ok(redoIndex > correctionIndex);
   assert.match(markup, /blank-gap/);
 });
 
@@ -247,7 +294,7 @@ test('buildDocumentMarkup renders latex inside scheduled error-review blanks', a
     answerItems: [],
   });
 
-  const reviewSection = markup.slice(markup.indexOf('错题复习'), markup.indexOf('重做原题'));
+  const reviewSection = markup.slice(markup.indexOf('挖空复盘'), markup.indexOf('订正区'));
   assert.match(reviewSection, /class="katex"/);
   assert.doesNotMatch(reviewSection, /\$180\^\\circ/);
   assert.match(reviewSection, /blank-gap/);
