@@ -1504,6 +1504,12 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /归档来源/);
   assert.match(pageSource, /老师复核原因/);
   assert.match(pageSource, /最近处理：/);
+  assert.match(pageSource, /学生反思/);
+  assert.match(pageSource, /为什么错/);
+  assert.match(pageSource, /不理解的步骤/);
+  assert.match(pageSource, /希望怎么帮助/);
+  assert.match(pageSource, /反思模式：/);
+  assert.match(pageSource, /selectedRecordReflectionSummaryText/);
   assert.match(pageSource, /对话归档摘要/);
   assert.match(pageSource, /生成版本/);
   assert.match(pageSource, /再练闭环/);

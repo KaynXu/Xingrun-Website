@@ -476,10 +476,11 @@ The current round now also lands the first explicit archive/reflection authority
 - the archived record now keeps a normalized reflection payload with `mode / summary_text / why_wrong / unknown_step / help_preference / answered_stages / session_entrypoint`
 - existing historical rows keep a backward-compatible fallback summary synthesized from legacy child-reason fields, so the new spine can be adopted without breaking older records
 - this keeps the student AI-chat reflection legible to later review, practice, and mastery steps without requiring each downstream surface to reconstruct the same semantics again
+- the teacher-facing wrong-question detail surface now reads and shows that same reflection spine directly, so review does not have to infer the student's “why wrong / what step is unclear / what kind of help they want” from a single flat archive summary
 
 The next highest-value task is now **the first reflection-authority follow-through slice after persistence**:
 
-- make teacher review and rework consume/edit the same `reflection_summary` spine rather than only reading `child_reason_*`
+- extend teacher review and rework from “read-only reflection consumption” into “same-spine editing and return-for-rework”, rather than only reading `child_reason_*`
 - let practice generation and later PDF sections read from `reflection_summary + question_structured + knowledge_tags` as the default teaching inputs
 - only after those core downstream consumers are on the shared reflection spine should we spend more time multiplying alternate entrypoints or introducing mastery-specific classifiers
 

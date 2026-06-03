@@ -145,6 +145,18 @@ const WRONG_QUESTION_CHAT_STAGE_LABELS: Record<string, string> = {
   ready_to_archive: '已归档',
 };
 
+const WRONG_QUESTION_REFLECTION_MODE_LABELS: Record<string, string> = {
+  archive_reflection: '归档反思',
+  teacher_rework: '老师退回补充',
+  mastery_followup: '掌握追问',
+};
+
+const WRONG_QUESTION_REFLECTION_STAGE_LABELS: Record<string, string> = {
+  ask_why_wrong: '知道为什么错',
+  ask_unknown_step: '具体卡点',
+  ask_help_mode: '需要什么帮助',
+};
+
 const WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS: Record<string, string> = {
   missing_image_asset: '缺少原始图片',
   missing_question_text: '题目文本还不完整',
@@ -707,6 +719,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
     return buildWrongQuestionAuthedPath(`/api/wrong-question-practice-sheets/${sheetId}/pdf/download`);
   }, [selectedRecordMasteryTracking?.latestPracticeSheetId]);
+  const selectedRecordReflectionSummary = selectedRecord?.reflectionSummary;
+  const selectedRecordReflectionSummaryText = useMemo(() => {
+    return selectedRecordReflectionSummary?.summaryText?.trim()
+      || selectedRecord?.linkedChatSession?.summaryText?.trim()
+      || '';
+  }, [selectedRecord?.linkedChatSession?.summaryText, selectedRecordReflectionSummary?.summaryText]);
+  const selectedRecordReflectionAnsweredStageLabels = useMemo(() => {
+    return (selectedRecordReflectionSummary?.answeredStages ?? [])
+      .map((stage) => WRONG_QUESTION_REFLECTION_STAGE_LABELS[stage] || stage)
+      .filter(Boolean);
+  }, [selectedRecordReflectionSummary?.answeredStages]);
   const selectedQuestionTextPreview = useMemo(() => {
     if (!selectedRecord || !selectedDraft || selectedRecord.isGeometry) {
       return null;
@@ -3216,9 +3239,57 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 </div>
 
                 <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">学生反思</p>
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                    {selectedRecordReflectionSummaryText || '暂无结构化反思摘要'}
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">为什么错</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                        {selectedRecordReflectionSummary?.whyWrong || selectedRecord.childReasonText || '暂无'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">不理解的步骤</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                        {selectedRecordReflectionSummary?.unknownStep || selectedRecord.reasonCoreIssue || '暂无'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">希望怎么帮助</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                        {selectedRecordReflectionSummary?.helpPreference || selectedRecord.reasonNextStep || '暂无'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span>反思模式：{WRONG_QUESTION_REFLECTION_MODE_LABELS[selectedRecordReflectionSummary?.mode || ''] || selectedRecordReflectionSummary?.mode || '未记录'}</span>
+                    {selectedRecord.linkedChatSession ? (
+                      <>
+                        <span>阶段：{WRONG_QUESTION_CHAT_STAGE_LABELS[selectedRecord.linkedChatSession.currentStage] || selectedRecord.linkedChatSession.currentStage || '未记录'}</span>
+                        <span>消息数：{selectedRecord.linkedChatSession.messages.length}</span>
+                      </>
+                    ) : null}
+                  </div>
+                  {selectedRecordReflectionAnsweredStageLabels.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedRecordReflectionAnsweredStageLabels.map((label) => (
+                        <span
+                          key={label}
+                          className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className={`${workspaceCardClass} space-y-3 p-4`}>
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">对话归档摘要</p>
                   <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
-                    {selectedRecord.linkedChatSession?.summaryText || '暂无对话摘要'}
+                    {selectedRecordReflectionSummaryText || '暂无对话摘要'}
                   </p>
                   {selectedRecord.linkedChatSession ? (
                     <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
