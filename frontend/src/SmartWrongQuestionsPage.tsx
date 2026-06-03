@@ -3246,21 +3246,51 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   <div className="grid gap-3 md:grid-cols-3">
                     <div>
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">为什么错</p>
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
-                        {selectedRecordReflectionSummary?.whyWrong || selectedRecord.childReasonText || '暂无'}
-                      </p>
+                      {selectedDraft ? (
+                        <textarea
+                          aria-label="学生反思：为什么错"
+                          value={selectedDraft.reflectionWhyWrong ?? ''}
+                          onChange={(event) => handleDraftChange('reflectionWhyWrong', event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 min-h-24`}
+                          placeholder="老师可补充学生真正的错因表达"
+                        />
+                      ) : (
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                          {selectedRecordReflectionSummary?.whyWrong || selectedRecord.childReasonText || '暂无'}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">不理解的步骤</p>
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
-                        {selectedRecordReflectionSummary?.unknownStep || selectedRecord.reasonCoreIssue || '暂无'}
-                      </p>
+                      {selectedDraft ? (
+                        <textarea
+                          aria-label="学生反思：不理解的步骤"
+                          value={selectedDraft.reflectionUnknownStep ?? ''}
+                          onChange={(event) => handleDraftChange('reflectionUnknownStep', event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 min-h-24`}
+                          placeholder="老师可补充学生卡住的具体步骤"
+                        />
+                      ) : (
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                          {selectedRecordReflectionSummary?.unknownStep || selectedRecord.reasonCoreIssue || '暂无'}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">希望怎么帮助</p>
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
-                        {selectedRecordReflectionSummary?.helpPreference || selectedRecord.reasonNextStep || '暂无'}
-                      </p>
+                      {selectedDraft ? (
+                        <textarea
+                          aria-label="学生反思：希望怎么帮助"
+                          value={selectedDraft.reflectionHelpPreference ?? ''}
+                          onChange={(event) => handleDraftChange('reflectionHelpPreference', event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 min-h-24`}
+                          placeholder="老师可补充更合适的引导方式"
+                        />
+                      ) : (
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                          {selectedRecordReflectionSummary?.helpPreference || selectedRecord.reasonNextStep || '暂无'}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">

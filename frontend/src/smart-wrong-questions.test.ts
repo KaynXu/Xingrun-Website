@@ -1454,6 +1454,16 @@ test('buildWrongQuestionReviewPayload keeps ai chat correction fields for local 
     questionText: '原始题干',
     needsTeacherConfirmation: true,
     confirmationReasons: ['missing_question_text'],
+    reflectionSummary: {
+      schemaVersion: 'wrong_question_reflection_summary.v1',
+      mode: 'archive_reflection',
+      summaryText: '错因自述：原始错因；卡点：原始卡点；期望支持：原始帮助。',
+      whyWrong: '原始错因',
+      unknownStep: '原始卡点',
+      helpPreference: '原始帮助',
+      answeredStages: ['ask_why_wrong', 'ask_unknown_step', 'ask_help_mode'],
+      sessionEntrypoint: 'wrong_question_chat',
+    },
     analysis: {
       questionCategory: '方程',
       errorType: '概念错误',
@@ -1467,6 +1477,9 @@ test('buildWrongQuestionReviewPayload keeps ai chat correction fields for local 
   draft.selectedKnowledgePoints = ['一元一次方程', '移项'];
   draft.needsTeacherConfirmation = false;
   draft.confirmationReasons = [];
+  draft.reflectionWhyWrong = '老师补齐后的错因';
+  draft.reflectionUnknownStep = '老师确认的卡点';
+  draft.reflectionHelpPreference = '先提示，再让学生复述';
 
   const payload = buildWrongQuestionReviewPayload(draft);
 
@@ -1474,6 +1487,16 @@ test('buildWrongQuestionReviewPayload keeps ai chat correction fields for local 
   assert.deepEqual(payload.selectedKnowledgePoints, ['一元一次方程', '移项']);
   assert.equal(payload.needs_teacher_confirmation, false);
   assert.deepEqual(payload.confirmation_reasons_json, []);
+  assert.deepEqual(payload.reflection_summary_json, {
+    schema_version: 'wrong_question_reflection_summary.v1',
+    mode: 'archive_reflection',
+    summary_text: '错因自述：老师补齐后的错因；卡点：老师确认的卡点；期望支持：先提示，再让学生复述',
+    why_wrong: '老师补齐后的错因',
+    unknown_step: '老师确认的卡点',
+    help_preference: '先提示，再让学生复述',
+    answered_stages: ['ask_why_wrong', 'ask_unknown_step', 'ask_help_mode'],
+    session_entrypoint: 'wrong_question_chat',
+  });
 });
 
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
@@ -1510,6 +1533,9 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /希望怎么帮助/);
   assert.match(pageSource, /反思模式：/);
   assert.match(pageSource, /selectedRecordReflectionSummaryText/);
+  assert.match(pageSource, /aria-label="学生反思：为什么错"/);
+  assert.match(pageSource, /aria-label="学生反思：不理解的步骤"/);
+  assert.match(pageSource, /aria-label="学生反思：希望怎么帮助"/);
   assert.match(pageSource, /对话归档摘要/);
   assert.match(pageSource, /生成版本/);
   assert.match(pageSource, /再练闭环/);

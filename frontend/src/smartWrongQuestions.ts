@@ -28,6 +28,11 @@ export interface WrongQuestionReviewDraft {
   questionText?: string;
   needsTeacherConfirmation?: boolean;
   confirmationReasons?: string[];
+  reflectionWhyWrong?: string;
+  reflectionUnknownStep?: string;
+  reflectionHelpPreference?: string;
+  reflectionMode?: string;
+  reflectionSessionEntrypoint?: string;
 }
 
 export interface WrongQuestionReviewPayload {
@@ -44,6 +49,7 @@ export interface WrongQuestionReviewPayload {
   needs_teacher_confirmation?: boolean;
   confirmation_reasons_json?: string[];
   confirmation_action?: string;
+  reflection_summary_json?: Record<string, unknown>;
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
@@ -1110,6 +1116,58 @@ function normalizeDraftList(values: string[]): string[] {
     .filter(Boolean);
 }
 
+function buildWrongQuestionReflectionSummaryPayload(draft: WrongQuestionReviewDraft): Record<string, unknown> | undefined {
+  const whyWrong = draft.reflectionWhyWrong?.trim() ?? '';
+  const unknownStep = draft.reflectionUnknownStep?.trim() ?? '';
+  const helpPreference = draft.reflectionHelpPreference?.trim() ?? '';
+  const answeredStages: string[] = [];
+  if (whyWrong) {
+    answeredStages.push('ask_why_wrong');
+  }
+  if (unknownStep) {
+    answeredStages.push('ask_unknown_step');
+  }
+  if (helpPreference) {
+    answeredStages.push('ask_help_mode');
+  }
+  const summaryParts: string[] = [];
+  if (whyWrong) {
+    summaryParts.push(`错因自述：${whyWrong}`);
+  }
+  if (unknownStep) {
+    summaryParts.push(`卡点：${unknownStep}`);
+  }
+  if (helpPreference) {
+    summaryParts.push(`期望支持：${helpPreference}`);
+  }
+  const summaryText = summaryParts.join('；');
+  const mode = draft.reflectionMode?.trim() || '';
+  const sessionEntrypoint = draft.reflectionSessionEntrypoint?.trim() || '';
+  if (!summaryText && !mode && !sessionEntrypoint && answeredStages.length === 0) {
+    return undefined;
+  }
+
+  const payload: Record<string, unknown> = {
+    schema_version: 'wrong_question_reflection_summary.v1',
+    mode: mode || 'archive_reflection',
+    summary_text: summaryText,
+    answered_stages: answeredStages,
+  };
+  if (whyWrong) {
+    payload.why_wrong = whyWrong;
+  }
+  if (unknownStep) {
+    payload.unknown_step = unknownStep;
+  }
+  if (helpPreference) {
+    payload.help_preference = helpPreference;
+  }
+  if (sessionEntrypoint) {
+    payload.session_entrypoint = sessionEntrypoint;
+  }
+  return payload;
+}
+
 export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
   const draft: WrongQuestionReviewDraft = {
     selectedErrorType: record.analysis.selectedErrorType?.trim()
@@ -1141,6 +1199,11 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
   if (record.source === 'ai_chat') {
     draft.needsTeacherConfirmation = Boolean(record.needsTeacherConfirmation);
     draft.confirmationReasons = normalizeDraftList(record.confirmationReasons ?? []);
+    draft.reflectionWhyWrong = record.reflectionSummary?.whyWrong?.trim() || record.childReasonText?.trim() || '';
+    draft.reflectionUnknownStep = record.reflectionSummary?.unknownStep?.trim() || record.reasonCoreIssue?.trim() || '';
+    draft.reflectionHelpPreference = record.reflectionSummary?.helpPreference?.trim() || record.reasonNextStep?.trim() || '';
+    draft.reflectionMode = record.reflectionSummary?.mode?.trim() || 'archive_reflection';
+    draft.reflectionSessionEntrypoint = record.reflectionSummary?.sessionEntrypoint?.trim() || '';
   }
 
   return draft;
@@ -1174,6 +1237,11 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
     payload.confirmation_reasons_json = draft.needsTeacherConfirmation
       ? normalizeDraftList(draft.confirmationReasons ?? [])
       : [];
+  }
+
+  const reflectionSummaryPayload = buildWrongQuestionReflectionSummaryPayload(draft);
+  if (reflectionSummaryPayload) {
+    payload.reflection_summary_json = reflectionSummaryPayload;
   }
 
   return payload;
@@ -1245,6 +1313,15 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
       : record.confirmationReasons,
     analysis: nextAnalysis,
   };
+  if (isObjectRecord(payload.reflection_summary_json)) {
+    const reflectionSummary = normalizeWrongQuestionReflectionSummary(payload.reflection_summary_json);
+    if (reflectionSummary) {
+      nextRecord.reflectionSummary = reflectionSummary;
+      nextRecord.childReasonText = reflectionSummary.whyWrong ?? '';
+      nextRecord.reasonCoreIssue = reflectionSummary.unknownStep ?? '';
+      nextRecord.reasonNextStep = reflectionSummary.helpPreference ?? '';
+    }
+  }
   if (payload.topicCategory) {
     nextRecord.topicCategory = payload.topicCategory;
   }

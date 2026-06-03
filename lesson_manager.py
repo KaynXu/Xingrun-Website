@@ -8525,6 +8525,64 @@ def list_primary_topic_category_suggestions(
 
 
 def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer_user_id: int | None = None) -> Optional[dict]:
+    def normalize_reflection_summary(value: object) -> dict:
+        source = value
+        if isinstance(value, str):
+            try:
+                source = json.loads(value)
+            except json.JSONDecodeError:
+                source = {}
+        if not isinstance(source, dict):
+            return {}
+
+        why_wrong = str(source.get("why_wrong") or source.get("whyWrong") or "").strip()
+        unknown_step = str(source.get("unknown_step") or source.get("unknownStep") or "").strip()
+        help_preference = str(source.get("help_preference") or source.get("helpPreference") or "").strip()
+        mode = str(source.get("mode") or "").strip()
+        summary_text = str(source.get("summary_text") or source.get("summaryText") or "").strip()
+        session_entrypoint = str(source.get("session_entrypoint") or source.get("sessionEntrypoint") or "").strip()
+        raw_answered_stages = source.get("answered_stages")
+        if not isinstance(raw_answered_stages, list):
+            raw_answered_stages = source.get("answeredStages")
+        answered_stages = [
+            str(item or "").strip()
+            for item in (raw_answered_stages if isinstance(raw_answered_stages, list) else [])
+            if str(item or "").strip()
+        ]
+        if not answered_stages:
+            if why_wrong:
+                answered_stages.append("ask_why_wrong")
+            if unknown_step:
+                answered_stages.append("ask_unknown_step")
+            if help_preference:
+                answered_stages.append("ask_help_mode")
+        if not summary_text:
+            parts: list[str] = []
+            if why_wrong:
+                parts.append(f"错因自述：{why_wrong}")
+            if unknown_step:
+                parts.append(f"卡点：{unknown_step}")
+            if help_preference:
+                parts.append(f"期望支持：{help_preference}")
+            summary_text = "；".join(parts)
+        if not any([summary_text, why_wrong, unknown_step, help_preference, answered_stages, mode, session_entrypoint]):
+            return {}
+        normalized = {
+            "schema_version": "wrong_question_reflection_summary.v1",
+            "mode": mode or "archive_reflection",
+            "summary_text": summary_text,
+            "answered_stages": answered_stages,
+        }
+        if why_wrong:
+            normalized["why_wrong"] = why_wrong
+        if unknown_step:
+            normalized["unknown_step"] = unknown_step
+        if help_preference:
+            normalized["help_preference"] = help_preference
+        if session_entrypoint:
+            normalized["session_entrypoint"] = session_entrypoint
+        return normalized
+
     raw_is_mastered = payload.get("is_mastered")
     normalized_is_mastered = bool(raw_is_mastered)
     if isinstance(raw_is_mastered, str):
@@ -8577,6 +8635,13 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
         else payload.get("confirmationReasons")
     )
     normalized_confirmation_reasons = normalize_string_list(confirmation_reasons_payload)
+    has_reflection_summary = "reflection_summary_json" in payload or "reflectionSummary" in payload
+    reflection_summary_payload = (
+        payload.get("reflection_summary_json")
+        if "reflection_summary_json" in payload
+        else payload.get("reflectionSummary")
+    )
+    normalized_reflection_summary = normalize_reflection_summary(reflection_summary_payload)
     confirmation_action = str(
         payload.get("confirmation_action")
         if "confirmation_action" in payload
@@ -8604,6 +8669,7 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
             existing_confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
         except json.JSONDecodeError:
             existing_confirmation_reasons = []
+        existing_reflection_summary = normalize_reflection_summary(str(row["reflection_summary_json"] or "{}"))
         next_confirmation_state = bool(row["needs_teacher_confirmation"])
         next_confirmation_reasons = normalized_confirmation_reasons
         if has_confirmation_state and normalized_confirmation_state is not None:
@@ -8650,6 +8716,27 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
                 next_confirmation_status = next_confirmation_status if next_confirmation_status in {"pending", "returned"} else "pending"
             elif next_confirmation_status != "confirmed":
                 next_confirmation_status = "not_required"
+        next_reflection_summary = normalized_reflection_summary if has_reflection_summary else existing_reflection_summary
+        next_child_reason_text = str(
+            next_reflection_summary.get("why_wrong")
+            or row["child_raw_reason_text"]
+            or ""
+        ).strip()
+        next_child_reason_transcript = str(
+            next_reflection_summary.get("summary_text")
+            or row["child_reason_transcript"]
+            or ""
+        ).strip()
+        next_child_reason_core_issue = str(
+            next_reflection_summary.get("unknown_step")
+            or row["child_reason_core_issue"]
+            or ""
+        ).strip()
+        next_child_reason_next_step = str(
+            next_reflection_summary.get("help_preference")
+            or row["child_reason_next_step"]
+            or ""
+        ).strip()
         conn.execute(
             """
             UPDATE wrong_question_submissions
@@ -8657,7 +8744,12 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
                 archived_at=CASE WHEN ?='archived' THEN datetime('now','localtime') ELSE '' END,
                 primary_error_type=?,
                 secondary_error_summary=?,
+                child_raw_reason_text=?,
+                child_reason_transcript=?,
+                child_reason_core_issue=?,
+                child_reason_next_step=?,
                 knowledge_tags_json=?,
+                reflection_summary_json=?,
                 needs_teacher_confirmation=?,
                 confirmation_reasons_json=?,
                 confirmation_status=?,
@@ -8671,7 +8763,12 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
                 "archived" if normalized_is_mastered else "active",
                 selected_error_type,
                 student_note,
+                next_child_reason_text,
+                next_child_reason_transcript,
+                next_child_reason_core_issue,
+                next_child_reason_next_step,
                 json.dumps(selected_knowledge_points, ensure_ascii=False, separators=(",", ":")),
+                json.dumps(next_reflection_summary, ensure_ascii=False, separators=(",", ":")),
                 1 if next_confirmation_state else 0,
                 json.dumps(next_confirmation_reasons, ensure_ascii=False, separators=(",", ":")),
                 next_confirmation_status,

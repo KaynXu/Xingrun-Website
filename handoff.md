@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-03
+最后更新：2026-06-04
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-04 已把 `reflection_summary` 从“详情可读”继续推进到“老师复核可编辑并持久化回同一条 record”：`frontend/src/SmartWrongQuestionsPage.tsx` 现在会在本地 `ai_chat` 归档详情的编辑态直接开放 `为什么错 / 不理解的步骤 / 希望怎么帮助` 三个反思输入框；`frontend/src/smartWrongQuestions.ts` 会把它们和 `reflection_summary_json` 一起编入 review payload；`lesson_manager.py` 的本地 review 保存链路则会把老师补充后的反思稳定写回 `wrong_question_submissions.reflection_summary_json`，并同步刷新兼容用的 `child_raw_reason_text / child_reason_core_issue / child_reason_next_step / child_reason_transcript`。这样现在老师不是只能读反思，而是已经能在统一错题详情里直接补齐学生真实错因，并把同一条结构化反思脊柱继续传给后续 rework、练习和 PDF。回归补在 `tests/test_smart_wrong_questions_api.py` 和 `frontend/src/smart-wrong-questions.test.ts`，proof 沿用本轮脚本 `/private/tmp/xingrun_wrong_question_reflection_archive_spine_proof.sh`。
 - 2026-06-04 已把 `reflection_summary` 的第一批下游消费接到老师详情面板：`frontend/src/SmartWrongQuestionsPage.tsx` 现在会在本地 `ai_chat` 归档详情里直接展示 `学生反思`，明确拆出 `为什么错 / 不理解的步骤 / 希望怎么帮助 / 反思模式`，并让原来的 `对话归档摘要` 优先回退到 `reflection_summary.summary_text`，不再只依赖 `linked_chat_session.summary_text` 或旧的 `child_reason_*`。这样老师第一次真正能在统一错题详情里直接读取这条结构化反思脊柱，而不是继续从零散摘要里猜学生的真实卡点。回归补在 `frontend/src/smart-wrong-questions.test.ts`，proof 沿用本轮脚本 `/private/tmp/xingrun_wrong_question_reflection_archive_spine_proof.sh`。
 - 2026-06-04 已按最终产品形态再次重排错题闭环主线，并开始落第一刀 `archive/reflection authority layer`：`docs/superpowers/plans/2026-06-03-wrong-question-ingestion-chat-loop-implementation.md` 现在明确把“学生在 AI chat 上传错题 -> 系统引导反思 -> 反思结果和归档数据一起沉回同一条 record”放到最高优先级，同时把 `error_correction` 明确降成后续 adapter layer，而不是主链路 source of truth。对应实现上，`lesson_manager.py` / `app.py` 已给 `wrong_question_submissions` 新增并持久化 `reflection_summary_json`，把 `mode / summary_text / why_wrong / unknown_step / help_preference / answered_stages / session_entrypoint` 作为一等字段写回 record；旧记录没有这列时，也会从 `child_reason_*` 自动合成兼容 fallback。前端 `frontend/src/smartWrongQuestions.ts` 已补 `reflectionSummary` 归一化，后续老师复核、练习生成、PDF 和 follow-up 都可以直接消费这条结构化反思脊柱，而不是继续从零散摘要里猜。回归补在 `tests/test_wrong_question_chat_api.py`、`tests/test_smart_wrong_questions_api.py` 和 `frontend/src/smart-wrong-questions.test.ts`，proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_reflection_archive_spine_proof.sh`。
 - 2026-06-03 已把 `user-facing continuity entrypoints` 再补到 `本周数据总结 -> 本周活跃学生` summary surface：`lesson_manager.py` / `app.py` 现在会在 weekly activity summary 的 `student_items` 里显式带出可继续掌握追问的 `source_record_ids + source_records`，`frontend/src/SmartWrongQuestionsPage.tsx` 则会在满足条件的学生卡片上直接给出 `开启掌握追问`。这样老师可以从活跃学生总结页直接续上该学生最近一条已确认、且完成过再练的 `ai_chat` 归档题，不必先回到 notebook 再找记录。实现上同样复用了 deferred notebook-open flow，避免 modal 切换时被 chat auto-restore 抢走新会话。回归补在 `tests/test_weekly_wrong_question_activity_summary.py` 和 `frontend/src/smart-wrong-questions.test.ts`，proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_weekly_activity_summary_mastery_entrypoint_proof.sh`。
@@ -302,7 +303,7 @@
 
 ### 下一步
 - 先按重排后的闭环顺序推进：`archive/reflection authority layer -> same-record continuity -> student-facing AI chat front door -> practice artifact rebuild -> error_correction adapter -> optional workbench`，不再让“先补更多入口”反过来定义主链路。
-- 这轮之后最值得做的是把 `reflection_summary` 从“详情可读”继续推到“复核可编辑、退回可续写、练习/PDF 可直接消费”：优先把老师复核/退回补充和练习生成/PDF 默认接到同一条 `reflection_summary + question_structured + knowledge_tags` 脊柱，再决定是否还需要继续铺剩余 entrypoint。
+- 这轮之后最值得做的是把 `reflection_summary` 从“复核可编辑并持久化”继续推到“退回可续写、练习/PDF 可直接消费”：优先把老师退回补充、练习生成和 PDF 默认接到同一条 `reflection_summary + question_structured + knowledge_tags` 脊柱，再决定是否还需要继续铺剩余 entrypoint。
 - `error_correction` 的迁移下一步只先拿低耦合底层能力，不要早引入 Vue / SQLAlchemy / LangGraph：优先顺序调整为 `prepare_input() 风格标准化 -> simplify_ocr_results() OCR 边界 -> overlap split 多页分割 -> 结构化纠错预览`，确认这些都能挂到现有 Flask + SQLite ingestion run 上后，再考虑 React workbench 页面。
 - 定向一周错题练习包下一步建议用真实 owner/admin 账号 smoke：选择一个有历史错题的班级，分别按 `按专题/知识点：几何` 和 `按错因：去分母漏乘` 生成标准 10 题练习包，确认生成状态、zip 下载、每个学生 PDF 的 7 天安排、AI 变式题质量和答案页符合老师实际发放需求。
 - 如发现这批旋转后的个别原图方向与文字阅读方向相反，可从 `data/orientation-repair-backup-20260515-154838/files/` 恢复单个原图后按相反方向重转，并重建对应学生 PDF；当前自动 proof 只能确认“竖图已变横图”，不能替代人工逐页检查文字朝向。

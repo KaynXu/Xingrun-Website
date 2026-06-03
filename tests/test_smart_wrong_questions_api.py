@@ -991,6 +991,16 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
                 "needs_teacher_confirmation": False,
                 "confirmation_reasons_json": [],
                 "question_text": "老师修正后的题干",
+                "reflection_summary_json": {
+                    "schema_version": "wrong_question_reflection_summary.v1",
+                    "mode": "archive_reflection",
+                    "summary_text": "错因自述：老师补齐的真实错因；卡点：老师确认学生卡在移项变号；期望支持：先提示，再让学生自己复述",
+                    "why_wrong": "老师补齐的真实错因",
+                    "unknown_step": "老师确认学生卡在移项变号",
+                    "help_preference": "先提示，再让学生自己复述",
+                    "answered_stages": ["ask_why_wrong", "ask_unknown_step", "ask_help_mode"],
+                    "session_entrypoint": "wrong_question_chat",
+                },
             },
         )
 
@@ -1001,6 +1011,9 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(saved["analysis"]["knowledge_points"], ["一元一次方程", "移项"])
         self.assertFalse(saved["needs_teacher_confirmation"])
         self.assertEqual(saved["confirmation_reasons"], [])
+        self.assertEqual(saved["reflection_summary"]["why_wrong"], "老师补齐的真实错因")
+        self.assertEqual(saved["reflection_summary"]["unknown_step"], "老师确认学生卡在移项变号")
+        self.assertEqual(saved["reflection_summary"]["help_preference"], "先提示，再让学生自己复述")
 
         refreshed = lesson_manager.get_wechat_wrong_question_submission(record["id"])
         self.assertIsNotNone(refreshed)
@@ -1015,6 +1028,10 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(refreshed["confirmation_status"], "confirmed")
         self.assertEqual(refreshed["confirmation_reviewed_by"], owner_payload["user"]["id"])
         self.assertTrue(refreshed["confirmation_reviewed_at"])
+        self.assertEqual(json.loads(refreshed["reflection_summary_json"])["why_wrong"], "老师补齐的真实错因")
+        self.assertEqual(refreshed["child_raw_reason_text"], "老师补齐的真实错因")
+        self.assertEqual(refreshed["child_reason_core_issue"], "老师确认学生卡在移项变号")
+        self.assertEqual(refreshed["child_reason_next_step"], "先提示，再让学生自己复述")
 
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive-detail.pdf")
     def test_local_ai_chat_review_can_return_record_for_rework(self, _mock_rebuild):
