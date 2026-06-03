@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -201,27 +202,28 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
             },
         ).get_json()["run"]
 
-        response = self.client.post(
-            f"/api/wrong-question-ingestions/{run['id']}/archive",
-            headers=self.auth_headers(self.owner_payload["token"]),
-            json={
-                "metadata": {"archived_from": "chat"},
-                "submissions": [
-                    {
-                        "source": "ai_chat",
-                        "image_url": "https://files.example.com/archive-1.png",
-                        "question_text": "解方程 $2x+5=17$。",
-                        "recognition_status": "recognized",
-                        "topic_category": "一元一次方程",
-                        "question_structured_json": {"stem": "解方程 2x+5=17"},
-                        "knowledge_tags_json": ["一元一次方程", "移项"],
-                        "child_raw_reason_text": "我不知道为什么要先减 5",
-                        "needs_teacher_confirmation": True,
-                        "confirmation_reasons_json": ["student_confused_step"],
-                    }
-                ],
-            },
-        )
+        with patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive.pdf") as rebuild_mock:
+            response = self.client.post(
+                f"/api/wrong-question-ingestions/{run['id']}/archive",
+                headers=self.auth_headers(self.owner_payload["token"]),
+                json={
+                    "metadata": {"archived_from": "chat"},
+                    "submissions": [
+                        {
+                            "source": "ai_chat",
+                            "image_url": "https://files.example.com/archive-1.png",
+                            "question_text": "解方程 $2x+5=17$。",
+                            "recognition_status": "recognized",
+                            "topic_category": "一元一次方程",
+                            "question_structured_json": {"stem": "解方程 2x+5=17"},
+                            "knowledge_tags_json": ["一元一次方程", "移项"],
+                            "child_raw_reason_text": "我不知道为什么要先减 5",
+                            "needs_teacher_confirmation": True,
+                            "confirmation_reasons_json": ["student_confused_step"],
+                        }
+                    ],
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -234,10 +236,13 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.assertEqual(record["ingestion_run_id"], run["id"])
         self.assertEqual(record["chat_session_id"], "chat-session-archive")
         self.assertEqual(record["recognition_status"], "recognized")
+        self.assertEqual(record["student_library_pdf_path"], "/tmp/student-archive.pdf")
+        rebuild_mock.assert_called_once_with(self.student["id"])
 
         library_records = lesson_manager.list_student_wrong_question_library_records(self.student["id"])
         self.assertEqual([item["id"] for item in library_records], [record["id"]])
         self.assertEqual(library_records[0]["source"], "ai_chat")
+        self.assertEqual(library_records[0]["student_library_pdf_path"], "/tmp/student-archive.pdf")
         self.assertEqual(
             json.loads(library_records[0]["knowledge_tags_json"]),
             ["一元一次方程", "移项"],

@@ -3628,6 +3628,7 @@ def api_wrong_question_ingestion_archive(run_id: str):
     try:
         submissions = _normalize_wrong_question_ingestion_record_payloads(data.get("submissions"))
         created_records = []
+        student_id = int(run.get("student_id") or 0)
         for item in submissions:
             record_source = str(item.get("source") or run.get("source") or "workspace").strip() or "workspace"
             if record_source == "wechat_mp" and not item.get("binding_id"):
@@ -3669,6 +3670,12 @@ def api_wrong_question_ingestion_archive(run_id: str):
                     confirmation_reasons_json=item.get("confirmation_reasons_json"),
                 )
             )
+        pdf_path = _refresh_student_wrong_question_library_cache(student_id) if student_id and created_records else ""
+        if pdf_path:
+            created_records = [
+                attach_student_library_pdf_path(str(record.get("id") or ""), pdf_path) or record
+                for record in created_records
+            ]
         _create_wrong_question_assets_from_payload(run_id, data.get("assets"))
         updated = update_wrong_question_ingestion_run(
             run_id,
