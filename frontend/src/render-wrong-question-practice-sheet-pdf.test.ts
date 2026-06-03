@@ -39,7 +39,7 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.match(markup, /原题 \/ 原图/);
   assert.match(markup, /挖空复盘/);
   assert.match(markup, /订正区/);
-  assert.match(markup, /重做这题/);
+  assert.doesNotMatch(markup, /重做这题/);
   assert.doesNotMatch(markup, /可选/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
@@ -160,11 +160,12 @@ test('buildDocumentMarkup replaces low-information writing fallback with reflect
   assert.match(markup, /挖空复盘/);
   assert.match(markup, /没有把 CE⊥AD 翻译成直角关系/);
   assert.match(markup, /先提醒我标垂直和等角/);
-  assert.match(markup, /重新画出 CE⊥AD 这个垂直关系。/);
-  assert.match(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
+  assert.doesNotMatch(markup, /重新画出 CE⊥AD 这个垂直关系。/);
+  assert.doesNotMatch(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
   assert.match(markup, /\.writing-card,[\s\S]*?break-inside: avoid/);
   assert.match(markup, /\.redo-work-area \{[\s\S]*?break-inside: avoid/);
   assert.match(markup, /\.writing-prompt-block \{[\s\S]*?break-inside: avoid/);
+  assert.doesNotMatch(markup, /重做这题/);
 });
 
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
@@ -238,7 +239,7 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   });
 
   assert.equal((markup.match(/class="question-latex-card"/g) || []).length, 1);
-  assert.equal((markup.match(/class="geometry-card"/g) || []).length, 2);
+  assert.equal((markup.match(/class="geometry-card(?:\s|")/g) || []).length, 2);
   assert.match(markup, /向量 AB 长度为 √\(16\)/);
   assert.match(markup, /class="katex"/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
@@ -362,7 +363,6 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
   const reviewIndex = markup.indexOf('挖空复盘');
   const reasonIndex = markup.indexOf('本题信息还不完整');
   const correctionIndex = markup.indexOf('订正区');
-  const redoIndex = markup.indexOf('重做原题');
 
   assert.ok(sourceIndex > -1);
   assert.ok(questionIndex > sourceIndex);
@@ -372,9 +372,9 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
   assert.ok(reviewIndex > methodIndex);
   assert.ok(reasonIndex > reviewIndex);
   assert.ok(correctionIndex > reasonIndex);
-  assert.ok(redoIndex > correctionIndex);
   assert.match(markup, /blank-gap/);
   assert.doesNotMatch(markup, /我这题错在/);
+  assert.doesNotMatch(markup, /重做原题/);
 });
 
 test('buildDocumentMarkup renders latex inside scheduled error-review blanks', async () => {

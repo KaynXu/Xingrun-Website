@@ -54,9 +54,9 @@ function buildQuestionBlock(item) {
   if (item.image_data_url && item.diagram_type) {
     return `
       ${questionTextBlock}
-      <div class="geometry-card">
+      <div class="geometry-card generated-diagram-card">
         <div class="geometry-title">生成图像</div>
-        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image" />
+        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image generated-diagram-image" />
       </div>
     `;
   }
@@ -65,9 +65,9 @@ function buildQuestionBlock(item) {
     const imageTitle = item.is_geometry ? '几何原题图片' : '原题图片';
     return `
       ${questionTextBlock}
-      <div class="geometry-card">
+      <div class="geometry-card source-image-card">
         <div class="geometry-title">${imageTitle}</div>
-        <img src="${item.image_data_url}" alt="${imageTitle}" class="geometry-image" />
+        <img src="${item.image_data_url}" alt="${imageTitle}" class="geometry-image source-image" />
       </div>
     `;
   }
@@ -509,32 +509,12 @@ function buildWritingSection(item, title = '挖空复盘') {
   `;
 }
 
-function buildRedoGuidanceLines(item) {
-  const structured = normalizeStructuredContent(item);
-  if (structured.redoGuidanceLines.length > 0) {
-    return structured.redoGuidanceLines.slice(0, 3);
-  }
-  const knowledgeTags = normalizeKnowledgeTags(item);
-  if (knowledgeTags.some((tag) => /几何|角|垂直|平行|辅助线/.test(tag))) {
-    return ['重新画出关键辅助线。', '写出本题最关键的角度关系。', '补完整证明链条。'];
-  }
-  if (knowledgeTags.length > 0) {
-    return [`先写出本题用到的 ${knowledgeTags[0]} 规则。`, '重做时标出第一步依据。', '最后检查易错条件。'];
-  }
-  return ['写出本题最关键的条件。', '补完整订正过程。', '最后检查答案是否回到题目要求。'];
-}
-
-function buildRedoWorkArea(item, label = '重做这题') {
-  const guidanceLines = buildRedoGuidanceLines(item);
+function buildRedoWorkArea() {
   return `
     <section class="redo-work-area">
       <div class="section-title">订正区</div>
-      <div class="redo-work-label">${escapeHtml(label)}</div>
-      <div class="redo-guidance-list">
-        ${guidanceLines.map((line) => `<div class="redo-guidance-line">${buildLatexTextBlock(line)}</div>`).join('')}
-      </div>
       <div class="redo-lines">
-        ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
+        ${Array.from({ length: 14 }, () => '<div class="redo-line"></div>').join('')}
       </div>
     </section>
   `;
@@ -551,7 +531,7 @@ function buildItemMarkup(item) {
       ${buildQuestionSummarySection(item)}
       ${buildMethodHintSection(item)}
       ${buildWritingSection(item)}
-      ${buildRedoWorkArea(item)}
+      ${buildRedoWorkArea()}
     </section>
   `;
 }
@@ -559,7 +539,6 @@ function buildItemMarkup(item) {
 function buildScheduledItemMarkup(item, label) {
   const trainingGoal = String(item.trainingGoal || '').trim();
   const writingSection = buildWritingSection(item, '挖空复盘');
-  const redoLabel = item.itemType === 'variant' ? '重做变式' : '重做原题';
   return `
     <section class="record-page">
       <div class="record-header">
@@ -572,7 +551,7 @@ function buildScheduledItemMarkup(item, label) {
       ${buildQuestionSummarySection(item)}
       ${buildMethodHintSection(item)}
       ${writingSection}
-      ${buildRedoWorkArea(item, redoLabel)}
+      ${buildRedoWorkArea()}
     </section>
   `;
 }
@@ -691,26 +670,20 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-page {
-            page-break-before: always;
-            min-height: 265mm;
-            display: flex;
-            flex-direction: column;
-          }
-
-          .record-page:first-of-type {
-            page-break-before: auto;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
           }
 
           .record-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 14px;
+            gap: 8px;
+            margin-bottom: 8px;
           }
 
           .record-index {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -722,14 +695,14 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-label {
-            margin-bottom: 10px;
+            margin-bottom: 6px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
           .pack-goal {
-            margin: 0 0 12px;
+            margin: 0 0 10px;
             padding: 10px 12px;
             border: 1px solid #dbeafe;
             border-radius: 10px;
@@ -747,64 +720,63 @@ export async function buildDocumentMarkup(payload) {
             page-break-inside: avoid;
             border: 1px solid #dbe2ea;
             border-radius: 10px;
-            padding: 16px;
+            padding: 10px 12px;
             background: #ffffff;
           }
 
           .question-latex-card {
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
-            padding: 16px;
-            background: #f4fbff;
+            border: 1px solid #dbe2ea;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: #ffffff;
           }
 
           .question-latex-preview-frame {
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
+            border: none;
+            border-radius: 0;
             background: #ffffff;
-            padding: 14px 16px;
+            padding: 0;
           }
 
           .summary-card {
-            margin-top: 14px;
-            padding: 14px 16px;
+            margin-top: 6px;
           }
 
           .summary-copy {
             color: #334155;
             font-size: 13px;
-            line-height: 1.75;
+            line-height: 1.92;
           }
 
           .writing-card {
-            margin-top: 14px;
-            min-height: 82mm;
-            padding-bottom: 22px;
+            margin-top: 6px;
+            min-height: 0;
+            padding-bottom: 10px;
           }
 
           .section-title {
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
           .method-hint-card {
-            margin-top: 14px;
+            margin-top: 6px;
           }
 
           .method-hint-line {
             font-size: 14px;
-            line-height: 1.8;
+            line-height: 1.98;
             color: #334155;
           }
 
           .method-hint-line + .method-hint-line {
-            margin-top: 8px;
+            margin-top: 4px;
           }
 
           .writing-prompt-block + .writing-prompt-block {
-            margin-top: 18px;
+            margin-top: 8px;
           }
 
           .writing-prompt-block {
@@ -813,7 +785,7 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .writing-prompt-title {
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             font-size: 13px;
             font-weight: 700;
             color: #0f172a;
@@ -821,7 +793,7 @@ export async function buildDocumentMarkup(payload) {
 
           .writing-prompt {
             font-size: 14px;
-            line-height: 1.8;
+            line-height: 2;
             color: #334155;
             white-space: pre-wrap;
             word-break: break-word;
@@ -829,7 +801,7 @@ export async function buildDocumentMarkup(payload) {
 
           .blank-gap {
             display: inline-block;
-            min-width: 13em;
+            min-width: 11.5em;
             height: 1.2em;
             margin: 0 0.2em;
             vertical-align: -0.2em;
@@ -839,50 +811,18 @@ export async function buildDocumentMarkup(payload) {
           .redo-work-area {
             break-inside: avoid;
             page-break-inside: avoid;
-            flex: 1;
-            min-height: 88mm;
-            margin-top: 18px;
-            display: flex;
-            flex-direction: column;
-          }
-
-          .redo-work-label {
-            margin-bottom: 10px;
-            font-size: 12px;
-            font-weight: 700;
-            color: #64748b;
-          }
-
-          .redo-guidance-list {
-            margin-bottom: 12px;
-            padding: 10px 12px;
-            border-left: 3px solid #93c5fd;
-            background: #f8fbff;
-          }
-
-          .redo-guidance-line {
-            font-size: 12px;
-            line-height: 1.65;
-            color: #475569;
-          }
-
-          .redo-guidance-line + .redo-guidance-line {
-            margin-top: 4px;
-          }
-
-          .redo-question-label {
-            margin-top: 18px;
+            min-height: 0;
+            margin-top: 8px;
           }
 
           .redo-lines {
-            flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            gap: 4px;
           }
 
           .redo-line {
-            min-height: 16px;
+            min-height: 13px;
             border-bottom: 1px solid #cbd5e1;
           }
 
@@ -893,8 +833,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .xr-latex-preview {
-            font-size: 16px;
-            line-height: 1.8;
+            font-size: 15px;
+            line-height: 1.96;
             word-break: break-word;
           }
 
@@ -903,10 +843,10 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .xr-latex-preview .xr-latex-display {
-            margin: 14px 0;
+            margin: 10px 0;
             overflow-x: auto;
             overflow-y: hidden;
-            padding: 4px 0;
+            padding: 2px 0;
           }
 
           .xr-latex-preview .xr-latex-error-source {
@@ -922,8 +862,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-title {
-            margin-bottom: 12px;
-            font-size: 14px;
+            margin-bottom: 6px;
+            font-size: 13px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -931,11 +871,18 @@ export async function buildDocumentMarkup(payload) {
           .geometry-image {
             display: block;
             max-width: 100%;
-            max-height: 220mm;
             margin: 0 auto;
             object-fit: contain;
-            border-radius: 12px;
+            border-radius: 10px;
             background: #ffffff;
+          }
+
+          .source-image {
+            max-height: 66mm;
+          }
+
+          .generated-diagram-image {
+            max-height: 96mm;
           }
 
           .answer-section {
