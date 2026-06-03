@@ -114,6 +114,17 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
                     "ai_hint": "先回忆运算顺序，再检查自己是不是把乘法拖到了最后。",
                     "reason_blank_prompt": "这题我错在 ______，因为我忽略了 ______。",
                     "improvement_summary_prompt": "下次做这类题，我会先 ______，再 ______，避免 ______。",
+                    "structured_content": {
+                        "mistake_focus": "运算顺序漏检",
+                        "review_goal": "先乘除后加减",
+                        "method_hint_lines": ["先圈乘号，再决定第一步。"],
+                        "blank_review_blocks": [
+                            {
+                                "title": "运算顺序补全",
+                                "lines": ["这题我错在 ______，因为我忽略了 ______。"],
+                            }
+                        ],
+                    },
                 },
                 {
                     "wrong_question_record_id": self.record_two["id"],
@@ -138,6 +149,12 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             saved["items"][1]["improvement_summary_prompt"],
             "以后碰到几何题，我会先 ______，再 ______，避免再次漏掉 ______。",
         )
+        self.assertEqual(saved["items"][0]["structured_content"]["mistake_focus"], "运算顺序漏检")
+        self.assertEqual(
+            saved["items"][0]["structured_content"]["blank_review_blocks"][0]["title"],
+            "运算顺序补全",
+        )
+        self.assertEqual(saved["items"][1]["structured_content"], {})
 
     def test_mark_wrong_question_practice_sheet_failed_records_error(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(

@@ -2583,6 +2583,7 @@ def init_db():
             ai_hint                       TEXT NOT NULL DEFAULT '',
             reason_blank_prompt           TEXT NOT NULL DEFAULT '',
             improvement_summary_prompt    TEXT NOT NULL DEFAULT '',
+            structured_content_json       TEXT NOT NULL DEFAULT '{}',
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -2895,6 +2896,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "structured_content_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "ingestion_run_id", "TEXT NOT NULL DEFAULT ''")
@@ -8734,6 +8736,14 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
     payload = dict(row)
     payload["question_order"] = int(payload.get("question_order") or 0)
     payload["is_geometry"] = bool(payload.get("is_geometry"))
+    try:
+        payload["structured_content"] = (
+            json.loads(str(payload.get("structured_content_json") or "{}"))
+            if payload.get("structured_content_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["structured_content"] = {}
     return payload
 
 
@@ -9060,6 +9070,7 @@ def mark_wrong_question_practice_sheet_succeeded(
                 SET ai_hint=?,
                     reason_blank_prompt=?,
                     improvement_summary_prompt=?,
+                    structured_content_json=?,
                     updated_at=datetime('now','localtime')
                 WHERE id=?
                 """,
@@ -9067,6 +9078,11 @@ def mark_wrong_question_practice_sheet_succeeded(
                     str(generated.get("ai_hint") or "").strip(),
                     str(generated.get("reason_blank_prompt") or "").strip(),
                     str(generated.get("improvement_summary_prompt") or "").strip(),
+                    _normalize_json_storage_value(
+                        generated.get("structured_content_json", generated.get("structured_content")),
+                        field_name="structured_content_json",
+                        default="{}",
+                    ),
                     row["id"],
                 ),
             )

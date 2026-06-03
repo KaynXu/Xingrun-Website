@@ -883,6 +883,11 @@ def _run_wrong_question_practice_generation_job(
                         "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
                         "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
                         "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                        "structured_content": (
+                            generated_item.get("structured_content")
+                            if isinstance(generated_item.get("structured_content"), dict)
+                            else {}
+                        ),
                         "answer": str(generated_item.get("answer") or item.get("answer") or "").strip(),
                         "key_steps": (
                             generated_item.get("key_steps")
@@ -1190,6 +1195,11 @@ def _run_wrong_question_practice_pack_job(*, job_id: int, user: dict) -> None:
                             "ai_hint": str(generated_item.get("ai_hint") or "").strip(),
                             "reason_blank_prompt": str(generated_item.get("reason_blank_prompt") or "").strip(),
                             "improvement_summary_prompt": str(generated_item.get("improvement_summary_prompt") or "").strip(),
+                            "structured_content": (
+                                generated_item.get("structured_content")
+                                if isinstance(generated_item.get("structured_content"), dict)
+                                else {}
+                            ),
                             "answer": str(generated_item.get("answer") or item.get("answer") or "").strip(),
                             "key_steps": (
                                 generated_item.get("key_steps")

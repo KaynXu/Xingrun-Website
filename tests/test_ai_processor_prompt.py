@@ -165,6 +165,9 @@ class AiProcessorPromptTestCase(unittest.TestCase):
     def test_wrong_question_practice_prompt_focuses_on_reflection_not_solution(self):
         self.assertIn("不要单独生成“下次提醒”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("第一行是这个书写区的小标题", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("structured_content: object", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("method_hint_lines", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("blank_review_blocks", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("标准答案和关键步骤只允许放在 answer、key_steps、pitfall_reminder 字段里", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("answer: string", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("key_steps: array[string]", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
@@ -222,7 +225,7 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             }
         )
         with patch("ai_processor._get_client", return_value=fake_client):
-            ai_processor.generate_wrong_question_practice_sheet_material(
+            result = ai_processor.generate_wrong_question_practice_sheet_material(
                 student_name="Alice",
                 class_name="六年级 9 班",
                 teacher_name="Kayn",
@@ -241,6 +244,72 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         user_payload = json.loads(fake_client.chat.completions.last_kwargs["messages"][1]["content"])
         self.assertEqual(user_payload["items"][0]["topic_category"], "一元一次方程去分母")
+        self.assertEqual(result["items"][0]["structured_content"]["mistake_focus"], "【去分母检查】")
+        self.assertEqual(result["items"][0]["structured_content"]["review_goal"], "【下次先标分母】")
+        self.assertEqual(
+            result["items"][0]["structured_content"]["blank_review_blocks"][0]["lines"][0],
+            "这题先给等式两边每一项同乘 ______，容易漏乘的是 ______。",
+        )
+
+    def test_wrong_question_practice_material_keeps_explicit_structured_content(self):
+        fake_client = _FakeClient(
+            {
+                "title": "相遇错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "reason_blank_prompt": "【相遇关系辨析】\n先补出总路程和 ______ 的对应关系。",
+                        "improvement_summary_prompt": "【下次先标关系】\n下次先标出 ______，再判断谁和谁相向而行。",
+                        "structured_content": {
+                            "mistake_focus": "速度和时间对应关系写反",
+                            "review_goal": "先标相遇关系再列式",
+                            "method_hint_lines": ["先把总路程和速度和对应起来。", "再检查时间是不是同一段。"],
+                            "blank_review_blocks": [
+                                {
+                                    "title": "相遇关系补全",
+                                    "lines": ["先补出总路程和 ______ 的对应关系。"],
+                                }
+                            ],
+                            "teacher_feedback": "可继续追问单位。",
+                            "confirmation_reasons": ["needs_unit_check"],
+                        },
+                        "answer": "12 千米",
+                        "key_steps": ["列出相遇总路程=速度和×时间", "代入并求解"],
+                        "pitfall_reminder": "不要把单人速度直接当总速度。",
+                    }
+                ],
+            }
+        )
+        with patch("ai_processor._get_client", return_value=fake_client):
+            result = ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name="Alice",
+                class_name="六年级 9 班",
+                teacher_name="Kayn",
+                items=[
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "question_order": 1,
+                        "question_text_snapshot": "甲乙相向而行。",
+                        "child_reason_text_snapshot": "我把速度和时间对应错了",
+                        "primary_error_type_snapshot": "方法问题",
+                        "cause_note_snapshot": "相遇总路程列反",
+                        "topic_category_snapshot": "行程",
+                    }
+                ],
+            )
+
+        self.assertEqual(
+            result["items"][0]["structured_content"]["mistake_focus"],
+            "速度和时间对应关系写反",
+        )
+        self.assertEqual(
+            result["items"][0]["structured_content"]["method_hint_lines"],
+            ["先把总路程和速度和对应起来。", "再检查时间是不是同一段。"],
+        )
+        self.assertEqual(
+            result["items"][0]["structured_content"]["confirmation_reasons"],
+            ["needs_unit_check"],
+        )
 
     def test_wrong_question_practice_prompt_bans_template_copy_and_bullets(self):
         prompt = ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT

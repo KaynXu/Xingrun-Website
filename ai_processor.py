@@ -360,6 +360,13 @@ items 中每一项必须包含：
 - wrong_question_record_id: string，必须与输入题目里的 wrong_question_record_id 完全一致
 - reason_blank_prompt: string，用于第一个书写区。请写成多行字符串：第一行是这个书写区的小标题；后续内容必须是简短挖空题正文，不要写成开放问答或长段分析。只需要围绕错因做轻引导，让孩子自己补出原因
 - improvement_summary_prompt: string，用于第二个书写区。请写成多行字符串：第一行是这个书写区的小标题；后续内容也必须是简短挖空题正文，不要写成大段自由总结。只需要轻轻引导孩子写“接下来准备怎么补、以后做题先提醒自己什么”
+- structured_content: object，供后续四区 PDF、老师复核和长期闭环共用的结构化内容边界。字段至少包含：
+  - mistake_focus: string，本题真正要纠正的错因焦点，短句即可
+  - review_goal: string，这次复盘要达到的具体目标，短句即可
+  - method_hint_lines: array[string]，2 到 3 条方法提醒短句，不能直接泄露完整答案
+  - blank_review_blocks: array[object]，每个 object 至少包含 title 和 lines；lines 是 1 到 2 句挖空复盘句
+  - teacher_feedback: string，可留空；给老师后续批注或系统预留
+  - confirmation_reasons: array[string]，可留空；只放结构化原因标识，不写成长解释
 - answer: string，用于 PDF 最后的“答案与关键步骤”页，必须是这道题的标准答案或结论
 - key_steps: array[string]，用于 PDF 最后的“答案与关键步骤”页，必须是推出答案的 2 到 4 个关键步骤
 - pitfall_reminder: string，用于 PDF 最后的“答案与关键步骤”页，提醒本题最容易再次犯的 1 个错误
@@ -788,6 +795,100 @@ def _clean_wrong_question_practice_prompt_text(value: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+def _normalize_string_list(values: object, *, limit: int = 0) -> list[str]:
+    normalized = [
+        str(item or "").strip()
+        for item in (values if isinstance(values, list) else [])
+        if str(item or "").strip()
+    ]
+    if limit > 0:
+        return normalized[:limit]
+    return normalized
+
+
+def _extract_prompt_title_and_lines(prompt: str) -> tuple[str, list[str]]:
+    lines = [line.strip() for line in str(prompt or "").split("\n") if line.strip()]
+    if not lines:
+        return "", []
+    if len(lines) == 1:
+        return "", [lines[0]]
+    return lines[0], lines[1:]
+
+
+def _normalize_wrong_question_practice_structured_content(
+    source: dict,
+    *,
+    reason_blank_prompt: str,
+    improvement_summary_prompt: str,
+    pitfall_reminder: str,
+) -> dict:
+    structured_source = source.get("structured_content")
+    if not isinstance(structured_source, dict):
+        structured_source = {}
+
+    reason_title, reason_lines = _extract_prompt_title_and_lines(reason_blank_prompt)
+    improvement_title, improvement_lines = _extract_prompt_title_and_lines(improvement_summary_prompt)
+
+    mistake_focus = str(
+        structured_source.get("mistake_focus")
+        or structured_source.get("mistakeFocus")
+        or reason_title
+        or ""
+    ).strip()
+    review_goal = str(
+        structured_source.get("review_goal")
+        or structured_source.get("reviewGoal")
+        or improvement_title
+        or ""
+    ).strip()
+    method_hint_lines = _normalize_string_list(
+        structured_source.get("method_hint_lines") or structured_source.get("methodHintLines"),
+        limit=3,
+    )
+    if not method_hint_lines and pitfall_reminder:
+        method_hint_lines = [str(pitfall_reminder).strip()]
+
+    raw_blocks = structured_source.get("blank_review_blocks") or structured_source.get("blankReviewBlocks")
+    normalized_blocks = []
+    if isinstance(raw_blocks, list):
+        for raw_block in raw_blocks:
+            block = raw_block if isinstance(raw_block, dict) else {}
+            block_title = str(block.get("title") or "").strip()
+            block_lines = _normalize_string_list(block.get("lines"), limit=2)
+            if block_title or block_lines:
+                normalized_blocks.append(
+                    {
+                        "title": block_title,
+                        "lines": block_lines,
+                    }
+                )
+    if not normalized_blocks:
+        fallback_blocks = []
+        if reason_title or reason_lines:
+            fallback_blocks.append({"title": reason_title, "lines": reason_lines[:2]})
+        if improvement_title or improvement_lines:
+            fallback_blocks.append({"title": improvement_title, "lines": improvement_lines[:2]})
+        normalized_blocks = [block for block in fallback_blocks if block["title"] or block["lines"]]
+
+    teacher_feedback = str(
+        structured_source.get("teacher_feedback")
+        or structured_source.get("teacherFeedback")
+        or ""
+    ).strip()
+    confirmation_reasons = _normalize_string_list(
+        structured_source.get("confirmation_reasons") or structured_source.get("confirmationReasons"),
+    )
+
+    return {
+        "mistake_focus": mistake_focus,
+        "review_goal": review_goal,
+        "method_hint_lines": method_hint_lines,
+        "blank_review_blocks": normalized_blocks,
+        "teacher_feedback": teacher_feedback,
+        "confirmation_reasons": confirmation_reasons,
+    }
+
+
 def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected_record_ids: list[str]) -> dict:
     title = str(payload.get("title") or "").strip()
     raw_items = payload.get("items")
@@ -854,12 +955,20 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
         ):
             raise ValueError("wrong question practice sheet generation failed")
 
+        structured_content = _normalize_wrong_question_practice_structured_content(
+            source,
+            reason_blank_prompt=reason_blank_prompt,
+            improvement_summary_prompt=improvement_summary_prompt,
+            pitfall_reminder=pitfall_reminder,
+        )
+
         normalized_items.append(
             {
                 "wrong_question_record_id": wrong_question_record_id,
                 "ai_hint": ai_hint,
                 "reason_blank_prompt": reason_blank_prompt,
                 "improvement_summary_prompt": improvement_summary_prompt,
+                "structured_content": structured_content,
                 "answer": answer,
                 "key_steps": normalized_key_steps,
                 "pitfall_reminder": pitfall_reminder,

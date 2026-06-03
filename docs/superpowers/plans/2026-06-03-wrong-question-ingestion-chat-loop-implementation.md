@@ -170,6 +170,35 @@ The list below is intentionally more detailed than the high-level phase plan. It
 - [x] Add richer archive detail linkage so wrong-question detail can open the related ingestion run and chat session directly.
 - [x] Add retry-safe idempotency rules for chat archive finalization and workbench archive finalization.
 
+### Track S: Shared Content Schema And Feedback Spine
+
+This track is now the highest-leverage foundation. It keeps us from overfitting the next phase to either the current modal chat UI or the legacy two-prompt PDF layout.
+
+#### S1. Structured practice-content boundary
+
+- [ ] Introduce a shared structured practice-content schema that can survive across archive detail, teacher review, PDF rendering, and later AI follow-up.
+- [ ] Keep the current `reason_blank_prompt / improvement_summary_prompt` fields as compatibility outputs, but stop treating them as the long-term canonical model.
+- [ ] Store at least:
+  - `mistake_focus`
+  - `review_goal`
+  - `method_hint_lines[]`
+  - `blank_review_blocks[]`
+  - `teacher_feedback`
+  - `confirmation_reasons[]`
+- [ ] Make the PDF and follow-up surfaces consume this schema gradually instead of hard-coding two opaque writing boxes forever.
+
+#### S2. Review and version metadata
+
+- [ ] Add prompt/template/rule/model version tracking to archive and practice generation records.
+- [ ] Add explicit reviewer/outcome metadata anywhere a teacher confirmation changes the final record.
+- [ ] Keep AI-generated rule suggestions separate from approved production rules.
+
+#### S3. Human feedback loop
+
+- [ ] Add a structured feedback table for teacher/student/parent corrections on wrong-question cards and practice sheets.
+- [ ] Record whether a fix is local-only, should become a rule candidate, or should become an eval case.
+- [ ] Turn repeated-error and mastery feedback into first-class signals, not just free-text notes.
+
 ### Track B: AI Chat Product Entry
 
 This track is the shortest path to the intended end-user product.
@@ -201,6 +230,7 @@ Current V1 note:
 Progress note (2026-06-03):
 - Weekly follow-up candidates now include archived `ai_chat` records, return source-record navigation context, and expose repeated-category signals.
 - Unified local review now lets teachers mark `ai_chat` archive records as mastered so they can fall out of later weekly follow-up priority.
+- A first compatibility slice has started on the practice-sheet side: practice items can now carry a structured content payload in parallel with the legacy dual-prompt fields, so later PDF and review work can migrate incrementally instead of via a big-bang rewrite.
 
 ### Track C: Workbench / error_correction Product Entry
 
@@ -278,7 +308,7 @@ This track turns the archived wrong-question record into the student-facing revi
 
 #### F2. Content schema
 
-- [ ] Split current prompt output into:
+- [ ] Promote the shared Track S schema into the PDF/practice rendering path:
   - `mistake_focus`
   - `review_goal`
   - `method_hint_lines[]`
@@ -322,26 +352,27 @@ This track turns the archived wrong-question record into the student-facing revi
 
 This is the practical execution order after the work already completed:
 
-1. **A3 + B1**
-   - Make the AI chat loop recoverable and UI-ready.
-   - Why first: this is the shortest path from today’s backend base to the target product shape.
+1. **S1 + S2**
+   - Establish the shared content/schema boundary and version metadata before deepening any one surface.
+   - Why first: this is the cheapest way to support AI chat, teacher review, PDF, and future workbench without redoing each one separately.
 
-2. **E1**
-   - Make archived records explainable and reviewable.
-   - Why second: once chat archive exists, teachers need to trust and inspect it.
+2. **E2 + B3**
+   - Turn `needs_teacher_confirmation` into an operable review queue, then reconnect archived chat records into later follow-up and mastery checks.
+   - Why second: once the archive is real, it needs both trust and continuity.
 
-3. **C1**
-   - Make the ingestion runtime workbench-ready before building a full operator UI.
-   - Why third: this preserves extensibility without introducing UI complexity too early.
+3. **F1 + F2 + F3**
+   - Rebuild the practice/PDF artifact on top of the shared schema and quality rules.
+   - Why third: the current output still does not match the review document’s minimum four-area teaching structure.
 
-4. **C2 + C3**
-   - Migrate the highest-value `error_correction` backend flows and then add the React workbench.
+4. **C1 + C2**
+   - Make ingestion workbench-ready, then transplant the highest-value `error_correction` backend blocks: `prepare_input()`, `simplify_ocr_results()`, overlapping split, and schema fallback.
+   - Why fourth: these pieces are valuable, but they should land onto a stable shared data model rather than force an early architecture fork.
 
-5. **F1-F3**
-   - Upgrade the student-facing revision artifact and review sheet structure.
+5. **C3 + D1-D2**
+   - Add the React workbench UI and optional adapters only after the shared runtime is stable.
 
 6. **G1-G3**
-   - Turn the system into a measurable, improvable long-term loop.
+   - Turn the whole system into a measurable long-term loop with evals, labels, and lightweight classifiers.
 
 ## Product Structure Recommendation
 
