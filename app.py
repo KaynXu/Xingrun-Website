@@ -146,6 +146,7 @@ from lesson_manager import (
     list_primary_topic_category_suggestions,
     list_student_wrong_question_library_records,
     list_wrong_question_chat_messages,
+    list_wrong_question_ingestion_runs,
     list_wrong_question_submissions_for_chat_session,
     list_wrong_question_assets,
     list_wrong_question_submissions_for_ingestion_run,
@@ -3495,6 +3496,62 @@ def api_wrong_question_student_library_refresh(student_id: int):
     )
 
 
+@app.route("/api/wrong-question-ingestions", methods=["GET"])
+def api_wrong_question_ingestion_list():
+    user, error = _require_auth()
+    if error:
+        return error
+
+    try:
+        class_id = int(request.args.get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    try:
+        student_id = int(request.args.get("student_id") or 0)
+    except (TypeError, ValueError):
+        student_id = 0
+    try:
+        teacher_user_id = int(request.args.get("teacher_user_id") or 0)
+    except (TypeError, ValueError):
+        teacher_user_id = 0
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+
+    source = str(request.args.get("source") or "").strip()
+    status = str(request.args.get("status") or "").strip()
+    chat_session_id = str(request.args.get("chat_session_id") or "").strip()
+
+    organization_id = int(user.get("organization_id") or 0)
+    if class_id:
+        cls, class_error = _get_accessible_class_or_error(user, class_id)
+        if class_error:
+            return class_error
+        organization_id = int(cls.get("organization_id") or organization_id)
+
+    runs = list_wrong_question_ingestion_runs(
+        organization_id=organization_id,
+        source=source or None,
+        status=status or None,
+        class_id=class_id or None,
+        student_id=student_id or None,
+        teacher_user_id=teacher_user_id or None,
+        chat_session_id=chat_session_id or None,
+        limit=limit,
+    )
+    visible_runs = [
+        serialized
+        for serialized in (
+            _serialize_wrong_question_ingestion_run_for_response(run)
+            for run in runs
+            if _can_access_wrong_question_ingestion_run(user, run)
+        )
+        if serialized is not None
+    ]
+    return jsonify({"items": visible_runs})
+
+
 @app.route("/api/wrong-question-ingestions", methods=["POST"])
 def api_wrong_question_ingestion_create():
     user, error = _require_auth()
@@ -3537,6 +3594,7 @@ def api_wrong_question_ingestion_create():
             parent_wechat_account_id=data.get("parent_wechat_account_id"),
             chat_session_id=str(data.get("chat_session_id") or "").strip(),
             status=str(data.get("status") or "pending").strip() or "pending",
+            current_step=str(data.get("current_step") or "").strip(),
             original_filename=str(data.get("original_filename") or "").strip(),
             mime_type=str(data.get("mime_type") or "").strip(),
             error_message=str(data.get("error_message") or "").strip(),
@@ -3580,6 +3638,7 @@ def api_wrong_question_ingestion_ocr(run_id: str):
         updated = update_wrong_question_ingestion_run(
             run_id,
             status=str(data.get("status") or "ocr_ready").strip() or "ocr_ready",
+            current_step=str(data.get("current_step") or "ocr_completed").strip() or "ocr_completed",
             chat_session_id=str(data.get("chat_session_id") or run.get("chat_session_id") or "").strip(),
             error_message=str(data.get("error_message") or "").strip(),
             metadata_json=data.get("metadata"),
@@ -3605,6 +3664,7 @@ def api_wrong_question_ingestion_split(run_id: str):
         updated = update_wrong_question_ingestion_run(
             run_id,
             status=str(data.get("status") or "split_ready").strip() or "split_ready",
+            current_step=str(data.get("current_step") or "split_completed").strip() or "split_completed",
             error_message=str(data.get("error_message") or "").strip(),
             metadata_json=data.get("metadata"),
         )
@@ -3680,6 +3740,7 @@ def api_wrong_question_ingestion_archive(run_id: str):
         updated = update_wrong_question_ingestion_run(
             run_id,
             status=str(data.get("status") or "archived").strip() or "archived",
+            current_step=str(data.get("current_step") or "archived").strip() or "archived",
             error_message=str(data.get("error_message") or "").strip(),
             metadata_json=data.get("metadata"),
         )
@@ -3760,7 +3821,11 @@ def api_wrong_question_chat_stream(session_id: str):
             metadata_json={"entrypoint": "wrong_question_chat"},
         )
         if isinstance(run, dict):
-            updated_run = update_wrong_question_ingestion_run(run["id"], chat_session_id=normalized_session_id)
+            updated_run = update_wrong_question_ingestion_run(
+                run["id"],
+                chat_session_id=normalized_session_id,
+                current_step="chat_reflection",
+            )
             if updated_run:
                 run = updated_run
 
@@ -3881,6 +3946,7 @@ def api_wrong_question_chat_stream(session_id: str):
                 updated_run = update_wrong_question_ingestion_run(
                     run["id"],
                     status="archived",
+                    current_step="archived",
                     chat_session_id=normalized_session_id,
                 )
                 if updated_run:

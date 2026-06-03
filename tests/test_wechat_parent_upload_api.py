@@ -213,6 +213,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         run = lesson_manager.get_wrong_question_ingestion_run(refreshed["ingestion_run_id"])
         self.assertIsNotNone(run)
         self.assertEqual(run["status"], "archived")
+        self.assertEqual(run["current_step"], "archived")
         self.assertEqual(run["source"], "wechat_mp")
         self.assertEqual(run["student_id"], self.student["id"])
         self.assertEqual(run["teacher_user_id"], self.owner_id)
@@ -313,6 +314,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         run = lesson_manager.get_wrong_question_ingestion_run(refreshed["ingestion_run_id"])
         self.assertIsNotNone(run)
         self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["current_step"], "failed")
 
     def test_worker_keeps_network_recognition_failure_retryable_without_empty_record(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
@@ -343,6 +345,7 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         run = lesson_manager.get_wrong_question_ingestion_run(result["ingestion_run_id"])
         self.assertIsNotNone(run)
         self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["current_step"], "failed")
 
         submissions = lesson_manager.list_wechat_wrong_question_submissions()
         self.assertEqual(submissions, [])

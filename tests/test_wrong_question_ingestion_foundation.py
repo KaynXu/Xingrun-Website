@@ -211,10 +211,12 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
             mime_type="application/pdf",
             metadata_json={"page_count": 3, "entrypoint": "chat"},
         )
+        self.assertEqual(run["current_step"], "uploaded")
 
         updated_run = lesson_manager.update_wrong_question_ingestion_run(
             run["id"],
             status="ocr_ready",
+            current_step="ocr_completed",
             error_message="",
             metadata_json={"page_count": 3, "entrypoint": "chat", "ocr": "pending-review"},
         )
@@ -241,6 +243,8 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
 
         self.assertEqual(fetched_run["id"], run["id"])
         self.assertEqual(updated_run["status"], "ocr_ready")
+        self.assertEqual(updated_run["current_step"], "ocr_completed")
+        self.assertEqual(fetched_run["current_step"], "ocr_completed")
         self.assertEqual(
             json.loads(updated_run["metadata_json"]),
             {"page_count": 3, "entrypoint": "chat", "ocr": "pending-review"},
@@ -250,6 +254,42 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
         self.assertEqual(assets[1]["asset_role"], "ocr_page_image")
         self.assertEqual(assets[1]["page_number"], 1)
         self.assertEqual(json.loads(assets[1]["metadata_json"]), {"page_index": 0})
+
+    def test_list_ingestion_runs_filters_by_scope_and_status(self):
+        pending_run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=self.organization_id,
+            source="workspace",
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            status="pending",
+            current_step="uploaded",
+            original_filename="workspace-1.png",
+        )
+        archived_run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=self.organization_id,
+            source="ai_chat",
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            status="archived",
+            current_step="archived",
+            chat_session_id="chat-session-filter",
+            original_filename="chat-archive.png",
+        )
+
+        all_runs = lesson_manager.list_wrong_question_ingestion_runs(organization_id=self.organization_id, limit=10)
+        archived_runs = lesson_manager.list_wrong_question_ingestion_runs(
+            organization_id=self.organization_id,
+            status="archived",
+            source="ai_chat",
+            chat_session_id="chat-session-filter",
+            limit=10,
+        )
+
+        self.assertEqual({item["id"] for item in all_runs}, {pending_run["id"], archived_run["id"]})
+        self.assertEqual([item["id"] for item in archived_runs], [archived_run["id"]])
+        self.assertEqual(archived_runs[0]["current_step"], "archived")
 
 
 if __name__ == "__main__":

@@ -103,11 +103,58 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.assertEqual(run["student_id"], self.student["id"])
         self.assertEqual(run["teacher_user_id"], self.owner_id)
         self.assertEqual(run["chat_session_id"], "chat-session-101")
+        self.assertEqual(run["current_step"], "uploaded")
         self.assertEqual(json.loads(run["metadata_json"]), {"page_count": 2, "entrypoint": "chat"})
         self.assertEqual(len(run["assets"]), 1)
         self.assertEqual(run["assets"][0]["asset_role"], "original_upload")
         self.assertEqual(run["assets"][0]["storage_path"], "/tmp/wrong-question.pdf")
         self.assertEqual(run["records"], [])
+
+    def test_list_ingestion_runs_filters_and_enforces_scope(self):
+        workspace_run = self.client.post(
+            "/api/wrong-question-ingestions",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "source": "workspace",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+                "original_filename": "workspace.png",
+                "mime_type": "image/png",
+            },
+        ).get_json()["run"]
+        ai_chat_run = self.client.post(
+            "/api/wrong-question-ingestions",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "source": "ai_chat",
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+                "chat_session_id": "chat-session-list",
+                "original_filename": "chat.png",
+                "mime_type": "image/png",
+            },
+        ).get_json()["run"]
+        self.client.post(
+            f"/api/wrong-question-ingestions/{ai_chat_run['id']}/ocr",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"metadata": {"ocr_engine": "mock"}},
+        )
+
+        visible = self.client.get(
+            f"/api/wrong-question-ingestions?source=ai_chat&status=ocr_ready&chat_session_id=chat-session-list&class_id={self.class_id}",
+            headers=self.auth_headers(self.owner_payload["token"]),
+        )
+        hidden = self.client.get(
+            f"/api/wrong-question-ingestions?class_id={self.class_id}",
+            headers=self._create_other_owner_headers(),
+        )
+
+        self.assertEqual(visible.status_code, 200)
+        items = visible.get_json()["items"]
+        self.assertEqual([item["id"] for item in items], [ai_chat_run["id"]])
+        self.assertEqual(items[0]["current_step"], "ocr_completed")
+        self.assertEqual(hidden.status_code, 403)
+        self.assertEqual(workspace_run["current_step"], "uploaded")
 
     def test_get_ingestion_run_enforces_organization_scope(self):
         created = self.client.post(
@@ -182,9 +229,11 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
 
         self.assertEqual(ocr.status_code, 200)
         self.assertEqual(ocr.get_json()["run"]["status"], "ocr_ready")
+        self.assertEqual(ocr.get_json()["run"]["current_step"], "ocr_completed")
         self.assertEqual(split.status_code, 200)
         split_run = split.get_json()["run"]
         self.assertEqual(split_run["status"], "split_ready")
+        self.assertEqual(split_run["current_step"], "split_completed")
         self.assertEqual([item["asset_role"] for item in split_run["assets"]], ["ocr_page_image", "split_preview"])
         self.assertEqual(json.loads(split_run["metadata_json"]), {"split_groups": 1})
 
@@ -229,6 +278,7 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["run"]["status"], "archived")
+        self.assertEqual(payload["run"]["current_step"], "archived")
         self.assertEqual(json.loads(payload["run"]["metadata_json"]), {"archived_from": "chat"})
         self.assertEqual(len(payload["created_records"]), 1)
         record = payload["created_records"][0]

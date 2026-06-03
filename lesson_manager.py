@@ -2475,6 +2475,7 @@ def init_db():
             parent_wechat_account_id  INTEGER REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
             chat_session_id           TEXT NOT NULL DEFAULT '',
             status                    TEXT NOT NULL DEFAULT 'pending',
+            current_step              TEXT NOT NULL DEFAULT 'uploaded',
             original_filename         TEXT NOT NULL DEFAULT '',
             mime_type                 TEXT NOT NULL DEFAULT '',
             error_message             TEXT NOT NULL DEFAULT '',
@@ -2890,6 +2891,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "knowledge_tags_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_submissions", "needs_teacher_confirmation", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reasons_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_ingestion_runs", "current_step", "TEXT NOT NULL DEFAULT 'uploaded'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
@@ -6756,6 +6758,7 @@ def create_wrong_question_ingestion_run(
     parent_wechat_account_id: int | None = None,
     chat_session_id: str = "",
     status: str = "pending",
+    current_step: str = "",
     original_filename: str = "",
     mime_type: str = "",
     error_message: str = "",
@@ -6763,6 +6766,14 @@ def create_wrong_question_ingestion_run(
 ) -> dict:
     normalized_source = (source or "workspace").strip() or "workspace"
     normalized_status = (status or "pending").strip() or "pending"
+    normalized_current_step = (current_step or "").strip() or {
+        "pending": "uploaded",
+        "processing": "processing",
+        "ocr_ready": "ocr_completed",
+        "split_ready": "split_completed",
+        "archived": "archived",
+        "failed": "failed",
+    }.get(normalized_status, "uploaded")
     record_id = f"wqrun-{secrets.token_hex(8)}"
     normalized_metadata_json = _normalize_json_storage_value(
         metadata_json,
@@ -6775,9 +6786,9 @@ def create_wrong_question_ingestion_run(
             """
             INSERT INTO wrong_question_ingestion_runs (
                 id, organization_id, source, class_id, student_id, teacher_user_id,
-                parent_wechat_account_id, chat_session_id, status, original_filename,
+                parent_wechat_account_id, chat_session_id, status, current_step, original_filename,
                 mime_type, error_message, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -6789,6 +6800,7 @@ def create_wrong_question_ingestion_run(
                 int(parent_wechat_account_id) if parent_wechat_account_id is not None else None,
                 (chat_session_id or "").strip(),
                 normalized_status,
+                normalized_current_step,
                 (original_filename or "").strip(),
                 (mime_type or "").strip(),
                 (error_message or "").strip(),
@@ -6815,6 +6827,7 @@ def update_wrong_question_ingestion_run(
     run_id: str,
     *,
     status: str | None = None,
+    current_step: str | None = None,
     chat_session_id: str | None = None,
     error_message: str | None = None,
     metadata_json: object = None,
@@ -6824,6 +6837,9 @@ def update_wrong_question_ingestion_run(
     if status is not None:
         assignments.append("status=?")
         params.append((status or "pending").strip() or "pending")
+    if current_step is not None:
+        assignments.append("current_step=?")
+        params.append((current_step or "").strip() or "uploaded")
     if chat_session_id is not None:
         assignments.append("chat_session_id=?")
         params.append((chat_session_id or "").strip())
@@ -6857,6 +6873,53 @@ def update_wrong_question_ingestion_run(
             ((run_id or "").strip(),),
         ).fetchone()
     return dict(refreshed) if refreshed else None
+
+
+def list_wrong_question_ingestion_runs(
+    *,
+    organization_id: int,
+    source: str | None = None,
+    status: str | None = None,
+    class_id: int | None = None,
+    student_id: int | None = None,
+    teacher_user_id: int | None = None,
+    chat_session_id: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    normalized_limit = max(1, min(int(limit or 50), 200))
+    where_clauses = ["organization_id=?"]
+    params: list[object] = [int(organization_id or 0)]
+    if source is not None and str(source).strip():
+        where_clauses.append("source=?")
+        params.append(str(source).strip())
+    if status is not None and str(status).strip():
+        where_clauses.append("status=?")
+        params.append(str(status).strip())
+    if class_id is not None:
+        where_clauses.append("class_id=?")
+        params.append(int(class_id))
+    if student_id is not None:
+        where_clauses.append("student_id=?")
+        params.append(int(student_id))
+    if teacher_user_id is not None:
+        where_clauses.append("teacher_user_id=?")
+        params.append(int(teacher_user_id))
+    if chat_session_id is not None and str(chat_session_id).strip():
+        where_clauses.append("chat_session_id=?")
+        params.append(str(chat_session_id).strip())
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM wrong_question_ingestion_runs
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (*params, normalized_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def create_wrong_question_asset(

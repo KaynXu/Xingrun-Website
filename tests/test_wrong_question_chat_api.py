@@ -266,6 +266,10 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertEqual(payload["session"]["messages"][0]["role"], "assistant")
         self.assertEqual(payload["session"]["messages"][1]["role"], "user")
         self.assertEqual(payload["session"]["records"], [])
+        self.assertEqual(
+            lesson_manager.get_wrong_question_ingestion_run(run["id"])["current_step"],
+            "chat_reflection",
+        )
         self.assertEqual(hidden.status_code, 404)
 
 

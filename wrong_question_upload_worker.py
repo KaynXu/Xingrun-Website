@@ -102,13 +102,21 @@ def _load_run_metadata(run: dict | None) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _update_ingestion_run_with_metadata(run_id: str, *, status: str, error_message: str = "", **extra_metadata) -> dict | None:
+def _update_ingestion_run_with_metadata(
+    run_id: str,
+    *,
+    status: str,
+    current_step: str = "",
+    error_message: str = "",
+    **extra_metadata,
+) -> dict | None:
     existing = get_wrong_question_ingestion_run(run_id)
     metadata = _load_run_metadata(existing)
     metadata.update({key: value for key, value in extra_metadata.items() if value is not None})
     return update_wrong_question_ingestion_run(
         run_id,
         status=status,
+        current_step=current_step,
         error_message=error_message,
         metadata_json=metadata,
     )
@@ -128,6 +136,7 @@ def _ensure_upload_task_ingestion_run(task: dict) -> dict:
         teacher_user_id=int(task.get("teacher_user_id") or 0),
         parent_wechat_account_id=int(task.get("parent_wechat_account_id") or 0),
         status="processing",
+        current_step="queued_for_recognition",
         original_filename=_guess_upload_filename(str(task.get("image_url") or "")),
         metadata_json={
             "wechat_upload_task_id": int(task.get("id") or 0),
@@ -219,6 +228,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
         _update_ingestion_run_with_metadata(
             ingestion_run_id,
             status="archived",
+            current_step="archived",
             record_id=str(record.get("id") or ""),
             recognition_status="recognized",
             is_geometry=bool(recognition.get("is_geometry")),
@@ -238,6 +248,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
         _update_ingestion_run_with_metadata(
             ingestion_run_id,
             status="failed",
+            current_step="failed",
             error_message=str(exc),
             recognition_status="failed" if created_record_id else "processing_failed",
             record_id=created_record_id or "",
@@ -282,6 +293,7 @@ def process_wechat_wrong_question_upload_task(task_id: int) -> dict:
         _update_ingestion_run_with_metadata(
             ingestion_run_id,
             status="failed",
+            current_step="failed",
             error_message=str(exc),
             recognition_status="failed",
             record_id=created_record_id or "",
