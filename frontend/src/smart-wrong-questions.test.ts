@@ -1291,6 +1291,15 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
       entrypoint: 'wrong_question_chat_archive',
       ingestion_entrypoint: 'chat',
     },
+    mastery_tracking: {
+      practice_sheet_count: 2,
+      latest_practice_sheet_id: 18,
+      latest_practice_status: 'ready',
+      latest_practice_created_at: '2026-06-03 20:00:00',
+      latest_practice_pdf_path: '/tmp/archive-practice.pdf',
+      related_topic_categories: ['一元一次方程'],
+      related_error_types: ['概念错误'],
+    },
     archive_context: {
       source: 'ai_chat',
       ingestion_run_id: 'run-123',
@@ -1349,6 +1358,11 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
   assert.equal(normalized.generationMetadata?.schemaVersion, 'wrong_question_archive_schema.v1');
   assert.equal(normalized.generationMetadata?.modelVersion, 'local-guided-loop');
   assert.equal(normalized.generationMetadata?.ingestionEntrypoint, 'chat');
+  assert.equal(normalized.masteryTracking?.practiceSheetCount, 2);
+  assert.equal(normalized.masteryTracking?.latestPracticeSheetId, 18);
+  assert.equal(normalized.masteryTracking?.latestPracticeStatus, 'ready');
+  assert.deepEqual(normalized.masteryTracking?.relatedTopicCategories, ['一元一次方程']);
+  assert.deepEqual(normalized.masteryTracking?.relatedErrorTypes, ['概念错误']);
   assert.deepEqual(normalized.archiveContext, {
     source: 'ai_chat',
     ingestionRunId: 'run-123',
@@ -1420,6 +1434,9 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /最近处理：/);
   assert.match(pageSource, /对话归档摘要/);
   assert.match(pageSource, /生成版本/);
+  assert.match(pageSource, /再练闭环/);
+  assert.match(pageSource, /打开最近练习/);
+  assert.match(pageSource, /这层记录会继续作为后续掌握评级和相似错因复发判断的基础信号。/);
   assert.match(pageSource, /来源素材/);
   assert.match(pageSource, /OCR \/ 切题轨迹/);
   assert.match(pageSource, /仍需老师复核/);

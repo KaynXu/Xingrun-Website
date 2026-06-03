@@ -129,6 +129,7 @@ What is **not** true yet:
 - There is no operator workbench for multi-page PDF / batch ingestion.
 - `error_correction` OCR simplification / overlapping split / correction flow has not yet been transplanted into live product code.
 - Teacher confirmation, archived detail review, and mastery follow-up are not yet complete product flows.
+- Later re-practice and follow-up results are still only loosely connected to the archive record; the system does not yet have a durable mastery-evidence spine that can support评级 by repeated wrong knowledge points or error causes.
 
 That distinction matters. The plan below should be read as:
 
@@ -202,6 +203,7 @@ Progress note (2026-06-03):
 - [ ] Add a structured feedback table for teacher/student/parent corrections on wrong-question cards and practice sheets.
 - [ ] Record whether a fix is local-only, should become a rule candidate, or should become an eval case.
 - [ ] Turn repeated-error and mastery feedback into first-class signals, not just free-text notes.
+- [ ] Add a minimal mastery-evidence spine on each archive record so later practice/follow-up attempts can write back `latest_attempt`, `attempt_count`, and repeated-topic/repeated-error summaries before we attempt richer评级.
 
 ### Track B: AI Chat Product Entry
 
@@ -230,6 +232,9 @@ Current V1 note:
 - [ ] Link archived wrong question back into later AI follow-up.
 - [ ] Use same chat record to drive later re-practice and mastery checks.
 - [ ] Add mastery status inputs and repeated-error signals after later practice attempts.
+- [ ] Persist re-practice evidence back onto the same archive record instead of leaving it stranded in standalone practice-sheet history.
+- [ ] Reuse the same archive / chat chain when the system asks “这次真的掌握了吗” after another attempt.
+- [ ] Grade mastery from later evidence using similar `topic_category` / `primary_error_type` / `knowledge_tags`, not only a manual checkbox.
 
 Progress note (2026-06-03):
 - Weekly follow-up candidates now include archived `ai_chat` records, return source-record navigation context, and expose repeated-category signals.
@@ -237,6 +242,7 @@ Progress note (2026-06-03):
 - A first compatibility slice has started on the practice-sheet side: practice items can now carry a structured content payload in parallel with the legacy dual-prompt fields, so later PDF and review work can migrate incrementally instead of via a big-bang rewrite.
 - Returned local `ai_chat` archive records can now reopen into a fresh rework chat session from the existing notebook chat panel. The rework session reuses the same ingestion context, seeds a teacher-return prompt, and on re-archive updates the original wrong-question record in place instead of creating a duplicate card.
 - Confirmed or review-free local `ai_chat` archive records can now flow into the existing notebook practice-sheet pipeline. Teachers can select them alongside local wechat records once confirmation is complete, and the same async practice worker now consumes `ai_chat` snapshots without needing a parallel repractice product surface.
+- The next slice should stop treating practice-sheet history as a side table only: the archive record itself should carry mastery evidence from those later attempts, so follow-up and评级 can read one chain instead of stitching joins ad hoc everywhere.
 
 ### Track C: Workbench / error_correction Product Entry
 
@@ -369,9 +375,9 @@ This is the practical execution order after the work already completed:
    - Establish the shared content/schema boundary and version metadata before deepening any one surface.
    - Why first: this is the cheapest way to support AI chat, teacher review, PDF, and future workbench without redoing each one separately.
 
-2. **E2 + B3**
-   - Turn `needs_teacher_confirmation` into an operable review queue, then reconnect archived chat records into later follow-up and mastery checks.
-   - Why second: once the archive is real, it needs both trust and continuity.
+2. **B3 mastery spine + E2 continuity**
+   - First persist later re-practice evidence back onto the same archive record, then keep extending teacher confirmation / return-for-rework continuity.
+   - Why second: once the archive is real, the highest-value missing piece is not another new入口, but making the same record survive “确认 -> 再练 -> 复发 -> 再确认”.
 
 3. **F1 + F2 + F3**
    - Rebuild the practice/PDF artifact on top of the shared schema and quality rules.
@@ -415,4 +421,14 @@ The complete product shape should also include:
 
 ## Current Round
 
-The latest completed slices are **Phase 1** data foundations and the core of **Phase 2**: generic ingestion APIs plus WeChat worker handoff into ingestion runs. The next highest-value task is **Phase 3 chat-session persistence and guided dialogue orchestration**, because the storage/API base is now strong enough to support the intended AI chat upload loop.
+The latest completed slices already cover the generic ingestion base, local AI-chat archive loop, teacher review queue starter flow, structured PDF sections, generation metadata, returned-record rework, and “confirmed AI archive -> existing practice-sheet pipeline”.
+
+The next highest-value task is now **B3 mastery spine**:
+
+- write later practice evidence back onto the same archive record
+- expose that evidence in unified wrong-question detail
+- use it as the foundation for future mastery评级 by repeated wrong topics / error causes / knowledge tags
+
+This keeps the next implementation step small, but directly aligned with the final product shape:
+
+`AI chat upload -> guided reflection -> archive -> teacher confirmation -> later re-practice -> mastery signal -> later follow-up`

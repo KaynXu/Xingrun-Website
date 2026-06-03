@@ -1678,6 +1678,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "question_structured_json",
             "knowledge_tags_json",
             "generation_metadata_json",
+            "mastery_tracking_json",
             "needs_teacher_confirmation",
             "confirmation_reasons_json",
             "created_at",
@@ -1731,6 +1732,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             question_structured_json  TEXT NOT NULL DEFAULT '',
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
             generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
+            mastery_tracking_json     TEXT NOT NULL DEFAULT '{}',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
             confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
             confirmation_status      TEXT NOT NULL DEFAULT '',
@@ -2465,6 +2467,7 @@ def init_db():
             question_structured_json  TEXT NOT NULL DEFAULT '',
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
             generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
+            mastery_tracking_json     TEXT NOT NULL DEFAULT '{}',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
             confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
             confirmation_status      TEXT NOT NULL DEFAULT '',
@@ -2902,6 +2905,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "question_structured_json", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "knowledge_tags_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_submissions", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_submissions", "mastery_tracking_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_submissions", "needs_teacher_confirmation", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reasons_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_status", "TEXT NOT NULL DEFAULT ''")
@@ -7277,6 +7281,7 @@ def _normalize_wrong_question_submission_fields(
             field_name="generation_metadata_json",
             default="{}",
         ),
+        "mastery_tracking_json": "{}",
         "needs_teacher_confirmation": 1 if needs_teacher_confirmation else 0,
         "confirmation_reasons_json": _normalize_json_storage_value(
             confirmation_reasons_json,
@@ -7315,10 +7320,10 @@ def _create_wrong_question_submission_record(
             topic_category, archive_status, status,
             recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
             question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path,
-            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json, generation_metadata_json,
+            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json, generation_metadata_json, mastery_tracking_json,
             needs_teacher_confirmation, confirmation_reasons_json,
             confirmation_status, confirmation_reviewed_by, confirmation_reviewed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record_id,
@@ -7353,6 +7358,7 @@ def _create_wrong_question_submission_record(
             normalized_payload["question_structured_json"],
             normalized_payload["knowledge_tags_json"],
             normalized_payload["generation_metadata_json"],
+            normalized_payload["mastery_tracking_json"],
             normalized_payload["needs_teacher_confirmation"],
             normalized_payload["confirmation_reasons_json"],
             "pending" if normalized_payload["needs_teacher_confirmation"] else "not_required",
@@ -7773,6 +7779,10 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         generation_metadata = json.loads(str(row["generation_metadata_json"] or "{}"))
     except json.JSONDecodeError:
         generation_metadata = {}
+    try:
+        mastery_tracking = json.loads(str(row["mastery_tracking_json"] or "{}"))
+    except json.JSONDecodeError:
+        mastery_tracking = {}
     confirmation_status = str(row["confirmation_status"] or "").strip()
     if confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
         if row["needs_teacher_confirmation"]:
@@ -7783,6 +7793,7 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
             confirmation_status = "not_required"
     payload["knowledge_tags"] = normalized_knowledge_tags
     payload["generation_metadata"] = generation_metadata if isinstance(generation_metadata, dict) else {}
+    payload["mastery_tracking"] = mastery_tracking if isinstance(mastery_tracking, dict) else {}
     payload["confirmation_reasons"] = normalized_confirmation_reasons
     payload["confirmation_status"] = confirmation_status
     payload["confirmation_reviewed_by"] = (
@@ -9036,6 +9047,84 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
     return payload
 
 
+def _build_wrong_question_mastery_tracking_payload(
+    conn: sqlite3.Connection,
+    record_id: str,
+) -> dict:
+    rows = conn.execute(
+        """
+        SELECT
+            sheet.id,
+            sheet.status,
+            sheet.pdf_path,
+            sheet.created_at,
+            item.topic_category_snapshot,
+            item.primary_error_type_snapshot
+        FROM wrong_question_practice_sheet_items item
+        JOIN wrong_question_practice_sheets sheet ON sheet.id = item.sheet_id
+        WHERE item.wrong_question_record_id=?
+        ORDER BY sheet.created_at DESC, sheet.id DESC, item.question_order ASC, item.id ASC
+        """,
+        (str(record_id or "").strip(),),
+    ).fetchall()
+    if not rows:
+        return {}
+
+    unique_sheet_ids: list[int] = []
+    seen_sheet_ids: set[int] = set()
+    related_topic_categories: list[str] = []
+    seen_topics: set[str] = set()
+    related_error_types: list[str] = []
+    seen_error_types: set[str] = set()
+
+    for row in rows:
+        sheet_id = int(row["id"])
+        if sheet_id not in seen_sheet_ids:
+            unique_sheet_ids.append(sheet_id)
+            seen_sheet_ids.add(sheet_id)
+        topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category_snapshot"] or ""))
+        if topic_category and topic_category != PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED and topic_category not in seen_topics:
+            related_topic_categories.append(topic_category)
+            seen_topics.add(topic_category)
+        error_type = str(row["primary_error_type_snapshot"] or "").strip()
+        if error_type and error_type not in seen_error_types:
+            related_error_types.append(error_type)
+            seen_error_types.add(error_type)
+
+    latest = rows[0]
+    return {
+        "practice_sheet_count": len(unique_sheet_ids),
+        "latest_practice_sheet_id": int(latest["id"]),
+        "latest_practice_status": str(latest["status"] or "").strip(),
+        "latest_practice_created_at": str(latest["created_at"] or "").strip(),
+        "latest_practice_pdf_path": str(latest["pdf_path"] or "").strip(),
+        "related_topic_categories": related_topic_categories,
+        "related_error_types": related_error_types,
+    }
+
+
+def _refresh_wrong_question_submission_mastery_tracking(
+    conn: sqlite3.Connection,
+    record_id: str,
+) -> None:
+    normalized_record_id = str(record_id or "").strip()
+    if not normalized_record_id:
+        return
+    payload = _build_wrong_question_mastery_tracking_payload(conn, normalized_record_id)
+    conn.execute(
+        """
+        UPDATE wrong_question_submissions
+        SET mastery_tracking_json=?,
+            updated_at=datetime('now','localtime')
+        WHERE id=?
+        """,
+        (
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) if payload else "{}",
+            normalized_record_id,
+        ),
+    )
+
+
 PRACTICE_PACK_MODE_OPTIONS = {"topic", "reason"}
 PRACTICE_PACK_VOLUME_COUNTS = {"light": 5, "standard": 10, "intensive": 15}
 PRACTICE_PACK_JOB_STATUSES = {"pending", "running", "ready", "partial_failed", "failed"}
@@ -9191,6 +9280,7 @@ def create_pending_wrong_question_practice_sheet(
         if int(record.get("student_id") or 0) != student_id:
             raise ValueError("selected records must belong to the same student")
 
+    linked_record_ids: list[str] = []
     with get_conn() as conn:
         cursor = conn.execute(
             """
@@ -9224,6 +9314,9 @@ def create_pending_wrong_question_practice_sheet(
         )
         sheet_id = int(cursor.lastrowid)
         for index, record in enumerate(selected_records, start=1):
+            linked_record_id = str(record.get("id") or "").strip()
+            if linked_record_id:
+                linked_record_ids.append(linked_record_id)
             conn.execute(
                 """
                 INSERT INTO wrong_question_practice_sheet_items (
@@ -9245,7 +9338,7 @@ def create_pending_wrong_question_practice_sheet(
                 (
                     sheet_id,
                     index,
-                    str(record.get("id") or "").strip(),
+                    linked_record_id,
                     str(record.get("source") or "wechat_mp").strip() or "wechat_mp",
                     1 if bool(record.get("is_geometry")) else 0,
                     str(record.get("question_text") or "").strip(),
@@ -9258,6 +9351,8 @@ def create_pending_wrong_question_practice_sheet(
                     str(record.get("topic_category") or "").strip(),
                 ),
             )
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
         saved = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
     serialized = _serialize_wrong_question_practice_sheet_row(saved)
     return serialized if serialized is not None else {}
@@ -9318,7 +9413,21 @@ def delete_wrong_question_practice_sheet(sheet_id: int) -> Optional[dict]:
         if not sheet_row:
             return None
         serialized = get_wrong_question_practice_sheet(sheet_id)
+        linked_record_ids = [
+            str(row["wrong_question_record_id"] or "").strip()
+            for row in conn.execute(
+                """
+                SELECT wrong_question_record_id
+                FROM wrong_question_practice_sheet_items
+                WHERE sheet_id=?
+                """,
+                (sheet_id,),
+            ).fetchall()
+            if str(row["wrong_question_record_id"] or "").strip()
+        ]
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE id=?", (sheet_id,))
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
     return serialized
 
 
@@ -9335,6 +9444,7 @@ def mark_wrong_question_practice_sheet_succeeded(
         if str(item.get("wrong_question_record_id") or "").strip()
     }
 
+    linked_record_ids: list[str] = []
     with get_conn() as conn:
         sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
         if not sheet_row:
@@ -9355,6 +9465,8 @@ def mark_wrong_question_practice_sheet_succeeded(
             generated = generated_item_by_record_id.get(wrong_question_record_id)
             if not generated:
                 raise ValueError("generated_items do not match selected records")
+            if wrong_question_record_id:
+                linked_record_ids.append(wrong_question_record_id)
             conn.execute(
                 """
                 UPDATE wrong_question_practice_sheet_items
@@ -9403,6 +9515,8 @@ def mark_wrong_question_practice_sheet_succeeded(
                 sheet_id,
             ),
         )
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
     return get_wrong_question_practice_sheet(sheet_id)
 
 
@@ -9411,6 +9525,18 @@ def mark_wrong_question_practice_sheet_failed(sheet_id: int, error_message: str)
         sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
         if not sheet_row:
             raise LookupError("wrong question practice sheet not found")
+        linked_record_ids = [
+            str(row["wrong_question_record_id"] or "").strip()
+            for row in conn.execute(
+                """
+                SELECT wrong_question_record_id
+                FROM wrong_question_practice_sheet_items
+                WHERE sheet_id=?
+                """,
+                (sheet_id,),
+            ).fetchall()
+            if str(row["wrong_question_record_id"] or "").strip()
+        ]
         conn.execute(
             """
             UPDATE wrong_question_practice_sheets
@@ -9422,6 +9548,8 @@ def mark_wrong_question_practice_sheet_failed(sheet_id: int, error_message: str)
             """,
             (str(error_message or "").strip(), sheet_id),
         )
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
     return get_wrong_question_practice_sheet(sheet_id)
 
 

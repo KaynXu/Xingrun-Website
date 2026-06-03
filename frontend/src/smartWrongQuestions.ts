@@ -69,6 +69,16 @@ export interface WrongQuestionGenerationMetadata {
   archiveSource?: string;
 }
 
+export interface WrongQuestionMasteryTracking {
+  practiceSheetCount: number;
+  latestPracticeSheetId?: number | null;
+  latestPracticeStatus?: string;
+  latestPracticeCreatedAt?: string;
+  latestPracticePdfPath?: string;
+  relatedTopicCategories: string[];
+  relatedErrorTypes: string[];
+}
+
 export interface WrongQuestionRecord {
   id: string;
   roomId: string;
@@ -115,6 +125,7 @@ export interface WrongQuestionRecord {
   confirmationReviewedAt?: string;
   confirmationReviewerName?: string;
   generationMetadata?: WrongQuestionGenerationMetadata;
+  masteryTracking?: WrongQuestionMasteryTracking;
   linkedIngestionRun?: WrongQuestionIngestionRun;
   linkedChatSession?: WrongQuestionChatSession;
 }
@@ -504,6 +515,59 @@ function normalizeWrongQuestionGenerationMetadata(rawMetadata: unknown): WrongQu
   return hasValue ? metadata : undefined;
 }
 
+function normalizeWrongQuestionMasteryTracking(rawTracking: unknown): WrongQuestionMasteryTracking | undefined {
+  let source = rawTracking;
+  if (typeof rawTracking === 'string') {
+    try {
+      source = JSON.parse(rawTracking);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const tracking: WrongQuestionMasteryTracking = {
+    practiceSheetCount: pickNumberValue(source, ['practiceSheetCount', 'practice_sheet_count']) ?? 0,
+    relatedTopicCategories: normalizePossiblyJsonStringList(
+      source.related_topic_categories ?? source.relatedTopicCategories,
+    ),
+    relatedErrorTypes: normalizePossiblyJsonStringList(
+      source.related_error_types ?? source.relatedErrorTypes,
+    ),
+  };
+
+  const latestPracticeSheetId = pickNumberValue(source, ['latestPracticeSheetId', 'latest_practice_sheet_id']);
+  if (latestPracticeSheetId !== null) {
+    tracking.latestPracticeSheetId = latestPracticeSheetId;
+  }
+
+  const latestPracticeStatus = pickStringValue(source, ['latestPracticeStatus', 'latest_practice_status']);
+  if (latestPracticeStatus) {
+    tracking.latestPracticeStatus = latestPracticeStatus;
+  }
+
+  const latestPracticeCreatedAt = pickStringValue(source, ['latestPracticeCreatedAt', 'latest_practice_created_at']);
+  if (latestPracticeCreatedAt) {
+    tracking.latestPracticeCreatedAt = latestPracticeCreatedAt;
+  }
+
+  const latestPracticePdfPath = pickStringValue(source, ['latestPracticePdfPath', 'latest_practice_pdf_path']);
+  if (latestPracticePdfPath) {
+    tracking.latestPracticePdfPath = latestPracticePdfPath;
+  }
+
+  const hasValue = tracking.practiceSheetCount > 0
+    || tracking.relatedTopicCategories.length > 0
+    || tracking.relatedErrorTypes.length > 0
+    || typeof tracking.latestPracticeSheetId === 'number'
+    || Boolean(tracking.latestPracticeStatus)
+    || Boolean(tracking.latestPracticeCreatedAt)
+    || Boolean(tracking.latestPracticePdfPath);
+  return hasValue ? tracking : undefined;
+}
+
 function normalizeWrongQuestionTopicCategory(value = ''): string {
   const normalized = value.trim();
   return normalized || '未分类';
@@ -810,6 +874,13 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     record.generationMetadata = generationMetadata;
   }
 
+  const masteryTracking = normalizeWrongQuestionMasteryTracking(
+    source.mastery_tracking ?? source.masteryTracking ?? source.mastery_tracking_json,
+  );
+  if (masteryTracking) {
+    record.masteryTracking = masteryTracking;
+  }
+
   const archiveContextCandidate = isObjectRecord(source.archive_context)
     ? source.archive_context
     : isObjectRecord(source.archiveContext)
@@ -1021,6 +1092,7 @@ export function resolveSavedWrongQuestionRecord(
     const hasConfirmationReviewedAt = hasOwnKey(responseSource, ['confirmationReviewedAt', 'confirmation_reviewed_at']);
     const hasConfirmationReviewerName = hasOwnKey(responseSource, ['confirmationReviewerName', 'confirmation_reviewer_name']);
     const hasGenerationMetadata = hasOwnKey(responseSource, ['generationMetadata', 'generation_metadata', 'generation_metadata_json']);
+    const hasMasteryTracking = hasOwnKey(responseSource, ['masteryTracking', 'mastery_tracking', 'mastery_tracking_json']);
 
     return {
       ...normalizedResponse,
@@ -1066,6 +1138,9 @@ export function resolveSavedWrongQuestionRecord(
       generationMetadata: hasGenerationMetadata
         ? normalizedResponse.generationMetadata
         : currentRecord.generationMetadata,
+      masteryTracking: hasMasteryTracking
+        ? normalizedResponse.masteryTracking
+        : currentRecord.masteryTracking,
     };
   }
 

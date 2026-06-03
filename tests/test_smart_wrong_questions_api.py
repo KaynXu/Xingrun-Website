@@ -861,6 +861,22 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             ingestion_run_id=run["id"],
             chat_session_id="chat-session-record-detail",
         )
+        practice_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=owner_payload["user"]["id"],
+            selected_records=[record],
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            practice_sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": record["id"],
+                    "ai_hint": "先移项。",
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "下次先 ______。",
+                },
+            ],
+            pdf_path="/tmp/archive-detail-practice.pdf",
+        )
 
         detail = self.client.get(
             f"/api/wrong-questions/{record['id']}",
@@ -889,6 +905,10 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(payload["linked_chat_session"]["summary_text"], "错因自述：移项前没有先看清等式两边。")
         self.assertEqual(len(payload["linked_chat_session"]["messages"]), 1)
         self.assertEqual(payload["linked_chat_session"]["messages"][0]["content"], "你是在哪一步开始不确定的？")
+        self.assertEqual(payload["mastery_tracking"]["practice_sheet_count"], 1)
+        self.assertEqual(payload["mastery_tracking"]["latest_practice_sheet_id"], practice_sheet["id"])
+        self.assertEqual(payload["mastery_tracking"]["latest_practice_status"], "ready")
+        self.assertEqual(payload["mastery_tracking"]["latest_practice_pdf_path"], "/tmp/archive-detail-practice.pdf")
 
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive-detail.pdf")
     def test_local_ai_chat_review_can_update_archive_detail_fields(self, _mock_rebuild):

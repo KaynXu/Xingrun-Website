@@ -613,6 +613,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedRecordGenerationMetadataEntries = useMemo(() => {
     return buildWrongQuestionGenerationMetadataEntries(selectedRecord?.generationMetadata);
   }, [selectedRecord?.generationMetadata]);
+  const selectedRecordMasteryTracking = selectedRecord?.masteryTracking;
+  const selectedRecordLatestPracticePreviewUrl = useMemo(() => {
+    const sheetId = selectedRecordMasteryTracking?.latestPracticeSheetId;
+    if (typeof sheetId !== 'number' || sheetId <= 0) {
+      return '';
+    }
+    return buildWrongQuestionAuthedPath(`/api/wrong-question-practice-sheets/${sheetId}/pdf`);
+  }, [selectedRecordMasteryTracking?.latestPracticeSheetId]);
+  const selectedRecordLatestPracticeDownloadUrl = useMemo(() => {
+    const sheetId = selectedRecordMasteryTracking?.latestPracticeSheetId;
+    if (typeof sheetId !== 'number' || sheetId <= 0) {
+      return '';
+    }
+    return buildWrongQuestionAuthedPath(`/api/wrong-question-practice-sheets/${sheetId}/pdf/download`);
+  }, [selectedRecordMasteryTracking?.latestPracticeSheetId]);
   const selectedQuestionTextPreview = useMemo(() => {
     if (!selectedRecord || !selectedDraft || selectedRecord.isGeometry) {
       return null;
@@ -2884,6 +2899,70 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500 dark:text-slate-400">当前还没有记录生成版本信息。</p>
+                )}
+              </div>
+
+              <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">再练闭环</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                      {selectedRecordMasteryTracking?.practiceSheetCount
+                        ? `已生成 ${selectedRecordMasteryTracking.practiceSheetCount} 次练习`
+                        : '这题还没有进入再练链路'}
+                    </p>
+                  </div>
+                  {selectedRecordLatestPracticePreviewUrl ? (
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={selectedRecordLatestPracticePreviewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={workspaceSecondaryButtonClass}
+                      >
+                        打开最近练习
+                      </a>
+                      {selectedRecordLatestPracticeDownloadUrl ? (
+                        <a
+                          href={selectedRecordLatestPracticeDownloadUrl}
+                          className={workspaceSecondaryButtonClass}
+                        >
+                          下载最近练习
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                {selectedRecordMasteryTracking?.practiceSheetCount ? (
+                  <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                    <p>
+                      最近练习：{getWrongQuestionPracticeStatusLabel(selectedRecordMasteryTracking.latestPracticeStatus || '')}
+                      {selectedRecordMasteryTracking.latestPracticeCreatedAt ? ` · ${selectedRecordMasteryTracking.latestPracticeCreatedAt}` : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedRecordMasteryTracking.relatedTopicCategories.map((topic) => (
+                        <span
+                          key={`mastery-topic-${topic}`}
+                          className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                      {selectedRecordMasteryTracking.relatedErrorTypes.map((errorType) => (
+                        <span
+                          key={`mastery-error-${errorType}`}
+                          className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
+                        >
+                          {errorType}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      这层记录会继续作为后续掌握评级和相似错因复发判断的基础信号。
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">确认后的 AI 归档题后续一旦进入练习，这里会直接显示最新再练状态。</p>
                 )}
               </div>
 

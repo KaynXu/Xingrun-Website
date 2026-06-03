@@ -200,6 +200,44 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
         self.assertEqual(saved["pdf_path"], "")
 
+    def test_practice_sheet_lifecycle_refreshes_record_mastery_tracking(self):
+        sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=self._selected_records_in_order(self.record_one["id"]),
+        )
+
+        pending_record = lesson_manager.get_wechat_wrong_question_submission(self.record_one["id"])
+        self.assertIsNotNone(pending_record)
+        self.assertEqual(pending_record["mastery_tracking"]["practice_sheet_count"], 1)
+        self.assertEqual(pending_record["mastery_tracking"]["latest_practice_sheet_id"], sheet["id"])
+        self.assertEqual(pending_record["mastery_tracking"]["latest_practice_status"], "pending")
+        self.assertEqual(pending_record["mastery_tracking"]["related_topic_categories"], ["四则混合运算"])
+        self.assertEqual(pending_record["mastery_tracking"]["related_error_types"], ["细节问题"])
+
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": self.record_one["id"],
+                    "ai_hint": "先看运算顺序。",
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "下次先 ______。",
+                },
+            ],
+            pdf_path="/tmp/mastery-tracking.pdf",
+        )
+
+        ready_record = lesson_manager.get_wechat_wrong_question_submission(self.record_one["id"])
+        self.assertIsNotNone(ready_record)
+        self.assertEqual(ready_record["mastery_tracking"]["latest_practice_status"], "ready")
+        self.assertEqual(ready_record["mastery_tracking"]["latest_practice_pdf_path"], "/tmp/mastery-tracking.pdf")
+
+        lesson_manager.delete_wrong_question_practice_sheet(sheet["id"])
+
+        deleted_record = lesson_manager.get_wechat_wrong_question_submission(self.record_one["id"])
+        self.assertIsNotNone(deleted_record)
+        self.assertEqual(deleted_record["mastery_tracking"], {})
+
     def test_delete_wrong_question_practice_sheet_removes_sheet_and_items(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
             created_by=self.owner["id"],
