@@ -193,6 +193,10 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("不要在挖空题后面再追加纯写字线", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("不要把孩子没说过或题目里没明确给出的细节硬写成确定事实", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("只需要围绕错因做轻引导", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("整体语气要像老师把学生重新带回题目", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("至少给学生一个清晰的“入口动作”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("优先写成动作链", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("先……再……最后……", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertNotIn("ai_hint", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
 
     def test_practice_pack_variant_prompt_requires_same_reason_questions(self):
@@ -348,6 +352,8 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("E 点为什么要连到 AD", joined)
         self.assertIn("CE⊥AD", joined)
         self.assertIn("垂直", joined)
+        self.assertIn("先回到", joined)
+        self.assertIn("别急着算", joined)
 
     def test_wrong_question_practice_material_keeps_explicit_structured_content(self):
         fake_client = _FakeClient(

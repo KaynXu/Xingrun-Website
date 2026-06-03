@@ -363,7 +363,7 @@ items 中每一项必须包含：
 - structured_content: object，供后续四区 PDF、老师复核和长期闭环共用的结构化内容边界。字段至少包含：
   - mistake_focus: string，本题真正要纠正的错因焦点，短句即可
   - review_goal: string，这次复盘要达到的具体目标，短句即可
-  - method_hint_lines: array[string]，2 到 3 条方法提醒短句，不能直接泄露完整答案
+  - method_hint_lines: array[string]，2 到 3 条方法提醒短句，不能直接泄露完整答案；优先写成“先……再……最后……”这种带做动作链
   - blank_review_blocks: array[object]，每个 object 至少包含 title 和 lines；lines 是 1 到 2 句挖空复盘句
   - teacher_feedback: string，可留空；给老师后续批注或系统预留
   - confirmation_reasons: array[string]，可留空；只放结构化原因标识，不写成长解释
@@ -380,6 +380,9 @@ items 中每一项必须包含：
 2.d 下次提醒不是复述本题答案，而是总结可迁移的题型动作。几何题要优先把平行、垂直、等角、60°、辅助点分别翻译成可用关系；方程、函数、行程等题也要写成下次先做什么、先检查什么、如何触发正确方法。
 2.e 挖空复盘必须从错因复盘和下次提醒里抽取关键数学动作、关键条件或题型框架。禁止出现“我这题错在 ______”“下次我要先看 ______”“我要注意 ______”“这一步需要先看清 ______”这类没有上下文的空格；每个空格前后必须让学生知道要填什么。
 2.f structured_content.blank_review_blocks 必须稳定包含“错因复盘”和“下次提醒”两类 block；可以用更具体标题，但 title 或 lines 里必须看得出这两类用途。
+2.g 整体语气要像老师把学生重新带回题目，不像在写分析报告。优先写“先看什么、先判断什么、再把什么改写成什么、最后检查什么”，少写“你的问题是……”“本次目标是……”这类评语句。
+2.h 每道题至少给学生一个清晰的“入口动作”。读完方法提醒后，学生应该知道这题重做时第一步先写什么、先圈什么、先判断什么。
+2.i method_hint_lines、reason_blank_prompt、improvement_summary_prompt 都优先写成动作链，不要只写判断句。尽量出现“先……再……最后……”或“先由……推出……，再把……改写成……，最后检查……”这种可执行顺序。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
@@ -906,30 +909,30 @@ def _build_contextual_wrong_question_practice_blocks(context: dict) -> list[dict
 
     if student_transcript:
         reason_line = (
-            f"我录音里提到“{student_transcript}”，这说明本题卡在把 {condition_anchor} "
+            f"先回到你录音里提到的“{student_transcript}”，这一步要先把 {condition_anchor} "
             "翻译成 ______。"
         )
     elif why_wrong:
-        reason_line = f"本题常见卡点是：{why_wrong}；复盘时要先把 {condition_anchor} 翻译成 ______。"
+        reason_line = f"这类题别急着算，先把 {condition_anchor} 翻译成 ______；本题最容易卡在 {why_wrong}。"
     elif reason_text:
-        reason_line = f"我写下的错因是“{reason_text}”，复盘时要先把 {condition_anchor} 对应到 ______。"
+        reason_line = f"先回到你写下的“{reason_text}”，把 {condition_anchor} 对应到 ______，再继续往下推。"
     else:
-        reason_line = f"本题信息还不完整，先回到原图和题干确认 {condition_anchor} 表示的 ______。"
+        reason_line = f"本题信息还不完整，先回到原图和题干，确认 {condition_anchor} 表示的 ______。"
 
     if unknown_step and unknown_step not in reason_line:
-        reason_second_line = f"这一步别急着算，先说清“{unknown_step}”对应的是 ______。"
+        reason_second_line = f"别急着算，先说清“{unknown_step}”对应的是 ______，再写下一步。"
     else:
         reason_second_line = f"看到 {condition_anchor} 时，先标出 ______，再继续找关系。"
 
     if help_preference:
-        reminder_line = f"下次遇到 {topic_anchor} 题，先按“{help_preference}”检查 ______。"
+        reminder_line = f"下次遇到 {topic_anchor} 题，先按“{help_preference}”检查 ______，再下笔。"
     elif tag_anchor:
         reminder_line = f"下次遇到 {topic_anchor} 题，先把 {tag_anchor} 这些条件分别翻译成 ______。"
     else:
         reminder_line = f"下次遇到同类题，先把已知条件翻译成图上或式子里的 ______。"
 
     if tag_anchor:
-        reminder_second_line = f"做题前先问：{tag_anchor} 是在提示角度、长度、比例还是 ______。"
+        reminder_second_line = f"再问自己：{tag_anchor} 是在提示角度、长度、比例还是 ______。"
     else:
         reminder_second_line = "如果只有图片信息，先请老师确认关键条件，再补完整 ______。"
 
