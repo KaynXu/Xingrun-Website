@@ -2498,6 +2498,32 @@ def init_db():
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS wrong_question_chat_sessions (
+            id                        TEXT PRIMARY KEY,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            ingestion_run_id          TEXT NOT NULL DEFAULT '' REFERENCES wrong_question_ingestion_runs(id) ON DELETE SET DEFAULT,
+            class_id                  INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER REFERENCES students(id),
+            teacher_user_id           INTEGER REFERENCES users(id),
+            status                    TEXT NOT NULL DEFAULT 'active',
+            current_stage             TEXT NOT NULL DEFAULT 'ask_why_wrong',
+            summary_text              TEXT NOT NULL DEFAULT '',
+            metadata_json             TEXT NOT NULL DEFAULT '{}',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_chat_messages (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id                TEXT NOT NULL REFERENCES wrong_question_chat_sessions(id) ON DELETE CASCADE,
+            role                      TEXT NOT NULL,
+            stage                     TEXT NOT NULL DEFAULT '',
+            content                   TEXT NOT NULL,
+            metadata_json             TEXT NOT NULL DEFAULT '{}',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS wechat_wrong_question_upload_tasks (
             id                        INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2911,6 +2937,12 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_assets_run_role
             ON wrong_question_assets (ingestion_run_id, asset_role, page_number, id);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_chat_sessions_lookup
+            ON wrong_question_chat_sessions (organization_id, class_id, student_id, status, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_chat_messages_session
+            ON wrong_question_chat_messages (session_id, id);
 
             CREATE INDEX IF NOT EXISTS idx_wechat_wrong_question_upload_tasks_parent_status
             ON wechat_wrong_question_upload_tasks (parent_wechat_account_id, status, created_at);
@@ -6891,6 +6923,177 @@ def list_wrong_question_assets(ingestion_run_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def create_wrong_question_chat_session(
+    *,
+    session_id: str,
+    organization_id: int,
+    ingestion_run_id: str = "",
+    class_id: int | None = None,
+    student_id: int | None = None,
+    teacher_user_id: int | None = None,
+    status: str = "active",
+    current_stage: str = "ask_why_wrong",
+    summary_text: str = "",
+    metadata_json: object = None,
+) -> dict:
+    normalized_session_id = (session_id or "").strip()
+    if not normalized_session_id:
+        raise ValueError("session_id is required")
+    normalized_metadata_json = _normalize_json_storage_value(
+        metadata_json,
+        field_name="metadata_json",
+        default="{}",
+    )
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO wrong_question_chat_sessions (
+                id, organization_id, ingestion_run_id, class_id, student_id,
+                teacher_user_id, status, current_stage, summary_text, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_session_id,
+                int(organization_id or 0),
+                (ingestion_run_id or "").strip(),
+                int(class_id) if class_id is not None else None,
+                int(student_id) if student_id is not None else None,
+                int(teacher_user_id) if teacher_user_id is not None else None,
+                (status or "active").strip() or "active",
+                (current_stage or "ask_why_wrong").strip() or "ask_why_wrong",
+                (summary_text or "").strip(),
+                normalized_metadata_json,
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_chat_sessions WHERE id=?",
+            (normalized_session_id,),
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def get_wrong_question_chat_session(session_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM wrong_question_chat_sessions WHERE id=?",
+            ((session_id or "").strip(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_wrong_question_chat_session(
+    session_id: str,
+    *,
+    ingestion_run_id: str | None = None,
+    status: str | None = None,
+    current_stage: str | None = None,
+    summary_text: str | None = None,
+    metadata_json: object = None,
+) -> Optional[dict]:
+    assignments: list[str] = []
+    params: list[object] = []
+    if ingestion_run_id is not None:
+        assignments.append("ingestion_run_id=?")
+        params.append((ingestion_run_id or "").strip())
+    if status is not None:
+        assignments.append("status=?")
+        params.append((status or "active").strip() or "active")
+    if current_stage is not None:
+        assignments.append("current_stage=?")
+        params.append((current_stage or "ask_why_wrong").strip() or "ask_why_wrong")
+    if summary_text is not None:
+        assignments.append("summary_text=?")
+        params.append((summary_text or "").strip())
+    if metadata_json is not None:
+        assignments.append("metadata_json=?")
+        params.append(
+            _normalize_json_storage_value(
+                metadata_json,
+                field_name="metadata_json",
+                default="{}",
+            )
+        )
+    if not assignments:
+        return get_wrong_question_chat_session(session_id)
+
+    with get_conn() as conn:
+        conn.execute(
+            f"""
+            UPDATE wrong_question_chat_sessions
+            SET {", ".join(assignments)},
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (*params, (session_id or "").strip()),
+        )
+        refreshed = conn.execute(
+            "SELECT * FROM wrong_question_chat_sessions WHERE id=?",
+            ((session_id or "").strip(),),
+        ).fetchone()
+    return dict(refreshed) if refreshed else None
+
+
+def create_wrong_question_chat_message(
+    *,
+    session_id: str,
+    role: str,
+    content: str,
+    stage: str = "",
+    metadata_json: object = None,
+) -> dict:
+    normalized_session_id = (session_id or "").strip()
+    if not normalized_session_id:
+        raise ValueError("session_id is required")
+    normalized_role = (role or "").strip().lower()
+    if normalized_role not in {"user", "assistant", "system"}:
+        raise ValueError("role must be user, assistant or system")
+    normalized_content = (content or "").strip()
+    if not normalized_content:
+        raise ValueError("content is required")
+    normalized_metadata_json = _normalize_json_storage_value(
+        metadata_json,
+        field_name="metadata_json",
+        default="{}",
+    )
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO wrong_question_chat_messages (
+                session_id, role, stage, content, metadata_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_session_id,
+                normalized_role,
+                (stage or "").strip(),
+                normalized_content,
+                normalized_metadata_json,
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_chat_messages WHERE id=last_insert_rowid()",
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def list_wrong_question_chat_messages(session_id: str) -> list[dict]:
+    normalized_session_id = (session_id or "").strip()
+    if not normalized_session_id:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_chat_messages
+            WHERE session_id=?
+            ORDER BY id ASC
+            """,
+            (normalized_session_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _normalize_wrong_question_submission_fields(
     *,
     image_url: str,
@@ -7404,6 +7607,38 @@ def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(row)
+
+
+def list_wrong_question_submissions_for_chat_session(chat_session_id: str) -> list[dict]:
+    normalized_session_id = (chat_session_id or "").strip()
+    if not normalized_session_id:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                c.grade AS grade,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            WHERE wqs.chat_session_id=?
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            (normalized_session_id,),
+        ).fetchall()
+    return [
+        item
+        for item in (
+            _serialize_wechat_wrong_question_submission_row(row)
+            for row in rows
+        )
+        if item is not None
+    ]
 
 
 def list_wrong_question_submissions_for_ingestion_run(ingestion_run_id: str) -> list[dict]:

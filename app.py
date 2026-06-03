@@ -73,6 +73,8 @@ from lesson_manager import (
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
     create_wrong_question_asset,
+    create_wrong_question_chat_message,
+    create_wrong_question_chat_session,
     create_wrong_question_ingestion_run,
     create_wrong_question_submission,
     create_wrong_question_practice_pack_job,
@@ -111,6 +113,7 @@ from lesson_manager import (
     get_parent_student_binding_for_student,
     get_or_create_active_class_invite,
     get_lesson,
+    get_wrong_question_chat_session,
     get_weekly_wrong_question_followup_message,
     get_wrong_question_practice_pack_job,
     get_wrong_question_practice_sheet,
@@ -142,6 +145,8 @@ from lesson_manager import (
     list_parent_student_bindings_for_openid,
     list_primary_topic_category_suggestions,
     list_student_wrong_question_library_records,
+    list_wrong_question_chat_messages,
+    list_wrong_question_submissions_for_chat_session,
     list_wrong_question_assets,
     list_wrong_question_submissions_for_ingestion_run,
     list_students_for_class,
@@ -186,6 +191,7 @@ from lesson_manager import (
     update_wechat_wrong_question_upload_task,
     update_wechat_wrong_question_question_text,
     update_wechat_wrong_question_topic_category,
+    update_wrong_question_chat_session,
     update_wrong_question_ingestion_run,
     update_user_display_name_for_actor,
     update_user_visible_pages_for_actor,
@@ -1998,6 +2004,15 @@ def _serialize_wrong_question_ingestion_run_for_response(run: object) -> Optiona
     return serialized
 
 
+def _serialize_wrong_question_chat_session_for_response(session: object) -> Optional[dict]:
+    if not isinstance(session, dict):
+        return None
+    serialized = dict(session)
+    serialized["messages"] = list_wrong_question_chat_messages(str(serialized.get("id") or ""))
+    serialized["records"] = list_wrong_question_submissions_for_chat_session(str(serialized.get("id") or ""))
+    return serialized
+
+
 def _serialize_wrong_question_practice_sheets_for_response(items: object) -> list[dict]:
     if not isinstance(items, list):
         return []
@@ -2086,6 +2101,27 @@ def _can_access_wrong_question_practice_pack_job(user: dict, job: object) -> boo
     if user.get("role") in {"owner", "admin"}:
         return int(job.get("organization_id") or 0) == int(user.get("organization_id") or 0)
     return int(job.get("class_id") or 0) in set(get_user_class_ids(user["id"]))
+
+
+def _can_access_wrong_question_chat_session(user: dict, session: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
+    if user.get("role") == "super_owner":
+        return True
+    if not isinstance(session, dict):
+        return False
+    if user.get("role") in {"owner", "admin"}:
+        return int(session.get("organization_id") or 0) == int(user.get("organization_id") or 0)
+
+    teacher_user_id = session.get("teacher_user_id")
+    if isinstance(teacher_user_id, int) and teacher_user_id == user.get("id"):
+        return True
+
+    class_id = session.get("class_id")
+    if not isinstance(class_id, int):
+        return False
+    member_class_ids = owned_class_ids
+    if member_class_ids is None:
+        member_class_ids = set(get_user_class_ids(user["id"]))
+    return class_id in member_class_ids
 
 
 def _can_access_wrong_question_ingestion_run(user: dict, run: object, owned_class_ids: Optional[Set[int]] = None) -> bool:
@@ -2181,6 +2217,98 @@ def _normalize_wrong_question_ingestion_record_payloads(submissions_payload: obj
             raise ValueError("submissions must contain objects")
         normalized_items.append(raw_item)
     return normalized_items
+
+
+_WRONG_QUESTION_CHAT_NEXT_STAGE = {
+    "ask_why_wrong": "ask_unknown_step",
+    "ask_unknown_step": "ask_help_mode",
+    "ask_help_mode": "ready_to_archive",
+    "ready_to_archive": "ready_to_archive",
+}
+
+_WRONG_QUESTION_CHAT_ASSISTANT_PROMPTS = {
+    "ask_why_wrong": "先一起复盘一下。你觉得这题错在哪里，是没读懂题、不会列式，还是算到一半卡住了？",
+    "ask_unknown_step": "收到。具体是哪一步最不确定？是审题、列式、计算，还是某个知识点没想明白？",
+    "ask_help_mode": "明白了。接下来你更希望我先给一点提示，还是先带你完整复盘一遍？",
+    "ready_to_archive": "好，我会把这次错因、卡点和接下来的复习建议整理进错题库，后面我们可以继续追问这道题。",
+}
+
+
+def _wrong_question_chat_prompt_for_stage(stage: str) -> str:
+    normalized_stage = (stage or "ask_why_wrong").strip() or "ask_why_wrong"
+    return _WRONG_QUESTION_CHAT_ASSISTANT_PROMPTS.get(
+        normalized_stage,
+        _WRONG_QUESTION_CHAT_ASSISTANT_PROMPTS["ask_why_wrong"],
+    )
+
+
+def _collect_wrong_question_chat_reflection(messages: list[dict]) -> dict:
+    reflection = {
+        "why_wrong": "",
+        "unknown_step": "",
+        "help_preference": "",
+    }
+    for item in messages:
+        if not isinstance(item, dict) or str(item.get("role") or "") != "user":
+            continue
+        stage = str(item.get("stage") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        if stage == "ask_why_wrong" and not reflection["why_wrong"]:
+            reflection["why_wrong"] = content
+        elif stage == "ask_unknown_step" and not reflection["unknown_step"]:
+            reflection["unknown_step"] = content
+        elif stage == "ask_help_mode" and not reflection["help_preference"]:
+            reflection["help_preference"] = content
+    return reflection
+
+
+def _summarize_wrong_question_chat_reflection(reflection: dict) -> str:
+    parts = []
+    why_wrong = str(reflection.get("why_wrong") or "").strip()
+    unknown_step = str(reflection.get("unknown_step") or "").strip()
+    help_preference = str(reflection.get("help_preference") or "").strip()
+    if why_wrong:
+        parts.append(f"错因自述：{why_wrong}")
+    if unknown_step:
+        parts.append(f"卡点：{unknown_step}")
+    if help_preference:
+        parts.append(f"期望支持：{help_preference}")
+    return "；".join(parts)
+
+
+def _resolve_wrong_question_archive_image_url(run: object, archive_payload: dict) -> str:
+    direct_image_url = str(archive_payload.get("image_url") or "").strip()
+    if direct_image_url:
+        return direct_image_url
+    if isinstance(run, dict):
+        for asset in reversed(list_wrong_question_assets(str(run.get("id") or ""))):
+            if not isinstance(asset, dict):
+                continue
+            candidate = str(asset.get("file_url") or asset.get("storage_path") or "").strip()
+            if candidate:
+                return candidate
+    return ""
+
+
+def _infer_wrong_question_confirmation_state(*, archive_payload: dict, reflection: dict, image_url: str) -> tuple[bool, list[str]]:
+    reasons = []
+    for item in archive_payload.get("confirmation_reasons_json") or []:
+        reason = str(item or "").strip()
+        if reason and reason not in reasons:
+            reasons.append(reason)
+    if not image_url:
+        reasons.append("missing_image_asset")
+    if not str(archive_payload.get("question_text") or "").strip():
+        reasons.append("missing_question_text")
+    knowledge_tags = archive_payload.get("knowledge_tags_json")
+    if not isinstance(knowledge_tags, list) or not any(str(item or "").strip() for item in knowledge_tags):
+        reasons.append("knowledge_tags_unconfirmed")
+    if not str(reflection.get("unknown_step") or "").strip():
+        reasons.append("student_confused_step")
+    needs_teacher_confirmation = bool(archive_payload.get("needs_teacher_confirmation")) or bool(reasons)
+    return needs_teacher_confirmation, reasons
 
 def _get_parent_wechat_account_by_openid(open_id: str):
     with get_conn() as conn:
@@ -3558,6 +3686,213 @@ def api_wrong_question_ingestion_archive(run_id: str):
             "ok": True,
             "run": _serialize_wrong_question_ingestion_run_for_response(updated),
             "created_records": created_records,
+        }
+    )
+
+
+@app.route("/api/wrong-question-chats/<session_id>/stream", methods=["POST"])
+def api_wrong_question_chat_stream(session_id: str):
+    user, error = _require_auth()
+    if error:
+        return error
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+
+    normalized_session_id = str(session_id or "").strip()
+    if not normalized_session_id:
+        return jsonify({"error": "session_id is required"}), 400
+
+    archive_payload = data.get("archive_payload")
+    if archive_payload is None:
+        archive_payload = {}
+    if not isinstance(archive_payload, dict):
+        return jsonify({"error": "archive_payload must be an object"}), 400
+
+    session = get_wrong_question_chat_session(normalized_session_id)
+    run = None
+    if session:
+        if not _can_access_wrong_question_chat_session(user, session):
+            return jsonify({"error": "not found"}), 404
+    else:
+        requested_run_id = str(data.get("ingestion_run_id") or "").strip()
+        if requested_run_id:
+            run = get_wrong_question_ingestion_run(requested_run_id)
+            if not run or not _can_access_wrong_question_ingestion_run(user, run):
+                return jsonify({"error": "ingestion run not found"}), 404
+        class_id = int(data.get("class_id") or (run.get("class_id") if isinstance(run, dict) else 0) or 0)
+        student_id = int(data.get("student_id") or (run.get("student_id") if isinstance(run, dict) else 0) or 0)
+        if not class_id or not student_id:
+            return jsonify({"error": "class_id and student_id are required"}), 400
+        cls, class_error = _get_accessible_class_or_error(user, class_id)
+        if class_error:
+            return class_error
+        class_students = list_students_for_class(class_id)
+        if not any(int(item.get("id") or 0) == student_id for item in class_students):
+            return jsonify({"error": "student not found in class"}), 404
+
+        teacher_user_id = int(
+            data.get("teacher_user_id")
+            or (run.get("teacher_user_id") if isinstance(run, dict) else 0)
+            or get_class_teacher_user_id(class_id)
+            or user["id"]
+        )
+        teacher_user = get_user_by_id(teacher_user_id)
+        if not teacher_user:
+            return jsonify({"error": "teacher user not found"}), 404
+        if user.get("role") != "super_owner" and teacher_user.get("organization_id") != user.get("organization_id"):
+            return jsonify({"error": "teacher user not found"}), 404
+
+        session = create_wrong_question_chat_session(
+            session_id=normalized_session_id,
+            organization_id=int(cls.get("organization_id") or user.get("organization_id") or 0),
+            ingestion_run_id=str((run or {}).get("id") or "").strip(),
+            class_id=class_id,
+            student_id=student_id,
+            teacher_user_id=teacher_user_id,
+            metadata_json={"entrypoint": "wrong_question_chat"},
+        )
+        if isinstance(run, dict):
+            updated_run = update_wrong_question_ingestion_run(run["id"], chat_session_id=normalized_session_id)
+            if updated_run:
+                run = updated_run
+
+    if not isinstance(session, dict):
+        return jsonify({"error": "chat session unavailable"}), 500
+
+    if not isinstance(run, dict) and str(session.get("ingestion_run_id") or "").strip():
+        run = get_wrong_question_ingestion_run(str(session.get("ingestion_run_id") or "").strip())
+
+    message = str(data.get("message") or "").strip()
+    if str(data.get("message_role") or "user").strip() not in {"", "user"}:
+        return jsonify({"error": "message_role must be user"}), 400
+
+    existing_messages = list_wrong_question_chat_messages(normalized_session_id)
+    current_stage = str(session.get("current_stage") or "ask_why_wrong").strip() or "ask_why_wrong"
+
+    if not existing_messages and not message:
+        assistant_message = create_wrong_question_chat_message(
+            session_id=normalized_session_id,
+            role="assistant",
+            stage=current_stage,
+            content=_wrong_question_chat_prompt_for_stage(current_stage),
+        )
+        serialized = _serialize_wrong_question_chat_session_for_response(get_wrong_question_chat_session(normalized_session_id))
+        return jsonify({"ok": True, "session": serialized, "assistant_message": assistant_message, "archive": None})
+
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    create_wrong_question_chat_message(
+        session_id=normalized_session_id,
+        role="user",
+        stage=current_stage,
+        content=message,
+    )
+    messages = list_wrong_question_chat_messages(normalized_session_id)
+    reflection = _collect_wrong_question_chat_reflection(messages)
+    summary_text = _summarize_wrong_question_chat_reflection(reflection)
+    next_stage = _WRONG_QUESTION_CHAT_NEXT_STAGE.get(current_stage, "ready_to_archive")
+    assistant_message = create_wrong_question_chat_message(
+        session_id=normalized_session_id,
+        role="assistant",
+        stage=next_stage,
+        content=_wrong_question_chat_prompt_for_stage(next_stage),
+    )
+
+    session_metadata: dict[str, object]
+    try:
+        session_metadata = json.loads(str(session.get("metadata_json") or "{}"))
+    except json.JSONDecodeError:
+        session_metadata = {}
+    if not isinstance(session_metadata, dict):
+        session_metadata = {}
+    session_metadata["reflection"] = reflection
+
+    archive_result = None
+    should_finalize = bool(data.get("finalize_archive")) or current_stage == "ask_help_mode"
+    if should_finalize:
+        existing_records = list_wrong_question_submissions_for_chat_session(normalized_session_id)
+        if existing_records:
+            archive_result = {
+                "created": False,
+                "record": existing_records[0],
+            }
+            session_metadata["archived_record_id"] = existing_records[0]["id"]
+            session = update_wrong_question_chat_session(
+                normalized_session_id,
+                status="archived",
+                current_stage="ready_to_archive",
+                summary_text=summary_text,
+                metadata_json=session_metadata,
+            ) or session
+        else:
+            image_url = _resolve_wrong_question_archive_image_url(run, archive_payload)
+            if not image_url:
+                return jsonify({"error": "missing image asset for archive"}), 400
+            needs_teacher_confirmation, confirmation_reasons = _infer_wrong_question_confirmation_state(
+                archive_payload=archive_payload,
+                reflection=reflection,
+                image_url=image_url,
+            )
+            confirmation_reasons_json = confirmation_reasons or archive_payload.get("confirmation_reasons_json") or []
+            created_record = create_wrong_question_submission(
+                source="ai_chat",
+                organization_id=int(session.get("organization_id") or 0),
+                class_id=int(session.get("class_id") or 0),
+                student_id=int(session.get("student_id") or 0),
+                teacher_user_id=int(session.get("teacher_user_id") or user["id"]),
+                image_url=image_url,
+                child_raw_reason_text=str(reflection.get("why_wrong") or "").strip(),
+                child_reason_transcript=summary_text,
+                child_reason_core_issue=str(reflection.get("unknown_step") or "").strip(),
+                child_reason_next_step=str(reflection.get("help_preference") or "").strip(),
+                topic_category=str(archive_payload.get("topic_category") or archive_payload.get("topicCategory") or "").strip(),
+                recognition_status=str(archive_payload.get("recognition_status") or "recognized").strip() or "recognized",
+                question_text=str(archive_payload.get("question_text") or "").strip(),
+                question_text_source=str(archive_payload.get("question_text_source") or "ai").strip() or "ai",
+                ingestion_run_id=str(session.get("ingestion_run_id") or "").strip(),
+                chat_session_id=normalized_session_id,
+                question_structured_json=archive_payload.get("question_structured_json"),
+                knowledge_tags_json=archive_payload.get("knowledge_tags_json"),
+                needs_teacher_confirmation=needs_teacher_confirmation,
+                confirmation_reasons_json=confirmation_reasons_json,
+            )
+            session_metadata["archived_record_id"] = created_record["id"]
+            archive_result = {
+                "created": True,
+                "record": created_record,
+            }
+            session = update_wrong_question_chat_session(
+                normalized_session_id,
+                status="archived",
+                current_stage="ready_to_archive",
+                summary_text=summary_text,
+                metadata_json=session_metadata,
+            ) or session
+            if isinstance(run, dict):
+                updated_run = update_wrong_question_ingestion_run(
+                    run["id"],
+                    status="archived",
+                    chat_session_id=normalized_session_id,
+                )
+                if updated_run:
+                    run = updated_run
+    else:
+        session = update_wrong_question_chat_session(
+            normalized_session_id,
+            current_stage=next_stage,
+            summary_text=summary_text,
+            metadata_json=session_metadata,
+        ) or session
+
+    serialized = _serialize_wrong_question_chat_session_for_response(get_wrong_question_chat_session(normalized_session_id))
+    return jsonify(
+        {
+            "ok": True,
+            "session": serialized,
+            "assistant_message": assistant_message,
+            "archive": archive_result,
         }
     )
 

@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-03 已完成错题通用接入 Phase 3 的最小 AI 对话闭环：`lesson_manager.py` 新增 `wrong_question_chat_sessions`、`wrong_question_chat_messages` 和对应 persistence helper；`app.py` 新增认证后的 `POST /api/wrong-question-chats/<session_id>/stream`，当前采用确定性的三步引导流程，按“你觉得错在哪里 -> 哪一步/哪个知识点不理解 -> 要先提示还是先完整复盘”推进，并把聊天摘要、学生自述错因、卡点和后续支持偏好写回归档错题。最终归档时会自动复用 `ingestion_run` 里的原题图片资产，并在题干为空、知识点未确认等情况下把记录标成 `needs_teacher_confirmation=1`。新增回归 `tests/test_wrong_question_chat_api.py` 已证明“chat 上传 -> 追问三步 -> 入错题库”以及“不完整上下文自动转教师复核”两条主路径。proof `/tmp/xingrun_wrong_question_chat_loop_proof.sh` 已通过：`.venv/bin/python -m unittest tests.test_wrong_question_chat_api tests.test_wrong_question_ingestion_foundation tests.test_wrong_question_ingestion_api tests.test_wechat_parent_upload_data tests.test_wechat_parent_upload_api -v` 共 56 条通过。
 - 2026-06-03 已把微信异步上传 worker 接入通用 ingestion run：`wechat_wrong_question_upload_tasks` 新增 `ingestion_run_id`，`wrong_question_upload_worker.py` 处理任务时会自动补建/复用 `wrong_question_ingestion_runs`，写入 `original_upload` / `reason_audio` 资产，并在成功、识别失败、网络重试失败三条路径上同步更新 run 状态与 metadata；最终归档的 `wechat_mp` 错题记录也会写入 `ingestion_run_id`。这样现有小程序上传链路不改接口，但底层已不再是完全独立的专线。proof `/tmp/xingrun_wrong_question_worker_ingestion_handoff_proof.sh` 已通过：`.venv/bin/python -m unittest tests.test_wechat_parent_upload_data tests.test_wechat_parent_upload_api -v` 共 47 条通过。
 - 2026-06-03 已继续推进错题通用接入 Phase 2：`app.py` 新增认证后的通用 ingestion API `POST /api/wrong-question-ingestions`、`GET /api/wrong-question-ingestions/<run_id>`、`POST /api/wrong-question-ingestions/<run_id>/ocr`、`POST /api/wrong-question-ingestions/<run_id>/split`、`POST /api/wrong-question-ingestions/<run_id>/archive`；配套新增 `_can_access_wrong_question_ingestion_run()`、序列化 helper 和资产 payload 解析。`lesson_manager.py` 也新增 `list_wrong_question_submissions_for_ingestion_run()`，用于把 run 与归档后的错题记录串起来。当前这套 API 已能创建 ingestion run、附加 assets、推进 OCR/分割状态，并把 `ai_chat / workspace` 识别结果真正归档进现有错题库。proof `/tmp/xingrun_wrong_question_ingestion_api_regression.sh` 已通过：`.venv/bin/python -m unittest tests.test_wrong_question_ingestion_api tests.test_wrong_question_ingestion_foundation tests.test_wechat_parent_upload_api -v` 共 34 条通过，`git diff --check` 通过。
 - 2026-06-03 已新增实施计划文档 `docs/superpowers/plans/2026-06-03-wrong-question-ingestion-chat-loop-implementation.md`，把现有 `docs/wrong-questions/wrong-question-system-review-20260603.md` 中的 `error_correction` 迁移评估收束成可执行四阶段路线：`通用接入地基 -> 通用后端 API/RQ 流水线 -> AI 对话上传闭环 -> 工作台迁移与增强识别`。本轮同时已完成 Phase 1 地基实现：`lesson_manager.py` 新增 `wrong_question_ingestion_runs`、`wrong_question_assets`、通用 `create_wrong_question_submission()` / ingestion helper，`wrong_question_submissions` 放宽 `parent_wechat_account_id / binding_id` 为可空并新增 `ingestion_run_id`、`chat_session_id`、`question_structured_json`、`knowledge_tags_json`、`needs_teacher_confirmation`、`confirmation_reasons_json`；`list_student_wrong_question_library_records()` 也已放宽到可接纳未来 `workspace / ai_chat` 识别成功记录。proof `/tmp/xingrun_wrong_question_ingestion_foundation_regression.sh` 已通过：`py_compile` 通过，`tests.test_wrong_question_ingestion_foundation + tests.test_wechat_parent_upload_data + tests.test_wrong_question_practice_store` 共 27 条通过，`git diff --check` 通过。
@@ -272,6 +273,8 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 继续推进 `docs/superpowers/plans/2026-06-03-wrong-question-ingestion-chat-loop-implementation.md`：Phase 1-3 的最小闭环已到位，下一优先级转入 Phase 4，把 `error_correction` 的工作台能力按复杂度逐步迁入，优先顺序建议是“多页 PDF/图片批量上传 -> OCR 简化与重叠页分割 -> 结构化纠错预览 -> 教师/学生工作台归档”。
+- 在进入 Phase 4 之前，值得先补一个很小的加固切片：给 `wrong-question-chats/<session_id>/stream` 增加 session detail / retry 读取能力，这样网页或聊天 UI 接入时不需要自己拼消息历史。
 - 定向一周错题练习包下一步建议用真实 owner/admin 账号 smoke：选择一个有历史错题的班级，分别按 `按专题/知识点：几何` 和 `按错因：去分母漏乘` 生成标准 10 题练习包，确认生成状态、zip 下载、每个学生 PDF 的 7 天安排、AI 变式题质量和答案页符合老师实际发放需求。
 - 如发现这批旋转后的个别原图方向与文字阅读方向相反，可从 `data/orientation-repair-backup-20260515-154838/files/` 恢复单个原图后按相反方向重转，并重建对应学生 PDF；当前自动 proof 只能确认“竖图已变横图”，不能替代人工逐页检查文字朝向。
 - 用真实小程序/开发者工具上传一张横着或侧着的几何题照片，等后台 worker 完成后打开学生错题库 PDF，确认图片在 PDF 内按可阅读方向显示；如果生产 vision provider 仍是 N1N `503/insufficient_quota` 类问题，需要先恢复可用的 vision provider 再做真实 smoke。
@@ -333,6 +336,9 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- `docs/wrong-questions/wrong-question-system-review-20260603.md` 当前有用户已有未提交改动，本轮没有动它；后续若要继续补文档或合并文档侧结论，先单独 diff 用户改动，避免互相覆盖。
+- 当前 AI 对话闭环是确定性三步引导，不依赖 LangGraph；这能先稳住归档闭环，但还没有做更开放的多轮追问、对话中途改写归档摘要，或基于知识图谱的个性化追问。
+- `wrong_question_chat_sessions/messages` 目前只有 stream 写入和响应内序列化，没有单独的 list/detail API；如果前端需要懒加载历史或恢复未完成会话，还需要再补一个轻量读取接口。
 - 这份角度单位复习计划来自本地 `faster-whisper base` 对 62 分钟企业微信 Opus 录音的分段转写；原始转写噪声较重，已按稳定出现的“角度、度分秒、周角/平角、角名、角平分线、角关系表达”主线整理，正式发给学生前建议老师快速核对课堂原题字母、题面数据和单位换算例子。
 - 用户本轮点名的文件名为 `7633721706604170168_record_audio`，本地实际找到并处理的是 `7631121683310742458_record_audio.m4a` 及其同名前缀转写稿；若还有另一个 `763372...` 录音，需要补传或放到仓库后重新生成。当前几何复习计划基于已有 Whisper 转写稿整理，转写中有较多识别噪声，正式发给学生前建议老师快速核对外角、角平分线、凸凹型、全等相似对应点等课堂表述。
 - 智能错题练习 PDF 当前虽然已经在生产 `master(31747f5)` 上带着“浏览器子进程环境净化”修复上线，并通过了 PM2 环境复现 proof，但运行时依赖仍是服务器上的 `/snap/bin/chromium`。如果后续继续出现新的 Chromium 自身崩溃，优先考虑给生产机安装 Playwright 官方 Chromium 或继续收口渲染进程启动参数，而不是恢复已经按用户要求删除的 ReportLab fallback。

@@ -77,15 +77,18 @@
 
 **Outcome:** A student can upload a wrong question in chat and be guided into reflection before the record is archived.
 
-- [ ] Add `wrong_question_chat_sessions` and `wrong_question_chat_messages` persistence.
-- [ ] Add `POST /api/wrong-question-chats/<session_id>/stream`.
-- [ ] Add a guided teaching prompt that asks, in order:
+- [x] Add `wrong_question_chat_sessions` and `wrong_question_chat_messages` persistence.
+- [x] Add `POST /api/wrong-question-chats/<session_id>/stream`.
+- [x] Add a guided teaching prompt that asks, in order:
   - whether the student knows why they got it wrong
   - which step or concept they do not understand
   - whether they want a hint first or a full replay
-- [ ] Store the chat summary, student self-reported error reason, and follow-up status on the archived wrong-question record.
-- [ ] Route low-confidence OCR / empty stem / uncertain knowledge-tag cases into `needs_teacher_confirmation=1`.
-- [ ] Add end-to-end tests that prove: upload in chat -> reflective questioning -> archive into wrong-question library.
+- [x] Store the chat summary, student self-reported error reason, and follow-up status on the archived wrong-question record.
+- [x] Route low-confidence OCR / empty stem / uncertain knowledge-tag cases into `needs_teacher_confirmation=1`.
+- [x] Add end-to-end tests that prove: upload in chat -> reflective questioning -> archive into wrong-question library.
+
+Current V1 note:
+- The chat loop currently uses a deterministic three-step coaching flow on top of Flask + SQLite. That is intentional for low complexity. LangGraph / knowledge-graph orchestration should layer on later only after this archive loop is stable.
 
 ### Phase 4: Workbench Migration And Rich Recognition
 
