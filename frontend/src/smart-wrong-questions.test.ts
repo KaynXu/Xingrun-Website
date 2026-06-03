@@ -3538,7 +3538,7 @@ test('SmartWrongQuestionsPage hides teacher filter and avoids admin user fetches
       assert.ok(classSelect);
       assert.equal(teacherSelect, null);
       assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), false);
-      assert.match(pageText, /查看负责范围内的错题记录/);
+      assert.match(pageText, /查看负责范围内错题/);
     });
   } finally {
     if (root) {
@@ -4069,9 +4069,12 @@ test('SmartWrongQuestionsPage renders class-based student notebooks for owner ac
 
       assert.ok(classSelect);
       assert.ok(teacherSelect);
+      assert.match(pageText, /按班级或学生查看错题本/);
       assert.match(pageText, /学生错题本/);
       assert.match(pageText, /未掌握/);
       assert.doesNotMatch(pageText, /筛选与列表/);
+      assert.doesNotMatch(pageText, /查看 星润Starain 的错题记录，按班级或学生打开错题本/);
+      assert.doesNotMatch(pageText, /当前操作人：/);
       assert.equal(fetchCalls.some((call) => call.input === '/api/admin/users'), true);
     });
 
