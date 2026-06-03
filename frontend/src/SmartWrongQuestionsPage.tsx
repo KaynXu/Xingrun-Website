@@ -575,7 +575,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [wrongQuestionChatError, setWrongQuestionChatError] = useState('');
   const [wrongQuestionChatNotice, setWrongQuestionChatNotice] = useState('');
   const wrongQuestionChatRequestVersionRef = useRef(0);
-  const pendingWeeklyMasteryFollowupRecordIdRef = useRef('');
+  const pendingNotebookMasteryFollowupRecordIdRef = useRef('');
 
   const summary = useMemo(() => {
     if (records.some((item) => isWechatMiniProgramWrongQuestionRecord(item))) {
@@ -621,6 +621,19 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
     return buildMemberStudentNotebookSummaries(records, activeNotebookClassId);
   }, [activeNotebookClassId, records, usesStudentNotebook]);
+  const memberNotebookSummaryMasteryFollowupRecordByStudentName = useMemo(() => {
+    if (!usesStudentNotebook) {
+      return new Map<string, WrongQuestionRecord | null>();
+    }
+    return new Map(
+      memberNotebookSummaries.map((item) => {
+        const targetRecord = [...filterWrongQuestionRecordsForMemberNotebook(records, activeNotebookClassId, item.studentName)]
+          .reverse()
+          .find((record) => canStartWrongQuestionMasteryFollowup(record)) ?? null;
+        return [item.studentName, targetRecord];
+      }),
+    );
+  }, [activeNotebookClassId, memberNotebookSummaries, records, usesStudentNotebook]);
   const memberNotebookRecords = useMemo(() => {
     if (!usesStudentNotebook) {
       return [];
@@ -901,7 +914,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, []);
 
   const loadLatestWrongQuestionChatSession = useCallback(async () => {
-    if (pendingWeeklyMasteryFollowupRecordIdRef.current) {
+    if (pendingNotebookMasteryFollowupRecordIdRef.current) {
       return;
     }
     if (!activeNotebookClassId || !selectedNotebookStudentId || !selectedStudentName || notebookModalView !== 'questions') {
@@ -1316,6 +1329,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     selectedRecord,
     wrongQuestionChatRun,
   ]);
+  const scheduleNotebookMasteryFollowupStart = useCallback((record: WrongQuestionRecord) => {
+    pendingNotebookMasteryFollowupRecordIdRef.current = record.id;
+    globalThis.setTimeout(() => {
+      void (async () => {
+        try {
+          await handleStartWrongQuestionMasteryFollowup(record);
+        } finally {
+          if (pendingNotebookMasteryFollowupRecordIdRef.current === record.id) {
+            pendingNotebookMasteryFollowupRecordIdRef.current = '';
+          }
+        }
+      })();
+    }, 0);
+  }, [handleStartWrongQuestionMasteryFollowup]);
 
   const resetWeeklyFollowupContext = useCallback(() => {
     weeklyFollowupRequestVersionRef.current += 1;
@@ -2348,22 +2375,11 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     if (!opened) {
       return;
     }
-    pendingWeeklyMasteryFollowupRecordIdRef.current = sourceRecord.id;
-    globalThis.setTimeout(() => {
-      void (async () => {
-        try {
-          await handleStartWrongQuestionMasteryFollowup(sourceRecord);
-        } finally {
-          if (pendingWeeklyMasteryFollowupRecordIdRef.current === sourceRecord.id) {
-            pendingWeeklyMasteryFollowupRecordIdRef.current = '';
-          }
-        }
-      })();
-    }, 0);
+    scheduleNotebookMasteryFollowupStart(sourceRecord);
   }, [
     activeWeeklyFollowupClassId,
-    handleStartWrongQuestionMasteryFollowup,
     openWrongQuestionRecordInNotebook,
+    scheduleNotebookMasteryFollowupStart,
   ]);
 
   const handleStartNotebookDirectoryMasteryFollowup = useCallback(async (record: WrongQuestionRecord) => {
@@ -2371,6 +2387,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setNotebookModalView('questions');
     await handleStartWrongQuestionMasteryFollowup(record);
   }, [handleStartWrongQuestionMasteryFollowup]);
+  const handleStartMemberNotebookSummaryMasteryFollowup = useCallback((record: WrongQuestionRecord) => {
+    const opened = openWrongQuestionRecordInNotebook(record, {
+      classId: activeNotebookClassId,
+      studentName: record.studentName,
+      notice: '已打开这位学生的 AI 归档，并准备开启掌握追问。',
+    });
+    if (!opened) {
+      return;
+    }
+    scheduleNotebookMasteryFollowupStart(record);
+  }, [
+    activeNotebookClassId,
+    openWrongQuestionRecordInNotebook,
+    scheduleNotebookMasteryFollowupStart,
+  ]);
   const practiceHistoryMasteryFollowupRecordBySheetId = useMemo(() => {
     const recordById = new Map(records.map((item) => [item.id, item]));
     return new Map(
@@ -4191,29 +4222,47 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {memberNotebookSummaries.map((item) => {
               const isActive = item.studentName === selectedStudentName;
+              const summaryFollowupRecord = memberNotebookSummaryMasteryFollowupRecordByStudentName.get(item.studentName) ?? null;
               return (
-                <button
+                <article
                   key={`${item.classId}-${item.studentName}`}
-                  type="button"
-                  onClick={() => handleOpenMemberNotebook(item.studentName)}
                   className={`${workspaceSoftCardClass} w-full p-5 text-left transition ${isActive ? 'border-sky-400 shadow-[0_18px_48px_rgba(47,128,237,0.12)]' : ''}`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.className}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenMemberNotebook(item.studentName)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-semibold text-slate-900 dark:text-white">{item.studentName}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.className}</p>
+                      </div>
+                      {item.hasTeacherFollowUp ? (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                          已掌握
+                        </span>
+                      ) : null}
                     </div>
-                    {item.hasTeacherFollowUp ? (
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                        已掌握
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
-                    <span className="whitespace-nowrap">{item.totalCount}题</span>
-                    <span className="whitespace-nowrap">{item.pendingReviewCount}未掌握</span>
-                  </div>
-                </button>
+                    <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
+                      <span className="whitespace-nowrap">{item.totalCount}题</span>
+                      <span className="whitespace-nowrap">{item.pendingReviewCount}未掌握</span>
+                    </div>
+                  </button>
+                  {summaryFollowupRecord ? (
+                    <span className="mt-4 flex">
+                      <button
+                        type="button"
+                        aria-label={`为 ${item.studentName} 开启掌握追问`}
+                        onClick={() => void handleStartMemberNotebookSummaryMasteryFollowup(summaryFollowupRecord)}
+                        disabled={wrongQuestionChatSending}
+                        className={workspacePrimaryButtonClass}
+                      >
+                        开启掌握追问
+                      </button>
+                    </span>
+                  ) : null}
+                </article>
               );
             })}
           </div>
