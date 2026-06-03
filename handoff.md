@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-03 已把 `user-facing continuity entrypoints` 再补到 `错题练习记录`：`lesson_manager.py` / `app.py` 现在会在练习历史 API 里显式带出每张练习单的 `source_record_ids`，`frontend/src/SmartWrongQuestionsPage.tsx` 则会在满足条件的练习单卡片上直接给出 `开启掌握追问`，老师可以从“生成再练 -> 预览/下载 -> 继续掌握追问”原地续上同一条 `ai_chat` archive record，不必再绕回别的入口找这道题。回归补在 `tests/test_smart_wrong_questions_api.py` 和 `frontend/src/smart-wrong-questions.test.ts`，proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_practice_history_mastery_entrypoint_proof.sh`。
 - 2026-06-03 已把 `user-facing continuity entrypoints` 再补到学生错题本左侧目录行：`frontend/src/SmartWrongQuestionsPage.tsx` 现在会在满足条件的 `ai_chat` 归档题目录行直接给出 `开启掌握追问`，老师不用先点进右侧详情再找入口；点击后会先切到那道题，再直接开启同一条 archive record 的 mastery follow-up。回归补在 `frontend/src/smart-wrong-questions.test.ts`，新增从 notebook directory row 直接发起 follow-up 的交互验证；proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_notebook_directory_mastery_entrypoint_proof.sh`。
 - 2026-06-03 已把 `user-facing continuity entrypoints` 再补到 `AI 对话归档` 面板自身：`frontend/src/SmartWrongQuestionsPage.tsx` 现在会在已归档、且满足掌握追问条件的 chat archive header 直接给出 `开启掌握追问`，不用再先绕回统一错题详情或周跟进卡片；这样老师在 notebook modal 里看到刚归档的 AI 会话后，可以原地继续同一条 archive record 的 mastery follow-up。回归补在 `frontend/src/smart-wrong-questions.test.ts`，新增直接从 archived AI chat panel 发起 follow-up 的交互验证；proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_chat_archive_mastery_entrypoint_proof.sh`。
 - 2026-06-03 已把 `user-facing continuity entrypoints` 的下一刀接到每周跟进卡片：`frontend/src/SmartWrongQuestionsPage.tsx` 现在会在符合条件的 `AI 对话归档` 周跟进卡片上直接给出 `开启掌握追问`，并优先消费 weekly payload 自带的 `source_records`，不再要求主列表里先加载过那条 record。这样老师可以从“本周跟进”直接跳进同一条 archive record 的 mastery follow-up，而不是先手动绕回 notebook modal。实现上还顺手修掉了一个真实时序 bug：从周跟进切上下文再立即开启 follow-up 时，原来的 notebook chat auto-restore / reset effect 会把刚开的会话冲掉；现在前端会在切上下文后一拍再发起 follow-up，并在这段窗口内临时跳过 auto-restore，确保同一条 continuity chain 真正跑通。回归补在 `frontend/src/smart-wrong-questions.test.ts`，proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_weekly_followup_mastery_reuse_proof.sh`。
@@ -297,7 +298,7 @@
 
 ### 下一步
 - 先按重排后的闭环顺序推进：`Track S authority layer -> same-record continuity -> user-facing continuity entrypoints -> F practice artifact -> C error_correction adapter`，不再让 workbench 反过来决定主链路。
-- 现在周跟进卡片、`AI 对话归档` 面板和学生错题本目录行都已经能直接开启 mastery follow-up，下一刀最值得做的是把同一个入口继续接到剩余 archive-detail / summary surface，不要让 continuity reuse 还卡在“先打开记录再操作”的地方；这些入口都应该继续写回同一条 `mastery_tracking / mastery_assessment / generation_metadata` 脊柱。
+- 现在周跟进卡片、`AI 对话归档` 面板、学生错题本目录行和 `错题练习记录` 都已经能直接开启 mastery follow-up，下一刀最值得做的是把同一个入口继续接到剩余 archive-detail / summary surface，不要让 continuity reuse 还卡在“先打开记录再操作”的地方；这些入口都应该继续写回同一条 `mastery_tracking / mastery_assessment / generation_metadata` 脊柱。
 - `error_correction` 的迁移下一步只先拿低耦合底层能力，不要早引入 Vue / SQLAlchemy / LangGraph：优先顺序调整为 `prepare_input() 风格标准化 -> simplify_ocr_results() OCR 边界 -> overlap split 多页分割 -> 结构化纠错预览`，确认这些都能挂到现有 Flask + SQLite ingestion run 上后，再考虑 React workbench 页面。
 - 定向一周错题练习包下一步建议用真实 owner/admin 账号 smoke：选择一个有历史错题的班级，分别按 `按专题/知识点：几何` 和 `按错因：去分母漏乘` 生成标准 10 题练习包，确认生成状态、zip 下载、每个学生 PDF 的 7 天安排、AI 变式题质量和答案页符合老师实际发放需求。
 - 如发现这批旋转后的个别原图方向与文字阅读方向相反，可从 `data/orientation-repair-backup-20260515-154838/files/` 恢复单个原图后按相反方向重转，并重建对应学生 PDF；当前自动 proof 只能确认“竖图已变横图”，不能替代人工逐页检查文字朝向。

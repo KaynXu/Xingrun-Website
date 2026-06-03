@@ -451,6 +451,11 @@ The current round now also reuses the same continuity from the student notebook 
 - an eligible `ai_chat` record can now start mastery follow-up directly from the left-side notebook directory row, instead of forcing the teacher to first select the row and then hunt for the action again in the detail pane
 - this keeps the most common “scan student mistakes -> pick one candidate -> continue follow-up” workflow on the same single-record continuity chain, even before the detail pane fully becomes the operator’s focus
 
+The current round now also reuses the same continuity from the practice-history surface itself:
+
+- an eligible re-practice sheet card can now start mastery follow-up directly from `错题练习记录`, using the linked `source_record_ids` to reopen the matching confirmed `ai_chat` archive record
+- this keeps “generate re-practice -> preview/download -> immediately continue mastery confirmation” on the same record spine, without forcing the teacher to bounce back into another surface first
+
 The next highest-value task is now **the next continuity reuse slice after weekly follow-up reuse**:
 
 - extend the same mastery-followup entrypoint to the remaining archive-detail and summary surfaces that still stop at “open record”

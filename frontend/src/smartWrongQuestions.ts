@@ -262,6 +262,7 @@ export interface WrongQuestionPracticeSheetSummary {
   questionCount: number;
   status: string;
   createdAt: string;
+  sourceRecordIds: string[];
   pdfPath?: string;
   pdfUrl?: string;
   downloadUrl?: string;
@@ -1714,6 +1715,7 @@ export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): W
   const pdfUrl = pickStringValue(source, ['pdfUrl', 'pdf_url']);
   const downloadUrl = pickStringValue(source, ['downloadUrl', 'download_url']);
   const generationError = pickStringValue(source, ['generationError', 'generation_error']);
+  const sourceRecordIds = pickStringArrayValue(source, ['sourceRecordIds', 'source_record_ids', 'source_record_ids_json']);
   const sheet: WrongQuestionPracticeSheetSummary = {
     id: pickNumberValue(source, ['id']) ?? 0,
     studentId: pickNumberValue(source, ['studentId', 'student_id']),
@@ -1724,6 +1726,7 @@ export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): W
     questionCount: pickNumberValue(source, ['questionCount', 'question_count']) ?? 0,
     status: pickStringValue(source, ['status']) || 'pending',
     createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+    sourceRecordIds,
   };
 
   if (pdfPath) {

@@ -2912,6 +2912,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_by", "INTEGER")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_ingestion_runs", "current_step", "TEXT NOT NULL DEFAULT 'uploaded'")
+        _ensure_column(conn, "wrong_question_practice_sheets", "source_record_ids_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_practice_sheets", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
@@ -9332,6 +9333,15 @@ def _serialize_wrong_question_practice_sheet_row(row: sqlite3.Row | None) -> Opt
     payload = dict(row)
     payload["question_count"] = int(payload.get("question_count") or 0)
     try:
+        source_record_ids = json.loads(str(payload.get("source_record_ids_json") or "[]"))
+    except (TypeError, json.JSONDecodeError):
+        source_record_ids = []
+    payload["source_record_ids"] = [
+        str(record_id).strip()
+        for record_id in source_record_ids
+        if str(record_id).strip()
+    ] if isinstance(source_record_ids, list) else []
+    try:
         payload["generation_metadata"] = (
             json.loads(str(payload.get("generation_metadata_json") or "{}"))
             if payload.get("generation_metadata_json")
@@ -9606,7 +9616,11 @@ def create_pending_wrong_question_practice_sheet(
         if int(record.get("student_id") or 0) != student_id:
             raise ValueError("selected records must belong to the same student")
 
-    linked_record_ids: list[str] = []
+    linked_record_ids = [
+        str(record.get("id") or "").strip()
+        for record in selected_records
+        if str(record.get("id") or "").strip()
+    ]
     with get_conn() as conn:
         cursor = conn.execute(
             """
@@ -9622,9 +9636,10 @@ def create_pending_wrong_question_practice_sheet(
                 question_count,
                 status,
                 pdf_path,
+                source_record_ids_json,
                 generation_metadata_json,
                 generation_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '{}', '')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, '{}', '')
             """,
             (
                 organization_id,
@@ -9636,13 +9651,12 @@ def create_pending_wrong_question_practice_sheet(
                 class_name_snapshot,
                 teacher_name_snapshot,
                 len(selected_records),
+                json.dumps(linked_record_ids, ensure_ascii=False),
             ),
         )
         sheet_id = int(cursor.lastrowid)
         for index, record in enumerate(selected_records, start=1):
             linked_record_id = str(record.get("id") or "").strip()
-            if linked_record_id:
-                linked_record_ids.append(linked_record_id)
             conn.execute(
                 """
                 INSERT INTO wrong_question_practice_sheet_items (

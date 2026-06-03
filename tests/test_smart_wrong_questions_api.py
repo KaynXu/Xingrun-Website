@@ -1300,6 +1300,7 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertEqual(payload["items"][0]["status"], "ready")
         self.assertEqual(payload["items"][0]["pdf_path"], "/tmp/practice-history.pdf")
         self.assertEqual(payload["items"][0]["question_count"], 1)
+        self.assertEqual(payload["items"][0]["source_record_ids"], [record["id"]])
 
     def test_staff_can_preview_and_download_wrong_question_practice_pdf(self):
         owner_payload = self.login_owner()

@@ -2371,6 +2371,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setNotebookModalView('questions');
     await handleStartWrongQuestionMasteryFollowup(record);
   }, [handleStartWrongQuestionMasteryFollowup]);
+  const practiceHistoryMasteryFollowupRecordBySheetId = useMemo(() => {
+    const recordById = new Map(records.map((item) => [item.id, item]));
+    return new Map(
+      practiceSheets.map((sheet) => {
+        const linkedRecord = sheet.sourceRecordIds
+          .map((recordId) => recordById.get(recordId) ?? null)
+          .find((record) => canStartWrongQuestionMasteryFollowup(record)) ?? null;
+        return [sheet.id, linkedRecord];
+      }),
+    );
+  }, [practiceSheets, records]);
 
   const practiceHistoryPanel = (
     <>
@@ -2395,6 +2406,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
             const downloadPath = sheet.downloadUrl || sheet.pdfUrl || sheet.pdfPath || '';
             const previewUrl = previewPath ? buildWrongQuestionAuthedPath(previewPath) : '';
             const downloadUrl = downloadPath ? buildWrongQuestionAuthedPath(downloadPath) : previewUrl;
+            const linkedFollowupRecord = practiceHistoryMasteryFollowupRecordBySheetId.get(sheet.id) ?? null;
             return (
               <article key={sheet.id} className={`${workspaceSoftCardClass} space-y-4 p-4`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -2415,6 +2427,17 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-3">
+                    {linkedFollowupRecord ? (
+                      <button
+                        type="button"
+                        aria-label={`从练习单 #${displaySheetNumber} 开启掌握追问`}
+                        onClick={() => void handleStartNotebookDirectoryMasteryFollowup(linkedFollowupRecord)}
+                        disabled={wrongQuestionChatSending}
+                        className={workspacePrimaryButtonClass}
+                      >
+                        开启掌握追问
+                      </button>
+                    ) : null}
                     {previewUrl ? (
                       <>
                         <a
