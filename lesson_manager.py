@@ -7569,6 +7569,7 @@ def update_wrong_question_submission_from_chat_archive(
     generation_metadata_json: object = None,
     needs_teacher_confirmation: bool | None = None,
     confirmation_reasons_json: object = None,
+    preserve_existing_confirmation_review: bool = False,
 ) -> Optional[dict]:
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
@@ -7657,6 +7658,28 @@ def update_wrong_question_submission_from_chat_archive(
         if not next_confirmation_state:
             next_confirmation_reasons_json = "[]"
 
+        next_confirmation_status = str(row["confirmation_status"] or "").strip()
+        if next_confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
+            if bool(row["needs_teacher_confirmation"]):
+                next_confirmation_status = "pending"
+            elif row["confirmation_reviewed_by"] is not None or str(row["confirmation_reviewed_at"] or "").strip():
+                next_confirmation_status = "confirmed"
+            else:
+                next_confirmation_status = "not_required"
+        next_confirmation_reviewed_by = row["confirmation_reviewed_by"]
+        next_confirmation_reviewed_at = str(row["confirmation_reviewed_at"] or "").strip()
+
+        if next_confirmation_state:
+            next_confirmation_status = "pending"
+            next_confirmation_reviewed_by = None
+            next_confirmation_reviewed_at = ""
+        elif preserve_existing_confirmation_review and next_confirmation_status in {"confirmed", "not_required"}:
+            next_confirmation_status = next_confirmation_status
+        else:
+            next_confirmation_status = "not_required"
+            next_confirmation_reviewed_by = None
+            next_confirmation_reviewed_at = ""
+
         conn.execute(
             """
             UPDATE wrong_question_submissions
@@ -7674,8 +7697,8 @@ def update_wrong_question_submission_from_chat_archive(
                 needs_teacher_confirmation=?,
                 confirmation_reasons_json=?,
                 confirmation_status=?,
-                confirmation_reviewed_by=NULL,
-                confirmation_reviewed_at='',
+                confirmation_reviewed_by=?,
+                confirmation_reviewed_at=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
@@ -7693,7 +7716,9 @@ def update_wrong_question_submission_from_chat_archive(
                 next_generation_metadata_json,
                 1 if next_confirmation_state else 0,
                 next_confirmation_reasons_json,
-                "pending" if next_confirmation_state else "not_required",
+                next_confirmation_status,
+                next_confirmation_reviewed_by,
+                next_confirmation_reviewed_at,
                 record_id,
             ),
         )

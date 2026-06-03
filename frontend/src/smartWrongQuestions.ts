@@ -1554,6 +1554,10 @@ export function buildWrongQuestionChatReopenPath(recordId: string): string {
   return `/api/wrong-questions/${encodeURIComponent(recordId)}/reopen-chat`;
 }
 
+export function buildWrongQuestionChatFollowupPath(recordId: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}/followup-chat`;
+}
+
 export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): WeeklyWrongQuestionFollowupResponse {
   const source = isObjectRecord(payload) ? payload : {};
   const rawItems = Array.isArray(source.items) ? source.items : [];

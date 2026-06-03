@@ -20,6 +20,7 @@ import {
   buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
+  buildWrongQuestionChatFollowupPath,
   buildWrongQuestionChatReopenPath,
   buildWrongQuestionDetailPath,
   buildWrongQuestionQuery,
@@ -641,6 +642,13 @@ test('wrong question chat reopen path builder encodes record ids consistently', 
   assert.equal(
     buildWrongQuestionChatReopenPath('record/with space?#x'),
     '/api/wrong-questions/record%2Fwith%20space%3F%23x/reopen-chat',
+  );
+});
+
+test('wrong question chat followup path builder encodes record ids consistently', () => {
+  assert.equal(
+    buildWrongQuestionChatFollowupPath('record/with space?#x'),
+    '/api/wrong-questions/record%2Fwith%20space%3F%23x/followup-chat',
   );
 });
 
@@ -1466,6 +1474,8 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /编辑后确认/);
   assert.match(pageSource, /退回待补充/);
   assert.match(pageSource, /按老师意见继续补充/);
+  assert.match(pageSource, /开启掌握追问/);
+  assert.match(pageSource, /buildWrongQuestionChatFollowupPath/);
 });
 
 test('smart wrong question page lets confirmed ai chat records re-enter practice generation', () => {

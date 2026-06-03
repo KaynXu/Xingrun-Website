@@ -476,6 +476,127 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertTrue(retried_old_session.get_json()["archive"]["idempotent_reuse"])
         self.assertEqual(retried_old_session.get_json()["archive"]["record"]["id"], original_record["id"])
 
+    def test_confirmed_record_can_open_mastery_followup_chat_and_update_same_archive_record(self):
+        run = self._create_ai_chat_run(
+            chat_session_id="chat-session-followup-origin",
+            file_url="https://files.example.com/chat-followup-origin.png",
+        )
+
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-followup-origin/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "ingestion_run_id": run["id"],
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-followup-origin/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我当时不知道为什么要先减 5"},
+        )
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-followup-origin/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我卡在移项时不知道为什么符号会变"},
+        )
+        archived = self.client.post(
+            "/api/wrong-question-chats/chat-session-followup-origin/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "message": "先给提示，再让我自己复盘",
+                "archive_payload": {
+                    "question_text": "解方程 2x+5=17。",
+                    "topic_category": "一元一次方程",
+                    "knowledge_tags_json": ["一元一次方程", "移项"],
+                },
+            },
+        )
+        self.assertEqual(archived.status_code, 200)
+        original_record = archived.get_json()["archive"]["record"]
+        self.assertEqual(original_record["confirmation_status"], "not_required")
+
+        practice_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner_id,
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(original_record["id"])],
+        )
+        lesson_manager.mark_wrong_question_practice_sheet_succeeded(
+            practice_sheet["id"],
+            generated_items=[
+                {
+                    "wrong_question_record_id": original_record["id"],
+                    "ai_hint": "先看等式两边。",
+                    "reason_blank_prompt": "这题我错在 ______。",
+                    "improvement_summary_prompt": "下次先 ______。",
+                },
+            ],
+            pdf_path="/tmp/followup-mastery.pdf",
+        )
+
+        followup = self.client.post(
+            f"/api/wrong-questions/{original_record['id']}/followup-chat",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={},
+        )
+        self.assertEqual(followup.status_code, 200)
+        followup_payload = followup.get_json()
+        self.assertTrue(followup_payload["created"])
+        self.assertFalse(followup_payload["reused_active_session"])
+        followup_session = followup_payload["session"]
+        followup_session_id = followup_session["id"]
+        self.assertEqual(followup_session["status"], "active")
+        self.assertEqual(followup_session["current_stage"], "ask_why_wrong")
+        self.assertEqual(len(followup_session["messages"]), 1)
+        self.assertIn("最近已经完成了 1 次再练", followup_session["messages"][0]["content"])
+        self.assertEqual(followup_payload["run"]["chat_session_id"], followup_session_id)
+
+        followup_again = self.client.post(
+            f"/api/wrong-questions/{original_record['id']}/followup-chat",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={},
+        )
+        self.assertEqual(followup_again.status_code, 200)
+        self.assertFalse(followup_again.get_json()["created"])
+        self.assertTrue(followup_again.get_json()["reused_active_session"])
+        self.assertEqual(followup_again.get_json()["session"]["id"], followup_session_id)
+
+        self.client.post(
+            f"/api/wrong-question-chats/{followup_session_id}/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我现在最稳的是先看等式两边，最不稳的是移项后符号变化"},
+        )
+        self.client.post(
+            f"/api/wrong-question-chats/{followup_session_id}/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我还是会在变号时迟疑，不确定什么时候需要同步处理另一边"},
+        )
+        finalized = self.client.post(
+            f"/api/wrong-question-chats/{followup_session_id}/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "message": "先给我一点提示，我再试一次",
+                "archive_payload": {
+                    "knowledge_tags_json": ["一元一次方程", "移项", "等式性质"],
+                },
+            },
+        )
+        self.assertEqual(finalized.status_code, 200)
+        finalized_payload = finalized.get_json()
+        self.assertTrue(finalized_payload["archive"]["created"])
+        self.assertTrue(finalized_payload["archive"]["updated_existing_record"])
+        final_record = finalized_payload["archive"]["record"]
+        self.assertEqual(final_record["id"], original_record["id"])
+        self.assertEqual(final_record["chat_session_id"], followup_session_id)
+        self.assertEqual(final_record["question_text"], "解方程 2x+5=17。")
+        self.assertEqual(json.loads(final_record["knowledge_tags_json"]), ["一元一次方程", "移项", "等式性质"])
+        self.assertEqual(final_record["confirmation_status"], "not_required")
+        self.assertEqual(final_record["generation_metadata"]["entrypoint"], "wrong_question_chat_mastery_followup")
+        self.assertEqual(
+            len(lesson_manager.list_student_wrong_question_library_records(self.student["id"])),
+            1,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

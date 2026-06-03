@@ -315,8 +315,10 @@ def _build_wrong_question_archive_generation_metadata(
     *,
     archive_payload: dict,
     run: object = None,
+    session_metadata: dict | None = None,
 ) -> dict:
     run_payload = run if isinstance(run, dict) else {}
+    session_payload = session_metadata if isinstance(session_metadata, dict) else {}
     try:
         run_metadata = json.loads(str(run_payload.get("metadata_json") or "{}"))
     except json.JSONDecodeError:
@@ -333,6 +335,9 @@ def _build_wrong_question_archive_generation_metadata(
         "model_version": "local-guided-loop",
         "entrypoint": "wrong_question_chat_archive",
     }
+    session_entrypoint = str(session_payload.get("entrypoint") or "").strip()
+    if session_entrypoint in {"wrong_question_chat_rework", "wrong_question_chat_mastery_followup"}:
+        base["entrypoint"] = session_entrypoint
     if str(run_payload.get("source") or "").strip():
         base["archive_source"] = str(run_payload.get("source") or "").strip()
     if str(run_metadata.get("entrypoint") or "").strip():
@@ -343,6 +348,57 @@ def _build_wrong_question_archive_generation_metadata(
         run_metadata.get("generation_metadata"),
         archive_payload.get("generation_metadata_json"),
         archive_payload.get("generation_metadata"),
+    )
+
+
+def _can_start_wrong_question_mastery_followup(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("source") or "").strip() != "ai_chat":
+        return False
+    confirmation_status = _normalize_wrong_question_confirmation_status(record)
+    if confirmation_status not in {"confirmed", "not_required"}:
+        return False
+    mastery_tracking = record.get("mastery_tracking") if isinstance(record.get("mastery_tracking"), dict) else {}
+    mastery_assessment = record.get("mastery_assessment") if isinstance(record.get("mastery_assessment"), dict) else {}
+    practice_sheet_count = int(
+        mastery_tracking.get("practice_sheet_count")
+        or mastery_assessment.get("practice_sheet_count")
+        or 0
+    )
+    if practice_sheet_count <= 0:
+        return False
+    latest_practice_status = str(
+        mastery_assessment.get("latest_practice_status")
+        or mastery_tracking.get("latest_practice_status")
+        or ""
+    ).strip()
+    if latest_practice_status in {"pending", "generating"}:
+        return False
+    return True
+
+
+def _build_wrong_question_chat_mastery_followup_prompt(record: dict) -> str:
+    mastery_assessment = record.get("mastery_assessment") if isinstance(record.get("mastery_assessment"), dict) else {}
+    mastery_tracking = record.get("mastery_tracking") if isinstance(record.get("mastery_tracking"), dict) else {}
+    label = str(mastery_assessment.get("label") or "继续跟进").strip() or "继续跟进"
+    practice_sheet_count = int(
+        mastery_assessment.get("practice_sheet_count")
+        or mastery_tracking.get("practice_sheet_count")
+        or 0
+    )
+    evidence = [
+        str(item or "").strip()
+        for item in (mastery_assessment.get("evidence") or [])
+        if str(item or "").strip()
+    ]
+    evidence_text = "；".join(evidence[:2])
+    if evidence_text:
+        evidence_text = f" 当前重点：{evidence_text}"
+    return (
+        f"这道题最近已经完成了 {practice_sheet_count} 次再练，系统当前判断是“{label}”。"
+        f"{evidence_text}。"
+        "我们继续沿同一条错题追问。先说说：做完最近一次再练后，你现在最有把握的是哪一步，最不确定的又是哪一步？"
     )
 
 
@@ -3784,6 +3840,90 @@ def api_wrong_question_reopen_chat(record_id):
     )
 
 
+@app.route("/api/wrong-questions/<record_id>/followup-chat", methods=["POST"])
+def api_wrong_question_followup_chat(record_id):
+    user, error = _require_auth()
+    if error:
+        return error
+
+    local_record = get_wechat_wrong_question_submission(record_id)
+    if not local_record or not _can_access_wrong_question_record(user, local_record):
+        return jsonify({"error": "not found"}), 404
+    if not _can_start_wrong_question_mastery_followup(local_record):
+        return jsonify({"error": "record is not ready for mastery followup"}), 400
+
+    run = get_wrong_question_ingestion_run(str(local_record.get("ingestion_run_id") or "").strip())
+    if run and not _can_access_wrong_question_ingestion_run(user, run):
+        return jsonify({"error": "not found"}), 404
+
+    if run:
+        latest_session_id = str(run.get("chat_session_id") or "").strip()
+        if latest_session_id:
+            latest_session = get_wrong_question_chat_session(latest_session_id)
+            latest_metadata = _load_wrong_question_chat_session_metadata(latest_session)
+            if (
+                latest_session
+                and _can_access_wrong_question_chat_session(user, latest_session)
+                and str(latest_session.get("status") or "").strip() == "active"
+                and str(latest_metadata.get("followup_record_id") or "").strip() == str(local_record.get("id") or "").strip()
+            ):
+                return jsonify(
+                    {
+                        "ok": True,
+                        "created": False,
+                        "reused_active_session": True,
+                        "session": _serialize_wrong_question_chat_session_for_response(latest_session),
+                        "run": _serialize_wrong_question_ingestion_run_for_response(run),
+                    }
+                )
+
+    new_session_id = f"chat-followup-{record_id[:8]}-{secrets.token_hex(4)}"
+    previous_session_id = str(local_record.get("chat_session_id") or "").strip()
+    session = create_wrong_question_chat_session(
+        session_id=new_session_id,
+        organization_id=int(local_record.get("organization_id") or user.get("organization_id") or 0),
+        ingestion_run_id=str(local_record.get("ingestion_run_id") or "").strip(),
+        class_id=int(local_record.get("class_id") or 0) or None,
+        student_id=int(local_record.get("student_id") or 0) or None,
+        teacher_user_id=int(local_record.get("teacher_user_id") or user["id"]) or None,
+        metadata_json={
+            "entrypoint": "wrong_question_chat_mastery_followup",
+            "followup_kind": "mastery_check",
+            "followup_record_id": record_id,
+            "previous_chat_session_id": previous_session_id,
+        },
+    )
+    create_wrong_question_chat_message(
+        session_id=new_session_id,
+        role="assistant",
+        stage="ask_why_wrong",
+        content=_build_wrong_question_chat_mastery_followup_prompt(local_record),
+    )
+    if run:
+        refreshed_run = update_wrong_question_ingestion_run(
+            run["id"],
+            status="active",
+            current_step="chat_reflection",
+            chat_session_id=new_session_id,
+            error_message="",
+        )
+        if refreshed_run:
+            run = refreshed_run
+
+    serialized_session = _serialize_wrong_question_chat_session_for_response(
+        get_wrong_question_chat_session(new_session_id)
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "created": True,
+            "reused_active_session": False,
+            "session": serialized_session,
+            "run": _serialize_wrong_question_ingestion_run_for_response(run),
+        }
+    )
+
+
 @app.route("/api/wrong-questions/<record_id>/topic-category", methods=["PUT"])
 def api_wrong_question_topic_category_save(record_id):
     user, error = _require_auth()
@@ -4380,8 +4520,24 @@ def api_wrong_question_chat_stream(session_id: str):
             image_url = _resolve_wrong_question_archive_image_url(run, archive_payload)
             if not image_url:
                 return jsonify({"error": "missing image asset for archive"}), 400
+            rework_record_id = str(session_metadata.get("rework_record_id") or "").strip()
+            followup_record_id = str(session_metadata.get("followup_record_id") or "").strip()
+            linked_record_id = rework_record_id or followup_record_id
+            effective_archive_payload = dict(archive_payload)
+            if linked_record_id:
+                linked_record = get_wechat_wrong_question_submission(linked_record_id)
+                if linked_record:
+                    if "question_text" not in effective_archive_payload:
+                        effective_archive_payload["question_text"] = str(linked_record.get("question_text") or "").strip()
+                    if "knowledge_tags_json" not in effective_archive_payload:
+                        try:
+                            effective_archive_payload["knowledge_tags_json"] = json.loads(
+                                str(linked_record.get("knowledge_tags_json") or "[]")
+                            )
+                        except json.JSONDecodeError:
+                            effective_archive_payload["knowledge_tags_json"] = linked_record.get("knowledge_tags") or []
             needs_teacher_confirmation, confirmation_reasons = _infer_wrong_question_confirmation_state(
-                archive_payload=archive_payload,
+                archive_payload=effective_archive_payload,
                 reflection=reflection,
                 image_url=image_url,
             )
@@ -4389,25 +4545,42 @@ def api_wrong_question_chat_stream(session_id: str):
             generation_metadata = _build_wrong_question_archive_generation_metadata(
                 archive_payload=archive_payload,
                 run=run,
+                session_metadata=session_metadata,
             )
-            rework_record_id = str(session_metadata.get("rework_record_id") or "").strip()
             archived_record = None
-            if rework_record_id:
+            if linked_record_id:
                 archived_record = update_wrong_question_submission_from_chat_archive(
-                    rework_record_id,
+                    linked_record_id,
                     chat_session_id=normalized_session_id,
                     child_raw_reason_text=str(reflection.get("why_wrong") or "").strip(),
                     child_reason_transcript=summary_text,
                     child_reason_core_issue=str(reflection.get("unknown_step") or "").strip(),
                     child_reason_next_step=str(reflection.get("help_preference") or "").strip(),
-                    topic_category=str(archive_payload.get("topic_category") or archive_payload.get("topicCategory") or "").strip(),
-                    question_text=str(archive_payload.get("question_text") or "").strip(),
-                    question_text_source=str(archive_payload.get("question_text_source") or "ai").strip() or "ai",
-                    question_structured_json=archive_payload.get("question_structured_json"),
-                    knowledge_tags_json=archive_payload.get("knowledge_tags_json"),
+                    topic_category=(
+                        str(archive_payload.get("topic_category") or archive_payload.get("topicCategory") or "").strip()
+                        if ("topic_category" in archive_payload or "topicCategory" in archive_payload)
+                        else None
+                    ),
+                    question_text=(
+                        str(archive_payload.get("question_text") or "").strip()
+                        if "question_text" in archive_payload
+                        else None
+                    ),
+                    question_text_source=(
+                        str(archive_payload.get("question_text_source") or "ai").strip() or "ai"
+                        if "question_text_source" in archive_payload
+                        else None
+                    ),
+                    question_structured_json=archive_payload.get("question_structured_json")
+                    if "question_structured_json" in archive_payload
+                    else None,
+                    knowledge_tags_json=archive_payload.get("knowledge_tags_json")
+                    if "knowledge_tags_json" in archive_payload
+                    else None,
                     generation_metadata_json=generation_metadata,
                     needs_teacher_confirmation=needs_teacher_confirmation,
                     confirmation_reasons_json=confirmation_reasons_json,
+                    preserve_existing_confirmation_review=bool(followup_record_id and not rework_record_id),
                 )
             if archived_record is None:
                 archived_record = create_wrong_question_submission(
@@ -4440,7 +4613,7 @@ def api_wrong_question_chat_stream(session_id: str):
             session_metadata["archived_record_id"] = archived_record["id"]
             archive_result = {
                 "created": True,
-                "updated_existing_record": bool(rework_record_id),
+                "updated_existing_record": bool(linked_record_id),
                 "idempotent_reuse": False,
                 "record": _serialize_wrong_question_record_for_response(archived_record),
             }

@@ -27,6 +27,7 @@ import {
   buildWrongQuestionReviewDraft,
   buildWrongQuestionQuery,
   buildWrongQuestionChatDetailPath,
+  buildWrongQuestionChatFollowupPath,
   buildWrongQuestionChatReopenPath,
   buildWrongQuestionChatStreamPath,
   buildWrongQuestionIngestionAssetUploadPath,
@@ -273,6 +274,22 @@ function canGenerateWrongQuestionPractice(record: WrongQuestionRecord): boolean 
     return confirmationStatus === 'confirmed' || confirmationStatus === 'not_required';
   }
   return false;
+}
+
+function canStartWrongQuestionMasteryFollowup(record: WrongQuestionRecord | null): boolean {
+  if (!record || record.source !== 'ai_chat') {
+    return false;
+  }
+  const confirmationStatus = normalizeWrongQuestionConfirmationStatus(record);
+  if (confirmationStatus !== 'confirmed' && confirmationStatus !== 'not_required') {
+    return false;
+  }
+  const practiceSheetCount = record.masteryTracking?.practiceSheetCount ?? record.masteryAssessment?.practiceSheetCount ?? 0;
+  if (practiceSheetCount <= 0) {
+    return false;
+  }
+  const latestPracticeStatus = (record.masteryAssessment?.latestPracticeStatus ?? record.masteryTracking?.latestPracticeStatus ?? '').trim();
+  return latestPracticeStatus !== 'pending' && latestPracticeStatus !== 'generating';
 }
 
 function getWrongQuestionPracticeStatusLabel(status: string): string {
@@ -640,6 +657,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [selectedRecord?.generationMetadata]);
   const selectedRecordMasteryTracking = selectedRecord?.masteryTracking;
   const selectedRecordMasteryAssessment = selectedRecord?.masteryAssessment;
+  const selectedRecordCanStartMasteryFollowup = useMemo(() => {
+    return canStartWrongQuestionMasteryFollowup(selectedRecord);
+  }, [selectedRecord]);
   const selectedRecordLatestPracticePreviewUrl = useMemo(() => {
     const sheetId = selectedRecordMasteryTracking?.latestPracticeSheetId;
     if (typeof sheetId !== 'number' || sheetId <= 0) {
@@ -1159,6 +1179,38 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   }, [
     hydrateWrongQuestionChatState,
     wrongQuestionChatArchivedRecord,
+    wrongQuestionChatRun,
+  ]);
+
+  const handleStartWrongQuestionMasteryFollowup = useCallback(async () => {
+    if (!selectedRecord?.id) {
+      setWrongQuestionChatError('当前没有可继续追问的错题记录。');
+      setWrongQuestionChatNotice('');
+      return;
+    }
+    setWrongQuestionChatSending(true);
+    setWrongQuestionChatError('');
+    setWrongQuestionChatNotice('');
+    try {
+      const response = await apiFetch<{ session?: unknown; run?: unknown }>(
+        buildWrongQuestionChatFollowupPath(selectedRecord.id),
+        {
+          method: 'POST',
+          body: JSON.stringify({}),
+        },
+      );
+      const nextSession = response.session ? normalizeWrongQuestionChatSession(response.session) : null;
+      const nextRun = response.run ? normalizeWrongQuestionIngestionRun(response.run) : wrongQuestionChatRun;
+      hydrateWrongQuestionChatState(nextSession, nextRun);
+      setWrongQuestionChatNotice('已开启这道题的掌握追问，后续归档会继续覆盖同一条错题记录。');
+    } catch (followupError) {
+      setWrongQuestionChatError(followupError instanceof Error ? followupError.message : '开启掌握追问失败');
+    } finally {
+      setWrongQuestionChatSending(false);
+    }
+  }, [
+    hydrateWrongQuestionChatState,
+    selectedRecord,
     wrongQuestionChatRun,
   ]);
 
@@ -3076,6 +3128,16 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                 系统判断：{selectedRecordMasteryAssessment.label || '继续跟进'}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">证据评分 {selectedRecordMasteryAssessment.score}/4</span>
+              {selectedRecordCanStartMasteryFollowup ? (
+                <button
+                  type="button"
+                  onClick={() => void handleStartWrongQuestionMasteryFollowup()}
+                  disabled={wrongQuestionChatSending}
+                  className={workspaceSecondaryButtonClass}
+                >
+                  开启掌握追问
+                </button>
+              ) : null}
             </div>
           </div>
 
