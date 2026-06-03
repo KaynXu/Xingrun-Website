@@ -271,6 +271,9 @@ export type WeeklyWrongQuestionFollowupItem = {
   topicCategories: string[];
   representativeReasonSummaries: string[];
   sourceRecordIds: string[];
+  sourceRecords: WrongQuestionRecord[];
+  repeatedCategory: string;
+  repeatedCategoryCount: number;
   studentLibraryPdfUrl: string;
   message: WeeklyWrongQuestionFollowupMessage | null;
 };
@@ -775,8 +778,10 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     reviewStatus: record.reviewStatus.trim() || (isWechatMiniProgramWrongQuestionRecord(record) ? 'pending' : ''),
   };
 
-  if (isWechatMiniProgramWrongQuestionRecord(record)) {
+  if (isWechatMiniProgramWrongQuestionRecord(record) || record.source === 'ai_chat') {
     draft.isMastered = Boolean(record.isMastered);
+  }
+  if (isWechatMiniProgramWrongQuestionRecord(record)) {
     if (isPrimarySchoolWrongQuestionRecord(record)) {
       draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
     }
@@ -1307,6 +1312,11 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
         topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
         representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
         sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
+        sourceRecords: Array.isArray(item.source_records ?? item.sourceRecords)
+          ? (item.source_records ?? item.sourceRecords).map((record, index) => normalizeWrongQuestionRecord(record, index))
+          : [],
+        repeatedCategory: String(item.repeated_category ?? item.repeatedCategory ?? ''),
+        repeatedCategoryCount: pickNumberValue(item, ['repeated_category_count', 'repeatedCategoryCount']) ?? 0,
         studentLibraryPdfUrl: String(item.student_library_pdf_url ?? item.studentLibraryPdfUrl ?? ''),
         message: rawMessage
           ? {

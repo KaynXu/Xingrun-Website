@@ -8248,6 +8248,20 @@ def _weekly_followup_reason_from_category(category: str, count: int, practiced_r
     return f"{category}可练错题{count}道，且最近一周没有练过。"
 
 
+def _serialize_weekly_followup_source_records(record_ids: list[str]) -> list[dict]:
+    serialized_records: list[dict] = []
+    seen_ids: set[str] = set()
+    for record_id in record_ids:
+        normalized_record_id = str(record_id or "").strip()
+        if not normalized_record_id or normalized_record_id in seen_ids:
+            continue
+        seen_ids.add(normalized_record_id)
+        record = get_wechat_wrong_question_submission(normalized_record_id)
+        if record:
+            serialized_records.append(record)
+    return serialized_records
+
+
 def list_weekly_wrong_question_followup_students(
     *,
     organization_id: int,
@@ -8308,7 +8322,7 @@ def list_weekly_wrong_question_followup_students(
             JOIN users u ON u.id = wqs.teacher_user_id
             WHERE wqs.organization_id=?
               AND wqs.class_id=?
-              AND wqs.source='wechat_mp'
+              AND wqs.source IN ('wechat_mp', 'ai_chat')
               AND wqs.recognition_status='recognized'
               AND wqs.created_at >= ?
               AND wqs.created_at <= ?
@@ -8327,7 +8341,7 @@ def list_weekly_wrong_question_followup_students(
             FROM wrong_question_submissions
             WHERE organization_id=?
               AND class_id=?
-              AND source='wechat_mp'
+              AND source IN ('wechat_mp', 'ai_chat')
               AND recognition_status='recognized'
               AND archive_status='active'
             GROUP BY student_id
@@ -8419,6 +8433,8 @@ def list_weekly_wrong_question_followup_students(
 
         recommended_category = ""
         recommendation_reason = ""
+        repeated_category = ""
+        repeated_category_count = 0
         if candidates:
             grouped_by_category: dict[str, list[sqlite3.Row]] = {}
             for candidate in candidates:
@@ -8442,6 +8458,17 @@ def list_weekly_wrong_question_followup_students(
                     len(recommended_rows),
                     recommended_category in practiced_categories,
                 )
+            repeated_ranked = sorted(
+                (
+                    (category, len(rows))
+                    for category, rows in grouped_by_category.items()
+                    if len(rows) >= 2
+                ),
+                key=lambda item: (item[1], item[0]),
+                reverse=True,
+            )
+            if repeated_ranked:
+                repeated_category, repeated_category_count = repeated_ranked[0]
 
         if sheet:
             status = "has_practice_sheet"
@@ -8486,6 +8513,9 @@ def list_weekly_wrong_question_followup_students(
                 "representative_reason_summaries": output_reasons,
                 "latest_created_at": latest_created_at,
                 "source_record_ids": output_source_record_ids,
+                "source_records": _serialize_weekly_followup_source_records(output_source_record_ids),
+                "repeated_category": repeated_category,
+                "repeated_category_count": repeated_category_count,
             }
         )
     return students

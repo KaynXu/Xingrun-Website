@@ -198,6 +198,10 @@ Current V1 note:
 - [ ] Use same chat record to drive later re-practice and mastery checks.
 - [ ] Add mastery status inputs and repeated-error signals after later practice attempts.
 
+Progress note (2026-06-03):
+- Weekly follow-up candidates now include archived `ai_chat` records, return source-record navigation context, and expose repeated-category signals.
+- Unified local review now lets teachers mark `ai_chat` archive records as mastered so they can fall out of later weekly follow-up priority.
+
 ### Track C: Workbench / error_correction Product Entry
 
 This is the shortest path to the operator/teacher workbench requested by the review.

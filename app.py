@@ -1927,6 +1927,14 @@ def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
         for record_id in item.get("source_record_ids", [])
         if str(record_id or "").strip()
     ]
+    source_records = [
+        serialized
+        for serialized in (
+            _serialize_wrong_question_record_for_response(record, include_archive_context=True)
+            for record in (item.get("source_records") or [])
+        )
+        if serialized is not None
+    ]
     student_id = int(item.get("student_id") or 0)
     return {
         "organization_id": item.get("organization_id"),
@@ -1948,6 +1956,9 @@ def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
         "representative_reason_summaries": item.get("representative_reason_summaries") or [],
         "latest_created_at": item.get("latest_created_at"),
         "source_record_ids": source_record_ids,
+        "source_records": source_records,
+        "repeated_category": item.get("repeated_category") or "",
+        "repeated_category_count": int(item.get("repeated_category_count") or 0),
         "message": _weekly_followup_message_payload(message),
         "student_library_pdf_url": f"/api/wechat/student-libraries/{student_id}",
     }

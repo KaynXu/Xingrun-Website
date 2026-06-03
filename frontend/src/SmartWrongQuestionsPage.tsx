@@ -1982,6 +1982,34 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     setSelectedPracticeRecordIds([]);
     setPracticeSelectionTouched(false);
   };
+  const handleOpenWeeklyFollowupSourceRecord = (item: WeeklyWrongQuestionFollowupItem, preferredRecordId = '') => {
+    const targetRecordId = preferredRecordId.trim()
+      || item.sourceRecords[0]?.id
+      || item.candidateRecordIds[0]
+      || item.sourceRecordIds[0]
+      || '';
+    if (!targetRecordId) {
+      setWeeklyFollowupError('当前学生还没有可打开的来源错题。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+    const targetRecord = records.find((record) => record.id === targetRecordId);
+    if (!targetRecord) {
+      setWeeklyFollowupError('当前列表还没有加载这条来源错题，请先刷新列表。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+    if (!hasStaffScope && activeWeeklyFollowupClassId) {
+      setSelectedClassId(activeWeeklyFollowupClassId);
+    }
+    setSelectedStudentName(item.studentName);
+    setSelectedId(targetRecord.id);
+    setNotebookModalView('questions');
+    setSelectedPracticeRecordIds([]);
+    setPracticeSelectionTouched(false);
+    setWeeklyFollowupError('');
+    setWeeklyFollowupNotice('已跳转到来源错题。');
+  };
   const practiceHistoryPanel = (
     <>
       <div className="mb-5 border-b border-slate-200/80 pb-5 dark:border-white/10">
@@ -2800,9 +2828,21 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               disabled={savingReview}
                 className={workspacePrimaryButtonClass}
               >
-                保存跟进记录
-              </button>
-            </div>
+              保存跟进记录
+            </button>
+          </div>
+
+          {selectedRecord.source === 'ai_chat' ? (
+            <label className="flex items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={Boolean(selectedDraft.isMastered)}
+                onChange={(event) => handleDraftChange('isMastered', (event.target as HTMLInputElement).checked)}
+                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span>本题已掌握，后续周跟进可不再优先推送</span>
+            </label>
+          ) : null}
 
           {selectedRecord.source === 'ai_chat' ? (
             <label className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
@@ -3244,6 +3284,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                       : '';
                   const isReadyPractice = item.status === 'has_practice_sheet' && item.practiceSheet?.status === 'ready';
                   const needsPractice = item.status === 'needs_practice_sheet';
+                  const latestSourceRecord = item.sourceRecords[0] ?? null;
+                  const latestAiChatSourceRecord = item.sourceRecords.find((record) => record.source === 'ai_chat') ?? null;
+                  const hasAiChatSource = Boolean(latestAiChatSourceRecord);
                   return (
                     <article key={item.studentId} className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3254,6 +3297,12 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                               {isReadyPractice ? `本周练习 ${item.weeklyQuestionCount}题` : needsPractice ? `可练 ${item.candidateQuestionCount}题` : '暂无可练错题'}
                             </span>
                             {needsPractice && item.recommendedCategory ? <span>建议：{item.recommendedCategory}</span> : null}
+                            {item.repeatedCategoryCount > 1 && item.repeatedCategory ? <span>复发：{item.repeatedCategory} {item.repeatedCategoryCount}次</span> : null}
+                            {hasAiChatSource ? (
+                              <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                                AI 对话归档
+                              </span>
+                            ) : null}
                             {item.topicCategories.slice(0, 3).map((topic) => (
                               <span key={topic} className="rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
                                 {topic}
@@ -3289,6 +3338,24 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                             className={workspacePrimaryButtonClass}
                           >
                             {generatingWeeklyPracticeStudentId === item.studentId ? '正在提交' : '让 AI 生成练习'}
+                          </button>
+                        ) : null}
+                        {latestSourceRecord ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenWeeklyFollowupSourceRecord(item)}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            打开最近归档
+                          </button>
+                        ) : null}
+                        {latestAiChatSourceRecord ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenWeeklyFollowupSourceRecord(item, latestAiChatSourceRecord.id)}
+                            className={workspaceSecondaryButtonClass}
+                          >
+                            打开 AI 归档
                           </button>
                         ) : null}
                         {isReadyPractice ? (

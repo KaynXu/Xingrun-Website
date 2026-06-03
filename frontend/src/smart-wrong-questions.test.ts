@@ -573,6 +573,9 @@ test('SmartWrongQuestionsPage wires weekly followup UI only into the web smart w
   assert.match(pageSource, /每周练习跟进/);
   assert.match(pageSource, /buildWeeklyWrongQuestionFollowupArchivePath/);
   assert.match(pageSource, /buildWeeklyWrongQuestionFollowupPracticeSheetPath/);
+  assert.match(pageSource, /打开最近归档/);
+  assert.match(pageSource, /打开 AI 归档/);
+  assert.match(pageSource, /复发：/);
   assert.match(pageSource, /<select[\s\S]{0,200}aria-label="练习包方向"/);
   assert.doesNotMatch(pageSource, /<input[\s\S]{0,200}aria-label="练习包方向"/);
   assert.match(pageSource, /extractGeneratedWeeklyFollowupMessage/);
@@ -746,6 +749,22 @@ test('normalizeWeeklyWrongQuestionFollowupResponse preserves cached messages', (
         topic_categories: ['计算', '应用题'],
         primary_error_types: ['审题遗漏'],
         student_library_pdf_url: '/api/wechat/student-libraries/501',
+        repeated_category: '计算',
+        repeated_category_count: 2,
+        source_records: [
+          {
+            id: 'record-a',
+            source: 'ai_chat',
+            detail_url: '/api/wrong-questions/record-a',
+            archive_context: {
+              source: 'ai_chat',
+              ingestion_run_id: 'run-1',
+              ingestion_run_url: '/api/wrong-question-ingestions/run-1',
+              chat_session_id: 'session-1',
+              chat_session_url: '/api/wrong-question-chats/session-1',
+            },
+          },
+        ],
         message: {
           id: 7,
           message_text: '王睿博妈妈，我刚看了下孩子这周错题。',
@@ -760,6 +779,10 @@ test('normalizeWeeklyWrongQuestionFollowupResponse preserves cached messages', (
   assert.equal(payload.items[0]?.studentName, '王睿博');
   assert.equal(payload.items[0]?.message?.messageText, '王睿博妈妈，我刚看了下孩子这周错题。');
   assert.equal(payload.items[0]?.studentLibraryPdfUrl, '/api/wechat/student-libraries/501');
+  assert.equal(payload.items[0]?.repeatedCategory, '计算');
+  assert.equal(payload.items[0]?.repeatedCategoryCount, 2);
+  assert.equal(payload.items[0]?.sourceRecords[0]?.source, 'ai_chat');
+  assert.equal(payload.items[0]?.sourceRecords[0]?.archiveContext?.chatSessionUrl, '/api/wrong-question-chats/session-1');
 });
 
 test('normalizeWeeklyWrongQuestionFollowupResponse falls back for malformed numeric fields', () => {
@@ -1368,6 +1391,7 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /来源素材/);
   assert.match(pageSource, /OCR \/ 切题轨迹/);
   assert.match(pageSource, /仍需老师复核/);
+  assert.match(pageSource, /本题已掌握，后续周跟进可不再优先推送/);
 });
 
 test('SmartWrongQuestionsPage loads selected record detail into a review draft state', () => {
