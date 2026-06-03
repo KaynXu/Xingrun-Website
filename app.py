@@ -1996,12 +1996,89 @@ def _serialize_wrong_question_practice_pack_job_for_response(job: object) -> Opt
     return serialized
 
 
+def _serialize_wrong_question_ingestion_run_link_for_response(run: object) -> Optional[dict]:
+    if not isinstance(run, dict):
+        return None
+    serialized = {
+        "id": str(run.get("id") or "").strip(),
+        "source": str(run.get("source") or "").strip(),
+        "status": str(run.get("status") or "").strip(),
+        "current_step": str(run.get("current_step") or "").strip(),
+        "chat_session_id": str(run.get("chat_session_id") or "").strip(),
+    }
+    serialized["detail_url"] = (
+        f"/api/wrong-question-ingestions/{serialized['id']}" if serialized["id"] else ""
+    )
+    return serialized
+
+
+def _serialize_wrong_question_chat_session_link_for_response(session: object) -> Optional[dict]:
+    if not isinstance(session, dict):
+        return None
+    serialized = {
+        "id": str(session.get("id") or "").strip(),
+        "status": str(session.get("status") or "").strip(),
+        "current_stage": str(session.get("current_stage") or "").strip(),
+        "summary_text": str(session.get("summary_text") or "").strip(),
+        "ingestion_run_id": str(session.get("ingestion_run_id") or "").strip(),
+    }
+    normalized_session_id = serialized["id"]
+    serialized["detail_url"] = (
+        f"/api/wrong-question-chats/{normalized_session_id}" if normalized_session_id else ""
+    )
+    serialized["stream_url"] = (
+        f"/api/wrong-question-chats/{normalized_session_id}/stream" if normalized_session_id else ""
+    )
+    return serialized
+
+
+def _serialize_wrong_question_record_for_response(
+    record: object,
+    *,
+    include_archive_context: bool = False,
+) -> Optional[dict]:
+    if not isinstance(record, dict):
+        return None
+    serialized = dict(record)
+    record_id = str(serialized.get("id") or "").strip()
+    ingestion_run_id = str(serialized.get("ingestion_run_id") or "").strip()
+    chat_session_id = str(serialized.get("chat_session_id") or "").strip()
+    serialized["detail_url"] = f"/api/wrong-questions/{record_id}" if record_id else ""
+    serialized["archive_context"] = {
+        "source": str(serialized.get("source") or "").strip(),
+        "ingestion_run_id": ingestion_run_id,
+        "ingestion_run_url": (
+            f"/api/wrong-question-ingestions/{ingestion_run_id}" if ingestion_run_id else ""
+        ),
+        "chat_session_id": chat_session_id,
+        "chat_session_url": f"/api/wrong-question-chats/{chat_session_id}" if chat_session_id else "",
+    }
+    if include_archive_context:
+        serialized["linked_ingestion_run"] = _serialize_wrong_question_ingestion_run_link_for_response(
+            get_wrong_question_ingestion_run(ingestion_run_id) if ingestion_run_id else None
+        )
+        serialized["linked_chat_session"] = _serialize_wrong_question_chat_session_link_for_response(
+            get_wrong_question_chat_session(chat_session_id) if chat_session_id else None
+        )
+    return serialized
+
+
 def _serialize_wrong_question_ingestion_run_for_response(run: object) -> Optional[dict]:
     if not isinstance(run, dict):
         return None
     serialized = dict(run)
+    serialized["detail_url"] = (
+        f"/api/wrong-question-ingestions/{serialized['id']}" if serialized.get("id") else ""
+    )
     serialized["assets"] = list_wrong_question_assets(str(serialized.get("id") or ""))
-    serialized["records"] = list_wrong_question_submissions_for_ingestion_run(str(serialized.get("id") or ""))
+    serialized["records"] = [
+        linked_record
+        for linked_record in (
+            _serialize_wrong_question_record_for_response(item)
+            for item in list_wrong_question_submissions_for_ingestion_run(str(serialized.get("id") or ""))
+        )
+        if linked_record is not None
+    ]
     return serialized
 
 
@@ -2009,8 +2086,20 @@ def _serialize_wrong_question_chat_session_for_response(session: object) -> Opti
     if not isinstance(session, dict):
         return None
     serialized = dict(session)
+    normalized_session_id = str(serialized.get("id") or "").strip()
+    serialized["detail_url"] = f"/api/wrong-question-chats/{normalized_session_id}" if normalized_session_id else ""
+    serialized["stream_url"] = (
+        f"/api/wrong-question-chats/{normalized_session_id}/stream" if normalized_session_id else ""
+    )
     serialized["messages"] = list_wrong_question_chat_messages(str(serialized.get("id") or ""))
-    serialized["records"] = list_wrong_question_submissions_for_chat_session(str(serialized.get("id") or ""))
+    serialized["records"] = [
+        linked_record
+        for linked_record in (
+            _serialize_wrong_question_record_for_response(item)
+            for item in list_wrong_question_submissions_for_chat_session(str(serialized.get("id") or ""))
+        )
+        if linked_record is not None
+    ]
     return serialized
 
 
@@ -3343,7 +3432,7 @@ def api_wrong_question_detail(record_id):
     if local_record:
         if not _can_access_wrong_question_record(user, local_record):
             return jsonify({"error": "not found"}), 404
-        return jsonify(local_record)
+        return jsonify(_serialize_wrong_question_record_for_response(local_record, include_archive_context=True))
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
     except smart_wrong_questions.WrongQuestionProxyError as exc:
@@ -3409,7 +3498,15 @@ def api_wrong_question_review_save(record_id):
             )
         pdf_path = _refresh_student_wrong_question_library_cache(local_record["student_id"])
         saved_record = attach_student_library_pdf_path(record_id, pdf_path)
-        return jsonify({"ok": True, "record": saved_record})
+        return jsonify(
+            {
+                "ok": True,
+                "record": _serialize_wrong_question_record_for_response(
+                    saved_record,
+                    include_archive_context=True,
+                ),
+            }
+        )
     try:
         record = smart_wrong_questions.fetch_wrong_question_record(record_id, request.args)
         if not _can_access_wrong_question_record(user, record):
@@ -3736,6 +3833,11 @@ def api_wrong_question_ingestion_archive(run_id: str):
                 attach_student_library_pdf_path(str(record.get("id") or ""), pdf_path) or record
                 for record in created_records
             ]
+        created_records = [
+            serialized_record or record
+            for record in created_records
+            for serialized_record in [_serialize_wrong_question_record_for_response(record)]
+        ]
         _create_wrong_question_assets_from_payload(run_id, data.get("assets"))
         updated = update_wrong_question_ingestion_run(
             run_id,
@@ -3888,7 +3990,7 @@ def api_wrong_question_chat_stream(session_id: str):
         if existing_records:
             archive_result = {
                 "created": False,
-                "record": existing_records[0],
+                "record": _serialize_wrong_question_record_for_response(existing_records[0]),
             }
             session_metadata["archived_record_id"] = existing_records[0]["id"]
             session = update_wrong_question_chat_session(
@@ -3933,7 +4035,7 @@ def api_wrong_question_chat_stream(session_id: str):
             session_metadata["archived_record_id"] = created_record["id"]
             archive_result = {
                 "created": True,
-                "record": created_record,
+                "record": _serialize_wrong_question_record_for_response(created_record),
             }
             session = update_wrong_question_chat_session(
                 normalized_session_id,

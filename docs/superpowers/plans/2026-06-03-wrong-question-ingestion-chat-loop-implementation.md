@@ -166,7 +166,7 @@ The list below is intentionally more detailed than the high-level phase plan. It
 - [x] Add chat-session read/recovery API for UI resume and page reload.
 - [x] Add ingestion-run list/history API so a future workbench can reopen unfinished runs.
 - [x] Add explicit `current_step` / stage tracking on ingestion runs instead of relying only on `status`.
-- [ ] Add richer archive detail linkage so wrong-question detail can open the related ingestion run and chat session directly.
+- [x] Add richer archive detail linkage so wrong-question detail can open the related ingestion run and chat session directly.
 - [ ] Add retry-safe idempotency rules for chat archive finalization and workbench archive finalization.
 
 ### Track B: AI Chat Product Entry

@@ -285,9 +285,30 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.assertEqual(record["source"], "ai_chat")
         self.assertEqual(record["ingestion_run_id"], run["id"])
         self.assertEqual(record["chat_session_id"], "chat-session-archive")
+        self.assertEqual(record["detail_url"], f"/api/wrong-questions/{record['id']}")
+        self.assertEqual(record["archive_context"]["ingestion_run_id"], run["id"])
+        self.assertEqual(record["archive_context"]["ingestion_run_url"], f"/api/wrong-question-ingestions/{run['id']}")
+        self.assertEqual(record["archive_context"]["chat_session_id"], "chat-session-archive")
+        self.assertEqual(
+            record["archive_context"]["chat_session_url"],
+            "/api/wrong-question-chats/chat-session-archive",
+        )
         self.assertEqual(record["recognition_status"], "recognized")
         self.assertEqual(record["student_library_pdf_path"], "/tmp/student-archive.pdf")
         rebuild_mock.assert_called_once_with(self.student["id"])
+
+        detail_response = self.client.get(
+            f"/api/wrong-question-ingestions/{run['id']}",
+            headers=self.auth_headers(self.owner_payload["token"]),
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        detail_run = detail_response.get_json()["run"]
+        self.assertEqual(detail_run["detail_url"], f"/api/wrong-question-ingestions/{run['id']}")
+        self.assertEqual(detail_run["records"][0]["archive_context"]["ingestion_run_url"], f"/api/wrong-question-ingestions/{run['id']}")
+        self.assertEqual(
+            detail_run["records"][0]["archive_context"]["chat_session_url"],
+            "/api/wrong-question-chats/chat-session-archive",
+        )
 
         library_records = lesson_manager.list_student_wrong_question_library_records(self.student["id"])
         self.assertEqual([item["id"] for item in library_records], [record["id"]])

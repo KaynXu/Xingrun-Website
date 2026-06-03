@@ -262,6 +262,8 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertEqual(payload["session"]["id"], "chat-session-detail")
         self.assertEqual(payload["session"]["ingestion_run_id"], run["id"])
         self.assertEqual(payload["session"]["current_stage"], "ask_unknown_step")
+        self.assertEqual(payload["session"]["detail_url"], "/api/wrong-question-chats/chat-session-detail")
+        self.assertEqual(payload["session"]["stream_url"], "/api/wrong-question-chats/chat-session-detail/stream")
         self.assertEqual(len(payload["session"]["messages"]), 3)
         self.assertEqual(payload["session"]["messages"][0]["role"], "assistant")
         self.assertEqual(payload["session"]["messages"][1]["role"], "user")
@@ -271,6 +273,58 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
             "chat_reflection",
         )
         self.assertEqual(hidden.status_code, 404)
+
+    def test_chat_detail_records_include_archive_navigation_context(self):
+        run = self._create_ai_chat_run(
+            chat_session_id="chat-session-linked-record",
+            file_url="https://files.example.com/chat-linked-record.png",
+        )
+
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-linked-record/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "ingestion_run_id": run["id"],
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-linked-record/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我不知道为什么要先减 5"},
+        )
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-linked-record/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我卡在移项为什么变号"},
+        )
+        archived = self.client.post(
+            "/api/wrong-question-chats/chat-session-linked-record/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "message": "先给提示",
+                "archive_payload": {
+                    "question_text": "解方程 2x+5=17。",
+                    "knowledge_tags_json": ["一元一次方程"],
+                },
+            },
+        )
+        self.assertEqual(archived.status_code, 200)
+
+        detail = self.client.get(
+            "/api/wrong-question-chats/chat-session-linked-record",
+            headers=self.auth_headers(self.owner_payload["token"]),
+        )
+        self.assertEqual(detail.status_code, 200)
+        record = detail.get_json()["session"]["records"][0]
+        self.assertEqual(record["archive_context"]["ingestion_run_id"], run["id"])
+        self.assertEqual(record["archive_context"]["ingestion_run_url"], f"/api/wrong-question-ingestions/{run['id']}")
+        self.assertEqual(record["archive_context"]["chat_session_id"], "chat-session-linked-record")
+        self.assertEqual(
+            record["archive_context"]["chat_session_url"],
+            "/api/wrong-question-chats/chat-session-linked-record",
+        )
 
 
 if __name__ == "__main__":

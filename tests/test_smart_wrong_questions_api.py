@@ -698,6 +698,72 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         fetch_wrong_question_record.assert_not_called()
         save_wrong_question_review.assert_not_called()
 
+    def test_local_wrong_question_detail_includes_archive_navigation_context(self):
+        owner_payload = self.login_owner()
+        class_id = lesson_manager.save_class(
+            "六年级 8 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=owner_payload["user"]["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_payload["user"]["id"])
+        student = lesson_manager.create_student_for_class(class_id, "Alice")
+        run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=owner_payload["user"]["organization_id"],
+            source="ai_chat",
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            chat_session_id="chat-session-record-detail",
+            status="archived",
+            current_step="archived",
+        )
+        lesson_manager.create_wrong_question_chat_session(
+            session_id="chat-session-record-detail",
+            organization_id=owner_payload["user"]["organization_id"],
+            ingestion_run_id=run["id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            status="archived",
+            current_stage="ready_to_archive",
+            summary_text="错因自述：移项前没有先看清等式两边。",
+        )
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/archive-detail.png",
+            recognition_status="recognized",
+            question_text="解方程 2x+5=17。",
+            ingestion_run_id=run["id"],
+            chat_session_id="chat-session-record-detail",
+        )
+
+        detail = self.client.get(
+            f"/api/wrong-questions/{record['id']}",
+            headers=self.auth_headers(owner_payload["token"]),
+        )
+
+        self.assertEqual(detail.status_code, 200)
+        payload = detail.get_json()
+        self.assertEqual(payload["detail_url"], f"/api/wrong-questions/{record['id']}")
+        self.assertEqual(payload["archive_context"]["ingestion_run_id"], run["id"])
+        self.assertEqual(payload["archive_context"]["ingestion_run_url"], f"/api/wrong-question-ingestions/{run['id']}")
+        self.assertEqual(payload["archive_context"]["chat_session_id"], "chat-session-record-detail")
+        self.assertEqual(
+            payload["archive_context"]["chat_session_url"],
+            "/api/wrong-question-chats/chat-session-record-detail",
+        )
+        self.assertIsNotNone(payload["linked_ingestion_run"])
+        self.assertEqual(payload["linked_ingestion_run"]["detail_url"], f"/api/wrong-question-ingestions/{run['id']}")
+        self.assertEqual(payload["linked_ingestion_run"]["current_step"], "archived")
+        self.assertIsNotNone(payload["linked_chat_session"])
+        self.assertEqual(payload["linked_chat_session"]["detail_url"], "/api/wrong-question-chats/chat-session-record-detail")
+        self.assertEqual(payload["linked_chat_session"]["summary_text"], "错因自述：移项前没有先看清等式两边。")
+
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
     def test_local_wrong_question_review_can_update_question_text(self, _mock_rebuild):
         owner_payload = self.login_owner()
