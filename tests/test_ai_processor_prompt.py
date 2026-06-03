@@ -244,6 +244,12 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         user_payload = json.loads(fake_client.chat.completions.last_kwargs["messages"][1]["content"])
         self.assertEqual(user_payload["items"][0]["topic_category"], "一元一次方程去分母")
+        self.assertEqual(result["generation_metadata"]["schema_version"], ai_processor.WRONG_QUESTION_PRACTICE_SCHEMA_VERSION)
+        self.assertEqual(result["generation_metadata"]["provider"], "deepseek")
+        self.assertEqual(
+            result["items"][0]["generation_metadata"]["wrong_question_record_id"],
+            "record-1",
+        )
         self.assertEqual(result["items"][0]["structured_content"]["mistake_focus"], "【去分母检查】")
         self.assertEqual(result["items"][0]["structured_content"]["review_goal"], "【下次先标分母】")
         self.assertEqual(
@@ -309,6 +315,14 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertEqual(
             result["items"][0]["structured_content"]["confirmation_reasons"],
             ["needs_unit_check"],
+        )
+        self.assertEqual(
+            result["items"][0]["generation_metadata"]["prompt_version"],
+            ai_processor.WRONG_QUESTION_PRACTICE_PROMPT_VERSION,
+        )
+        self.assertEqual(
+            result["items"][0]["generation_metadata"]["model_version"],
+            "deepseek-v4-pro",
         )
 
     def test_wrong_question_practice_prompt_bans_template_copy_and_bullets(self):

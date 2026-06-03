@@ -56,6 +56,19 @@ export interface WrongQuestionArchiveContext {
   chatSessionUrl: string;
 }
 
+export interface WrongQuestionGenerationMetadata {
+  schemaVersion: string;
+  promptVersion: string;
+  templateVersion: string;
+  ruleVersion: string;
+  provider: string;
+  modelVersion: string;
+  entrypoint: string;
+  scope?: string;
+  ingestionEntrypoint?: string;
+  archiveSource?: string;
+}
+
 export interface WrongQuestionRecord {
   id: string;
   roomId: string;
@@ -101,6 +114,7 @@ export interface WrongQuestionRecord {
   confirmationReviewedBy?: number | null;
   confirmationReviewedAt?: string;
   confirmationReviewerName?: string;
+  generationMetadata?: WrongQuestionGenerationMetadata;
   linkedIngestionRun?: WrongQuestionIngestionRun;
   linkedChatSession?: WrongQuestionChatSession;
 }
@@ -448,6 +462,48 @@ function normalizePossiblyJsonStringList(value: unknown): string[] {
   }
 }
 
+function normalizeWrongQuestionGenerationMetadata(rawMetadata: unknown): WrongQuestionGenerationMetadata | undefined {
+  let source = rawMetadata;
+  if (typeof rawMetadata === 'string') {
+    try {
+      source = JSON.parse(rawMetadata);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const metadata: WrongQuestionGenerationMetadata = {
+    schemaVersion: pickStringValue(source, ['schemaVersion', 'schema_version']),
+    promptVersion: pickStringValue(source, ['promptVersion', 'prompt_version']),
+    templateVersion: pickStringValue(source, ['templateVersion', 'template_version']),
+    ruleVersion: pickStringValue(source, ['ruleVersion', 'rule_version']),
+    provider: pickStringValue(source, ['provider']),
+    modelVersion: pickStringValue(source, ['modelVersion', 'model_version']),
+    entrypoint: pickStringValue(source, ['entrypoint']),
+  };
+
+  const scope = pickStringValue(source, ['scope']);
+  if (scope) {
+    metadata.scope = scope;
+  }
+
+  const ingestionEntrypoint = pickStringValue(source, ['ingestionEntrypoint', 'ingestion_entrypoint']);
+  if (ingestionEntrypoint) {
+    metadata.ingestionEntrypoint = ingestionEntrypoint;
+  }
+
+  const archiveSource = pickStringValue(source, ['archiveSource', 'archive_source']);
+  if (archiveSource) {
+    metadata.archiveSource = archiveSource;
+  }
+
+  const hasValue = Object.values(metadata).some((value) => typeof value === 'string' ? value.trim() : Boolean(value));
+  return hasValue ? metadata : undefined;
+}
+
 function normalizeWrongQuestionTopicCategory(value = ''): string {
   const normalized = value.trim();
   return normalized || '未分类';
@@ -747,6 +803,13 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     record.confirmationReviewerName = confirmationReviewerName;
   }
 
+  const generationMetadata = normalizeWrongQuestionGenerationMetadata(
+    source.generation_metadata ?? source.generationMetadata ?? source.generation_metadata_json,
+  );
+  if (generationMetadata) {
+    record.generationMetadata = generationMetadata;
+  }
+
   const archiveContextCandidate = isObjectRecord(source.archive_context)
     ? source.archive_context
     : isObjectRecord(source.archiveContext)
@@ -957,6 +1020,7 @@ export function resolveSavedWrongQuestionRecord(
     const hasConfirmationReviewedBy = hasOwnKey(responseSource, ['confirmationReviewedBy', 'confirmation_reviewed_by']);
     const hasConfirmationReviewedAt = hasOwnKey(responseSource, ['confirmationReviewedAt', 'confirmation_reviewed_at']);
     const hasConfirmationReviewerName = hasOwnKey(responseSource, ['confirmationReviewerName', 'confirmation_reviewer_name']);
+    const hasGenerationMetadata = hasOwnKey(responseSource, ['generationMetadata', 'generation_metadata', 'generation_metadata_json']);
 
     return {
       ...normalizedResponse,
@@ -999,6 +1063,9 @@ export function resolveSavedWrongQuestionRecord(
       confirmationReviewerName: hasConfirmationReviewerName
         ? normalizedResponse.confirmationReviewerName
         : currentRecord.confirmationReviewerName,
+      generationMetadata: hasGenerationMetadata
+        ? normalizedResponse.generationMetadata
+        : currentRecord.generationMetadata,
     };
   }
 

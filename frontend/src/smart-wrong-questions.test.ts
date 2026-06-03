@@ -1273,6 +1273,16 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
     confirmation_reviewed_by: 7,
     confirmation_reviewed_at: '2026-06-03 11:00:00',
     confirmation_reviewer_name: '管理员',
+    generation_metadata: {
+      schema_version: 'wrong_question_archive_schema.v1',
+      prompt_version: 'wrong_question_chat_prompt.2026-06-03',
+      template_version: 'wrong_question_chat_archive_template.2026-06-03',
+      rule_version: 'wrong_question_chat_archive_rules.2026-06-03',
+      provider: 'local',
+      model_version: 'local-guided-loop',
+      entrypoint: 'wrong_question_chat_archive',
+      ingestion_entrypoint: 'chat',
+    },
     archive_context: {
       source: 'ai_chat',
       ingestion_run_id: 'run-123',
@@ -1328,6 +1338,9 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
   assert.equal(normalized.confirmationReviewedBy, 7);
   assert.equal(normalized.confirmationReviewedAt, '2026-06-03 11:00:00');
   assert.equal(normalized.confirmationReviewerName, '管理员');
+  assert.equal(normalized.generationMetadata?.schemaVersion, 'wrong_question_archive_schema.v1');
+  assert.equal(normalized.generationMetadata?.modelVersion, 'local-guided-loop');
+  assert.equal(normalized.generationMetadata?.ingestionEntrypoint, 'chat');
   assert.deepEqual(normalized.archiveContext, {
     source: 'ai_chat',
     ingestionRunId: 'run-123',
@@ -1398,6 +1411,7 @@ test('smart wrong question page exposes archive detail panels for ai chat review
   assert.match(pageSource, /老师复核原因/);
   assert.match(pageSource, /最近处理：/);
   assert.match(pageSource, /对话归档摘要/);
+  assert.match(pageSource, /生成版本/);
   assert.match(pageSource, /来源素材/);
   assert.match(pageSource, /OCR \/ 切题轨迹/);
   assert.match(pageSource, /仍需老师复核/);

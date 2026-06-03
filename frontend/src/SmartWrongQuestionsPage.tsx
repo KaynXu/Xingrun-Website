@@ -64,6 +64,7 @@ import {
   type WrongQuestionPracticeSheetListApiResponse,
   type WrongQuestionPracticeSheetSummary,
   type WrongQuestionFilters,
+  type WrongQuestionGenerationMetadata,
   type WrongQuestionListApiResponse,
   type WrongQuestionRecord,
   type WrongQuestionReviewDraft,
@@ -159,6 +160,18 @@ const WRONG_QUESTION_INGESTION_ASSET_ROLE_LABELS: Record<string, string> = {
   ocr_page_image: 'OCR 页图',
   split_preview: '切题预览',
 };
+
+const WRONG_QUESTION_GENERATION_METADATA_LABELS: Array<[keyof WrongQuestionGenerationMetadata, string]> = [
+  ['schemaVersion', 'Schema'],
+  ['promptVersion', 'Prompt'],
+  ['templateVersion', 'Template'],
+  ['ruleVersion', 'Rule'],
+  ['provider', 'Provider'],
+  ['modelVersion', 'Model'],
+  ['entrypoint', 'Entrypoint'],
+  ['ingestionEntrypoint', 'Ingestion'],
+  ['archiveSource', 'Archive'],
+];
 
 const practicePackStatusLabels: Record<string, string> = {
   pending: '等待生成',
@@ -325,6 +338,17 @@ function parseWrongQuestionAssetMetadata(value: string): Record<string, unknown>
   } catch {
     return null;
   }
+}
+
+function buildWrongQuestionGenerationMetadataEntries(
+  metadata?: WrongQuestionGenerationMetadata,
+): Array<{ label: string; value: string }> {
+  if (!metadata) {
+    return [];
+  }
+  return WRONG_QUESTION_GENERATION_METADATA_LABELS
+    .map(([key, label]) => ({ label, value: String(metadata[key] ?? '').trim() }))
+    .filter((item) => item.value);
 }
 
 function parseWeeklyFollowupMessageId(value: unknown): number {
@@ -578,6 +602,9 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedRecordArchiveTraceAssets = useMemo(() => {
     return selectedRecordArchiveAssets.filter((item) => item.assetRole !== 'original_upload');
   }, [selectedRecordArchiveAssets]);
+  const selectedRecordGenerationMetadataEntries = useMemo(() => {
+    return buildWrongQuestionGenerationMetadataEntries(selectedRecord?.generationMetadata);
+  }, [selectedRecord?.generationMetadata]);
   const selectedQuestionTextPreview = useMemo(() => {
     if (!selectedRecord || !selectedDraft || selectedRecord.isGeometry) {
       return null;
@@ -2770,6 +2797,24 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                     </div>
                   ) : null}
                 </div>
+              </div>
+
+              <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">生成版本</p>
+                {selectedRecordGenerationMetadataEntries.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedRecordGenerationMetadataEntries.map((item) => (
+                      <span
+                        key={`${item.label}-${item.value}`}
+                        className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
+                      >
+                        {item.label}: {item.value}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">当前还没有记录生成版本信息。</p>
+                )}
               </div>
 
               <div className="grid gap-4 xl:grid-cols-2">

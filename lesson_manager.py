@@ -1677,6 +1677,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "chat_session_id",
             "question_structured_json",
             "knowledge_tags_json",
+            "generation_metadata_json",
             "needs_teacher_confirmation",
             "confirmation_reasons_json",
             "created_at",
@@ -1729,6 +1730,7 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             chat_session_id           TEXT NOT NULL DEFAULT '',
             question_structured_json  TEXT NOT NULL DEFAULT '',
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
+            generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
             confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
             confirmation_status      TEXT NOT NULL DEFAULT '',
@@ -2462,6 +2464,7 @@ def init_db():
             chat_session_id           TEXT NOT NULL DEFAULT '',
             question_structured_json  TEXT NOT NULL DEFAULT '',
             knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
+            generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
             needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
             confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
             confirmation_status      TEXT NOT NULL DEFAULT '',
@@ -2566,6 +2569,7 @@ def init_db():
             question_count            INTEGER NOT NULL DEFAULT 0,
             status                    TEXT NOT NULL DEFAULT 'pending',
             pdf_path                  TEXT NOT NULL DEFAULT '',
+            generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
             generation_error          TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
@@ -2590,6 +2594,7 @@ def init_db():
             reason_blank_prompt           TEXT NOT NULL DEFAULT '',
             improvement_summary_prompt    TEXT NOT NULL DEFAULT '',
             structured_content_json       TEXT NOT NULL DEFAULT '{}',
+            generation_metadata_json      TEXT NOT NULL DEFAULT '{}',
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -2896,16 +2901,19 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "chat_session_id", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "question_structured_json", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "knowledge_tags_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_submissions", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_submissions", "needs_teacher_confirmation", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reasons_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_status", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_by", "INTEGER")
         _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_ingestion_runs", "current_step", "TEXT NOT NULL DEFAULT 'uploaded'")
+        _ensure_column(conn, "wrong_question_practice_sheets", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "structured_content_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "ingestion_run_id", "TEXT NOT NULL DEFAULT ''")
@@ -7194,6 +7202,7 @@ def _normalize_wrong_question_submission_fields(
     chat_session_id: str = "",
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    generation_metadata_json: object = None,
     needs_teacher_confirmation: bool = False,
     confirmation_reasons_json: object = None,
 ) -> dict:
@@ -7263,6 +7272,11 @@ def _normalize_wrong_question_submission_fields(
             field_name="knowledge_tags_json",
             default="[]",
         ),
+        "generation_metadata_json": _normalize_json_storage_value(
+            generation_metadata_json,
+            field_name="generation_metadata_json",
+            default="{}",
+        ),
         "needs_teacher_confirmation": 1 if needs_teacher_confirmation else 0,
         "confirmation_reasons_json": _normalize_json_storage_value(
             confirmation_reasons_json,
@@ -7301,10 +7315,10 @@ def _create_wrong_question_submission_record(
             topic_category, archive_status, status,
             recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
             question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path,
-            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json,
+            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json, generation_metadata_json,
             needs_teacher_confirmation, confirmation_reasons_json,
             confirmation_status, confirmation_reviewed_by, confirmation_reviewed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record_id,
@@ -7338,6 +7352,7 @@ def _create_wrong_question_submission_record(
             normalized_payload["chat_session_id"],
             normalized_payload["question_structured_json"],
             normalized_payload["knowledge_tags_json"],
+            normalized_payload["generation_metadata_json"],
             normalized_payload["needs_teacher_confirmation"],
             normalized_payload["confirmation_reasons_json"],
             "pending" if normalized_payload["needs_teacher_confirmation"] else "not_required",
@@ -7385,6 +7400,7 @@ def create_wrong_question_submission(
     chat_session_id: str = "",
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    generation_metadata_json: object = None,
     needs_teacher_confirmation: bool = False,
     confirmation_reasons_json: object = None,
 ) -> dict:
@@ -7414,6 +7430,7 @@ def create_wrong_question_submission(
         chat_session_id=chat_session_id,
         question_structured_json=question_structured_json,
         knowledge_tags_json=knowledge_tags_json,
+        generation_metadata_json=generation_metadata_json,
         needs_teacher_confirmation=needs_teacher_confirmation,
         confirmation_reasons_json=confirmation_reasons_json,
     )
@@ -7493,6 +7510,7 @@ def create_wechat_wrong_question_submission(
     chat_session_id: str = "",
     question_structured_json: object = None,
     knowledge_tags_json: object = None,
+    generation_metadata_json: object = None,
     needs_teacher_confirmation: bool = False,
     confirmation_reasons_json: object = None,
 ) -> dict:
@@ -7523,6 +7541,7 @@ def create_wechat_wrong_question_submission(
         chat_session_id=chat_session_id,
         question_structured_json=question_structured_json,
         knowledge_tags_json=knowledge_tags_json,
+        generation_metadata_json=generation_metadata_json,
         needs_teacher_confirmation=needs_teacher_confirmation,
         confirmation_reasons_json=confirmation_reasons_json,
     )
@@ -7602,6 +7621,10 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         for item in (confirmation_reasons if isinstance(confirmation_reasons, list) else [])
         if str(item or "").strip()
     ]
+    try:
+        generation_metadata = json.loads(str(row["generation_metadata_json"] or "{}"))
+    except json.JSONDecodeError:
+        generation_metadata = {}
     confirmation_status = str(row["confirmation_status"] or "").strip()
     if confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
         if row["needs_teacher_confirmation"]:
@@ -7611,6 +7634,7 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         else:
             confirmation_status = "not_required"
     payload["knowledge_tags"] = normalized_knowledge_tags
+    payload["generation_metadata"] = generation_metadata if isinstance(generation_metadata, dict) else {}
     payload["confirmation_reasons"] = normalized_confirmation_reasons
     payload["confirmation_status"] = confirmation_status
     payload["confirmation_reviewed_by"] = (
@@ -7811,12 +7835,15 @@ def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
             SELECT
                 wqs.*,
                 c.name AS class_display_name,
+                c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             WHERE wqs.student_id=?
               AND wqs.recognition_status='recognized'
               AND wqs.archive_status='active'
@@ -7824,7 +7851,14 @@ def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
             """,
             (student_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [
+        item
+        for item in (
+            _serialize_wechat_wrong_question_submission_row(row)
+            for row in rows
+        )
+        if item is not None
+    ]
 
 
 def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[dict]:
@@ -8818,6 +8852,14 @@ def _serialize_wrong_question_practice_sheet_row(row: sqlite3.Row | None) -> Opt
         return None
     payload = dict(row)
     payload["question_count"] = int(payload.get("question_count") or 0)
+    try:
+        payload["generation_metadata"] = (
+            json.loads(str(payload.get("generation_metadata_json") or "{}"))
+            if payload.get("generation_metadata_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["generation_metadata"] = {}
     return payload
 
 
@@ -8835,6 +8877,14 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
         )
     except (TypeError, json.JSONDecodeError):
         payload["structured_content"] = {}
+    try:
+        payload["generation_metadata"] = (
+            json.loads(str(payload.get("generation_metadata_json") or "{}"))
+            if payload.get("generation_metadata_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["generation_metadata"] = {}
     return payload
 
 
@@ -9008,8 +9058,9 @@ def create_pending_wrong_question_practice_sheet(
                 question_count,
                 status,
                 pdf_path,
+                generation_metadata_json,
                 generation_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '{}', '')
             """,
             (
                 organization_id,
@@ -9128,6 +9179,7 @@ def mark_wrong_question_practice_sheet_succeeded(
     *,
     generated_items: list[dict],
     pdf_path: str,
+    generation_metadata: object = None,
 ) -> Optional[dict]:
     generated_item_by_record_id = {
         str(item.get("wrong_question_record_id") or "").strip(): item
@@ -9162,6 +9214,7 @@ def mark_wrong_question_practice_sheet_succeeded(
                     reason_blank_prompt=?,
                     improvement_summary_prompt=?,
                     structured_content_json=?,
+                    generation_metadata_json=?,
                     updated_at=datetime('now','localtime')
                 WHERE id=?
                 """,
@@ -9174,6 +9227,11 @@ def mark_wrong_question_practice_sheet_succeeded(
                         field_name="structured_content_json",
                         default="{}",
                     ),
+                    _normalize_json_storage_value(
+                        generated.get("generation_metadata_json", generated.get("generation_metadata")),
+                        field_name="generation_metadata_json",
+                        default="{}",
+                    ),
                     row["id"],
                 ),
             )
@@ -9182,11 +9240,20 @@ def mark_wrong_question_practice_sheet_succeeded(
             UPDATE wrong_question_practice_sheets
             SET status='ready',
                 pdf_path=?,
+                generation_metadata_json=?,
                 generation_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            ((pdf_path or "").strip(), sheet_id),
+            (
+                (pdf_path or "").strip(),
+                _normalize_json_storage_value(
+                    generation_metadata,
+                    field_name="generation_metadata_json",
+                    default="{}",
+                ),
+                sheet_id,
+            ),
         )
     return get_wrong_question_practice_sheet(sheet_id)
 

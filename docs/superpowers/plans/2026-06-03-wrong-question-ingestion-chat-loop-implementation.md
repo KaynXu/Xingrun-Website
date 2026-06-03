@@ -189,12 +189,13 @@ This track is now the highest-leverage foundation. It keeps us from overfitting 
 
 #### S2. Review and version metadata
 
-- [ ] Add prompt/template/rule/model version tracking to archive and practice generation records.
-- [ ] Add explicit reviewer/outcome metadata anywhere a teacher confirmation changes the final record.
+- [x] Add prompt/template/rule/model version tracking to archive and practice generation records.
+- [x] Add explicit reviewer/outcome metadata anywhere a teacher confirmation changes the final record.
 - [ ] Keep AI-generated rule suggestions separate from approved production rules.
 
 Progress note (2026-06-03):
 - Local wrong-question archive records now carry confirmation reviewer/outcome metadata (`confirmation_status / confirmation_reviewed_by / confirmation_reviewed_at`) and expose it through the unified wrong-question API, so later workbench and queue flows can reuse the same review spine instead of inventing a second approval model.
+- Practice generation and local archive records now also persist `generation_metadata_json`, covering `schema / prompt / template / rule / provider / model / entrypoint` in a shared shape. The practice AI helper emits this metadata at both sheet and item scope, the async sheet job stores it on `wrong_question_practice_sheets` and `wrong_question_practice_sheet_items`, and `ai_chat` archive finalization stores the same kind of spine on `wrong_question_submissions`.
 
 #### S3. Human feedback loop
 

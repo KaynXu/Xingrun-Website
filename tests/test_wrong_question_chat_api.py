@@ -164,6 +164,9 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertEqual(record["question_text"], "解方程 2x+5=17。")
         self.assertEqual(json.loads(record["knowledge_tags_json"]), ["一元一次方程", "移项"])
         self.assertEqual(record["needs_teacher_confirmation"], 0)
+        self.assertEqual(record["generation_metadata"]["schema_version"], "wrong_question_archive_schema.v1")
+        self.assertEqual(record["generation_metadata"]["prompt_version"], "wrong_question_chat_prompt.2026-06-03")
+        self.assertEqual(record["generation_metadata"]["model_version"], "local-guided-loop")
 
         saved_session = lesson_manager.get_wrong_question_chat_session("chat-session-guided")
         self.assertIsNotNone(saved_session)
@@ -240,6 +243,7 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
             json.loads(record["confirmation_reasons_json"]),
             ["missing_question_text", "knowledge_tags_unconfirmed"],
         )
+        self.assertEqual(record["generation_metadata"]["archive_source"], "ai_chat")
         self.assertEqual(payload["session"]["status"], "archived")
 
     def test_chat_detail_returns_messages_records_and_enforces_scope(self):

@@ -240,6 +240,10 @@ _AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
 _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
 _AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
 _AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
+WRONG_QUESTION_CHAT_ARCHIVE_SCHEMA_VERSION = "wrong_question_archive_schema.v1"
+WRONG_QUESTION_CHAT_ARCHIVE_PROMPT_VERSION = "wrong_question_chat_prompt.2026-06-03"
+WRONG_QUESTION_CHAT_ARCHIVE_TEMPLATE_VERSION = "wrong_question_chat_archive_template.2026-06-03"
+WRONG_QUESTION_CHAT_ARCHIVE_RULE_VERSION = "wrong_question_chat_archive_rules.2026-06-03"
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
     return get_runtime_config()
@@ -277,6 +281,68 @@ def _split_ai_result_with_usage(result: object, *, provider: str, model: str) ->
     ):
         return result[0], _normalize_ai_usage_payload(result[1], provider=provider, model=model)
     return result, _normalize_ai_usage_payload({}, provider=provider, model=model)
+
+
+def _normalize_wrong_question_generation_metadata(value: object) -> dict:
+    payload = value
+    if isinstance(value, str):
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            payload = {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        str(key): payload[key]
+        for key in payload
+        if isinstance(key, str)
+    }
+
+
+def _merge_wrong_question_generation_metadata(*parts: object) -> dict:
+    merged: dict[str, object] = {}
+    for part in parts:
+        payload = _normalize_wrong_question_generation_metadata(part)
+        for key, value in payload.items():
+            if value in (None, "", [], {}):
+                continue
+            merged[key] = value
+    return merged
+
+
+def _build_wrong_question_archive_generation_metadata(
+    *,
+    archive_payload: dict,
+    run: object = None,
+) -> dict:
+    run_payload = run if isinstance(run, dict) else {}
+    try:
+        run_metadata = json.loads(str(run_payload.get("metadata_json") or "{}"))
+    except json.JSONDecodeError:
+        run_metadata = {}
+    if not isinstance(run_metadata, dict):
+        run_metadata = {}
+
+    base = {
+        "schema_version": WRONG_QUESTION_CHAT_ARCHIVE_SCHEMA_VERSION,
+        "prompt_version": WRONG_QUESTION_CHAT_ARCHIVE_PROMPT_VERSION,
+        "template_version": WRONG_QUESTION_CHAT_ARCHIVE_TEMPLATE_VERSION,
+        "rule_version": WRONG_QUESTION_CHAT_ARCHIVE_RULE_VERSION,
+        "provider": "local",
+        "model_version": "local-guided-loop",
+        "entrypoint": "wrong_question_chat_archive",
+    }
+    if str(run_payload.get("source") or "").strip():
+        base["archive_source"] = str(run_payload.get("source") or "").strip()
+    if str(run_metadata.get("entrypoint") or "").strip():
+        base["ingestion_entrypoint"] = str(run_metadata.get("entrypoint") or "").strip()
+
+    return _merge_wrong_question_generation_metadata(
+        base,
+        run_metadata.get("generation_metadata"),
+        archive_payload.get("generation_metadata_json"),
+        archive_payload.get("generation_metadata"),
+    )
 
 
 class DuplicateAiRequestError(RuntimeError):
@@ -888,6 +954,10 @@ def _run_wrong_question_practice_generation_job(
                             if isinstance(generated_item.get("structured_content"), dict)
                             else {}
                         ),
+                        "generation_metadata": _merge_wrong_question_generation_metadata(
+                            generated.get("generation_metadata"),
+                            generated_item.get("generation_metadata"),
+                        ),
                         "answer": str(generated_item.get("answer") or item.get("answer") or "").strip(),
                         "key_steps": (
                             generated_item.get("key_steps")
@@ -970,6 +1040,7 @@ def _run_wrong_question_practice_generation_job(
                 sheet_id,
                 generated_items=generated_items,
                 pdf_path=str(pdf_path or "").strip(),
+                generation_metadata=generated.get("generation_metadata"),
             )
         finally:
             if organization_execution_claimed:
@@ -2112,6 +2183,10 @@ def _serialize_wrong_question_record_for_response(
         "chat_session_id": chat_session_id,
         "chat_session_url": f"/api/wrong-question-chats/{chat_session_id}" if chat_session_id else "",
     }
+    serialized["generation_metadata"] = _merge_wrong_question_generation_metadata(
+        serialized.get("generation_metadata"),
+        serialized.get("generation_metadata_json"),
+    )
     if include_archive_context:
         serialized["linked_ingestion_run"] = _serialize_wrong_question_ingestion_run_for_response(
             get_wrong_question_ingestion_run(ingestion_run_id) if ingestion_run_id else None
@@ -3969,6 +4044,7 @@ def api_wrong_question_ingestion_archive(run_id: str):
                     chat_session_id=str(item.get("chat_session_id") or run.get("chat_session_id") or "").strip(),
                     question_structured_json=item.get("question_structured_json"),
                     knowledge_tags_json=item.get("knowledge_tags_json"),
+                    generation_metadata_json=item.get("generation_metadata_json", item.get("generation_metadata")),
                     needs_teacher_confirmation=bool(item.get("needs_teacher_confirmation")),
                     confirmation_reasons_json=item.get("confirmation_reasons_json"),
                 )
@@ -4191,6 +4267,10 @@ def api_wrong_question_chat_stream(session_id: str):
                 image_url=image_url,
             )
             confirmation_reasons_json = confirmation_reasons or archive_payload.get("confirmation_reasons_json") or []
+            generation_metadata = _build_wrong_question_archive_generation_metadata(
+                archive_payload=archive_payload,
+                run=run,
+            )
             created_record = create_wrong_question_submission(
                 source="ai_chat",
                 organization_id=int(session.get("organization_id") or 0),
@@ -4210,6 +4290,7 @@ def api_wrong_question_chat_stream(session_id: str):
                 chat_session_id=normalized_session_id,
                 question_structured_json=archive_payload.get("question_structured_json"),
                 knowledge_tags_json=archive_payload.get("knowledge_tags_json"),
+                generation_metadata_json=generation_metadata,
                 needs_teacher_confirmation=needs_teacher_confirmation,
                 confirmation_reasons_json=confirmation_reasons_json,
             )

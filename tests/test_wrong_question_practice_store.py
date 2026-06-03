@@ -125,15 +125,30 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
                             }
                         ],
                     },
+                    "generation_metadata": {
+                        "schema_version": "wrong_question_practice_schema.v1",
+                        "prompt_version": "wrong_question_practice_prompt.2026-06-03",
+                        "model_version": "deepseek-v4-pro",
+                    },
                 },
                 {
                     "wrong_question_record_id": self.record_two["id"],
                     "ai_hint": "先标出已知线段和角，再回看辅助线是否真的服务于结论。",
                     "reason_blank_prompt": "这题我漏看了 ______，所以图形关系判断成了 ______。",
                     "improvement_summary_prompt": "以后碰到几何题，我会先 ______，再 ______，避免再次漏掉 ______。",
+                    "generation_metadata": {
+                        "schema_version": "wrong_question_practice_schema.v1",
+                        "prompt_version": "wrong_question_practice_prompt.2026-06-03",
+                        "model_version": "deepseek-v4-pro",
+                    },
                 },
             ],
             pdf_path="/tmp/wrong-question-practice-1.pdf",
+            generation_metadata={
+                "schema_version": "wrong_question_practice_schema.v1",
+                "prompt_version": "wrong_question_practice_prompt.2026-06-03",
+                "model_version": "deepseek-v4-pro",
+            },
         )
 
         saved = lesson_manager.get_wrong_question_practice_sheet(sheet["id"])
@@ -155,6 +170,18 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             "运算顺序补全",
         )
         self.assertEqual(saved["items"][1]["structured_content"], {})
+        self.assertEqual(
+            saved["generation_metadata"]["schema_version"],
+            "wrong_question_practice_schema.v1",
+        )
+        self.assertEqual(
+            saved["items"][0]["generation_metadata"]["prompt_version"],
+            "wrong_question_practice_prompt.2026-06-03",
+        )
+        self.assertEqual(
+            saved["items"][1]["generation_metadata"]["model_version"],
+            "deepseek-v4-pro",
+        )
 
     def test_mark_wrong_question_practice_sheet_failed_records_error(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(

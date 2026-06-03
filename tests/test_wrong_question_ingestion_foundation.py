@@ -96,6 +96,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
                     chat_session_id,
                     question_structured_json,
                     knowledge_tags_json,
+                    generation_metadata_json,
                     needs_teacher_confirmation,
                     confirmation_reasons_json
                 FROM wrong_question_submissions
@@ -110,6 +111,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
         self.assertIn("chat_session_id", columns)
         self.assertIn("question_structured_json", columns)
         self.assertIn("knowledge_tags_json", columns)
+        self.assertIn("generation_metadata_json", columns)
         self.assertIn("needs_teacher_confirmation", columns)
         self.assertIn("confirmation_reasons_json", columns)
         self.assertEqual(row["parent_wechat_account_id"], account["id"])
@@ -118,6 +120,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
         self.assertEqual(row["chat_session_id"], "")
         self.assertEqual(row["question_structured_json"], "")
         self.assertEqual(row["knowledge_tags_json"], "[]")
+        self.assertEqual(row["generation_metadata_json"], "{}")
         self.assertEqual(row["needs_teacher_confirmation"], 0)
         self.assertEqual(row["confirmation_reasons_json"], "[]")
 
@@ -133,6 +136,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
             question_text="解方程 $2x+3=9$。",
             question_structured_json={"stem": "解方程 2x+3=9", "subject": "math"},
             knowledge_tags_json=["一元一次方程", "移项"],
+            generation_metadata_json={"schema_version": "archive.v1", "prompt_version": "guided-chat.v1"},
             ingestion_run_id="wqrun-workspace-1",
             needs_teacher_confirmation=True,
             confirmation_reasons_json=["ocr_low_confidence"],
@@ -147,6 +151,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
             recognition_status="recognized",
             question_text="已知两点间距离公式，求坐标差。",
             knowledge_tags_json=["坐标系"],
+            generation_metadata_json={"schema_version": "archive.v1", "model_version": "local-guided-loop"},
             chat_session_id="chat-session-1",
         )
         lesson_manager.create_wrong_question_submission(
@@ -160,6 +165,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
         )
 
         library_records = lesson_manager.list_student_wrong_question_library_records(self.student["id"])
+        library_records_by_id = {item["id"]: item for item in library_records}
 
         self.assertEqual({item["id"] for item in library_records}, {workspace_record["id"], ai_chat_record["id"]})
         self.assertEqual({item["source"] for item in library_records}, {"workspace", "ai_chat"})
@@ -173,6 +179,7 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
                     chat_session_id,
                     question_structured_json,
                     knowledge_tags_json,
+                    generation_metadata_json,
                     needs_teacher_confirmation,
                     confirmation_reasons_json
                 FROM wrong_question_submissions
@@ -193,10 +200,22 @@ class WrongQuestionIngestionFoundationTestCase(unittest.TestCase):
             json.loads(saved_workspace["knowledge_tags_json"]),
             ["一元一次方程", "移项"],
         )
+        self.assertEqual(
+            json.loads(saved_workspace["generation_metadata_json"]),
+            {"schema_version": "archive.v1", "prompt_version": "guided-chat.v1"},
+        )
         self.assertEqual(saved_workspace["needs_teacher_confirmation"], 1)
         self.assertEqual(
             json.loads(saved_workspace["confirmation_reasons_json"]),
             ["ocr_low_confidence"],
+        )
+        self.assertEqual(
+            library_records_by_id[workspace_record["id"]]["generation_metadata"]["schema_version"],
+            "archive.v1",
+        )
+        self.assertEqual(
+            library_records_by_id[ai_chat_record["id"]]["generation_metadata"]["model_version"],
+            "local-guided-loop",
         )
 
     def test_create_ingestion_run_and_assets_persist_metadata(self):

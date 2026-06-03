@@ -442,6 +442,11 @@ WRONG_QUESTION_PRACTICE_PACK_VARIANT_REVIEW_PROMPT = """你是错题练习变式
 
 后续再用一句话说明原因。"""
 
+WRONG_QUESTION_PRACTICE_SCHEMA_VERSION = "wrong_question_practice_schema.v1"
+WRONG_QUESTION_PRACTICE_PROMPT_VERSION = "wrong_question_practice_prompt.2026-06-03"
+WRONG_QUESTION_PRACTICE_TEMPLATE_VERSION = "wrong_question_practice_template.2026-06-03"
+WRONG_QUESTION_PRACTICE_RULE_VERSION = "wrong_question_practice_rules.2026-06-03"
+
 WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT = """你是老师微信沟通助手。
 你会收到学生本周错题概况，请写一段老师可以直接发给家长的微信。
 
@@ -979,9 +984,47 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
     if normalized_record_ids != expected_record_ids:
         raise ValueError("wrong question practice sheet generation failed")
 
+    base_generation_metadata = build_wrong_question_practice_generation_metadata()
+    normalized_items = [
+        {
+            **item,
+            "generation_metadata": {
+                **base_generation_metadata,
+                "scope": "item",
+                "wrong_question_record_id": item["wrong_question_record_id"],
+            },
+        }
+        for item in normalized_items
+    ]
+
     return {
         "title": title,
+        "generation_metadata": {
+            **base_generation_metadata,
+            "scope": "sheet",
+            "item_count": len(normalized_items),
+        },
         "items": normalized_items,
+    }
+
+
+def build_wrong_question_practice_generation_metadata(
+    *,
+    provider: str = "",
+    model_version: str = "",
+    entrypoint: str = "wrong_question_practice_sheet",
+) -> dict:
+    normalized_provider = str(provider or "").strip()
+    normalized_model_version = str(model_version or "").strip()
+    normalized_entrypoint = str(entrypoint or "wrong_question_practice_sheet").strip() or "wrong_question_practice_sheet"
+    return {
+        "schema_version": WRONG_QUESTION_PRACTICE_SCHEMA_VERSION,
+        "prompt_version": WRONG_QUESTION_PRACTICE_PROMPT_VERSION,
+        "template_version": WRONG_QUESTION_PRACTICE_TEMPLATE_VERSION,
+        "rule_version": WRONG_QUESTION_PRACTICE_RULE_VERSION,
+        "provider": normalized_provider,
+        "model_version": normalized_model_version,
+        "entrypoint": normalized_entrypoint,
     }
 
 
@@ -1206,8 +1249,10 @@ def generate_wrong_question_practice_sheet_material(
         )
 
     client = _get_client()
+    provider = str(_load_config().get("provider") or "deepseek").strip() or "deepseek"
+    model_version = _get_structured_generation_model()
     response = client.chat.completions.create(
-        model=_get_structured_generation_model(),
+        model=model_version,
         messages=[
             {"role": "system", "content": WRONG_QUESTION_PRACTICE_SHEET_PROMPT},
             {
@@ -1231,6 +1276,27 @@ def generate_wrong_question_practice_sheet_material(
         payload,
         expected_record_ids=expected_record_ids,
     )
+    generation_metadata = build_wrong_question_practice_generation_metadata(
+        provider=provider,
+        model_version=model_version,
+    )
+    normalized["generation_metadata"] = {
+        **normalized.get("generation_metadata", {}),
+        **generation_metadata,
+    }
+    normalized["items"] = [
+        {
+            **item,
+            "generation_metadata": {
+                **item.get("generation_metadata", {}),
+                **generation_metadata,
+                "scope": "item",
+                "wrong_question_record_id": item.get("wrong_question_record_id"),
+            },
+        }
+        for item in normalized.get("items", [])
+        if isinstance(item, dict)
+    ]
     if include_usage:
         return normalized, _usage_dict(response)
     return normalized
