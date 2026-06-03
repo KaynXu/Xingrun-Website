@@ -238,12 +238,28 @@ class AiProcessorPromptTestCase(unittest.TestCase):
                         "primary_error_type_snapshot": "知识点问题",
                         "cause_note_snapshot": "去分母时常数项漏乘",
                         "topic_category_snapshot": "一元一次方程去分母",
+                        "question_structured_snapshot_json": {
+                            "stem": "解方程 (x-1)/2=3",
+                            "subject": "math",
+                        },
+                        "knowledge_tags_snapshot_json": ["一元一次方程", "去分母"],
+                        "reflection_summary_snapshot_json": {
+                            "schema_version": "wrong_question_reflection_summary.v1",
+                            "mode": "archive_reflection",
+                            "why_wrong": "我去分母时漏乘右边常数",
+                            "unknown_step": "不知道等式右边也要同乘 2",
+                            "help_preference": "先提醒我要两边一起乘",
+                            "summary_text": "错因自述：我去分母时漏乘右边常数；卡点：不知道等式右边也要同乘 2；期望支持：先提醒我要两边一起乘",
+                        },
                     }
                 ],
             )
 
         user_payload = json.loads(fake_client.chat.completions.last_kwargs["messages"][1]["content"])
         self.assertEqual(user_payload["items"][0]["topic_category"], "一元一次方程去分母")
+        self.assertEqual(user_payload["items"][0]["question_structured"]["stem"], "解方程 (x-1)/2=3")
+        self.assertEqual(user_payload["items"][0]["knowledge_tags"], ["一元一次方程", "去分母"])
+        self.assertEqual(user_payload["items"][0]["reflection_summary"]["unknown_step"], "不知道等式右边也要同乘 2")
         self.assertEqual(result["generation_metadata"]["schema_version"], ai_processor.WRONG_QUESTION_PRACTICE_SCHEMA_VERSION)
         self.assertEqual(result["generation_metadata"]["provider"], "deepseek")
         self.assertEqual(

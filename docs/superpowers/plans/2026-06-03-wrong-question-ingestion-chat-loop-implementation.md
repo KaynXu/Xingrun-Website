@@ -482,8 +482,8 @@ The current round now also lands the first explicit archive/reflection authority
 
 The next highest-value task is now **the first artifact-consumption slice after review-save + rework continuity**:
 
-- let practice generation and later PDF sections read from `reflection_summary + question_structured + knowledge_tags` as the default teaching inputs
-- stop reconstructing teaching prompts primarily from legacy `child_reason_*` fields once those artifact consumers are migrated
+- practice generation inputs now already carry `reflection_summary + question_structured + knowledge_tags` through both stored practice-sheet item snapshots and live practice-pack items, so downstream artifact generation has a durable shared spine instead of request-local transient fields
+- the next slice is to make PDF-facing rendering and remaining practice artifact surfaces read and show that same spine more explicitly, rather than continuing to infer teacher/student guidance primarily from legacy `child_reason_*`
 - only after those core downstream consumers are on the shared reflection spine should we spend more time multiplying alternate entrypoints or introducing mastery-specific classifiers
 
 This keeps the implementation path aligned with the final desired product:

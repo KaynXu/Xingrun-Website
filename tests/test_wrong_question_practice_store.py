@@ -39,6 +39,16 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             is_geometry=False,
             question_text="计算 $2+3\\times4$ 的结果。",
             question_text_source="teacher",
+            question_structured_json={"stem": "计算 2+3×4 的结果", "subject": "math"},
+            knowledge_tags_json=["四则混合运算", "运算顺序"],
+            reflection_summary_json={
+                "schema_version": "wrong_question_reflection_summary.v1",
+                "mode": "archive_reflection",
+                "why_wrong": "我先算了加法",
+                "unknown_step": "不知道什么时候必须先算乘法",
+                "help_preference": "先提醒我看运算顺序",
+                "summary_text": "错因自述：我先算了加法；卡点：不知道什么时候必须先算乘法；期望支持：先提醒我看运算顺序",
+            },
         )
         self.record_two = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=self.binding_id,
@@ -56,6 +66,16 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
                 "type": "geometry",
                 "points": [{"label": "A", "x": 0, "y": 1}],
                 "segments": [],
+            },
+            question_structured_json={"stem": "根据辅助线判断角度关系", "subject": "math"},
+            knowledge_tags_json=["几何辅助线", "角度关系"],
+            reflection_summary_json={
+                "schema_version": "wrong_question_reflection_summary.v1",
+                "mode": "archive_reflection",
+                "why_wrong": "我把辅助线当成无关线段了",
+                "unknown_step": "不知道辅助线是在提示哪组角",
+                "help_preference": "先提醒我要先标角",
+                "summary_text": "错因自述：我把辅助线当成无关线段了；卡点：不知道辅助线是在提示哪组角；期望支持：先提醒我要先标角",
             },
         )
 
@@ -90,6 +110,9 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertTrue(saved["items"][0]["is_geometry"])
         self.assertEqual(saved["items"][0]["cause_note_snapshot"], "图形关系判断不完整")
         self.assertEqual(saved["items"][0]["topic_category_snapshot"], "几何辅助线")
+        self.assertEqual(saved["items"][0]["question_structured_snapshot"]["stem"], "根据辅助线判断角度关系")
+        self.assertEqual(saved["items"][0]["knowledge_tags_snapshot"], ["几何辅助线", "角度关系"])
+        self.assertEqual(saved["items"][0]["reflection_summary_snapshot"]["why_wrong"], "我把辅助线当成无关线段了")
         self.assertEqual(saved["items"][0]["diagram_type_snapshot"], "geometry")
         self.assertEqual(
             json.loads(saved["items"][0]["diagram_spec_json_snapshot"])["points"][0]["label"],
@@ -99,6 +122,9 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["items"][1]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
         self.assertEqual(saved["items"][1]["child_reason_text_snapshot"], "我把乘法放到最后算了")
         self.assertEqual(saved["items"][1]["topic_category_snapshot"], "四则混合运算")
+        self.assertEqual(saved["items"][1]["question_structured_snapshot"]["stem"], "计算 2+3×4 的结果")
+        self.assertEqual(saved["items"][1]["knowledge_tags_snapshot"], ["四则混合运算", "运算顺序"])
+        self.assertEqual(saved["items"][1]["reflection_summary_snapshot"]["unknown_step"], "不知道什么时候必须先算乘法")
 
     def test_mark_wrong_question_practice_sheet_succeeded_saves_generated_prompts_and_pdf(self):
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(

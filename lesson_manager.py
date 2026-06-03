@@ -2596,6 +2596,9 @@ def init_db():
             primary_error_type_snapshot   TEXT NOT NULL DEFAULT '',
             cause_note_snapshot           TEXT NOT NULL DEFAULT '',
             topic_category_snapshot       TEXT NOT NULL DEFAULT '',
+            question_structured_snapshot_json TEXT NOT NULL DEFAULT '',
+            knowledge_tags_snapshot_json  TEXT NOT NULL DEFAULT '[]',
+            reflection_summary_snapshot_json TEXT NOT NULL DEFAULT '{}',
             ai_hint                       TEXT NOT NULL DEFAULT '',
             reason_blank_prompt           TEXT NOT NULL DEFAULT '',
             improvement_summary_prompt    TEXT NOT NULL DEFAULT '',
@@ -2921,6 +2924,9 @@ def init_db():
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "question_structured_snapshot_json", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "knowledge_tags_snapshot_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "reflection_summary_snapshot_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "structured_content_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
@@ -9604,6 +9610,39 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
     payload["question_order"] = int(payload.get("question_order") or 0)
     payload["is_geometry"] = bool(payload.get("is_geometry"))
     try:
+        payload["question_structured_snapshot"] = (
+            json.loads(str(payload.get("question_structured_snapshot_json") or ""))
+            if payload.get("question_structured_snapshot_json")
+            else None
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["question_structured_snapshot"] = None
+    if not isinstance(payload.get("question_structured_snapshot"), dict):
+        payload["question_structured_snapshot"] = None
+    try:
+        knowledge_tags_snapshot = (
+            json.loads(str(payload.get("knowledge_tags_snapshot_json") or "[]"))
+            if payload.get("knowledge_tags_snapshot_json")
+            else []
+        )
+    except (TypeError, json.JSONDecodeError):
+        knowledge_tags_snapshot = []
+    payload["knowledge_tags_snapshot"] = [
+        str(item or "").strip()
+        for item in (knowledge_tags_snapshot if isinstance(knowledge_tags_snapshot, list) else [])
+        if str(item or "").strip()
+    ]
+    try:
+        payload["reflection_summary_snapshot"] = (
+            json.loads(str(payload.get("reflection_summary_snapshot_json") or "{}"))
+            if payload.get("reflection_summary_snapshot_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["reflection_summary_snapshot"] = {}
+    if not isinstance(payload.get("reflection_summary_snapshot"), dict):
+        payload["reflection_summary_snapshot"] = {}
+    try:
         payload["structured_content"] = (
             json.loads(str(payload.get("structured_content_json") or "{}"))
             if payload.get("structured_content_json")
@@ -9917,8 +9956,11 @@ def create_pending_wrong_question_practice_sheet(
                     child_reason_text_snapshot,
                     primary_error_type_snapshot,
                     cause_note_snapshot,
-                    topic_category_snapshot
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    topic_category_snapshot,
+                    question_structured_snapshot_json,
+                    knowledge_tags_snapshot_json,
+                    reflection_summary_snapshot_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sheet_id,
@@ -9934,6 +9976,21 @@ def create_pending_wrong_question_practice_sheet(
                     str(record.get("primary_error_type") or "").strip(),
                     str(record.get("secondary_error_summary") or "").strip(),
                     str(record.get("topic_category") or "").strip(),
+                    _normalize_json_storage_value(
+                        record.get("question_structured_json", record.get("question_structured")),
+                        field_name="question_structured_snapshot_json",
+                        default="",
+                    ),
+                    _normalize_json_storage_value(
+                        record.get("knowledge_tags_json", record.get("knowledge_tags")),
+                        field_name="knowledge_tags_snapshot_json",
+                        default="[]",
+                    ),
+                    _normalize_json_storage_value(
+                        record.get("reflection_summary_json", record.get("reflection_summary")),
+                        field_name="reflection_summary_snapshot_json",
+                        default="{}",
+                    ),
                 ),
             )
         for linked_record_id in linked_record_ids:

@@ -1138,6 +1138,9 @@ def _practice_pack_item_from_real_record(record: dict, index: int) -> dict:
         "primary_error_type_snapshot": str(record.get("primary_error_type") or "").strip(),
         "cause_note_snapshot": str(record.get("secondary_error_summary") or "").strip(),
         "topic_category_snapshot": str(record.get("topic_category") or "").strip(),
+        "question_structured_snapshot_json": record.get("question_structured_json", record.get("question_structured")),
+        "knowledge_tags_snapshot_json": record.get("knowledge_tags_json", record.get("knowledge_tags")),
+        "reflection_summary_snapshot_json": record.get("reflection_summary_json", record.get("reflection_summary")),
     }
 
 
@@ -1157,6 +1160,9 @@ def _practice_pack_item_from_variant(variant: dict, index: int) -> dict:
         "child_reason_text_snapshot": "",
         "primary_error_type_snapshot": str(variant.get("training_goal") or "").strip(),
         "cause_note_snapshot": str(variant.get("pitfall_reminder") or "").strip(),
+        "question_structured_snapshot_json": "",
+        "knowledge_tags_snapshot_json": [],
+        "reflection_summary_snapshot_json": {},
         "variant_id": variant_id,
         "source_record_id": str(variant.get("source_record_id") or "").strip(),
         "training_goal": str(variant.get("training_goal") or "").strip(),

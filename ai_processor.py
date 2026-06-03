@@ -374,6 +374,7 @@ items 中每一项必须包含：
 严格规则：
 1. 不要在 reason_blank_prompt 或 improvement_summary_prompt 里直接给出原题答案，也不要在这两个学生书写区里提示孩子该怎样把这道题一步一步做对；标准答案和关键步骤只允许放在 answer、key_steps、pitfall_reminder 字段里。
 2. 生成内容主要依据孩子自述错因、顶层错因分类和补充备注；题目内容必须用于提取本题的对象、条件、问法或符号，让填空题具像到这道题，但不要把重点放在讲题上。
+2.a 如果输入里提供了 reflection_summary、question_structured、knowledge_tags，就优先把它们当成这道题的主信息脊柱；child_reason_text、cause_note 和 topic_category 作为兼容补充，不要忽略更完整的结构化反思。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
@@ -811,6 +812,32 @@ def _normalize_string_list(values: object, *, limit: int = 0) -> list[str]:
     return normalized
 
 
+def _normalize_optional_json_object(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _normalize_optional_json_string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return _normalize_string_list(value)
+    text = str(value or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    return _normalize_string_list(parsed)
+
+
 def _extract_prompt_title_and_lines(prompt: str) -> tuple[str, list[str]]:
     lines = [line.strip() for line in str(prompt or "").split("\n") if line.strip()]
     if not lines:
@@ -1235,6 +1262,15 @@ def generate_wrong_question_practice_sheet_material(
 
     normalized_items = []
     for item in items:
+        reflection_summary = _normalize_optional_json_object(
+            item.get("reflection_summary_snapshot_json", item.get("reflection_summary")),
+        )
+        question_structured = _normalize_optional_json_object(
+            item.get("question_structured_snapshot_json", item.get("question_structured")),
+        )
+        knowledge_tags = _normalize_optional_json_string_list(
+            item.get("knowledge_tags_snapshot_json", item.get("knowledge_tags")),
+        )
         normalized_items.append(
             {
                 "wrong_question_record_id": str(item.get("wrong_question_record_id") or "").strip(),
@@ -1245,6 +1281,9 @@ def generate_wrong_question_practice_sheet_material(
                 "primary_error_type": str(item.get("primary_error_type_snapshot") or "").strip(),
                 "cause_note": str(item.get("cause_note_snapshot") or "").strip(),
                 "topic_category": str(item.get("topic_category_snapshot") or item.get("topic_category") or "").strip(),
+                "reflection_summary": reflection_summary,
+                "question_structured": question_structured,
+                "knowledge_tags": knowledge_tags,
             }
         )
 
