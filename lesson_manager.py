@@ -8717,26 +8717,32 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer
             elif next_confirmation_status != "confirmed":
                 next_confirmation_status = "not_required"
         next_reflection_summary = normalized_reflection_summary if has_reflection_summary else existing_reflection_summary
-        next_child_reason_text = str(
-            next_reflection_summary.get("why_wrong")
-            or row["child_raw_reason_text"]
-            or ""
-        ).strip()
-        next_child_reason_transcript = str(
-            next_reflection_summary.get("summary_text")
-            or row["child_reason_transcript"]
-            or ""
-        ).strip()
-        next_child_reason_core_issue = str(
-            next_reflection_summary.get("unknown_step")
-            or row["child_reason_core_issue"]
-            or ""
-        ).strip()
-        next_child_reason_next_step = str(
-            next_reflection_summary.get("help_preference")
-            or row["child_reason_next_step"]
-            or ""
-        ).strip()
+        if has_reflection_summary:
+            next_child_reason_text = str(next_reflection_summary.get("why_wrong") or "").strip()
+            next_child_reason_transcript = str(next_reflection_summary.get("summary_text") or "").strip()
+            next_child_reason_core_issue = str(next_reflection_summary.get("unknown_step") or "").strip()
+            next_child_reason_next_step = str(next_reflection_summary.get("help_preference") or "").strip()
+        else:
+            next_child_reason_text = str(
+                next_reflection_summary.get("why_wrong")
+                or row["child_raw_reason_text"]
+                or ""
+            ).strip()
+            next_child_reason_transcript = str(
+                next_reflection_summary.get("summary_text")
+                or row["child_reason_transcript"]
+                or ""
+            ).strip()
+            next_child_reason_core_issue = str(
+                next_reflection_summary.get("unknown_step")
+                or row["child_reason_core_issue"]
+                or ""
+            ).strip()
+            next_child_reason_next_step = str(
+                next_reflection_summary.get("help_preference")
+                or row["child_reason_next_step"]
+                or ""
+            ).strip()
         conn.execute(
             """
             UPDATE wrong_question_submissions

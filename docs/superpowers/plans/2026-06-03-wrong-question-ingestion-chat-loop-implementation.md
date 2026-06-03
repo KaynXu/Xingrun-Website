@@ -478,11 +478,12 @@ The current round now also lands the first explicit archive/reflection authority
 - this keeps the student AI-chat reflection legible to later review, practice, and mastery steps without requiring each downstream surface to reconstruct the same semantics again
 - the teacher-facing wrong-question detail surface now reads and shows that same reflection spine directly, so review does not have to infer the student's “why wrong / what step is unclear / what kind of help they want” from a single flat archive summary
 - the teacher review draft/save path now edits and persists that same reflection spine directly, so reviewer补充不会再次退化成只写散落的 `child_reason_*` 文本
+- returned-record rework sessions now also continue from that same reflection spine: teacher-edited reflection fields seed the reopened chat, the system resumes at the first missing reflection stage when possible, and the final archive merges `seed + new student answers` back onto the same record instead of forking a second reflection narrative
 
-The next highest-value task is now **the first reflection-authority follow-through slice after review-save persistence**:
+The next highest-value task is now **the first artifact-consumption slice after review-save + rework continuity**:
 
-- extend returned-record rework from “teacher has edited the reflection locally” into “student can continue the same reflection spine after being sent back”, rather than letting rework fork into a parallel free-text path
 - let practice generation and later PDF sections read from `reflection_summary + question_structured + knowledge_tags` as the default teaching inputs
+- stop reconstructing teaching prompts primarily from legacy `child_reason_*` fields once those artifact consumers are migrated
 - only after those core downstream consumers are on the shared reflection spine should we spend more time multiplying alternate entrypoints or introducing mastery-specific classifiers
 
 This keeps the implementation path aligned with the final desired product:

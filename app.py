@@ -2573,25 +2573,120 @@ def _load_wrong_question_chat_session_metadata(session: object) -> dict:
 
 
 def _build_wrong_question_chat_rework_prompt(record: dict) -> str:
+    return _build_wrong_question_chat_rework_prompt_for_stage(record, "ask_why_wrong", {})
+
+
+def _build_wrong_question_chat_reflection_seed(record: dict) -> dict:
+    if not isinstance(record, dict):
+        return {}
+    reflection_summary = record.get("reflection_summary")
+    if not isinstance(reflection_summary, dict):
+        reflection_summary = {}
+    seed = {}
+    why_wrong = str(
+        reflection_summary.get("why_wrong")
+        or record.get("child_raw_reason_text")
+        or ""
+    ).strip()
+    unknown_step = str(
+        reflection_summary.get("unknown_step")
+        or record.get("child_reason_core_issue")
+        or ""
+    ).strip()
+    help_preference = str(
+        reflection_summary.get("help_preference")
+        or record.get("child_reason_next_step")
+        or ""
+    ).strip()
+    if why_wrong:
+        seed["why_wrong"] = why_wrong
+    if unknown_step:
+        seed["unknown_step"] = unknown_step
+    if help_preference:
+        seed["help_preference"] = help_preference
+    return seed
+
+
+def _infer_wrong_question_chat_stage_from_reflection_seed(reflection_seed: dict) -> str:
+    normalized_seed = reflection_seed if isinstance(reflection_seed, dict) else {}
+    if not str(normalized_seed.get("why_wrong") or "").strip():
+        return "ask_why_wrong"
+    if not str(normalized_seed.get("unknown_step") or "").strip():
+        return "ask_unknown_step"
+    if not str(normalized_seed.get("help_preference") or "").strip():
+        return "ask_help_mode"
+    return "ask_why_wrong"
+
+
+def _build_wrong_question_chat_rework_prompt_for_stage(record: dict, stage: str, reflection_seed: dict) -> str:
     reason_labels = [
         _WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS.get(reason, reason)
         for reason in (record.get("confirmation_reasons") or [])
         if str(reason or "").strip()
     ]
-    if reason_labels:
-        reasons_text = "、".join(reason_labels)
+    reasons_text = f"老师刚把这道题退回补充，主要还想再确认：{'、'.join(reason_labels)}。" if reason_labels else "老师希望你再补充一下这道错题。"
+    normalized_seed = reflection_seed if isinstance(reflection_seed, dict) else {}
+    why_wrong = str(normalized_seed.get("why_wrong") or "").strip()
+    unknown_step = str(normalized_seed.get("unknown_step") or "").strip()
+    help_preference = str(normalized_seed.get("help_preference") or "").strip()
+    if stage == "ask_unknown_step":
+        if why_wrong:
+            return (
+                f"{reasons_text} 目前我们先保留你已经说明的错因：{why_wrong}。"
+                "这次继续沿着同一条错题补充一下，你具体卡在了哪一步，或者哪个知识点还没有真正想明白？"
+            )
+        return f"{reasons_text} 你具体卡在了哪一步，或者哪个知识点还没有真正想明白？"
+    if stage == "ask_help_mode":
+        context_bits = []
+        if why_wrong:
+            context_bits.append(f"错因是“{why_wrong}”")
+        if unknown_step:
+            context_bits.append(f"卡点是“{unknown_step}”")
+        if context_bits:
+            return (
+                f"{reasons_text} 现在我们已经补到 {'，'.join(context_bits)}。"
+                "接下来你更希望我怎么帮你，是先给一点提示，还是先带你完整复盘一遍？"
+            )
+        return f"{reasons_text} 接下来你更希望我怎么帮你，是先给一点提示，还是先带你完整复盘一遍？"
+    if why_wrong or unknown_step or help_preference:
+        summary_bits = []
+        if why_wrong:
+            summary_bits.append(f"上次你提到错因是“{why_wrong}”")
+        if unknown_step:
+            summary_bits.append(f"卡点是“{unknown_step}”")
+        if help_preference:
+            summary_bits.append(f"希望的帮助方式是“{help_preference}”")
         return (
-            f"老师刚把这道题退回补充，主要还想再确认：{reasons_text}。"
-            "我们沿着同一条错题继续补充。先说说，你这次最想补清楚的错因或卡点是什么？"
+            f"{reasons_text} 我们先沿着同一条错题继续。{'，'.join(summary_bits)}。"
+            "如果现在你想更准确地补充真正的错因，可以先从这里继续说。"
         )
-    return "老师希望你再补充一下这道错题的错因和卡点。先说说，这次你最想补清楚的是哪里？"
+    return f"{reasons_text} 我们先沿着同一条错题继续。你这次最想补清楚的错因或卡点是什么？"
 
 
-def _collect_wrong_question_chat_reflection(messages: list[dict]) -> dict:
+def _load_wrong_question_chat_reflection_seed(session_metadata: dict) -> dict:
+    if not isinstance(session_metadata, dict):
+        return {}
+    seed = session_metadata.get("reflection_seed")
+    if not isinstance(seed, dict):
+        return {}
+    reflection = {}
+    why_wrong = str(seed.get("why_wrong") or "").strip()
+    unknown_step = str(seed.get("unknown_step") or "").strip()
+    help_preference = str(seed.get("help_preference") or "").strip()
+    if why_wrong:
+        reflection["why_wrong"] = why_wrong
+    if unknown_step:
+        reflection["unknown_step"] = unknown_step
+    if help_preference:
+        reflection["help_preference"] = help_preference
+    return reflection
+
+
+def _collect_wrong_question_chat_reflection(messages: list[dict], reflection_seed: dict | None = None) -> dict:
     reflection = {
-        "why_wrong": "",
-        "unknown_step": "",
-        "help_preference": "",
+        "why_wrong": str((reflection_seed or {}).get("why_wrong") or "").strip(),
+        "unknown_step": str((reflection_seed or {}).get("unknown_step") or "").strip(),
+        "help_preference": str((reflection_seed or {}).get("help_preference") or "").strip(),
     }
     for item in messages:
         if not isinstance(item, dict) or str(item.get("role") or "") != "user":
@@ -2600,11 +2695,11 @@ def _collect_wrong_question_chat_reflection(messages: list[dict]) -> dict:
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        if stage == "ask_why_wrong" and not reflection["why_wrong"]:
+        if stage == "ask_why_wrong":
             reflection["why_wrong"] = content
-        elif stage == "ask_unknown_step" and not reflection["unknown_step"]:
+        elif stage == "ask_unknown_step":
             reflection["unknown_step"] = content
-        elif stage == "ask_help_mode" and not reflection["help_preference"]:
+        elif stage == "ask_help_mode":
             reflection["help_preference"] = content
     return reflection
 
@@ -3874,6 +3969,8 @@ def api_wrong_question_reopen_chat(record_id):
 
     new_session_id = f"chat-rework-{record_id[:8]}-{secrets.token_hex(4)}"
     previous_session_id = str(local_record.get("chat_session_id") or "").strip()
+    reflection_seed = _build_wrong_question_chat_reflection_seed(local_record)
+    initial_stage = _infer_wrong_question_chat_stage_from_reflection_seed(reflection_seed)
     session = create_wrong_question_chat_session(
         session_id=new_session_id,
         organization_id=int(local_record.get("organization_id") or user.get("organization_id") or 0),
@@ -3881,17 +3978,19 @@ def api_wrong_question_reopen_chat(record_id):
         class_id=int(local_record.get("class_id") or 0) or None,
         student_id=int(local_record.get("student_id") or 0) or None,
         teacher_user_id=int(local_record.get("teacher_user_id") or user["id"]) or None,
+        current_stage=initial_stage,
         metadata_json={
             "entrypoint": "wrong_question_chat_rework",
             "rework_record_id": record_id,
             "previous_chat_session_id": previous_session_id,
+            "reflection_seed": reflection_seed,
         },
     )
     create_wrong_question_chat_message(
         session_id=new_session_id,
         role="assistant",
-        stage="ask_why_wrong",
-        content=_build_wrong_question_chat_rework_prompt(local_record),
+        stage=initial_stage,
+        content=_build_wrong_question_chat_rework_prompt_for_stage(local_record, initial_stage, reflection_seed),
     )
     if run:
         refreshed_run = update_wrong_question_ingestion_run(
@@ -4566,7 +4665,10 @@ def api_wrong_question_chat_stream(session_id: str):
         content=message,
     )
     messages = list_wrong_question_chat_messages(normalized_session_id)
-    reflection = _collect_wrong_question_chat_reflection(messages)
+    reflection = _collect_wrong_question_chat_reflection(
+        messages,
+        _load_wrong_question_chat_reflection_seed(session_metadata),
+    )
     summary_text = _summarize_wrong_question_chat_reflection(reflection)
     reflection_summary = _build_wrong_question_chat_reflection_summary(
         reflection,

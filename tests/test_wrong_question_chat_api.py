@@ -491,6 +491,110 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         self.assertTrue(retried_old_session.get_json()["archive"]["idempotent_reuse"])
         self.assertEqual(retried_old_session.get_json()["archive"]["record"]["id"], original_record["id"])
 
+    def test_returned_record_rework_continues_from_teacher_edited_reflection_summary(self):
+        run = self._create_ai_chat_run(
+            chat_session_id="chat-session-rework-seeded",
+            file_url="https://files.example.com/chat-rework-seeded.png",
+        )
+
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-rework-seeded/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "ingestion_run_id": run["id"],
+                "class_id": self.class_id,
+                "student_id": self.student["id"],
+            },
+        )
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-rework-seeded/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我就是有点说不清自己为什么错"},
+        )
+        self.client.post(
+            "/api/wrong-question-chats/chat-session-rework-seeded/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我不知道到底是哪一步开始出问题"},
+        )
+        archived = self.client.post(
+            "/api/wrong-question-chats/chat-session-rework-seeded/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "message": "先给我一点提示",
+                "archive_payload": {
+                    "question_text": "",
+                    "knowledge_tags_json": [],
+                },
+            },
+        )
+        self.assertEqual(archived.status_code, 200)
+        original_record = archived.get_json()["archive"]["record"]
+
+        returned = self.client.put(
+            f"/api/wrong-questions/{original_record['id']}/review",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "needs_teacher_confirmation": True,
+                "confirmation_reasons_json": ["student_confused_step"],
+                "confirmation_action": "return_for_rework",
+                "reflection_summary_json": {
+                    "schema_version": "wrong_question_reflection_summary.v1",
+                    "mode": "teacher_rework",
+                    "summary_text": "错因自述：老师先帮他定位到移项前没看清等式关系",
+                    "why_wrong": "老师先帮他定位到移项前没看清等式关系",
+                    "answered_stages": ["ask_why_wrong"],
+                    "session_entrypoint": "wrong_question_chat_rework",
+                },
+            },
+        )
+        self.assertEqual(returned.status_code, 200)
+        self.assertEqual(returned.get_json()["record"]["confirmation_status"], "returned")
+
+        reopened = self.client.post(
+            f"/api/wrong-questions/{original_record['id']}/reopen-chat",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={},
+        )
+        self.assertEqual(reopened.status_code, 200)
+        reopened_payload = reopened.get_json()
+        reopened_session = reopened_payload["session"]
+        reopened_session_id = reopened_session["id"]
+        self.assertEqual(reopened_session["current_stage"], "ask_unknown_step")
+        self.assertEqual(reopened_session["messages"][0]["stage"], "ask_unknown_step")
+        self.assertIn("老师先帮他定位到移项前没看清等式关系", reopened_session["messages"][0]["content"])
+
+        turn_one = self.client.post(
+            f"/api/wrong-question-chats/{reopened_session_id}/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我现在知道自己主要卡在移项时为什么要同时变号"},
+        )
+        self.assertEqual(turn_one.status_code, 200)
+        self.assertEqual(turn_one.get_json()["session"]["current_stage"], "ask_help_mode")
+
+        finalized = self.client.post(
+            f"/api/wrong-question-chats/{reopened_session_id}/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "message": "先给一点提示，再让我自己试着重做",
+                "archive_payload": {
+                    "question_text": "解方程 2x+5=17。",
+                    "topic_category": "一元一次方程",
+                    "knowledge_tags_json": ["一元一次方程", "移项"],
+                },
+            },
+        )
+        self.assertEqual(finalized.status_code, 200)
+        final_record = finalized.get_json()["archive"]["record"]
+        self.assertEqual(final_record["id"], original_record["id"])
+        self.assertEqual(final_record["reflection_summary"]["why_wrong"], "老师先帮他定位到移项前没看清等式关系")
+        self.assertEqual(final_record["reflection_summary"]["unknown_step"], "我现在知道自己主要卡在移项时为什么要同时变号")
+        self.assertEqual(final_record["reflection_summary"]["help_preference"], "先给一点提示，再让我自己试着重做")
+        self.assertEqual(
+            final_record["reflection_summary"]["answered_stages"],
+            ["ask_why_wrong", "ask_unknown_step", "ask_help_mode"],
+        )
+        self.assertEqual(final_record["confirmation_status"], "not_required")
+
     def test_confirmed_record_can_open_mastery_followup_chat_and_update_same_archive_record(self):
         run = self._create_ai_chat_run(
             chat_session_id="chat-session-followup-origin",
