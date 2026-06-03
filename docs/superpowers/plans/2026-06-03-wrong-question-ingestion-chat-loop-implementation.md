@@ -461,6 +461,12 @@ The current round now also reuses the same continuity from the student summary c
 - when a student card already has a latest confirmed `ai_chat` archive record with completed re-practice, the teacher can now start mastery follow-up directly from the summary card before even opening the notebook and scanning the directory
 - the frontend reuses the same deferred notebook-open flow as weekly follow-up entrypoints, so the chat auto-restore effect does not override the newly opened mastery-followup session during the modal transition
 
+The current round now also reuses the same continuity from the weekly activity summary student surface itself:
+
+- weekly activity summary `student_items` now carry linked eligible `source_record_ids + source_records`, so the summary view can directly identify the latest confirmed `ai_chat` archive record that is already ready for mastery follow-up
+- from `本周活跃学生`, the teacher can now jump straight into mastery follow-up on that same single-record continuity chain, instead of stopping at a class/student activity summary and then manually reopening the notebook to hunt for the record again
+- the frontend uses the same deferred notebook-open + scheduled follow-up start pattern as the other summary entrypoints, so the modal transition does not clobber the newly opened mastery-followup session
+
 The next highest-value task is now **the next continuity reuse slice after weekly follow-up reuse**:
 
 - extend the same mastery-followup entrypoint to the remaining archive-detail and summary surfaces that still stop at “open record”

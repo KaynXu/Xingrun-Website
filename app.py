@@ -2141,6 +2141,36 @@ def _weekly_followup_item_payload(item: dict, message: Optional[dict]) -> dict:
     }
 
 
+def _weekly_activity_student_item_payload(item: dict) -> dict:
+    source_record_ids = [
+        str(record_id).strip()
+        for record_id in item.get("source_record_ids", [])
+        if str(record_id or "").strip()
+    ]
+    source_records = [
+        serialized
+        for serialized in (
+            _serialize_wrong_question_record_for_response(record, include_archive_context=True)
+            for record in (item.get("source_records") or [])
+        )
+        if serialized is not None
+    ]
+    return {
+        "organization_id": item.get("organization_id"),
+        "organization_name": item.get("organization_name"),
+        "class_id": item.get("class_id"),
+        "class_name": item.get("class_name"),
+        "student_id": item.get("student_id"),
+        "student_name": item.get("student_name"),
+        "weekly_question_count": item.get("weekly_question_count"),
+        "total_question_count": item.get("total_question_count"),
+        "topic_categories": item.get("topic_categories") or [],
+        "latest_created_at": item.get("latest_created_at"),
+        "source_record_ids": source_record_ids,
+        "source_records": source_records,
+    }
+
+
 def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
     if not isinstance(lesson, dict):
         return None
@@ -3158,7 +3188,10 @@ def api_admin_wrong_question_activity_summary():
             "week_end": week_end_date,
             "class_items": summary["class_items"],
             "teacher_items": summary["teacher_items"],
-            "student_items": summary["student_items"],
+            "student_items": [
+                _weekly_activity_student_item_payload(item)
+                for item in summary["student_items"]
+            ],
         }
     )
 

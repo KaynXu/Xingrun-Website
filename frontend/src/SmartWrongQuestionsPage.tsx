@@ -55,6 +55,7 @@ import {
   resolveSavedWrongQuestionRecord,
   summarizeWrongQuestionRecords,
   type MemberStudentNotebookSummary,
+  type WeeklyWrongQuestionActivityStudentItem,
   type WeeklyWrongQuestionActivitySummary,
   type WeeklyWrongQuestionFollowupItem,
   type WrongQuestionChatSession,
@@ -2402,6 +2403,41 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     openWrongQuestionRecordInNotebook,
     scheduleNotebookMasteryFollowupStart,
   ]);
+  const handleStartWeeklyActivitySummaryMasteryFollowup = useCallback(async (
+    item: WeeklyWrongQuestionActivityStudentItem,
+    record: WrongQuestionRecord | null,
+  ) => {
+    const preferredRecordId = record?.id || item.sourceRecordIds[0] || '';
+    let targetRecord = record ?? records.find((candidate) => candidate.id === preferredRecordId) ?? null;
+    if (!targetRecord && preferredRecordId) {
+      try {
+        const detail = await apiFetch<unknown>(buildWrongQuestionDetailPath(preferredRecordId));
+        targetRecord = normalizeWrongQuestionRecord(detail);
+      } catch (detailError) {
+        setWeeklyFollowupError(detailError instanceof Error ? detailError.message : '来源错题加载失败');
+        setWeeklyFollowupNotice('');
+        return;
+      }
+    }
+    if (!targetRecord) {
+      setWeeklyFollowupError('当前学生还没有可继续追问的 AI 归档。');
+      setWeeklyFollowupNotice('');
+      return;
+    }
+    const opened = openWrongQuestionRecordInNotebook(targetRecord, {
+      classId: item.classId,
+      studentName: item.studentName,
+      notice: '已打开这位学生的 AI 归档，并准备开启掌握追问。',
+    });
+    if (!opened) {
+      return;
+    }
+    scheduleNotebookMasteryFollowupStart(targetRecord);
+  }, [
+    openWrongQuestionRecordInNotebook,
+    records,
+    scheduleNotebookMasteryFollowupStart,
+  ]);
   const practiceHistoryMasteryFollowupRecordBySheetId = useMemo(() => {
     const recordById = new Map(records.map((item) => [item.id, item]));
     return new Map(
@@ -3775,21 +3811,38 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
                   {weeklyActivitySummary.studentItems.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-400">暂无学生数据</p>
                   ) : (
-                    weeklyActivitySummary.studentItems.map((item) => (
-                      <article key={`${item.organizationId}-${item.classId}-${item.studentId}`} className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
-                        <p className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-white">{item.studentName || '未命名学生'}</p>
-                        <p className="mt-1 min-w-0 break-words text-xs text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.organizationName || '未标注机构'}</p>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
-                          <span>本周{item.weeklyQuestionCount}题</span>
-                          <span>累计{item.totalQuestionCount}题</span>
-                          {item.topicCategories.slice(0, 3).map((topic) => (
-                            <span key={topic} className="rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
-                              {topic}
+                    weeklyActivitySummary.studentItems.map((item) => {
+                      const activitySummaryFollowupRecord = item.sourceRecords[0] ?? null;
+                      const canStartActivitySummaryFollowup = Boolean(activitySummaryFollowupRecord || item.sourceRecordIds[0]);
+                      return (
+                        <article key={`${item.organizationId}-${item.classId}-${item.studentId}`} className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                          <p className="min-w-0 break-words text-sm font-semibold text-slate-900 dark:text-white">{item.studentName || '未命名学生'}</p>
+                          <p className="mt-1 min-w-0 break-words text-xs text-slate-500 dark:text-slate-400">{item.className || '未标注班级'} · {item.organizationName || '未标注机构'}</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span>本周{item.weeklyQuestionCount}题</span>
+                            <span>累计{item.totalQuestionCount}题</span>
+                            {item.topicCategories.slice(0, 3).map((topic) => (
+                              <span key={topic} className="rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                                {topic}
+                              </span>
+                            ))}
+                          </div>
+                          {canStartActivitySummaryFollowup ? (
+                            <span className="mt-3 flex">
+                              <button
+                                type="button"
+                                aria-label={`为本周活跃学生 ${item.studentName} 开启掌握追问`}
+                                onClick={() => void handleStartWeeklyActivitySummaryMasteryFollowup(item, activitySummaryFollowupRecord)}
+                                disabled={wrongQuestionChatSending}
+                                className={workspacePrimaryButtonClass}
+                              >
+                                开启掌握追问
+                              </button>
                             </span>
-                          ))}
-                        </div>
-                      </article>
-                    ))
+                          ) : null}
+                        </article>
+                      );
+                    })
                   )}
                 </section>
               </div>

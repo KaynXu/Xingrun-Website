@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,57 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import lesson_manager
+
+
+def _create_followup_ready_ai_chat_record(
+    *,
+    organization_id: int,
+    class_id: int,
+    student_id: int,
+    teacher_user_id: int,
+    created_at: str,
+) -> dict:
+    record = lesson_manager.create_wrong_question_submission(
+        source="ai_chat",
+        image_url=f"https://files.example.com/ai-chat-{student_id}-{created_at}.png",
+        organization_id=organization_id,
+        class_id=class_id,
+        student_id=student_id,
+        teacher_user_id=teacher_user_id,
+        recognition_status="recognized",
+        question_text="这是一道需要继续确认掌握度的题。",
+        topic_category="计算",
+        chat_session_id=f"session-{student_id}",
+        generation_metadata_json={"archive_source": "ai_chat"},
+    )
+    with lesson_manager.get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET created_at=?,
+                confirmation_status='confirmed',
+                needs_teacher_confirmation=0,
+                mastery_tracking_json=?
+            WHERE id=?
+            """,
+            (
+                created_at,
+                json.dumps(
+                    {
+                        "practice_sheet_count": 1,
+                        "latest_practice_sheet_id": 101,
+                        "latest_practice_status": "ready",
+                        "latest_practice_created_at": created_at,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                record["id"],
+            ),
+        )
+    refreshed = lesson_manager.get_wechat_wrong_question_submission(record["id"])
+    assert refreshed is not None
+    return refreshed
 
 
 class WeeklyWrongQuestionActivitySummaryStoreTestCase(unittest.TestCase):
@@ -209,6 +261,67 @@ class WeeklyWrongQuestionActivitySummaryStoreTestCase(unittest.TestCase):
         self.assertEqual([item["class_name"] for item in summary["class_items"]], ["五年级3班"])
         self.assertEqual([item["student_name"] for item in summary["student_items"]], ["Alice"])
 
+    def test_activity_summary_student_items_include_followup_ready_ai_chat_source_records(self):
+        self._record(binding_id=self.alice_binding["id"], created_at="2026-05-04 09:00:00", topic_category="几何")
+        self._record(binding_id=self.bob_binding["id"], created_at="2026-05-04 10:00:00", topic_category="计算")
+        linked_record = _create_followup_ready_ai_chat_record(
+            organization_id=self.organization_id,
+            class_id=self.class_a,
+            student_id=self.alice["id"],
+            teacher_user_id=self.owner_id,
+            created_at="2026-05-03 18:00:00",
+        )
+        non_eligible_record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            image_url="https://files.example.com/non-eligible-bob.png",
+            organization_id=self.organization_id,
+            class_id=self.class_a,
+            student_id=self.bob["id"],
+            teacher_user_id=self.owner_id,
+            recognition_status="recognized",
+            question_text="这题还没确认。",
+            topic_category="计算",
+            chat_session_id="session-bob-pending",
+            generation_metadata_json={"archive_source": "ai_chat"},
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE wrong_question_submissions
+                SET created_at=?,
+                    confirmation_status='pending',
+                    mastery_tracking_json=?
+                WHERE id=?
+                """,
+                (
+                    "2026-05-03 19:00:00",
+                    json.dumps(
+                        {
+                            "practice_sheet_count": 1,
+                            "latest_practice_sheet_id": 102,
+                            "latest_practice_status": "ready",
+                            "latest_practice_created_at": "2026-05-03 19:00:00",
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    non_eligible_record["id"],
+                ),
+            )
+
+        summary = lesson_manager.list_weekly_wrong_question_activity_summary(
+            week_start_date="2026-05-04",
+            week_end_date="2026-05-10",
+        )
+
+        alice_item = next(item for item in summary["student_items"] if item["student_name"] == "Alice")
+        bob_item = next(item for item in summary["student_items"] if item["student_name"] == "Bob")
+        self.assertEqual(alice_item["source_record_ids"], [linked_record["id"]])
+        self.assertEqual([record["id"] for record in alice_item["source_records"]], [linked_record["id"]])
+        self.assertEqual(alice_item["source_records"][0]["source"], "ai_chat")
+        self.assertEqual(bob_item["source_record_ids"], [])
+        self.assertEqual(bob_item["source_records"], [])
+
 
 class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -253,6 +366,7 @@ class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
         )
         lesson_manager.set_class_teacher_user_id(self.class_id, self.owner_id)
         student = lesson_manager.create_student_for_class(self.class_id, "Alice")
+        self.student_id = student["id"]
         parent = lesson_manager.upsert_parent_wechat_account(openid="openid-activity-api")
         binding = lesson_manager.bind_parent_to_student(
             parent_wechat_account_id=parent["id"],
@@ -352,3 +466,23 @@ class WeeklyWrongQuestionActivitySummaryApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json(), {"error": "week_start must be YYYY-MM-DD"})
+
+    def test_super_owner_weekly_activity_summary_includes_student_source_records(self):
+        linked_record = _create_followup_ready_ai_chat_record(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            student_id=self.student_id,
+            teacher_user_id=self.owner_id,
+            created_at="2026-05-03 20:00:00",
+        )
+
+        response = self.client.get(
+            "/api/admin/wrong-question-activity-summary?week_start=2026-05-04",
+            headers=self.super_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["student_items"][0]["source_record_ids"], [linked_record["id"]])
+        self.assertEqual(payload["student_items"][0]["source_records"][0]["id"], linked_record["id"])
+        self.assertEqual(payload["student_items"][0]["source_records"][0]["source"], "ai_chat")

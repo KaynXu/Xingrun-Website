@@ -373,6 +373,8 @@ export interface WeeklyWrongQuestionActivityStudentItem {
   totalQuestionCount: number;
   topicCategories: string[];
   latestCreatedAt: string;
+  sourceRecordIds: string[];
+  sourceRecords: WrongQuestionRecord[];
 }
 
 export interface WeeklyWrongQuestionActivitySummary {
@@ -1705,6 +1707,10 @@ export function normalizeWeeklyWrongQuestionActivitySummaryResponse(payload: unk
       totalQuestionCount: pickNumberValue(item, ['total_question_count', 'totalQuestionCount']) ?? 0,
       topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
       latestCreatedAt: String(item.latest_created_at ?? item.latestCreatedAt ?? ''),
+      sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
+      sourceRecords: Array.isArray(item.source_records ?? item.sourceRecords)
+        ? (item.source_records ?? item.sourceRecords).filter(isObjectRecord).map((record, index) => normalizeWrongQuestionRecord(record, index))
+        : [],
     })),
   };
 }

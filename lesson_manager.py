@@ -8869,6 +8869,76 @@ def _serialize_weekly_followup_source_records(record_ids: list[str]) -> list[dic
     return serialized_records
 
 
+def _can_start_wrong_question_mastery_followup_record(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("source") or "").strip() != "ai_chat":
+        return False
+    confirmation_status = str(record.get("confirmation_status") or "").strip()
+    if confirmation_status not in {"confirmed", "not_required"}:
+        return False
+    mastery_tracking = record.get("mastery_tracking") if isinstance(record.get("mastery_tracking"), dict) else {}
+    mastery_assessment = record.get("mastery_assessment") if isinstance(record.get("mastery_assessment"), dict) else {}
+    practice_sheet_count = int(
+        mastery_tracking.get("practice_sheet_count")
+        or mastery_assessment.get("practice_sheet_count")
+        or 0
+    )
+    if practice_sheet_count <= 0:
+        return False
+    latest_practice_status = str(
+        mastery_assessment.get("latest_practice_status")
+        or mastery_tracking.get("latest_practice_status")
+        or ""
+    ).strip()
+    return latest_practice_status not in {"pending", "generating"}
+
+
+def _load_weekly_activity_summary_student_source_records(
+    *,
+    student_ids: list[int],
+    organization_id: int | None = None,
+) -> dict[int, list[dict]]:
+    normalized_student_ids = [
+        int(student_id)
+        for student_id in student_ids
+        if isinstance(student_id, int) and student_id > 0
+    ]
+    if not normalized_student_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_student_ids)
+    params: list[object] = ["ai_chat", *normalized_student_ids]
+    filters = [
+        "source=?",
+        f"student_id IN ({placeholders})",
+    ]
+    if organization_id is not None:
+        filters.append("organization_id=?")
+        params.append(int(organization_id or 0))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id, student_id
+            FROM wrong_question_submissions
+            WHERE {" AND ".join(filters)}
+            ORDER BY created_at DESC, id DESC
+            """,
+            params,
+        ).fetchall()
+    source_records_by_student_id: dict[int, list[dict]] = {
+        student_id: []
+        for student_id in normalized_student_ids
+    }
+    for row in rows:
+        student_id = int(row["student_id"] or 0)
+        if student_id <= 0 or source_records_by_student_id.get(student_id):
+            continue
+        record = get_wechat_wrong_question_submission(str(row["id"] or "").strip())
+        if record and _can_start_wrong_question_mastery_followup_record(record):
+            source_records_by_student_id[student_id] = [record]
+    return source_records_by_student_id
+
+
 def list_weekly_wrong_question_followup_students(
     *,
     organization_id: int,
@@ -9276,6 +9346,10 @@ def list_weekly_wrong_question_activity_summary(
     for teacher_user_id, item in teacher_items_by_id.items():
         item["class_count"] = len(teacher_class_ids.get(teacher_user_id, set()))
         item["involved_student_count"] = len(teacher_student_ids.get(teacher_user_id, set()))
+    student_source_records_by_id = _load_weekly_activity_summary_student_source_records(
+        student_ids=list(student_items_by_id.keys()),
+        organization_id=organization_id,
+    )
     for student_id_value, item in student_items_by_id.items():
         topic_counts = student_topic_counts.get(student_id_value, {})
         item["topic_categories"] = [
@@ -9285,6 +9359,13 @@ def list_weekly_wrong_question_activity_summary(
                 key=lambda topic_item: (-int(topic_item[1] or 0), str(topic_item[0] or "")),
             )[:3]
         ] or [PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED]
+        source_records = student_source_records_by_id.get(student_id_value) or []
+        item["source_record_ids"] = [
+            str(record.get("id") or "").strip()
+            for record in source_records
+            if str(record.get("id") or "").strip()
+        ]
+        item["source_records"] = source_records
 
     class_items = sorted(
         class_items_by_id.values(),
