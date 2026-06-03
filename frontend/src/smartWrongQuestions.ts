@@ -26,6 +26,8 @@ export interface WrongQuestionReviewDraft {
   topicCategory?: string;
   isMastered?: boolean;
   questionText?: string;
+  needsTeacherConfirmation?: boolean;
+  confirmationReasons?: string[];
 }
 
 export interface WrongQuestionReviewPayload {
@@ -39,6 +41,8 @@ export interface WrongQuestionReviewPayload {
   topicCategory?: string;
   is_mastered?: boolean;
   question_text?: string;
+  needs_teacher_confirmation?: boolean;
+  confirmation_reasons_json?: string[];
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
@@ -92,6 +96,8 @@ export interface WrongQuestionRecord {
   archiveContext?: WrongQuestionArchiveContext;
   needsTeacherConfirmation?: boolean;
   confirmationReasons?: string[];
+  linkedIngestionRun?: WrongQuestionIngestionRun;
+  linkedChatSession?: WrongQuestionChatSession;
 }
 
 export interface WrongQuestionIngestionAsset {
@@ -727,6 +733,24 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     };
   }
 
+  const linkedIngestionRunCandidate = isObjectRecord(source.linked_ingestion_run)
+    ? source.linked_ingestion_run
+    : isObjectRecord(source.linkedIngestionRun)
+      ? source.linkedIngestionRun
+      : null;
+  if (linkedIngestionRunCandidate) {
+    record.linkedIngestionRun = normalizeWrongQuestionIngestionRun(linkedIngestionRunCandidate);
+  }
+
+  const linkedChatSessionCandidate = isObjectRecord(source.linked_chat_session)
+    ? source.linked_chat_session
+    : isObjectRecord(source.linkedChatSession)
+      ? source.linkedChatSession
+      : null;
+  if (linkedChatSessionCandidate) {
+    record.linkedChatSession = normalizeWrongQuestionChatSession(linkedChatSessionCandidate);
+  }
+
   return record;
 }
 
@@ -758,8 +782,13 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     }
   }
 
-  if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
+  if ((isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) || record.source === 'ai_chat') {
     draft.questionText = record.questionText?.trim() ?? '';
+  }
+
+  if (record.source === 'ai_chat') {
+    draft.needsTeacherConfirmation = Boolean(record.needsTeacherConfirmation);
+    draft.confirmationReasons = normalizeDraftList(record.confirmationReasons ?? []);
   }
 
   return draft;
@@ -786,6 +815,13 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
 
   if (typeof draft.questionText === 'string') {
     payload.question_text = draft.questionText.trim();
+  }
+
+  if (typeof draft.needsTeacherConfirmation === 'boolean') {
+    payload.needs_teacher_confirmation = draft.needsTeacherConfirmation;
+    payload.confirmation_reasons_json = draft.needsTeacherConfirmation
+      ? normalizeDraftList(draft.confirmationReasons ?? [])
+      : [];
   }
 
   return payload;
@@ -849,6 +885,12 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     reviewStatus: payload.reviewStatus || record.reviewStatus,
     isMastered: typeof payload.is_mastered === 'boolean' ? payload.is_mastered : record.isMastered,
     questionText: typeof payload.question_text === 'string' ? payload.question_text : record.questionText,
+    needsTeacherConfirmation: typeof payload.needs_teacher_confirmation === 'boolean'
+      ? payload.needs_teacher_confirmation
+      : record.needsTeacherConfirmation,
+    confirmationReasons: Array.isArray(payload.confirmation_reasons_json)
+      ? payload.confirmation_reasons_json
+      : record.confirmationReasons,
     analysis: nextAnalysis,
   };
   if (payload.topicCategory) {
@@ -878,6 +920,8 @@ export function resolveSavedWrongQuestionRecord(
     const hasReviewStatus = hasOwnKey(responseSource, ['status']);
     const hasMastered = hasOwnKey(responseSource, ['is_mastered', 'archive_status', 'archiveStatus']);
     const hasTopicCategory = hasOwnKey(responseSource, ['topicCategory', 'topic_category']);
+    const hasNeedsTeacherConfirmation = hasOwnKey(responseSource, ['needsTeacherConfirmation', 'needs_teacher_confirmation']);
+    const hasConfirmationReasons = hasOwnKey(responseSource, ['confirmationReasons', 'confirmation_reasons_json', 'confirmationReasonsJson']);
 
     return {
       ...normalizedResponse,
@@ -902,6 +946,12 @@ export function resolveSavedWrongQuestionRecord(
       reviewStatus: hasReviewStatus ? normalizedResponse.reviewStatus : currentRecord.reviewStatus,
       isMastered: hasMastered ? normalizedResponse.isMastered : currentRecord.isMastered,
       topicCategory: hasTopicCategory ? normalizedResponse.topicCategory : currentRecord.topicCategory,
+      needsTeacherConfirmation: hasNeedsTeacherConfirmation
+        ? normalizedResponse.needsTeacherConfirmation
+        : currentRecord.needsTeacherConfirmation,
+      confirmationReasons: hasConfirmationReasons
+        ? normalizedResponse.confirmationReasons
+        : currentRecord.confirmationReasons,
     };
   }
 

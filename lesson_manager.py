@@ -7564,6 +7564,31 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     except json.JSONDecodeError:
         diagram_spec = None
     payload["diagram_spec"] = diagram_spec if isinstance(diagram_spec, dict) else None
+    try:
+        question_structured = json.loads(str(row["question_structured_json"] or "")) if row["question_structured_json"] else None
+    except json.JSONDecodeError:
+        question_structured = None
+    payload["question_structured"] = question_structured if isinstance(question_structured, dict) else None
+    try:
+        knowledge_tags = json.loads(str(row["knowledge_tags_json"] or "[]"))
+    except json.JSONDecodeError:
+        knowledge_tags = []
+    normalized_knowledge_tags = [
+        str(item or "").strip()
+        for item in (knowledge_tags if isinstance(knowledge_tags, list) else [])
+        if str(item or "").strip()
+    ]
+    try:
+        confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
+    except json.JSONDecodeError:
+        confirmation_reasons = []
+    normalized_confirmation_reasons = [
+        str(item or "").strip()
+        for item in (confirmation_reasons if isinstance(confirmation_reasons, list) else [])
+        if str(item or "").strip()
+    ]
+    payload["knowledge_tags"] = normalized_knowledge_tags
+    payload["confirmation_reasons"] = normalized_confirmation_reasons
     topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
     payload["topic_category"] = topic_category
     payload["topicCategory"] = topic_category
@@ -7575,6 +7600,8 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         "error_type": str(row["primary_error_type"] or ""),
         "selected_error_type": str(row["primary_error_type"] or ""),
         "student_note": str(row["secondary_error_summary"] or ""),
+        "knowledge_points": normalized_knowledge_tags,
+        "selected_knowledge_points": normalized_knowledge_tags,
         "core_issue": str(row["child_reason_core_issue"] or ""),
         "key_omission": str(row["child_reason_key_omission"] or ""),
         "next_step": str(row["child_reason_next_step"] or ""),
@@ -7887,19 +7914,103 @@ def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional
     if isinstance(raw_is_mastered, str):
         normalized_is_mastered = raw_is_mastered.strip().lower() in {"1", "true", "yes", "on"}
 
+    def normalize_string_list(value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+
+    def normalize_optional_boolean(value: object) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return None
+
+    has_selected_error_type = "selectedErrorType" in payload or "selected_error_type" in payload
+    selected_error_type = str(
+        payload.get("selectedErrorType")
+        if "selectedErrorType" in payload
+        else payload.get("selected_error_type")
+        or ""
+    ).strip()
+    has_student_note = "studentNote" in payload or "student_note" in payload
+    student_note = str(
+        payload.get("studentNote")
+        if "studentNote" in payload
+        else payload.get("student_note")
+        or ""
+    ).strip()
+    has_selected_knowledge_points = "selectedKnowledgePoints" in payload or "selected_knowledge_points" in payload
+    selected_knowledge_points = normalize_string_list(
+        payload.get("selectedKnowledgePoints")
+        if "selectedKnowledgePoints" in payload
+        else payload.get("selected_knowledge_points")
+    )
+    has_confirmation_state = "needs_teacher_confirmation" in payload or "needsTeacherConfirmation" in payload
+    raw_confirmation_state = (
+        payload.get("needs_teacher_confirmation")
+        if "needs_teacher_confirmation" in payload
+        else payload.get("needsTeacherConfirmation")
+    )
+    normalized_confirmation_state = normalize_optional_boolean(raw_confirmation_state)
+    confirmation_reasons_payload = (
+        payload.get("confirmation_reasons_json")
+        if "confirmation_reasons_json" in payload
+        else payload.get("confirmationReasons")
+    )
+    normalized_confirmation_reasons = normalize_string_list(confirmation_reasons_payload)
+
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
         if not row:
             return None
+        if not has_selected_error_type:
+            selected_error_type = str(row["primary_error_type"] or "").strip()
+        if not has_student_note:
+            student_note = str(row["secondary_error_summary"] or "").strip()
+        if not has_selected_knowledge_points:
+            try:
+                existing_knowledge_tags = json.loads(str(row["knowledge_tags_json"] or "[]"))
+            except json.JSONDecodeError:
+                existing_knowledge_tags = []
+            selected_knowledge_points = normalize_string_list(existing_knowledge_tags)
+        next_confirmation_state = bool(row["needs_teacher_confirmation"])
+        next_confirmation_reasons = normalized_confirmation_reasons
+        if has_confirmation_state and normalized_confirmation_state is not None:
+            next_confirmation_state = normalized_confirmation_state
+            if not next_confirmation_state:
+                next_confirmation_reasons = []
+        elif not normalized_confirmation_reasons:
+            try:
+                parsed_confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
+            except json.JSONDecodeError:
+                parsed_confirmation_reasons = []
+            next_confirmation_reasons = normalize_string_list(parsed_confirmation_reasons)
         conn.execute(
             """
             UPDATE wrong_question_submissions
             SET archive_status=?,
                 archived_at=CASE WHEN ?='archived' THEN datetime('now','localtime') ELSE '' END,
+                primary_error_type=?,
+                secondary_error_summary=?,
+                knowledge_tags_json=?,
+                needs_teacher_confirmation=?,
+                confirmation_reasons_json=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            ("archived" if normalized_is_mastered else "active", "archived" if normalized_is_mastered else "active", record_id),
+            (
+                "archived" if normalized_is_mastered else "active",
+                "archived" if normalized_is_mastered else "active",
+                selected_error_type,
+                student_note,
+                json.dumps(selected_knowledge_points, ensure_ascii=False, separators=(",", ":")),
+                1 if next_confirmation_state else 0,
+                json.dumps(next_confirmation_reasons, ensure_ascii=False, separators=(",", ":")),
+                record_id,
+            ),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
     return _serialize_wechat_wrong_question_submission_row(refreshed)

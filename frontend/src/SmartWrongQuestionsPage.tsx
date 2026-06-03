@@ -147,6 +147,12 @@ const WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS: Record<string, string> = {
   student_confused_step: '学生卡点描述还不够清楚',
 };
 
+const WRONG_QUESTION_INGESTION_ASSET_ROLE_LABELS: Record<string, string> = {
+  original_upload: '原始上传',
+  ocr_page_image: 'OCR 页图',
+  split_preview: '切题预览',
+};
+
 const practicePackStatusLabels: Record<string, string> = {
   pending: '等待生成',
   running: '生成中',
@@ -270,6 +276,18 @@ function getCurrentMondayDateInputValue(): string {
 function buildWrongQuestionChatSessionId(): string {
   const randomPart = Math.random().toString(36).slice(2, 8);
   return `wrong-question-chat-${Date.now()}-${randomPart}`;
+}
+
+function parseWrongQuestionAssetMetadata(value: string): Record<string, unknown> | null {
+  if (!value.trim()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseWeeklyFollowupMessageId(value: unknown): number {
@@ -511,8 +529,20 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const selectedRecord = memberNotebookRecords.find((item) => item.id === selectedId) ?? null;
   const selectedRecordIsPrimarySchool = selectedRecord ? isPrimarySchoolWrongQuestionRecord(selectedRecord) : false;
   const selectedDraft = selectedRecord ? reviewDraftByRecordId[selectedRecord.id] ?? buildWrongQuestionReviewDraft(selectedRecord) : null;
+  const selectedRecordArchiveAssets = useMemo(() => {
+    return selectedRecord?.linkedIngestionRun?.assets ?? [];
+  }, [selectedRecord]);
+  const selectedRecordArchiveOriginalAssets = useMemo(() => {
+    return selectedRecordArchiveAssets.filter((item) => item.assetRole === 'original_upload');
+  }, [selectedRecordArchiveAssets]);
+  const selectedRecordArchiveTraceAssets = useMemo(() => {
+    return selectedRecordArchiveAssets.filter((item) => item.assetRole !== 'original_upload');
+  }, [selectedRecordArchiveAssets]);
   const selectedQuestionTextPreview = useMemo(() => {
-    if (!selectedRecord || !selectedDraft || selectedRecord.source !== 'wechat_mp' || selectedRecord.isGeometry) {
+    if (!selectedRecord || !selectedDraft || selectedRecord.isGeometry) {
+      return null;
+    }
+    if (selectedRecord.source !== 'wechat_mp' && selectedRecord.source !== 'ai_chat') {
       return null;
     }
 
@@ -2382,7 +2412,7 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   );
   const detailPanel = selectedRecord ? (
     <>
-      {selectedDraft && selectedRecord.source === 'wechat_mp' && !selectedRecord.isGeometry && (
+      {selectedDraft && (selectedRecord.source === 'wechat_mp' || selectedRecord.source === 'ai_chat') && !selectedRecord.isGeometry && (
         <div className={`${workspaceSoftCardClass} space-y-3 p-4`}>
           <label className="space-y-2 text-sm">
             <span className="text-slate-500 dark:text-slate-400">题目文本</span>
@@ -2574,6 +2604,147 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               )}
             </div>
           </div>
+
+          {selectedRecord.source === 'ai_chat' && (
+            <div className={`${workspaceSoftCardClass} space-y-4 p-4`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">归档来源</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {selectedRecord.archiveContext?.source || selectedRecord.linkedIngestionRun?.source || 'ai_chat'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedRecord.linkedIngestionRun?.detailUrl ? (
+                    <a
+                      href={buildWrongQuestionAuthedPath(selectedRecord.linkedIngestionRun.detailUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={workspaceSecondaryButtonClass}
+                    >
+                      打开处理链路
+                    </a>
+                  ) : null}
+                  {selectedRecord.linkedChatSession?.detailUrl ? (
+                    <a
+                      href={buildWrongQuestionAuthedPath(selectedRecord.linkedChatSession.detailUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={workspaceSecondaryButtonClass}
+                    >
+                      打开对话归档
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">老师复核原因</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(selectedDraft?.confirmationReasons ?? selectedRecord.confirmationReasons ?? []).length > 0 ? (
+                      (selectedDraft?.confirmationReasons ?? selectedRecord.confirmationReasons ?? []).map((reason) => (
+                        <span
+                          key={reason}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300"
+                        >
+                          {WRONG_QUESTION_CHAT_CONFIRMATION_REASON_LABELS[reason] || reason}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-slate-500 dark:text-slate-400">当前没有待复核原因</span>
+                    )}
+                  </div>
+                  {selectedRecord.needsTeacherConfirmation ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">这条记录目前仍会出现在老师复核链路里。</p>
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">这条记录当前已经可以直接进入后续练习链路。</p>
+                  )}
+                </div>
+
+                <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">对话归档摘要</p>
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                    {selectedRecord.linkedChatSession?.summaryText || '暂无对话摘要'}
+                  </p>
+                  {selectedRecord.linkedChatSession ? (
+                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span>阶段：{WRONG_QUESTION_CHAT_STAGE_LABELS[selectedRecord.linkedChatSession.currentStage] || selectedRecord.linkedChatSession.currentStage || '未记录'}</span>
+                      <span>消息数：{selectedRecord.linkedChatSession.messages.length}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">来源素材</p>
+                  {selectedRecordArchiveOriginalAssets.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {selectedRecordArchiveOriginalAssets.map((asset) => {
+                        const assetUrl = buildWrongQuestionAuthedPath(asset.fileUrl || asset.storagePath);
+                        return (
+                          <div key={`${asset.id}-${asset.assetRole}`} className="space-y-2 rounded-2xl border border-slate-200/80 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/60">
+                            {assetUrl ? (
+                              <a href={assetUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/10">
+                                <img src={assetUrl} alt={WRONG_QUESTION_INGESTION_ASSET_ROLE_LABELS[asset.assetRole] || asset.assetRole} className="max-h-44 w-full object-cover" />
+                              </a>
+                            ) : null}
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              <p className="font-semibold text-slate-700 dark:text-slate-200">{WRONG_QUESTION_INGESTION_ASSET_ROLE_LABELS[asset.assetRole] || asset.assetRole}</p>
+                              <p>第 {asset.pageNumber || 1} 页</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">暂无来源素材</p>
+                  )}
+                </div>
+
+                <div className={`${workspaceCardClass} space-y-3 p-4`}>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">OCR / 切题轨迹</p>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 text-sm text-slate-600 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300">
+                      当前步骤：{selectedRecord.linkedIngestionRun?.currentStep || '未记录'}
+                    </div>
+                    {selectedRecordArchiveTraceAssets.length > 0 ? selectedRecordArchiveTraceAssets.map((asset) => {
+                      const metadata = parseWrongQuestionAssetMetadata(asset.metadataJson);
+                      const assetUrl = buildWrongQuestionAuthedPath(asset.fileUrl || asset.storagePath);
+                      return (
+                        <div key={`${asset.id}-${asset.assetRole}`} className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-950/60">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">{WRONG_QUESTION_INGESTION_ASSET_ROLE_LABELS[asset.assetRole] || asset.assetRole}</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">第 {asset.pageNumber || 1} 页 · {asset.mimeType || '未知类型'}</p>
+                            </div>
+                            {assetUrl ? (
+                              <a href={assetUrl} target="_blank" rel="noreferrer" className={workspaceSecondaryButtonClass}>查看素材</a>
+                            ) : null}
+                          </div>
+                          {metadata ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {Object.entries(metadata).map(([key, value]) => (
+                                <span
+                                  key={`${asset.id}-${key}`}
+                                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300"
+                                >
+                                  {key}: {typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    }) : (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">还没有 OCR / 切题轨迹。</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -2627,11 +2798,23 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
               type="button"
               onClick={() => void handleSaveReview()}
               disabled={savingReview}
-              className={workspacePrimaryButtonClass}
-            >
-              保存跟进记录
-            </button>
-          </div>
+                className={workspacePrimaryButtonClass}
+              >
+                保存跟进记录
+              </button>
+            </div>
+
+          {selectedRecord.source === 'ai_chat' ? (
+            <label className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+              <input
+                type="checkbox"
+                checked={Boolean(selectedDraft.needsTeacherConfirmation)}
+                onChange={(event) => handleDraftChange('needsTeacherConfirmation', (event.target as HTMLInputElement).checked)}
+                className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span>仍需老师复核</span>
+            </label>
+          ) : null}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm sm:col-span-2">

@@ -2054,10 +2054,10 @@ def _serialize_wrong_question_record_for_response(
         "chat_session_url": f"/api/wrong-question-chats/{chat_session_id}" if chat_session_id else "",
     }
     if include_archive_context:
-        serialized["linked_ingestion_run"] = _serialize_wrong_question_ingestion_run_link_for_response(
+        serialized["linked_ingestion_run"] = _serialize_wrong_question_ingestion_run_for_response(
             get_wrong_question_ingestion_run(ingestion_run_id) if ingestion_run_id else None
         )
-        serialized["linked_chat_session"] = _serialize_wrong_question_chat_session_link_for_response(
+        serialized["linked_chat_session"] = _serialize_wrong_question_chat_session_for_response(
             get_wrong_question_chat_session(chat_session_id) if chat_session_id else None
         )
     return serialized

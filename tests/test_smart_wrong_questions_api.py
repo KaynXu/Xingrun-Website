@@ -729,6 +729,29 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
             current_stage="ready_to_archive",
             summary_text="错因自述：移项前没有先看清等式两边。",
         )
+        lesson_manager.create_wrong_question_chat_message(
+            session_id="chat-session-record-detail",
+            role="assistant",
+            stage="ask_unknown_step",
+            content="你是在哪一步开始不确定的？",
+        )
+        lesson_manager.create_wrong_question_asset(
+            ingestion_run_id=run["id"],
+            asset_role="original_upload",
+            storage_path="/tmp/archive-detail.png",
+            file_url="/api/wrong-question-ingestion-assets/archive-detail.png",
+            mime_type="image/png",
+            page_number=1,
+            metadata_json={"original_filename": "archive-detail.png"},
+        )
+        lesson_manager.create_wrong_question_asset(
+            ingestion_run_id=run["id"],
+            asset_role="ocr_page_image",
+            storage_path="/tmp/archive-detail-ocr.png",
+            mime_type="image/png",
+            page_number=1,
+            metadata_json={"page_index": 0},
+        )
         record = lesson_manager.create_wrong_question_submission(
             source="ai_chat",
             organization_id=owner_payload["user"]["organization_id"],
@@ -760,9 +783,84 @@ class SmartWrongQuestionsApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload["linked_ingestion_run"])
         self.assertEqual(payload["linked_ingestion_run"]["detail_url"], f"/api/wrong-question-ingestions/{run['id']}")
         self.assertEqual(payload["linked_ingestion_run"]["current_step"], "archived")
+        self.assertEqual(
+            [item["asset_role"] for item in payload["linked_ingestion_run"]["assets"]],
+            ["original_upload", "ocr_page_image"],
+        )
         self.assertIsNotNone(payload["linked_chat_session"])
         self.assertEqual(payload["linked_chat_session"]["detail_url"], "/api/wrong-question-chats/chat-session-record-detail")
         self.assertEqual(payload["linked_chat_session"]["summary_text"], "错因自述：移项前没有先看清等式两边。")
+        self.assertEqual(len(payload["linked_chat_session"]["messages"]), 1)
+        self.assertEqual(payload["linked_chat_session"]["messages"][0]["content"], "你是在哪一步开始不确定的？")
+
+    @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-archive-detail.pdf")
+    def test_local_ai_chat_review_can_update_archive_detail_fields(self, _mock_rebuild):
+        owner_payload = self.login_owner()
+        class_id = lesson_manager.save_class(
+            "六年级 9 班",
+            subject="数学",
+            grade="六年级",
+            organization_id=owner_payload["user"]["organization_id"],
+        )
+        lesson_manager.set_class_teacher_user_id(class_id, owner_payload["user"]["id"])
+        student = lesson_manager.create_student_for_class(class_id, "Bob")
+        run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=owner_payload["user"]["organization_id"],
+            source="ai_chat",
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            chat_session_id="chat-session-review-detail",
+            status="archived",
+            current_step="archived",
+        )
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=owner_payload["user"]["organization_id"],
+            class_id=class_id,
+            student_id=student["id"],
+            teacher_user_id=owner_payload["user"]["id"],
+            image_url="https://files.example.com/archive-review.png",
+            recognition_status="recognized",
+            question_text="原始题干",
+            ingestion_run_id=run["id"],
+            chat_session_id="chat-session-review-detail",
+            knowledge_tags_json=["移项"],
+            needs_teacher_confirmation=True,
+            confirmation_reasons_json=["missing_question_text"],
+        )
+
+        response = self.client.put(
+            f"/api/wrong-questions/{record['id']}/review",
+            headers=self.auth_headers(owner_payload["token"]),
+            json={
+                "selectedErrorType": "概念错误",
+                "selectedKnowledgePoints": ["一元一次方程", "移项"],
+                "studentNote": "老师已补齐知识点并确认题干。",
+                "needs_teacher_confirmation": False,
+                "confirmation_reasons_json": [],
+                "question_text": "老师修正后的题干",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        saved = response.get_json()["record"]
+        self.assertEqual(saved["question_text"], "老师修正后的题干")
+        self.assertEqual(saved["analysis"]["selected_error_type"], "概念错误")
+        self.assertEqual(saved["analysis"]["knowledge_points"], ["一元一次方程", "移项"])
+        self.assertFalse(saved["needs_teacher_confirmation"])
+        self.assertEqual(saved["confirmation_reasons"], [])
+
+        refreshed = lesson_manager.get_wechat_wrong_question_submission(record["id"])
+        self.assertIsNotNone(refreshed)
+        assert refreshed is not None
+        self.assertEqual(refreshed["question_text"], "老师修正后的题干")
+        self.assertEqual(json.loads(refreshed["knowledge_tags_json"]), ["一元一次方程", "移项"])
+        self.assertEqual(refreshed["primary_error_type"], "概念错误")
+        self.assertEqual(refreshed["secondary_error_summary"], "老师已补齐知识点并确认题干。")
+        self.assertEqual(refreshed["question_text_source"], "teacher")
+        self.assertEqual(refreshed["needs_teacher_confirmation"], 0)
+        self.assertEqual(json.loads(refreshed["confirmation_reasons_json"]), [])
 
     @patch("app._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf")
     def test_local_wrong_question_review_can_update_question_text(self, _mock_rebuild):

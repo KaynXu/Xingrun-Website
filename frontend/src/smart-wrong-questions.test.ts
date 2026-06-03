@@ -1252,6 +1252,43 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
       chat_session_id: 'session-456',
       chat_session_url: '/api/wrong-question-chats/session-456',
     },
+    linked_ingestion_run: {
+      id: 'run-123',
+      source: 'ai_chat',
+      status: 'archived',
+      current_step: 'split_completed',
+      detail_url: '/api/wrong-question-ingestions/run-123',
+      assets: [
+        {
+          id: 11,
+          ingestion_run_id: 'run-123',
+          asset_role: 'original_upload',
+          file_url: '/api/wrong-question-ingestion-assets/archive-1.png',
+          mime_type: 'image/png',
+          metadata_json: '{"original_filename":"archive-1.png"}',
+        },
+      ],
+      records: [],
+    },
+    linked_chat_session: {
+      id: 'session-456',
+      status: 'archived',
+      current_stage: 'ready_to_archive',
+      summary_text: '错因自述：移项前没看清等式两边。',
+      ingestion_run_id: 'run-123',
+      detail_url: '/api/wrong-question-chats/session-456',
+      stream_url: '/api/wrong-question-chats/session-456/stream',
+      messages: [
+        {
+          id: 7,
+          session_id: 'session-456',
+          role: 'assistant',
+          stage: 'ask_unknown_step',
+          content: '你卡在哪一步了？',
+        },
+      ],
+      records: [],
+    },
   });
 
   assert.equal(normalized.detailUrl, '/api/wrong-questions/ai-chat-record-1');
@@ -1266,6 +1303,38 @@ test('normalizeWrongQuestionRecord keeps archive linkage and confirmation fields
     chatSessionId: 'session-456',
     chatSessionUrl: '/api/wrong-question-chats/session-456',
   });
+  assert.equal(normalized.linkedIngestionRun?.assets[0]?.assetRole, 'original_upload');
+  assert.equal(normalized.linkedChatSession?.summaryText, '错因自述：移项前没看清等式两边。');
+  assert.equal(normalized.linkedChatSession?.messages[0]?.content, '你卡在哪一步了？');
+});
+
+test('buildWrongQuestionReviewPayload keeps ai chat correction fields for local archive records', () => {
+  const record = makeWrongQuestionRecord({
+    id: 'ai-chat-record-review',
+    source: 'ai_chat',
+    questionText: '原始题干',
+    needsTeacherConfirmation: true,
+    confirmationReasons: ['missing_question_text'],
+    analysis: {
+      questionCategory: '方程',
+      errorType: '概念错误',
+      knowledgePoints: ['移项'],
+      selectedKnowledgePoints: ['移项'],
+    },
+  });
+
+  const draft = buildWrongQuestionReviewDraft(record);
+  draft.questionText = '老师修正后的题干';
+  draft.selectedKnowledgePoints = ['一元一次方程', '移项'];
+  draft.needsTeacherConfirmation = false;
+  draft.confirmationReasons = [];
+
+  const payload = buildWrongQuestionReviewPayload(draft);
+
+  assert.equal(payload.question_text, '老师修正后的题干');
+  assert.deepEqual(payload.selectedKnowledgePoints, ['一元一次方程', '移项']);
+  assert.equal(payload.needs_teacher_confirmation, false);
+  assert.deepEqual(payload.confirmation_reasons_json, []);
 });
 
 test('SmartWrongQuestionsPage guards against stale list responses with a request version ref', () => {
@@ -1288,6 +1357,17 @@ test('smart wrong question page shows wechat mini-program source badge and local
   assert.match(pageSource, /aria-label="问题归类"/);
   assert.match(pageSource, /补充备注/);
   assert.match(pageSource, /是否掌握/);
+});
+
+test('smart wrong question page exposes archive detail panels for ai chat review records', () => {
+  const pageSource = readFileSync(resolve(currentDir, 'SmartWrongQuestionsPage.tsx'), 'utf8');
+
+  assert.match(pageSource, /归档来源/);
+  assert.match(pageSource, /老师复核原因/);
+  assert.match(pageSource, /对话归档摘要/);
+  assert.match(pageSource, /来源素材/);
+  assert.match(pageSource, /OCR \/ 切题轨迹/);
+  assert.match(pageSource, /仍需老师复核/);
 });
 
 test('SmartWrongQuestionsPage loads selected record detail into a review draft state', () => {
@@ -1316,7 +1396,7 @@ test('SmartWrongQuestionsPage source exposes editable question text for local no
   assert.match(pageSource, /公式片段用/);
   assert.match(pageSource, /预览 PDF/);
   assert.match(pageSource, /下载 PDF/);
-  assert.match(pageSource, /selectedRecord\.source === 'wechat_mp'/);
+  assert.match(pageSource, /selectedRecord\.source === 'wechat_mp' \|\| selectedRecord\.source === 'ai_chat'/);
 });
 
 test('SmartWrongQuestionsPage wires the AI wrong-question chat upload and resume panel', () => {

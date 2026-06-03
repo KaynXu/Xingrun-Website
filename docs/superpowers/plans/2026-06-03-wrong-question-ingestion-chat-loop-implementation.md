@@ -245,9 +245,9 @@ These are deliberately delayed until the shared ingestion backbone is stable.
 
 #### E1. Archive detail completeness
 
-- [ ] Wrong-question detail should show original assets, OCR/split trail, chat summary, and archive source.
-- [ ] Teacher should be able to see why `needs_teacher_confirmation` was triggered.
-- [ ] Teacher should be able to fix question text, tags, and confirmation state from the archive detail.
+- [x] Wrong-question detail should show original assets, OCR/split trail, chat summary, and archive source.
+- [x] Teacher should be able to see why `needs_teacher_confirmation` was triggered.
+- [x] Teacher should be able to fix question text, tags, and confirmation state from the archive detail.
 
 #### E2. Teacher confirmation workflow
 
