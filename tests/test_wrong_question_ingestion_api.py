@@ -277,6 +277,8 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertTrue(payload["ok"])
+        self.assertTrue(payload["created"])
+        self.assertFalse(payload["idempotent_reuse"])
         self.assertEqual(payload["run"]["status"], "archived")
         self.assertEqual(payload["run"]["current_step"], "archived")
         self.assertEqual(json.loads(payload["run"]["metadata_json"]), {"archived_from": "chat"})
@@ -317,6 +319,32 @@ class WrongQuestionIngestionApiTestCase(unittest.TestCase):
         self.assertEqual(
             json.loads(library_records[0]["knowledge_tags_json"]),
             ["一元一次方程", "移项"],
+        )
+
+        retried = self.client.post(
+            f"/api/wrong-question-ingestions/{run['id']}/archive",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={
+                "metadata": {"archived_from": "chat", "retry": True},
+                "submissions": [
+                    {
+                        "source": "ai_chat",
+                        "image_url": "https://files.example.com/archive-1.png",
+                        "question_text": "这次不应该再创建第二条。",
+                        "recognition_status": "recognized",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(retried.status_code, 200)
+        retried_payload = retried.get_json()
+        self.assertFalse(retried_payload["created"])
+        self.assertTrue(retried_payload["idempotent_reuse"])
+        self.assertEqual(len(retried_payload["created_records"]), 1)
+        self.assertEqual(retried_payload["created_records"][0]["id"], record["id"])
+        self.assertEqual(
+            len(lesson_manager.list_wrong_question_submissions_for_ingestion_run(run["id"])),
+            1,
         )
 
 

@@ -2063,6 +2063,17 @@ def _serialize_wrong_question_record_for_response(
     return serialized
 
 
+def _serialize_wrong_question_records_for_response(records: object) -> list[dict]:
+    if not isinstance(records, list):
+        return []
+    serialized_records = []
+    for item in records:
+        serialized = _serialize_wrong_question_record_for_response(item)
+        if serialized is not None:
+            serialized_records.append(serialized)
+    return serialized_records
+
+
 def _serialize_wrong_question_ingestion_run_for_response(run: object) -> Optional[dict]:
     if not isinstance(run, dict):
         return None
@@ -2071,14 +2082,9 @@ def _serialize_wrong_question_ingestion_run_for_response(run: object) -> Optiona
         f"/api/wrong-question-ingestions/{serialized['id']}" if serialized.get("id") else ""
     )
     serialized["assets"] = list_wrong_question_assets(str(serialized.get("id") or ""))
-    serialized["records"] = [
-        linked_record
-        for linked_record in (
-            _serialize_wrong_question_record_for_response(item)
-            for item in list_wrong_question_submissions_for_ingestion_run(str(serialized.get("id") or ""))
-        )
-        if linked_record is not None
-    ]
+    serialized["records"] = _serialize_wrong_question_records_for_response(
+        list_wrong_question_submissions_for_ingestion_run(str(serialized.get("id") or ""))
+    )
     return serialized
 
 
@@ -2092,14 +2098,9 @@ def _serialize_wrong_question_chat_session_for_response(session: object) -> Opti
         f"/api/wrong-question-chats/{normalized_session_id}/stream" if normalized_session_id else ""
     )
     serialized["messages"] = list_wrong_question_chat_messages(str(serialized.get("id") or ""))
-    serialized["records"] = [
-        linked_record
-        for linked_record in (
-            _serialize_wrong_question_record_for_response(item)
-            for item in list_wrong_question_submissions_for_chat_session(str(serialized.get("id") or ""))
-        )
-        if linked_record is not None
-    ]
+    serialized["records"] = _serialize_wrong_question_records_for_response(
+        list_wrong_question_submissions_for_chat_session(str(serialized.get("id") or ""))
+    )
     return serialized
 
 
@@ -3782,6 +3783,24 @@ def api_wrong_question_ingestion_archive(run_id: str):
     if not run or not _can_access_wrong_question_ingestion_run(user, run):
         return jsonify({"error": "not found"}), 404
 
+    existing_records = list_wrong_question_submissions_for_ingestion_run(run_id)
+    if existing_records:
+        updated = update_wrong_question_ingestion_run(
+            run_id,
+            status="archived",
+            current_step="archived",
+            error_message="",
+        ) or run
+        return jsonify(
+            {
+                "ok": True,
+                "created": False,
+                "idempotent_reuse": True,
+                "run": _serialize_wrong_question_ingestion_run_for_response(updated),
+                "created_records": _serialize_wrong_question_records_for_response(existing_records),
+            }
+        )
+
     try:
         submissions = _normalize_wrong_question_ingestion_record_payloads(data.get("submissions"))
         created_records = []
@@ -3854,6 +3873,8 @@ def api_wrong_question_ingestion_archive(run_id: str):
     return jsonify(
         {
             "ok": True,
+            "created": True,
+            "idempotent_reuse": False,
             "run": _serialize_wrong_question_ingestion_run_for_response(updated),
             "created_records": created_records,
         }
@@ -3937,6 +3958,39 @@ def api_wrong_question_chat_stream(session_id: str):
     if not isinstance(run, dict) and str(session.get("ingestion_run_id") or "").strip():
         run = get_wrong_question_ingestion_run(str(session.get("ingestion_run_id") or "").strip())
 
+    existing_records = list_wrong_question_submissions_for_chat_session(normalized_session_id)
+    if str(session.get("status") or "").strip() == "archived" and existing_records:
+        updated_run = run
+        if isinstance(run, dict):
+            updated_run = update_wrong_question_ingestion_run(
+                run["id"],
+                status="archived",
+                current_step="archived",
+                chat_session_id=normalized_session_id,
+                error_message="",
+            ) or run
+        serialized = _serialize_wrong_question_chat_session_for_response(
+            update_wrong_question_chat_session(
+                normalized_session_id,
+                status="archived",
+                current_stage="ready_to_archive",
+            )
+            or get_wrong_question_chat_session(normalized_session_id)
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "session": serialized,
+                "assistant_message": None,
+                "archive": {
+                    "created": False,
+                    "idempotent_reuse": True,
+                    "record": _serialize_wrong_question_record_for_response(existing_records[0]),
+                },
+                "run": _serialize_wrong_question_ingestion_run_link_for_response(updated_run),
+            }
+        )
+
     message = str(data.get("message") or "").strip()
     if str(data.get("message_role") or "user").strip() not in {"", "user"}:
         return jsonify({"error": "message_role must be user"}), 400
@@ -3986,10 +4040,10 @@ def api_wrong_question_chat_stream(session_id: str):
     archive_result = None
     should_finalize = bool(data.get("finalize_archive")) or current_stage == "ask_help_mode"
     if should_finalize:
-        existing_records = list_wrong_question_submissions_for_chat_session(normalized_session_id)
         if existing_records:
             archive_result = {
                 "created": False,
+                "idempotent_reuse": True,
                 "record": _serialize_wrong_question_record_for_response(existing_records[0]),
             }
             session_metadata["archived_record_id"] = existing_records[0]["id"]
@@ -4035,6 +4089,7 @@ def api_wrong_question_chat_stream(session_id: str):
             session_metadata["archived_record_id"] = created_record["id"]
             archive_result = {
                 "created": True,
+                "idempotent_reuse": False,
                 "record": _serialize_wrong_question_record_for_response(created_record),
             }
             session = update_wrong_question_chat_session(

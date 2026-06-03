@@ -147,6 +147,7 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
         payload = turn_three.get_json()
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["archive"]["created"])
+        self.assertFalse(payload["archive"]["idempotent_reuse"])
         self.assertEqual(payload["assistant_message"]["stage"], "ready_to_archive")
         self.assertEqual(payload["session"]["status"], "archived")
         self.assertEqual(payload["session"]["current_stage"], "ready_to_archive")
@@ -174,6 +175,23 @@ class WrongQuestionChatApiTestCase(unittest.TestCase):
 
         library_records = lesson_manager.list_student_wrong_question_library_records(self.student["id"])
         self.assertEqual([item["id"] for item in library_records], [record["id"]])
+
+        retried = self.client.post(
+            "/api/wrong-question-chats/chat-session-guided/stream",
+            headers=self.auth_headers(self.owner_payload["token"]),
+            json={"message": "我再点一次提交，应该复用已有归档"},
+        )
+        self.assertEqual(retried.status_code, 200)
+        retried_payload = retried.get_json()
+        self.assertFalse(retried_payload["archive"]["created"])
+        self.assertTrue(retried_payload["archive"]["idempotent_reuse"])
+        self.assertEqual(retried_payload["assistant_message"], None)
+        self.assertEqual(retried_payload["archive"]["record"]["id"], record["id"])
+        self.assertEqual(len(retried_payload["session"]["messages"]), 7)
+        self.assertEqual(
+            len(lesson_manager.list_wrong_question_submissions_for_chat_session("chat-session-guided")),
+            1,
+        )
 
     def test_stream_marks_teacher_confirmation_when_archive_context_is_incomplete(self):
         run = self._create_ai_chat_run(

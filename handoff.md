@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-03 已补上 archive finalization 的 retry-safe 防重：`app.py` 里的 `POST /api/wrong-question-ingestions/<run_id>/archive` 现在如果该 run 已经归档出错题记录，会直接返回已有 records，并把 `created=false`、`idempotent_reuse=true` 明确打回响应，不再重复创建第二条；`POST /api/wrong-question-chats/<session_id>/stream` 也会在 session 已归档且已有 records 时直接复用已有归档结果，不再追加新的 user/assistant message 或再落第二条错题。这个切片把 A3 第五条补齐了，先用最低复杂度把 UI 重试/网络抖动下最容易发生的重复归档问题堵住。proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_archive_idempotency_proof.sh`。
 - 2026-06-03 已补上错题 archive detail 的直接联通能力：`app.py` 现在会给归档后的错题记录统一补 `detail_url` 和 `archive_context`，其中包含 `ingestion_run_id/url`、`chat_session_id/url`；本地 `GET /api/wrong-questions/<record_id>` 详情还会额外带 `linked_ingestion_run`、`linked_chat_session` 紧凑摘要，`GET /api/wrong-question-ingestions/<run_id>` 和 `GET /api/wrong-question-chats/<session_id>` 里的 `records` 也都能直接反查同一条链路。这样 AI 对话、工作台和错题详情终于能围绕同一条 archive record 互相跳转，不用再靠人工拼 id。proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_archive_detail_linkage_proof.sh`。
 - 2026-06-03 已修复错题 ingestion archive 后学生错题库 PDF 不刷新的缺口：`app.py` 的 `POST /api/wrong-question-ingestions/<run_id>/archive` 现在在成功创建 `created_records` 后，会按 `run.student_id` 调用现有 `_refresh_student_wrong_question_library_cache()`，并把返回的 `pdf_path` 回填到每条新建记录的 `student_library_pdf_path`；回归 `tests/test_wrong_question_ingestion_api.py` 已补充 mock PDF 重建断言，锁住 archive 响应和 `list_student_wrong_question_library_records()` 都返回同一路径。proof：临时 runner 在缺少仓库依赖的系统 Python 下通过 stub 运行目标 unittest 和接口 smoke，输出 `Ran 1 test ... OK`、`archive_status 200`、`record_student_library_pdf_path /tmp/student-archive-proof.pdf`、`library_record_student_library_pdf_path /tmp/student-archive-proof.pdf`、`rebuild_called_once True`。
 - 2026-06-03 已继续把错题 ingestion 底座从“能跑”补到“可恢复、可列历史、可识别阶段”：`lesson_manager.py` 的 `wrong_question_ingestion_runs` 新增 `current_step`，并补了 `list_wrong_question_ingestion_runs()`；`app.py` 新增 `GET /api/wrong-question-ingestions`，可按 `source/status/class_id/student_id/teacher_user_id/chat_session_id` 过滤历史 run；现有 `create/ocr/split/archive`、AI 对话 session 绑定和微信 worker 也都会把 `current_step` 写回，比如 `uploaded / ocr_completed / split_completed / chat_reflection / archived / failed`。这对应实施计划里 A3 的第二、第三条，目的是让未来 AI 对话 UI 和工作台都能用同一套 run 状态恢复流程。proof 见本轮临时脚本 `/private/tmp/xingrun_wrong_question_ingestion_history_step_proof.sh`。
@@ -277,10 +278,10 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 优先继续做实施计划里的 A3 第五条：补 chat/workbench archive finalization 的 retry-safe idempotency，避免 UI 重试或网络抖动时重复归档同一条错题。
-- 优先继续做 A3 已完成能力的消费层：既然 `wrong-question-ingestions` 的列表/历史、`current_step`、archive detail linkage 都已补上，下一步应让后续 AI chat UI / workbench 真正消费这些状态，而不是继续只写底层。
+- 优先转入实施计划里的 B1：把现有 AI chat UI 接到 `wrong-question-chats/<session_id>/stream`，让学生端真正能上传错题、看到当前追问阶段、刷新后恢复历史，并在最后看到归档结果。
+- 紧接着补 B2 的最小可见性：在 chat 里加入 archive preview 和 `needs_teacher_confirmation` 提示，不要让学生和老师面对“已经归档但不知道归了什么”的黑盒状态。
 - 继续推进 `docs/superpowers/plans/2026-06-03-wrong-question-ingestion-chat-loop-implementation.md`：Phase 1-3 的最小闭环已到位，下一优先级转入 Phase 4，把 `error_correction` 的工作台能力按复杂度逐步迁入，优先顺序建议是“多页 PDF/图片批量上传 -> OCR 简化与重叠页分割 -> 结构化纠错预览 -> 教师/学生工作台归档”。
-- 在进入 Phase 4 之前，仍值得继续补一个很小的加固切片：把 `needs_teacher_confirmation` 的触发原因和老师修正入口也挂到统一 archive detail 视图，并补 retry-safe 归档规则，这样网页或聊天 UI 接入时能稳定恢复历史并避免重复归档。
+- 在进入 Phase 4 之前，仍值得继续补一个很小的加固切片：把 `needs_teacher_confirmation` 的触发原因和老师修正入口也挂到统一 archive detail 视图，这样网页或聊天 UI 接入时能稳定恢复历史并给老师明确的复核入口。
 - 定向一周错题练习包下一步建议用真实 owner/admin 账号 smoke：选择一个有历史错题的班级，分别按 `按专题/知识点：几何` 和 `按错因：去分母漏乘` 生成标准 10 题练习包，确认生成状态、zip 下载、每个学生 PDF 的 7 天安排、AI 变式题质量和答案页符合老师实际发放需求。
 - 如发现这批旋转后的个别原图方向与文字阅读方向相反，可从 `data/orientation-repair-backup-20260515-154838/files/` 恢复单个原图后按相反方向重转，并重建对应学生 PDF；当前自动 proof 只能确认“竖图已变横图”，不能替代人工逐页检查文字朝向。
 - 用真实小程序/开发者工具上传一张横着或侧着的几何题照片，等后台 worker 完成后打开学生错题库 PDF，确认图片在 PDF 内按可阅读方向显示；如果生产 vision provider 仍是 N1N `503/insufficient_quota` 类问题，需要先恢复可用的 vision provider 再做真实 smoke。
