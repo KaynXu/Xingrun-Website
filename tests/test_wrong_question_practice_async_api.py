@@ -36,6 +36,7 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
             binding_id=binding["id"],
             image_url="https://files.example.com/practice-worker.png",
             child_raw_reason_text="我把乘法顺序放错了",
+            child_reason_transcript="我录音里说，我总是先算加法，没有先处理乘法。",
             primary_error_type="细节问题",
             secondary_error_summary="运算顺序判断不稳定",
             recognition_status="recognized",
@@ -96,6 +97,11 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(material_kwargs["teacher_name"], self.owner["display_name"])
         self.assertEqual(material_kwargs["items"][0]["wrong_question_record_id"], self.record["id"])
         self.assertEqual(material_kwargs["items"][0]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
+        self.assertEqual(material_kwargs["items"][0]["image_url_snapshot"], "https://files.example.com/practice-worker.png")
+        self.assertEqual(
+            material_kwargs["items"][0]["child_reason_transcript_snapshot"],
+            "我录音里说，我总是先算加法，没有先处理乘法。",
+        )
         self.assertTrue(material_kwargs["include_usage"])
         mock_generate_pdf.assert_called_once()
         mock_finalize.assert_called_once()

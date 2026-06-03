@@ -2593,6 +2593,7 @@ def init_db():
             diagram_type_snapshot         TEXT NOT NULL DEFAULT '',
             diagram_spec_json_snapshot    TEXT NOT NULL DEFAULT '',
             child_reason_text_snapshot    TEXT NOT NULL DEFAULT '',
+            child_reason_transcript_snapshot TEXT NOT NULL DEFAULT '',
             primary_error_type_snapshot   TEXT NOT NULL DEFAULT '',
             cause_note_snapshot           TEXT NOT NULL DEFAULT '',
             topic_category_snapshot       TEXT NOT NULL DEFAULT '',
@@ -2923,6 +2924,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_practice_sheets", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "child_reason_transcript_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "question_structured_snapshot_json", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "knowledge_tags_snapshot_json", "TEXT NOT NULL DEFAULT '[]'")
@@ -9609,6 +9611,7 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
     payload = dict(row)
     payload["question_order"] = int(payload.get("question_order") or 0)
     payload["is_geometry"] = bool(payload.get("is_geometry"))
+    payload["child_reason_transcript_snapshot"] = str(payload.get("child_reason_transcript_snapshot") or "").strip()
     try:
         payload["question_structured_snapshot"] = (
             json.loads(str(payload.get("question_structured_snapshot_json") or ""))
@@ -9954,13 +9957,14 @@ def create_pending_wrong_question_practice_sheet(
                     diagram_type_snapshot,
                     diagram_spec_json_snapshot,
                     child_reason_text_snapshot,
+                    child_reason_transcript_snapshot,
                     primary_error_type_snapshot,
                     cause_note_snapshot,
                     topic_category_snapshot,
                     question_structured_snapshot_json,
                     knowledge_tags_snapshot_json,
                     reflection_summary_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sheet_id,
@@ -9973,6 +9977,7 @@ def create_pending_wrong_question_practice_sheet(
                     str(record.get("diagram_type") or "").strip(),
                     str(record.get("diagram_spec_json") or "").strip(),
                     str(record.get("child_raw_reason_text") or "").strip(),
+                    str(record.get("child_reason_transcript") or "").strip(),
                     str(record.get("primary_error_type") or "").strip(),
                     str(record.get("secondary_error_summary") or "").strip(),
                     str(record.get("topic_category") or "").strip(),

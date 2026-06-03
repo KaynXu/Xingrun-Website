@@ -126,6 +126,46 @@ test('buildDocumentMarkup falls back to reflection spine when structured content
   assert.match(markup, /先补清：不知道等式右边也要同乘 2/);
 });
 
+test('buildDocumentMarkup replaces low-information writing fallback with reflection context and redo guidance', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '七年级 4 班',
+    teacherName: '何老师',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 5,
+        wrong_question_record_id: 'wechat-low-info',
+        is_geometry: true,
+        question_text_snapshot: '已知 CE⊥AD，∠CDA=∠BAC。',
+        reason_blank_prompt: '错因复盘\n我这题错在 ______。',
+        improvement_summary_prompt: '下次提醒\n下次我要先看 ______。',
+        structured_content: {
+          redo_guidance_lines: ['重新画出 CE⊥AD 这个垂直关系。', '写出 ∠CDA=∠BAC 能触发的等角关系。'],
+        },
+        knowledge_tags_snapshot_json: ['垂直', '等角', '辅助线'],
+        reflection_summary_snapshot_json: {
+          why_wrong: '没有把 CE⊥AD 翻译成直角关系',
+          unknown_step: '不知道 E 点是为了制造什么关系',
+          help_preference: '先提醒我标垂直和等角',
+        },
+      },
+    ],
+  });
+
+  assert.doesNotMatch(markup, /我这题错在/);
+  assert.doesNotMatch(markup, /下次我要先看/);
+  assert.match(markup, /错因复盘/);
+  assert.match(markup, /没有把 CE⊥AD 翻译成直角关系/);
+  assert.match(markup, /下次提醒/);
+  assert.match(markup, /先提醒我标垂直和等角/);
+  assert.match(markup, /重新画出 CE⊥AD 这个垂直关系。/);
+  assert.match(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
+  assert.match(markup, /\.writing-card,[\s\S]*?break-inside: avoid/);
+  assert.match(markup, /\.redo-work-area \{[\s\S]*?break-inside: avoid/);
+  assert.match(markup, /\.writing-prompt-block \{[\s\S]*?break-inside: avoid/);
+});
+
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
@@ -295,7 +335,7 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
   const sourceIndex = markup.indexOf('原题 / 原图');
   const questionIndex = markup.indexOf('解方程');
   const reviewIndex = markup.indexOf('挖空复盘');
-  const reasonIndex = markup.indexOf('我这题错在');
+  const reasonIndex = markup.indexOf('本题信息还不完整');
   const correctionIndex = markup.indexOf('订正区');
   const redoIndex = markup.indexOf('重做原题');
 
@@ -306,6 +346,7 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
   assert.ok(correctionIndex > reasonIndex);
   assert.ok(redoIndex > correctionIndex);
   assert.match(markup, /blank-gap/);
+  assert.doesNotMatch(markup, /我这题错在/);
 });
 
 test('buildDocumentMarkup renders latex inside scheduled error-review blanks', async () => {

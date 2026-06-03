@@ -206,6 +206,11 @@ function normalizeStructuredContent(item) {
       })
       .filter((block) => block.title || block.lines.length > 0),
     teacherFeedback: String(structured.teacher_feedback ?? structured.teacherFeedback ?? '').trim(),
+    redoGuidanceLines: Array.isArray(structured.redo_guidance_lines)
+      ? structured.redo_guidance_lines.map((line) => String(line || '').trim()).filter(Boolean)
+      : (Array.isArray(structured.redoGuidanceLines)
+        ? structured.redoGuidanceLines.map((line) => String(line || '').trim()).filter(Boolean)
+        : []),
     confirmationReasons: normalizePossiblyJsonStringList(
       structured.confirmation_reasons
       ?? structured.confirmationReasons
@@ -215,6 +220,30 @@ function normalizeStructuredContent(item) {
       ?? source.confirmationReasonsJson,
     ),
   };
+}
+
+function isLowInformationClozeText(text) {
+  const normalized = String(text || '').replace(/\s+/g, '').trim();
+  if (!normalized) {
+    return false;
+  }
+  const patterns = [
+    '我这题错在______',
+    '我错在______',
+    '下次我要先看______',
+    '下次我会先______',
+    '我要注意______',
+    '这一步需要先看清______',
+    '做完后我要检查______',
+  ];
+  if (patterns.some((pattern) => normalized.includes(pattern))) {
+    return true;
+  }
+  return normalized.includes('______') && normalized.replaceAll('______', '').length <= 8;
+}
+
+function hasLowInformationClozeLines(lines) {
+  return lines.some((line) => isLowInformationClozeText(line));
 }
 
 function normalizeReflectionSummary(item) {
@@ -286,9 +315,67 @@ function buildLegacyWritingBlocks(reasonPrompt, improvementPrompt) {
 
   return sections.map((section) => ({
     title: '',
+    rawText: section,
     contentHtml: renderPromptHtml(section),
     kind: 'legacy',
   }));
+}
+
+function buildReflectionWritingBlocks(item) {
+  const reflection = normalizeReflectionSummary(item);
+  const knowledgeTags = normalizeKnowledgeTags(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const topic = knowledgeTags.slice(0, 2).join(' / ') || questionStructured.subject || '同类题';
+  const blocks = [];
+
+  if (reflection.whyWrong || reflection.unknownStep || questionStructured.stem) {
+    const lines = [];
+    if (reflection.whyWrong) {
+      lines.push(`本题复盘时，先把“${reflection.whyWrong}”对应到 ______。`);
+    }
+    if (reflection.unknownStep) {
+      lines.push(`我卡住的步骤是“${reflection.unknownStep}”，这里要先补清 ______。`);
+    } else if (questionStructured.stem) {
+      lines.push(`先回到题干“${questionStructured.stem}”，找出最关键的 ______。`);
+    }
+    blocks.push({
+      title: '错因复盘',
+      contentHtml: lines.map((line) => renderPromptHtml(line)).join('<br />'),
+      kind: 'reflection',
+    });
+  }
+
+  if (reflection.helpPreference || knowledgeTags.length > 0 || questionStructured.subject) {
+    const lines = [];
+    if (reflection.helpPreference) {
+      lines.push(`下次遇到${topic}题，先按“${reflection.helpPreference}”检查 ______。`);
+    } else {
+      lines.push(`下次遇到${topic}题，先把题目条件翻译成可用的 ______。`);
+    }
+    if (knowledgeTags.length > 0) {
+      lines.push(`看到 ${knowledgeTags.slice(0, 3).join('、')} 时，先判断它提示的是角度、数量、关系还是 ______。`);
+    }
+    blocks.push({
+      title: '下次提醒',
+      contentHtml: lines.map((line) => renderPromptHtml(line)).join('<br />'),
+      kind: 'reflection',
+    });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({
+      title: '错因复盘',
+      contentHtml: renderPromptHtml('本题信息还不完整，先回到原题确认关键条件和 ______。'),
+      kind: 'reflection',
+    });
+    blocks.push({
+      title: '下次提醒',
+      contentHtml: renderPromptHtml('下次遇到同类题，先把题目条件翻译成可用的 ______。'),
+      kind: 'reflection',
+    });
+  }
+
+  return blocks;
 }
 
 function buildMethodHintSection(item) {
@@ -334,13 +421,20 @@ function buildReviewMeta(item) {
 
 function buildWritingSection(item, title = '挖空复盘') {
   const structured = normalizeStructuredContent(item);
-  const blocks = structured.blankReviewBlocks.length > 0
+  let blocks = structured.blankReviewBlocks.length > 0 && !structured.blankReviewBlocks.some((block) => hasLowInformationClozeLines(block.lines))
     ? structured.blankReviewBlocks.map((block) => ({
       title: block.title,
       contentHtml: block.lines.map((line) => renderPromptHtml(line)).join('<br />'),
       kind: 'structured',
     }))
     : buildLegacyWritingBlocks(item.reason_blank_prompt || '', item.improvement_summary_prompt || '');
+
+  if (blocks.some((block) => isLowInformationClozeText(block.contentHtml))) {
+    blocks = buildReflectionWritingBlocks(item);
+  }
+  if (blocks.some((block) => isLowInformationClozeText(block.rawText))) {
+    blocks = buildReflectionWritingBlocks(item);
+  }
 
   if (blocks.length === 0) {
     return '';
@@ -395,11 +489,30 @@ function buildTeacherConfirmationSection(item) {
   `;
 }
 
-function buildRedoWorkArea(label = '重做这题') {
+function buildRedoGuidanceLines(item) {
+  const structured = normalizeStructuredContent(item);
+  if (structured.redoGuidanceLines.length > 0) {
+    return structured.redoGuidanceLines.slice(0, 3);
+  }
+  const knowledgeTags = normalizeKnowledgeTags(item);
+  if (knowledgeTags.some((tag) => /几何|角|垂直|平行|辅助线/.test(tag))) {
+    return ['重新画出关键辅助线。', '写出本题最关键的角度关系。', '补完整证明链条。'];
+  }
+  if (knowledgeTags.length > 0) {
+    return [`先写出本题用到的 ${knowledgeTags[0]} 规则。`, '重做时标出第一步依据。', '最后检查易错条件。'];
+  }
+  return ['写出本题最关键的条件。', '补完整订正过程。', '最后检查答案是否回到题目要求。'];
+}
+
+function buildRedoWorkArea(item, label = '重做这题') {
+  const guidanceLines = buildRedoGuidanceLines(item);
   return `
     <section class="redo-work-area">
       <div class="section-title">订正区</div>
       <div class="redo-work-label">${escapeHtml(label)}</div>
+      <div class="redo-guidance-list">
+        ${guidanceLines.map((line) => `<div class="redo-guidance-line">${buildLatexTextBlock(line)}</div>`).join('')}
+      </div>
       <div class="redo-lines">
         ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
       </div>
@@ -419,7 +532,7 @@ function buildItemMarkup(item) {
       ${buildWritingSection(item)}
       ${buildTeacherFeedbackSection(item)}
       ${buildTeacherConfirmationSection(item)}
-      ${buildRedoWorkArea()}
+      ${buildRedoWorkArea(item)}
     </section>
   `;
 }
@@ -441,7 +554,7 @@ function buildScheduledItemMarkup(item, label) {
       ${writingSection}
       ${buildTeacherFeedbackSection(item)}
       ${buildTeacherConfirmationSection(item)}
-      ${buildRedoWorkArea(redoLabel)}
+      ${buildRedoWorkArea(item, redoLabel)}
     </section>
   `;
 }
@@ -612,6 +725,8 @@ export async function buildDocumentMarkup(payload) {
           .writing-card,
           .method-hint-card,
           .confirmation-card {
+            break-inside: avoid;
+            page-break-inside: avoid;
             border: 1px solid #dbe2ea;
             border-radius: 10px;
             padding: 16px;
@@ -683,6 +798,11 @@ export async function buildDocumentMarkup(payload) {
             margin-top: 18px;
           }
 
+          .writing-prompt-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
           .writing-prompt-title {
             margin-bottom: 8px;
             font-size: 13px;
@@ -708,6 +828,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .redo-work-area {
+            break-inside: avoid;
+            page-break-inside: avoid;
             flex: 1;
             min-height: 88mm;
             margin-top: 18px;
@@ -720,6 +842,23 @@ export async function buildDocumentMarkup(payload) {
             font-size: 12px;
             font-weight: 700;
             color: #64748b;
+          }
+
+          .redo-guidance-list {
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            border-left: 3px solid #93c5fd;
+            background: #f8fbff;
+          }
+
+          .redo-guidance-line {
+            font-size: 12px;
+            line-height: 1.65;
+            color: #475569;
+          }
+
+          .redo-guidance-line + .redo-guidance-line {
+            margin-top: 4px;
           }
 
           .redo-question-label {
