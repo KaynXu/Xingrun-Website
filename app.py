@@ -1135,6 +1135,7 @@ def _practice_pack_item_from_real_record(record: dict, index: int) -> dict:
         "diagram_type_snapshot": str(record.get("diagram_type") or "").strip(),
         "diagram_spec_json_snapshot": str(record.get("diagram_spec_json") or "").strip(),
         "child_reason_text_snapshot": str(record.get("child_raw_reason_text") or "").strip(),
+        "child_reason_transcript_snapshot": str(record.get("child_reason_transcript") or "").strip(),
         "primary_error_type_snapshot": str(record.get("primary_error_type") or "").strip(),
         "cause_note_snapshot": str(record.get("secondary_error_summary") or "").strip(),
         "topic_category_snapshot": str(record.get("topic_category") or "").strip(),

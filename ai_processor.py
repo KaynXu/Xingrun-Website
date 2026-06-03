@@ -375,6 +375,11 @@ items 中每一项必须包含：
 1. 不要在 reason_blank_prompt 或 improvement_summary_prompt 里直接给出原题答案，也不要在这两个学生书写区里提示孩子该怎样把这道题一步一步做对；标准答案和关键步骤只允许放在 answer、key_steps、pitfall_reminder 字段里。
 2. 生成内容主要依据孩子自述错因、顶层错因分类和补充备注；题目内容必须用于提取本题的对象、条件、问法或符号，让填空题具像到这道题，但不要把重点放在讲题上。
 2.a 如果输入里提供了 reflection_summary、question_structured、knowledge_tags，就优先把它们当成这道题的主信息脊柱；child_reason_text、cause_note 和 topic_category 作为兼容补充，不要忽略更完整的结构化反思。
+2.b 内容证据优先级固定为：student_transcript > student_reason_text/学生原答案 > question_text/OCR/图片线索 > standard_solution > knowledge_tags/reflection_summary > 通用题型经验。高优先级信息存在时，不要绕开它去套低优先级标签。
+2.c 错因复盘必须优先基于 student_transcript。如果 student_transcript 存在，先判断学生真实卡点：他在哪一步误解、遗漏、跳步，或把哪个条件没有翻译成数学关系；必须结合本题条件解释。没有录音转录时，只能根据题目条件、学生文字、标准解法和常见题型写“本题常见卡点是”“最容易漏的是”，不得写成“学生一定是……”。
+2.d 下次提醒不是复述本题答案，而是总结可迁移的题型动作。几何题要优先把平行、垂直、等角、60°、辅助点分别翻译成可用关系；方程、函数、行程等题也要写成下次先做什么、先检查什么、如何触发正确方法。
+2.e 挖空复盘必须从错因复盘和下次提醒里抽取关键数学动作、关键条件或题型框架。禁止出现“我这题错在 ______”“下次我要先看 ______”“我要注意 ______”“这一步需要先看清 ______”这类没有上下文的空格；每个空格前后必须让学生知道要填什么。
+2.f structured_content.blank_review_blocks 必须稳定包含“错因复盘”和“下次提醒”两类 block；可以用更具体标题，但 title 或 lines 里必须看得出这两类用途。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
@@ -847,12 +852,100 @@ def _extract_prompt_title_and_lines(prompt: str) -> tuple[str, list[str]]:
     return lines[0], lines[1:]
 
 
+def _is_low_information_wrong_question_cloze(text: object) -> bool:
+    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    if not normalized:
+        return False
+    low_information_patterns = [
+        "我这题错在______",
+        "我错在______",
+        "下次我要先看______",
+        "下次我会先______",
+        "我要注意______",
+        "这一步需要先看清______",
+        "做完后我要检查______",
+    ]
+    if any(pattern in normalized for pattern in low_information_patterns):
+        return True
+    return "______" in normalized and len(normalized.replace("______", "")) <= 8
+
+
+def _has_low_information_wrong_question_cloze(lines: object) -> bool:
+    return any(_is_low_information_wrong_question_cloze(line) for line in _normalize_string_list(lines))
+
+
+def _first_non_empty_text(*values: object) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _pick_condition_anchor(context: dict) -> str:
+    question_text = str(context.get("question_text") or "").strip()
+    for pattern in (r"[A-Z]{1,3}\s*⊥\s*[A-Z]{1,3}", r"∠[A-Z]{3}\s*=\s*∠[A-Z]{3}", r"\b\d+°"):
+        match = re.search(pattern, question_text)
+        if match:
+            return match.group(0).replace(" ", "")
+    structured = context.get("question_structured") if isinstance(context.get("question_structured"), dict) else {}
+    return _first_non_empty_text(structured.get("stem"), question_text, context.get("topic_category"), "题目条件")
+
+
+def _build_contextual_wrong_question_practice_blocks(context: dict) -> list[dict]:
+    reflection = context.get("reflection_summary") if isinstance(context.get("reflection_summary"), dict) else {}
+    knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
+    student_transcript = str(context.get("student_transcript") or "").strip()
+    reason_text = str(context.get("student_reason_text") or context.get("child_reason_text") or "").strip()
+    why_wrong = _first_non_empty_text(reflection.get("why_wrong"), context.get("cause_note"), context.get("primary_error_type"))
+    unknown_step = _first_non_empty_text(reflection.get("unknown_step"), context.get("cause_note"), context.get("topic_category"))
+    help_preference = _first_non_empty_text(reflection.get("help_preference"), context.get("topic_category"))
+    condition_anchor = _pick_condition_anchor(context)
+    topic_anchor = _first_non_empty_text(context.get("topic_category"), "同类题")
+    tag_anchor = "、".join(str(tag or "").strip() for tag in knowledge_tags[:3] if str(tag or "").strip())
+
+    if student_transcript:
+        reason_line = (
+            f"我录音里提到“{student_transcript}”，这说明本题卡在把 {condition_anchor} "
+            "翻译成 ______。"
+        )
+    elif why_wrong:
+        reason_line = f"本题常见卡点是：{why_wrong}；复盘时要先把 {condition_anchor} 翻译成 ______。"
+    elif reason_text:
+        reason_line = f"我写下的错因是“{reason_text}”，复盘时要先把 {condition_anchor} 对应到 ______。"
+    else:
+        reason_line = f"本题信息还不完整，先回到原图和题干确认 {condition_anchor} 表示的 ______。"
+
+    if unknown_step and unknown_step not in reason_line:
+        reason_second_line = f"这一步别急着算，先说清“{unknown_step}”对应的是 ______。"
+    else:
+        reason_second_line = f"看到 {condition_anchor} 时，先标出 ______，再继续找关系。"
+
+    if help_preference:
+        reminder_line = f"下次遇到 {topic_anchor} 题，先按“{help_preference}”检查 ______。"
+    elif tag_anchor:
+        reminder_line = f"下次遇到 {topic_anchor} 题，先把 {tag_anchor} 这些条件分别翻译成 ______。"
+    else:
+        reminder_line = f"下次遇到同类题，先把已知条件翻译成图上或式子里的 ______。"
+
+    if tag_anchor:
+        reminder_second_line = f"做题前先问：{tag_anchor} 是在提示角度、长度、比例还是 ______。"
+    else:
+        reminder_second_line = "如果只有图片信息，先请老师确认关键条件，再补完整 ______。"
+
+    return [
+        {"title": "错因复盘", "lines": [reason_line, reason_second_line]},
+        {"title": "下次提醒", "lines": [reminder_line, reminder_second_line]},
+    ]
+
+
 def _normalize_wrong_question_practice_structured_content(
     source: dict,
     *,
     reason_blank_prompt: str,
     improvement_summary_prompt: str,
     pitfall_reminder: str,
+    source_context: dict | None = None,
 ) -> dict:
     structured_source = source.get("structured_content")
     if not isinstance(structured_source, dict):
@@ -901,6 +994,10 @@ def _normalize_wrong_question_practice_structured_content(
         if improvement_title or improvement_lines:
             fallback_blocks.append({"title": improvement_title, "lines": improvement_lines[:2]})
         normalized_blocks = [block for block in fallback_blocks if block["title"] or block["lines"]]
+    if any(_has_low_information_wrong_question_cloze(block.get("lines")) for block in normalized_blocks):
+        contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context or {})
+        if contextual_blocks:
+            normalized_blocks = contextual_blocks
 
     teacher_feedback = str(
         structured_source.get("teacher_feedback")
@@ -921,7 +1018,12 @@ def _normalize_wrong_question_practice_structured_content(
     }
 
 
-def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected_record_ids: list[str]) -> dict:
+def _normalize_wrong_question_practice_sheet_material(
+    payload: dict,
+    *,
+    expected_record_ids: list[str],
+    item_contexts_by_record_id: dict[str, dict] | None = None,
+) -> dict:
     title = str(payload.get("title") or "").strip()
     raw_items = payload.get("items")
     if not title:
@@ -935,6 +1037,9 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
         wrong_question_record_id = str(source.get("wrong_question_record_id") or "").strip()
         if not wrong_question_record_id and index < len(expected_record_ids):
             wrong_question_record_id = expected_record_ids[index]
+        source_context = {}
+        if item_contexts_by_record_id:
+            source_context = item_contexts_by_record_id.get(wrong_question_record_id) or {}
         ai_hint = str(source.get("ai_hint") or "").strip()
         reason_blank_prompt = str(source.get("reason_blank_prompt") or "").strip()
         improvement_summary_prompt = str(source.get("improvement_summary_prompt") or "").strip()
@@ -962,6 +1067,10 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
             else:
                 reason_title = ""
                 reason_body = reason_lines[0]
+            if _is_low_information_wrong_question_cloze(reason_body):
+                contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context)
+                reason_title = contextual_blocks[0]["title"]
+                reason_body = "\n".join(contextual_blocks[0]["lines"])
             while reason_body.count("______") < 2:
                 reason_body = f"{reason_body.rstrip('。')} ______。"
             reason_blank_prompt = (
@@ -974,9 +1083,20 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
             if len(improvement_lines) >= 2:
                 improvement_title = improvement_lines[0]
                 improvement_body = "\n".join(improvement_lines[1:])
+                if _is_low_information_wrong_question_cloze(improvement_body):
+                    contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context)
+                    improvement_title = contextual_blocks[1]["title"]
+                    improvement_body = "\n".join(contextual_blocks[1]["lines"])
                 improvement_summary_prompt = f"{improvement_title}\n{improvement_body}".strip()
             else:
-                improvement_summary_prompt = improvement_lines[0]
+                improvement_body = improvement_lines[0]
+                if _is_low_information_wrong_question_cloze(improvement_body):
+                    contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context)
+                    improvement_summary_prompt = (
+                        f"{contextual_blocks[1]['title']}\n" + "\n".join(contextual_blocks[1]["lines"])
+                    ).strip()
+                else:
+                    improvement_summary_prompt = improvement_body
 
         if (
             not wrong_question_record_id
@@ -992,6 +1112,7 @@ def _normalize_wrong_question_practice_sheet_material(payload: dict, *, expected
             reason_blank_prompt=reason_blank_prompt,
             improvement_summary_prompt=improvement_summary_prompt,
             pitfall_reminder=pitfall_reminder,
+            source_context=source_context,
         )
 
         normalized_items.append(
@@ -1271,13 +1392,31 @@ def generate_wrong_question_practice_sheet_material(
         knowledge_tags = _normalize_optional_json_string_list(
             item.get("knowledge_tags_snapshot_json", item.get("knowledge_tags")),
         )
+        student_transcript = str(
+            item.get("child_reason_transcript_snapshot")
+            or item.get("student_transcript")
+            or reflection_summary.get("summary_text")
+            or ""
+        ).strip()
+        student_reason_text = str(
+            item.get("child_reason_text_snapshot")
+            or item.get("student_reason_text")
+            or ""
+        ).strip()
+        image_url = str(item.get("image_url_snapshot") or item.get("image_url") or "").strip()
         normalized_items.append(
             {
                 "wrong_question_record_id": str(item.get("wrong_question_record_id") or "").strip(),
                 "question_order": int(item.get("question_order") or 0),
                 "is_geometry": bool(item.get("is_geometry")),
                 "question_text": str(item.get("question_text_snapshot") or "").strip(),
-                "child_reason_text": str(item.get("child_reason_text_snapshot") or "").strip(),
+                "child_reason_text": student_reason_text,
+                "student_reason_text": student_reason_text,
+                "student_transcript": student_transcript,
+                "image_url": image_url,
+                "image_available": bool(image_url),
+                "student_answer": str(item.get("student_answer_snapshot") or item.get("student_answer") or "").strip(),
+                "standard_solution": str(item.get("standard_solution_snapshot") or item.get("standard_solution") or "").strip(),
                 "primary_error_type": str(item.get("primary_error_type_snapshot") or "").strip(),
                 "cause_note": str(item.get("cause_note_snapshot") or "").strip(),
                 "topic_category": str(item.get("topic_category_snapshot") or item.get("topic_category") or "").strip(),
@@ -1311,9 +1450,15 @@ def generate_wrong_question_practice_sheet_material(
         response_format={"type": "json_object"},
     )
     payload = _loads_model_json(response.choices[0].message.content)
+    item_contexts_by_record_id = {
+        str(item.get("wrong_question_record_id") or "").strip(): item
+        for item in normalized_items
+        if str(item.get("wrong_question_record_id") or "").strip()
+    }
     normalized = _normalize_wrong_question_practice_sheet_material(
         payload,
         expected_record_ids=expected_record_ids,
+        item_contexts_by_record_id=item_contexts_by_record_id,
     )
     generation_metadata = build_wrong_question_practice_generation_metadata(
         provider=provider,

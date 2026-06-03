@@ -32,6 +32,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             binding_id=self.binding_id,
             image_url="https://files.example.com/non-geometry.png",
             child_raw_reason_text="我把乘法放到最后算了",
+            child_reason_transcript="我录音里说，我总是先算 2+3，忘了乘法要先做。",
             primary_error_type="细节问题",
             secondary_error_summary="运算顺序判断不稳定",
             topic_category="四则混合运算",
@@ -54,6 +55,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             binding_id=self.binding_id,
             image_url="https://files.example.com/geometry.png",
             child_raw_reason_text="我没有看清辅助线",
+            child_reason_transcript="我说不出来 E 点为什么要连到 AD，也没想到垂直能变成直角。",
             primary_error_type="审题问题",
             secondary_error_summary="图形关系判断不完整",
             topic_category="几何辅助线",
@@ -113,6 +115,10 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["items"][0]["question_structured_snapshot"]["stem"], "根据辅助线判断角度关系")
         self.assertEqual(saved["items"][0]["knowledge_tags_snapshot"], ["几何辅助线", "角度关系"])
         self.assertEqual(saved["items"][0]["reflection_summary_snapshot"]["why_wrong"], "我把辅助线当成无关线段了")
+        self.assertEqual(
+            saved["items"][0]["child_reason_transcript_snapshot"],
+            "我说不出来 E 点为什么要连到 AD，也没想到垂直能变成直角。",
+        )
         self.assertEqual(saved["items"][0]["diagram_type_snapshot"], "geometry")
         self.assertEqual(
             json.loads(saved["items"][0]["diagram_spec_json_snapshot"])["points"][0]["label"],
@@ -121,6 +127,10 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["items"][1]["wrong_question_record_id"], self.record_one["id"])
         self.assertEqual(saved["items"][1]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
         self.assertEqual(saved["items"][1]["child_reason_text_snapshot"], "我把乘法放到最后算了")
+        self.assertEqual(
+            saved["items"][1]["child_reason_transcript_snapshot"],
+            "我录音里说，我总是先算 2+3，忘了乘法要先做。",
+        )
         self.assertEqual(saved["items"][1]["topic_category_snapshot"], "四则混合运算")
         self.assertEqual(saved["items"][1]["question_structured_snapshot"]["stem"], "计算 2+3×4 的结果")
         self.assertEqual(saved["items"][1]["knowledge_tags_snapshot"], ["四则混合运算", "运算顺序"])
