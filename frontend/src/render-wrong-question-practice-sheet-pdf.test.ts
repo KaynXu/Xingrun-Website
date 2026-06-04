@@ -39,11 +39,12 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.match(markup, /原题 \/ 原图/);
   assert.match(markup, /挖空复盘/);
   assert.match(markup, /订正区/);
-  assert.match(markup, /重做这题/);
+  assert.doesNotMatch(markup, /重做这题/);
   assert.doesNotMatch(markup, /可选/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
   assert.match(markup, /xr-latex-preview/);
+  assert.doesNotMatch(markup, /学生：|班级：|老师：|题目数量：/);
 });
 
 test('buildDocumentMarkup prefers structured content for method hints, review blocks, and confirmation copy', async () => {
@@ -77,15 +78,16 @@ test('buildDocumentMarkup prefers structured content for method hints, review bl
     ],
   });
 
+  assert.match(markup, /题干摘要/);
+  assert.match(markup, /先回到“速度和时间对应关系写反”这个入口/);
   assert.match(markup, /方法提醒/);
   assert.match(markup, /先把总路程和速度和对应起来。/);
-  assert.match(markup, /错因定位：速度和时间对应关系写反/);
-  assert.match(markup, /本次目标：先标相遇总路程再列式/);
   assert.match(markup, /相遇关系补全/);
-  assert.match(markup, /老师提示/);
   assert.match(markup, /可继续追问单位。/);
-  assert.match(markup, /需老师确认/);
-  assert.match(markup, /needs_unit_check/);
+  assert.doesNotMatch(markup, /错因定位：/);
+  assert.doesNotMatch(markup, /本次目标：/);
+  assert.doesNotMatch(markup, /老师提示/);
+  assert.doesNotMatch(markup, /需老师确认/);
   assert.doesNotMatch(markup, /旧提示/);
 });
 
@@ -119,11 +121,12 @@ test('buildDocumentMarkup falls back to reflection spine when structured content
     ],
   });
 
-  assert.match(markup, /错因定位：我去分母时漏乘了右边常数/);
-  assert.match(markup, /本次目标：先提醒我要两边一起乘，再让我自己重做/);
-  assert.match(markup, /知识点：一元一次方程 \/ 去分母/);
+  assert.match(markup, /题干摘要/);
+  assert.match(markup, /先回到“我去分母时漏乘了右边常数”这个入口/);
   assert.match(markup, /先回到 一元一次方程 \/ 去分母 这组知识点。/);
   assert.match(markup, /先补清：不知道等式右边也要同乘 2/);
+  assert.doesNotMatch(markup, /错因定位：/);
+  assert.doesNotMatch(markup, /本次目标：/);
 });
 
 test('buildDocumentMarkup replaces low-information writing fallback with reflection context and redo guidance', async () => {
@@ -155,15 +158,15 @@ test('buildDocumentMarkup replaces low-information writing fallback with reflect
 
   assert.doesNotMatch(markup, /我这题错在/);
   assert.doesNotMatch(markup, /下次我要先看/);
-  assert.match(markup, /错因复盘/);
+  assert.match(markup, /挖空复盘/);
   assert.match(markup, /没有把 CE⊥AD 翻译成直角关系/);
-  assert.match(markup, /下次提醒/);
   assert.match(markup, /先提醒我标垂直和等角/);
-  assert.match(markup, /重新画出 CE⊥AD 这个垂直关系。/);
-  assert.match(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
+  assert.doesNotMatch(markup, /重新画出 CE⊥AD 这个垂直关系。/);
+  assert.doesNotMatch(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
   assert.match(markup, /\.writing-card,[\s\S]*?break-inside: avoid/);
   assert.match(markup, /\.redo-work-area \{[\s\S]*?break-inside: avoid/);
   assert.match(markup, /\.writing-prompt-block \{[\s\S]*?break-inside: avoid/);
+  assert.doesNotMatch(markup, /重做这题/);
 });
 
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
@@ -237,12 +240,34 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   });
 
   assert.equal((markup.match(/class="question-latex-card"/g) || []).length, 1);
-  assert.equal((markup.match(/class="geometry-card"/g) || []).length, 2);
+  assert.equal((markup.match(/class="geometry-card(?:\s|")/g) || []).length, 2);
   assert.match(markup, /向量 AB 长度为 √\(16\)/);
   assert.match(markup, /class="katex"/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
   assert.match(markup, /图片暂时无法载入，已保留原图记录。/);
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
+});
+
+test('buildDocumentMarkup renders original image for non-geometry practice items when image data exists', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: false,
+        question_text_snapshot: '计算 18÷3×2 的结果。',
+        image_data_url: 'data:image/png;base64,ZmFrZQ==',
+      },
+    ],
+  });
+
+  assert.match(markup, /计算 18÷3×2 的结果/);
+  assert.match(markup, /原题图片/);
+  assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
 });
 
 test('buildDocumentMarkup renders generated diagram practice items with question text', async () => {
@@ -334,19 +359,23 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
 
   const sourceIndex = markup.indexOf('原题 / 原图');
   const questionIndex = markup.indexOf('解方程');
+  const summaryIndex = markup.indexOf('题干摘要');
+  const methodIndex = markup.indexOf('方法提醒');
   const reviewIndex = markup.indexOf('挖空复盘');
   const reasonIndex = markup.indexOf('本题信息还不完整');
   const correctionIndex = markup.indexOf('订正区');
-  const redoIndex = markup.indexOf('重做原题');
 
   assert.ok(sourceIndex > -1);
   assert.ok(questionIndex > sourceIndex);
+  assert.ok(summaryIndex > questionIndex);
+  assert.ok(methodIndex > summaryIndex);
   assert.ok(reviewIndex > -1);
+  assert.ok(reviewIndex > methodIndex);
   assert.ok(reasonIndex > reviewIndex);
   assert.ok(correctionIndex > reasonIndex);
-  assert.ok(redoIndex > correctionIndex);
   assert.match(markup, /blank-gap/);
   assert.doesNotMatch(markup, /我这题错在/);
+  assert.doesNotMatch(markup, /重做原题/);
 });
 
 test('buildDocumentMarkup renders latex inside scheduled error-review blanks', async () => {

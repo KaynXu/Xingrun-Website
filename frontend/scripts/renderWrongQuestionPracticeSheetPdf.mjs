@@ -54,24 +54,25 @@ function buildQuestionBlock(item) {
   if (item.image_data_url && item.diagram_type) {
     return `
       ${questionTextBlock}
-      <div class="geometry-card">
+      <div class="geometry-card generated-diagram-card">
         <div class="geometry-title">生成图像</div>
-        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image" />
+        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image generated-diagram-image" />
+      </div>
+    `;
+  }
+
+  if (item.image_data_url) {
+    const imageTitle = item.is_geometry ? '几何原题图片' : '原题图片';
+    return `
+      ${questionTextBlock}
+      <div class="geometry-card source-image-card">
+        <div class="geometry-title">${imageTitle}</div>
+        <img src="${item.image_data_url}" alt="${imageTitle}" class="geometry-image source-image" />
       </div>
     `;
   }
 
   if (item.is_geometry) {
-    if (item.image_data_url) {
-      return `
-        ${questionTextBlock}
-        <div class="geometry-card">
-          <div class="geometry-title">几何原题图片</div>
-          <img src="${item.image_data_url}" alt="几何原题图片" class="geometry-image" />
-        </div>
-      `;
-    }
-
     return `
       ${questionTextBlock}
       <div class="geometry-card">
@@ -134,6 +135,16 @@ function normalizePromptText(prompt) {
     .replaceAll('\\n', '\n')
     .replaceAll('\r\n', '\n')
     .replaceAll('\r', '\n');
+}
+
+function firstNonEmptyText(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (text) {
+      return text;
+    }
+  }
+  return '';
 }
 
 function formatQuestionTextForPractice(value) {
@@ -307,6 +318,69 @@ function buildReflectionFallbackMethodHints(item) {
   return hintLines.slice(0, 3);
 }
 
+function buildGuidingMethodLines(item) {
+  const structured = normalizeStructuredContent(item);
+  const hintLines = structured.methodHintLines.length > 0
+    ? structured.methodHintLines
+    : buildReflectionFallbackMethodHints(item);
+  const merged = [...hintLines];
+  if (structured.teacherFeedback) {
+    const duplicated = merged.some((line) => line.includes(structured.teacherFeedback) || structured.teacherFeedback.includes(line));
+    if (!duplicated) {
+      merged.push(structured.teacherFeedback);
+    }
+  }
+  if (merged.length === 0) {
+    merged.push('先把题目里的已知条件和问法分开圈出来，再决定第一步用哪个关系。');
+  }
+  return merged.slice(0, 3);
+}
+
+function buildQuestionSummaryText(item) {
+  const reflection = normalizeReflectionSummary(item);
+  const structured = normalizeStructuredContent(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const questionText = normalizePromptText(item.question_text_snapshot || item.question_text || '').trim();
+  const studentReason = firstNonEmptyText(
+    item.child_reason_transcript_snapshot,
+    item.student_transcript,
+    item.child_reason_text_snapshot,
+    item.student_reason_text,
+  );
+  const reasonAnchor = firstNonEmptyText(studentReason, reflection.whyWrong, structured.mistakeFocus);
+  const guidanceLines = buildGuidingMethodLines(item);
+
+  if (reasonAnchor && guidanceLines.length > 0) {
+    return `先回到“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这个入口，再按这题的起手顺序往下走：${guidanceLines[0]}`;
+  }
+  if (guidanceLines.length > 0) {
+    return guidanceLines[0];
+  }
+  if (reasonAnchor) {
+    return `先回到“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这个卡点，再看题目第一步要用什么关系。`;
+  }
+  if (questionStructured.stem) {
+    return `先把题目里“${questionStructured.stem}”这一步重新读清。`;
+  }
+  if (questionText) {
+    return '先把题目在问什么、已知什么重新圈出来，再决定第一步从哪里下手。';
+  }
+  return '';
+}
+
+function buildQuestionSummarySection(item) {
+  const summaryText = buildQuestionSummaryText(item);
+  if (!summaryText) {
+    return '';
+  }
+  return `
+    <section class="summary-card">
+      <div class="section-title">题干摘要</div>
+      <div class="summary-copy">${buildLatexTextBlock(summaryText)}</div>
+    </section>
+  `;
+}
+
 function buildLegacyWritingBlocks(reasonPrompt, improvementPrompt) {
   const sections = [
     extractWritingPromptBody(reasonPrompt),
@@ -379,10 +453,7 @@ function buildReflectionWritingBlocks(item) {
 }
 
 function buildMethodHintSection(item) {
-  const structured = normalizeStructuredContent(item);
-  const hintLines = structured.methodHintLines.length > 0
-    ? structured.methodHintLines
-    : buildReflectionFallbackMethodHints(item);
+  const hintLines = buildGuidingMethodLines(item);
   if (hintLines.length === 0) {
     return '';
   }
@@ -396,27 +467,8 @@ function buildMethodHintSection(item) {
   `;
 }
 
-function buildReviewMeta(item) {
-  const structured = normalizeStructuredContent(item);
-  const reflection = normalizeReflectionSummary(item);
-  const questionStructured = normalizeQuestionStructured(item);
-  const knowledgeTags = normalizeKnowledgeTags(item);
-  const mistakeFocus = structured.mistakeFocus || reflection.whyWrong;
-  const reviewGoal = structured.reviewGoal || reflection.helpPreference || reflection.unknownStep;
-  const chips = [
-    mistakeFocus ? `错因定位：${mistakeFocus}` : '',
-    reviewGoal ? `本次目标：${reviewGoal}` : '',
-    knowledgeTags.length > 0 ? `知识点：${knowledgeTags.slice(0, 2).join(' / ')}` : '',
-    !knowledgeTags.length && questionStructured.stem ? `题眼：${questionStructured.stem}` : '',
-  ].filter(Boolean);
-  if (chips.length === 0) {
-    return '';
-  }
-  return `
-    <div class="review-meta-row">
-      ${chips.map((chip) => `<span class="review-meta-chip">${escapeHtml(chip)}</span>`).join('')}
-    </div>
-  `;
+function shouldShowWritingBlockTitle(title) {
+  return !['', '错因复盘', '下次提醒'].includes(String(title || '').trim());
 }
 
 function buildWritingSection(item, title = '挖空复盘') {
@@ -443,12 +495,11 @@ function buildWritingSection(item, title = '挖空复盘') {
   return `
     <section class="writing-card">
       ${title ? `<div class="section-title">${escapeHtml(title)}</div>` : ''}
-      ${buildReviewMeta(item)}
       ${blocks
         .map(
           (block) => `
             <div class="writing-prompt-block">
-              ${block.title ? `<div class="writing-prompt-title">${escapeHtml(block.title)}</div>` : ''}
+              ${shouldShowWritingBlockTitle(block.title) ? `<div class="writing-prompt-title">${escapeHtml(block.title)}</div>` : ''}
               <div class="writing-prompt">${block.contentHtml}</div>
             </div>
           `,
@@ -458,63 +509,12 @@ function buildWritingSection(item, title = '挖空复盘') {
   `;
 }
 
-function buildTeacherFeedbackSection(item) {
-  const structured = normalizeStructuredContent(item);
-  const teacherFeedback = structured.teacherFeedback;
-  if (!teacherFeedback) {
-    return '';
-  }
-  return `
-    <section class="confirmation-card">
-      <div class="section-title">老师提示</div>
-      <div class="confirmation-copy">${buildLatexTextBlock(teacherFeedback)}</div>
-    </section>
-  `;
-}
-
-function buildTeacherConfirmationSection(item) {
-  const structured = normalizeStructuredContent(item);
-  const reasons = structured.confirmationReasons;
-  if (reasons.length === 0) {
-    return '';
-  }
-  return `
-    <section class="confirmation-card">
-      <div class="section-title">需老师确认</div>
-      <div class="confirmation-copy">当前识别或归档信息仍需老师复核。</div>
-      <div class="confirmation-reasons">
-        ${reasons.map((reason) => `<span class="confirmation-chip">${escapeHtml(reason)}</span>`).join('')}
-      </div>
-    </section>
-  `;
-}
-
-function buildRedoGuidanceLines(item) {
-  const structured = normalizeStructuredContent(item);
-  if (structured.redoGuidanceLines.length > 0) {
-    return structured.redoGuidanceLines.slice(0, 3);
-  }
-  const knowledgeTags = normalizeKnowledgeTags(item);
-  if (knowledgeTags.some((tag) => /几何|角|垂直|平行|辅助线/.test(tag))) {
-    return ['重新画出关键辅助线。', '写出本题最关键的角度关系。', '补完整证明链条。'];
-  }
-  if (knowledgeTags.length > 0) {
-    return [`先写出本题用到的 ${knowledgeTags[0]} 规则。`, '重做时标出第一步依据。', '最后检查易错条件。'];
-  }
-  return ['写出本题最关键的条件。', '补完整订正过程。', '最后检查答案是否回到题目要求。'];
-}
-
-function buildRedoWorkArea(item, label = '重做这题') {
-  const guidanceLines = buildRedoGuidanceLines(item);
+function buildRedoWorkArea() {
   return `
     <section class="redo-work-area">
       <div class="section-title">订正区</div>
-      <div class="redo-work-label">${escapeHtml(label)}</div>
-      <div class="redo-guidance-list">
-        ${guidanceLines.map((line) => `<div class="redo-guidance-line">${buildLatexTextBlock(line)}</div>`).join('')}
-      </div>
       <div class="redo-lines">
-        ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
+        ${Array.from({ length: 14 }, () => '<div class="redo-line"></div>').join('')}
       </div>
     </section>
   `;
@@ -528,11 +528,10 @@ function buildItemMarkup(item) {
       </div>
       <div class="record-label">原题 / 原图</div>
       ${buildQuestionBlock(item)}
+      ${buildQuestionSummarySection(item)}
       ${buildMethodHintSection(item)}
       ${buildWritingSection(item)}
-      ${buildTeacherFeedbackSection(item)}
-      ${buildTeacherConfirmationSection(item)}
-      ${buildRedoWorkArea(item)}
+      ${buildRedoWorkArea()}
     </section>
   `;
 }
@@ -540,7 +539,6 @@ function buildItemMarkup(item) {
 function buildScheduledItemMarkup(item, label) {
   const trainingGoal = String(item.trainingGoal || '').trim();
   const writingSection = buildWritingSection(item, '挖空复盘');
-  const redoLabel = item.itemType === 'variant' ? '重做变式' : '重做原题';
   return `
     <section class="record-page">
       <div class="record-header">
@@ -550,11 +548,10 @@ function buildScheduledItemMarkup(item, label) {
       ${trainingGoal ? `<div class="pack-goal">训练目标：${escapeHtml(trainingGoal)}</div>` : ''}
       <div class="record-label">原题 / 原图</div>
       ${buildQuestionBlock(item)}
+      ${buildQuestionSummarySection(item)}
       ${buildMethodHintSection(item)}
       ${writingSection}
-      ${buildTeacherFeedbackSection(item)}
-      ${buildTeacherConfirmationSection(item)}
-      ${buildRedoWorkArea(item, redoLabel)}
+      ${buildRedoWorkArea()}
     </section>
   `;
 }
@@ -614,18 +611,10 @@ function buildScheduledBody(schedule, answerItems) {
 
 export async function buildDocumentMarkup(payload) {
   const katexCss = await readFile(katexCssPath, 'utf8');
-  const studentName = escapeHtml(payload.studentName || '');
-  const className = escapeHtml(payload.className || '');
-  const teacherName = escapeHtml(payload.teacherName || '');
-  const title = escapeHtml(payload.title || `${studentName} 错题练习`);
+  const title = escapeHtml(payload.title || `${payload.studentName || ''} 错题练习`);
   const items = Array.isArray(payload.items) ? payload.items : [];
   const schedule = Array.isArray(payload.schedule) ? payload.schedule : [];
   const answerItems = Array.isArray(payload.answerItems) ? payload.answerItems : items;
-  const packMeta = payload.packMeta && typeof payload.packMeta === 'object' ? payload.packMeta : {};
-  const scheduledQuestionCount = schedule.reduce(
-    (count, day) => count + (Array.isArray(day.items) ? day.items.length : 0),
-    0,
-  );
   const hasSchedule = schedule.length > 0;
 
   return `
@@ -666,33 +655,21 @@ export async function buildDocumentMarkup(payload) {
             color: #0f172a;
           }
 
-          .cover-meta {
-            margin-top: 8px;
-            color: #475569;
-            font-size: 13px;
-          }
-
           .record-page {
-            page-break-before: always;
-            min-height: 265mm;
-            display: flex;
-            flex-direction: column;
-          }
-
-          .record-page:first-of-type {
-            page-break-before: auto;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
           }
 
           .record-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 14px;
+            gap: 8px;
+            margin-bottom: 8px;
           }
 
           .record-index {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -704,14 +681,14 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-label {
-            margin-bottom: 10px;
+            margin-bottom: 6px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
           .pack-goal {
-            margin: 0 0 12px;
+            margin: 0 0 10px;
             padding: 10px 12px;
             border: 1px solid #dbeafe;
             border-radius: 10px;
@@ -722,80 +699,70 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-card,
+          .summary-card,
           .writing-card,
-          .method-hint-card,
-          .confirmation-card {
+          .method-hint-card {
             break-inside: avoid;
             page-break-inside: avoid;
             border: 1px solid #dbe2ea;
             border-radius: 10px;
-            padding: 16px;
+            padding: 10px 12px;
             background: #ffffff;
           }
 
           .question-latex-card {
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
-            padding: 16px;
-            background: #f4fbff;
+            border: 1px solid #dbe2ea;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: #ffffff;
           }
 
           .question-latex-preview-frame {
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
+            border: none;
+            border-radius: 0;
             background: #ffffff;
-            padding: 14px 16px;
+            padding: 0;
+          }
+
+          .summary-card {
+            margin-top: 6px;
+          }
+
+          .summary-copy {
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.92;
           }
 
           .writing-card {
-            margin-top: 14px;
-            min-height: 82mm;
-            padding-bottom: 22px;
+            margin-top: 6px;
+            min-height: 0;
+            padding-bottom: 10px;
           }
 
           .section-title {
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
-          .method-hint-card,
-          .confirmation-card {
-            margin-top: 14px;
+          .method-hint-card {
+            margin-top: 6px;
           }
 
           .method-hint-line {
             font-size: 14px;
-            line-height: 1.8;
+            line-height: 1.98;
             color: #334155;
           }
 
           .method-hint-line + .method-hint-line {
-            margin-top: 8px;
-          }
-
-          .review-meta-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 14px;
-          }
-
-          .review-meta-chip,
-          .confirmation-chip {
-            display: inline-flex;
-            align-items: center;
-            padding: 3px 10px;
-            border-radius: 999px;
-            background: #f1f5f9;
-            color: #475569;
-            font-size: 12px;
-            line-height: 1.5;
+            margin-top: 4px;
           }
 
           .writing-prompt-block + .writing-prompt-block {
-            margin-top: 18px;
+            margin-top: 8px;
           }
 
           .writing-prompt-block {
@@ -804,7 +771,7 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .writing-prompt-title {
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             font-size: 13px;
             font-weight: 700;
             color: #0f172a;
@@ -812,7 +779,7 @@ export async function buildDocumentMarkup(payload) {
 
           .writing-prompt {
             font-size: 14px;
-            line-height: 1.8;
+            line-height: 2;
             color: #334155;
             white-space: pre-wrap;
             word-break: break-word;
@@ -820,7 +787,7 @@ export async function buildDocumentMarkup(payload) {
 
           .blank-gap {
             display: inline-block;
-            min-width: 13em;
+            min-width: 11.5em;
             height: 1.2em;
             margin: 0 0.2em;
             vertical-align: -0.2em;
@@ -830,50 +797,18 @@ export async function buildDocumentMarkup(payload) {
           .redo-work-area {
             break-inside: avoid;
             page-break-inside: avoid;
-            flex: 1;
-            min-height: 88mm;
-            margin-top: 18px;
-            display: flex;
-            flex-direction: column;
-          }
-
-          .redo-work-label {
-            margin-bottom: 10px;
-            font-size: 12px;
-            font-weight: 700;
-            color: #64748b;
-          }
-
-          .redo-guidance-list {
-            margin-bottom: 12px;
-            padding: 10px 12px;
-            border-left: 3px solid #93c5fd;
-            background: #f8fbff;
-          }
-
-          .redo-guidance-line {
-            font-size: 12px;
-            line-height: 1.65;
-            color: #475569;
-          }
-
-          .redo-guidance-line + .redo-guidance-line {
-            margin-top: 4px;
-          }
-
-          .redo-question-label {
-            margin-top: 18px;
+            min-height: 0;
+            margin-top: 8px;
           }
 
           .redo-lines {
-            flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            gap: 4px;
           }
 
           .redo-line {
-            min-height: 16px;
+            min-height: 13px;
             border-bottom: 1px solid #cbd5e1;
           }
 
@@ -883,22 +818,9 @@ export async function buildDocumentMarkup(payload) {
             font-size: 14px;
           }
 
-          .confirmation-copy {
-            font-size: 13px;
-            line-height: 1.7;
-            color: #475569;
-          }
-
-          .confirmation-reasons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 12px;
-          }
-
           .xr-latex-preview {
-            font-size: 16px;
-            line-height: 1.8;
+            font-size: 15px;
+            line-height: 1.96;
             word-break: break-word;
           }
 
@@ -907,10 +829,10 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .xr-latex-preview .xr-latex-display {
-            margin: 14px 0;
+            margin: 10px 0;
             overflow-x: auto;
             overflow-y: hidden;
-            padding: 4px 0;
+            padding: 2px 0;
           }
 
           .xr-latex-preview .xr-latex-error-source {
@@ -926,8 +848,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-title {
-            margin-bottom: 12px;
-            font-size: 14px;
+            margin-bottom: 6px;
+            font-size: 13px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -935,11 +857,18 @@ export async function buildDocumentMarkup(payload) {
           .geometry-image {
             display: block;
             max-width: 100%;
-            max-height: 220mm;
             margin: 0 auto;
             object-fit: contain;
-            border-radius: 12px;
+            border-radius: 10px;
             background: #ffffff;
+          }
+
+          .source-image {
+            max-height: 66mm;
+          }
+
+          .generated-diagram-image {
+            max-height: 96mm;
           }
 
           .answer-section {
@@ -1007,19 +936,6 @@ export async function buildDocumentMarkup(payload) {
       <body>
         <section class="cover">
           <div class="cover-title">${title}</div>
-          <div class="cover-meta">学生：${studentName}</div>
-          <div class="cover-meta">班级：${className}</div>
-          <div class="cover-meta">老师：${teacherName}</div>
-          ${
-            hasSchedule
-              ? `
-                <div class="cover-meta">目标：${escapeHtml(packMeta.target || '')}</div>
-                <div class="cover-meta">题量档位：${escapeHtml(packMeta.volume || '')}</div>
-                <div class="cover-meta">生成日期：${escapeHtml(packMeta.generatedDate || '')}</div>
-              `
-              : ''
-          }
-          <div class="cover-meta">题目数量：${hasSchedule ? scheduledQuestionCount : items.length}</div>
         </section>
         ${hasSchedule ? buildScheduledBody(schedule, answerItems) : items.map((item) => buildItemMarkup(item)).join('')}
       </body>

@@ -2590,6 +2590,7 @@ def init_db():
             is_geometry                   INTEGER NOT NULL DEFAULT 0,
             question_text_snapshot        TEXT NOT NULL DEFAULT '',
             image_url_snapshot            TEXT NOT NULL DEFAULT '',
+            erased_image_url_snapshot     TEXT NOT NULL DEFAULT '',
             diagram_type_snapshot         TEXT NOT NULL DEFAULT '',
             diagram_spec_json_snapshot    TEXT NOT NULL DEFAULT '',
             child_reason_text_snapshot    TEXT NOT NULL DEFAULT '',
@@ -2923,6 +2924,7 @@ def init_db():
         _ensure_column(conn, "wrong_question_practice_sheets", "source_record_ids_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "wrong_question_practice_sheets", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "erased_image_url_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "child_reason_transcript_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
@@ -7022,6 +7024,35 @@ def list_wrong_question_assets(ingestion_run_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _resolve_erased_wrong_question_image_url_for_record(
+    conn: sqlite3.Connection,
+    record: dict,
+) -> str:
+    for key in ("erased_image_url", "erased_image_url_snapshot", "clean_image_url"):
+        direct_url = str(record.get(key) or "").strip()
+        if direct_url:
+            return direct_url
+
+    ingestion_run_id = str(record.get("ingestion_run_id") or "").strip()
+    if not ingestion_run_id:
+        return ""
+
+    row = conn.execute(
+        """
+        SELECT file_url, storage_path
+        FROM wrong_question_assets
+        WHERE ingestion_run_id=?
+          AND asset_role IN ('erased_question_image', 'erased_upload', 'erased_image')
+        ORDER BY page_number ASC, id DESC
+        LIMIT 1
+        """,
+        (ingestion_run_id,),
+    ).fetchone()
+    if not row:
+        return ""
+    return str(row["file_url"] or row["storage_path"] or "").strip()
+
+
 def create_wrong_question_chat_session(
     *,
     session_id: str,
@@ -9954,6 +9985,7 @@ def create_pending_wrong_question_practice_sheet(
                     is_geometry,
                     question_text_snapshot,
                     image_url_snapshot,
+                    erased_image_url_snapshot,
                     diagram_type_snapshot,
                     diagram_spec_json_snapshot,
                     child_reason_text_snapshot,
@@ -9964,7 +9996,7 @@ def create_pending_wrong_question_practice_sheet(
                     question_structured_snapshot_json,
                     knowledge_tags_snapshot_json,
                     reflection_summary_snapshot_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sheet_id,
@@ -9974,6 +10006,7 @@ def create_pending_wrong_question_practice_sheet(
                     1 if bool(record.get("is_geometry")) else 0,
                     str(record.get("question_text") or "").strip(),
                     str(record.get("image_url") or "").strip(),
+                    _resolve_erased_wrong_question_image_url_for_record(conn, record),
                     str(record.get("diagram_type") or "").strip(),
                     str(record.get("diagram_spec_json") or "").strip(),
                     str(record.get("child_raw_reason_text") or "").strip(),

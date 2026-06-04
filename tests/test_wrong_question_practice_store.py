@@ -27,6 +27,24 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             student_id=self.student["id"],
         )
         self.binding_id = binding["id"]
+        self.ingestion_run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=self.owner["organization_id"],
+            source="wechat_mp",
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            parent_wechat_account_id=account["id"],
+            status="completed",
+            current_step="archived",
+            original_filename="non-geometry.png",
+        )
+        lesson_manager.create_wrong_question_asset(
+            ingestion_run_id=self.ingestion_run["id"],
+            asset_role="erased_question_image",
+            file_url="https://files.example.com/non-geometry-erased.png",
+            mime_type="image/png",
+            page_number=1,
+        )
 
         self.record_one = lesson_manager.create_wechat_wrong_question_submission(
             binding_id=self.binding_id,
@@ -40,6 +58,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
             is_geometry=False,
             question_text="计算 $2+3\\times4$ 的结果。",
             question_text_source="teacher",
+            ingestion_run_id=self.ingestion_run["id"],
             question_structured_json={"stem": "计算 2+3×4 的结果", "subject": "math"},
             knowledge_tags_json=["四则混合运算", "运算顺序"],
             reflection_summary_json={
@@ -126,6 +145,7 @@ class WrongQuestionPracticeStoreTestCase(unittest.TestCase):
         )
         self.assertEqual(saved["items"][1]["wrong_question_record_id"], self.record_one["id"])
         self.assertEqual(saved["items"][1]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
+        self.assertEqual(saved["items"][1]["erased_image_url_snapshot"], "https://files.example.com/non-geometry-erased.png")
         self.assertEqual(saved["items"][1]["child_reason_text_snapshot"], "我把乘法放到最后算了")
         self.assertEqual(
             saved["items"][1]["child_reason_transcript_snapshot"],
