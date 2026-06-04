@@ -1030,6 +1030,9 @@ def _run_wrong_question_practice_generation_job(
 
             title = str((generated or {}).get("title") or "").strip() or f"{sheet.get('student_name_snapshot') or '学生'} 错题练习"
             output_path = str(_wrong_question_practice_sheet_pdf_path(sheet_id))
+            from wrong_question_upload_worker import ensure_erased_wrong_question_images_for_practice_items
+
+            pdf_items = ensure_erased_wrong_question_images_for_practice_items(merged_items)
 
             pdf_path = ""
             pdf_generation_succeeded = False
@@ -1041,7 +1044,7 @@ def _run_wrong_question_practice_generation_job(
                         class_name=str(sheet.get("class_name_snapshot") or ""),
                         teacher_name=str(sheet.get("teacher_name_snapshot") or ""),
                         title=title,
-                        items=merged_items,
+                        items=pdf_items,
                         output_path=output_path,
                     )
                     pdf_generation_succeeded = True

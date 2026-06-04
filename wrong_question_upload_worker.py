@@ -199,6 +199,48 @@ def _erase_wrong_question_image_bytes(image_bytes: bytes) -> bytes:
     return output.getvalue()
 
 
+def _wrong_question_erased_image_path_for_record(record_id: str) -> Path:
+    safe_record_id = "".join(
+        ch if ch.isalnum() or ch in {"-", "_"} else "_"
+        for ch in str(record_id or "").strip()
+    ).strip("._")
+    if not safe_record_id:
+        safe_record_id = uuid.uuid4().hex
+    return ERASED_IMAGE_DIR / f"{safe_record_id}.png"
+
+
+def ensure_erased_wrong_question_images_for_practice_items(items: list[dict]) -> list[dict]:
+    prepared_items: list[dict] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        prepared_item = dict(item)
+        if str(prepared_item.get("erased_image_url_snapshot") or "").strip():
+            prepared_items.append(prepared_item)
+            continue
+
+        image_url = str(prepared_item.get("image_url_snapshot") or prepared_item.get("image_url") or "").strip()
+        record_id = str(prepared_item.get("wrong_question_record_id") or "").strip()
+        if not image_url or not record_id:
+            prepared_items.append(prepared_item)
+            continue
+
+        erased_path = _wrong_question_erased_image_path_for_record(record_id)
+        try:
+            if not erased_path.exists():
+                source_bytes = _fetch_upload_image_bytes(image_url)
+                erased_bytes = _erase_wrong_question_image_bytes(source_bytes)
+                if erased_bytes:
+                    erased_path.parent.mkdir(parents=True, exist_ok=True)
+                    erased_path.write_bytes(erased_bytes)
+            if erased_path.exists():
+                prepared_item["erased_image_url_snapshot"] = str(erased_path)
+        except Exception:
+            pass
+        prepared_items.append(prepared_item)
+    return prepared_items
+
+
 def _try_create_erased_wrong_question_asset(ingestion_run_id: str, image_url: str) -> None:
     normalized_run_id = str(ingestion_run_id or "").strip()
     if not normalized_run_id:
