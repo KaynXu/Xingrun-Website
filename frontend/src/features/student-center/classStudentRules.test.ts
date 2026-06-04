@@ -6,7 +6,10 @@ import {
   executeClassStudentListRequest,
   buildStudentProfileSavePayload,
   executeStudentProfileCreateRequest,
+  executeStudentProfileDeleteRequest,
+  getDuplicateStudentProfileMatches,
   resolveStudentProfileDraftDirty,
+  buildDuplicateStudentProfileWarning,
   validateStudentProfileDraft,
   resolveClassStudentDraftName,
   resolveClassStudentErrorMessage,
@@ -120,4 +123,29 @@ test('student profile save rules normalize optional source and parent contact fi
     path: '/api/students',
     init: { method: 'POST', body: JSON.stringify(payload) },
   }]);
+});
+
+test('student profile duplicate and delete rules keep creation permissive but warned', async () => {
+  const matches = getDuplicateStudentProfileMatches(
+    { name: ' 张三 ', source: '', parent_contact: '' },
+    [
+      { id: 1, name: '张三' },
+      { id: 2, name: '张三丰' },
+      { id: 3, name: '张三' },
+      { id: 4, name: '张三', status: 'archived' },
+    ],
+  );
+
+  assert.deepEqual(matches.map((item) => item.id), [1, 3]);
+  assert.equal(buildDuplicateStudentProfileWarning(matches), '已存在 2 位同名学员，保存前请确认是否仍要新建。');
+  assert.equal(buildDuplicateStudentProfileWarning([]), '');
+
+  const calls: Array<{ path: string; init: { method: 'DELETE' } }> = [];
+  const result = await executeStudentProfileDeleteRequest(3, async (path, init) => {
+    calls.push({ path, init });
+    return { action: 'archived', student_id: 3, reference_count: 2 };
+  });
+
+  assert.deepEqual(result, { action: 'archived', student_id: 3, reference_count: 2 });
+  assert.deepEqual(calls, [{ path: '/api/students/3', init: { method: 'DELETE' } }]);
 });

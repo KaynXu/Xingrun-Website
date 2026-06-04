@@ -3,6 +3,8 @@ export type ClassStudent = {
   name: string;
   source?: string;
   parent_contact?: string;
+  status?: string;
+  archived_at?: string;
   created_at?: string;
   study_status?: string;
   study_duration_label?: string;
@@ -48,6 +50,10 @@ type DeleteClassStudent = (classId: number, studentId: number) => Promise<{ ok: 
 type CreateStudentProfile = (path: string, init: { method: 'POST'; body: string }) => Promise<{ student: ClassStudent }>;
 type UpdateStudentProfile = (path: string, init: { method: 'PUT'; body: string }) => Promise<{ student: ClassStudent }>;
 type GetStudentProfile = (path: string) => Promise<{ student: ClassStudent }>;
+type DeleteStudentProfile = (
+  path: string,
+  init: { method: 'DELETE' },
+) => Promise<{ action: 'deleted' | 'archived'; student_id: number; reference_count: number; student?: ClassStudent }>;
 
 export function resolveClassStudentDraftName(rawName: string | undefined): string {
   return (rawName || '').trim();
@@ -92,6 +98,29 @@ export function validateStudentProfileDraft(draft: StudentProfileDraft): string 
   return buildStudentProfileSavePayload(draft).name ? null : '请输入学员姓名';
 }
 
+export function getDuplicateStudentProfileMatches(
+  draft: StudentProfileDraft,
+  students: ClassStudent[],
+  excludeStudentId?: number | null,
+): ClassStudent[] {
+  const name = buildStudentProfileSavePayload(draft).name;
+  if (!name) {
+    return [];
+  }
+  return students.filter((student) => (
+    student.status !== 'archived'
+    && student.id !== excludeStudentId
+    && (student.name || '').trim() === name
+  ));
+}
+
+export function buildDuplicateStudentProfileWarning(matches: ClassStudent[]): string {
+  if (!matches.length) {
+    return '';
+  }
+  return `已存在 ${matches.length} 位同名学员，保存前请确认是否仍要新建。`;
+}
+
 export function resolveStudentProfileDraftDirty(
   currentDraft: StudentProfileDraft,
   savedDraft: StudentProfileDraft | null,
@@ -128,6 +157,15 @@ export async function executeStudentProfileGetRequest(
   apiFetch: GetStudentProfile,
 ): Promise<{ student: ClassStudent }> {
   return apiFetch(`/api/students/${studentId}`);
+}
+
+export async function executeStudentProfileDeleteRequest(
+  studentId: number,
+  apiFetch: DeleteStudentProfile,
+): Promise<{ action: 'deleted' | 'archived'; student_id: number; reference_count: number; student?: ClassStudent }> {
+  return apiFetch(`/api/students/${studentId}`, {
+    method: 'DELETE',
+  });
 }
 
 export function resolveClassStudentSavingStartState(

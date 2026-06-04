@@ -52,6 +52,8 @@ export type ClassStudentOption = {
   name: string;
   source?: string;
   parent_contact?: string;
+  status?: string;
+  archived_at?: string;
   created_at?: string;
   study_status?: string;
   study_duration_label?: string;

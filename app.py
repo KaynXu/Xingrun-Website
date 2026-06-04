@@ -94,6 +94,7 @@ from lesson_manager import (
     delete_class as db_delete_class,
     delete_lesson as db_delete_lesson,
     delete_organization,
+    delete_or_archive_student_profile,
     find_previous_confirmed_class_feedback_entry,
     find_active_wrong_question_practice_pack_job,
     get_class,
@@ -140,6 +141,7 @@ from lesson_manager import (
     list_organization_requests,
     list_parent_student_bindings_for_openid,
     list_primary_topic_category_suggestions,
+    list_duplicate_student_profiles,
     list_students_for_organization,
     list_student_wrong_question_library_records,
     list_students_for_class,
@@ -4076,7 +4078,17 @@ def api_students_list():
     user, error = _require_staff()
     if error:
         return error
-    return jsonify({"students": list_students_for_organization(user.get("organization_id"))})
+    include_archived = str(request.args.get("include_archived") or "").strip().lower() in {"1", "true", "yes"}
+    return jsonify({"students": list_students_for_organization(user.get("organization_id"), include_archived=include_archived)})
+
+
+@app.route("/api/students/duplicates", methods=["GET"])
+def api_students_duplicates():
+    user, error = _require_staff()
+    if error:
+        return error
+    name = request.args.get("name") or ""
+    return jsonify({"students": list_duplicate_student_profiles(name, user.get("organization_id"))})
 
 
 @app.route("/api/students", methods=["POST"])
@@ -4131,6 +4143,18 @@ def api_student_profile_update(student_id):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"student": student})
+
+
+@app.route("/api/students/<int:student_id>", methods=["DELETE"])
+def api_student_profile_delete(student_id):
+    user, error = _require_staff()
+    if error:
+        return error
+    try:
+        result = delete_or_archive_student_profile(student_id, user.get("organization_id"))
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(result)
 
 
 @app.route("/api/classes/teacher-bindings", methods=["GET"])

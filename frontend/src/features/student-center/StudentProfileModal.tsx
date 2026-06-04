@@ -1,5 +1,6 @@
-import { AlertCircle, Save, X } from 'lucide-react';
+import { AlertCircle, Save, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useState } from 'react';
 import {
   workspaceCardClass,
   workspaceFieldClass,
@@ -23,9 +24,12 @@ type StudentProfileModalProps = {
   canManageStudents: boolean;
   loading: boolean;
   saving: boolean;
+  deleting: boolean;
   error: string;
+  duplicateWarning: string;
   onDraftChange: (key: keyof StudentProfileDraft, value: string) => void;
   onSave: () => void;
+  onDeleteOrArchive: () => void;
   onClose: () => void;
 };
 
@@ -51,17 +55,27 @@ export function StudentProfileModal({
   canManageStudents,
   loading,
   saving,
+  deleting,
   error,
+  duplicateWarning,
   onDraftChange,
   onSave,
+  onDeleteOrArchive,
   onClose,
 }: StudentProfileModalProps) {
+  const [nameBlurred, setNameBlurred] = useState(false);
   const dirty = resolveStudentProfileDraftDirty(draft, savedDraft);
-  const saveDisabled = !canManageStudents || loading || saving || !dirty;
+  const saveDisabled = !canManageStudents || loading || saving || deleting || !dirty;
   const isOpen = mode !== null;
   const title = mode === 'create' ? '新建学员' : `学员档案：${detail?.name || draft.name || ''}`;
   const studyRecords = detail?.study_records || [];
   const historyItems = detail?.history_items || [];
+  const isArchived = detail?.status === 'archived';
+  const showDuplicateWarning = Boolean(duplicateWarning && nameBlurred);
+
+  useEffect(() => {
+    setNameBlurred(false);
+  }, [mode, detail?.id]);
 
   return (
     <AnimatePresence>
@@ -71,7 +85,7 @@ export function StudentProfileModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-3 py-3 sm:items-center sm:px-4 sm:py-6"
-          onClick={(event) => event.target === event.currentTarget && !saving && onClose()}
+          onClick={(event) => event.target === event.currentTarget && !saving && !deleting && onClose()}
         >
           <div className="absolute inset-0 bg-black/45 backdrop-blur-[6px]" />
           <motion.div
@@ -104,7 +118,7 @@ export function StudentProfileModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  disabled={saving}
+                  disabled={saving || deleting}
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
                   aria-label="关闭学员档案窗口"
                 >
@@ -120,13 +134,29 @@ export function StudentProfileModal({
                   {error}
                 </div>
               ) : null}
+              {showDuplicateWarning ? (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                  <AlertCircle size={16} />
+                  {duplicateWarning}
+                </div>
+              ) : null}
+              {isArchived ? (
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                  <AlertCircle size={16} />
+                  此学员档案已停用，历史记录仍保留。
+                </div>
+              ) : null}
 
               <div className={`${workspaceCardClass} grid gap-4 p-5 md:grid-cols-3`}>
                 <label className="space-y-2">
                   <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">学员姓名</span>
                   <input
                     value={draft.name}
-                    onChange={(event) => onDraftChange('name', event.target.value)}
+                    onChange={(event) => {
+                      setNameBlurred(false);
+                      onDraftChange('name', event.target.value);
+                    }}
+                    onBlur={() => setNameBlurred(true)}
                     disabled={!canManageStudents || loading || saving}
                     className={workspaceFieldClass}
                     placeholder="请输入学员姓名"
@@ -215,7 +245,18 @@ export function StudentProfileModal({
               </div>
 
               {canManageStudents ? (
-                <div className="flex justify-end">
+                <div className="flex flex-wrap justify-end gap-3">
+                  {mode === 'edit' ? (
+                    <button
+                      type="button"
+                      onClick={onDeleteOrArchive}
+                      disabled={loading || saving || deleting}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/25 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/15"
+                    >
+                      <Trash2 size={16} />
+                      {deleting ? '处理中...' : '删除/停用档案'}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={onSave}

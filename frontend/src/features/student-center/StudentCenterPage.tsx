@@ -88,12 +88,15 @@ import {
 } from './classInviteRules';
 import {
   buildStudentProfileSavePayload,
+  buildDuplicateStudentProfileWarning,
   executeClassStudentCreateRequest,
   executeClassStudentDeleteRequest,
   executeClassStudentListRequest,
   executeStudentProfileCreateRequest,
+  executeStudentProfileDeleteRequest,
   executeStudentProfileGetRequest,
   executeStudentProfileUpdateRequest,
+  getDuplicateStudentProfileMatches,
   resolveClassStudentDraftAfterCreate,
   resolveClassStudentErrorMessage,
   resolveClassStudentSavingEndState,
@@ -233,6 +236,7 @@ export function StudentCenterPage({
   const [studentProfileDetail, setStudentProfileDetail] = useState<ClassStudent | null>(null);
   const [studentProfileLoading, setStudentProfileLoading] = useState(false);
   const [studentProfileSaving, setStudentProfileSaving] = useState(false);
+  const [studentProfileDeleting, setStudentProfileDeleting] = useState(false);
   const [studentProfileError, setStudentProfileError] = useState('');
   const [showClassCohortYear, setShowClassCohortYear] = useState(false);
   const [activeClassHelpKey, setActiveClassHelpKey] = useState<'overview' | null>(null);
@@ -731,6 +735,22 @@ export function StudentCenterPage({
     ));
   };
 
+  const removeStudentFromCaches = (studentId: number) => {
+    setAllStudents((current) => current.filter((item) => item.id !== studentId));
+    setStudentsByClassId((current) => Object.fromEntries(
+      Object.entries(current).map(([classId, students]) => [
+        classId,
+        students.filter((item) => item.id !== studentId),
+      ]),
+    ));
+    setSavedStudentsByClassId((current) => Object.fromEntries(
+      Object.entries(current).map(([classId, students]) => [
+        classId,
+        students.filter((item) => item.id !== studentId),
+      ]),
+    ));
+  };
+
   const openCreateStudentProfile = () => {
     if (!studentCenterPermissions.canManageStudents) {
       return;
@@ -742,6 +762,7 @@ export function StudentCenterPage({
     setStudentProfileDetail(null);
     setStudentProfileError('');
     setStudentProfileLoading(false);
+    setStudentProfileDeleting(false);
   };
 
   const openStudentProfile = async (studentId: number) => {
@@ -754,6 +775,7 @@ export function StudentCenterPage({
     setStudentProfileDetail(listStudent);
     setStudentProfileError('');
     setStudentProfileLoading(true);
+    setStudentProfileDeleting(false);
 
     try {
       const payload = await executeStudentProfileGetRequest(studentId, apiFetch);
@@ -774,9 +796,17 @@ export function StudentCenterPage({
   };
 
   const isStudentProfileDraftDirty = () => resolveStudentProfileDraftDirty(studentProfileDraft, savedStudentProfileDraft);
+  const studentProfileDuplicateMatches = getDuplicateStudentProfileMatches(
+    studentProfileDraft,
+    allStudents,
+    studentProfileMode === 'edit' ? studentProfileStudentId : null,
+  );
+  const studentProfileDuplicateWarning = studentProfileMode === 'create'
+    ? buildDuplicateStudentProfileWarning(studentProfileDuplicateMatches)
+    : '';
 
   const closeStudentProfile = () => {
-    if (studentProfileSaving) {
+    if (studentProfileSaving || studentProfileDeleting) {
       return;
     }
     if (isStudentProfileDraftDirty() && !window.confirm('有未保存的修改，确定放弃并关闭吗？')) {
@@ -788,6 +818,7 @@ export function StudentCenterPage({
     setSavedStudentProfileDraft(null);
     setStudentProfileDetail(null);
     setStudentProfileError('');
+    setStudentProfileDeleting(false);
   };
 
   const saveStudentProfile = async () => {
@@ -798,6 +829,13 @@ export function StudentCenterPage({
     const validationError = validateStudentProfileDraft(payload);
     if (validationError) {
       setStudentProfileError(validationError);
+      return;
+    }
+    if (
+      studentProfileMode === 'create'
+      && studentProfileDuplicateMatches.length
+      && !window.confirm(`已存在 ${studentProfileDuplicateMatches.length} 位同名学员，仍要新建吗？`)
+    ) {
       return;
     }
 
@@ -828,6 +866,31 @@ export function StudentCenterPage({
     }
   };
 
+  const deleteOrArchiveStudentProfile = async () => {
+    if (!studentCenterPermissions.canManageStudents || studentProfileMode !== 'edit' || studentProfileStudentId == null || studentProfileSaving || studentProfileLoading || studentProfileDeleting) {
+      return;
+    }
+    if (!window.confirm('确定处理此学员档案吗？无关联档案会永久删除；已有课程、历史或错题记录的档案会停用并默认隐藏。')) {
+      return;
+    }
+    setStudentProfileDeleting(true);
+    setStudentProfileError('');
+    try {
+      await executeStudentProfileDeleteRequest(studentProfileStudentId, apiFetch);
+      removeStudentFromCaches(studentProfileStudentId);
+      setStudentProfileMode(null);
+      setStudentProfileStudentId(null);
+      setStudentProfileDraft(emptyStudentProfileDraft);
+      setSavedStudentProfileDraft(null);
+      setStudentProfileDetail(null);
+      await loadPage(expandedClassId, { preserveStateOnError: true });
+    } catch (err) {
+      setStudentProfileError(err instanceof Error ? err.message : '学员档案处理失败，请重试。');
+    } finally {
+      setStudentProfileDeleting(false);
+    }
+  };
+
   useEffect(() => {
     if (studentProfileMode === null || !isStudentProfileDraftDirty()) {
       return undefined;
@@ -840,7 +903,7 @@ export function StudentCenterPage({
     };
     window.addEventListener('keydown', handleSaveShortcut);
     return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [studentProfileMode, studentProfileDraft, savedStudentProfileDraft, studentProfileSaving, studentProfileLoading, studentCenterPermissions.canManageStudents]);
+  }, [studentProfileMode, studentProfileDraft, savedStudentProfileDraft, studentProfileSaving, studentProfileLoading, studentProfileDeleting, studentCenterPermissions.canManageStudents]);
 
   const getClassTeacherUserId = (item: ClassItem) => resolveClassTeacherUserId(item, teacherBindingByClassId);
   const getClassEffectiveSubject = (item: ClassItem) => resolveClassEffectiveSubject(item, classes, teacherBindingByClassId, academicSubjectOptions);
@@ -1440,9 +1503,12 @@ export function StudentCenterPage({
         canManageStudents={studentCenterPermissions.canManageStudents}
         loading={studentProfileLoading}
         saving={studentProfileSaving}
+        deleting={studentProfileDeleting}
         error={studentProfileError}
+        duplicateWarning={studentProfileDuplicateWarning}
         onDraftChange={handleStudentProfileDraftChange}
         onSave={() => void saveStudentProfile()}
+        onDeleteOrArchive={() => void deleteOrArchiveStudentProfile()}
         onClose={closeStudentProfile}
       />
     </div>

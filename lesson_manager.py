@@ -2051,14 +2051,16 @@ def _enforce_students_organization_contract(conn: sqlite3.Connection) -> None:
 	            name            TEXT NOT NULL,
 	            source          TEXT NOT NULL DEFAULT '',
 	            parent_contact  TEXT NOT NULL DEFAULT '',
+	            status          TEXT NOT NULL DEFAULT 'active',
+	            archived_at     TEXT NOT NULL DEFAULT '',
 	            created_at      TEXT DEFAULT (datetime('now','localtime'))
 	        )
             """
         )
         conn.execute(
             """
-	        INSERT INTO students (id, organization_id, name, source, parent_contact, created_at)
-	        SELECT id, organization_id, name, '', '', created_at
+	        INSERT INTO students (id, organization_id, name, source, parent_contact, status, archived_at, created_at)
+	        SELECT id, organization_id, name, '', '', 'active', '', created_at
 	        FROM students__org_scope_legacy
             """
         )
@@ -2356,6 +2358,8 @@ def init_db():
 	            name            TEXT NOT NULL,
 	            source          TEXT NOT NULL DEFAULT '',
 	            parent_contact  TEXT NOT NULL DEFAULT '',
+	            status          TEXT NOT NULL DEFAULT 'active',
+	            archived_at     TEXT NOT NULL DEFAULT '',
 	            created_at      TEXT DEFAULT (datetime('now','localtime'))
 	        );
 
@@ -2842,6 +2846,8 @@ def init_db():
         _ensure_column(conn, "course_calendar_custom_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "students", "source", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "students", "parent_contact", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "students", "status", "TEXT NOT NULL DEFAULT 'active'")
+        _ensure_column(conn, "students", "archived_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_weekly_wrong_question_followup_messages_user_delete_policy(conn)
         _migrate_course_calendar_time_blocks(conn)
         _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn)
@@ -4149,7 +4155,7 @@ def list_classes():
         rows = conn.execute(
             """
             SELECT c.*, COUNT(DISTINCT l.id) as lesson_count,
-                   COUNT(DISTINCT cs.student_id) as student_count,
+                   COUNT(DISTINCT s_count.id) as student_count,
                    (
                        SELECT uc.user_id
                        FROM user_classes uc
@@ -4160,6 +4166,7 @@ def list_classes():
             FROM classes c
             LEFT JOIN lessons l ON l.class_id = c.id
             LEFT JOIN class_students cs ON cs.class_id = c.id
+            LEFT JOIN students s_count ON s_count.id = cs.student_id AND s_count.status='active'
             GROUP BY c.id
             ORDER BY c.created_at DESC
             """
@@ -4180,7 +4187,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             SELECT s.name
             FROM class_students cs
             JOIN students s ON s.id = cs.student_id
-            WHERE cs.class_id=?
+            WHERE cs.class_id=? AND s.status='active'
             ORDER BY s.name
             """,
             (class_id,),
@@ -4804,7 +4811,7 @@ def list_students_for_class(class_id: int) -> list:
             SELECT s.*
             FROM class_students cs
             JOIN students s ON s.id = cs.student_id
-            WHERE cs.class_id=?
+            WHERE cs.class_id=? AND s.status='active'
             ORDER BY cs.id
             """,
             (class_id,),
@@ -4812,18 +4819,39 @@ def list_students_for_class(class_id: int) -> list:
     return [dict(row) for row in rows]
 
 
-def list_students_for_organization(organization_id: int | None = None) -> list:
+def list_students_for_organization(organization_id: int | None = None, include_archived: bool = False) -> list:
     with get_conn() as conn:
         if organization_id is None:
             organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
+        status_sql = "" if include_archived else " AND status='active'"
         rows = conn.execute(
-            """
-            SELECT id, name, source, parent_contact, created_at
+            f"""
+            SELECT id, name, source, parent_contact, status, archived_at, created_at
             FROM students
-            WHERE organization_id=?
+            WHERE organization_id=?{status_sql}
             ORDER BY name COLLATE NOCASE, id
             """,
             (organization_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_duplicate_student_profiles(raw_name: str, organization_id: int | None = None, include_archived: bool = False) -> list[dict]:
+    name = (raw_name or "").strip()
+    if not name:
+        return []
+    with get_conn() as conn:
+        if organization_id is None:
+            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
+        status_sql = "" if include_archived else " AND status='active'"
+        rows = conn.execute(
+            f"""
+            SELECT id, name, source, parent_contact, status, archived_at, created_at
+            FROM students
+            WHERE organization_id=? AND name=?{status_sql}
+            ORDER BY id
+            """,
+            (organization_id, name),
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -4891,6 +4919,8 @@ def _build_student_profile_from_row(conn: sqlite3.Connection, row) -> dict:
     student.update({
         "source": student.get("source") or "",
         "parent_contact": student.get("parent_contact") or "",
+        "status": student.get("status") or "active",
+        "archived_at": student.get("archived_at") or "",
         "first_lesson_date": first_lesson_date,
         "last_lesson_date": last_lesson_date,
         "study_duration_label": _format_student_study_duration(first_lesson_date, last_lesson_date),
@@ -4910,13 +4940,63 @@ def create_student_profile(raw_name: str, source: str = "", parent_contact: str 
             organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
         cur = conn.execute(
             """
-            INSERT INTO students (organization_id, name, source, parent_contact)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO students (organization_id, name, source, parent_contact, status)
+            VALUES (?, ?, ?, ?, 'active')
             """,
             (organization_id, name, (source or "").strip(), (parent_contact or "").strip()),
         )
         row = conn.execute("SELECT * FROM students WHERE id=?", (cur.lastrowid,)).fetchone()
         return _build_student_profile_from_row(conn, row)
+
+
+def _count_student_profile_references(conn: sqlite3.Connection, student_id: int) -> int:
+    reference_tables = [
+        "class_students",
+        "student_class_history",
+        "parent_student_bindings",
+        "wrong_question_submissions",
+        "wechat_wrong_question_upload_tasks",
+        "wrong_question_practice_sheets",
+        "wrong_question_practice_pack_job_students",
+        "weekly_wrong_question_followup_messages",
+        "class_feedback_student_entries",
+    ]
+    total = 0
+    for table in reference_tables:
+        row = conn.execute(f"SELECT COUNT(*) AS total FROM {table} WHERE student_id=?", (student_id,)).fetchone()
+        total += int(row["total"] or 0)
+    return total
+
+
+def delete_or_archive_student_profile(student_id: int, organization_id: int | None = None) -> dict:
+    with get_conn() as conn:
+        params: list[object] = [student_id]
+        scope_sql = ""
+        if organization_id is not None:
+            scope_sql = " AND organization_id=?"
+            params.append(organization_id)
+        row = conn.execute(f"SELECT * FROM students WHERE id=?{scope_sql}", tuple(params)).fetchone()
+        if not row:
+            raise LookupError("student not found")
+        reference_count = _count_student_profile_references(conn, student_id)
+        if reference_count == 0:
+            conn.execute("DELETE FROM students WHERE id=?", (student_id,))
+            return {"action": "deleted", "student_id": student_id, "reference_count": 0}
+        conn.execute(
+            """
+            UPDATE students
+            SET status='archived', archived_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (student_id,),
+        )
+        archived_row = conn.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+        return {
+            "action": "archived",
+            "student_id": student_id,
+            "reference_count": reference_count,
+            "student": _build_student_profile_from_row(conn, archived_row),
+        }
 
 
 def update_student_profile(student_id: int, raw_name: str, source: str = "", parent_contact: str = "", organization_id: int | None = None) -> dict:
