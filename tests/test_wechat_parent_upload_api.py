@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -223,6 +224,26 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(assets[0]["asset_role"], "original_upload")
         self.assertEqual(assets[1]["asset_role"], "erased_question_image")
         self.assertTrue(Path(assets[1]["storage_path"]).exists())
+
+    def test_erasure_helper_can_use_external_python_runtime(self):
+        from wrong_question_upload_worker import _erase_wrong_question_image_bytes
+
+        script_path = self.base / "fake_erase.py"
+        script_path.write_text(
+            "from pathlib import Path\n"
+            "import sys\n"
+            "Path(sys.argv[2]).write_bytes(b'erased:' + Path(sys.argv[1]).read_bytes())\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "XR_ERROR_CORRECTION_PYTHON": sys.executable,
+                "XR_ERROR_CORRECTION_ERASE_SCRIPT": str(script_path),
+            },
+        ):
+            self.assertEqual(_erase_wrong_question_image_bytes(b"original"), b"erased:original")
 
     def test_staff_and_parent_can_update_wrong_question_topic_category(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")

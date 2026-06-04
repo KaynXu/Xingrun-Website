@@ -4,7 +4,9 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import uuid
 import urllib.error
 import urllib.parse
@@ -31,6 +33,8 @@ BASE_DIR = Path(__file__).parent.resolve()
 PDF_DIR = BASE_DIR / "data" / "pdfs"
 ERASED_IMAGE_DIR = BASE_DIR / "data" / "wrong_question_erased"
 DEFAULT_ERROR_CORRECTION_BACKEND = Path("/Users/xiaodi/Desktop/error_correction/backend")
+DEFAULT_ERROR_CORRECTION_PYTHON = Path("/Users/xiaodi/Desktop/error_correction/.venv/bin/python")
+DEFAULT_ERASE_SCRIPT = BASE_DIR / "scripts" / "erase_wrong_question_image.py"
 
 
 def _iter_exception_chain(exc: BaseException):
@@ -144,7 +148,40 @@ def _fetch_upload_image_bytes(image_url: str) -> bytes:
 
 
 def _erase_wrong_question_image_bytes(image_bytes: bytes) -> bytes:
+    external_python = Path(os.environ.get("XR_ERROR_CORRECTION_PYTHON") or DEFAULT_ERROR_CORRECTION_PYTHON)
+    external_script = Path(os.environ.get("XR_ERROR_CORRECTION_ERASE_SCRIPT") or DEFAULT_ERASE_SCRIPT)
     backend_path = Path(os.environ.get("XR_ERROR_CORRECTION_BACKEND_PATH") or DEFAULT_ERROR_CORRECTION_BACKEND)
+    if external_python.exists() and external_script.exists():
+        input_path = None
+        output_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as input_file:
+                input_file.write(image_bytes)
+                input_path = Path(input_file.name)
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as output_file:
+                output_path = Path(output_file.name)
+            result = subprocess.run(
+                [
+                    str(external_python),
+                    str(external_script),
+                    str(input_path),
+                    str(output_path),
+                    str(backend_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                message = str(result.stderr or result.stdout or "error_correction erasure failed").strip()
+                raise RuntimeError(message)
+            return output_path.read_bytes()
+        finally:
+            for path in (input_path, output_path):
+                if path:
+                    path.unlink(missing_ok=True)
+
     if not backend_path.exists():
         raise FileNotFoundError(f"error_correction backend not found: {backend_path}")
     sys.path.insert(0, str(backend_path))
